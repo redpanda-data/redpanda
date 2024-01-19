@@ -262,7 +262,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             cloud_storage_segment_size_min=2 * self.log_segment_size,
             retention_local_target_bytes_default=2 * self.log_segment_size,
             cloud_storage_enable_segment_merging=True,
-            cloud_storage_cache_chunk_size=self.chunk_size)
+            cloud_storage_cache_chunk_size=self.chunk_size,
+            cloud_storage_spillover_manifest_size=None)
 
         super(CloudStorageTimingStressTest,
               self).__init__(test_context=test_context,

@@ -399,6 +399,8 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         self.redpanda.set_cluster_config({
             "cloud_storage_housekeeping_interval_ms":
             1000,
+            "cloud_storage_spillover_manifest_size":
+            None,
             "cloud_storage_spillover_manifest_max_segments":
             10
         })

@@ -1008,7 +1008,8 @@ class EnableSpillover(Expression):
         return [
             ClusterConfigInput(
                 "EnableSpillover",
-                dict(cloud_storage_spillover_manifest_max_segments=
+                dict(cloud_storage_spillover_manifest_size=None,
+                     cloud_storage_spillover_manifest_max_segments=
                      SPILLOVER_MANIFEST_SIZE))
         ]
 
