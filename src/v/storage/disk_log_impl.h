@@ -200,7 +200,7 @@ private:
       ss::lw_shared_ptr<segment> s,
       segment_index::entry index_entry,
       model::offset target,
-      bool is_inclusive,
+      model::boundary_type boundary,
       ss::io_priority_class priority);
 
     ss::future<model::record_batch_reader>

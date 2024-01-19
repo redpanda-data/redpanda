@@ -1756,7 +1756,7 @@ struct batch_size_accumulator {
         //                  target---v
         //     |++++++++++++++[+++++++]X          |
         //
-        if (target_is_inclusive) {
+        if (boundary == model::boundary_type::inclusive) {
             if (b.last_offset() > target) {
                 co_return ss::stop_iteration::yes;
             }
@@ -1776,7 +1776,7 @@ struct batch_size_accumulator {
 
     size_t* result_size_bytes{nullptr};
     model::offset target;
-    bool target_is_inclusive;
+    model::boundary_type boundary;
 };
 } // namespace details
 
@@ -1784,13 +1784,13 @@ ss::future<size_t> disk_log_impl::get_file_offset(
   ss::lw_shared_ptr<segment> s,
   segment_index::entry index_entry,
   model::offset target,
-  bool is_inclusive,
+  model::boundary_type boundary,
   ss::io_priority_class priority) {
     size_t size_bytes{index_entry.filepos};
     details::batch_size_accumulator acc{
       .result_size_bytes = &size_bytes,
       .target = target,
-      .target_is_inclusive = is_inclusive,
+      .boundary = boundary,
     };
 
     storage::log_reader_config reader_cfg(index_entry.offset, target, priority);
@@ -1901,7 +1901,11 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
           segments.front()->offsets());
     }
     auto left_scan_bytes = co_await get_file_offset(
-      segments.front(), left_entry, first, false, io_priority);
+      segments.front(),
+      left_entry,
+      first,
+      model::boundary_type::exclusive,
+      io_priority);
 
     // Right subscan
     auto ix_right = segments.back()->index().find_nearest(last);
@@ -1925,7 +1929,11 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
           segments.back()->offsets());
     }
     auto right_scan_bytes = co_await get_file_offset(
-      segments.back(), right_entry, last, true, io_priority);
+      segments.back(),
+      right_entry,
+      last,
+      model::boundary_type::inclusive,
+      io_priority);
 
     // compute size
     size_t total_size = 0;
@@ -2033,7 +2041,11 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
                 index_entry = ix_res.value();
             }
             auto file_pos = co_await get_file_offset(
-              *it, index_entry, first, false, io_priority);
+              *it,
+              index_entry,
+              first,
+              model::boundary_type::exclusive,
+              io_priority);
             auto sz = it->get()->file_size() - file_pos;
             current_size += sz;
             base_file_pos = file_pos;
