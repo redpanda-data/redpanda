@@ -30,10 +30,20 @@ class SmallBatchesTest(RedpandaTest):
             "test_duration_minutes": 5,
             "warmup_duration_minutes": 1,
         }
+        validator = {
+            OMBSampleConfigurations.E2E_LATENCY_50PCT:
+            [OMBSampleConfigurations.lte(30)],
+            OMBSampleConfigurations.E2E_LATENCY_AVG:
+            [OMBSampleConfigurations.lte(75)],
+            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
+            [OMBSampleConfigurations.gte(145)],
+            OMBSampleConfigurations.PUB_LATENCY_50PCT:
+            [OMBSampleConfigurations.lte(40)],
+        }
 
-        benchmark = OpenMessagingBenchmark(
-            self._ctx, self.redpanda, "ACK_ALL_GROUP_LINGER_1MS",
-            (workload, OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR))
+        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda,
+                                           "ACK_ALL_GROUP_LINGER_1MS",
+                                           (workload, validator))
 
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time() + 5
