@@ -268,7 +268,8 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
               })
             .handle_exception([this, seq, corr](std::exception_ptr eptr) {
                 // This is unlikely but may potentially mean dispatch_send()
-                // is not called, stalling the sequence number.
+                // is not called, stalling the sequence number. Shut it down
+                // because in this case it is not usable anymore.
                 vlog(
                   rpclog.error,
                   "Exception {} dispatching rpc with sequence: {}, "
@@ -277,6 +278,8 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
                   seq,
                   corr,
                   _last_seq);
+                _probe->request_error();
+                fail_outstanding_futures();
                 return ss::make_exception_future<ret_t>(eptr);
             });
       });
