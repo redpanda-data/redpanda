@@ -34,6 +34,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/archival.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future-util.hh>
@@ -523,9 +524,11 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
      * of the entire spillover manifest.
      */
 
-    config::shard_local_cfg()
-      .cloud_storage_spillover_manifest_max_segments.set_value(
-        std::optional<size_t>{2});
+    auto cfg = scoped_config{};
+    cfg.get("cloud_storage_spillover_manifest_max_segments")
+      .set_value(std::optional<size_t>{2});
+    cfg.get("cloud_storage_spillover_manifest_size")
+      .set_value(std::optional<size_t>{std::nullopt});
 
     // Write segments to local log
     auto old_stamp = model::timestamp{
