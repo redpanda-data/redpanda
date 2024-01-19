@@ -1495,8 +1495,7 @@ fragmented_vector<cloud_storage::partition_manifest::lw_segment_meta>
 archival_metadata_stm::get_segments_to_cleanup() const {
     // Include replaced segments to the backlog
     using lw_segment_meta = cloud_storage::partition_manifest::lw_segment_meta;
-    const fragmented_vector<lw_segment_meta> source_backlog
-      = _manifest->lw_replaced_segments();
+    const auto source_backlog = _manifest->lw_replaced_segments();
 
     // Make sure that 'replaced' list doesn't have any references to active
     // segments. This is a protection from the data loss. This should not
