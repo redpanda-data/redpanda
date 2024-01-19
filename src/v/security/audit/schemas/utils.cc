@@ -72,15 +72,6 @@ namespace security::audit {
 
 namespace {
 
-api_activity::activity_id http_method_to_activity_id(std::string_view method) {
-    return string_switch<api_activity::activity_id>(method)
-      .match_all("POST", "post", api_activity::activity_id::create)
-      .match_all("GET", "get", api_activity::activity_id::read)
-      .match_all("PUT", "put", api_activity::activity_id::update)
-      .match_all("DELETE", "delete", api_activity::activity_id::delete_id)
-      .default_match(api_activity::activity_id::unknown);
-}
-
 uniform_resource_locator
 uri_from_ss_http_request(const ss::http::request& req) {
     return {
@@ -172,15 +163,6 @@ authorization_metadata auth_result_to_authorization_metadata(
     return metadata;
 }
 
-/// TODO: Via ACLs metadata return correct response
-api_activity_unmapped unmapped_data() { return api_activity_unmapped{}; }
-
-api_activity_unmapped unmapped_data(const security::auth_result& auth_result) {
-    return api_activity_unmapped{
-      .authorization_metadata = auth_result_to_authorization_metadata(
-        auth_result)};
-}
-
 user user_from_request_auth_result(const request_auth_result& r) {
     auto& username = r.get_username();
 
@@ -222,45 +204,36 @@ actor actor_from_user_string(
     return {.authorizations = std::move(auths), .user = std::move(u)};
 }
 
-template<typename Clock>
-timestamp_t create_timestamp_t(std::chrono::time_point<Clock> time_point) {
-    return timestamp_t(std::chrono::duration_cast<std::chrono::milliseconds>(
-                         time_point.time_since_epoch())
-                         .count());
+authentication::auth_protocol_variant
+mechanism_string_to_auth_protocol(std::string_view mech) {
+    if (mech.empty()) {
+        return authentication::auth_protocol_id::unknown;
+    }
+    return string_switch<authentication::auth_protocol_variant>(mech)
+      .match(
+        security::scram_sha256_authenticator::name,
+        security::scram_sha256_authenticator::name)
+      .match(
+        security::scram_sha512_authenticator::name,
+        security::scram_sha512_authenticator::name)
+      .match(
+        security::gssapi_authenticator::name,
+        authentication::auth_protocol_id::kerberos)
+      .match(
+        security::oidc::sasl_authenticator::name,
+        authentication::auth_protocol_id::oauth_2_0)
+      .default_match(ss::sstring{mech});
 }
 
-template<typename Clock = ss::lowres_system_clock>
-timestamp_t create_timestamp_t() {
-    return create_timestamp_t(Clock::now());
-}
-constexpr api_activity::activity_id op_to_crud(security::acl_operation op) {
-    switch (op) {
-    case acl_operation::read:
-        return api_activity::activity_id::read;
-    case acl_operation::write:
-        return api_activity::activity_id::update;
-    case acl_operation::create:
-        return api_activity::activity_id::create;
-    case acl_operation::remove:
-        return api_activity::activity_id::delete_id;
-    case acl_operation::alter:
-        return api_activity::activity_id::update;
-    case acl_operation::describe:
-        return api_activity::activity_id::update;
-    case acl_operation::cluster_action:
-        return api_activity::activity_id::update;
-    case acl_operation::describe_configs:
-        return api_activity::activity_id::read;
-    case acl_operation::alter_configs:
-        return api_activity::activity_id::update;
-    case acl_operation::idempotent_write:
-        return api_activity::activity_id::update;
-    case acl_operation::all:
-        // The `acl_operation` passed to this function is based off of
-        // the ACL check performed by the Kafka handlers.  None of the
-        // handlers should be providing `all` to an ACL check.
-        vassert(false, "Cannot convert an ALL acl operation to a CRUD");
-    }
+} // namespace
+
+/// TODO: Via ACLs metadata return correct response
+api_activity_unmapped unmapped_data() { return api_activity_unmapped{}; }
+
+api_activity_unmapped unmapped_data(const security::auth_result& auth_result) {
+    return api_activity_unmapped{
+      .authorization_metadata = auth_result_to_authorization_metadata(
+        auth_result)};
 }
 
 actor result_to_actor(const security::auth_result& result) {
@@ -300,28 +273,14 @@ actor result_to_actor(const security::auth_result& result) {
     return {.authorizations = std::move(auths), .user = std::move(user)};
 }
 
-authentication::auth_protocol_variant
-mechanism_string_to_auth_protocol(std::string_view mech) {
-    if (mech.empty()) {
-        return authentication::auth_protocol_id::unknown;
-    }
-    return string_switch<authentication::auth_protocol_variant>(mech)
-      .match(
-        security::scram_sha256_authenticator::name,
-        security::scram_sha256_authenticator::name)
-      .match(
-        security::scram_sha512_authenticator::name,
-        security::scram_sha512_authenticator::name)
-      .match(
-        security::gssapi_authenticator::name,
-        authentication::auth_protocol_id::kerberos)
-      .match(
-        security::oidc::sasl_authenticator::name,
-        authentication::auth_protocol_id::oauth_2_0)
-      .default_match(ss::sstring{mech});
+api_activity::activity_id http_method_to_activity_id(std::string_view method) {
+    return string_switch<api_activity::activity_id>(method)
+      .match_all("POST", "post", api_activity::activity_id::create)
+      .match_all("GET", "get", api_activity::activity_id::read)
+      .match_all("PUT", "put", api_activity::activity_id::update)
+      .match_all("DELETE", "delete", api_activity::activity_id::delete_id)
+      .default_match(api_activity::activity_id::unknown);
 }
-
-} // namespace
 
 std::ostream& operator<<(std::ostream& os, audit_resource_type type) {
     switch (type) {
@@ -517,7 +476,7 @@ event_type kafka_api_to_event_type(kafka::api_key key) {
     vassert(false, "Unhandled Kafka API in kafka_api_to_event_type: {}", key);
 }
 
-api_activity make_api_activity_event(
+api_activity api_activity::construct(
   ss::httpd::const_req req,
   const request_auth_result& auth_result,
   const ss::sstring& svc_name,
@@ -540,7 +499,7 @@ api_activity make_api_activity_event(
       unmapped_data()};
 }
 
-api_activity make_api_activity_event(
+api_activity api_activity::construct(
   ss::httpd::const_req req,
   const ss::sstring& user,
   const ss::sstring& svc_name) {
@@ -559,7 +518,24 @@ api_activity make_api_activity_event(
       unmapped_data()};
 }
 
-authentication make_authentication_event(authentication_event_options options) {
+application_lifecycle application_lifecycle::construct(
+  application_lifecycle::activity_id activity_id,
+  std::optional<ss::sstring> feature_name) {
+    auto product = redpanda_product();
+    if (feature_name) {
+        product.feature = feature{.name = std::move(*feature_name)};
+    }
+    product.uid = ss::to_sstring(
+      config::node().node_id().value_or(model::node_id{0}));
+
+    return {
+      activity_id,
+      std::move(product),
+      severity_id::informational,
+      create_timestamp_t()};
+}
+
+authentication authentication::construct(authentication_event_options options) {
     auto result = options.error_reason.has_value()
                     ? authentication::status_id::failure
                     : authentication::status_id::success;
@@ -581,71 +557,6 @@ authentication make_authentication_event(authentication_event_options options) {
       std::move(options.error_reason),
       create_timestamp_t(),
       std::move(options.user)};
-}
-
-api_activity make_api_activity_event(
-  std::string_view operation_name,
-  const security::auth_result& auth_result,
-  const ss::socket_address& local_address,
-  std::string_view service_name,
-  ss::net::inet_address client_addr,
-  uint16_t client_port,
-  std::optional<std::string_view> client_id,
-  std::vector<resource_detail> additional_resources) {
-    auto crud = op_to_crud(auth_result.operation);
-    auto actor = result_to_actor(auth_result);
-    additional_resources.emplace_back(resource_detail{
-      .name = auth_result.resource_name,
-      .type = fmt::format("{}", auth_result.resource_type)});
-
-    return {
-      crud,
-      std::move(actor),
-      api{
-        .operation = ss::sstring{operation_name},
-        .service = {.name = ss::sstring{service_name}}},
-      network_endpoint{
-        .addr = net::unresolved_address(
-          fmt::format("{}", local_address.addr()), local_address.port()),
-        .svc_name = ss::sstring{service_name},
-      },
-      std::nullopt,
-      std::move(additional_resources),
-      severity_id::informational,
-      network_endpoint{
-        .addr = net::unresolved_address(
-          fmt::format("{}", client_addr), client_port),
-        .name = ss::sstring{client_id.value_or("")}},
-      auth_result.authorized ? api_activity::status_id::success
-                             : api_activity::status_id::failure,
-      create_timestamp_t(),
-      unmapped_data(auth_result)};
-}
-
-application_lifecycle
-make_application_lifecycle(application_lifecycle::activity_id activity_id) {
-    auto product = redpanda_product();
-    product.uid = ss::to_sstring(
-      config::node().node_id().value_or(model::node_id{0}));
-    return {
-      activity_id,
-      std::move(product),
-      severity_id::informational,
-      create_timestamp_t()};
-}
-
-application_lifecycle make_application_lifecycle(
-  application_lifecycle::activity_id activity_id, ss::sstring feature_name) {
-    auto product = redpanda_product();
-    product.feature = feature{.name = std::move(feature_name)};
-    product.uid = ss::to_sstring(
-      config::node().node_id().value_or(model::node_id{0}));
-
-    return {
-      activity_id,
-      std::move(product),
-      severity_id::informational,
-      create_timestamp_t()};
 }
 
 } // namespace security::audit

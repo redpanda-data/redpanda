@@ -375,6 +375,15 @@ public:
     const std::optional<ss::sstring>& name() const { return _name; }
     std::optional<pattern_filter_type> pattern() const { return _pattern; }
 
+    template<typename H>
+    friend H AbslHashValue(H h, const pattern_match&) {
+        return H::combine(std::move(h), 0x1B3A5CD7); // random number
+    }
+    template<typename H>
+    friend H AbslHashValue(H h, const resource_pattern_filter& f) {
+        return H::combine(std::move(h), f._resource, f._name, f._pattern);
+    }
+
     friend void read_nested(
       iobuf_parser& in,
       resource_pattern_filter& filter,
@@ -444,6 +453,12 @@ public:
         return std::tie(_principal, _host, _operation, _permission);
     }
 
+    template<typename H>
+    friend H AbslHashValue(H h, const acl_entry_filter& f) {
+        return H::combine(
+          std::move(h), f._principal, f._host, f._operation, f._permission);
+    }
+
     friend bool operator==(const acl_entry_filter&, const acl_entry_filter&)
       = default;
 
@@ -469,6 +484,11 @@ public:
     acl_binding_filter(resource_pattern_filter pattern, acl_entry_filter acl)
       : _pattern(std::move(pattern))
       , _acl(std::move(acl)) {}
+
+    template<typename H>
+    friend H AbslHashValue(H h, const acl_binding_filter& f) {
+        return H::combine(std::move(h), f._pattern, f._acl);
+    }
 
     /*
      * A filter that matches any ACL binding.
