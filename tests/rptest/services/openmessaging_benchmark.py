@@ -334,6 +334,8 @@ class OpenMessagingBenchmark(Service):
         metrics['throughputMBps'] = (
             sum(metrics['publishRate']) / len(metrics['publishRate']) *
             metrics['messageSize']) / (1024.0 * 1024.0)
+        metrics['publishLatencyMin'] = min(metrics['publishLatencyMin'])
+        metrics['endToEndLatencyMin'] = min(metrics['endToEndLatencyMin'])
 
         if validate_metrics:
             OMBSampleConfigurations.validate_metrics(metrics, self.validator)
