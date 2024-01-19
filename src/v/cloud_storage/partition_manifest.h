@@ -115,7 +115,7 @@ public:
     using value = segment_meta;
     using segment_map = segment_meta_cstore;
     using spillover_manifest_map = segment_meta_cstore;
-    using replaced_segments_list = std::vector<lw_segment_meta>;
+    using replaced_segments_list = fragmented_vector<lw_segment_meta>;
     using const_iterator = segment_map::const_iterator;
 
     /// Generate segment name to use in the cloud
@@ -462,11 +462,11 @@ public:
     const_iterator segment_containing(kafka::offset o) const;
 
     // Return collection of segments that were replaced in lightweight format.
-    std::vector<partition_manifest::lw_segment_meta>
+    fragmented_vector<partition_manifest::lw_segment_meta>
     lw_replaced_segments() const;
 
     /// Return collection of segments that were replaced by newer segments.
-    std::vector<segment_meta> replaced_segments() const;
+    fragmented_vector<segment_meta> replaced_segments() const;
 
     /// Return the number of replaced segments currently awaiting deletion.
     size_t replaced_segments_count() const;
