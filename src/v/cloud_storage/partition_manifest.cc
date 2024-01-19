@@ -819,14 +819,13 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     return false;
 }
 
-std::vector<partition_manifest::lw_segment_meta>
+fragmented_vector<partition_manifest::lw_segment_meta>
 partition_manifest::lw_replaced_segments() const {
-    return _replaced;
+    return _replaced.copy();
 }
 
-std::vector<segment_meta> partition_manifest::replaced_segments() const {
-    std::vector<segment_meta> res;
-    res.reserve(_replaced.size());
+fragmented_vector<segment_meta> partition_manifest::replaced_segments() const {
+    fragmented_vector<segment_meta> res;
     for (const auto& s : _replaced) {
         res.push_back(lw_segment_meta::convert(s));
     }
@@ -2724,6 +2723,8 @@ partition_manifest_serde_from_partition_manifest(partition_manifest const& m)
         (([&]<typename Src>(auto& dest, Src const& src) {
              if constexpr (std::is_same_v<Src, segment_meta_cstore>) {
                  dest = src.to_iobuf();
+             } else if constexpr (reflection::is_fragmented_vector<Src>) {
+                 dest = src.copy();
              } else {
                  dest = src;
              }
