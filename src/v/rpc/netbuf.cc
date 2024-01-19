@@ -32,11 +32,6 @@ ss::future<ss::scattered_message<char>> netbuf::as_scattered() && {
     iobuf out_buf = std::move(_out);
     auto hdr = _hdr;
 
-    if (hdr.correlation_id == 0 || hdr.meta == 0) {
-        throw std::runtime_error(
-          "cannot compose scattered view with incomplete header. missing "
-          "correlation_id or remote method id");
-    }
     if (
       out_buf.size_bytes() >= _min_compression_bytes
       && rpc::compression_type::zstd == hdr.compression) {
