@@ -295,7 +295,7 @@ class HighThroughputTest(PreallocNodesTest):
         self._partitions_min = tier_product.max_partition_count // 50
         self._advertised_max_ingress = tier_product.max_ingress
         self._advertised_max_egress = tier_product.max_egress
-        self._advertised_max_client_count = tier_product.max_client_count
+        self._advertised_max_client_count = tier_product.max_connection_count
 
         if self.config_profile_name == CloudTierName.DOCKER:
             si_settings = SISettings(
