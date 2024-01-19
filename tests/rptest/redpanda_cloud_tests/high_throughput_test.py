@@ -207,7 +207,7 @@ def omb_runner(context, redpanda, driver, workload, omb_config):
 
 
 class HighThroughputTest(PreallocNodesTest):
-    msg_size = 256 * KiB
+    msg_size = 4 * KiB
     # Min segment size across all tiers
     min_segment_size = 16 * MiB
     unavailable_timeout = 60
