@@ -224,7 +224,7 @@ public:
 
     // Return list of all segments that has to be
     // removed from S3.
-    std::vector<cloud_storage::partition_manifest::lw_segment_meta>
+    fragmented_vector<cloud_storage::partition_manifest::lw_segment_meta>
     get_segments_to_cleanup() const;
 
     /// Create batch builder that can be used to combine and replicate multipe
