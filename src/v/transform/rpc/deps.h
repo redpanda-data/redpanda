@@ -160,7 +160,8 @@ public:
 
     static std::unique_ptr<partition_manager> make_default(
       ss::sharded<cluster::shard_table>*,
-      ss::sharded<cluster::partition_manager>*);
+      ss::sharded<cluster::partition_manager>*,
+      ss::smp_service_group smp_group);
 
     /**
      * Lookup which shard owns a particular ntp.

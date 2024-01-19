@@ -29,6 +29,7 @@
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/smp.hh>
 
 #include <memory>
 #include <type_traits>
@@ -73,9 +74,11 @@ class partition_manager_impl final : public partition_manager {
 public:
     partition_manager_impl(
       ss::sharded<cluster::shard_table>* table,
-      ss::sharded<cluster::partition_manager>* manager)
+      ss::sharded<cluster::partition_manager>* manager,
+      ss::smp_service_group smp_group)
       : _table(table)
-      , _manager(manager) {}
+      , _manager(manager)
+      , _smp_group(smp_group) {}
 
     std::optional<ss::shard_id> shard_owner(const model::ktp& ntp) final {
         return _table->local().shard_for(ntp);
@@ -207,19 +210,12 @@ private:
         co_return response;
     }
 
-    template<class Func>
-    requires requires(Func f, cluster::partition_manager& mgr) { f(mgr); }
-    std::invoke_result_t<Func, cluster::partition_manager&>
-    invoke_func_on_shard_impl(ss::shard_id shard, Func&& func) {
-        return _manager->invoke_on(shard, std::forward<Func>(func));
-    }
-
     ss::future<cluster::errc> invoke_on_shard_impl(
       ss::shard_id shard,
       const model::any_ntp auto& ntp,
       ss::noncopyable_function<
         ss::future<cluster::errc>(kafka::partition_proxy*)> fn) {
-        return _manager->invoke_on(
+        return invoke_func_on_shard_impl(
           shard,
           [ntp, fn = std::move(fn)](cluster::partition_manager& mgr) mutable {
               auto pp = kafka::make_partition_proxy(ntp, mgr);
@@ -235,8 +231,17 @@ private:
           });
     }
 
+    template<class Func>
+    requires requires(Func f, cluster::partition_manager& mgr) { f(mgr); }
+    std::invoke_result_t<Func, cluster::partition_manager&>
+    invoke_func_on_shard_impl(ss::shard_id shard, Func&& func) {
+        return _manager->invoke_on(
+          shard, {_smp_group}, std::forward<Func>(func));
+    }
+
     ss::sharded<cluster::shard_table>* _table;
     ss::sharded<cluster::partition_manager>* _manager;
+    ss::smp_service_group _smp_group;
 };
 
 class topic_creator_impl : public topic_creator {
@@ -327,8 +332,9 @@ transform::rpc::topic_metadata_cache::make_default(
 std::unique_ptr<partition_manager>
 transform::rpc::partition_manager::make_default(
   ss::sharded<cluster::shard_table>* table,
-  ss::sharded<cluster::partition_manager>* manager) {
-    return std::make_unique<partition_manager_impl>(table, manager);
+  ss::sharded<cluster::partition_manager>* manager,
+  ss::smp_service_group smp_group) {
+    return std::make_unique<partition_manager_impl>(table, manager, smp_group);
 }
 
 std::optional<ss::shard_id>

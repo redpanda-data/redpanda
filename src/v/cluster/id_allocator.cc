@@ -27,7 +27,7 @@ id_allocator::id_allocator(
   , _id_allocator_frontend(id_allocator_frontend) {}
 
 ss::future<allocate_id_reply>
-id_allocator::allocate_id(allocate_id_request&& req, rpc::streaming_context&) {
+id_allocator::allocate_id(allocate_id_request req, rpc::streaming_context&) {
     auto timeout = req.timeout;
     return _id_allocator_frontend.local()
       .allocator_router()
@@ -36,7 +36,7 @@ id_allocator::allocate_id(allocate_id_request&& req, rpc::streaming_context&) {
 }
 
 ss::future<reset_id_allocator_reply> id_allocator::reset_id_allocator(
-  reset_id_allocator_request&& req, rpc::streaming_context&) {
+  reset_id_allocator_request req, rpc::streaming_context&) {
     auto timeout = req.timeout;
     return _id_allocator_frontend.local().id_reset_router().process_or_dispatch(
       std::move(req), model::id_allocator_ntp, timeout);

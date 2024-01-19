@@ -25,6 +25,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
@@ -253,11 +254,14 @@ template<typename ClockType>
 manager<ClockType>::manager(
   model::node_id self,
   std::unique_ptr<registry> r,
-  std::unique_ptr<processor_factory> f)
+  std::unique_ptr<processor_factory> f,
+  ss::scheduling_group sg)
   : _self(self)
-  , _queue([](const std::exception_ptr& ex) {
-      vlog(tlog.error, "unexpected transform manager error: {}", ex);
-  })
+  , _queue(
+      sg,
+      [](const std::exception_ptr& ex) {
+          vlog(tlog.error, "unexpected transform manager error: {}", ex);
+      })
   , _registry(std::move(r))
   , _processors(std::make_unique<processor_table<ClockType>>())
   , _processor_factory(std::move(f)) {}

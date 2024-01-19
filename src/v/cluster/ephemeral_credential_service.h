@@ -23,7 +23,7 @@ public:
       , _fe(fe) {}
 
     ss::future<put_ephemeral_credential_reply> put_ephemeral_credential(
-      put_ephemeral_credential_request&&, rpc::streaming_context&) override;
+      put_ephemeral_credential_request, rpc::streaming_context&) override;
 
 private:
     ss::sharded<ephemeral_credential_frontend>& _fe;

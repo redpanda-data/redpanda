@@ -13,8 +13,7 @@
 
 #include "seastarx.h"
 
-#include <seastar/core/coroutine.hh>
-#include <seastar/core/reactor.hh>
+#include <seastar/core/smp.hh>
 
 // manage SMP scheduling groups. These scheduling groups are global, so one
 // instance of this class can be created at the top level and passed down into
@@ -30,71 +29,33 @@ public:
           = default_max_nonlocal_requests;
         uint32_t cluster_group_max_non_local_requests
           = default_max_nonlocal_requests;
-
         uint32_t proxy_group_max_non_local_requests
+          = default_max_nonlocal_requests;
+        uint32_t transform_group_max_non_local_requests
           = default_max_nonlocal_requests;
     };
 
     smp_groups() = default;
-    ss::future<> create_groups(config cfg) {
-        _raft = co_await create_service_group(
-          cfg.raft_group_max_non_local_requests);
-        _kafka = co_await create_service_group(
-          cfg.kafka_group_max_non_local_requests);
-        _cluster = co_await create_service_group(
-          cfg.cluster_group_max_non_local_requests);
-        _proxy = co_await create_service_group(
-          cfg.proxy_group_max_non_local_requests);
-    }
+    ss::future<> create_groups(config cfg);
 
     ss::smp_service_group raft_smp_sg() { return *_raft; }
     ss::smp_service_group kafka_smp_sg() { return *_kafka; }
     ss::smp_service_group cluster_smp_sg() { return *_cluster; }
     ss::smp_service_group proxy_smp_sg() { return *_proxy; }
+    ss::smp_service_group transform_smp_sg() { return *_transform; }
 
-    ss::future<> destroy_groups() {
-        return destroy_smp_service_group(*_kafka)
-          .then([this] { return destroy_smp_service_group(*_raft); })
-          .then([this] { return destroy_smp_service_group(*_cluster); })
-          .then([this] { return destroy_smp_service_group(*_proxy); });
-    }
+    ss::future<> destroy_groups();
 
     static uint32_t
-    default_raft_non_local_requests(uint32_t max_partitions_per_core) {
-        /**
-         * raft max non local requests
-         * - up to 7000 groups per core
-         * - up to 256 concurrent append entries per group
-         * - additional requests like (vote, snapshot, timeout now)
-         *
-         * All the values have to be multiplied by core count minus one since
-         * part of the requests will be core local
-         *
-         * 7000*256 * (number of cores-1) + 10 * 7000 * (number of cores-1)
-         *         ^                                 ^
-         * append entries requests          additional requests
-         */
-
-        static constexpr uint32_t max_append_requests_per_follower = 256;
-        static constexpr uint32_t additional_requests_per_follower = 10;
-
-        return max_partitions_per_core
-               * (max_append_requests_per_follower + additional_requests_per_follower)
-               * (ss::smp::count - 1);
-    }
+    default_raft_non_local_requests(uint32_t max_partitions_per_core);
 
 private:
     ss::future<std::unique_ptr<ss::smp_service_group>>
-    create_service_group(unsigned max_non_local_requests) {
-        ss::smp_service_group_config smp_sg_config{
-          .max_nonlocal_requests = max_non_local_requests};
-        auto sg = co_await create_smp_service_group(smp_sg_config);
-
-        co_return std::make_unique<ss::smp_service_group>(sg);
-    }
+    create_service_group(unsigned max_non_local_requests);
 
     std::unique_ptr<ss::smp_service_group> _raft;
     std::unique_ptr<ss::smp_service_group> _kafka;
     std::unique_ptr<ss::smp_service_group> _cluster;
     std::unique_ptr<ss::smp_service_group> _proxy;
+    std::unique_ptr<ss::smp_service_group> _transform;
 };
