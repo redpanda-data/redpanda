@@ -1507,27 +1507,27 @@ archival_metadata_stm::get_segments_to_cleanup() const {
       source_backlog.end(),
       std::back_inserter(backlog),
       [this](const lw_segment_meta& m) {
-        auto it = _manifest->find(m.base_offset);
-        if (it == _manifest->end()) {
-            return true;
-        }
-        auto m_name = _manifest->generate_remote_segment_name(
-          cloud_storage::partition_manifest::lw_segment_meta::convert(m));
-        auto s_name = _manifest->generate_remote_segment_name(*it);
-        // The segment will have the same path as the one we have in
-        // manifest in S3 so if we will delete it the data will be lost.
-        if (m_name == s_name) {
-            vlog(
-              _logger.error,
-              "The replaced segment name {} collides with the segment "
-              "{} "
-              "in the manifest. It will be removed to prevent the data "
-              "loss.",
-              m_name,
-              s_name);
-            return false;
-        }
-        return true;
+          auto it = _manifest->find(m.base_offset);
+          if (it == _manifest->end()) {
+              return true;
+          }
+          auto m_name = _manifest->generate_remote_segment_name(
+            cloud_storage::partition_manifest::lw_segment_meta::convert(m));
+          auto s_name = _manifest->generate_remote_segment_name(*it);
+          // The segment will have the same path as the one we have in
+          // manifest in S3 so if we will delete it the data will be lost.
+          if (m_name == s_name) {
+              vlog(
+                _logger.error,
+                "The replaced segment name {} collides with the segment "
+                "{} "
+                "in the manifest. It will be removed to prevent the data "
+                "loss.",
+                m_name,
+                s_name);
+              return false;
+          }
+          return true;
       });
 
     if (backlog.size() < backlog_size) {
