@@ -715,7 +715,7 @@ service::create_reporter(ss::sharded<service>* s) {
 
 ss::future<
   result<ss::chunked_fifo<model::transform_committed_offset>, cluster::errc>>
-service::list_committed_offsets() {
+service::list_committed_offsets(list_committed_offsets_options options) {
     if (!_feature_table->local().is_active(
           features::feature::wasm_transforms)) {
         co_return cluster::errc::feature_disabled;
@@ -729,10 +729,12 @@ service::list_committed_offsets() {
     ss::chunked_fifo<model::transform_committed_offset> commits;
     for (const auto& [k, v] : result.value()) {
         auto it = all_transforms.find(k.id);
-        if (it == all_transforms.end()) {
-            continue;
+        if (it != all_transforms.end()) {
+            commits.emplace_back(it->second.name, k.partition, v.offset);
+        } else if (options.show_unknown) {
+            commits.emplace_back(
+              model::transform_name(), k.partition, v.offset);
         }
-        commits.emplace_back(it->second.name, k.partition, v.offset);
         co_await ss::coroutine::maybe_yield();
     }
     co_return commits;

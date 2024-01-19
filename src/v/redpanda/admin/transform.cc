@@ -229,7 +229,8 @@ admin_server::list_committed_offsets(std::unique_ptr<ss::http::request> req) {
     if (!_transform_service->local_is_initialized()) {
         throw transforms_not_enabled();
     }
-    auto result = co_await _transform_service->local().list_committed_offsets();
+    auto result = co_await _transform_service->local().list_committed_offsets(
+      {.show_unknown = admin::get_boolean_query_param(*req, "show_unknown")});
     if (result.has_error()) {
         co_await throw_on_error(*req, result.error(), model::controller_ntp);
         co_return ss::json::json_void();

@@ -11,6 +11,8 @@
 
 #include "json/validator.h"
 
+#include <seastar/http/request.hh>
+
 #pragma once
 
 namespace admin {
@@ -38,5 +40,12 @@ private:
  */
 void apply_validator(
   json::validator& validator, const json::Document::ValueType& doc);
+
+/**
+ * Helper for requests with boolean URL query parameters that should
+ * be treated as false if absent, or true if "true" (case insensitive) or "1"
+ */
+bool get_boolean_query_param(
+  const ss::http::request& req, std::string_view name);
 
 } // namespace admin

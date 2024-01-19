@@ -29,6 +29,10 @@
 
 namespace transform {
 
+struct list_committed_offsets_options {
+    bool show_unknown = false;
+};
+
 /**
  * The transform service is responsible for intersecting the current state of
  * plugins and topic partitions and ensures that the corresponding wasm
@@ -79,7 +83,7 @@ public:
     ss::future<result<
       ss::chunked_fifo<model::transform_committed_offset>,
       cluster::errc>>
-    list_committed_offsets();
+      list_committed_offsets(list_committed_offsets_options);
 
     /**
      * Create a reporter of the transform subsystem.
