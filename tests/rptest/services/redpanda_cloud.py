@@ -715,12 +715,15 @@ class CloudCluster():
 
         return
 
-    def _ensure_cluster_health(self, superuser):
+    def _ensure_cluster_health(self, superuser) -> str | None:
         """
             Check if current cluster is healthy
               - check connectivity
               - query health data
               - list topics
+
+            Returns a string describing the problem if a check fails or
+            None otherwise.
         """
         def _get(cluster, path, user):
             # Prepare credentials
@@ -735,39 +738,40 @@ class CloudCluster():
                                           base_url=proxy_url,
                                           override_headers=headers)
 
+        def warn_and_return(msg: str):
+            self._logger.warning(msg)
+            return msg
+
         # Get cluster details
         cluster = {}
         try:
             self._logger.info("Getting cluster specs")
             cluster = self._get_cluster(self.current.cluster_id)
         except Exception as e:
-            self._logger.warning("# Failed to get info for cluster with Id: "
-                                 f"'{self.current.cluster_id}'")
-            return False
+            return warn_and_return("# Failed to get info for cluster with Id: "
+                                   f"'{self.current.cluster_id}'")
 
         # list cluster specs
-        self._logger.warning(f"Cluster '{self.current.cluster_id}': "
-                             f"health = '{cluster['status']['health']}', "
-                             f"state = '{cluster['state']}'")
+        self._logger.info(f"Cluster '{self.current.cluster_id}': "
+                          f"health = '{cluster['status']['health']}', "
+                          f"state = '{cluster['state']}'")
 
         # Check if panda-proxy is available
         if not 'panda-proxy' in cluster['status']['listeners']['pandaProxy']:
-            self._logger.warning("Panda-Proxy listener is not available")
-            return False
+            return warn_and_return("Panda-Proxy listener is not available")
         else:
             _u = cluster['status']['listeners']['pandaProxy']['panda-proxy'][
                 'urls'][0]
-            self._logger.warning(f"Panda-Proxy listener: '{_u}'")
+            self._logger.info(f"Panda-Proxy listener: '{_u}'")
 
         # Check that cluster is operational
         # Check brokers count
         self._logger.info("Checking cluster brokers")
         _brokers = _get(cluster, "/brokers", superuser)
         if len(_brokers['brokers']) < 3:
-            self._logger.warning("Less than 3 brokers operational")
-            return False
+            return warn_and_return("Less than 3 brokers operational")
         else:
-            self._logger.warning(
+            self._logger.info(
                 f"Console reports '{len(_brokers['brokers'])}' brokers")
 
         # Check topic count
@@ -780,11 +784,10 @@ class CloudCluster():
         ]
         _intersect = list(set(_topics) & set(_critical))
         if len(_intersect) < 6:
-            self._logger.warning("Cluster missing critical topics")
-            return False
+            return warn_and_return("Cluster missing critical topics")
         else:
             _t = ', '.join(_intersect)
-            self._logger.warning(f"Critical topics present: '{_t}'")
+            self._logger.info(f"Critical topics present: '{_t}'")
 
         # Check brokers metric
         self._logger.info("Checking cluster public_metrics")
@@ -795,22 +798,20 @@ class CloudCluster():
             if _metric.name == "redpanda_cluster_brokers":
                 _brokers_metric = _metric
         if _brokers_metric is None:
-            self._logger.warning("Failed to get brokers metric")
-            return False
+            return warn_and_return("Failed to get brokers metric")
         else:
-            self._logger.warning("Public metric 'redpanda_cluster_brokers' "
-                                 "is available")
+            self._logger.info("Public metric 'redpanda_cluster_brokers' "
+                              "is available")
 
         # Get Samples
         _instances = [s.value for s in _brokers_metric.samples]
         if max(_instances) < 3:
-            self._logger.warning("Prometheus reports less than 3 instances")
-            return False
+            return warn_and_return("Prometheus reports less than 3 instances")
         else:
-            self._logger.warning("Prometheus samples reports maximum of "
-                                 f"{max(_instances)} instances")
+            self._logger.info("Prometheus samples reports maximum of "
+                              f"{max(_instances)} instances")
         # All checks passed
-        return True
+        return None
 
     def _select_cluster_id(self):
         """
@@ -849,6 +850,7 @@ class CloudCluster():
 
         # Prepare the cluster
         if self.current.cluster_id != '':
+            fail_on_unhealthy = self.current.cluster_id == self.config.id
             # Cluster already exist
             # Check if cluster is healthy
             try:
@@ -858,18 +860,23 @@ class CloudCluster():
                 self.current.consoleUrl = self._get_cluster_console_url()
                 self.update_cluster_acls(superuser)
                 # Do the health check
-                _isHealthy = self._ensure_cluster_health(superuser)
+                unhealthy_reason: str | None = self._ensure_cluster_health(
+                    superuser)
             except Exception as e:
-                self._logger.warning(f"Failed to ensure cluster health: {e}")
-                _isHealthy = False
+                if fail_on_unhealthy:
+                    raise
+                msg = f"Health check ended exceptionally: {e}"
+                self._logger.warning(msg)
+                unhealthy_reason = msg
 
-            if not _isHealthy:
-                if self.current.cluster_id == self.config.id:
+            if unhealthy_reason is not None:
+                if fail_on_unhealthy:
                     # Cluster id was provided. Generate exception as
                     # cluster creation not logical in this case
-                    raise RuntimeError("Provided Cluster with id "
-                                       f"'{self.config.id}' "
-                                       "is no longer operational")
+                    raise RuntimeError(
+                        "Provided Cluster with id "
+                        f"'{self.config.id}' "
+                        f"failed health check: {unhealthy_reason}")
 
                 # Health check fail, create new cluster
                 self._logger.warning(f"Cluster '{self.current.cluster_id}' "
