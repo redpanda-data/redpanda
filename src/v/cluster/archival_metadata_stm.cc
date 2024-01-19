@@ -1502,11 +1502,14 @@ archival_metadata_stm::get_segments_to_cleanup() const {
     // happen, but protects us from data loss in cases where bugs elsewhere.
     const auto backlog_size = source_backlog.size();
     fragmented_vector<lw_segment_meta> backlog;
-    for (const auto& m : source_backlog) {
+    std::copy_if(
+      source_backlog.begin(),
+      source_backlog.end(),
+      std::back_inserter(backlog),
+      [this](const lw_segment_meta& m) {
         auto it = _manifest->find(m.base_offset);
         if (it == _manifest->end()) {
-            backlog.push_back(m);
-            continue;
+            return true;
         }
         auto m_name = _manifest->generate_remote_segment_name(
           cloud_storage::partition_manifest::lw_segment_meta::convert(m));
@@ -1522,10 +1525,10 @@ archival_metadata_stm::get_segments_to_cleanup() const {
               "loss.",
               m_name,
               s_name);
-            continue;
+            return false;
         }
-        backlog.push_back(m);
-    }
+        return true;
+      });
 
     if (backlog.size() < backlog_size) {
         vlog(
