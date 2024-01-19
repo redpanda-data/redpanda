@@ -7,8 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from typing import Any
 from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
@@ -23,8 +25,11 @@ class PreallocNodesTest(RedpandaTest):
     run services that need to be on the same host (e.g. the KgoVerifier
     producer/consumers that coordinate via a local file)
     """
+
+    _preallocated_nodes: list[ClusterNode]
+
     def __init__(self, test_context: TestContext, node_prealloc_count: int,
-                 *args, **kwargs):
+                 *args: Any, **kwargs: Any):
         super(PreallocNodesTest, self).__init__(test_context, *args, **kwargs)
         self.node_prealloc_count = node_prealloc_count
 

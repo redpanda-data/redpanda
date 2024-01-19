@@ -7,12 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from __future__ import annotations
+
 import os
 import time
 import signal
 import threading
 import requests
-from typing import Optional
+from typing import Any, Optional
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -445,8 +447,8 @@ class ValidatorStatus:
     internally to kgo-verifier.  Other parts of consumer status are allowed to
     differ per-worker, although at time of writing they don't.
     """
-    def __init__(self, name, valid_reads, invalid_reads,
-                 out_of_scope_invalid_reads, max_offsets_consumed):
+    def __init__(self, name: str, valid_reads: int, invalid_reads: int,
+                 out_of_scope_invalid_reads: int, max_offsets_consumed: int):
         # Validator name is just a unique name per worker thread in kgo-verifier: useful in logging
         # but we mostly don't care
         self.name = name
@@ -462,7 +464,7 @@ class ValidatorStatus:
         # terminates as soon as it sees an invalid read
         return self.valid_reads + self.out_of_scope_invalid_reads
 
-    def merge(self, rhs):
+    def merge(self, rhs: ValidatorStatus):
         # Clear name if we are merging multiple statuses together, to avoid confusion.
         self.name = ""
 
@@ -475,7 +477,11 @@ class ValidatorStatus:
 
 
 class ConsumerStatus:
-    def __init__(self, topic=None, validator=None, errors=0, active=True):
+    def __init__(self,
+                 topic: str = None,
+                 validator: dict[str, Any] | None = None,
+                 errors: int = 0,
+                 active: bool = True):
         """
         `active` defaults to True, because we use it for deciding when to drop out in `wait()` -- the initial
         state of a worker should be presumed that it is busy, and we must wait to see it go `active=False`
@@ -494,7 +500,7 @@ class ConsumerStatus:
         self.errors = errors
         self.active = active
 
-    def merge(self, rhs):
+    def merge(self, rhs: ConsumerStatus):
         self.active = self.active or rhs.active
         self.errors += rhs.errors
         self.validator.merge(rhs.validator)

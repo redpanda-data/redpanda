@@ -26,7 +26,7 @@ import zipfile
 import pathlib
 import shlex
 from enum import Enum, IntEnum
-from typing import Mapping, Optional, Tuple, Any
+from typing import Mapping, Optional, Protocol, Tuple, Any
 
 import yaml
 from ducktape.services.service import Service
@@ -38,6 +38,7 @@ from rptest.archival.abs_client import ABSClient
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
 from ducktape.utils.util import wait_until
+from ducktape.cluster.remoteaccount import RemoteAccount
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.cluster_spec import ClusterSpec
 from prometheus_client.parser import text_string_to_metric_families
@@ -187,6 +188,14 @@ FAILURE_INJECTION_LOG_ALLOW_LIST = [
 ]
 
 
+class RemoteClusterNode(Protocol):
+    account: RemoteAccount
+
+    @property
+    def name(self) -> str:
+        ...
+
+
 class MetricSamples:
     def __init__(self, samples: list[MetricSample]):
         self.samples = samples
@@ -201,8 +210,8 @@ class MetricSamples:
 
 
 class MetricsEndpoint(Enum):
-    METRICS = 1
-    PUBLIC_METRICS = 2
+    METRICS = 'metrics'
+    PUBLIC_METRICS = 'public_metrics'
 
 
 class CloudStorageType(IntEnum):
@@ -223,10 +232,11 @@ def one_or_many(value):
         return value
 
 
-def get_cloud_storage_type(applies_only_on: list(CloudStorageType) = None,
+def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
+                           | None = None,
                            docker_use_arbitrary=False):
     """
-    Returns a list(CloudStorageType) based on the "CLOUD_PROVIDER"
+    Returns a list[CloudStorageType] based on the "CLOUD_PROVIDER"
     environment variable. For example:
     CLOUD_PROVIDER=docker => returns: [CloudStorageType.S3, CloudStorageType.ABS]
     CLOUD_PROVIDER=aws => returns: [CloudStorageType.S3]
@@ -256,6 +266,8 @@ def get_cloud_storage_type(applies_only_on: list(CloudStorageType) = None,
         cloud_storage_type = [CloudStorageType.S3]
     elif cloud_provider == "azure":
         cloud_storage_type = [CloudStorageType.ABS]
+    else:
+        raise RuntimeError(f"bad cloud provider: {cloud_provider}")
 
     if applies_only_on:
         cloud_storage_type = list(
@@ -894,8 +906,8 @@ class RedpandaServiceBase(Service):
     }
 
     def __init__(self,
-                 context,
-                 num_brokers,
+                 context: TestContext,
+                 num_brokers: int,
                  *,
                  cluster_spec=None,
                  extra_rp_conf=None,
@@ -942,11 +954,11 @@ class RedpandaServiceBase(Service):
         self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
 
         self._node_id_by_idx = {}
-        self._security_config = dict()
+        self._security_config: dict[str, str] = {}
 
         self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
 
-        self._dedicated_nodes = self._context.globals.get(
+        self._dedicated_nodes: bool = self._context.globals.get(
             self.DEDICATED_NODE_KEY, False)
 
         self.logger.info(
@@ -1019,9 +1031,7 @@ class RedpandaServiceBase(Service):
             metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
         assert node in self._started, f"Node {node.account.hostname} is not started"
 
-        metrics_endpoint = ("/metrics" if metrics_endpoint
-                            == MetricsEndpoint.METRICS else "/public_metrics")
-        url = f"http://{node.account.hostname}:9644{metrics_endpoint}"
+        url = f"http://{node.account.hostname}:9644/{metrics_endpoint.value}"
         resp = requests.get(url, timeout=10)
         assert resp.status_code == 200
         return resp.text
@@ -1067,7 +1077,10 @@ class RedpandaServiceBase(Service):
         later be replaced by a proper / official start-up probe type check on
         the health of a node after a restart.
         """
-        counts = {self.idx(node): None for node in self.nodes}
+        counts: dict[int, int | None] = {
+            self.idx(node): None
+            for node in self.nodes
+        }
         for node in self.nodes:
             try:
                 metrics = self.metrics(node)
@@ -1077,9 +1090,7 @@ class RedpandaServiceBase(Service):
             for family in metrics:
                 for sample in family.samples:
                     if sample.name == "vectorized_cluster_partition_under_replicated_replicas":
-                        if counts[idx] is None:
-                            counts[idx] = 0
-                        counts[idx] += int(sample.value)
+                        counts[idx] = int(sample.value) + (counts[idx] or 0)
         return all(map(lambda count: count == 0, counts.values()))
 
     def partitions(self, topic_name=None):
@@ -1520,6 +1531,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
     @property
     def kubectl(self):
+        assert self._kubectl, 'kubectl accessed before cluster was started?'
         return self._kubectl
 
     def start_node(self, node, **kwargs):
@@ -1591,7 +1603,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     def set_cluster_config(self, values: dict, timeout: int = 300):
         pass
 
-    def sockets_clear(self, node):
+    def sockets_clear(self, node: RemoteClusterNode):
         return True
 
     def all_up(self):
@@ -1668,6 +1680,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
 
 class RedpandaService(RedpandaServiceBase):
+
+    nodes: list[RemoteClusterNode]
+
     def __init__(self,
                  context,
                  num_brokers,
@@ -1737,7 +1752,7 @@ class RedpandaService(RedpandaServiceBase):
         self._raise_on_errors = self._context.globals.get(
             self.RAISE_ON_ERRORS_KEY, True)
 
-        self.cloud_storage_client: Optional[S3Client] = None
+        self.cloud_storage_client: S3Client | ABSClient | None = None
 
         # enable asan abort / core dumps by default
         self._environment = dict(
@@ -2215,7 +2230,7 @@ class RedpandaService(RedpandaServiceBase):
 
         node.account.signal(pid, signal, allow_fail=False)
 
-    def sockets_clear(self, node):
+    def sockets_clear(self, node: RemoteClusterNode):
         """
         Check that high-numbered redpanda ports (in practice, just the internal
         RPC port) are clear on the node, to avoid TIME_WAIT sockets from previous
@@ -2441,6 +2456,7 @@ class RedpandaService(RedpandaServiceBase):
             raise
 
     def start_si(self):
+        assert self._si_settings, "start_si() called but SI not configured"
         if self._si_settings.cloud_storage_type == CloudStorageType.S3:
             self.cloud_storage_client = S3Client(
                 region=self._si_settings.cloud_storage_region,
@@ -2465,23 +2481,31 @@ class RedpandaService(RedpandaServiceBase):
             self.logger.debug(
                 f"Creating ABS container: {self._si_settings.cloud_storage_bucket}"
             )
+        else:
+            raise RuntimeError(
+                f"Unsuported cloud_storage_type: {self._si_settings.cloud_storage_type}"
+            )
 
         if not self._si_settings.bypass_bucket_creation:
+            assert self._si_settings.cloud_storage_bucket, "No SI bucket configured"
             self.cloud_storage_client.create_bucket(
                 self._si_settings.cloud_storage_bucket)
 
     def delete_bucket_from_si(self):
+        assert self._si_settings, "start_si() called but SI not configured"
         self.logger.debug(
             f"Deleting bucket/container: {self._si_settings.cloud_storage_bucket}"
         )
 
-        assert self.cloud_storage_client is not None
+        assert self.cloud_storage_client and self._si_settings.cloud_storage_bucket, \
+                f"bad si config {self.cloud_storage_client} : {self._si_settings.cloud_storage_bucket}"
         self.cloud_storage_client.empty_and_delete_bucket(
             self._si_settings.cloud_storage_bucket,
             parallel=self.dedicated_nodes)
 
     def get_objects_from_si(self):
-        assert self.cloud_storage_client is not None
+        assert self.cloud_storage_client and self._si_settings and self._si_settings.cloud_storage_bucket, \
+                f"bad si config {self.cloud_storage_client} : {self._si_settings.cloud_storage_bucket if self._si_settings else self._si_settings}"
         return self.cloud_storage_client.list_objects(
             self._si_settings.cloud_storage_bucket)
 
@@ -4240,7 +4264,7 @@ class RedpandaService(RedpandaServiceBase):
 def make_redpanda_service(context: TestContext,
                           num_brokers: Optional[int],
                           *,
-                          cloud_tier: CloudTierName | None = None,
+                          cloud_tier: str | None = None,
                           apply_cloud_tier_to_noncloud: bool = False,
                           extra_rp_conf=None,
                           **kwargs) -> RedpandaServiceCloud | RedpandaService:

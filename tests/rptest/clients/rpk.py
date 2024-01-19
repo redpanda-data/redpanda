@@ -450,7 +450,7 @@ class RpkTool:
         ]
         return self._run(cmd)
 
-    def delete_topic(self, topic):
+    def delete_topic(self, topic: str):
         cmd = ["delete", topic]
         output = self._run_topic(cmd)
         table = parse_rpk_table(output)
