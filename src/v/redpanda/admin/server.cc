@@ -3377,7 +3377,7 @@ void admin_server::register_cluster_routes() {
             = _controller->get_storage().local().get_cluster_uuid();
           if (cluster_uuid) {
               ss::httpd::cluster_json::uuid ret;
-              ret.cluster_uuid = ssx::sformat("{}", cluster_uuid);
+              ret.cluster_uuid = ssx::sformat("{}", cluster_uuid.value());
               return ss::json::json_return_type(std::move(ret));
           }
           return ss::json::json_return_type(ss::json::json_void());
