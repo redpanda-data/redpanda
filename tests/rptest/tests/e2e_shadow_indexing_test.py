@@ -257,7 +257,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             "cloud_storage_housekeeping_interval_ms":
             10000,
             "cloud_storage_spillover_manifest_max_segments":
-            10
+            10,
+            "cloud_storage_spillover_manifest_size":
+            None,
         })
         msg_per_segment = self.segment_size // msg_size
         msg_count_before_reset = 50 * msg_per_segment
