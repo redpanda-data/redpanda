@@ -62,7 +62,8 @@ public:
     factory& operator=(const factory&) = delete;
     factory(factory&&) = delete;
     factory& operator=(factory&&) = delete;
-    virtual ss::future<ss::shared_ptr<engine>> make_engine() = 0;
+    virtual ss::future<ss::shared_ptr<engine>>
+      make_engine(std::unique_ptr<wasm::logger>) = 0;
     virtual ~factory() = default;
 };
 
@@ -124,8 +125,24 @@ public:
      * can be used on any shard and is thread-safe.
      */
     virtual ss::future<ss::shared_ptr<factory>>
-    make_factory(model::transform_metadata, iobuf, ss::logger*) = 0;
+      make_factory(model::transform_metadata, iobuf) = 0;
     virtual ~runtime() = default;
+};
+
+/**
+ * A logging interface for wasm transforms.
+ *
+ */
+class logger {
+public:
+    logger() = default;
+    virtual ~logger() = default;
+    logger(const logger&) = delete;
+    logger& operator=(const logger&) = delete;
+    logger(logger&&) = delete;
+    logger& operator=(logger&&) = delete;
+
+    virtual void log(ss::log_level lvl, std::string_view message) noexcept = 0;
 };
 
 } // namespace wasm

@@ -32,6 +32,7 @@
 #include "transform/logger.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
+#include "transform/transform_logger.h"
 #include "transform/transform_manager.h"
 #include "transform/transform_processor.h"
 #include "transform/txn_reader.h"
@@ -628,11 +629,12 @@ ss::future<> service::cleanup_wasm_binary(uuid_t key) {
 
 ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>
 service::create_engine(model::transform_metadata meta) {
+    auto logger = std::make_unique<transform::logger>(meta.name, &tlog);
     auto factory = co_await get_factory(std::move(meta));
     if (!factory) {
         co_return ss::shared_ptr<wasm::engine>(nullptr);
     }
-    co_return co_await (*factory)->make_engine();
+    co_return co_await (*factory)->make_engine(std::move(logger));
 }
 
 ss::future<
@@ -664,7 +666,7 @@ service::get_factory(model::transform_metadata meta) {
         co_return ss::foreign_ptr<ss::shared_ptr<wasm::factory>>(nullptr);
     }
     auto factory = co_await _runtime->make_factory(
-      std::move(meta), std::move(result).value(), &tlog);
+      std::move(meta), std::move(result).value());
     co_return ss::make_foreign(factory);
 }
 

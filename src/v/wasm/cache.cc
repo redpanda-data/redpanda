@@ -226,7 +226,8 @@ public:
       , _underlying(std::move(f))
       , _engine_cache(e) {}
 
-    ss::future<ss::shared_ptr<engine>> make_engine() override {
+    ss::future<ss::shared_ptr<engine>>
+    make_engine(std::unique_ptr<wasm::logger> logger) override {
         auto engine = _engine_cache->local().get(_offset);
         // Try to grab an engine outside the lock
         if (engine) {
@@ -247,7 +248,8 @@ public:
         // created.
         auto foreign_this = co_await foreign_from_this();
         auto created = ss::make_shared<shared_engine>(
-          co_await _underlying->make_engine(), std::move(foreign_this));
+          co_await _underlying->make_engine(std::move(logger)),
+          std::move(foreign_this));
         _engine_cache->local().put(_offset, created);
         co_return created;
     }
@@ -291,8 +293,8 @@ ss::future<> caching_runtime::stop() {
     co_await _underlying->stop();
 }
 
-ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
-  model::transform_metadata meta, iobuf binary, ss::logger* logger) {
+ss::future<ss::shared_ptr<factory>>
+caching_runtime::make_factory(model::transform_metadata meta, iobuf binary) {
     model::offset offset = meta.source_ptr;
     // Look in the cache outside the lock
     auto cached = get_cached_factory(meta);
@@ -309,7 +311,7 @@ ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
     // There is no factory and we're holding the lock,
     // time to create a new one.
     auto factory = co_await _underlying->make_factory(
-      std::move(meta), std::move(binary), logger);
+      std::move(meta), std::move(binary));
 
     // Now cache the factory and return the result.
     //

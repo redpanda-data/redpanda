@@ -17,6 +17,7 @@
 #include "wasm/api.h"
 #include "wasm/logger.h"
 #include "wasm/schema_registry.h"
+#include "wasm/tests/wasm_logger.h"
 #include "wasm/transform_probe.h"
 #include "wasm/wasmtime.h"
 
@@ -73,8 +74,9 @@ public:
             wasm_binary.append(data.data(), data.size());
         }
         auto factory = co_await _runtime->make_factory(
-          meta, std::move(wasm_binary), &wasm::wasm_log);
-        _engine = co_await factory->make_engine();
+          meta, std::move(wasm_binary));
+        _engine = co_await factory->make_engine(
+          std::make_unique<wasm_logger>(meta.name(), &wasm::wasm_log));
         co_await _engine->start();
     }
 
