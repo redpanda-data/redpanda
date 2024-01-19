@@ -3234,6 +3234,14 @@ class RedpandaService(RedpandaServiceBase):
             conf.update(
                 dict(http_authentication=self._security.http_authentication))
 
+        # in redpanda, cloud_storage_spillover_manifest_size takes preference over cloud_storage_spillover_manifest_max_segments.
+        # disable the former to use the latter
+        assert conf.get('cloud_storage_spillover_manifest_size', None) is None or \
+            conf.get('cloud_storage_spillover_manifest_max_segments', None) is None, \
+                  "cannot set cloud_storage_spillover_manifest_max_segments if cloud_storage_spillover_manifest_size is already set, it will not be used by redpanda"
+        if 'cloud_storage_spillover_manifest_max_segments' in conf:
+            conf['cloud_storage_spillover_manifest_size'] = None
+
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:
             self.logger.info(
