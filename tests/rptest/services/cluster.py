@@ -9,11 +9,13 @@
 
 import functools
 import time
+from typing import Protocol
 import psutil
 
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, RedpandaServiceCloud
 from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.mark._mark import Mark
+from ducktape.tests.test import TestContext
 
 
 def cluster(log_allow_list=None,
@@ -32,7 +34,7 @@ def cluster(log_allow_list=None,
         """
         Most tests have a single RedpandaService at self.redpanda, but
         it is legal to create multiple instances, e.g. for read replica tests.
-        
+
         We find all replicas by traversing ducktape's internal service registry.
         """
         yield test.redpanda
@@ -52,6 +54,7 @@ def cluster(log_allow_list=None,
         memory = psutil.virtual_memory()
         swap = psutil.swap_memory()
         disk_stats = psutil.disk_io_counters()
+        assert disk_stats is not None, 'psutil.disk_io_counters() failed'
         disk_deltas = {}
         disk_rates = {}
         runtime = time.time() - t_initial
@@ -70,8 +73,12 @@ def cluster(log_allow_list=None,
     def cluster_use_metadata_adder(f):
         Mark.mark(f, ClusterUseMetadata(**kwargs))
 
+        class HasRedpanda(Protocol):
+            redpanda: RedpandaServiceBase | RedpandaServiceCloud
+            test_context: TestContext
+
         @functools.wraps(f)
-        def wrapped(self, *args, **kwargs):
+        def wrapped(self: HasRedpanda, *args, **kwargs):
             # This decorator will only work on test classes that have a RedpandaService,
             # such as RedpandaTest subclasses
             assert hasattr(self, 'redpanda')

@@ -26,7 +26,7 @@ import zipfile
 import pathlib
 import shlex
 from enum import Enum, IntEnum
-from typing import Mapping, Optional, Protocol, Tuple, Any
+from typing import Callable, Mapping, Optional, Protocol, Tuple, Any
 
 import yaml
 from ducktape.services.service import Service
@@ -45,7 +45,6 @@ from prometheus_client.parser import text_string_to_metric_families
 from ducktape.errors import TimeoutError
 from ducktape.tests.test import TestContext
 
-from rptest.archival.abs_client import build_connection_string
 from rptest.clients.helm import HelmTool
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kubectl import KubectlTool
@@ -954,7 +953,7 @@ class RedpandaServiceBase(Service):
         self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
 
         self._node_id_by_idx = {}
-        self._security_config: dict[str, str] = {}
+        self._security_config: dict[str, str | int] = {}
 
         self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
 
@@ -1150,7 +1149,7 @@ class RedpandaServiceBase(Service):
     def si_settings(self):
         return self._si_settings
 
-    def for_nodes(self, nodes, cb: callable) -> list:
+    def for_nodes(self, nodes, cb: Callable) -> list:
         n_workers = len(nodes)
         if n_workers > 0:
             with concurrent.futures.ThreadPoolExecutor(
@@ -1469,7 +1468,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     GLOBAL_CLOUD_CLUSTER_CONFIG = 'cloud_cluster'
 
     def __init__(self,
-                 context,
+                 context: TestContext,
                  num_brokers,
                  *,
                  superuser: Optional[SaslCredentials] = None,
