@@ -66,9 +66,12 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.test_context = test_context
         self.topic = self.s3_topic_name
 
-        conf = dict(enable_cluster_metadata_upload_loop=True,
-                    cloud_storage_cluster_metadata_upload_interval_ms=1000,
-                    controller_snapshot_max_age_sec=1)
+        conf = dict(
+            enable_cluster_metadata_upload_loop=True,
+            cloud_storage_cluster_metadata_upload_interval_ms=1000,
+            # Tests may configure spillover manually.
+            cloud_storage_spillover_manifest_size=None,
+            controller_snapshot_max_age_sec=1)
         if extra_rp_conf:
             for k, v in conf.items():
                 extra_rp_conf[k] = v
@@ -257,7 +260,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             "cloud_storage_housekeeping_interval_ms":
             10000,
             "cloud_storage_spillover_manifest_max_segments":
-            10
+            10,
         })
         msg_per_segment = self.segment_size // msg_size
         msg_count_before_reset = 50 * msg_per_segment
@@ -1207,6 +1210,7 @@ class EndToEndSpilloverTest(RedpandaTest):
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
     def __init__(self, test_context):
+        extra_rp_conf = dict(cloud_storage_spillover_manifest_size=None)
         self.si_settings = SISettings(
             test_context,
             log_segment_size=1024,
@@ -1215,7 +1219,8 @@ class EndToEndSpilloverTest(RedpandaTest):
             cloud_storage_spillover_manifest_max_segments=10)
         super(EndToEndSpilloverTest,
               self).__init__(test_context=test_context,
-                             si_settings=self.si_settings)
+                             si_settings=self.si_settings,
+                             extra_rp_conf=extra_rp_conf)
 
         self.msg_size = 1024 * 256
         self.msg_count = 3000

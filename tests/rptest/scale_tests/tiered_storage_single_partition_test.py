@@ -45,7 +45,9 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
             'cloud_storage_manifest_max_upload_interval_sec':
             self.manifest_upload_interval,
             # Ensure spillover can happen promptly during test
-            'cloud_storage_housekeeping_interval_ms': 5000
+            'cloud_storage_housekeeping_interval_ms': 5000,
+            # But allow the test runtime to configure it.
+            'cloud_storage_spillover_manifest_size': None,
         }
         super().__init__(test_context, *args, **kwargs)
 
