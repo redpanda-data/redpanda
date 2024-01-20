@@ -128,6 +128,7 @@ class TestReadReplicaService(EndToEndTest):
     topic_name = "panda-topic"
 
     def __init__(self, test_context: TestContext):
+        extra_rp_conf = dict(cloud_storage_spillover_manifest_size=None)
         super(TestReadReplicaService, self).__init__(
             test_context=test_context,
             si_settings=SISettings(
@@ -140,7 +141,8 @@ class TestReadReplicaService(EndToEndTest):
                 cloud_storage_spillover_manifest_max_segments=4,
                 # Ensure metadata spilling happens promptly
                 cloud_storage_housekeeping_interval_ms=100,
-                fast_uploads=True))
+                fast_uploads=True),
+            extra_rp_conf=extra_rp_conf)
 
         # Read reaplica shouldn't have it's own bucket.
         # We're adding 'none' as a bucket name without creating

@@ -18,6 +18,9 @@ class TSWriteOpenmessagingTest(RedpandaTest):
     BENCHMARK_WAIT_TIME_MIN = 10
 
     def __init__(self, ctx):
+        extra_rp_conf = {
+            "cloud_storage_spillover_manifest_size": None,
+        }
         si_settings = SISettings(
             test_context=ctx,
             log_segment_size=16 * 1_000_000,  # 16 MB
@@ -25,9 +28,11 @@ class TSWriteOpenmessagingTest(RedpandaTest):
             cloud_storage_spillover_manifest_max_segments=10,
         )
         self._ctx = ctx
-        super(TSWriteOpenmessagingTest, self).__init__(test_context=ctx,
-                                                       num_brokers=3,
-                                                       si_settings=si_settings)
+        super(TSWriteOpenmessagingTest,
+              self).__init__(test_context=ctx,
+                             num_brokers=3,
+                             si_settings=si_settings,
+                             extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=6)
     @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",

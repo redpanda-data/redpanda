@@ -211,7 +211,8 @@ class CloudStorageScrubberTest(RedpandaTest):
                 "cloud_storage_background_jobs_quota": 30,
                 # Disable segment merging since it can reupload
                 # the deleted segment and remove the gap
-                "cloud_storage_enable_segment_merging": False
+                "cloud_storage_enable_segment_merging": False,
+                "cloud_storage_spillover_manifest_size": None,
             },
             si_settings=self.si_settings)
 

@@ -310,7 +310,11 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             'log_segment_size_min':
             32 * 1024,
             'cloud_storage_cache_chunk_size':
-            self.chunk_size
+            self.chunk_size,
+
+            # Avoid confiugring spillover so tests can do it themselves.
+            'cloud_storage_spillover_manifest_size':
+            None,
         })
 
         if cloud_storage:
