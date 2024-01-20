@@ -57,6 +57,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
         self.extra_rp_conf['cloud_storage_enable_segment_merging'] = False
         self.extra_rp_conf['compaction_ctrl_min_shares'] = 300
         self.extra_rp_conf['cloud_storage_disable_chunk_reads'] = True
+        self.extra_rp_conf['cloud_storage_spillover_manifest_size'] = None
 
         self.si_settings = SISettings(
             test_context,

@@ -20,7 +20,8 @@ class TSReadOpenmessagingTest(RedpandaTest):
 
     def __init__(self, ctx):
         extra_rp_conf = {
-            "retention_local_target_bytes_default": 16 * 1_000_000  # 16 MB
+            "retention_local_target_bytes_default": 16 * 1_000_000,  # 16 MB
+            "cloud_storage_spillover_manifest_size": None,
         }
         si_settings = SISettings(
             test_context=ctx,
