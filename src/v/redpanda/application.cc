@@ -96,6 +96,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/memory_sampling.h"
+#include "resource_mgmt/scheduling_groups_probe.h"
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/rpc_utils.h"
 #include "security/audit/audit_log_manager.h"
@@ -544,11 +545,13 @@ void application::initialize(
     }
 
     sched_groups.create_groups().get();
-    _scheduling_groups_probe.wire_up(sched_groups);
-    _deferred.emplace_back([this] {
-        _scheduling_groups_probe.clear();
-        sched_groups.destroy_groups().get();
-    });
+    _deferred.emplace_back([this] { sched_groups.destroy_groups().get(); });
+
+    construct_service(_scheduling_groups_probe).get();
+    _scheduling_groups_probe
+      .invoke_on_all(
+        [this](scheduling_groups_probe& s) { return s.start(sched_groups); })
+      .get();
 
     if (proxy_cfg) {
         _proxy_config.emplace(*proxy_cfg);

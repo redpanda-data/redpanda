@@ -284,7 +284,7 @@ private:
       _schema_reg_config;
     std::optional<kafka::client::configuration> _schema_reg_client_config;
     std::optional<kafka::client::configuration> _audit_log_client_config;
-    scheduling_groups_probe _scheduling_groups_probe;
+    ss::sharded<scheduling_groups_probe> _scheduling_groups_probe;
     ss::logger _log;
 
     std::optional<config::binding<bool>> _abort_on_oom;
