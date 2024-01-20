@@ -32,6 +32,7 @@ class CloudArchiveRetentionTest(RedpandaTest):
         self.extra_rp_conf = dict(
             log_compaction_interval_ms=1000,
             cloud_storage_spillover_manifest_max_segments=5,
+            cloud_storage_spillover_manifest_size=None,
             cloud_storage_enable_segment_merging=False)
 
         self.next_base_timestamp = 1664453149000  # arbitrary value

@@ -79,6 +79,7 @@ class CloudRetentionTest(PreallocNodesTest):
                              default_retention_segments * segment_size,
                              log_segment_size_jitter_percent=5,
                              group_initial_rebalance_delay=300,
+                             cloud_storage_spillover_manifest_size=None,
                              cloud_storage_segment_max_upload_interval_sec=60,
                              cloud_storage_housekeeping_interval_ms=10_000)
         self.redpanda.add_extra_rp_conf(extra_rp_conf)

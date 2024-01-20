@@ -40,7 +40,8 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
     def __init__(self, test_context):
         self.extra_rp_conf = {
             'enable_leader_balancer': False,
-            "log_compaction_interval_ms": 1000
+            "log_compaction_interval_ms": 1000,
+            "cloud_storage_spillover_manifest_size": None,
         }
         self.si_settings = SISettings(
             test_context,
