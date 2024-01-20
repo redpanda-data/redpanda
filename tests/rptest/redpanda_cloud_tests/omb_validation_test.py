@@ -32,6 +32,14 @@ GB = 10**9
 minutes = 60
 hours = 60 * minutes
 
+T = TypeVar('T')
+
+
+def not_none(value: T | None) -> T:
+    if value is None:
+        raise ValueError(f'value was unexpectedly None')
+    return value
+
 
 class OMBValidationTest(RedpandaTest):
 
@@ -111,7 +119,7 @@ class OMBValidationTest(RedpandaTest):
             self.s3_port = si_settings.cloud_storage_api_endpoint_port
 
         self.num_brokers = config_profile['nodes_count']
-        self.tier_limits: ProductInfo = self.redpanda.get_product()
+        self.tier_limits: ProductInfo = not_none(self.redpanda.get_product())
         self.tier_machine_info = get_machine_info(
             config_profile['machine_type'])
         self.rpk = RpkTool(self.redpanda)

@@ -14,6 +14,9 @@ from typing import Optional, Any
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.node_container import NodeContainer
+from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud
 from rptest.services.utils import BadLogLines
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 
@@ -36,7 +39,12 @@ class OpenMessagingBenchmarkWorkers(Service):
         }
     }
 
-    def __init__(self, ctx, num_workers=None, nodes: Optional[list] = None):
+    nodes: list[ClusterNode] | NodeContainer
+
+    def __init__(self,
+                 ctx,
+                 num_workers=None,
+                 nodes: Optional[list[ClusterNode]] = None):
         """
         :param num_workers: allocate this many nodes as workers (mutually exclusive with `nodes`)
         :param nodes: use these pre-allocated nodes as workers (mutually exclusive with `num_workers`)
@@ -158,12 +166,14 @@ class OpenMessagingBenchmark(Service):
         },
     }
 
+    nodes: list[ClusterNode] | NodeContainer
+
     def __init__(self,
                  ctx,
-                 redpanda,
+                 redpanda: RedpandaService | RedpandaServiceCloud,
                  driver: str | dict[str, Any] = "SIMPLE_DRIVER",
                  workload: str | WorkloadTuple = "SIMPLE_WORKLOAD",
-                 node=None,
+                 node: ClusterNode | None = None,
                  worker_nodes=None,
                  topology="swarm",
                  num_workers=NUM_WORKERS):
@@ -215,7 +225,7 @@ class OpenMessagingBenchmark(Service):
 
     def _create_benchmark_driver_file(self, node):
         # if testing redpanda cloud, override with default superuser
-        if hasattr(self.redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+        if isinstance(self.redpanda, RedpandaServiceCloud):
             u, p, m = self.redpanda._superuser
             self.driver['sasl_username'] = u
             self.driver['sasl_password'] = p
@@ -253,6 +263,7 @@ class OpenMessagingBenchmark(Service):
         self._create_benchmark_workload_file(node)
         self._create_benchmark_driver_file(node)
 
+        assert self.workers
         worker_nodes = self.workers.get_adresses()
 
         self.logger.info(
@@ -322,6 +333,7 @@ class OpenMessagingBenchmark(Service):
             raise BadLogLines(bad_lines)
 
     def check_succeed(self, validate_metrics=True):
+        assert self.workers
         self.workers.check_has_errors()
         for node in self.nodes:
             # Here we check that OMB finished and put result in file
@@ -351,6 +363,7 @@ class OpenMessagingBenchmark(Service):
                                                      self.validator)
 
     def wait_node(self, node, timeout_sec):
+        assert timeout_sec is not None
         process_pid = node.account.java_pids("benchmark")
         if len(process_pid) == 0:
             return True
