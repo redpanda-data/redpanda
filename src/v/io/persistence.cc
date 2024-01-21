@@ -127,22 +127,18 @@ disk_persistence::disk_file::disk_file(seastar::file file)
 
 seastar::future<size_t> disk_persistence::disk_file::dma_read(
   uint64_t pos, char* buf, size_t len) noexcept {
-    return maybe_fail_read().then([this, pos, buf, len] {
-    return file_.dma_read(pos, buf, len);
-    });
+    return maybe_fail_read().then(
+      [this, pos, buf, len] { return file_.dma_read(pos, buf, len); });
 }
 
 seastar::future<size_t> disk_persistence::disk_file::dma_write(
   uint64_t pos, const char* buf, size_t len) noexcept {
-    return maybe_fail_write().then([this, pos, buf, len] {
-    return file_.dma_write(pos, buf, len);
-    });
+    return maybe_fail_write().then(
+      [this, pos, buf, len] { return file_.dma_write(pos, buf, len); });
 }
 
 seastar::future<> disk_persistence::disk_file::close() noexcept {
-    return maybe_fail_close().then([this] {
-    return file_.close();
-    });
+    return maybe_fail_close().then([this] { return file_.close(); });
 }
 
 uint64_t disk_persistence::disk_file::disk_read_dma_alignment() const noexcept {
@@ -166,21 +162,25 @@ disk_persistence::allocate(uint64_t alignment, size_t size) noexcept {
 seastar::future<seastar::shared_ptr<persistence::file>>
 disk_persistence::create(std::filesystem::path path) noexcept {
     return maybe_fail_create().then([path = std::move(path)] {
-    using of = seastar::open_flags;
-    const auto flags = of::create | of::exclusive | of::rw;
-    return seastar::open_file_dma(path.string(), flags).then([](auto file) {
-    return seastar::make_ready_future<seastar::shared_ptr<persistence::file>>(seastar::make_shared<disk_file>(std::move(file)));
-    });
+        using of = seastar::open_flags;
+        const auto flags = of::create | of::exclusive | of::rw;
+        return seastar::open_file_dma(path.string(), flags).then([](auto file) {
+            return seastar::make_ready_future<
+              seastar::shared_ptr<persistence::file>>(
+              seastar::make_shared<disk_file>(std::move(file)));
+        });
     });
 }
 
 seastar::future<seastar::shared_ptr<persistence::file>>
 disk_persistence::open(std::filesystem::path path) noexcept {
     return maybe_fail_open().then([path = std::move(path)] {
-    const auto flags = seastar::open_flags::rw;
-    return seastar::open_file_dma(path.string(), flags).then([](auto file) {
-    return seastar::make_ready_future<seastar::shared_ptr<persistence::file>>(seastar::make_shared<disk_file>(std::move(file)));
-    });
+        const auto flags = seastar::open_flags::rw;
+        return seastar::open_file_dma(path.string(), flags).then([](auto file) {
+            return seastar::make_ready_future<
+              seastar::shared_ptr<persistence::file>>(
+              seastar::make_shared<disk_file>(std::move(file)));
+        });
     });
 }
 
@@ -218,35 +218,35 @@ memory_persistence::allocate(uint64_t alignment, size_t size) noexcept {
 seastar::future<seastar::shared_ptr<persistence::file>>
 memory_persistence::create(std::filesystem::path path) noexcept {
     return maybe_fail_create().then([this, path = std::move(path)] {
-    auto ret = files_.try_emplace(
-      path, seastar::make_shared<memory_file>(this));
-    if (!ret.second) {
-        return seastar::make_exception_future<
-          seastar::shared_ptr<persistence::file>>(
-          std::filesystem::filesystem_error(
-            "File exists",
-            path,
-            std::error_code(EEXIST, std::system_category())));
-    }
-    return seastar::make_ready_future<seastar::shared_ptr<persistence::file>>(
-      ret.first->second);
+        auto ret = files_.try_emplace(
+          path, seastar::make_shared<memory_file>(this));
+        if (!ret.second) {
+            return seastar::make_exception_future<
+              seastar::shared_ptr<persistence::file>>(
+              std::filesystem::filesystem_error(
+                "File exists",
+                path,
+                std::error_code(EEXIST, std::system_category())));
+        }
+        return seastar::make_ready_future<
+          seastar::shared_ptr<persistence::file>>(ret.first->second);
     });
 }
 
 seastar::future<seastar::shared_ptr<persistence::file>>
 memory_persistence::open(std::filesystem::path path) noexcept {
     return maybe_fail_open().then([this, path = std::move(path)] {
-    auto it = files_.find(path);
-    if (it == files_.end()) {
-        return seastar::make_exception_future<
-          seastar::shared_ptr<persistence::file>>(
-          std::filesystem::filesystem_error(
-            "File does not exist",
-            path,
-            std::error_code(ENOENT, std::system_category())));
-    }
-    return seastar::make_ready_future<seastar::shared_ptr<persistence::file>>(
-      it->second);
+        auto it = files_.find(path);
+        if (it == files_.end()) {
+            return seastar::make_exception_future<
+              seastar::shared_ptr<persistence::file>>(
+              std::filesystem::filesystem_error(
+                "File does not exist",
+                path,
+                std::error_code(ENOENT, std::system_category())));
+        }
+        return seastar::make_ready_future<
+          seastar::shared_ptr<persistence::file>>(it->second);
     });
 }
 
@@ -256,35 +256,35 @@ memory_persistence::memory_file::memory_file(memory_persistence* persistence)
 seastar::future<size_t> memory_persistence::memory_file::dma_read(
   uint64_t pos, char* buf, size_t len) noexcept {
     return maybe_fail_read().then([this, pos, buf, len] {
-    if (auto err = check_alignment(
-          "dma_read",
-          pos,
-          {buf, len},
-          memory_dma_alignment(),
-          disk_read_dma_alignment());
-        err.has_value()) {
-        return std::move(err.value());
-    }
-    return read(pos, buf, len);
+        if (auto err = check_alignment(
+              "dma_read",
+              pos,
+              {buf, len},
+              memory_dma_alignment(),
+              disk_read_dma_alignment());
+            err.has_value()) {
+            return std::move(err.value());
+        }
+        return read(pos, buf, len);
     });
 }
 
 seastar::future<size_t> memory_persistence::memory_file::dma_write(
   uint64_t pos, const char* buf, size_t len) noexcept {
     return maybe_fail_write().then([this, pos, buf, len] {
-    if (auto err = check_alignment(
-          "dma_write",
-          pos,
-          {buf, len},
-          memory_dma_alignment(),
-          disk_write_dma_alignment());
-        err.has_value()) {
-        return std::move(err.value());
-    }
-    return write(pos, buf, len).then([this, pos](size_t written) {
-        size_ = std::max(size_, pos + written);
-        return written;
-    });
+        if (auto err = check_alignment(
+              "dma_write",
+              pos,
+              {buf, len},
+              memory_dma_alignment(),
+              disk_write_dma_alignment());
+            err.has_value()) {
+            return std::move(err.value());
+        }
+        return write(pos, buf, len).then([this, pos](size_t written) {
+            size_ = std::max(size_, pos + written);
+            return written;
+        });
     });
 }
 
