@@ -10,6 +10,7 @@
  */
 
 #include "units.h"
+#include "wasm/tests/wasm_logger.h"
 #include "wasm/wasi.h"
 
 #include <seastar/util/log.hh>
@@ -42,11 +43,12 @@ TEST_P(WasiLogTest, ChunksLogsCorrectly) {
     for (uint32_t size : buf_sizes) {
         ss::logger logger("LOGGER_NAME");
         logger.set_level(ss::log_level::trace);
+        wasm_logger wasm_log{"XFORM_NAME", &logger};
         size_t amt = 0;
         std::stringstream ss;
         logger.set_ostream(ss);
         wasm::wasi::log_writer w = wasm::wasi::log_writer::make_for_stdout(
-          "XFORM_NAME", &logger);
+          &wasm_log);
         for (auto chunk : absl::StrSplit(input, absl::ByLength(size))) {
             amt += w.write(chunk);
         }
