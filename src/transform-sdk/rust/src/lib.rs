@@ -53,8 +53,8 @@ pub use redpanda_transform_sdk_types::*;
 /// }
 ///
 /// // A transform that duplicates the record on the input topic to the output topic.
-/// fn my_transform(event: WriteEvent, writer: &mut dyn RecordWriter) -> Result<()> {
-///   writer.write(Record::new(
+/// fn my_transform(event: WriteEvent, writer: &mut RecordWriter) -> Result<()> {
+///   writer.write(&Record::new(
 ///     event.record.key().map(|k| k.to_owned()),
 ///     event.record.value().map(|v| v.to_owned()),
 ///   ))?;
@@ -64,7 +64,7 @@ pub use redpanda_transform_sdk_types::*;
 pub fn on_record_written<E, F>(cb: F) -> !
 where
     E: Debug,
-    F: Fn(WriteEvent, &mut dyn RecordWriter) -> Result<(), E>,
+    F: Fn(WriteEvent, &mut RecordWriter) -> Result<(), E>,
 {
     redpanda_transform_sdk_sys::process(cb)
 }

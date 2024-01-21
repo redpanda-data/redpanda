@@ -12,25 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate redpanda_transform_sdk as redpanda;
-
 use anyhow::Result;
-use redpanda::*;
+use redpanda_transform_sdk::*;
 
 fn main() {
     on_record_written(my_transform);
 }
 
-fn my_transform(event: WriteEvent, writer: &mut dyn RecordWriter) -> Result<()> {
-    writer.write(Record::new_with_headers(
-        event.record.key().map(|b| b.to_owned()),
-        event.record.value().map(|b| b.to_owned()),
-        event
-            .record
-            .headers()
-            .iter()
-            .map(|h| h.to_owned())
-            .collect(),
-    ))?;
+fn my_transform(event: WriteEvent, writer: &mut RecordWriter) -> Result<()> {
+    writer.write(event.record)?;
     Ok(())
 }
