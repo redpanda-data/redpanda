@@ -50,8 +50,11 @@ where
     unsafe {
         abi::check_abi();
     }
+    let mut input_buffer: Vec<u8> = vec![];
+    let mut sink = AbiRecordWriter::new();
+    let mut writer = RecordWriter::new(&mut sink);
     loop {
-        process_batch(&cb);
+        process_batch(&mut input_buffer, &mut writer, &cb);
     }
 }
 
@@ -95,7 +98,7 @@ impl RecordSink for AbiRecordWriter {
     }
 }
 
-fn process_batch<E, F>(cb: &F)
+fn process_batch<E, F>(input_buffer: &mut Vec<u8>, writer: &mut RecordWriter, cb: &F)
 where
     E: Debug,
     F: Fn(WriteEvent, &mut RecordWriter) -> Result<(), E>,
@@ -131,9 +134,7 @@ where
         "failed to read batch header (errno: {errno_or_buf_size})"
     );
     let buf_size = errno_or_buf_size as usize;
-    let mut input_buffer: Vec<u8> = vec![0; buf_size];
-    let mut sink = AbiRecordWriter::new();
-    let mut record_writer = RecordWriter::new(&mut sink);
+    input_buffer.resize(buf_size, 0);
     for _ in 0..header.record_count {
         let mut attr: u8 = 0;
         let mut timestamp: i64 = 0;
@@ -159,7 +160,7 @@ where
             WriteEvent {
                 record: WrittenRecord::from_record(record, ts),
             },
-            &mut record_writer,
+            writer,
         )
         .expect("transforming record failed");
     }
