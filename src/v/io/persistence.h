@@ -88,6 +88,34 @@ public:
          */
         [[nodiscard]] virtual uint64_t memory_dma_alignment() const noexcept
           = 0;
+
+        /**
+         * Arrange for the next invocation of \ref read to return an exceptional
+         * future containing \p eptr.
+         */
+        void fail_next_read(std::exception_ptr);
+
+        /**
+         * Arrange for the next invocation of \ref write to return an
+         * exceptional future containing \p eptr.
+         */
+        void fail_next_write(std::exception_ptr);
+
+        /**
+         * Arrange for the next invocation of \ref close to return an
+         * exceptional future containing \p eptr.
+         */
+        void fail_next_close(std::exception_ptr);
+
+    protected:
+        seastar::future<> maybe_fail_read();
+        seastar::future<> maybe_fail_write();
+        seastar::future<> maybe_fail_close();
+
+    private:
+        std::exception_ptr read_ex_;
+        std::exception_ptr write_ex_;
+        std::exception_ptr close_ex_;
     };
 
     /**
@@ -107,6 +135,26 @@ public:
      */
     virtual seastar::future<seastar::shared_ptr<file>>
       open(std::filesystem::path) noexcept = 0;
+
+    /**
+     * Arrange for the next invocation of \ref create to return an exceptional
+     * future containing \p eptr.
+     */
+    void fail_next_create(std::exception_ptr eptr);
+
+    /**
+     * Arrange for the next invocation of \ref open to return an exceptional
+     * future containing \p eptr.
+     */
+    void fail_next_open(std::exception_ptr eptr);
+
+protected:
+    seastar::future<> maybe_fail_create();
+    seastar::future<> maybe_fail_open();
+
+private:
+    std::exception_ptr create_ex_;
+    std::exception_ptr open_ex_;
 };
 
 /**
