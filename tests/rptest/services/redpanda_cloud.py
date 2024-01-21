@@ -165,7 +165,7 @@ class LiveClusterParams:
 class ProductInfo:
     max_ingress: int
     max_egress: int
-    max_client_count: int
+    max_connection_count: int
     max_partition_count: int
 
 
@@ -1364,7 +1364,11 @@ class CloudCluster():
                 return ProductInfo(
                     max_ingress=int(product['advertisedMaxIngress']),
                     max_egress=int(product['advertisedMaxEgress']),
-                    max_client_count=int(product['advertisedMaxClientCount']),
+                    # note that despite the name advertisedMaxClientCount is actually
+                    # the advertised connection count, which is a much different value
+                    # (clients may make many connections to a single cluster)
+                    max_connection_count=int(
+                        product['advertisedMaxClientCount']),
                     max_partition_count=int(
                         product['advertisedMaxPartitionCount']))
 

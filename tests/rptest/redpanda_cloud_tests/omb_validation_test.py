@@ -212,8 +212,8 @@ class OMBValidationTest(RedpandaTest):
             producer_kwargs['max_record_size'] -
             producer_kwargs['min_record_size']) // 2
 
-        conn_limit = tier_limits.max_client_count - 3 * (total_producers +
-                                                         total_consumers)
+        conn_limit = tier_limits.max_connection_count - 3 * (total_producers +
+                                                             total_consumers)
         _target_per_node = conn_limit // SWARM_WORKERS
         _conn_per_node = int(_target_per_node * 0.7)
 
