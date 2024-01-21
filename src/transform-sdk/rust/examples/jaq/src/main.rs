@@ -14,7 +14,7 @@
 
 use anyhow::{anyhow, ensure, Context, Result};
 use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter, Val};
-use redpanda_transform_sdk::{on_record_written, Record, RecordWriter, WriteEvent};
+use redpanda_transform_sdk::{on_record_written, BorrowedRecord, RecordWriter, WriteEvent};
 
 // This allows one to use $KEY to reference the record's key as a string.
 const KEY_VAR: &str = "KEY";
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
     on_record_written(|event, writer| jaq_transform(&f, event, writer));
 }
 
-fn jaq_transform(filter: &Filter, event: WriteEvent, writer: &mut dyn RecordWriter) -> Result<()> {
+fn jaq_transform(filter: &Filter, event: WriteEvent, writer: &mut RecordWriter) -> Result<()> {
     let payload = event.record.value().context("missing json")?;
     let json_payload: serde_json::Value = serde_json::from_slice(payload)?;
     let inputs = RcIter::new(core::iter::empty());
@@ -46,10 +46,8 @@ fn jaq_transform(filter: &Filter, event: WriteEvent, writer: &mut dyn RecordWrit
     for output in filter.run((ctx, Val::from(json_payload))) {
         let value = output.map_err(|e| anyhow!("error: {e}"))?;
         let value: serde_json::Value = value.into();
-        writer.write(Record::new(
-            event.record.key().map(|k| k.to_owned()),
-            Some(serde_json::to_vec(&value)?),
-        ))?;
+        let value = serde_json::to_vec(&value)?;
+        writer.write(BorrowedRecord::new(event.record.key(), Some(&value)))?;
     }
     Ok(())
 }

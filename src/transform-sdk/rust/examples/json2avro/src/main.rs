@@ -46,22 +46,17 @@ fn main() -> Result<()> {
 fn my_transform(
     schema: &apache_avro::Schema,
     event: WriteEvent,
-    writer: &mut dyn RecordWriter,
+    writer: &mut RecordWriter,
 ) -> Result<()> {
     let transformed_value = match event.record.value() {
         Some(bytes) => Some(json_to_avro(schema, bytes)?),
         None => None,
     };
 
-    writer.write(Record::new_with_headers(
-        event.record.key().map(|b| b.to_owned()),
-        transformed_value,
-        event
-            .record
-            .headers()
-            .iter()
-            .map(|h| h.to_owned())
-            .collect(),
+    writer.write(BorrowedRecord::new_with_headers(
+        event.record.key(),
+        transformed_value.as_ref().map(|v| &v[..]),
+        event.record.headers().to_owned(),
     ))?;
     Ok(())
 }

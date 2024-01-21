@@ -45,7 +45,7 @@ extern crate rand;
 pub fn process<E, F>(cb: F) -> !
 where
     E: Debug,
-    F: Fn(WriteEvent, &mut dyn RecordWriter) -> Result<(), E>,
+    F: Fn(WriteEvent, &mut RecordWriter) -> Result<(), E>,
 {
     unsafe {
         abi::check_abi();
@@ -80,10 +80,10 @@ impl AbiRecordWriter {
     }
 }
 
-impl RecordWriter for AbiRecordWriter {
-    fn write(&mut self, r: Record) -> Result<(), WriteError> {
+impl RecordSink for AbiRecordWriter {
+    fn write(&mut self, r: BorrowedRecord) -> Result<(), WriteError> {
         self.output_buffer.clear();
-        serde::write_record_payload(&r, &mut self.output_buffer);
+        serde::write_record_payload(r, &mut self.output_buffer);
         let errno_or_amt = unsafe {
             abi::write_record(self.output_buffer.as_ptr(), self.output_buffer.len() as u32)
         };
@@ -98,7 +98,7 @@ impl RecordWriter for AbiRecordWriter {
 fn process_batch<E, F>(cb: &F)
 where
     E: Debug,
-    F: Fn(WriteEvent, &mut dyn RecordWriter) -> Result<(), E>,
+    F: Fn(WriteEvent, &mut RecordWriter) -> Result<(), E>,
 {
     let mut header = BatchHeader {
         base_offset: 0,
@@ -132,7 +132,8 @@ where
     );
     let buf_size = errno_or_buf_size as usize;
     let mut input_buffer: Vec<u8> = vec![0; buf_size];
-    let mut record_writer = AbiRecordWriter::new();
+    let mut sink = AbiRecordWriter::new();
+    let mut record_writer = RecordWriter::new(&mut sink);
     for _ in 0..header.record_count {
         let mut attr: u8 = 0;
         let mut timestamp: i64 = 0;
@@ -152,8 +153,14 @@ where
         );
         let amt = errno_or_amt as usize;
         let ts = SystemTime::UNIX_EPOCH + Duration::from_millis(timestamp as u64);
-        let record = serde::read_record_from_payload(&input_buffer[0..amt], ts)
+        let record = serde::read_record_from_payload(&input_buffer[0..amt])
             .expect("deserializing record failed");
-        cb(WriteEvent { record }, &mut record_writer).expect("transforming record failed");
+        cb(
+            WriteEvent {
+                record: WrittenRecord::from_record(record, ts),
+            },
+            &mut record_writer,
+        )
+        .expect("transforming record failed");
     }
 }
