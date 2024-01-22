@@ -16,7 +16,8 @@ from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.node_container import NodeContainer
-from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud
+
+from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, RedpandaServiceCloud
 from rptest.services.utils import BadLogLines
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 
@@ -269,15 +270,16 @@ class OpenMessagingBenchmark(Service):
         self.logger.info(
             f"Starting Open Messaging Benchmark with workers: {worker_nodes}")
 
-        rp_node = None
-        if self.redpanda.num_nodes > 0:
-            rp_node = self.redpanda.nodes[0]
-        rp_version = "unknown_version"
-        try:
-            rp_version = self.redpanda.get_version(rp_node)
-        except AssertionError:
-            # In some builds (particularly in dev), version string may not be populated
-            pass
+        # This version is used for the charts, in the cloud we use the
+        # install pack version, otherwise the redpanda version
+        if isinstance(self.redpanda, RedpandaServiceCloud):
+            rp_version = self.redpanda.install_pack_version()
+        else:
+            try:
+                rp_version = self.redpanda.get_version(self.redpanda.nodes[0])
+            except AssertionError:
+                # In some builds (particularly in dev), version string may not be populated
+                rp_version = "unknown_version"
 
         start_cmd = f"cd {OpenMessagingBenchmark.OPENMESSAGING_DIR}; \
                     bin/benchmark \

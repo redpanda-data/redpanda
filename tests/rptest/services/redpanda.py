@@ -6,8 +6,11 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from abc import ABC, abstractmethod
 import concurrent.futures
 import copy
+from functools import cached_property
+from logging import Logger
 
 import time
 import os
@@ -26,7 +29,7 @@ import zipfile
 import pathlib
 import shlex
 from enum import Enum, IntEnum
-from typing import Callable, Mapping, Optional, Protocol, Tuple, Any
+from typing import Callable, Mapping, Optional, Protocol, Tuple, Any, Type, cast
 
 import yaml
 from ducktape.services.service import Service
@@ -275,6 +278,17 @@ def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
         cloud_storage_type = list(
             set(applies_only_on).intersection(cloud_storage_type))
     return cloud_storage_type
+
+
+def is_redpanda_cloud(context: TestContext):
+    """
+    Returns True if we are running againt a Redpanda Cloud cluster,
+    False otherwise."""
+
+    # we use the presence of a non-empty cloud_cluster key in the config as our
+    # global signal that it's a cloud run
+    return bool(
+        context.globals.get(RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG))
 
 
 class ResourceSettings:
@@ -833,7 +847,72 @@ class AuditLogConfig(TlsConfig):
         self.listener_authn_method = listener_authn_method
 
 
-class RedpandaServiceBase(Service):
+class RedpandaServiceABC(ABC):
+    """A base class for all Redpanda services. This lowest-common denominator
+    class has both implementation and abstract methods, only for methods which
+    can be implemented by all services. Any methods which the service should
+    implement should be @abstractmethod in order to ensure they are implemented
+    by base classes.
+
+    If a method can be implemented by more than one service implementation, but
+    not all of them, it does NOT belong here.
+    """
+
+    context: TestContext
+    logger: Logger
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Now ensure that this base is part of the right type of object.
+        # For these checks to work, this __init__ method should appear in
+        # the MRO after all the __init__ methods that would set these properties
+        self._check_attr('context', TestContext)
+        self._check_attr('logger', Logger)
+
+    def healthy(self) -> bool:
+        raise NotImplementedError(
+            f'{self.healthy.__name__} is not implemented yet')
+
+    @abstractmethod
+    def all_up(self):
+        pass
+
+    def wait_until(self, fn, timeout_sec, backoff_sec, err_msg: str = None):
+        """
+        Cluster-aware variant of wait_until, which will fail out
+        early if a node dies.
+
+        This is useful for long waits, which would otherwise not notice
+        a test failure until the end of the timeout, even if redpanda
+        already crashed.
+        """
+
+        t_initial = time.time()
+        # How long to delay doing redpanda liveness checks, to make short waits more efficient
+        grace_period = 15
+
+        def wrapped():
+            r = fn()
+            if not r and time.time() > t_initial + grace_period:
+                # Check the cluster is up before waiting + retrying
+                assert self.all_up() or getattr(self, '_tolerate_crashes',
+                                                False)
+            return r
+
+        wait_until(wrapped,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=backoff_sec,
+                   err_msg=err_msg)
+
+    def _check_attr(self, name: str, t: Type):
+        v = getattr(self, name, None)
+        mro = self.__class__.__mro__
+        assert v is not None, f'RedpandaServiceABC was missing attribute {name} after __init__: {mro}\n'
+        assert isinstance(
+            v, t), f'{name} had wrong type, expected {t} but was {type(v)}'
+
+
+class RedpandaServiceBase(RedpandaServiceABC, Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     TRIM_LOGS_KEY = "trim_logs"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
@@ -1221,32 +1300,6 @@ class RedpandaServiceBase(Service):
     def security_config(self):
         return self._security_config
 
-    def wait_until(self, fn, timeout_sec, backoff_sec, err_msg=None):
-        """
-        Cluster-aware variant of wait_until, which will fail out
-        early if a node dies.
-
-        This is useful for long waits, which would otherwise not notice
-        a test failure until the end of the timeout, even if redpanda
-        already crashed.
-        """
-
-        t_initial = time.time()
-        # How long to delay doing redpanda liveness checks, to make short waits more efficient
-        grace_period = 15
-
-        def wrapped():
-            r = fn()
-            if not r and time.time() > t_initial + grace_period:
-                # Check the cluster is up before waiting + retrying
-                assert self.all_up() or self._tolerate_crashes
-            return r
-
-        wait_until(wrapped,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=backoff_sec,
-                   err_msg=err_msg)
-
     def set_skip_if_no_redpanda_log(self, v: bool):
         self._skip_if_no_redpanda_log = v
 
@@ -1386,7 +1439,7 @@ class RedpandaServiceK8s(RedpandaServiceBase):
                              skip_if_no_redpanda_log=skip_if_no_redpanda_log)
         self._trim_logs = False
         self._helm = None
-        self._kubectl = None
+        self.__kubectl = None
 
     def start_node(self, node, **kwargs):
         pass
@@ -1412,26 +1465,6 @@ class RedpandaServiceK8s(RedpandaServiceBase):
 
     def clean_node(self, node, **kwargs):
         self._helm.uninstall()
-
-    def get_node_memory_mb(self):
-        line = self._kubectl.exec("cat /proc/meminfo | grep MemTotal")
-        memory_kb = int(line.strip().split()[1])
-        return memory_kb / 1024
-
-    def get_node_cpu_count(self):
-        core_count_str = self._kubectl.exec(
-            "cat /proc/cpuinfo | grep ^processor | wc -l")
-        return int(core_count_str.strip())
-
-    def get_node_disk_free(self):
-        if self._kubectl.exists(self.PERSISTENT_ROOT):
-            df_path = self.PERSISTENT_ROOT
-        else:
-            # If dir doesn't exist yet, use the parent.
-            df_path = os.path.dirname(self.PERSISTENT_ROOT)
-        df_out = self._kubectl.exec(f"df --output=avail {df_path}")
-        avail_kb = int(df_out.strip().split(b"\n")[1].strip())
-        return avail_kb * 1024
 
     def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
         """
@@ -1468,7 +1501,32 @@ class RedpandaServiceK8s(RedpandaServiceBase):
         self._helm.upgrade_config_cluster(values)
 
 
-class RedpandaServiceCloud(RedpandaServiceK8s):
+class KubeServiceMixin:
+
+    kubectl: KubectlTool
+
+    def get_node_memory_mb(self):
+        line = self.kubectl.exec("cat /proc/meminfo | grep MemTotal")
+        memory_kb = int(line.strip().split()[1])
+        return memory_kb / 1024
+
+    def get_node_cpu_count(self):
+        core_count_str = self.kubectl.exec(
+            "cat /proc/cpuinfo | grep ^processor | wc -l")
+        return int(core_count_str.strip())
+
+    def get_node_disk_free(self):
+        if self.kubectl.exists(RedpandaServiceBase.PERSISTENT_ROOT):
+            df_path = RedpandaServiceBase.PERSISTENT_ROOT
+        else:
+            # If dir doesn't exist yet, use the parent.
+            df_path = os.path.dirname(RedpandaServiceBase.PERSISTENT_ROOT)
+        df_out = self.kubectl.exec(f"df --output=avail {df_path}")
+        avail_kb = int(df_out.strip().split(b"\n")[1].strip())
+        return avail_kb * 1024
+
+
+class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
     """
     Service class for running tests against Redpanda Cloud.
 
@@ -1481,11 +1539,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
     def __init__(self,
                  context: TestContext,
-                 num_brokers,
                  *,
+                 config_profile_name: str,
                  superuser: Optional[SaslCredentials] = None,
                  skip_if_no_redpanda_log: Optional[bool] = False,
-                 tier_name: Optional[str] = None,
+                 min_brokers: int = 3,
                  **kwargs):
         """Initialize a RedpandaServiceCloud object.
 
@@ -1493,24 +1551,28 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         :param num_brokers: ignored because Redpanda Cloud will launch the number of brokers necessary to satisfy the product needs
         :param superuser:  if None, then create SUPERUSER_CREDENTIALS with full acls
         :param tier_name:  the redpanda cloud tier name to create
+        :param min_brokers: the minimum number of brokers the consumer of the cluster (a test, typically) requires
+                            if the cloud cluster does not have this many brokers an exception is thrown
         """
 
-        super(RedpandaServiceCloud,
-              self).__init__(context,
-                             None,
-                             cluster_spec=ClusterSpec.empty(),
-                             superuser=superuser,
-                             skip_if_no_redpanda_log=skip_if_no_redpanda_log)
-        if num_brokers is not None:
-            self.logger.info(
-                f'num_brokers is {num_brokers}, but setting to None for cloud')
+        # we save the test context under both names since RedpandaService and Service
+        # save them under these two names, respetively
+        self.context = self._context = context
+        self.logger = context.logger
+
+        super().__init__()
+
+        self.config_profile_name = config_profile_name
+        self._min_brokers = min_brokers
+        self._superuser = superuser or RedpandaServiceBase.SUPERUSER_CREDENTIALS
+        self._skip_create_superuser = bool(superuser)
 
         self._trim_logs = False
 
         # Prepare values from globals.json to serialize
         # later to dataclass
-        self._cc_config = context.globals.get(self.GLOBAL_CLOUD_CLUSTER_CONFIG,
-                                              None)
+        self._cc_config = context.globals[self.GLOBAL_CLOUD_CLUSTER_CONFIG]
+
         self._provider_config = {
             "access_key":
             context.globals.get(SISettings.GLOBAL_S3_ACCESS_KEY, None),
@@ -1529,7 +1591,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self._cc_config,
             provider_config=self._provider_config)
         # Prepare kubectl
-        self._kubectl = None
+        self.__kubectl = None
 
         # Backward compatibility with RedpandaService
         # Fake out sasl_enabled callable
@@ -1542,11 +1604,14 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
     @property
     def kubectl(self):
-        assert self._kubectl, 'kubectl accessed before cluster was started?'
-        return self._kubectl
+        assert self.__kubectl, 'kubectl accessed before cluster was started?'
+        return self.__kubectl
 
-    def start_node(self, node, **kwargs):
-        pass
+    def who_am_i(self):
+        return self._cloud_cluster.cluster_id
+
+    def security_config(self):
+        return self._security_config
 
     def start(self, **kwargs):
         superuser = None
@@ -1562,7 +1627,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         cluster_id = self._cloud_cluster.create(superuser=superuser)
         remote_uri = f'redpanda@{cluster_id}-agent'
-        self._kubectl = KubectlTool(
+        self.__kubectl = KubectlTool(
             self,
             remote_uri=remote_uri,
             cluster_id=self._cloud_cluster.cluster_id,
@@ -1573,15 +1638,18 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         # Get pods and form node list
         self.pods = []
-        _r = self._kubectl.cmd('get pods -n redpanda -o json')
+        _r = self.kubectl.cmd('get pods -n redpanda -o json')
         _pods = json.loads(_r.decode())
         for p in _pods['items']:
             if not p['metadata']['name'].startswith(
                     f"rp-{self._cloud_cluster.config.id}"):
                 continue
             else:
-                _node = CloudBroker(p, self._kubectl, self.logger)
+                _node = CloudBroker(p, self.kubectl, self.logger)
                 self.pods.append(_node)
+
+        node_count = self.config_profile['nodes_count']
+        assert self._min_brokers <= node_count, f'Not enough brokers: test needs {self._min_brokers} but cluster has {node_count}'
 
     def get_node_by_id(self, id):
         for p in self.pods:
@@ -1589,8 +1657,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 return p
         return None
 
-    def stop_node(self, node, **kwargs):
-        pass
+    @cached_property
+    def config_profile(self) -> dict[str, Any]:
+        return self.get_install_pack()['config_profiles'][
+            self.config_profile_name]
 
     def stop(self, **kwargs):
         if self._cloud_cluster.config.delete_cluster:
@@ -1599,20 +1669,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self.logger.info(
                 f'skipping delete of cluster {self._cloud_cluster.cluster_id}')
 
-    def clean_node(self, node, **kwargs):
-        pass
-
-    def node_id(self, node, force_refresh=False, timeout_sec=30):
-        pass
-
-    def brokers(self, limit=None, listener: str = "dnslistener") -> str:
+    def brokers(self) -> str:
         return self._cloud_cluster.get_broker_address()
 
-    def get_version(self, node):
+    def install_pack_version(self) -> str:
         return self._cloud_cluster.get_install_pack_version()
-
-    def set_cluster_config(self, values: dict, timeout: int = 300):
-        pass
 
     def sockets_clear(self, node: RemoteClusterNode):
         return True
@@ -1682,7 +1743,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         :param remote_cmd: The command to run on the agent node.
         """
-        return self._kubectl._cmd(remote_cmd)
+        return self.kubectl._cmd(remote_cmd)
 
     def scale_cluster(self, nodes_count):
         """Scale out/in cluster to specified number of nodes.
@@ -2944,7 +3005,7 @@ class RedpandaService(RedpandaServiceBase):
 
     def get_version(self, node):
         """
-        Returns the version as a string.
+        Returns the redpanda binary version as a string.
         """
         version_cmd = f"{self.find_binary('redpanda')} --version"
         VERSION_LINE_RE = re.compile(".*(v\\d+\\.\\d+\\.\\d+).*")
@@ -3290,14 +3351,6 @@ class RedpandaService(RedpandaServiceBase):
             )
             conf.update(
                 dict(http_authentication=self._security.http_authentication))
-
-        # in redpanda, cloud_storage_spillover_manifest_size takes preference over cloud_storage_spillover_manifest_max_segments.
-        # disable the former to use the latter
-        assert conf.get('cloud_storage_spillover_manifest_size', None) is None or \
-            conf.get('cloud_storage_spillover_manifest_max_segments', None) is None, \
-                  "cannot set cloud_storage_spillover_manifest_max_segments if cloud_storage_spillover_manifest_size is already set, it will not be used by redpanda"
-        if 'cloud_storage_spillover_manifest_max_segments' in conf:
-            conf['cloud_storage_spillover_manifest_size'] = None
 
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:
@@ -4301,10 +4354,13 @@ def make_redpanda_service(context: TestContext,
                           num_brokers: Optional[int],
                           *,
                           cloud_tier: str | None = None,
-                          apply_cloud_tier_to_noncloud: bool = False,
                           extra_rp_conf=None,
-                          **kwargs) -> RedpandaServiceCloud | RedpandaService:
+                          **kwargs) -> RedpandaService:
     """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
+
+    # https://github.com/redpanda-data/core-internal/issues/1002
+    assert RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG not in context.globals, \
+        'make_redpanda_service should not be called in a cloud test context'
 
     if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in context.globals:
         if cloud_tier is None:
@@ -4314,16 +4370,13 @@ def make_redpanda_service(context: TestContext,
             context.logger.info(
                 f"extra_rp_conf is ignored with RedpandaServiceCloud")
 
+        assert num_brokers is None, f'num_broker specified but cloud tests cannot vary broker count'
+
         service = RedpandaServiceCloud(context,
-                                       num_brokers,
-                                       tier_name=cloud_tier,
+                                       config_profile_name=cloud_tier,
                                        **kwargs)
 
     else:
-        if apply_cloud_tier_to_noncloud:
-            raise RuntimeError(
-                'applying cloud tier to noncloud not implemented yet')
-
         if num_brokers is None:
             assert cloud_tier is not None
             num_brokers = 3
@@ -4333,4 +4386,56 @@ def make_redpanda_service(context: TestContext,
                                   extra_rp_conf=extra_rp_conf,
                                   **kwargs)
 
-    return service
+    # currently we just pretend we always return a RedpandaService, pending the
+    # deletion of the paths above that return a cloud service
+    return cast(RedpandaService, service)
+
+
+def make_redpanda_cloud_service(context: TestContext,
+                                *,
+                                min_brokers: int = 3) -> RedpandaServiceCloud:
+    """Create a RedpandaServiceCloud service. This can only be used in a test
+    running against Redpanda Cloud or else it will throw."""
+
+    cloud_config = context.globals.get(
+        RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG)
+
+    assert cloud_config, "Trying to create a cloud test, but no cloud_cluster section found in config"
+
+    config_profile_name = get_config_profile_name(cloud_config)
+
+    if config_profile_name == CloudTierName.DOCKER:
+        # TODO: Bake the docker config into a higher layer that will
+        # automatically load these settings upon call to make_rp_service
+
+        # this whole local hack is likely no longer working, but for now pretend by casting
+        return cast(
+            RedpandaServiceCloud,
+            RedpandaService(context,
+                            num_brokers=3,
+                            extra_rp_conf={
+                                'log_segment_size': 128 * 2**20,
+                                'cloud_storage_cache_size': 20 * 2**30,
+                                'kafka_connections_max': 100,
+                            }))
+
+    return RedpandaServiceCloud(context,
+                                config_profile_name=config_profile_name,
+                                min_brokers=min_brokers)
+
+
+def make_redpanda_service_mixed(context: TestContext, *, min_brokers: int = 3):
+    """Creates either a RedpandaService or RedpandaServiceCloud depending on which
+    environemnt we are running in. This allows you to write a so-called 'mixed' test
+    which can run against services of different types.
+
+    :param min_brokers: Create or expose a cluster with at least this many brokers."""
+
+    # For cloud tests, we can't affect the number of brokers (or any other cluster
+    # parameters, really), so we just check (eventually) that the number of brokers
+    # is at least the specified minimum (by passing as min_brokers). For vanilla tests,
+    # we create a cluster with exactly the requested number of brokers.
+    if is_redpanda_cloud(context):
+        return make_redpanda_cloud_service(context, min_brokers=min_brokers)
+    else:
+        return make_redpanda_service(context, num_brokers=min_brokers)

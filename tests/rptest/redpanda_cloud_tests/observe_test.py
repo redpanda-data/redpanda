@@ -5,18 +5,16 @@ from types import SimpleNamespace
 from io import BytesIO
 
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import make_redpanda_service
-from rptest.tests.rpk_cloud_test import get_ci_env_var
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 
 
-class HTObserveTest(Test):
+class HTObserveTest(RedpandaCloudTest):
     """
     Cloudv2 only - ensure no firing alarms for cloud cluster - should be ran after all other tests
     this is acomplished by setting @cluster(num_nodes=0) which is good enough
     """
     def __init__(self, test_context):
         super(HTObserveTest, self).__init__(test_context=test_context)
-        self.redpanda = make_redpanda_service(test_context, 3)
         self._ctx = test_context
         self._token = self.redpanda._cloud_cluster.config.grafana_token
         self._endpoint = self.redpanda._cloud_cluster.config.grafana_alerts_url
