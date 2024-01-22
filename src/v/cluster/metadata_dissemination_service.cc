@@ -39,6 +39,8 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/later.hh>
 
 #include <absl/container/flat_hash_set.h>
 
@@ -381,29 +383,40 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
       .finally([this] { _dispatch_timer.arm(_dissemination_interval); });
 }
 
+ss::future<> update_leaders(
+  const node_health_report& node_report, partition_leaders_table& leaders) {
+    size_t partition_i = 0;
+    for (auto& tp : node_report.topics) {
+        for (auto& p : tp.partitions) {
+            // Nodes may report a null leader if they're out of
+            // touch, even if the leader is actually still up.  Only
+            // trust leadership updates from health reports if
+            // they're non-null (non-null updates are safe to apply
+            // in any order because update_partition leader will
+            // ignore old terms)
+            if (p.leader_id.has_value()) {
+                leaders.update_partition_leader(
+                  model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
+                  p.revision_id,
+                  p.term,
+                  p.leader_id);
+            }
+
+            ++partition_i;
+            if (partition_i % 500 == 0) {
+                co_await ss::coroutine::maybe_yield();
+            }
+        }
+    }
+}
+
 ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
   cluster_health_report report) {
     vlog(clusterlog.trace, "updating leadership from health report");
     for (const auto& node_report : report.node_reports) {
         co_await _leaders.invoke_on_all(
-          [&node_report](partition_leaders_table& leaders) {
-              for (auto& tp : node_report.topics) {
-                  for (auto& p : tp.partitions) {
-                      // Nodes may report a null leader if they're out of
-                      // touch, even if the leader is actually still up.  Only
-                      // trust leadership updates from health reports if
-                      // they're non-null (non-null updates are safe to apply
-                      // in any order because update_partition leader will
-                      // ignore old terms)
-                      if (p.leader_id.has_value()) {
-                          leaders.update_partition_leader(
-                            model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
-                            p.revision_id,
-                            p.term,
-                            p.leader_id);
-                      }
-                  }
-              }
+          [&node_report](partition_leaders_table& leaders) -> ss::future<> {
+              return update_leaders(node_report, leaders);
           });
     }
 }
