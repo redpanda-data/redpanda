@@ -67,15 +67,15 @@ std::optional<seastar::future<size_t>> check_alignment(
 
 namespace experimental::io {
 
-void persistence::file::fail_next_read(std::exception_ptr eptr) {
+void persistence::file::fail_next_read(std::exception_ptr eptr) noexcept {
     read_ex_ = std::move(eptr);
 }
 
-void persistence::file::fail_next_write(std::exception_ptr eptr) {
+void persistence::file::fail_next_write(std::exception_ptr eptr) noexcept {
     write_ex_ = std::move(eptr);
 }
 
-void persistence::file::fail_next_close(std::exception_ptr eptr) {
+void persistence::file::fail_next_close(std::exception_ptr eptr) noexcept {
     close_ex_ = std::move(eptr);
 }
 
@@ -100,11 +100,11 @@ seastar::future<> persistence::file::maybe_fail_close() {
     return seastar::make_ready_future<>();
 }
 
-void persistence::fail_next_create(std::exception_ptr eptr) {
+void persistence::fail_next_create(std::exception_ptr eptr) noexcept {
     create_ex_ = std::move(eptr);
 }
 
-void persistence::fail_next_open(std::exception_ptr eptr) {
+void persistence::fail_next_open(std::exception_ptr eptr) noexcept {
     open_ex_ = std::move(eptr);
 }
 
