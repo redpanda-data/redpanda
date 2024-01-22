@@ -88,25 +88,32 @@ class FlinkScaleTests(RedpandaTest):
                 "Flink reports fails for " \
                 f"transaction workload:\n{desc}"
 
-        def get_hwm_for_topic(topic):
-            _hwm = 0
+        def get_total_events_for_topic(topic):
+            total_events = 0
             for partition in self.rpk.describe_topic(topic):
                 # Add currect high watermark for topic
-                _hwm += partition.high_watermark
-            return _hwm
+                total_events += partition.high_watermark
+            return total_events
 
         # Validate test according to
         # - How many transactions can be generated per one job
         # - How mane transactions for the node
 
         # Prepare topics
-        topics_per_node = 4
+        total_workloads = 4
+        unique_topics = False
         # 4 mil events total
-        total_events = 4 * 1024 * 1024
+        target_total_events = 4 * 1024 * 1024
 
         self.topic_specs = []
-        for idx in range(topics_per_node):
-            topic_name = f"flink_scale_{idx}"
+        if unique_topics:
+            for idx in range(total_workloads):
+                topic_name = f"flink_scale_{idx}"
+                spec = TopicSpec(name=topic_name, partition_count=8)
+                self.kafkacli.create_topic(spec)
+                self.topic_specs.append(spec)
+        else:
+            topic_name = "flink_scale_single_node"
             spec = TopicSpec(name=topic_name, partition_count=8)
             self.kafkacli.create_topic(spec)
             self.topic_specs.append(spec)
@@ -125,8 +132,9 @@ class FlinkScaleTests(RedpandaTest):
             "producer_group": "flink_group",
             "consumer_group": "flink_group",
             "topic_name": "flink_scale_topic_placeholder",
+            "transaction_id_prefix": "flink_scale_tid_prefix_placeholder",
             "mode": "produce",
-            "count": total_events // topics_per_node
+            "count": target_total_events // total_workloads
         }
 
         # Get workload
@@ -134,8 +142,15 @@ class FlinkScaleTests(RedpandaTest):
             ['flink', 'transactions', 'scale'])
         # Run produce part
         all_jobs = []
-        for spec in self.topic_specs:
-            _workload_config['topic_name'] = spec.name
+        for idx in range(total_workloads):
+            if unique_topics:
+                _workload_config['topic_name'] = self.topic_specs[idx].name
+                _workload_config[
+                    'transaction_id_prefix'] = f"flink_scale_tid_{idx}"
+            else:
+                _workload_config['topic_name'] = self.topic_specs[0].name
+                _workload_config[
+                    'transaction_id_prefix'] = f"flink_scale_tid_{idx}"
             self.logger.debug("Submitting job with config: \n"
                               f"{json.dumps(_workload_config, indent=2)}")
             all_jobs += self._run_workloads(workloads, _workload_config)
@@ -146,26 +161,26 @@ class FlinkScaleTests(RedpandaTest):
         # Wait to finish
         self.flink.wait(timeout_sec=1800)
 
-        topic_watermarks = []
+        all_topic_events = []
         for spec in self.topic_specs:
-            hwm = get_hwm_for_topic(spec.name)
-            topic_watermarks.append(hwm)
+            hwm = get_total_events_for_topic(spec.name)
+            all_topic_events.append(hwm)
 
         # Print out in one place:
-        for idx in range(len(topic_watermarks)):
+        for idx in range(len(all_topic_events)):
             self.logger.info(f"Topic: {self.topic_specs[idx].name}, "
-                             f"watermark: {topic_watermarks[idx]}")
+                             f"event count: {all_topic_events[idx]}")
         self.logger.info(
-            f"Total messages/High watermark sum: {sum(topic_watermarks)}")
+            f"Total messages/High watermark sum: {sum(all_topic_events)}")
 
         # Simple validation according to RP topic watermarks
-        sum_hwm = sum(topic_watermarks)
-        assert sum_hwm >= total_events, \
+        topics_total_events = sum(all_topic_events)
+        assert topics_total_events >= target_total_events, \
             "High watermark is less than targer total events: " \
-            f"{sum_hwm} hwm, {total_events} target total"
+            f"{topics_total_events} hwm, {target_total_events} target total"
 
         # Calculate per-node vectorized_internal_rpc_latency_sum/commit_tx
-        def current_rpc_latency_sum(method, nodes) -> list[MetricSamples]:
+        def get_commit_requests_counts(method, nodes) -> list[MetricSamples]:
             # Get metrics from redpanda nodes
             metrics = self.redpanda.metrics_sample(  # type: ignore
                 "vectorized_internal_rpc_latency_sum",
@@ -184,7 +199,7 @@ class FlinkScaleTests(RedpandaTest):
             return samples
 
         # Get metric for commit_tx method
-        rpc_latency_sum = current_rpc_latency_sum(
+        commit_requests = get_commit_requests_counts(
             "commit_tx", self.redpanda.started_nodes())
 
         # Rearrange as dict
@@ -195,17 +210,17 @@ class FlinkScaleTests(RedpandaTest):
         #   }
         # }
         metric_per_node = {}
-        rpc_latency_sum_total = 0
+        total_commit_requests = 0
         for node in self.redpanda.started_nodes():
             h = node.account.hostname
-            for metric in rpc_latency_sum:
+            for metric in commit_requests:
                 if node == metric.node:  # type: ignore
                     if h not in metric_per_node:
                         metric_per_node[h] = {}
                     metric_per_node[h].update(
                         {metric.labels["shard"]: metric.value})  # type: ignore
             metric_per_node[h]['total'] = sum(metric_per_node[h].values())
-            rpc_latency_sum_total += metric_per_node[h]['total']
+            total_commit_requests += metric_per_node[h]['total']
 
         # Collected metric is a count of commit_tx RPCs on the shard.
         # Since there is a commit_tx for each transaction, i.e. checkpoint
@@ -215,12 +230,12 @@ class FlinkScaleTests(RedpandaTest):
         # So, this is a number of transactions happened
         self.logger.info("Per-node metrics for latency is:\n"
                          f"{json.dumps(metric_per_node, indent=2)}")
-        self.logger.info(f"Total: {rpc_latency_sum_total}")
+        self.logger.info(f"Total: {total_commit_requests}")
 
         # Number of total transactions should be not less than
         # transaction_count / total_events. I.e. >0.1 in this case.
         # I.e. flink should be able to send at least 1 transaction per 1 ms
-        assert 0.1 < rpc_latency_sum_total / total_events, \
+        assert 0.1 < total_commit_requests / target_total_events, \
             "Flink failed to generate at least 1 transaction " \
             "per checkpoint each 1 ms"
 

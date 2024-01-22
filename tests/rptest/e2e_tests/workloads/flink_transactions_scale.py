@@ -38,6 +38,7 @@ class WorkloadConfig:
     producer_group: str = "flink_group"
     consumer_group: str = "flink_group"
     topic_name: str = "flink_transactions_topic"
+    transaction_id_prefix: str = "flink_transaction_prefix"
     # options are produce/consume
     mode: str = MODE_PRODUCE
     # How many events generate
@@ -155,7 +156,7 @@ class FlinkWorkloadProduce:
             .set_bootstrap_servers(self.config.brokers) \
             .set_record_serializer(record_serializer) \
             .set_delivery_guarantee(DeliveryGuarantee.EXACTLY_ONCE) \
-            .set_transactional_id_prefix(self.config.topic_name) \
+            .set_transactional_id_prefix(self.config.transaction_id_prefix) \
             .build()
 
     def produce_sequence(self):
