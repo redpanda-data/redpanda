@@ -9,9 +9,10 @@
 
 import math
 from time import sleep
-from typing import Any
+from typing import Any, TypeVar
 
 from rptest.services.cluster import cluster
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.tests.test import TestContext
 from rptest.services.producer_swarm import ProducerSwarm
@@ -41,7 +42,7 @@ def not_none(value: T | None) -> T:
     return value
 
 
-class OMBValidationTest(RedpandaTest):
+class OMBValidationTest(RedpandaCloudTest):
 
     # The numbers of nodes we expect to run with - this value (10) is the default
     # for duck.py so these tests should just work with that default, but not necessarily
@@ -60,30 +61,8 @@ class OMBValidationTest(RedpandaTest):
 
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
-        # Get tier name
-        self.config_profile_name = get_config_profile_name(
-            RedpandaServiceCloud.get_cloud_globals(self._ctx.globals))
-        extra_rp_conf = None
-        num_brokers = None
 
-        if self.config_profile_name == CloudTierName.DOCKER:
-            # TODO: Bake the docker config into a higher layer that will
-            # automatically load these settings upon call to make_rp_service
-            num_brokers = 3
-            extra_rp_conf = {
-                'log_segment_size': 128 * MiB,
-                'cloud_storage_cache_size': 20 * GiB,
-                'kafka_connections_max': 100,
-            }
-
-        super(OMBValidationTest,
-              self).__init__(test_ctx,
-                             *args,
-                             num_brokers=num_brokers,
-                             extra_rp_conf=extra_rp_conf,
-                             cloud_tier=self.config_profile_name,
-                             disable_cloud_storage_diagnostics=True,
-                             **kwargs)
+        super().__init__(test_ctx, *args, **kwargs)
 
         # Load install pack and check profile
         install_pack = self.redpanda.get_install_pack()
@@ -99,17 +78,6 @@ class OMBValidationTest(RedpandaTest):
             )
         config_profile = install_pack['config_profiles'][
             self.config_profile_name]
-        cluster_config = config_profile['cluster_config']
-
-        if self.config_profile_name == CloudTierName.DOCKER:
-            si_settings = SISettings(
-                test_ctx,
-                log_segment_size=self.min_segment_size,
-                cloud_storage_cache_size=cluster_config[
-                    'cloud_storage_cache_size'],
-            )
-            self.redpanda.set_si_settings(si_settings)
-            self.s3_port = si_settings.cloud_storage_api_endpoint_port
 
         self.num_brokers = config_profile['nodes_count']
         self.tier_limits: ProductInfo = not_none(self.redpanda.get_product())

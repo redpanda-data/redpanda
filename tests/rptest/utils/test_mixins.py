@@ -1,24 +1,16 @@
-# Copyright 2022 Vectorized, Inc.
-#
-# Use of this software is governed by the Business Source License
-# included in the file licenses/BSL.md
-#
-# As of the Change Date specified in that file, in accordance with
-# the Business Source License, use of this software will be governed
-# by the Apache License, Version 2.0
-
-from typing import Any
-from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.cluster.cluster_spec import ClusterSpec
+from logging import Logger
+from typing import Any, Callable, cast
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.tests.test import TestContext
+from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.tests.test import TestContext, Test
 from ducktape.utils.util import wait_until
 
+from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud
 
-class PreallocNodesTest(RedpandaTest):
+
+class PreallocNodesMixin:
     """
-    Extends RedpandaTest to preallocate ducktape
-    nodes from the given test context.
+    A test mixin to preallocate some nodes.
 
     Having some explicitly allocated nodes is useful for
     re-using those nodes to run multiple services at once, or to
@@ -28,8 +20,13 @@ class PreallocNodesTest(RedpandaTest):
 
     _preallocated_nodes: list[ClusterNode]
 
+    # these must be provided by the mixin's environment (i.e., other
+    # parts of the class hierarchy)
+    context: TestContext
+    logger: Logger
+
     def __init__(self, node_prealloc_count: int, **kwargs: Any):
-        super(PreallocNodesTest, self).__init__(test_context, *args, **kwargs)
+        super().__init__(**kwargs)
         self.node_prealloc_count = node_prealloc_count
 
         # Nodes are allocated later on first access
@@ -38,7 +35,7 @@ class PreallocNodesTest(RedpandaTest):
     @property
     def preallocated_nodes(self):
         if not self._preallocated_nodes:
-            self._preallocated_nodes = self.test_context.cluster.alloc(
+            self._preallocated_nodes = self.context.cluster.alloc(
                 ClusterSpec.simple_linux(self.node_prealloc_count))
 
             for node in self._preallocated_nodes:
@@ -48,7 +45,7 @@ class PreallocNodesTest(RedpandaTest):
 
     def free_nodes(self):
         # Free the normally allocated nodes (e.g. RedpandaService)
-        super().free_nodes()
+        cast(Test, super()).free_nodes()
 
         self.free_preallocated_nodes()
 
@@ -66,12 +63,16 @@ class PreallocNodesTest(RedpandaTest):
             # with subsequent tests' use of the node. Clear them down first.
             # For example, those tests that use KgoVerifierProducer.
             for node in self.preallocated_nodes:
-                wait_until(lambda: self.redpanda.sockets_clear(node),
+                wait_until(lambda: self.__redpanda.sockets_clear(node),
                            timeout_sec=120,
                            backoff_sec=10)
 
                 # Free the hand-allocated nodes
                 self.logger.debug(f"Freeing node {node.name}")
-                self.test_context.cluster.free_single(node)
+                self.context.cluster.free_single(node)
 
             self._preallocated_nodes = []
+
+    @property
+    def __redpanda(self) -> RedpandaService | RedpandaServiceCloud:
+        return getattr(self, 'redpanda')
