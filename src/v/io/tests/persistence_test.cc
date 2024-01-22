@@ -274,6 +274,74 @@ TYPED_TEST(PersistenceTest, ReadWrite) {
     }
 }
 
+class fault_injection : std::exception {};
+class fault_injection2 : std::exception {};
+
+TYPED_TEST(PersistenceTest, ThrowCreate) {
+    this->fs.fail_next_create(std::make_exception_ptr(fault_injection()));
+    EXPECT_THROW(this->create(this->path), fault_injection);
+
+    this->fs.fail_next_create(fault_injection2());
+    EXPECT_THROW(this->create(this->path), fault_injection2);
+
+    EXPECT_NO_THROW(this->create(this->path));
+}
+
+TYPED_TEST(PersistenceTest, ThrowOpen) {
+    this->create(this->path);
+
+    this->fs.fail_next_open(std::make_exception_ptr(fault_injection()));
+    EXPECT_THROW(this->open(this->path), fault_injection);
+
+    this->fs.fail_next_open(fault_injection2());
+    EXPECT_THROW(this->open(this->path), fault_injection2);
+
+    EXPECT_NO_THROW(this->open(this->path));
+}
+
+TYPED_TEST(PersistenceTest, ThrowRead) {
+    auto f = this->create(this->path);
+    auto tmp = this->fs.allocate(
+      f->memory_dma_alignment(), f->disk_read_dma_alignment());
+
+    f->fail_next_read(std::make_exception_ptr(fault_injection()));
+    EXPECT_THROW(
+      f->dma_read(0, tmp.get_write(), tmp.size()).get(), fault_injection);
+
+    f->fail_next_read(fault_injection2());
+    EXPECT_THROW(
+      f->dma_read(0, tmp.get_write(), tmp.size()).get(), fault_injection2);
+
+    EXPECT_NO_THROW(f->dma_read(0, tmp.get_write(), tmp.size()).get());
+}
+
+TYPED_TEST(PersistenceTest, ThrowWrite) {
+    auto f = this->create(this->path);
+    auto tmp = this->fs.allocate(
+      f->memory_dma_alignment(), f->disk_write_dma_alignment());
+
+    f->fail_next_write(std::make_exception_ptr(fault_injection()));
+    EXPECT_THROW(f->dma_write(0, tmp.get(), tmp.size()).get(), fault_injection);
+
+    f->fail_next_write(fault_injection2());
+    EXPECT_THROW(
+      f->dma_write(0, tmp.get(), tmp.size()).get(), fault_injection2);
+
+    EXPECT_NO_THROW(f->dma_write(0, tmp.get(), tmp.size()).get());
+}
+
+TYPED_TEST(PersistenceTest, ThrowClose) {
+    auto f = this->fs.create(this->path).get();
+
+    f->fail_next_close(std::make_exception_ptr(fault_injection()));
+    EXPECT_THROW(f->close().get(), fault_injection);
+
+    f->fail_next_close(fault_injection2());
+    EXPECT_THROW(f->close().get(), fault_injection2);
+
+    EXPECT_NO_THROW(f->close().get());
+}
+
 TEST(MemoryPersistenceTest, CustomAlignment) {
     std::vector<seastar::shared_ptr<io::persistence::file>> open_files;
     auto cleanup = seastar::defer([&open_files] {

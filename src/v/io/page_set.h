@@ -23,7 +23,7 @@ namespace experimental::io {
  * A container holding non-overlapping pages.
  */
 class page_set {
-    using map_type = io::interval_map<uint64_t, seastar::lw_shared_ptr<page>>;
+    using map_type = interval_map<uint64_t, seastar::lw_shared_ptr<page>>;
 
 public:
     /**
