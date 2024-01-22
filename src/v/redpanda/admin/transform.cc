@@ -86,11 +86,8 @@ admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
     }
     auto report = co_await _transform_service->local().list_transforms();
 
-    ss::json::json_list<ss::httpd::transform_json::transform_metadata>
-      list_result;
-
-    co_return ss::json::json_return_type(
-      ss::json::stream_range_as_array(report.transforms, [](const auto& entry) {
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      std::move(report.transforms), [](const auto& entry) {
           const model::transform_report& t = entry.second;
           ss::httpd::transform_json::transform_metadata meta;
           meta.name = t.metadata.name();
