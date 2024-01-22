@@ -363,6 +363,7 @@ class HighThroughputTest(PreallocNodesTest):
         for item in self.resources:
             if item['type'] == 'topic':
                 self.rpk.delete_topic(item['spec'].name)
+        self.redpanda.clean_cluster()
 
     @cluster(num_nodes=0)
     def test_cluster_cleanup(self):
@@ -373,6 +374,10 @@ class HighThroughputTest(PreallocNodesTest):
         # Cluster will be deleted if configuration is enabled it
         # and/or config.use_same_cluster and current.tests_finished set to True
         self.redpanda._cloud_cluster.current.tests_finished = True
+
+    def setup(self):
+        super().setup()
+        self.redpanda.clean_cluster()
 
     def tearDown(self):
         # These tests may run on cloud ec2 instances where between each test
