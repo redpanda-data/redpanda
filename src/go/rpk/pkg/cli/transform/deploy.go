@@ -12,7 +12,6 @@
 package transform
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -230,15 +229,6 @@ func validateProjectConfig(cfg project.Config, fileConfigErr error) error {
 	}
 	if cfg.Name == "" {
 		return errors.New("missing name")
-	}
-	return nil
-}
-
-// verifyWasm checks that a wasm file has the correct magic bytes.
-func verifyWasm(binary []byte) error {
-	// Check the file is a .wasm file (needs the magic \0asm prefix)
-	if !bytes.HasPrefix(binary, []byte{0x00, 0x61, 0x73, 0x6d}) {
-		return fmt.Errorf("invalid wasm binary")
 	}
 	return nil
 }
