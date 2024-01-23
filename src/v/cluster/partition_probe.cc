@@ -208,6 +208,14 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "max_offset",
           [this] {
+              // TODO: merge code with replicated_partition.h?
+              if (_partition.is_read_replica_mode_enabled()) {
+                  if (_partition.cloud_data_available()) {
+                      return _partition.next_cloud_offset();
+                  }
+                  // This is a read replica and there's no data in the cloud.
+                  return model::offset(0);
+              }
               auto log_offset = _partition.high_watermark();
               auto translator = _partition.get_offset_translator_state();
 
