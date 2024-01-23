@@ -41,6 +41,24 @@
             ]
         },
         {
+            "path": "/v1/broker_uuids",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get a list of node id to UUID mappings",
+                    "type": "array",
+                    "items": {
+                        "type": "broker_uuid_mapping"
+                    },
+                    "nickname": "get_broker_uuids",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/brokers/{id}",
             "operations": [
                 {
@@ -432,6 +450,20 @@
                 "core": {
                     "type": "int",
                     "description": "id of a core on a given node"
+                }
+            }
+        },
+        "broker_uuid_mapping": {
+            "id": "broker_uuid_mapping",
+            "description": "Mapping between UUID and node id",
+            "properties": {
+                "node_id": {
+                    "type": "int",
+                    "description": "Broker assigned id"
+                },
+                "uuid": {
+                    "type": "string",
+                    "description": "Broker unique identifier. UUID is generated when Redpanda starts with empty data folder"
                 }
             }
         }
