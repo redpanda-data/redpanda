@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "connection.h"
+#include "ossl_context_service.h"
 #include "ssl_utils.h"
 
 #include <seastar/core/abort_source.hh>
@@ -27,7 +28,10 @@
 class ossl_tls_service final {
 public:
     ossl_tls_service(
-      ss::socket_address addr, ss::sstring key_path, ss::sstring cert_path);
+      ss::sharded<ossl_context_service>& ssl_ctx_service,
+      ss::socket_address addr,
+      ss::sstring key_path,
+      ss::sstring cert_path);
     ~ossl_tls_service() = default;
 
     ss::future<> start();
@@ -38,6 +42,7 @@ public:
     ss::abort_source& abort_source() { return _as; }
 
 private:
+    ss::sharded<ossl_context_service>& _ssl_ctx_service;
     std::optional<ss::server_socket> _listener;
     boost::intrusive::list<connection> _connections;
     ss::abort_source _as;

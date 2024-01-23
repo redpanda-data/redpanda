@@ -61,3 +61,24 @@ ss::future<> context::stop() {
     co_await _as.request_abort_ex(ssx::connection_aborted_exception{});
     co_await _as.stop();
 }
+
+bool context::is_finished_parsing() const {
+    return _conn->input().eof() || abort_requested();
+}
+
+ss::future<> context::process() {
+    while (true) {
+        if (is_finished_parsing()) {
+            lg.info("context is finished parsing");
+            break;
+        }
+        co_await process_one_request();
+    }
+}
+
+ss::future<> context::process_one_request() {
+    auto buf = co_await _conn->input().read();
+    lg.info("Read {} bytes", buf.size());
+    co_await _conn->output().write(std::move(buf));
+    co_await _conn->output().flush();
+}

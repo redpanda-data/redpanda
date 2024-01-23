@@ -13,6 +13,7 @@
 
 #include "context.h"
 #include "logger.h"
+#include "ossl-poc/ossl_context_service.h"
 #include "ssx/abort_source.h"
 #include "ssx/future-util.h"
 
@@ -21,9 +22,16 @@
 #include <openssl/ssl.h>
 
 ossl_tls_service::ossl_tls_service(
-  ss::socket_address addr, ss::sstring key_path, ss::sstring cert_path)
-  : _addr(addr)
-  , _ssl_ctx(SSL_CTX_new(TLS_method()), SSL_CTX_free)
+  ss::sharded<ossl_context_service>& ssl_ctx_service,
+  ss::socket_address addr,
+  ss::sstring key_path,
+  ss::sstring cert_path)
+  : _ssl_ctx_service(ssl_ctx_service)
+  , _addr(addr)
+  , _ssl_ctx(
+      SSL_CTX_new_ex(
+        _ssl_ctx_service.local().get_ossl_context(), nullptr, TLS_method()),
+      SSL_CTX_free)
   , _key_path(std::move(key_path))
   , _cert_path(std::move(cert_path)) {
     if (!_ssl_ctx) {
@@ -116,9 +124,8 @@ ossl_tls_service::accept_finish(ss::future<ss::accept_result> f_ar) {
 
     _as.check();
 
-    ssx::spawn_with_gate(_conn_gate, [this, conn] {
-        // fill this in
-    });
+    ssx::spawn_with_gate(
+      _conn_gate, [this, conn] { return apply_proto(conn); });
 
     co_return ss::stop_iteration::no;
 }
@@ -129,7 +136,7 @@ ss::future<> ossl_tls_service::apply_proto(ss::lw_shared_ptr<connection> c) {
     std::exception_ptr eptr;
     try {
         co_await ctx->start();
-        //        co_await ctx->process();
+        co_await ctx->process();
     } catch (...) {
         eptr = std::current_exception();
     }

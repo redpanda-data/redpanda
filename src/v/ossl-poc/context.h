@@ -29,8 +29,13 @@ public:
 
     ss::future<> start();
     ss::future<> process();
+    ss::future<> process_one_request();
     ss::future<> stop();
     ssx::sharded_abort_source& abort_source() { return _as; }
+    bool abort_requested() const { return _as.abort_requested(); }
+
+private:
+    bool is_finished_parsing() const;
 
 private:
     std::optional<std::reference_wrapper<boost::intrusive::list<context>>>

@@ -35,6 +35,7 @@ public:
     connection& operator=(connection&&) noexcept = delete;
 
     ss::input_stream<char>& input() { return _in; }
+    ss::output_stream<char>& output() { return _out; }
 
     ss::future<> shutdown();
     void shutdown_input();
