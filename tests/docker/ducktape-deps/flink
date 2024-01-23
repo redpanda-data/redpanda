@@ -3,9 +3,15 @@ set -e
 mkdir /opt/flink
 
 # Download
-FLINK_FILE=flink-1.18.1-bin-scala_2.12.tgz
+FLINK_VERSION=1.18.1
+FLINK_SCALA_VERSION=2.12
+FLINK_FILE=flink-${FLINK_VERSION}-bin-scala_${FLINK_SCALA_VERSION}.tgz
+# Instead of using main download link, use archive.apache.org
+# This will prevent us from getting an HTTP:404 when new version will be introduced
+# old: FLINK_URL=https://downloads.apache.org/flink/flink-${FLINK_VERSION}/${FLINK_FILE}
+FLINK_URL=https://archive.apache.org/dist/flink/flink-${FLINK_VERSION}/${FLINK_FILE}
 KAFKA_CONNECTOR=flink-sql-connector-kafka-3.0.1-1.18.jar
-wget https://dlcdn.apache.org/flink/flink-1.18.1/${FLINK_FILE}
+wget ${FLINK_URL}
 
 # Extract
 tar -xvf ${FLINK_FILE} -C /opt/flink --strip-components 1
