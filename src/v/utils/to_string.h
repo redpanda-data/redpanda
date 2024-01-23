@@ -52,9 +52,9 @@ operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
 
 } // namespace std
 
-template<typename T>
-struct fmt::formatter<ss::chunked_fifo<T>> {
-    using type = ss::chunked_fifo<T>;
+template<typename T, size_t chunk_size>
+struct fmt::formatter<ss::chunked_fifo<T, chunk_size>> {
+    using type = ss::chunked_fifo<T, chunk_size>;
 
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
