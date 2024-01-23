@@ -24,8 +24,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <initializer_list>
-#include <math.h>
 #include <utility>
 
 namespace model {
@@ -140,36 +140,12 @@ TEST(ClusterTransformReportTest, Merge) {
     EXPECT_EQ(node_one, expected);
 }
 
-namespace {
-void append_vint_to_iobuf(iobuf& b, int64_t v) {
-    auto vb = vint::to_bytes(v);
-    b.append(vb.data(), vb.size());
-}
-std::optional<transformed_data> noop_transformed_data(const model::record& r) {
-    iobuf payload;
-    append_vint_to_iobuf(payload, r.key_size());
-    payload.append(r.key().copy());
-    append_vint_to_iobuf(payload, r.value_size());
-    payload.append(r.value().copy());
-    append_vint_to_iobuf(payload, int64_t(r.headers().size()));
-    for (const auto& header : r.headers()) {
-        append_vint_to_iobuf(payload, header.key_size());
-        payload.append(header.key().copy());
-        append_vint_to_iobuf(payload, header.value_size());
-        payload.append(header.value().copy());
-    }
-    return model::transformed_data::create_validated(std::move(payload));
-}
-} // namespace
-
 TEST(TransformedDataTest, Serialize) {
     auto src = model::test::make_random_record(
       0, random_generators::make_iobuf());
-    auto validated = noop_transformed_data(src);
-    ASSERT_TRUE(validated.has_value());
-    auto got = std::move(validated.value())
-                 .to_serialized_record(
-                   src.attributes(), src.timestamp_delta(), src.offset_delta());
+    auto validated = transformed_data::from_record(src.copy());
+    auto got = std::move(validated).to_serialized_record(
+      src.attributes(), src.timestamp_delta(), src.offset_delta());
     iobuf want;
     model::append_record_to_buffer(want, src);
     EXPECT_EQ(got, want) << "GOT:\n"
@@ -184,7 +160,7 @@ TEST(TransformedDataTest, MakeBatch) {
     });
     ss::chunked_fifo<transformed_data> transformed;
     for (const auto& r : batch.copy_records()) {
-        transformed.push_back(noop_transformed_data(r).value());
+        transformed.push_back(transformed_data::from_record(r.copy()));
     }
     auto now = model::timestamp::now();
     auto transformed_batch = transformed_data::make_batch(

@@ -15,6 +15,8 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
+#include "model/transform.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "random/simple_time_jitter.h"
 #include "transform/logger.h"
@@ -233,7 +235,15 @@ ss::future<> processor::run_transform_loop() {
     while (!_as.abort_requested()) {
         auto batch = co_await _consumer_transform_pipe.pop_eventually();
         auto offset = model::offset_cast(batch.last_offset());
-        batch = co_await _engine->transform(std::move(batch), _probe);
+        ss::chunked_fifo<model::transformed_data> transformed;
+        co_await _engine->transform(
+          std::move(batch),
+          _probe,
+          [&transformed](model::transformed_data data) {
+              transformed.push_back(std::move(data));
+          });
+        batch = model::transformed_data::make_batch(
+          model::timestamp::now(), std::move(transformed));
         co_await _transform_producer_pipe.push_eventually(
           {.batch = std::move(batch), .input_offset = offset});
     }
