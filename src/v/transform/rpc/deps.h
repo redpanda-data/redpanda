@@ -197,6 +197,9 @@ public:
 
     virtual ss::future<offset_fetch_response>
     invoke_on_shard(ss::shard_id, const model::ntp&, offset_fetch_request) = 0;
+
+    virtual ss::future<result<model::transform_offsets_map, cluster::errc>>
+    list_committed_offsets_on_shard(ss::shard_id, const model::ntp&) = 0;
 };
 
 }; // namespace transform::rpc

@@ -12,6 +12,7 @@
 #include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "model/transform.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
@@ -53,6 +54,9 @@ public:
     ss::future<offset_fetch_response> offset_fetch(offset_fetch_request);
 
     ss::future<model::cluster_transform_report> compute_node_local_report();
+
+    ss::future<result<model::transform_offsets_map, cluster::errc>>
+      list_committed_offsets(list_commits_request);
 
 private:
     ss::future<transformed_topic_data_result>
@@ -103,6 +107,9 @@ public:
 
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request, ::rpc::streaming_context&) override;
+
+    ss::future<list_commits_reply> list_committed_offsets(
+      list_commits_request, ::rpc::streaming_context&) override;
 
     ss::future<generate_report_reply> generate_report(
       generate_report_request, ::rpc::streaming_context&) override;

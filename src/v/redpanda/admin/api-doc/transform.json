@@ -61,6 +61,23 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/v1/transform/debug/committed_offsets",
+      "operations": [
+        {
+          "method": "GET",
+          "type": "array",
+          "items": {
+            "type": "committed_offset"
+          },
+          "summary": "List all the committed offsets for transforms.",
+          "nickname": "list_committed_offsets",
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
     }
   ],
   "models": {
@@ -155,6 +172,24 @@
         },
         "value": {
           "type": "string"
+        }
+      }
+    },
+    "committed_offset": {
+      "id": "committed_offset",
+      "description": "A committed offset for a single partition and transform",
+      "properties": {
+        "transform_name": {
+          "type": "string",
+          "description": "name of the transform"
+        },
+        "partition": {
+          "type": "int",
+          "description": "partition in the input topic"
+        },
+        "offset": {
+          "type": "int",
+          "description": "The offset within the input topic that has been committed"
         }
       }
     }

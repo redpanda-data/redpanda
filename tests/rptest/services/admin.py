@@ -84,6 +84,12 @@ class RedpandaNode(NamedTuple):
     id: int
 
 
+class CommittedWasmOffset(NamedTuple):
+    name: str
+    partition: int
+    offset: int
+
+
 class Admin:
     """
     Wrapper for Redpanda admin REST API.
@@ -1235,3 +1241,16 @@ class Admin:
     def get_tx_manager_recovery_status(self,
                                        node: Optional[ClusterNode] = None):
         return self._request("GET", "recovery/migrate_tx_manager", node=node)
+
+    def transforms_list_committed_offsets(
+            self,
+            show_unknown: bool = False,
+            node: Optional[ClusterNode] = None) -> list[CommittedWasmOffset]:
+        path = "transform/debug/committed_offsets"
+        if show_unknown:
+            path += "?show_unknown=true"
+        raw = self._request("GET", path, node=node).json()
+        return [
+            CommittedWasmOffset(c["transform_name"], c["partition"],
+                                c["offset"]) for c in raw
+        ]
