@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
 #include "features/feature_table.h"
+#include "health_monitor_types.h"
 #include "model/adl_serde.h"
 #include "model/metadata.h"
 #include "utils/to_string.h"
@@ -156,7 +157,7 @@ topic_status& topic_status::operator=(const topic_status& rhs) {
         return *this;
     }
 
-    ss::chunked_fifo<partition_status> p;
+    partition_statuses_t p;
     p.reserve(rhs.partitions.size());
     std::copy(
       rhs.partitions.begin(), rhs.partitions.end(), std::back_inserter(p));
@@ -167,7 +168,7 @@ topic_status& topic_status::operator=(const topic_status& rhs) {
 }
 
 topic_status::topic_status(
-  model::topic_namespace tp_ns, ss::chunked_fifo<partition_status> partitions)
+  model::topic_namespace tp_ns, partition_statuses_t partitions)
   : tp_ns(std::move(tp_ns))
   , partitions(std::move(partitions)) {}
 
