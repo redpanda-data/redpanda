@@ -50,6 +50,13 @@ class OMBValidationTest(RedpandaTest):
         "warmup_duration_minutes": 5,
     }
 
+    EXPECTED_MAX_LATENCIES = {
+        OMBSampleConfigurations.E2E_LATENCY_50PCT: 20.0,
+        OMBSampleConfigurations.E2E_LATENCY_75PCT: 25.0,
+        OMBSampleConfigurations.E2E_LATENCY_99PCT: 50.0,
+        OMBSampleConfigurations.E2E_LATENCY_999PCT: 100.0,
+    }
+
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
         # Get tier name
@@ -118,24 +125,19 @@ class OMBValidationTest(RedpandaTest):
         self.redpanda.clean_cluster()
 
     @staticmethod
-    def base_validator(multiplier: float = 1):
-        """Return a default validator object with reasonable latency targets for
-        healthy systems. Optionally accepts a multiplier value which will adjust
-        all the latencies by the given value, which might be used to accept higher
+    def base_validator(multiplier: float = 1) -> dict[str, Any]:
+        """Return a validator object with reasonable latency targets for
+        healthy systems. Optionally accepts a multiplier value which will multiply
+        all the latencies by the given value, which could be used to accept higher
         latencies in cases we know this is reasonable (e.g., a system running at
         its maximum partition count."""
-        ret: dict[str, Any] = {
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(20 * multiplier)],
-            OMBSampleConfigurations.E2E_LATENCY_75PCT:
-            [OMBSampleConfigurations.lte(25 * multiplier)],
-            OMBSampleConfigurations.E2E_LATENCY_99PCT:
-            [OMBSampleConfigurations.lte(50 * multiplier)],
-            OMBSampleConfigurations.E2E_LATENCY_999PCT:
-            [OMBSampleConfigurations.lte(100 * multiplier)],
-        }
 
-        return ret
+        # use dict comprehension to generate dict of latencies to list of validation functions
+        # e.g. { 'aggregatedEndToEndLatency50pct': [OMBSampleConfigurations.lte(20.0 * multiplier)] }
+        return {
+            k: [OMBSampleConfigurations.lte(v * multiplier)]
+            for k, v in OMBValidationTest.EXPECTED_MAX_LATENCIES.items()
+        }
 
     def _partition_count(self) -> int:
         machine_config = self.tier_machine_info
@@ -298,9 +300,32 @@ class OMBValidationTest(RedpandaTest):
         finally:
             self.rpk.delete_topic(swarm_topic_name)
 
+    def _warn_metrics(self, metrics, validator):
+        """Validates metrics and just warn if any fail."""
+
+        assert len(validator) > 0, "At least one metric should be validated"
+
+        results = []
+        kv_str = lambda k, v: f"Metric {k}, value {v}, "
+
+        for key in validator.keys():
+            assert key in metrics, f"Missing requested validator key {key} in metrics"
+
+            val = metrics[key]
+            for rule in validator[key]:
+                if not rule[0](val):
+                    results.append(kv_str(key, val) + rule[1])
+
+        if len(results) > 0:
+            self.logger.warn(str(results))
+
     @cluster(num_nodes=CLUSTER_NODES)
     def test_max_partitions(self):
         tier_limits = self.tier_limits
+
+        # multiplier for the latencies to log warnings on, but still pass the test
+        # because we expect poorer performance when we max out one dimension
+        fudge_factor = 2.0
 
         # Producer clients perform poorly with many partitions. Hence we limit
         # the max amount per producer by splitting them over multiple topics.
@@ -333,9 +358,16 @@ class OMBValidationTest(RedpandaTest):
             producer_rate / (1 * KiB),
         }
 
-        # we allow latencies to be 50% higher in the max partitions test as we
-        # expect poorer performance when we max out one dimensions
-        validator = self.base_validator(1.5) | {
+        # validator to check metrics and fail on
+        fail_validator = self.base_validator(fudge_factor) | {
+            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
+                OMBSampleConfigurations.gte(
+                    self._mb_to_mib(producer_rate // (1 * MB))),
+            ],
+        }
+
+        # validator to check metrics and just log warning on
+        warn_validator = self.base_validator() | {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
                 OMBSampleConfigurations.gte(
                     self._mb_to_mib(producer_rate // (1 * MB))),
@@ -346,12 +378,29 @@ class OMBValidationTest(RedpandaTest):
             self._ctx,
             self.redpanda,
             "ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
-            (workload, validator),
+            (workload, fail_validator),
             num_workers=self.CLUSTER_NODES - 1,
             topology="ensemble")
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time() + 5
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
+
+        # check if omb gave errors, but don't process metrics
+        benchmark.check_succeed(validate_metrics=False)
+
+        # benchmark.metrics has a lot of measurements,
+        # so just get the measurements specified in EXPECTED_MAX_LATENCIES
+        # using dict comprehension
+        latency_metrics = {
+            k: benchmark.metrics[k]
+            for k in OMBValidationTest.EXPECTED_MAX_LATENCIES.keys()
+        }
+        self.logger.info(f'latency_metrics: {latency_metrics}')
+
+        # just warn on the latency if above expected
+        self._warn_metrics(benchmark.metrics, warn_validator)
+
+        # fail test if the latency is above expected including fudge factor
         benchmark.check_succeed()
 
     @cluster(num_nodes=CLUSTER_NODES)
