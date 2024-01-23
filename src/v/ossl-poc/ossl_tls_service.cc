@@ -135,15 +135,21 @@ ss::future<> ossl_tls_service::apply_proto(ss::lw_shared_ptr<connection> c) {
 
     std::exception_ptr eptr;
     try {
+        lg.info("Starting...");
         co_await ctx->start();
+        lg.info("Processing...");
         co_await ctx->process();
+        lg.info("Finished process...");
     } catch (...) {
         eptr = std::current_exception();
     }
 
+    lg.info("Done processing...");
+
     if (!eptr) {
         co_await ctx->stop();
     } else {
+        lg.warn("Error occurred: {}", eptr);
         co_await ctx->abort_source().request_abort_ex(eptr);
         co_await ctx->stop();
     }

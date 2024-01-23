@@ -20,7 +20,9 @@
 #include <seastar/net/socket_defs.hh>
 
 #include <boost/intrusive/list_hook.hpp>
-class connection : public boost::intrusive::list_base_hook<> {
+class connection
+  : public ss::enable_lw_shared_from_this<connection>
+  , public boost::intrusive::list_base_hook<> {
 public:
     connection(
       boost::intrusive::list<connection>& hook,
