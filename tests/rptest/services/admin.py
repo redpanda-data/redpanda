@@ -1209,3 +1209,7 @@ class Admin:
     def get_tx_manager_recovery_status(self,
                                        node: Optional[ClusterNode] = None):
         return self._request("GET", "recovery/migrate_tx_manager", node=node)
+
+    def get_broker_uuids(self, node: Optional[ClusterNode] = None):
+        return self._request("GET", "broker_uuids", node=node).json()
+
