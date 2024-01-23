@@ -10,6 +10,7 @@
  */
 
 #include "logger.h"
+#include "ossl_tls_service.h"
 #include "ssl_utils.h"
 #include "ssx/thread_worker.h"
 #include "utils/stop_signal.h"
@@ -78,11 +79,15 @@ int main(int argc, char* argv[]) {
           "module-path", po::value<ss::sstring>(), "Path to the modules");
     }
 
+    ss::sharded<ossl_tls_service> ssl_service;
     std::unique_ptr<ssx::singleton_thread_worker> thread_worker;
     return app.run(argc, argv, [&] {
         return ss::async([&]() {
             auto& opts = app.configuration();
             auto module_path = opts["module-path"].as<ss::sstring>();
+            auto key_path = opts["key"].as<ss::sstring>();
+            auto cert_path = opts["cert"].as<ss::sstring>();
+            auto port = opts["port"].as<uint16_t>();
 
             stop_signal sg;
             std::deque<ss::deferred_action<std::function<void()>>> deferred;
@@ -108,6 +113,16 @@ int main(int argc, char* argv[]) {
             }
 
             lg.info("OpenSSL successfully initialized");
+            lg.info("Starting service, opening port on {}", port);
+
+            ss::socket_address addr{port};
+            ssl_service.start(addr, std::move(key_path), std::move(cert_path))
+              .get();
+            deferred.emplace_back([&ssl_service] { ssl_service.stop().get(); });
+            ssl_service.invoke_on_all(&ossl_tls_service::start).get();
+            lg.info("Started service now waiting...");
+            sg.wait().get();
+            lg.info("Exiting...");
             return 0;
         });
     });
