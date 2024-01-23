@@ -54,7 +54,6 @@ gh pr create --title "[$BACKPORT_BRANCH] $ORIG_TITLE" \
   --base "$BACKPORT_BRANCH" \
   --label "kind/backport" \
   --head "$GIT_USER:$HEAD_BRANCH" \
-  --draft \
   --repo "$TARGET_ORG/$TARGET_REPO" \
   --reviewer "$AUTHOR" \
   --milestone "$TARGET_MILESTONE" \
