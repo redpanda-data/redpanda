@@ -398,7 +398,7 @@ inline void read_value(json::Value const& rd, cluster::partition_status& obj) {
 
 inline void read_value(json::Value const& rd, cluster::topic_status& obj) {
     model::topic_namespace tp_ns;
-    ss::chunked_fifo<cluster::partition_status> partitions;
+    cluster::partition_statuses_t partitions;
 
     read_member(rd, "tp_ns", tp_ns);
     read_member(rd, "partitions", partitions);

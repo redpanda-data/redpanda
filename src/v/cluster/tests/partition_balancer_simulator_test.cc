@@ -610,7 +610,7 @@ private:
 
             absl::flat_hash_map<
               model::topic_namespace,
-              ss::chunked_fifo<cluster::partition_status>>
+              cluster::partition_statuses_t>
               topic2partitions;
             for (const auto& [ntp, repl] : replicas) {
                 topic2partitions[model::topic_namespace(ntp.ns, ntp.tp.topic)]
