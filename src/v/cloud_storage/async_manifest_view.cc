@@ -203,6 +203,7 @@ async_manifest_view_cursor::seek(async_view_search_query_t q) {
         // of hydrating/materializing/fetching the manifest
         co_return true;
     }
+
     auto start_offset = std::clamp(
       _view.stm_manifest().get_start_offset().value_or(model::offset{}),
       _begin,
@@ -249,7 +250,7 @@ bool async_manifest_view_cursor::manifest_in_range(
           auto lo = p.get().get_last_offset();
           vlog(
             _view._ctxlog.debug,
-            "Spill manifest range: [{}/{}], cursor range: [{}/{}]",
+            "STM manifest range: [{}/{}], cursor range: [{}/{}]",
             so,
             lo,
             _begin,
@@ -261,7 +262,7 @@ bool async_manifest_view_cursor::manifest_in_range(
           auto lo = m->manifest.get_last_offset();
           vlog(
             _view._ctxlog.debug,
-            "STM manifest range: [{}/{}], cursor range: [{}/{}]",
+            "Spill manifest range: [{}/{}], cursor range: [{}/{}]",
             so,
             lo,
             _begin,
@@ -559,7 +560,7 @@ ss::future<> async_manifest_view::run_bg_loop() {
 
 ss::future<result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
 async_manifest_view::get_cursor(
-  async_view_search_query_t query,
+  async_view_search_query_t const query,
   std::optional<model::offset> end_inclusive) noexcept {
     try {
         ss::gate::holder h(_gate);
@@ -827,6 +828,7 @@ bool async_manifest_view::is_empty() const noexcept {
     return _stm_manifest.size() == 0;
 }
 
+/// NOTEANDREA check who use this and the next
 bool async_manifest_view::in_archive(async_view_search_query_t o) {
     if (_stm_manifest.get_archive_start_offset() == model::offset{}) {
         return false;
@@ -1471,7 +1473,13 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
             manifests.begin()->base_timestamp,
             manifests.last_segment()->max_timestamp);
 
-          auto first_manifest = manifests.begin();
+          auto base_offset = _stm_manifest.get_start_offset().value_or(
+            _stm_manifest.get_archive_clean_offset());
+          auto first_manifest = manifests.lower_bound(base_offset);
+          if (first_manifest.is_end()) {
+              return -1;
+          }
+
           auto base_t = first_manifest->base_timestamp;
           auto max_t = manifests.last_segment()->max_timestamp;
 
@@ -1484,8 +1492,8 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
 
           const auto& bt_col = manifests.get_base_timestamp_column();
           const auto& mt_col = manifests.get_max_timestamp_column();
-          auto mt_it = mt_col.begin();
-          auto bt_it = bt_col.begin();
+          auto mt_it = std::next(mt_col.begin(), first_manifest.index());
+          auto bt_it = std::next(bt_col.begin(), first_manifest.index());
           int target_ix = -1;
           while (!bt_it.is_end()) {
               if (*mt_it >= t.value() || *bt_it > t.value()) {
