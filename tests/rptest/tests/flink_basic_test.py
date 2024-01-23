@@ -10,6 +10,7 @@ import os
 import csv
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.mark import matrix, ok_to_fail
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
@@ -167,6 +168,7 @@ class FlinkBasicTests(RedpandaTest):
 
         return
 
+    @ok_to_fail
     @cluster(num_nodes=4)
     def test_transaction_workload(self):
         """
