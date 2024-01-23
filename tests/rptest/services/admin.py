@@ -1254,6 +1254,9 @@ class Admin:
                                        node: Optional[ClusterNode] = None):
         return self._request("GET", "recovery/migrate_tx_manager", node=node)
 
+    def get_broker_uuids(self, node: Optional[ClusterNode] = None):
+        return self._request("GET", "broker_uuids", node=node).json()
+
     def transforms_list_committed_offsets(
             self,
             show_unknown: bool = False,
