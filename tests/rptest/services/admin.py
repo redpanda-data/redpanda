@@ -379,7 +379,7 @@ class Admin:
         return self._request("GET", "cluster_config/schema", node=node).json()
 
     def patch_cluster_config(self,
-                             upsert: dict[str, str] = {},
+                             upsert: dict[str, str | int | None] = {},
                              remove: list[str] = [],
                              force=False,
                              dry_run=False,
