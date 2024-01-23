@@ -16,7 +16,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
@@ -95,7 +94,7 @@ The --var flag can be repeated to specify multiple variables like so:
 			if file == "" {
 				file = fmt.Sprintf("%s.wasm", cfg.Name)
 			}
-			var wasm io.Reader
+			var wasm []byte
 			if strings.HasPrefix(file, "https://") || strings.HasPrefix(file, "http://") {
 				wasm, err = loadWasmFromNetwork(cmd.Context(), file)
 			} else {
@@ -245,7 +244,7 @@ func verifyWasm(binary []byte) error {
 }
 
 // loadWasmFromDisk loads the wasm file and ensures the magic bytes are correct.
-func loadWasmFromDisk(fs afero.Fs, path string) (io.Reader, error) {
+func loadWasmFromDisk(fs afero.Fs, path string) ([]byte, error) {
 	contents, err := afero.ReadFile(fs, path)
 	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("missing %q did you run `rpk transform build`", path)
@@ -253,17 +252,17 @@ func loadWasmFromDisk(fs afero.Fs, path string) (io.Reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to read %q: %v", path, err)
 	}
-	return bytes.NewReader(contents), verifyWasm(contents)
+	return contents, nil
 }
 
 // loadWasmFromDisk downloads the wasm file and ensures the magic bytes are correct.
-func loadWasmFromNetwork(ctx context.Context, url string) (io.Reader, error) {
+func loadWasmFromNetwork(ctx context.Context, url string) ([]byte, error) {
 	client := httpapi.NewClient(httpapi.ReqTimeout(120 * time.Second))
 	var contents []byte
 	if err := client.Get(ctx, url, nil, &contents); err != nil {
 		return nil, fmt.Errorf("unable to fetch wasm file: %v", err)
 	}
-	return bytes.NewReader(contents), verifyWasm(contents)
+	return contents, nil
 }
 
 // mapToEnvVars converts a map to the adminapi environment variable type.

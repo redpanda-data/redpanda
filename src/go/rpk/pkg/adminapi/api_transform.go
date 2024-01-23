@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -22,15 +23,22 @@ const (
 )
 
 // DeployWasmTransform deploys a wasm transform to a cluster.
-func (a *AdminAPI) DeployWasmTransform(ctx context.Context, t TransformMetadata, file io.Reader) error {
+func (a *AdminAPI) DeployWasmTransform(ctx context.Context, t TransformMetadata, file []byte) error {
+	if !bytes.HasPrefix(file, []byte{0x00, 0x61, 0x73, 0x6D}) {
+		return fmt.Errorf("invalid file format: missing WebAssembly magic bytes")
+	}
 	b, err := json.Marshal(t)
 	if err != nil {
 		return err
 	}
 	// The format of these bytes is a little awkward, there is a json header on the wasm source
 	// that specifies the configuration of the transform.
-	body := io.MultiReader(bytes.NewReader(b), file)
-	return a.sendToLeader(ctx, http.MethodPost, baseTransformEndpoint+"deploy", body, nil)
+	return a.sendToLeader(ctx,
+		http.MethodPost,
+		baseTransformEndpoint+"deploy",
+		io.MultiReader(bytes.NewReader(b), bytes.NewReader(file)),
+		nil,
+	)
 }
 
 // DeleteWasmTransform deletes a wasm transform in a cluster.
