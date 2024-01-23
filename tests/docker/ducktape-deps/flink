@@ -6,10 +6,12 @@ mkdir /opt/flink
 FLINK_VERSION=1.18.1
 FLINK_SCALA_VERSION=2.12
 FLINK_FILE=flink-${FLINK_VERSION}-bin-scala_${FLINK_SCALA_VERSION}.tgz
-# Instead of using main download link, use archive.apache.org
+# Instead of using main download link, use our s3. Alternative is to use archive.apache.org,
+# but it will ban frequent downloads after some time. 
 # This will prevent us from getting an HTTP:404 when new version will be introduced
 # old: FLINK_URL=https://downloads.apache.org/flink/flink-${FLINK_VERSION}/${FLINK_FILE}
-FLINK_URL=https://archive.apache.org/dist/flink/flink-${FLINK_VERSION}/${FLINK_FILE}
+DEPS_BASEURL=https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies
+FLINK_URL=${DEPS_BASEURL}/${FLINK_FILE}
 KAFKA_CONNECTOR=flink-sql-connector-kafka-3.0.1-1.18.jar
 wget ${FLINK_URL}
 
@@ -19,7 +21,7 @@ rm ${FLINK_FILE}
 
 # Download connector
 mkdir /opt/flink/connectors
-wget https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.0.1-1.18/${KAFKA_CONNECTOR} -O /opt/flink/connectors/${KAFKA_CONNECTOR}
+wget ${DEPS_BASEURL}/${KAFKA_CONNECTOR} -O /opt/flink/connectors/${KAFKA_CONNECTOR}
 
 # Show version
 /opt/flink/bin/flink --version
