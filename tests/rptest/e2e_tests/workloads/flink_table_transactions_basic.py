@@ -128,6 +128,12 @@ class FlinkWorkloadProduce:
         table_env = StreamTableEnvironment.create(
             stream_execution_environment=env, environment_settings=settings)
 
+        # Tune table idle state handling
+        # Clear the state if it has not changed
+        table_env.get_config().set("table.exec.state.ttl", "60 s")
+        # If a source does not received anything after 5 sec mark it as idle
+        table_env.get_config().set("table.exec.source.idle-timeout", "5000 ms")
+
         # Alternative way to add connector, just for illustrative purposes
         table_env.get_config().set("pipeline.jars", self.config.connector_path)
         # This is needed for Scalar functions work
