@@ -158,6 +158,7 @@
 #include <system_error>
 #include <type_traits>
 #include <unordered_map>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -2287,6 +2288,24 @@ admin_server::get_broker_handler(std::unique_ptr<ss::http::request> req) {
     co_return ret;
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_broker_uuids_handler() {
+    auto mappings = co_await _controller->get_members_manager().invoke_on(
+      cluster::controller_stm_shard, [](cluster::members_manager& mm) {
+          std::vector<ss::httpd::broker_json::broker_uuid_mapping> ret;
+          const auto& uuid_map = mm.get_id_by_uuid_map();
+          ret.reserve(uuid_map.size());
+          for (const auto& [uuid, id] : mm.get_id_by_uuid_map()) {
+              ss::httpd::broker_json::broker_uuid_mapping mapping;
+              mapping.node_id = id();
+              mapping.uuid = ssx::sformat("{}", uuid);
+              ret.push_back(mapping);
+          }
+          return ret;
+      });
+    co_return ss::json::json_return_type(std::move(mappings));
+}
+
 ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
   std::unique_ptr<ss::http::request> req) {
     model::node_id id = parse_broker_id(*req);
@@ -2447,6 +2466,11 @@ void admin_server::register_broker_routes() {
             .then([](std::vector<ss::httpd::broker_json::broker> brokers) {
                 return ss::json::json_return_type(std::move(brokers));
             });
+      });
+    register_route<user>(
+      ss::httpd::broker_json::get_broker_uuids,
+      [this](std::unique_ptr<ss::http::request>) {
+          return get_broker_uuids_handler();
       });
 
     register_route<user>(
