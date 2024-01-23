@@ -3,9 +3,9 @@ set -e
 mkdir /opt/flink
 
 # Download
-FLINK_FILE=flink-1.18.0-bin-scala_2.12.tgz
+FLINK_FILE=flink-1.18.1-bin-scala_2.12.tgz
 KAFKA_CONNECTOR=flink-sql-connector-kafka-3.0.1-1.18.jar
-wget https://dlcdn.apache.org/flink/flink-1.18.0/${FLINK_FILE}
+wget https://dlcdn.apache.org/flink/flink-1.18.1/${FLINK_FILE}
 
 # Extract
 tar -xvf ${FLINK_FILE} -C /opt/flink --strip-components 1
