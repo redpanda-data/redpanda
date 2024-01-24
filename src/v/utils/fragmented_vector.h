@@ -23,10 +23,6 @@
 #include <utility>
 #include <vector>
 
-namespace test_details {
-struct fragmented_vector_accessor;
-}
-
 /**
  * A very very simple fragmented vector that provides random access like a
  * vector, but does not store its data in contiguous memory.
@@ -309,8 +305,6 @@ public:
     const_iterator cbegin() const { return const_iterator(this, 0); }
     const_iterator cend() const { return const_iterator(this, _size); }
 
-    friend test_details::fragmented_vector_accessor;
-
     friend std::ostream&
     operator<<(std::ostream& os, const fragmented_vector& v) {
         os << "[";
@@ -332,6 +326,7 @@ private:
     }
 
 private:
+    friend class fragmented_vector_validator;
     fragmented_vector(const fragmented_vector&) noexcept = default;
 
     template<typename TT, size_t SS>

@@ -43,7 +43,6 @@ rp_test(
     bottomless_token_bucket_test.cc
     constexpr_string_switch.cc
     filtered_lower_bound_test.cc
-    fragmented_vector_test.cc
     human_test.cc
     move_canary_test.cc
     moving_average_test.cc
@@ -55,6 +54,16 @@ rp_test(
     utf8_control_chars.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map
+  LABELS utils
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME utils_gunit
+  SOURCES
+    fragmented_vector_test.cc
+  LIBRARIES v::utils v::gtest_main
   LABELS utils
 )
 
