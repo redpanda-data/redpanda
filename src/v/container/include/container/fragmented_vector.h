@@ -16,9 +16,11 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/later.hh>
 
+#include <climits>
 #include <compare>
 #include <cstddef>
 #include <iterator>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -28,34 +30,39 @@
  * A very very simple fragmented vector that provides random access like a
  * vector, but does not store its data in contiguous memory.
  *
- * There is no reserve method because we allocate a full fragment at a time.
- * However, after you populate a vector you might want to call shrink to fit if
- * your fragment is large. A more advanced strategy could allocate capacity up
- * front which just requires a bit more accounting.
- *
  * The iterator implementation works for a few things like std::lower_bound,
  * upper_bound, distance, etc... see fragmented_vector_test.
  *
- * Note that the decision to allocate a full fragment at a time isn't
- * necessarily an optimization, but rather a restriction that simplifies the
- * implementation. If expand fragmented_vector to be more general purpose, we
- * should indeed make it more flexible. If we add a reserve method to allocate
- * all of the space at once we might benefit from the allocator helping with
- * giving us contiguous memory.
+ * By default, this container allocates full sized segments at a time as
+ * specified as a template parameter. If fragment_size_bytes is equal to
+ * std::dynamic_extent then we will switch out the allocation strategy to be the
+ * standard vector capacity doubling for the first chunk, but then subsequent
+ * chunks will be allocated at the full max allocation size we recommend.
  */
-template<typename T, size_t max_fragment_size = 8192>
+template<typename T, size_t fragment_size_bytes = 8192>
 class fragmented_vector {
+public:
+    static constexpr bool is_chunked_vector = fragment_size_bytes
+                                              == std::dynamic_extent;
+
+private:
+    // Compute the previous (or equal) power of two relative to `size`.
+    static constexpr size_t pow2_floor(size_t size) {
+        unsigned lz = std::countl_zero(size);
+        unsigned shift = (sizeof(size_t) * CHAR_BIT) - lz;
+        return 1UL << shift;
+    }
+
     // calculate the maximum number of elements per fragment while
     // keeping the element count a power of two
     static constexpr size_t calc_elems_per_frag(size_t esize) {
-        size_t max = max_fragment_size / esize;
-        assert(max > 0);
-        // round down to a power of two
-        size_t pow2 = 1;
-        while (pow2 * 2 <= max) {
-            pow2 *= 2;
+        size_t max = fragment_size_bytes / esize;
+        if constexpr (is_chunked_vector) {
+            constexpr size_t max_allocation_size = 128UL * 1024;
+            max = max_allocation_size / esize;
         }
-        return pow2;
+        assert(max > 0);
+        return pow2_floor(max);
     }
 
     static constexpr size_t elems_per_frag = calc_elems_per_frag(sizeof(T));
@@ -66,7 +73,7 @@ class fragmented_vector {
     static_assert(elems_per_frag >= 1);
 
 public:
-    using this_type = fragmented_vector<T, max_fragment_size>;
+    using this_type = fragmented_vector<T, fragment_size_bytes>;
     using value_type = T;
     using reference = T&;
     using const_reference = const T&;
@@ -79,7 +86,7 @@ public:
      * of this amount (+1) since the number of elements is restricted
      * to a power of two.
      */
-    static constexpr size_t max_frag_bytes = max_fragment_size;
+    static constexpr size_t max_frag_bytes = elems_per_frag * sizeof(T);
 
     fragmented_vector() noexcept = default;
     fragmented_vector& operator=(const fragmented_vector&) noexcept = delete;
@@ -193,14 +200,60 @@ public:
     T& back() { return _frags.back().back(); }
     bool empty() const noexcept { return _size == 0; }
     size_t size() const noexcept { return _size; }
+    size_t capacity() const noexcept { return _capacity; }
 
+    /**
+     * Requests the removal of unused capacity.
+     *
+     * If reallocation occurs, all iterators (including the end() iterator) and
+     * all references to the elements are invalidated.
+     */
     void shrink_to_fit() {
-        // Calling shrink to fix then modifying the container could result in
-        // allocations that overshoot the template parameter.
-        //
-        // if (!_frags.empty()) {
-        //    _frags.back().shrink_to_fit();
-        // }
+        // Calling shrink to fix then modifying the container could result
+        // in allocations that overshoot our max_frag_bytes, except when
+        // we're managing the dynamic size of the first fragment.
+        if constexpr (is_chunked_vector) {
+            if (_frags.size() == 1) {
+                auto& front = _frags.front();
+                front.shrink_to_fit();
+                _capacity = front.capacity();
+            }
+        }
+        update_generation();
+    }
+
+    /**
+     * Increase the capacity of the vector (the total number of elements that
+     * the vector can hold without requiring reallocation) to a value that's
+     * greater or equal to new_cap.
+     *
+     * This method has the same guarantees as `std::vector::reserve`, that being
+     * calling reserve doesn't preserve pointer or iterator stability when
+     * new_cap is larger than the current capacity. There maybe cases where this
+     * class invalidates less than `std::vector`, but that should not be relied
+     * upon.
+     *
+     * Performance wise if you know the intended size of this structure is
+     * desired to call this to prevent costly reallocations when inserting
+     * elements.
+     */
+    void reserve(size_t new_cap) {
+        // For fixed size fragments we noop, as we already reserve the full size
+        // of vector
+        if constexpr (is_chunked_vector) {
+            if (new_cap > _capacity) {
+                if (_frags.empty()) {
+                    auto& frag = _frags.emplace_back();
+                    frag.reserve(std::min(elems_per_frag, new_cap));
+                    _capacity = frag.capacity();
+                } else if (_frags.size() == 1) {
+                    auto& frag = _frags.front();
+                    frag.reserve(std::min(elems_per_frag, new_cap));
+                    _capacity = frag.capacity();
+                }
+            }
+        }
+        update_generation();
     }
 
     bool operator==(const fragmented_vector& o) const noexcept {
@@ -217,7 +270,7 @@ public:
     /**
      * Returns the (maximum) number of elements in each fragment of this vector.
      */
-    static size_t elements_per_fragment() { return elems_per_frag; }
+    static constexpr size_t elements_per_fragment() { return elems_per_frag; }
 
     /**
      * Remove all elements from the vector.
@@ -304,15 +357,11 @@ public:
 
         bool operator==(const iter& o) const {
             check_generation();
-            return _index == o._index && _vec == o._vec;
+            return std::tie(_index, _vec) == std::tie(o._index, o._vec);
         };
         auto operator<=>(const iter& o) const {
             check_generation();
-            auto cmp = _index <=> o._index;
-            if (cmp != std::strong_ordering::equal) {
-                return cmp;
-            }
-            return _vec <=> o._vec;
+            return std::tie(_index, _vec) <=> std::tie(o._index, o._vec);
         };
 
         friend ssize_t operator-(const iter& a, const iter& b) {
@@ -325,11 +374,10 @@ public:
 
         iter(vec_type* vec, size_t index)
           : _index(index)
-          , _vec(vec) {
 #ifndef NDEBUG
-            // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
-            _my_generation = vec->_generation;
+          , _my_generation(vec->_generation)
 #endif
+          , _vec(vec) {
         }
 
         inline void check_generation() const {
@@ -343,10 +391,10 @@ public:
         }
 
         size_t _index{};
-        vec_type* _vec{};
 #ifndef NDEBUG
         size_t _my_generation{};
 #endif
+        vec_type* _vec{};
     };
 
     using const_iterator = iter<true>;
@@ -372,13 +420,32 @@ public:
     }
 
 private:
-    void maybe_add_capacity() {
-        if (_size == _capacity) {
-            std::vector<T> frag;
-            frag.reserve(elems_per_frag);
-            _frags.push_back(std::move(frag));
-            _capacity += elems_per_frag;
+    [[gnu::always_inline]] void maybe_add_capacity() {
+        if (_size == _capacity) [[unlikely]] {
+            add_capacity();
         }
+    }
+
+    void add_capacity() {
+        if constexpr (is_chunked_vector) {
+            if (
+              _frags.size() == 1 && _frags.back().capacity() < elems_per_frag) {
+                auto& frag = _frags.back();
+                auto new_cap = std::min(elems_per_frag, frag.capacity() * 2);
+                frag.reserve(new_cap);
+                _capacity = new_cap;
+                return;
+            } else if (_frags.empty()) {
+                // At least one element or 32 bytes worth of elements for small
+                // items.
+                constexpr size_t initial_cap = std::max(1UL, 32UL / sizeof(T));
+                _capacity = initial_cap;
+                _frags.emplace_back().reserve(_capacity);
+                return;
+            }
+        }
+        _frags.emplace_back().reserve(elems_per_frag);
+        _capacity += elems_per_frag;
     }
 
     inline void update_generation() {
@@ -421,6 +488,18 @@ using large_fragment_vector = fragmented_vector<T, 32 * 1024>;
  */
 template<typename T>
 using small_fragment_vector = fragmented_vector<T, 1024>;
+
+/**
+ * A vector that does not allocate large contiguous chunks. Instead the
+ * allocations are broken up across many different individual vectors, but the
+ * exposed view is of a single container.
+ *
+ * Additionally the allocation strategy is like a "normal" vector up to our max
+ * recommended allocation size, at which we will then only allocate new chunks
+ * and previous chunk elements will not be moved.
+ */
+template<typename T>
+using chunked_vector = fragmented_vector<T, std::dynamic_extent>;
 
 /**
  * A futurized version of std::fill optimized for fragmented vector. It is
