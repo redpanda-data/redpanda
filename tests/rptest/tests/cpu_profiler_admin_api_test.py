@@ -48,7 +48,7 @@ class CPUProfilerAdminAPITest(RedpandaTest):
                               workers=1) as repeater:
             repeater.await_group_ready()
             repeater.await_progress(2 * 1024,
-                                    timeout_sec=100 if self.debug_mode else 75)
+                                    timeout_sec=150 if self.debug_mode else 75)
 
             profile = self.admin.get_cpu_profile()
 
