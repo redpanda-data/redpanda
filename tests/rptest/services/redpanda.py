@@ -1605,7 +1605,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 return p
         return None
 
-    def stop_node(self,
+    def stop_node(self, node, **kwargs):
+        pass
+
+    def restart_pod(self,
                   pod_name,
                   signal=int(signal.SIGTERM),
                   timeout=60,
