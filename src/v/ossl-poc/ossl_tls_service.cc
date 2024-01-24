@@ -28,19 +28,21 @@ ossl_tls_service::ossl_tls_service(
   ss::sstring cert_path)
   : _ssl_ctx_service(ssl_ctx_service)
   , _addr(addr)
-  , _ssl_ctx(
-      SSL_CTX_new_ex(
-        _ssl_ctx_service.local().get_ossl_context(), nullptr, TLS_method()),
-      SSL_CTX_free)
+  , _ssl_ctx(nullptr, SSL_CTX_free)
   , _key_path(std::move(key_path))
-  , _cert_path(std::move(cert_path)) {
-    if (!_ssl_ctx) {
-        throw ossl_error("Failed to create SSL context");
-    }
-}
+  , _cert_path(std::move(cert_path)) {}
 
 ss::future<> ossl_tls_service::start() {
     lg.info("Starting TLS service...");
+
+    _ssl_ctx = SSL_CTX_ptr(
+      SSL_CTX_new_ex(
+        _ssl_ctx_service.local().get_ossl_context(), nullptr, TLS_method()),
+      SSL_CTX_free);
+
+    if (!_ssl_ctx) {
+        throw ossl_error("Failed to create SSL context");
+    }
 
     SSL_CTX_set_verify(_ssl_ctx.get(), SSL_VERIFY_NONE, nullptr);
     auto x509 = co_await load_x509_from_file(_cert_path);

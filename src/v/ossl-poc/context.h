@@ -18,6 +18,7 @@
 #include "logger.h"
 #include "ssx/abort_source.h"
 
+#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 
@@ -47,8 +48,21 @@ public:
     static ssl_status get_sslstatus(SSL* ssl, int n);
 
 private:
+    class response {
+    public:
+        response() = default;
+        ~response() = default;
+
+        const iobuf& buf() const { return _buf; };
+        iobuf& buf() { return _buf; };
+        iobuf release() && { return std::move(_buf); }
+
+    private:
+        iobuf _buf;
+    };
+    using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
     bool is_finished_parsing() const;
-    void on_read(ss::temporary_buffer<char>);
+    response_ptr on_read(ss::temporary_buffer<char>);
 
 private:
     std::optional<std::reference_wrapper<boost::intrusive::list<context>>>
@@ -61,5 +75,4 @@ private:
     SSL_ptr _ssl;
 
     ss::promise<> _wait_input_shutdown;
-    iobuf _write_buf{};
 };

@@ -18,12 +18,14 @@
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/scattered_message.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 
 #include <limits>
+#include <memory>
 
 context::context(
   std::optional<std::reference_wrapper<boost::intrusive::list<context>>> hook,
@@ -37,6 +39,8 @@ context::context(
   , _wbio(BIO_new(BIO_s_mem()))
   , _ssl(SSL_new(_conn->ssl_ctx().get()), SSL_free) {
     if (!_ssl) {
+        BIO_free(_wbio);
+        BIO_free(_rbio);
         throw ossl_error("Failed to create SSL from context");
     }
     SSL_set_accept_state(_ssl.get());
@@ -97,27 +101,28 @@ ss::future<> context::process() {
 ss::future<> context::process_one_request() {
     auto buf = co_await _conn->input().read();
     lg.info("Read {} bytes", buf.size());
-    on_read(std::move(buf));
+    auto resp = on_read(std::move(buf));
 
-    if (!_write_buf.empty()) {
-        lg.info("Needing to send {} bytes", _write_buf.size_bytes());
-        auto in = iobuf::iterator_consumer(
-          _write_buf.cbegin(), _write_buf.cend());
+    if (!resp->buf().empty()) {
+        auto& buf = resp->buf();
+        lg.debug("Needing to send {} bytes", buf.size_bytes());
+        auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
         ss::scattered_message<char> msg;
         int chunk_no = 0;
         in.consume(
-          _write_buf.size_bytes(),
-          [&msg, &chunk_no, this](const char* src, size_t sz) {
+          buf.size_bytes(),
+          [&msg, &chunk_no, &buf](const char* src, size_t sz) {
               ++chunk_no;
               vassert(
                 chunk_no <= std::numeric_limits<int16_t>::max(),
-                "Invalid construction of scattered_message. max count: {}, "
-                "Usually a bug with small append() to iobuf. {}",
+                "Invalid construction of scattered_message.  max count: {}, "
+                "Usually a bug with small append() to iobuf.  {}",
                 chunk_no,
-                _write_buf);
+                buf);
               msg.append_static(src, sz);
               return ss::stop_iteration::no;
           });
+        msg.on_delete([resp = std::move(resp)] {});
         co_await _conn->output().write(std::move(msg));
         co_await _conn->output().flush();
     }
@@ -136,82 +141,94 @@ context::ssl_status context::get_sslstatus(SSL* ssl, int n) {
     }
 }
 
-void context::on_read(ss::temporary_buffer<char> srcb) {
-    std::array<char, 64> buf{};
-    int n;
-    int len = srcb.size();
-    const char* src = srcb.get();
-    ssl_status status;
-    _write_buf.clear();
+context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
+    std::array<char, 4096> buf{};
 
-    while (len > 0) {
-        n = BIO_write(_rbio, src, len);
+    auto resp = std::make_unique<response>();
+
+    int n = 0;
+    int ssl_err = 0;
+    while (tb.size() > 0) {
+        n = BIO_write(_rbio, tb.get(), tb.size());
         if (n <= 0) {
-            throw ossl_error("Failed to write to OSSL BIO buffer");
+            throw ossl_error("Failed to write to OpenSSL read bio");
         }
 
-        lg.info("Wrote {} bytes to BIO", n);
-        src += n;
-        len -= n;
+        lg.debug("Wrote {} bytes to SSL read bio", n);
+        tb.trim_front(n);
 
         if (!SSL_is_init_finished(_ssl.get())) {
-            lg.info("Not yet finished");
+            lg.debug("SSL initialization not yet finished, calling SSL_accept");
             n = SSL_accept(_ssl.get());
-            status = get_sslstatus(_ssl.get(), n);
-
-            if (status == ssl_status::SSLSTATUS_WANT_READ) {
+            ssl_err = SSL_get_error(_ssl.get(), n);
+            switch (ssl_err) {
+            case SSL_ERROR_NONE:
+                break;
+            case SSL_ERROR_WANT_READ:
+                lg.debug("Requesting data to be read from SSL wbio");
                 do {
                     n = BIO_read(_wbio, buf.data(), buf.size());
                     if (n > 0) {
-                        lg.info("Appending {} bytes to write buffer", n);
-                        _write_buf.append(buf.data(), n);
+                        lg.debug("Consumed {} bytes from SSL write bio", n);
+                        resp->buf().append(buf.data(), n);
                     } else if (!BIO_should_retry(_wbio)) {
-                        throw ossl_error("Failure during bio read");
+                        throw ossl_error(
+                          "Failure consuming from SSL write bio");
                     }
                 } while (n > 0);
-            } else if (status == ssl_status::SSLSTATUS_FAIL) {
-                throw ossl_error("Error during SSL accept");
-            } else if (status == ssl_status::SSLSTATUS_WANT_WRITE) {
-                lg.info("Need to write to SSL data");
-                return;
+                break;
+            case SSL_ERROR_WANT_WRITE:
+                lg.debug("Need data to be written to SSL _rbio");
+                return std::move(resp);
+            default:
+                throw ossl_error("Failed to perform SSL_accept");
             }
 
             if (!SSL_is_init_finished(_ssl.get())) {
-                lg.info("Still not done");
-                return;
+                lg.debug("Not yet done");
+                return std::move(resp);
             } else {
-                lg.info("Claim to be done");
+                lg.debug("SSL has finished initialization");
             }
         } else {
-            lg.info("SSL is initialized");
+            lg.debug("SSL is initialized");
         }
 
         do {
             n = SSL_read(_ssl.get(), buf.data(), buf.size());
-            lg.info("SSL_read: {}", n);
+            lg.debug("SSL_read: {}", n);
             if (n > 0) {
-                lg.info("Read {} bytes from SSL", n);
+                lg.debug("Read {} bytes from SSL", n);
+                // Echo back exactly what we just read
+                SSL_write(_ssl.get(), buf.data(), n);
             }
         } while (n > 0);
 
-        status = get_sslstatus(_ssl.get(), n);
+        ssl_err = SSL_get_error(_ssl.get(), n);
 
-        if (status == ssl_status::SSLSTATUS_WANT_READ) {
-            lg.info("Possible peer renegotiation");
+        switch (ssl_err) {
+        case SSL_ERROR_NONE:
+            break;
+        case SSL_ERROR_WANT_WRITE:
+            lg.debug("Requesting more data to wbio");
+            return std::move(resp);
+        case SSL_ERROR_WANT_READ:
+            lg.debug("Requesting more read data");
             do {
                 n = BIO_read(_wbio, buf.data(), buf.size());
                 if (n > 0) {
-                    lg.info(
-                      "Negotiation appending {} bytes to write buffer", n);
-                    _write_buf.append(buf.data(), n);
+                    lg.debug("Read additional {} bytes", n);
+                    resp->buf().append(buf.data(), n);
                 } else if (!BIO_should_retry(_wbio)) {
-                    throw ossl_error("Error while attempting BIO read");
+                    throw ossl_error(
+                      "Error reading from wbio on additional read");
                 }
             } while (n > 0);
-        }
-
-        if (status == ssl_status::SSLSTATUS_FAIL) {
-            throw ossl_error("Error with SSL reading");
+            break;
+        default:
+            throw ossl_error("Error while performing SSL_read");
         }
     }
+
+    return std::move(resp);
 }
