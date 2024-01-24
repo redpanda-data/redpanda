@@ -354,7 +354,11 @@ class FlinkService(Service):
 
         # Save node data for future log handling
         self.node = node
-        self.hostname = node.account.hostname
+        # Docker compatibility
+        # While in EC2 hostname and actual hostname is the same,
+        # in docker hostname is the container hash.
+        self.hostname = self.nodes[0].account.ssh_output(
+            "hostname").decode().strip()
         return
 
     def stop_node(self, node):

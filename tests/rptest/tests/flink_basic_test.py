@@ -170,7 +170,6 @@ class FlinkBasicTests(RedpandaTest):
 
         return
 
-    @ok_to_fail
     @cluster(num_nodes=4)
     def test_transaction_workload(self):
         """
@@ -301,7 +300,9 @@ class FlinkBasicTests(RedpandaTest):
         # Stop flink
         self.flink.stop()
 
-        # Assert the fail
+        # Assert the fail, this is for illustrative purposes and
+        # probably will always pass since wait_until will fail
+        # if max_index would be wrong
         assert max_index == target_index, \
             f"Flink workload consume max offset is incorrect: {max_index} " \
             f"(should be: {target_index})"

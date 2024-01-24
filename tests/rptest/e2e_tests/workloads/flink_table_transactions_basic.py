@@ -12,6 +12,7 @@ import os
 import random
 import string
 import sys
+import subprocess
 
 from dataclasses import dataclass
 
@@ -29,11 +30,25 @@ MODE_PRODUCE = 'produce'
 MODE_CONSUME = 'consume'
 
 
+def shell(cmd) -> list[str]:
+    # Run single command
+    _cmd = cmd.split(" ")
+    p = subprocess.Popen(_cmd,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         text=True)
+    p.wait()
+    # get stdout, expect no errors
+    _out = p.communicate()[0].splitlines()
+    # _rcode = p.returncode
+    p.kill()
+    return _out
+
+
 @dataclass(kw_only=True)
 class WorkloadConfig:
     # Default values are set for CDT run inside EC2 instance
     connector_path: str = "File:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar"
-    python_lib_path: str = "File:///opt/flink/opt/flink-python-1.18.0.jar"
     python_archive: str = "/opt/flink/flink_venv.tgz"
     logger_path: str = "/workloads"
     log_level: str = "DEBUG"
@@ -138,8 +153,15 @@ class FlinkWorkloadProduce:
         table_env.get_config().set("pipeline.jars", self.config.connector_path)
         # This is needed for Scalar functions work
         # See https://nightlies.apache.org/flink/flink-docs-master/docs/dev/python/dependency_management/
+        lib_path_list = shell("find /opt/flink/opt/ -name flink-python*")
+        if len(lib_path_list) < 1:
+            raise RuntimeError("Failed to find flink-python-....jar "
+                               "at '/opt/flink/opt/")
+        elif len(lib_path_list) > 1:
+            self.logger.info(f"Found multiple libs: {lib_path_list}")
+        self.logger.info(f"Using python classlib at '{lib_path_list[0]}'")
         table_env.get_config().set("pipeline.classpaths",
-                                   self.config.python_lib_path)
+                                   f"file://{lib_path_list[0]}")
 
         # Add python venv archive to table_api
         table_env.add_python_archive(self.config.python_archive, "venv")
