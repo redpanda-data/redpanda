@@ -109,8 +109,8 @@ void read_value(json::Value const& v, std::vector<T>& target) {
     }
 }
 
-template<typename T>
-void read_value(json::Value const& v, ss::chunked_fifo<T>& target) {
+template<typename T, size_t chunk_size = 128>
+void read_value(json::Value const& v, ss::chunked_fifo<T, chunk_size>& target) {
     for (auto const& e : v.GetArray()) {
         auto t = T{};
         read_value(e, t);
