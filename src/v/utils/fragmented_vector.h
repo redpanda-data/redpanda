@@ -184,14 +184,20 @@ public:
         update_generation();
     }
 
+    const T& at(size_t index) const {
+        return _frags.at(index / elems_per_frag).at(index % elems_per_frag);
+    }
+
+    T& at(size_t index) {
+        return _frags.at(index / elems_per_frag).at(index % elems_per_frag);
+    }
+
     const T& operator[](size_t index) const {
-        vassert(index < _size, "Index out of range {}/{}", index, _size);
-        auto& frag = _frags.at(index / elems_per_frag);
-        return frag.at(index % elems_per_frag);
+        return _frags[index / elems_per_frag][index % elems_per_frag];
     }
 
     T& operator[](size_t index) {
-        return const_cast<T&>(std::as_const(*this)[index]);
+        return _frags[index / elems_per_frag][index % elems_per_frag];
     }
 
     const T& front() const { return _frags.front().front(); }
