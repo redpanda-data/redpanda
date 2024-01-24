@@ -617,6 +617,21 @@
                         "application/json"
                     ]
                 },
+                {
+                    "method": "PUT",
+                    "summary": "Overrides stored broker UUID and ID values",
+                    "nickname": "override_broker_uuid",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "required": true,
+                            "paramType": "broker_id_override"
+                        }
+                    ]
+                }
             ]
         }
     ],
@@ -1217,4 +1232,23 @@
                 }
             }
         },
+        "broker_id_override": {
+            "id": "broker_id_override",
+            "description": "An override for broker id and UUID",
+            "properties": {
+                "current_node_uuid": {
+                    "type": "string",
+                    "description": "Current node UUID, used to validate if request is addressed to the correct node"
+                },
+                "new_node_id": {
+                    "type": "int",
+                    "description": "New node id for current node"
+                },
+                "new_node_uuid": {
+                    "type": "string",
+                    "description": "Node unique identifier. UUID is generated when Redpanda starts with empty data folder"
+                }
+            }
+        }
+    }
 }
