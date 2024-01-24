@@ -190,9 +190,12 @@ public:
     size_t size() const noexcept { return _size; }
 
     void shrink_to_fit() {
-        if (!_frags.empty()) {
-            _frags.back().shrink_to_fit();
-        }
+        // Calling shrink to fix then modifying the container could result in
+        // allocations that overshoot the template parameter.
+        //
+        // if (!_frags.empty()) {
+        //    _frags.back().shrink_to_fit();
+        // }
     }
 
     bool operator==(const fragmented_vector& o) const noexcept {
