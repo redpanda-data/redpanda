@@ -1753,15 +1753,8 @@ class HighThroughputTest(PreallocNodesTest):
 
         self.logger.info(f"Starting stage_hard_restart")
 
-        # hard stop all nodes
-        self.logger.info("stopping all redpanda nodes")
-        for node in self.redpanda.nodes:
-            self.redpanda.stop_node(node, forced=True)
-
-        # start all nodes again
-        self.logger.info("starting all redpanda nodes")
-        for node in self.redpanda.nodes:
-            self.redpanda.start_node(node, timeout=600)
+        for pod in self.redpanda.pods:
+            self.redpanda.restart_pod(pod.name, timeout=600)
 
         # wait until the cluster is health once more
         self.logger.info("waiting for RP cluster to be healthy")
