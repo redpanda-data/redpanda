@@ -849,6 +849,7 @@ fill_maintenance_status(const cluster::broker_state& b_state) {
 ss::future<std::vector<ss::httpd::broker_json::broker>>
 get_brokers(cluster::controller* const controller) {
     cluster::node_report_filter filter;
+    filter.include_partitions = cluster::include_partitions_info::no;
 
     return controller->get_health_monitor()
       .local()
