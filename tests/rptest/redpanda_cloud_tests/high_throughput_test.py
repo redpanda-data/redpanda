@@ -772,7 +772,7 @@ class HighThroughputTest(PreallocNodesTest):
 
         for pod in self.redpanda.pods:
             pod_name = pod.name
-            self.redpanda.stop_node(pod_name)
+            self.redpanda.restart_pod(pod_name)
             delete_cmd = ['delete', 'pod', pod_name, '-n=redpanda']
             self.logger.info(f'deleting pod {pod_name}')
             # kubectl delete pod rp-clo88krkqkrfamptsst0-0 -n=redpanda'
@@ -813,7 +813,7 @@ class HighThroughputTest(PreallocNodesTest):
         sig = int(signal.SIGTERM)
         if forced_stop:
             sig = int(signal.SIGSEGV)
-        self.redpanda.stop_node(pod_name,
+        self.redpanda.restart_pod(pod_name,
                                 signal=sig,
                                 timeout=60 if forced_stop else 180)
 

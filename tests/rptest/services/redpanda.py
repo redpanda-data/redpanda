@@ -1609,10 +1609,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         pass
 
     def restart_pod(self,
-                  pod_name,
-                  signal=int(signal.SIGTERM),
-                  timeout=60,
-                  **kwargs):
+                    pod_name,
+                    signal=int(signal.SIGTERM),
+                    timeout=60,
+                    **kwargs):
         """Stop a specific pod by name
 
         Send a signal to the redpanda process running in k8s pod container.
