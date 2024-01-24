@@ -2597,12 +2597,8 @@ class RedpandaService(RedpandaServiceBase):
         if admin_client is None:
             admin_client = self._admin
 
-        patch_result = admin_client.patch_cluster_config(
-            upsert={
-                k: v
-                for k, v in values.items() if v is not None
-            },
-            remove=[k for k, v in values.items() if v is None])
+        patch_result = admin_client.patch_cluster_config(upsert=values,
+                                                         remove=[])
         new_version = patch_result['config_version']
 
         self._wait_for_config_version(new_version,
