@@ -2590,7 +2590,7 @@ class RedpandaService(RedpandaServiceBase):
         Update cluster configuration and wait for all nodes to report that they
         have seen the new config.
 
-        :param values: dict of property name to value. if value is None, key will be removed from cluster config
+        :param values: dict of property name to value.
         :param expect_restart: set to true if you wish to permit a node restart for needs_restart=yes properties.
                                If you set such a property without this flag, an assertion error will be raised.
         """
