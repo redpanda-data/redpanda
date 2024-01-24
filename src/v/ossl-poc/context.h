@@ -25,7 +25,12 @@ class context final
   : public ss::enable_lw_shared_from_this<context>
   , public boost::intrusive::list_base_hook<> {
 public:
-    enum class ssl_status { SSLSTATUS_OK, SSLSTATUS_WANT_IO, SSLSTATUS_FAIL };
+    enum class ssl_status {
+        SSLSTATUS_OK,
+        SSLSTATUS_WANT_READ,
+        SSLSTATUS_WANT_WRITE,
+        SSLSTATUS_FAIL
+    };
     context(
       std::optional<std::reference_wrapper<boost::intrusive::list<context>>>,
       class ossl_tls_service& ossl_tls_service,

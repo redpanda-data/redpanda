@@ -128,8 +128,9 @@ context::ssl_status context::get_sslstatus(SSL* ssl, int n) {
     case SSL_ERROR_NONE:
         return context::ssl_status::SSLSTATUS_OK;
     case SSL_ERROR_WANT_WRITE:
+        return context::ssl_status::SSLSTATUS_WANT_WRITE;
     case SSL_ERROR_WANT_READ:
-        return context::ssl_status::SSLSTATUS_WANT_IO;
+        return context::ssl_status::SSLSTATUS_WANT_READ;
     default:
         return context::ssl_status::SSLSTATUS_FAIL;
     }
@@ -141,6 +142,7 @@ void context::on_read(ss::temporary_buffer<char> srcb) {
     int len = srcb.size();
     const char* src = srcb.get();
     ssl_status status;
+    _write_buf.clear();
 
     while (len > 0) {
         n = BIO_write(_rbio, src, len);
@@ -157,7 +159,7 @@ void context::on_read(ss::temporary_buffer<char> srcb) {
             n = SSL_accept(_ssl.get());
             status = get_sslstatus(_ssl.get(), n);
 
-            if (status == ssl_status::SSLSTATUS_WANT_IO) {
+            if (status == ssl_status::SSLSTATUS_WANT_READ) {
                 do {
                     n = BIO_read(_wbio, buf.data(), buf.size());
                     if (n > 0) {
@@ -169,11 +171,16 @@ void context::on_read(ss::temporary_buffer<char> srcb) {
                 } while (n > 0);
             } else if (status == ssl_status::SSLSTATUS_FAIL) {
                 throw ossl_error("Error during SSL accept");
+            } else if (status == ssl_status::SSLSTATUS_WANT_WRITE) {
+                lg.info("Need to write to SSL data");
+                return;
             }
 
             if (!SSL_is_init_finished(_ssl.get())) {
                 lg.info("Still not done");
                 return;
+            } else {
+                lg.info("Claim to be done");
             }
         } else {
             lg.info("SSL is initialized");
@@ -189,7 +196,7 @@ void context::on_read(ss::temporary_buffer<char> srcb) {
 
         status = get_sslstatus(_ssl.get(), n);
 
-        if (status == ssl_status::SSLSTATUS_WANT_IO) {
+        if (status == ssl_status::SSLSTATUS_WANT_READ) {
             lg.info("Possible peer renegotiation");
             do {
                 n = BIO_read(_wbio, buf.data(), buf.size());
