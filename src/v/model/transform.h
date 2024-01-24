@@ -42,6 +42,9 @@ using transform_id = named_type<int64_t, struct transform_id_tag>;
  */
 using transform_name = named_type<ss::sstring, struct transform_name_tag>;
 
+using transform_name_view
+  = named_type<std::string_view, struct transform_name_view_tag>;
+
 /**
  * Metadata for a WebAssembly powered data transforms.
  */
