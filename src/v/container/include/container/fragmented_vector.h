@@ -16,6 +16,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/later.hh>
 
+#include <compare>
 #include <cstddef>
 #include <iterator>
 #include <stdexcept>
@@ -93,6 +94,8 @@ public:
             // Move compatibility with std::vector that post move
             // the vector is empty().
             other._size = other._capacity = 0;
+            other.update_generation();
+            update_generation();
         }
         return *this;
     }
@@ -115,6 +118,8 @@ public:
         std::swap(_size, other._size);
         std::swap(_capacity, other._capacity);
         std::swap(_frags, other._frags);
+        other.update_generation();
+        update_generation();
     }
 
     template<class E = T>
@@ -122,6 +127,7 @@ public:
         maybe_add_capacity();
         _frags.back().push_back(std::forward<E>(elem));
         ++_size;
+        update_generation();
     }
 
     template<class... Args>
@@ -129,6 +135,7 @@ public:
         maybe_add_capacity();
         _frags.back().emplace_back(std::forward<Args>(args)...);
         ++_size;
+        update_generation();
         return _frags.back().back();
     }
 
@@ -140,6 +147,7 @@ public:
             _frags.pop_back();
             _capacity -= elems_per_frag;
         }
+        update_generation();
     }
 
     /*
@@ -166,6 +174,7 @@ public:
         for (size_t i = 0; i < n; ++i) {
             _frags.back().pop_back();
         }
+        update_generation();
     }
 
     const T& operator[](size_t index) const {
@@ -223,6 +232,7 @@ public:
         std::vector<std::vector<T>>{}.swap(_frags);
         _size = 0;
         _capacity = 0;
+        update_generation();
     }
 
     template<bool C>
@@ -236,46 +246,74 @@ public:
 
         iter() = default;
 
-        reference operator*() const { return _vec->operator[](_index); }
-        pointer operator->() const { return &_vec->operator[](_index); }
+        reference operator*() const {
+            check_generation();
+            return _vec->operator[](_index);
+        }
+        pointer operator->() const {
+            check_generation();
+            return &_vec->operator[](_index);
+        }
 
         iter& operator+=(ssize_t n) {
+            check_generation();
             _index += n;
             return *this;
         }
 
         iter& operator-=(ssize_t n) {
+            check_generation();
             _index -= n;
             return *this;
         }
 
         iter& operator++() {
+            check_generation();
             ++_index;
             return *this;
         }
 
         iter& operator--() {
+            check_generation();
             --_index;
             return *this;
         }
 
         iter operator++(int) {
+            check_generation();
             auto tmp = *this;
             ++*this;
             return tmp;
         }
 
         iter operator--(int) {
+            check_generation();
             auto tmp = *this;
             --*this;
             return tmp;
         }
 
-        iter operator+(difference_type offset) { return iter{*this} += offset; }
-        iter operator-(difference_type offset) { return iter{*this} -= offset; }
+        iter operator+(difference_type offset) {
+            check_generation();
+            return iter{*this} += offset;
+        }
+        iter operator-(difference_type offset) {
+            check_generation();
+            return iter{*this} -= offset;
+        }
 
-        bool operator==(const iter&) const = default;
-        auto operator<=>(const iter&) const = default;
+        bool operator==(const iter& o) const {
+            check_generation();
+            return _index == o._index && _vec == o._vec;
+        };
+        auto operator<=>(const iter& o) const {
+            check_generation();
+            auto cmp = _index <=> o._index;
+            if (cmp != std::strong_ordering::equal) {
+                return cmp;
+            }
+            return _vec <=> o._vec;
+        };
 
         friend ssize_t operator-(const iter& a, const iter& b) {
             return a._index - b._index;
@@ -287,10 +325,28 @@ public:
 
         iter(vec_type* vec, size_t index)
           : _index(index)
-          , _vec(vec) {}
+          , _vec(vec) {
+#ifndef NDEBUG
+            // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
+            _my_generation = vec->_generation;
+#endif
+        }
+
+        inline void check_generation() const {
+#ifndef NDEBUG
+            vassert(
+              _vec->_generation == _my_generation,
+              "Attempting to use an invalidated iterator. The corresponding "
+              "fragmented_vector container has been mutated since this "
+              "iterator was constructed.");
+#endif
+        }
 
         size_t _index{};
         vec_type* _vec{};
+#ifndef NDEBUG
+        size_t _my_generation{};
+#endif
     };
 
     using const_iterator = iter<true>;
@@ -325,6 +381,12 @@ private:
         }
     }
 
+    inline void update_generation() {
+#ifndef NDEBUG
+        ++_generation;
+#endif
+    }
+
 private:
     friend class fragmented_vector_validator;
     fragmented_vector(const fragmented_vector&) noexcept = default;
@@ -340,6 +402,11 @@ private:
     size_t _size{0};
     size_t _capacity{0};
     std::vector<std::vector<T>> _frags;
+#ifndef NDEBUG
+    // Add a generation number that is incremented on every mutation to catch
+    // invalidated iterator accesses.
+    size_t _generation{0};
+#endif
 };
 
 /**
