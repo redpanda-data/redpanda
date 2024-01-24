@@ -166,6 +166,14 @@ class CloudStorageCompactionTest(EndToEndTest):
     def _setup_read_replica(self):
         self._init_redpanda_read_replica()
         self.rr_cluster.start(start_si=False)
+
+        # Explicitly create the consumer offsets topic to avoid it uploading.
+        rpk_rr_cluster = RpkTool(self.rr_cluster)
+        conf = {
+            'redpanda.remote.write': "false",
+        }
+        rpk_rr_cluster.create_topic("__consumer_offsets", config=conf)
+
         wait_until(self._create_read_repica_topic_success,
                    timeout_sec=30,
                    backoff_sec=5)
