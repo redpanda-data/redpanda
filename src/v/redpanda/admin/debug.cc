@@ -742,3 +742,15 @@ admin_server::get_partition_state_handler(
     }
     co_return ss::json::json_return_type(std::move(response));
 }
+
+ss::future<ss::json::json_return_type> admin_server::get_node_uuid_handler() {
+    ss::httpd::debug_json::broker_uuid uuid;
+    uuid.node_uuid = ssx::sformat(
+      "{}", _controller->get_storage().local().node_uuid());
+
+    if (config::node().node_id().has_value()) {
+        uuid.node_id = config::node().node_id().value();
+    }
+
+    co_return ss::json::json_return_type(std::move(uuid));
+}

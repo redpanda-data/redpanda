@@ -605,6 +605,19 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/broker_uuid",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Return current broker id and UUID",
+                    "nickname": "get_broker_uuid",
+                    "produces": [
+                        "application/json"
+                    ]
+                },
+            ]
         }
     ],
     "models": {
@@ -1189,6 +1202,19 @@
                     "description": "kafka offset"
                 }
             }
-        }
-    }
+        },
+        "broker_uuid": {
+            "id": "broker_uuid",
+            "description": "Broker UUID and assigned id",
+            "properties": {
+                "node_uuid": {
+                    "type": "string",
+                    "description": "Current node UUID"
+                },
+                "node_id": {
+                    "type": "int",
+                    "description": "Assigned node id (may be empty)"
+                }
+            }
+        },
 }

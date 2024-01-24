@@ -608,6 +608,7 @@ private:
       list_transforms(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       delete_transform(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type> get_node_uuid_handler();
 
     ss::future<> throw_on_error(
       ss::http::request& req,
