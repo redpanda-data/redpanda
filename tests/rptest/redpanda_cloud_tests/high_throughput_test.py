@@ -814,8 +814,8 @@ class HighThroughputTest(PreallocNodesTest):
         if forced_stop:
             sig = int(signal.SIGSEGV)
         self.redpanda.restart_pod(pod_name,
-                                signal=sig,
-                                timeout=60 if forced_stop else 180)
+                                  signal=sig,
+                                  timeout=60 if forced_stop else 180)
 
     @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
