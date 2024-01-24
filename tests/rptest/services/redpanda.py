@@ -1622,6 +1622,12 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         :param signal: int signal number
         :param timeout: number of seconds to wait_until timeout
         """
+        # kubectl get pod rp-clo88krkqkrfamptsst0-0 -n=redpanda -o=jsonpath='{.status.containerStatuses[0].restartCount}'
+        orig_rc = int(
+            self._kubectl.cmd([
+                'get', 'pod', pod_name, '-n=redpanda',
+                "-o=jsonpath='{.status.containerStatuses[0].restartCount}'"
+            ]).decode())
 
         kill_cmd = f'kill -n {signal} 1'  # assume redpanda is pid 1 in the pod's container
         # kubectl exec rp-clo88krkqkrfamptsst0-0 -n=redpanda -c=redpanda -- /bin/bash -c 'kill 1'
@@ -1640,6 +1646,16 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             err_msg=
             f'pod {pod_name} sent signal {signal} failed to stop in {timeout} seconds'
         )
+
+        # kubectl get pod rp-clo88krkqkrfamptsst0-0 -n=redpanda -o=jsonpath='{.status.containerStatuses[0].restartCount}'
+        new_rc = int(
+            self._kubectl.cmd([
+                'get', 'pod', pod_name, '-n=redpanda',
+                "-o=jsonpath='{.status.containerStatuses[0].restartCount}'"
+            ]).decode())
+
+        expected_rc = orig_rc + 1
+        assert expected_rc == new_rc, f'expected pod restartCount {expected_rc}, got {new_rc}'
 
     def stop(self, **kwargs):
         if self._cloud_cluster.config.delete_cluster:
