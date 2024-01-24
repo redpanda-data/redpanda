@@ -149,6 +149,9 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
     int n = 0;
     int ssl_err = 0;
     while (tb.size() > 0) {
+        // Write the received data to the "read bio".  This bio is consumed
+        // by the SSL struct.  Think of this of writing encrypted data into
+        // the SSL session
         n = BIO_write(_rbio, tb.get(), tb.size());
         if (n <= 0) {
             throw ossl_error("Failed to write to OpenSSL read bio");
@@ -157,6 +160,7 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
         lg.debug("Wrote {} bytes to SSL read bio", n);
         tb.trim_front(n);
 
+        // This checks to ensure we have initialized the SSL connection
         if (!SSL_is_init_finished(_ssl.get())) {
             lg.debug("SSL initialization not yet finished, calling SSL_accept");
             n = SSL_accept(_ssl.get());
@@ -167,6 +171,9 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
             case SSL_ERROR_WANT_READ:
                 lg.debug("Requesting data to be read from SSL wbio");
                 do {
+                    // Here we need to read data out of the write bio (the bio
+                    // written to by the SSL session) to transport back to the
+                    // client
                     n = BIO_read(_wbio, buf.data(), buf.size());
                     if (n > 0) {
                         lg.debug("Consumed {} bytes from SSL write bio", n);
@@ -195,11 +202,15 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
         }
 
         do {
+            // SSL_read will pull the decrypted data out of the SSL session. buf
+            // now contains plaintext data
             n = SSL_read(_ssl.get(), buf.data(), buf.size());
             lg.debug("SSL_read: {}", n);
             if (n > 0) {
                 lg.debug("Read {} bytes from SSL", n);
                 // Echo back exactly what we just read
+                // SSL_write will take plaintext data and encrypt it, putting
+                // cipher text into the write bio
                 SSL_write(_ssl.get(), buf.data(), n);
             }
         } while (n > 0);
@@ -215,6 +226,7 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
         case SSL_ERROR_WANT_READ:
             lg.debug("Requesting more read data");
             do {
+                // Read out cipher text and send back to the client
                 n = BIO_read(_wbio, buf.data(), buf.size());
                 if (n > 0) {
                     lg.debug("Read additional {} bytes", n);

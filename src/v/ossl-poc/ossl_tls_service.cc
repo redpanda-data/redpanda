@@ -35,6 +35,8 @@ ossl_tls_service::ossl_tls_service(
 ss::future<> ossl_tls_service::start() {
     lg.info("Starting TLS service...");
 
+    // Make sure when creating the OpenSSL context, to use the correct library
+    // context.  This ensures that the SSL_CTX uses shard local memory.
     _ssl_ctx = SSL_CTX_ptr(
       SSL_CTX_new_ex(
         _ssl_ctx_service.local().get_ossl_context(), nullptr, TLS_method()),
@@ -44,9 +46,12 @@ ss::future<> ossl_tls_service::start() {
         throw ossl_error("Failed to create SSL context");
     }
 
+    // Do not verify the client's credentials
     SSL_CTX_set_verify(_ssl_ctx.get(), SSL_VERIFY_NONE, nullptr);
     auto x509 = co_await load_x509_from_file(_cert_path);
     auto pkey = co_await load_evp_pkey_from_file(_key_path);
+    // Load private key and certificate and verify that the private key and
+    // public key match.  Can also provide a cert chain here
     if (!SSL_CTX_use_cert_and_key(
           _ssl_ctx.get(), x509.get(), pkey.get(), nullptr, 1)) {
         throw ossl_error(fmt::format(
@@ -57,6 +62,8 @@ ss::future<> ossl_tls_service::start() {
         throw ossl_error("Failed to set min version of TLSv1.2");
     }
 
+    // This sets the valid cipher suite for TLSv1.3 only.  There is another call
+    // for TLSv1.2
     if (!SSL_CTX_set_ciphersuites(
           _ssl_ctx.get(),
           "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_AES_128_CCM_"

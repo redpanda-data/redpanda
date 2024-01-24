@@ -25,6 +25,10 @@
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 
+/**
+ * This service will accept new connections from clients and perform the SSL
+ * handshake and then echo back any data it receives
+ */
 class ossl_tls_service final {
 public:
     ossl_tls_service(

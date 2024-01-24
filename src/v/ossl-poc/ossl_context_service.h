@@ -18,7 +18,16 @@
 
 #include <openssl/crypto.h>
 #include <openssl/provider.h>
-
+/**
+ * This service provides the ability to create multiple OpenSSL library
+ * contexts, one for each shard.  This is required due to the way
+ * OpenSSL works under the hood.  Most calls will default to using the global
+ * default context that uses locks.  This would mean locks shared across
+ * shards, which could cause contention with Seastar's reactor.
+ *
+ * This service should be used whenver OpenSSL is used in order to get the
+ * local shard's OpenSSL lib context.
+ */
 class ossl_context_service final {
 public:
     ossl_context_service(
