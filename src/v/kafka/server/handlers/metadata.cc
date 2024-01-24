@@ -80,8 +80,15 @@ std::optional<cluster::leader_term> get_leader_term(
   const cluster::metadata_cache& md_cache,
   const std::vector<model::node_id>& replicas) {
     auto leader_term = md_cache.get_leader_term(tp_ns, p_id);
+    /**
+     * If current broker do not yet have any information about leadership we
+     * fallback to leader guesstimating. We return first replica from the
+     * replica set and term 0. (This is the same logic that has been a part of
+     * cluster::topic_dispatcher before)
+     */
     if (!leader_term) {
-        return std::nullopt;
+        leader_term.emplace(replicas[0], model::term_id(0));
+        return leader_term;
     }
     if (!leader_term->leader.has_value()) {
         const auto previous = md_cache.get_previous_leader_id(tp_ns, p_id);
