@@ -1053,10 +1053,25 @@ class RedpandaServiceBase(Service):
                 for sample in family.samples:
                     if sample.name != metric_name:
                         continue
-                    if ns and sample.labels["namespace"] != ns:
-                        continue
-                    if topic and sample.labels["topic"] != topic:
-                        continue
+                    labels = sample.labels
+                    if ns:
+                        if "redpanda_namespace" in labels:
+                            if labels["redpanda_namespace"] != ns:
+                                continue
+                        elif "namespace" in labels:
+                            if labels["namespace"] != ns:
+                                continue
+                        else:
+                            assert False, f"Missing namespace label: {sample}"
+                    if topic:
+                        if "redpanda_topic" in labels:
+                            if labels["redpanda_topic"] != topic:
+                                continue
+                        elif "topic" in labels:
+                            if labels["topic"] != topic:
+                                continue
+                        else:
+                            assert False, f"Missing topic label: {sample}"
                     count += int(sample.value)
         return count
 
@@ -1619,10 +1634,25 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         metrics = self.metrics(None, metrics_endpoint=metrics_endpoint)
         for family in metrics:
             for sample in family.samples:
-                if ns and sample.labels["namespace"] != ns:
-                    continue
-                if topic and sample.labels["topic"] != topic:
-                    continue
+                labels = sample.labels
+                if ns:
+                    if "redpanda_namespace" in labels:
+                        if labels["redpanda_namespace"] != ns:
+                            continue
+                    elif "namespace" in labels:
+                        if labels["namespace"] != ns:
+                            continue
+                    else:
+                        assert False, f"Missing namespace label: {sample}"
+                if topic:
+                    if "redpanda_topic" in labels:
+                        if labels["redpanda_topic"] != topic:
+                            continue
+                    elif "topic" in labels:
+                        if labels["topic"] != topic:
+                            continue
+                    else:
+                        assert False, f"Missing topic label: {sample}"
                 if sample.name == metric_name:
                     count += int(sample.value)
         return count
