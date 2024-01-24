@@ -15,6 +15,8 @@
 #include <absl/hash/hash.h>
 #include <boost/uuid/uuid.hpp>
 
+#include <string>
+#include <string_view>
 #include <vector>
 
 // Wrapper around Boost's UUID type suitable for serialization with serde.
@@ -52,6 +54,8 @@ public:
     const underlying_t& uuid() const { return _uuid; }
 
     underlying_t& mutable_uuid() { return _uuid; }
+
+    static uuid_t from_string(std::string_view);
 
 private:
     explicit uuid_t(const underlying_t& uuid)
