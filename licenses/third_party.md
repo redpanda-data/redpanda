@@ -49,11 +49,11 @@ please keep this up to date with every new library use.
 These are dependencies of wasmtime and can be generated via a script like:
 
 ```bash
-# Make sure you run this in the vtools directory with the patched wasmtime to remove the features we don't need.
+# Make sure you run this in a checked out wasmtime repo with the same version that we use.
 rm -f /tmp/license.md
 for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
 do
-    cargo license --avoid-build-deps --avoid-dev-deps --filter-platform=$target --json \
+    cargo license --no-default-features --features=async --features=wat --avoid-build-deps --avoid-dev-deps --filter-platform=$target --json \
       | jq 'map({name, license})' | jq -r '(.[0] | keys_unsorted) as $keys | map([.[ $keys[] ]])[] | @text "| \(.[0]) | \(.[1]) |"' \
       >> /tmp/license.md
 done
@@ -65,7 +65,6 @@ cat /tmp/license.md | sort | uniq
 | :---------- | :------------ |
 | addr2line | Apache-2.0 OR MIT |
 | ahash | Apache-2.0 OR MIT |
-| aho-corasick | MIT OR Unlicense |
 | anyhow | Apache-2.0 OR MIT |
 | arbitrary | Apache-2.0 OR MIT |
 | async-trait | Apache-2.0 OR MIT |
@@ -89,7 +88,6 @@ cat /tmp/license.md | sort | uniq
 | cranelift-native | Apache-2.0 WITH LLVM-exception |
 | cranelift-wasm | Apache-2.0 WITH LLVM-exception |
 | crc32fast | Apache-2.0 OR MIT |
-| crossbeam-channel | Apache-2.0 OR MIT |
 | crossbeam-deque | Apache-2.0 OR MIT |
 | crossbeam-epoch | Apache-2.0 OR MIT |
 | crossbeam-utils | Apache-2.0 OR MIT |
@@ -101,10 +99,9 @@ cat /tmp/license.md | sort | uniq
 | dirs-sys-next | Apache-2.0 OR MIT |
 | either | Apache-2.0 OR MIT |
 | encoding_rs | (Apache-2.0 OR MIT) AND BSD-3-Clause |
-| env_logger | Apache-2.0 OR MIT |
 | equivalent | Apache-2.0 OR MIT |
+| errno | Apache-2.0 OR MIT |
 | fallible-iterator | Apache-2.0 OR MIT |
-| form_urlencoded | Apache-2.0 OR MIT |
 | futures | Apache-2.0 OR MIT |
 | futures-channel | Apache-2.0 OR MIT |
 | futures-core | Apache-2.0 OR MIT |
@@ -119,12 +116,8 @@ cat /tmp/license.md | sort | uniq
 | gimli | Apache-2.0 OR MIT |
 | hashbrown | Apache-2.0 OR MIT |
 | heck | Apache-2.0 OR MIT |
-| humantime | Apache-2.0 OR MIT |
 | id-arena | Apache-2.0 OR MIT |
-| idna | Apache-2.0 OR MIT |
 | indexmap | Apache-2.0 OR MIT |
-| io-lifetimes | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT |
-| is-terminal | MIT |
 | itertools | Apache-2.0 OR MIT |
 | itoa | Apache-2.0 OR MIT |
 | ittapi | BSD-3-Clause OR GPL-2.0-only |
@@ -136,26 +129,16 @@ cat /tmp/license.md | sort | uniq
 | memchr | MIT OR Unlicense |
 | memfd | Apache-2.0 OR MIT |
 | memoffset | MIT |
-| num_cpus | Apache-2.0 OR MIT |
 | object | Apache-2.0 OR MIT |
 | once_cell | Apache-2.0 OR MIT |
 | paste | Apache-2.0 OR MIT |
-| percent-encoding | Apache-2.0 OR MIT |
 | pin-project-lite | Apache-2.0 OR MIT |
 | pin-utils | Apache-2.0 OR MIT |
-| ppv-lite86 | Apache-2.0 OR MIT |
 | proc-macro2 | Apache-2.0 OR MIT |
-| pulldown-cmark | MIT |
 | quote | Apache-2.0 OR MIT |
-| rand | Apache-2.0 OR MIT |
-| rand_chacha | Apache-2.0 OR MIT |
-| rand_core | Apache-2.0 OR MIT |
 | rayon | Apache-2.0 OR MIT |
 | rayon-core | Apache-2.0 OR MIT |
 | regalloc2 | Apache-2.0 WITH LLVM-exception |
-| regex | Apache-2.0 OR MIT |
-| regex-automata | Apache-2.0 OR MIT |
-| regex-syntax | Apache-2.0 OR MIT |
 | rustc-demangle | Apache-2.0 OR MIT |
 | rustc-hash | Apache-2.0 OR MIT |
 | rustix | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT |
@@ -168,26 +151,21 @@ cat /tmp/license.md | sort | uniq
 | sha2 | Apache-2.0 OR MIT |
 | slice-group-by | MIT |
 | smallvec | Apache-2.0 OR MIT |
-| souper-ir | Apache-2.0 OR MIT |
 | sptr | Apache-2.0 OR MIT |
 | stable_deref_trait | Apache-2.0 OR MIT |
 | syn | Apache-2.0 OR MIT |
 | target-lexicon | Apache-2.0 WITH LLVM-exception |
-| termcolor | MIT OR Unlicense |
 | thiserror | Apache-2.0 OR MIT |
 | thiserror-impl | Apache-2.0 OR MIT |
-| tinyvec | Apache-2.0 OR MIT OR Zlib |
-| tinyvec_macros | Apache-2.0 OR MIT OR Zlib |
 | toml | Apache-2.0 OR MIT |
+| tracing-attributes | MIT |
+| tracing-core | MIT |
+| tracing | MIT |
 | typenum | Apache-2.0 OR MIT |
-| unicase | Apache-2.0 OR MIT |
-| unicode-bidi | Apache-2.0 OR MIT |
 | unicode-ident | (MIT OR Apache-2.0) AND Unicode-DFS-2016 |
-| unicode-normalization | Apache-2.0 OR MIT |
 | unicode-segmentation | Apache-2.0 OR MIT |
 | unicode-width | Apache-2.0 OR MIT |
 | unicode-xid | Apache-2.0 OR MIT |
-| url | Apache-2.0 OR MIT |
 | uuid | Apache-2.0 OR MIT |
 | wasm-encoder | Apache-2.0 WITH LLVM-exception |
 | wasmparser | Apache-2.0 WITH LLVM-exception |
@@ -195,7 +173,7 @@ cat /tmp/license.md | sort | uniq
 | wasmtime | Apache-2.0 WITH LLVM-exception |
 | wasmtime-asm-macros | Apache-2.0 WITH LLVM-exception |
 | wasmtime-cache | Apache-2.0 WITH LLVM-exception |
-| wasmtime-c-api | Apache-2.0 WITH LLVM-exception |
+| wasmtime-c-api-impl | Apache-2.0 WITH LLVM-exception |
 | wasmtime-c-api-macros | Apache-2.0 WITH LLVM-exception |
 | wasmtime-component-macro | Apache-2.0 WITH LLVM-exception |
 | wasmtime-component-util | Apache-2.0 WITH LLVM-exception |
