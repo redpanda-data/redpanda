@@ -58,7 +58,6 @@ cluster_recovery_backend::cluster_recovery_backend(
   cluster::members_table& members_table,
   features::feature_table& features,
   security::credential_store& creds,
-  security::acl_store& acls,
   cluster::topic_table& topics,
   cluster::controller_api& api,
   cluster::feature_manager& feature_manager,
@@ -76,7 +75,6 @@ cluster_recovery_backend::cluster_recovery_backend(
   , _members_table(members_table)
   , _features(features)
   , _creds(creds)
-  , _acls(acls)
   , _topics(topics)
   , _controller_api(api)
   , _feature_manager(feature_manager)
@@ -508,12 +506,7 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
 
         // We may need to restore state from the controller snapshot.
         cloud_metadata::controller_snapshot_reconciler reconciler(
-          _recovery_table.local(),
-          config::shard_local_cfg(),
-          _features,
-          _creds,
-          _acls,
-          _topics);
+          _recovery_table.local(), _features, _creds, _topics);
         auto controller_actions = reconciler.get_actions(
           controller_snap.value());
         vlog(

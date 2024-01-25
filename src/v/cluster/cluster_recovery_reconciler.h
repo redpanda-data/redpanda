@@ -63,16 +63,12 @@ public:
 
     controller_snapshot_reconciler(
       cluster::cluster_recovery_table& recovery,
-      config::config_store& configs,
       features::feature_table& features,
       security::credential_store& creds,
-      security::acl_store& acls,
       cluster::topic_table& topics)
       : _recovery_table(recovery)
-      , _config(configs)
       , _feature_table(features)
       , _creds(creds)
-      , _acls(acls)
       , _topic_table(topics) {}
 
     // Returns the set of actions to perform to get to the state of 'snap'.
@@ -84,10 +80,8 @@ public:
 
 private:
     cluster::cluster_recovery_table& _recovery_table;
-    config::config_store& _config;
     features::feature_table& _feature_table;
     security::credential_store& _creds;
-    security::acl_store& _acls;
     cluster::topic_table& _topic_table;
 };
 
