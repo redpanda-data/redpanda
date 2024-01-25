@@ -33,20 +33,16 @@ initialize_openssl(OSSL_LIB_CTX* libctx, const ss::sstring& module_path) {
     }
 
     // Loads the FIPS module, found in the default search path, set above
-    auto fips = OSSL_PROVIDER_load(libctx, "fips");
+    auto fips = OSSL_PROVIDER_ptr(OSSL_PROVIDER_load(libctx, "fips"));
     if (!fips) {
         throw ossl_error("Failed to load FIPS provider");
     }
 
-    auto fips_ptr = OSSL_PROVIDER_ptr(fips, OSSL_PROVIDER_unload);
-
-    auto base = OSSL_PROVIDER_load(libctx, "base");
+    auto base = OSSL_PROVIDER_ptr(OSSL_PROVIDER_load(libctx, "base"));
 
     if (!base) {
         throw ossl_error("Failed to load base provider");
     }
-
-    auto base_ptr = OSSL_PROVIDER_ptr(base, OSSL_PROVIDER_unload);
 
     if (!OSSL_PROVIDER_available(libctx, "fips")) {
         throw ossl_error("FIPS NOT UNAVAILBEL");
@@ -57,7 +53,7 @@ initialize_openssl(OSSL_LIB_CTX* libctx, const ss::sstring& module_path) {
         throw ossl_error("Failed to initialize OpenSSL");
     }
 
-    return {std::move(fips_ptr), std::move(base_ptr)};
+    return {std::move(fips), std::move(base)};
 }
 } // namespace
 

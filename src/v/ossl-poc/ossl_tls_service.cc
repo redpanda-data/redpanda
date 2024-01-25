@@ -28,7 +28,7 @@ ossl_tls_service::ossl_tls_service(
   ss::sstring cert_path)
   : _ssl_ctx_service(ssl_ctx_service)
   , _addr(addr)
-  , _ssl_ctx(nullptr, SSL_CTX_free)
+  , _ssl_ctx(nullptr)
   , _key_path(std::move(key_path))
   , _cert_path(std::move(cert_path)) {}
 
@@ -37,10 +37,8 @@ ss::future<> ossl_tls_service::start() {
 
     // Make sure when creating the OpenSSL context, to use the correct library
     // context.  This ensures that the SSL_CTX uses shard local memory.
-    _ssl_ctx = SSL_CTX_ptr(
-      SSL_CTX_new_ex(
-        _ssl_ctx_service.local().get_ossl_context(), nullptr, TLS_method()),
-      SSL_CTX_free);
+    _ssl_ctx = SSL_CTX_ptr(SSL_CTX_new_ex(
+      _ssl_ctx_service.local().get_ossl_context(), nullptr, TLS_method()));
 
     if (!_ssl_ctx) {
         throw ossl_error("Failed to create SSL context");

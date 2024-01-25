@@ -24,16 +24,22 @@
 
 #pragma once
 
-using BIO_ptr = std::unique_ptr<BIO, decltype(&BIO_free)>;
-using OSSL_PROVIDER_ptr
-  = std::unique_ptr<OSSL_PROVIDER, decltype(&OSSL_PROVIDER_unload)>;
-using EVP_CIPHER_ptr = std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)>;
-using EVP_CIPHER_CTX_ptr
-  = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
-using EVP_PKEY_ptr = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
-using SSL_CTX_ptr = std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)>;
-using SSL_ptr = std::unique_ptr<SSL, decltype(&SSL_free)>;
-using X509_ptr = std::unique_ptr<X509, decltype(&X509_free)>;
+template<typename T, auto fn>
+struct deleter {
+    void operator()(T* ptr) { fn(ptr); }
+};
+
+template<typename T, auto fn>
+using handle = std::unique_ptr<T, deleter<T, fn>>;
+
+using BIO_ptr = handle<BIO, BIO_free>;
+using OSSL_PROVIDER_ptr = handle<OSSL_PROVIDER, OSSL_PROVIDER_unload>;
+using EVP_CIPHER_ptr = handle<EVP_CIPHER, EVP_CIPHER_free>;
+using EVP_CIPHER_CTX_ptr = handle<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free>;
+using EVP_PKEY_ptr = handle<EVP_PKEY, EVP_PKEY_free>;
+using SSL_CTX_ptr = handle<SSL_CTX, SSL_CTX_free>;
+using SSL_ptr = handle<SSL, SSL_free>;
+using X509_ptr = handle<X509, X509_free>;
 
 /// Used to construct an exception holding OpenSSL error information
 class ossl_error : public std::runtime_error {

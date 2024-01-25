@@ -38,6 +38,11 @@ public:
       ss::lw_shared_ptr<connection>);
     ~context() noexcept { lg.info("Context being destructed"); }
 
+    context(const context&) = delete;
+    context(context&&) = delete;
+    context& operator=(const context&) = delete;
+    context& operator=(context&&) = delete;
+
     ss::future<> start();
     ss::future<> process();
     ss::future<> process_one_request();

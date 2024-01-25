@@ -38,6 +38,11 @@ public:
       ss::sstring cert_path);
     ~ossl_tls_service() = default;
 
+    ossl_tls_service(const ossl_tls_service&) = delete;
+    ossl_tls_service(ossl_tls_service&&) = delete;
+    ossl_tls_service& operator=(const ossl_tls_service&) = delete;
+    ossl_tls_service& operator=(ossl_tls_service&&) = delete;
+
     ss::future<> start();
     ss::future<> shutdown_input();
     ss::future<> wait_for_shutdown();

@@ -26,6 +26,8 @@
 #include <deque>
 #include <functional>
 
+static const uint16_t default_port = 4567;
+
 int main(int argc, char* argv[]) {
     ss::app_template app;
     {
@@ -33,7 +35,9 @@ int main(int argc, char* argv[]) {
         app.add_options()(
           "key", po::value<ss::sstring>(), "Path to the key file")(
           "cert", po::value<ss::sstring>(), "path to the cert file")(
-          "port", po::value<uint16_t>()->default_value(4567), "Port to use")(
+          "port",
+          po::value<uint16_t>()->default_value(default_port),
+          "Port to use")(
           "module-path", po::value<ss::sstring>(), "Path to the modules");
     }
 

@@ -46,10 +46,13 @@ public:
     OSSL_LIB_CTX* get_ossl_context() { return _cur_context; }
 
 private:
+    // The current (Thread local) context
     OSSL_LIB_CTX* _cur_context{};
+    // The original context that was reaplced
     OSSL_LIB_CTX* _old_context{};
-    OSSL_PROVIDER_ptr _fips_provider{nullptr, OSSL_PROVIDER_unload};
-    OSSL_PROVIDER_ptr _base_provider{nullptr, OSSL_PROVIDER_unload};
+    // Holds the OpenSSL provider pointer for later clean up
+    OSSL_PROVIDER_ptr _fips_provider{nullptr};
+    OSSL_PROVIDER_ptr _base_provider{nullptr};
     ssx::singleton_thread_worker& _thread_worker;
     ss::sstring _module_path;
 };

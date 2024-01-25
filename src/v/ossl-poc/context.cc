@@ -31,13 +31,13 @@ context::context(
   std::optional<std::reference_wrapper<boost::intrusive::list<context>>> hook,
   class ossl_tls_service& ossl_tls_service,
   ss::lw_shared_ptr<connection> conn)
-  : _hook(std::move(hook))
+  : _hook(hook)
   , _ossl_tls_service(ossl_tls_service)
-  , _conn(conn)
+  , _conn(std::move(conn))
   , _as()
   , _rbio(BIO_new(BIO_s_mem()))
   , _wbio(BIO_new(BIO_s_mem()))
-  , _ssl(SSL_new(_conn->ssl_ctx().get()), SSL_free) {
+  , _ssl(SSL_new(_conn->ssl_ctx().get())) {
     if (!_ssl) {
         BIO_free(_wbio);
         BIO_free(_rbio);
@@ -142,7 +142,8 @@ context::ssl_status context::get_sslstatus(SSL* ssl, int n) {
 }
 
 context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
-    std::array<char, 4096> buf{};
+    static const auto default_buffer_len = 4096;
+    std::array<char, default_buffer_len> buf{};
 
     auto resp = std::make_unique<response>();
 

@@ -18,7 +18,7 @@
 
 namespace {
 EVP_PKEY_ptr load_evp_pkey(const ss::temporary_buffer<char>& buf) {
-    BIO_ptr key_bio(BIO_new_mem_buf(buf.get(), buf.size()), BIO_free);
+    BIO_ptr key_bio(BIO_new_mem_buf(buf.get(), buf.size()));
     auto pkey_temp = EVP_PKEY_new();
     if (
       nullptr
@@ -26,11 +26,11 @@ EVP_PKEY_ptr load_evp_pkey(const ss::temporary_buffer<char>& buf) {
         EVP_PKEY_free(pkey_temp);
         throw ossl_error();
     }
-    return {pkey_temp, EVP_PKEY_free};
+    return EVP_PKEY_ptr(pkey_temp);
 }
 
 X509_ptr load_x509(const ss::temporary_buffer<char>& buf) {
-    BIO_ptr cert_bio(BIO_new_mem_buf(buf.get(), buf.size()), BIO_free);
+    BIO_ptr cert_bio(BIO_new_mem_buf(buf.get(), buf.size()));
     auto x509_temp = X509_new();
     if (
       nullptr
@@ -39,7 +39,7 @@ X509_ptr load_x509(const ss::temporary_buffer<char>& buf) {
         throw ossl_error();
     }
 
-    return {x509_temp, X509_free};
+    return X509_ptr(x509_temp);
 }
 
 ss::future<ss::temporary_buffer<char>>
