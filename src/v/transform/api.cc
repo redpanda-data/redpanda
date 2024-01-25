@@ -529,11 +529,11 @@ ss::future<> service::stop() {
     }
 }
 
-ss::future<cluster::errc>
+ss::future<std::error_code>
 service::delete_transform(model::transform_name name) {
     if (!_feature_table->local().is_active(
           features::feature::wasm_transforms)) {
-        co_return cluster::errc::feature_disabled;
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
     }
     auto _ = _gate.hold();
 
@@ -543,13 +543,13 @@ service::delete_transform(model::transform_name name) {
 
     // Make deletes itempotent by translating does not exist into success
     if (result.ec == cluster::errc::transform_does_not_exist) {
-        co_return cluster::errc::success;
+        co_return cluster::make_error_code(cluster::errc::success);
     }
     if (result.ec != cluster::errc::success) {
-        co_return result.ec;
+        co_return cluster::make_error_code(result.ec);
     }
     co_await cleanup_wasm_binary(result.uuid);
-    co_return cluster::errc::success;
+    co_return cluster::make_error_code(cluster::errc::success);
 }
 
 ss::future<std::error_code>
@@ -726,16 +726,16 @@ service::create_reporter(ss::sharded<service>* s) {
 }
 
 ss::future<
-  result<ss::chunked_fifo<model::transform_committed_offset>, cluster::errc>>
+  result<ss::chunked_fifo<model::transform_committed_offset>, std::error_code>>
 service::list_committed_offsets(list_committed_offsets_options options) {
     if (!_feature_table->local().is_active(
           features::feature::wasm_transforms)) {
-        co_return cluster::errc::feature_disabled;
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
     }
     auto _ = _gate.hold();
     auto result = co_await _rpc_client->local().list_committed_offsets();
     if (result.has_error()) {
-        co_return result.error();
+        co_return cluster::make_error_code(result.error());
     }
     auto all_transforms = _plugin_frontend->local().all_transforms();
     ss::chunked_fifo<model::transform_committed_offset> commits;
