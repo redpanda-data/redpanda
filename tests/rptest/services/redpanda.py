@@ -869,10 +869,6 @@ class RedpandaServiceABC(ABC):
         self._check_attr('context', TestContext)
         self._check_attr('logger', Logger)
 
-    def healthy(self) -> bool:
-        raise NotImplementedError(
-            f'{self.healthy.__name__} is not implemented yet')
-
     @abstractmethod
     def all_up(self):
         pass
