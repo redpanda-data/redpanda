@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate redpanda_transform_sdk as redpanda;
-
 use anyhow::Result;
-use redpanda::*;
+use redpanda_transform_sdk::*;
 
 fn main() -> Result<()> {
     let schema = apache_avro::Schema::parse_str(
