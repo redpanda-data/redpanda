@@ -1297,8 +1297,9 @@ async_manifest_view::get_materialized_manifest(
             // Fast path for STM reads
             co_return std::ref(_stm_manifest);
         }
+        // query in not in the stm region
         if (
-          !in_stm(q) && std::holds_alternative<model::timestamp>(q)
+          std::holds_alternative<model::timestamp>(q)
           && _stm_manifest.get_archive_start_offset() == model::offset{}) {
             vlog(_ctxlog.debug, "Using STM manifest for timequery {}", q);
             co_return std::ref(_stm_manifest);
