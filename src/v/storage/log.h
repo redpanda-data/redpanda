@@ -137,12 +137,21 @@ public:
         size_t min_size;
     };
 
+    /// Compute number of bytes between the two offset (including both offsets)
+    ///
+    /// The 'first' offset should be the first offset of the batch. The 'last'
+    /// should be the last offset of the batch. The offset range is inclusive.
     virtual ss::future<offset_range_size_result_t> offset_range_size(
       model::offset first,
       model::offset last,
       ss::io_priority_class io_priority)
       = 0;
 
+    /// Find the offset range based on size requirements
+    ///
+    /// The 'first' offset should be the first offset of the batch. The 'target'
+    /// contains size requirements. The desired target size and smallest
+    /// acceptable size.
     virtual ss::future<offset_range_size_result_t> offset_range_size(
       model::offset first,
       offset_range_size_requirements_t target,
