@@ -17,6 +17,8 @@
 #include "redpanda/admin/server.h"
 #include "transform/api.h"
 
+#include <system_error>
+
 namespace {
 
 ss::httpd::bad_request_exception transforms_not_enabled() {
@@ -206,7 +208,7 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
     }
 
     // Now do the deploy!
-    cluster::errc ec = co_await _transform_service->local().deploy_transform(
+    std::error_code ec = co_await _transform_service->local().deploy_transform(
       {.name = name,
        .input_topic = input_nt,
        .output_topics = output_topics,

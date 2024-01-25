@@ -59,7 +59,7 @@ public:
     /**
      * Deploy a transform to the cluster.
      */
-    ss::future<cluster::errc>
+    ss::future<std::error_code>
       deploy_transform(model::transform_metadata, iobuf);
 
     /**
