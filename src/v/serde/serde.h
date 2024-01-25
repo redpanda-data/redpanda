@@ -434,8 +434,8 @@ void write(iobuf& out, fragmented_vector<T, fragment_size> t) {
     }
 }
 
-template<typename T>
-void write(iobuf& out, ss::chunked_fifo<T> t) {
+template<typename T, size_t chunk_size = 128>
+void write(iobuf& out, ss::chunked_fifo<T, chunk_size> t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,
