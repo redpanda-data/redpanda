@@ -1463,43 +1463,52 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
           if (manifests.empty()) {
               return -1;
           }
+
+          auto begin
+            = _stm_manifest.get_archive_start_offset() == model::offset{}
+                ? _stm_manifest.get_start_offset().value_or(model::offset{})
+                : _stm_manifest.get_archive_clean_offset();
+          auto first_manifest = manifests.lower_bound(begin);
+          if (first_manifest.is_end()) {
+              return -1;
+          }
+
           vlog(
             _ctxlog.debug,
-            "search_spillover_manifest query: {}, num manifests: {}, first: "
+            "search_spillover_manifest query: {}, num manifests: {}, "
+            "first_manifest index: {}, first: "
             "{}, last: {}",
             query,
             manifests.size(),
-            manifests.begin()->base_timestamp,
+            first_manifest.index(),
+            first_manifest->base_timestamp,
             manifests.last_segment()->max_timestamp);
 
-          auto first_manifest = manifests.begin();
           auto base_t = first_manifest->base_timestamp;
           auto max_t = manifests.last_segment()->max_timestamp;
 
           // Edge cases
           if (t < base_t || max_t == base_t) {
-              return 0;
+              return static_cast<int>(first_manifest.index());
           } else if (t > max_t) {
               return -1;
           }
 
           const auto& bt_col = manifests.get_base_timestamp_column();
           const auto& mt_col = manifests.get_max_timestamp_column();
-          auto mt_it = mt_col.begin();
-          auto bt_it = bt_col.begin();
-          int target_ix = -1;
+          auto mt_it = std::next(mt_col.begin(), first_manifest.index());
+          auto bt_it = std::next(bt_col.begin(), first_manifest.index());
           while (!bt_it.is_end()) {
               if (*mt_it >= t.value() || *bt_it > t.value()) {
                   // Handle case when we're overshooting the target
                   // (base_timestamp > t) or the case when the target is in the
                   // middle of the manifest (max_timestamp >= t)
-                  target_ix = static_cast<int>(bt_it.index());
-                  break;
+                  return static_cast<int>(bt_it.index());
               }
               ++bt_it;
               ++mt_it;
           }
-          return target_ix;
+          return -1;
       });
 
     if (ix < 0) {
