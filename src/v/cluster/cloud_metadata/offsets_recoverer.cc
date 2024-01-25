@@ -24,6 +24,7 @@
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/timed_out_error.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 namespace cluster::cloud_metadata {
 
@@ -217,7 +218,7 @@ ss::future<offsets_recovery_reply> offsets_recoverer::recover(
                 }
                 batched_groups = {};
             }
-            co_await ss::maybe_yield();
+            co_await ss::coroutine::maybe_yield();
         }
         // We've processed all groups in the snapshot. Send out any remaining
         // batches of offset commits.
