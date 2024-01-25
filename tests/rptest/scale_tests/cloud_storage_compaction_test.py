@@ -211,12 +211,12 @@ class CloudStorageCompactionTest(EndToEndTest):
 
         # read replica success and failures
         rr_upload_successes = sum([
-            sample.value for sample in self.redpanda.metrics_sample(
+            sample.value for sample in self.rr_cluster.metrics_sample(
                 "cloud_storage_successful_uploads",
                 metrics_endpoint=MetricsEndpoint.METRICS).samples
         ])
         rr_upload_failures = sum([
-            sample.value for sample in self.redpanda.metrics_sample(
+            sample.value for sample in self.rr_cluster.metrics_sample(
                 "cloud_storage_failed_uploads",
                 metrics_endpoint=MetricsEndpoint.METRICS).samples
         ])
