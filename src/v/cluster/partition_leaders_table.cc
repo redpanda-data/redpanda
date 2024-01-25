@@ -221,25 +221,6 @@ void partition_leaders_table::update_partition_leader(
     }
 }
 
-ss::future<> partition_leaders_table::update_with_estimates() {
-    for (const auto& [ns_tp, topic] :
-         _topic_table.local().all_topics_metadata()) {
-        for (const auto& part : topic.metadata.get_assignments()) {
-            if (!_leaders.contains(leader_key_view{ns_tp, part.id})) {
-                model::ntp ntp{ns_tp.ns, ns_tp.tp, part.id};
-                vassert(
-                  !part.replicas.empty(),
-                  "set of replicas for ntp {} can't be empty",
-                  ntp);
-                update_partition_leader(
-                  ntp, model::term_id{1}, part.replicas.begin()->node_id);
-            }
-
-            co_await ss::coroutine::maybe_yield();
-        }
-    }
-}
-
 ss::future<model::node_id> partition_leaders_table::wait_for_leader(
   const model::ntp& ntp,
   ss::lowres_clock::time_point timeout,
