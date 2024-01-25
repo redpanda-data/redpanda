@@ -19,6 +19,7 @@ v_cc_library(
     engine_probe.cc
   DEPS
     wasmtime
+    v::wasm_parser
     v::storage
     v::model
     v::pandaproxy_schema_registry

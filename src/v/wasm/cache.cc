@@ -357,4 +357,9 @@ ss::future<int64_t> caching_runtime::gc_engines() {
     return _engine_caches.map_reduce0(
       &engine_cache::gc, int64_t(0), std::plus<>());
 }
+
+ss::future<> caching_runtime::validate(iobuf buf) {
+    return _underlying->validate(std::move(buf));
+}
+
 } // namespace wasm
