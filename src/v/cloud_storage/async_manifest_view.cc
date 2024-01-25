@@ -249,7 +249,7 @@ bool async_manifest_view_cursor::manifest_in_range(
           auto lo = p.get().get_last_offset();
           vlog(
             _view._ctxlog.debug,
-            "Spill manifest range: [{}/{}], cursor range: [{}/{}]",
+            "STM manifest range: [{}/{}], cursor range: [{}/{}]",
             so,
             lo,
             _begin,
@@ -261,7 +261,7 @@ bool async_manifest_view_cursor::manifest_in_range(
           auto lo = m->manifest.get_last_offset();
           vlog(
             _view._ctxlog.debug,
-            "STM manifest range: [{}/{}], cursor range: [{}/{}]",
+            "Spill manifest range: [{}/{}], cursor range: [{}/{}]",
             so,
             lo,
             _begin,
