@@ -16,6 +16,8 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 
+from rptest.services.provider_clients.instance_utils import ProviderInstanceUtils
+
 java_opts = [
     "--add-exports=java.base/sun.net.util=ALL-UNNAMED",
     "--add-exports=java.rmi/sun.rmi.registry=ALL-UNNAMED",
@@ -156,6 +158,8 @@ class FlinkService(Service):
     FLINK_CONFIG_FILE_PATH = FLINK_HOME + "conf/flink-conf.yaml"
     FLINK_START = FLINK_BIN + "start-cluster.sh"
     FLINK_STOP = FLINK_BIN + "stop-cluster.sh"
+    FLINK_TASKMAN_START = FLINK_BIN + "taskmanager.sh start"
+    FLINK_TASKMAN_STOP_ALL = FLINK_BIN + "taskmanager.sh stop-all"
     FLINK_WORKLOADS_FOLDER = "/workloads"
     FLINK_WORKLOAD_CONFIG_FILENAME = "flink_workload_config.json"
 
@@ -192,6 +196,39 @@ class FlinkService(Service):
             self.STATE_CREATED, self.STATE_SCHEDULED, self.STATE_FAILED,
             self.STATE_FINISHED, self.STATE_CANCELED
         ]
+
+        # Provider instance/node util class
+        nodeutils = ProviderInstanceUtils(self.logger)
+        # Get specs for an flink node
+        specs = nodeutils.get_node_specs(self.nodes[0], context)
+        self.logger.info(f"Using specs of '{specs}'")
+
+        # Handle service configuration for single node
+        # 10% ram - reserved
+        # 10% ram - job manager
+        # 80% ram / vcpus - per taskmanager
+        # Example, xlarge, 32 ram, 4 vcpus
+        # 32 * 0.1 = 3 (rounded down)
+        # 32 * 0.8 / vcpus = 6 (rounded down)
+        jm_ram = int(specs["ram"] * 0.1)
+        tm_ram = int(specs["ram"] * 0.8 // specs["vcpus"])
+        self.service_config = flink_config
+        # default, 1600m
+        self.service_config['jobmanager.memory.process.size'] = f"{jm_ram}g"
+        # default, 1728m
+        self.service_config['taskmanager.memory.process.size'] = f"{tm_ram}g"
+        # 1280m, total - 1g for JVM metadata, etc
+        self.service_config['taskmanager.memory.flink.size'] = f"{tm_ram-1}g"
+        # Task slots is half cpu cores, 1
+        self.service_config['taskmanager.numberOfTaskSlots'] = 1
+
+        self.logger.info("Flink service configufation is:\n"
+                         f"{json.dumps(self.service_config, indent=2)}")
+        # No need to tinker with parallelism settings, it is adaptive
+        # It is better to run multiple task managers. So, there should be
+        # one task manager running for each vcpus. This will provide
+        # efficient use of resources
+        self.num_taskmanagers = specs["vcpus"]
 
         # Safe var announce for log handling
         self.node = None
@@ -291,17 +328,29 @@ class FlinkService(Service):
         handle = f"/jobs/{jobid}"
         return self._get(handle)
 
+    def _run_cmd(self, node, cmd):
+        out = node.account.ssh_output(cmd)
+        self.logger.info(f"Response:\n{out.decode()}")
+
     def start_node(self, node):
         # Prepare config
         # Dump yaml and prevent java options to be divided
-        conf = yaml.dump(flink_config, width=float("inf"))
+        conf = yaml.dump(self.service_config, width=float("inf"))
         self.logger.info("Creating flink configuration file")
         node.account.create_file(self.FLINK_CONFIG_FILE_PATH, conf)
 
         # Start
         self.logger.info("Starting Flink standalone cluster")
-        out = node.account.ssh_output(self.FLINK_START)
-        self.logger.info(f"Response:\n{out.decode()}")
+        self._run_cmd(node, self.FLINK_START)
+        self.num_active_taskmanagers = 1
+
+        # Run additional task managers
+        self.logger.info("Starting additional task managers")
+        while self.num_active_taskmanagers < self.num_taskmanagers:
+            self.logger.info(f"Task manager {self.num_active_taskmanagers+1} "
+                             "is starting")
+            self._run_cmd(node, self.FLINK_TASKMAN_START)
+            self.num_active_taskmanagers += 1
 
         # Save node data for future log handling
         self.node = node
@@ -309,10 +358,13 @@ class FlinkService(Service):
         return
 
     def stop_node(self, node):
+        # Stop task managers
+        self.logger.info("Stopping flink task managers")
+        self._run_cmd(node, self.FLINK_TASKMAN_STOP_ALL)
+
         # Stop cluster
         self.logger.info("Stopping flink standalone cluster")
-        out = node.account.ssh_output(self.FLINK_STOP)
-        self.logger.info(f"Response:\n{out.decode()}")
+        self._run_cmd(node, self.FLINK_STOP)
 
         # No local node or hostname removing as they needed for log extraction
         return
