@@ -3,8 +3,10 @@ v_cc_library(
   HDRS
     event.h
     io.h
+    logger.h
   SRCS
     event.cc
+    logger.cc
   DEPS
     v::model
 )
