@@ -38,6 +38,7 @@
 #include "transform/txn_reader.h"
 #include "wasm/api.h"
 #include "wasm/cache.h"
+#include "wasm/errc.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -48,6 +49,8 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/optimized_optional.hh>
+
+#include <system_error>
 
 namespace transform {
 
@@ -549,14 +552,23 @@ service::delete_transform(model::transform_name name) {
     co_return cluster::errc::success;
 }
 
-ss::future<cluster::errc>
+ss::future<std::error_code>
 service::deploy_transform(model::transform_metadata meta, iobuf binary) {
     if (!_feature_table->local().is_active(
           features::feature::wasm_transforms)) {
-        co_return cluster::errc::feature_disabled;
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
     }
     auto _ = _gate.hold();
-
+    try {
+        co_await _runtime->validate(binary.share(0, binary.size_bytes()));
+    } catch (const wasm::wasm_exception& ex) {
+        vlog(
+          tlog.warn,
+          "invalid wasm binary {} when deploying transform {}",
+          ex,
+          meta.name);
+        co_return wasm::make_error_code(ex.error_code());
+    }
     vlog(
       tlog.info,
       "deploying wasm binary (size={}) for transform {}",
@@ -568,7 +580,7 @@ service::deploy_transform(model::transform_metadata meta, iobuf binary) {
     if (result.has_error()) {
         vlog(
           tlog.warn, "storing wasm binary for transform {} failed", meta.name);
-        co_return result.error();
+        co_return cluster::make_error_code(result.error());
     }
     auto [key, offset] = result.value();
     meta.uuid = key;
@@ -588,7 +600,7 @@ service::deploy_transform(model::transform_metadata meta, iobuf binary) {
     if (ec != cluster::errc::success) {
         co_await cleanup_wasm_binary(key);
     }
-    co_return ec;
+    co_return cluster::make_error_code(ec);
 }
 
 ss::future<model::cluster_transform_report> service::list_transforms() {

@@ -109,6 +109,7 @@
 #include "strings/string_switch.h"
 #include "strings/utf8.h"
 #include "transform/api.h"
+#include "wasm/errc.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
@@ -1156,6 +1157,15 @@ ss::future<> admin_server::throw_on_error(
         case rpc::errc::method_not_found:
         case rpc::errc::version_not_supported:
         case rpc::errc::unknown:
+            throw ss::httpd::server_error_exception(
+              fmt::format("Unexpected error: {}", ec.message()));
+        }
+    } else if (ec.category() == wasm::error_category()) {
+        switch (wasm::errc(ec.value())) {
+        case wasm::errc::invalid_module:
+            throw ss::httpd::bad_request_exception(
+              "invalid WebAssembly module");
+        default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected error: {}", ec.message()));
         }

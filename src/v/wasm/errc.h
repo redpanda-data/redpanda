@@ -26,6 +26,8 @@ enum class errc {
     engine_not_running,
     // Engine wasm shutdown
     engine_shutdown,
+    // invalid module
+    invalid_module
 };
 
 struct errc_category final : public std::error_category {
@@ -34,26 +36,30 @@ struct errc_category final : public std::error_category {
     std::string message(int c) const final {
         switch (static_cast<errc>(c)) {
         case errc::success:
-            return "wasm::errc::success";
+            return "Success";
         case errc::load_failure:
-            return "wasm::errc::load_failure";
+            return "WebAssembly load failure";
         case errc::engine_creation_failure:
-            return "wasm::errc::engine_creation_failure";
+            return "WebAssembly engine creation failure";
         case errc::user_code_failure:
-            return "wasm::errc::user_code_failure";
+            return "WebAssembly user code failure";
         case errc::engine_not_running:
-            return "wasm::errc::engine_not_running";
+            return "WebAssembly not running";
         case errc::engine_shutdown:
-            return "wasm::errc::engine_shutdown";
+            return "WebAssembly engine shutdown";
+        case errc::invalid_module:
+            return "invalid WebAssembly module";
         default:
             return "wasm::errc::unknown(" + std::to_string(c) + ")";
         }
     }
 };
+
 inline const std::error_category& error_category() noexcept {
     static errc_category e;
     return e;
 }
+
 inline std::error_code make_error_code(errc e) noexcept {
     return {static_cast<int>(e), error_category()};
 }
