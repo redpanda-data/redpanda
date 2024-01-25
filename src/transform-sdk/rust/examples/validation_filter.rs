@@ -1,4 +1,4 @@
-// Copyright 2023 Redpanda Data, Inc.
+// Copyright 2024 Redpanda Data, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,18 +15,15 @@
 use anyhow::Result;
 use redpanda_transform_sdk::*;
 
-// This example shows the basic usage of the crate:
-// This transform does nothing but copy the same data from an
-// input topic to an output topic.
+// This example shows a filter that outputs only valid JSON to the output topic.
 fn main() {
-    // Make sure to register your callback and perform other setup in main
-    on_record_written(my_transform);
+    on_record_written(filter_valid_json);
 }
 
-// This will be called for each record in the source topic.
-//
-// The output records returned will be written to the destination topic.
-fn my_transform(event: WriteEvent, writer: &mut RecordWriter) -> Result<()> {
-    writer.write(event.record)?;
+fn filter_valid_json(event: WriteEvent, writer: &mut RecordWriter) -> Result<()> {
+    let value = event.record.value().unwrap_or_default();
+    if serde_json::from_slice::<serde_json::Value>(value).is_ok() {
+        writer.write(event.record)?;
+    }
     Ok(())
 }
