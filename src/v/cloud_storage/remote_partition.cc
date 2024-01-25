@@ -1146,7 +1146,6 @@ remote_partition::timequery(storage::timequery_config cfg) {
     // Construct a reader that will skip to the requested timestamp
     // by virtue of log_reader_config::start_timestamp
     auto translating_reader = co_await make_reader(config);
-    auto ot_state = std::move(translating_reader.ot_state);
 
     // Read one batch from the reader to learn the offset
     model::record_batch_reader::storage_t data
