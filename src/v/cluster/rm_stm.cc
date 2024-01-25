@@ -616,15 +616,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         co_return tx_errc::stale;
     }
     auto synced_term = _insync_term;
-    // catching up with all previous end_tx operations (commit | abort)
-    // to avoid writing the same commit | abort marker twice
-    if (_mem_state.last_end_tx >= model::offset{0}) {
-        if (!co_await wait_no_throw(
-              _mem_state.last_end_tx, model::timeout_clock::now() + timeout)) {
-            co_return tx_errc::stale;
-        }
-    }
-
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
     if (fence_it == _log_state.fence_pid_epoch.end()) {
         // begin_tx should have set a fence
@@ -723,10 +714,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         co_return tx_errc::timeout;
     }
 
-    if (_mem_state.last_end_tx < r.value().last_offset) {
-        _mem_state.last_end_tx = r.value().last_offset;
-    }
-
     co_return tx_errc::none;
 }
 
@@ -790,19 +777,6 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
       pid,
       tx_seq.value_or(model::tx_seq(-1)),
       synced_term);
-    // catching up with all previous end_tx operations (commit | abort)
-    // to avoid writing the same commit | abort marker twice
-    if (_mem_state.last_end_tx >= model::offset{0}) {
-        if (!co_await wait_no_throw(
-              _mem_state.last_end_tx, model::timeout_clock::now() + timeout)) {
-            vlog(
-              _ctx_log.trace,
-              "Can't catch up to abort pid:{} tx_seq:{}",
-              pid,
-              tx_seq.value_or(model::tx_seq(-1)));
-            co_return tx_errc::stale;
-        }
-    }
 
     if (!is_known_session(pid)) {
         vlog(
@@ -886,9 +860,6 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
             co_await _raft->step_down("abort_tx replication error");
         }
         co_return tx_errc::timeout;
-    }
-    if (_mem_state.last_end_tx < r.value().last_offset) {
-        _mem_state.last_end_tx = r.value().last_offset;
     }
 
     if (!co_await wait_no_throw(
@@ -1560,16 +1531,6 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         co_return tx_errc::leader_not_found;
     }
     auto synced_term = _insync_term;
-    // catching up with all previous end_tx operations (commit | abort)
-    // to avoid writing the same commit | abort marker twice
-    if (_mem_state.last_end_tx >= model::offset{0}) {
-        if (!co_await wait_no_throw(
-              _mem_state.last_end_tx,
-              model::timeout_clock::now() + _sync_timeout)) {
-            co_return tx_errc::timeout;
-        }
-    }
-
     if (!is_known_session(pid)) {
         co_return tx_errc::pid_not_found;
     }
@@ -1626,9 +1587,6 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                     co_return tx_errc::unknown_server_error;
                 }
 
-                if (_mem_state.last_end_tx < cr.value().last_offset) {
-                    _mem_state.last_end_tx = cr.value().last_offset;
-                }
                 if (!co_await wait_no_throw(
                       cr.value().last_offset,
                       model::timeout_clock::now() + _sync_timeout)) {
@@ -1672,9 +1630,6 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                     co_return tx_errc::unknown_server_error;
                 }
 
-                if (_mem_state.last_end_tx < cr.value().last_offset) {
-                    _mem_state.last_end_tx = cr.value().last_offset;
-                }
                 if (!co_await wait_no_throw(
                       cr.value().last_offset,
                       model::timeout_clock::now() + _sync_timeout)) {
@@ -1729,9 +1684,21 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
             co_return tx_errc::unknown_server_error;
         }
 
-        if (_mem_state.last_end_tx < cr.value().last_offset) {
-            _mem_state.last_end_tx = cr.value().last_offset;
+        if (!co_await wait_no_throw(
+              model::offset(cr.value().last_offset()),
+              model::timeout_clock::now() + _sync_timeout)) {
+            vlog(
+              _ctx_log.trace,
+              "timeout on waiting until {} is applied (try_abort_old_tx "
+              "pid:{})",
+              cr.value().last_offset(),
+              pid);
+            if (_raft->is_leader() && _raft->term() == synced_term) {
+                co_await _raft->step_down("try_abort_old_tx apply error");
+            }
+            co_return tx_errc::timeout;
         }
+
         co_return tx_errc::none;
     }
 }
