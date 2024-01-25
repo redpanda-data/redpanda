@@ -3,11 +3,14 @@ v_cc_library(
   HDRS
     event.h
     io.h
+    log_manager.h
     logger.h
   SRCS
     event.cc
+    log_manager.cc
     logger.cc
   DEPS
+    v::config
     v::model
 )
 
