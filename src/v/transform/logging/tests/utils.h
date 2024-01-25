@@ -13,9 +13,15 @@
 
 #include "bytes/iobuf.h"
 #include "json/document.h"
+#include "model/transform.h"
+
+#include <string>
 
 namespace transform::logging::testing {
 
 json::Document parse_json(iobuf resp);
+std::string get_message_body(iobuf);
+
+model::transform_name random_transform_name(size_t len = 12);
 
 } // namespace transform::logging::testing
