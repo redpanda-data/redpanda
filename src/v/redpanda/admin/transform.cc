@@ -46,7 +46,7 @@ admin_server::delete_transform(std::unique_ptr<ss::http::request> req) {
         throw transforms_not_enabled();
     }
     auto name = model::transform_name(req->param["name"]);
-    auto ec = co_await _transform_service->local().delete_transform(
+    std::error_code ec = co_await _transform_service->local().delete_transform(
       std::move(name));
     co_await throw_on_error(*req, ec, model::controller_ntp);
     co_return ss::json::json_void();

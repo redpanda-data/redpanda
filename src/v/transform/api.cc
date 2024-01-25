@@ -528,11 +528,11 @@ ss::future<> service::stop() {
     }
 }
 
-ss::future<cluster::errc>
+ss::future<std::error_code>
 service::delete_transform(model::transform_name name) {
     if (!_feature_table->local().is_active(
           features::feature::wasm_transforms)) {
-        co_return cluster::errc::feature_disabled;
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
     }
     auto _ = _gate.hold();
 
@@ -542,13 +542,13 @@ service::delete_transform(model::transform_name name) {
 
     // Make deletes itempotent by translating does not exist into success
     if (result.ec == cluster::errc::transform_does_not_exist) {
-        co_return cluster::errc::success;
+        co_return cluster::make_error_code(cluster::errc::success);
     }
     if (result.ec != cluster::errc::success) {
-        co_return result.ec;
+        co_return cluster::make_error_code(result.ec);
     }
     co_await cleanup_wasm_binary(result.uuid);
-    co_return cluster::errc::success;
+    co_return cluster::make_error_code(cluster::errc::success);
 }
 
 ss::future<std::error_code>

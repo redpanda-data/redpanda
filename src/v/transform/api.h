@@ -26,6 +26,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <system_error>
+
 namespace transform {
 
 /**
@@ -65,7 +67,7 @@ public:
     /**
      * Delete a transform from the cluster.
      */
-    ss::future<cluster::errc> delete_transform(model::transform_name);
+    ss::future<std::error_code> delete_transform(model::transform_name);
 
     /**
      * List all transforms from the entire cluster.
