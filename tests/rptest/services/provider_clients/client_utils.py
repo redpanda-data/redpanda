@@ -64,3 +64,59 @@ def query_instance_meta(baseurl, headers=None):
     pool.shutdown(wait=False)
     # Return
     return _meta
+
+
+# This is a duplicate code combined from ec2 and gcp clients in order to
+# be able to get meta using cluster.node[?].account.ssh_output
+# The reason for this is that EC2 metadata service available only
+# within the host and not externally
+# TODO: Consolidate code in one place and refactor its use in HTT tests
+if __name__ == "__main__":
+    import sys
+    import json
+
+    # get provider from command line
+    provider = None
+    if len(sys.argv) < 2:
+        sys.stderr.write("ERROR: missing provider type")
+        sys.stderr.flush()
+        sys.exit(1)
+    else:
+        provider = sys.argv[1].upper()
+    # get metadata according to provider
+    if provider == 'AWS':
+        _prefix = "http://"
+        _suffix = "/latest/meta-data/"
+        _target = "169.254.169.254"
+        uri = f"{_prefix}{_target}{_suffix}"
+        # Get meta
+        _meta = query_instance_meta(uri, headers=None)
+        # swith macs for device ids
+        # filter out keys for network interfaces
+        # _old_keys = filter(lambda x: x.startswith('interfaces-macs'), _meta)
+        # iterate keys and build new dict
+        _new_meta = {}
+        _head = "network-interfaces-macs-"
+        for k, v in _meta.items():
+            if not k.startswith(_head):
+                _new_meta[k] = v
+            else:
+                # current mac
+                _tail = k.replace(_head, "")
+                _mac = _tail[:_tail.index('-')] if '-' in _tail else ""
+                _tail = _tail[_tail.index('-'):] if '-' in _tail else _tail
+                # if this is not interface key just copy
+                # get id and create new key
+                _id = _meta[_head + _mac + "-device-number"]
+                _new_meta[_head + _id + _tail] = v
+        _meta = _new_meta
+    elif provider == 'GCP':
+        _prefix = "http://"
+        _suffix = "/computeMetadata/v1/instance/"
+        _target = "169.254.169.254"
+        uri = f"{_prefix}{_target}{_suffix}"
+        _meta = query_instance_meta(uri, headers={"Metadata-Flavor": "Google"})
+
+    sys.stdout.write(json.dumps(_meta))
+    sys.stdout.flush()
+    sys.exit(0)
