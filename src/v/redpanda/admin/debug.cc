@@ -472,7 +472,31 @@ admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
         }
     }
 
-    auto profiles = co_await _cpu_profiler.local().results(shard_id);
+    std::optional<std::chrono::milliseconds> wait_ms;
+    if (auto e = req->get_query_param("wait_ms"); !e.empty()) {
+        try {
+            wait_ms = std::chrono::milliseconds(
+              boost::lexical_cast<uint64_t>(e));
+        } catch (const boost::bad_lexical_cast&) {
+            throw ss::httpd::bad_param_exception(
+              fmt::format("Invalid parameter 'wait_ms' value {{{}}}", e));
+        }
+    }
+
+    if (wait_ms.has_value()) {
+        if (*wait_ms < 1ms || *wait_ms > 15min) {
+            throw ss::httpd::bad_param_exception(
+              "wait_ms must be between 1ms and 15min");
+        }
+    }
+
+    std::vector<resources::cpu_profiler::shard_samples> profiles;
+    if (!wait_ms) {
+        profiles = co_await _cpu_profiler.local().results(shard_id);
+    } else {
+        profiles = co_await _cpu_profiler.local().collect_results_for_period(
+          *wait_ms, shard_id);
+    }
 
     std::vector<ss::httpd::debug_json::cpu_profile_shard_samples> response{
       profiles.size()};
