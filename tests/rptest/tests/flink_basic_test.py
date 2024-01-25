@@ -284,8 +284,14 @@ class FlinkBasicTests(RedpandaTest):
                    err_msg="Flink transaction workload produced "
                    "no data files after 5 min")
 
-        # Wait for index in data files to reach total_events
-        # 'count - 1' coz index starts with '0'
+        # make sure that there is no active jobs
+        # 10 min for safety
+        self.flink.wait(timeout_sec=600)
+
+        # Since there is a possibility that after job is finished
+        # data is still be written from buffers, make sure that
+        # desired index is reached. I.e. index in data files
+        # has to reach target_index
         target_index = total_events - 1
         self.logger.info("Waiting for consumer to emit message "
                          f"with index {target_index}")

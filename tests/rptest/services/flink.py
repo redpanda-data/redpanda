@@ -114,6 +114,9 @@ flink_config = {
     # The parallelism used for programs that did not specify and other parallelism.
     "parallelism.default": 1,
 
+    # Enable detailed metrics for network subsystem
+    "taskmanager.network.detailed-metrics": True,
+
     #==============================================================================
     # Rest & web frontend
     #==============================================================================
@@ -144,6 +147,9 @@ flink_config = {
     # Flag to specify whether job cancellation is enabled from the web-based
     # runtime monitor. Uncomment to disable.
     "web.cancel.enable": False,
+
+    # Metrics
+    "metrics.recording.level": "debug"
 }
 
 
@@ -185,8 +191,6 @@ class FlinkService(Service):
                                            **kwargs)
 
         self.flink_rest_port = flink_config["rest.port"]
-        self.flink_baseurl = \
-            f"http://{self.nodes[0].account.hostname}:{self.flink_rest_port}"
         # Map statuses
         self.job_active_statuses = [
             self.STATE_INIT, self.STATE_RECONCILING, self.STATE_RUNNING,
@@ -229,6 +233,10 @@ class FlinkService(Service):
         # one task manager running for each vcpus. This will provide
         # efficient use of resources
         self.num_taskmanagers = specs["vcpus"]
+
+        # internal metric storage
+        self._metric = {}
+        self.job_idle_threshold_ms = 30000
 
         # Safe var announce for log handling
         self.node = None
@@ -301,12 +309,15 @@ class FlinkService(Service):
 
         return generated_ids
 
-    def _get(self, rest_handle):
+    def _get(self, node, rest_handle):
         """
             Perform a GET to Flink REST API
             More here:
             https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/ops/rest_api/
         """
+        self.flink_baseurl = \
+            f"http://{node.account.hostname}:{self.flink_rest_port}"
+
         url = f"{self.flink_baseurl}{rest_handle}"
         try:
             r = requests.get(url)
@@ -314,19 +325,22 @@ class FlinkService(Service):
             raise RuntimeError(f"Failed to get data from '{url}'") from e
         return r.json()
 
-    def list_jobs(self):
+    def list_jobs(self, node):
         """
             List all jobs
         """
         handle = "/jobs"
-        return self._get(handle)
+        return self._get(node, handle)
 
     def get_job_by_id(self, jobid):
         """
             Gets job specs
         """
         handle = f"/jobs/{jobid}"
-        return self._get(handle)
+        if self.node is None:
+            return {}
+        else:
+            return self._get(self.node, handle)
 
     def _run_cmd(self, node, cmd):
         out = node.account.ssh_output(cmd)
@@ -357,8 +371,7 @@ class FlinkService(Service):
         # Docker compatibility
         # While in EC2 hostname and actual hostname is the same,
         # in docker hostname is the container hash.
-        self.hostname = self.nodes[0].account.ssh_output(
-            "hostname").decode().strip()
+        self.hostname = node.account.ssh_output("hostname").decode().strip()
         return
 
     def stop_node(self, node):
@@ -373,23 +386,83 @@ class FlinkService(Service):
         # No local node or hostname removing as they needed for log extraction
         return
 
-    def get_active_jobs(self):
+    def get_active_jobs(self, node):
         """
             Get all active jobs from flink REST API
         """
-        jobs = self.list_jobs()
+        jobs = self.list_jobs(node)
         active = [
             job for job in jobs['jobs']
             if job['status'] in self.job_active_statuses
         ]
         return active
 
-    def _has_active_jobs(self):
+    def is_job_idle(self, jobid) -> bool:
+        """
+            Gets job data and ensures that it is idle for job_idle_threshold_ms
+            Each job vertice should have not less than idle_threshold value
+            as recorded and available in
+              <rest_api>/jobs/<jobid>/vertices/*/metrics/accumulated-idle-time
+            By default, 60 sec min of accumulated idle time since last non-zero 
+            busy time
+
+            jobid: as returned by <rest_api>/jobs
+        """
+        # If flink is not running then the job sure is idle :)
+        if self.node is None:
+            return True
+        # Get job details
+        job_details = self._get(self.node, f"/jobs/{jobid}")
+        self.logger.debug(f"Checking if job '{job_details['name']}' "
+                          f"({job_details['jid']}) is idle")
+        # get metrics for all job vertices
+        vertices = [v for v in job_details['vertices']]
+        # Check each vertice
+        idle_vertices = []
+        for v in vertices:
+            metric_key = f"{job_details['jid']}_{v['id']}_" \
+                "last_idle_time_when_busy"
+            # Shorthands
+            idle_time = v['metrics']['accumulated-idle-time']
+            busy_time = v['metrics']['accumulated-busy-time']
+            # save current value for safety if this is the first time
+            if metric_key not in self._metric:
+                self._metric[metric_key] = idle_time
+            # Prepare debug message
+            log_msg = f"Vertice '{v['id']}': " \
+                      f"'accumulated-idle-time' = {idle_time} ms, " \
+                      f"'accumulated-busy-time' = {busy_time} ms -> "
+
+            # If job is busy, save idle time
+            if busy_time == 'NaN' or busy_time > 0:
+                self._metric[metric_key] = idle_time
+                # vertice is busy
+                idle_vertices.append(False)
+                log_msg += "is BUSY"
+            else:
+                # calculate idle time since last 'busy' status
+                idle_since_busy = idle_time - self._metric[metric_key]
+                if idle_since_busy > self.job_idle_threshold_ms:
+                    # vertice is idle
+                    idle_vertices.append(True)
+                    log_msg += f"is IDLE (idle for {idle_since_busy} ms)"
+                else:
+                    idle_vertices.append(False)
+                    log_msg += f"is IDLE (time to threshold " \
+                        f"{self.job_idle_threshold_ms - idle_since_busy} ms)"
+            # log message
+            self.logger.debug(log_msg)
+        # All vertices should be idle/True
+        return all(idle_vertices)
+
+    def _has_active_jobs(self, node, detect_idle_jobs=True):
         """
             Get active job list, log aggregated status count
             Return Bool valus if active jobs >0
         """
-        jobs = self.get_active_jobs()
+        # Get jobs in 'RUNNING' status
+        jobs = self.get_active_jobs(node)
+        # Log job status map
         map = {}
         for j in jobs:
             s = j['status']
@@ -399,17 +472,31 @@ class FlinkService(Service):
                 map[s] += 1
         out = [f"{k}: {v}" for k, v in map.items()]
         if len(out) > 0:
-            self.logger.debug(f"Flink active jobs status: {', '.join(out)}")
+            self.logger.debug(f"Flink active jobs; {', '.join(out)}")
         else:
             self.logger.debug("Flink has no active jobs")
 
-        return len(jobs) > 0
+        # Build list of idle jobs
+        active_jobs = [j['id'] for j in jobs]
+        if detect_idle_jobs:
+            # generate list of jobs that can be consudered as idle
+            idle_jobs = [
+                job['id'] for job in jobs if self.is_job_idle(job['id'])
+            ]
+            if len(idle_jobs) > 0:
+                self.logger.info(f"Detected idle jobs: {', '.join(idle_jobs)}")
+                # subtract them from active
+                active_jobs = list(set(active_jobs) - set(idle_jobs))
+        # return True if >0
+        return len(active_jobs) > 0
 
-    def wait_node(self, node, timeout_sec=120):
+    def wait_node(self, node, timeout_sec=300):
         """
             Wait for all jobs to finish, default timeout is half an hour
         """
-        wait_until(lambda: not self._has_active_jobs(),
+        # Flush internal metrics
+        self._metric = {}
+        wait_until(lambda: not self._has_active_jobs(node),
                    timeout_sec=timeout_sec,
                    backoff_sec=5)
 
@@ -425,6 +512,7 @@ class FlinkService(Service):
             # Clear local vars
             self.node = None
             self.hostname = None
+            self._metric = {}
 
             # Clean workloads folder
             node.account.ssh_output(
