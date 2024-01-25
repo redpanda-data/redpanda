@@ -681,7 +681,7 @@ cluster::drain_manager::drain_status random_drain_status() {
 }
 
 cluster::topic_status random_topic_status() {
-    ss::chunked_fifo<cluster::partition_status> partitions;
+    cluster::partition_statuses_t partitions;
     for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
         partitions.push_back(cluster::partition_status{
           .id = tests::random_named_int<model::partition_id>(),
