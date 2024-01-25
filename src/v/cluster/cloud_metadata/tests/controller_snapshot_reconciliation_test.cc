@@ -45,10 +45,8 @@ public:
       , bucket(cloud_storage_clients::bucket_name("test-bucket"))
       , reconciler(
           app.controller->get_cluster_recovery_table().local(),
-          config::shard_local_cfg(),
           app.feature_table.local(),
           app.controller->get_credential_store().local(),
-          app.controller->get_authorizer().local().store(),
           app.controller->get_topics_state().local()) {
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
