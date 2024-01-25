@@ -1782,10 +1782,14 @@ struct batch_size_accumulator {
 
 ss::future<size_t> disk_log_impl::get_file_offset(
   ss::lw_shared_ptr<segment> s,
-  segment_index::entry index_entry,
+  std::optional<segment_index::entry> maybe_index_entry,
   model::offset target,
   model::boundary_type boundary,
   ss::io_priority_class priority) {
+    auto index_entry = maybe_index_entry.value_or(segment_index::entry{
+      .offset = s->offsets().base_offset,
+      .filepos = 0,
+    });
     size_t size_bytes{index_entry.filepos};
     details::batch_size_accumulator acc{
       .result_size_bytes = &size_bytes,
@@ -1880,10 +1884,8 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
 
     // Left subscan
     auto ix_left = segments.front()->index().find_nearest(first);
-    segment_index::entry left_entry;
     if (ix_left.has_value()) {
         // We have found an index entry.
-        left_entry = ix_left.value();
         vlog(
           stlog.debug,
           "Scanning (left) log segment {} from the file offset {} (RP offset "
@@ -1893,8 +1895,6 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
           ix_left->offset);
     } else {
         // Scan from the beginning of the segment.
-        left_entry.filepos = 0;
-        left_entry.offset = segments.front()->offsets().base_offset;
         vlog(
           stlog.debug,
           "Scanning (left) log segment {} from the start",
@@ -1902,16 +1902,14 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
     }
     auto left_scan_bytes = co_await get_file_offset(
       segments.front(),
-      left_entry,
+      ix_left,
       first,
       model::boundary_type::exclusive,
       io_priority);
 
     // Right subscan
     auto ix_right = segments.back()->index().find_nearest(last);
-    segment_index::entry right_entry;
     if (ix_right.has_value()) {
-        right_entry = ix_right.value();
         vlog(
           stlog.debug,
           "Scanning (right) log segment {} from the file offset {} (RP offset "
@@ -1921,8 +1919,6 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
           ix_right->offset);
     } else {
         // Scan from the beginning of the segment.
-        right_entry.filepos = 0;
-        right_entry.offset = segments.back()->offsets().base_offset;
         vlog(
           stlog.debug,
           "Scanning (right) log segment {} from the start",
@@ -1930,7 +1926,7 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
     }
     auto right_scan_bytes = co_await get_file_offset(
       segments.back(),
-      right_entry,
+      ix_right,
       last,
       model::boundary_type::inclusive,
       io_priority);
@@ -2029,18 +2025,11 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
         // end. When we subsequently creating uploads using this method
         // only the first upload will have to do scanning to find the
         // offset.
-        segment_index::entry index_entry{
-          .offset = first_segment_offsets.base_offset,
-          .filepos = 0,
-        };
         auto ix_res = first_segment->index().find_nearest(first);
-        if (ix_res.has_value()) {
-            index_entry = ix_res.value();
-        }
         //
         first_segment_file_pos = co_await get_file_offset(
           first_segment,
-          index_entry,
+          ix_res,
           first,
           model::boundary_type::exclusive,
           io_priority);

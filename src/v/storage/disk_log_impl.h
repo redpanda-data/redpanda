@@ -198,7 +198,7 @@ private:
     /// Compute file offset of the batch inside the segment
     ss::future<size_t> get_file_offset(
       ss::lw_shared_ptr<segment> s,
-      segment_index::entry index_entry,
+      std::optional<segment_index::entry> index_entry,
       model::offset target,
       model::boundary_type boundary,
       ss::io_priority_class priority);
