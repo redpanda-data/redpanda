@@ -517,7 +517,7 @@ raft_node_instance::read_batches_in_range(
     auto rdr = co_await _raft->make_reader(cfg);
 
     auto batches = co_await model::consume_reader_to_memory(
-      std::move(rdr), model::no_timeout);
+      std::move(rdr), default_timeout());
 
     ss::circular_buffer<model::record_batch> data_batches;
     data_batches.reserve(batches.size());
