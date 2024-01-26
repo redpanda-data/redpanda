@@ -459,19 +459,6 @@ ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
         if (is_control) {
             // tx_commit / tx_abort / unknown
 
-            // Control batches are not discarded but are compacted in the same
-            // manner as other data batches. This approach prevents the
-            // elimination of the last batch within a segment when it happens to
-            // be a control batch. If the final batch in a segment is discarded,
-            // and there are no subsequent data batches, it could lead to
-            // clients being unable to advance their consumable offset until the
-            // Last Stable Offset (LSO) is reached, creating the perception of a
-            // stuck consumer unable to make progress.
-
-            // However, this situation is not problematic when the last batch is
-            // an aborted data batch. This is because we can guarantee the
-            // presence of user consumable batches following it, specifically
-            // the abort control batch, ensuring continuous consumer progress.
             handle_tx_control_batch(b);
         } else if (is_data) {
             // User produced data batches in tx scope..
