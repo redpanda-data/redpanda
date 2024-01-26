@@ -161,23 +161,23 @@ private:
         using is_transparent = void;
 
         bool operator()(leader_key_view lhs, leader_key_view rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
+            return lhs.pid == rhs.pid && lhs.tp_ns.tp == rhs.tp_ns.tp
+                   && lhs.tp_ns.ns == rhs.tp_ns.ns;
         }
 
         bool operator()(const leader_key& lhs, const leader_key& rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
+            return lhs.pid == rhs.pid && lhs.tp_ns.tp == rhs.tp_ns.tp
+                   && lhs.tp_ns.ns == rhs.tp_ns.ns;
         }
 
         bool operator()(const leader_key& lhs, leader_key_view rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
+            return lhs.pid == rhs.pid && lhs.tp_ns.tp == rhs.tp_ns.tp
+                   && lhs.tp_ns.ns == rhs.tp_ns.ns;
         }
 
         bool operator()(leader_key_view lhs, const leader_key& rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
+            return lhs.pid == rhs.pid && lhs.tp_ns.tp == rhs.tp_ns.tp
+                   && lhs.tp_ns.ns == rhs.tp_ns.ns;
         }
     };
 
