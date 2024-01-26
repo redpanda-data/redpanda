@@ -141,7 +141,8 @@ public:
     ///
     /// The 'first' offset should be the first offset of the batch. The 'last'
     /// should be the last offset of the batch. The offset range is inclusive.
-    virtual ss::future<offset_range_size_result_t> offset_range_size(
+    virtual ss::future<std::optional<offset_range_size_result_t>>
+    offset_range_size(
       model::offset first,
       model::offset last,
       ss::io_priority_class io_priority)
@@ -152,7 +153,8 @@ public:
     /// The 'first' offset should be the first offset of the batch. The 'target'
     /// contains size requirements. The desired target size and smallest
     /// acceptable size.
-    virtual ss::future<offset_range_size_result_t> offset_range_size(
+    virtual ss::future<std::optional<offset_range_size_result_t>>
+    offset_range_size(
       model::offset first,
       offset_range_size_requirements_t target,
       ss::io_priority_class io_priority)

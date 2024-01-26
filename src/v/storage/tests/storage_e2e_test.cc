@@ -3636,21 +3636,23 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
           = log->offset_range_size(base, last, ss::default_priority_class())
               .get();
 
+        BOOST_REQUIRE(result.has_value());
+
         vlog(
           e2e_test_log.debug,
           "base: {}, last: {}, expected size: {}, actual size: {}",
           base,
           last,
           expected_size,
-          result.on_disk_size);
+          result->on_disk_size);
 
-        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
-        BOOST_REQUIRE_EQUAL(last, result.last_offset);
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+        BOOST_REQUIRE_EQUAL(last, result->last_offset);
 
         // Validate using the segment reader
         size_t consumed_size = 0;
         storage::log_reader_config reader_cfg(
-          base, result.last_offset, ss::default_priority_class());
+          base, result->last_offset, ss::default_priority_class());
         reader_cfg.skip_readers_cache = true;
         reader_cfg.skip_batch_cache = true;
         auto log_rdr = log->make_reader(std::move(reader_cfg)).get();
@@ -3658,7 +3660,7 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
           .size_bytes = &consumed_size,
         };
         std::move(log_rdr).consume(size_acc, model::no_timeout).get();
-        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
     }
 
     auto new_start_offset = model::next_offset(first_segment_last_offset);
@@ -3672,23 +3674,23 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
 
     // Check that out of range access triggers exception.
 
-    BOOST_REQUIRE_THROW(
+    BOOST_REQUIRE(
       log
         ->offset_range_size(
           model::offset(0),
           model::next_offset(new_start_offset),
           ss::default_priority_class())
-        .get(),
-      std::invalid_argument);
+        .get()
+      == std::nullopt);
 
-    BOOST_REQUIRE_THROW(
+    BOOST_REQUIRE(
       log
         ->offset_range_size(
           model::next_offset(new_start_offset),
           model::next_offset(lstat.committed_offset),
           ss::default_priority_class())
-        .get(),
-      std::invalid_argument);
+        .get()
+      == std::nullopt);
 
 #endif
 };
@@ -3757,7 +3759,8 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
                           ss::default_priority_class())
                         .get();
 
-        auto last_offset = result.last_offset;
+        BOOST_REQUIRE(result.has_value());
+        auto last_offset = result->last_offset;
         size_t result_ix = 0;
         for (auto s : summaries) {
             if (s.last == last_offset) {
@@ -3766,12 +3769,12 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
             result_ix++;
         }
         auto expected_size = acc_size[result_ix] - prev_size[base_ix];
-        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
 
         // Validate using the segment reader
         size_t consumed_size = 0;
         storage::log_reader_config reader_cfg(
-          base, result.last_offset, ss::default_priority_class());
+          base, result->last_offset, ss::default_priority_class());
         reader_cfg.skip_readers_cache = true;
         reader_cfg.skip_batch_cache = true;
         auto log_rdr = log->make_reader(std::move(reader_cfg)).get();
@@ -3779,7 +3782,7 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
           .size_bytes = &consumed_size,
         };
         std::move(log_rdr).consume(size_acc, model::no_timeout).get();
-        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
     }
 
     auto new_start_offset = model::next_offset(first_segment_last_offset);
@@ -3793,7 +3796,7 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
 
     // Check that out of range access triggers exception.
 
-    BOOST_REQUIRE_THROW(
+    BOOST_REQUIRE(
       log
         ->offset_range_size(
           model::offset(0),
@@ -3802,27 +3805,27 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
             .min_size = 1,
           },
           ss::default_priority_class())
-        .get(),
-      std::invalid_argument);
+        .get()
+      == std::nullopt);
 
     // Query committed offset of the last batch, expect
     // no result.
 
-    auto res = log
-                 ->offset_range_size(
-                   summaries.back().last,
-                   storage::log::offset_range_size_requirements_t{
-                     .target_size = 0x10000,
-                     .min_size = 0,
-                   },
-                   ss::default_priority_class())
-                 .get();
-
-    BOOST_REQUIRE_EQUAL(res.last_offset, model::offset{});
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          summaries.back().last,
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 0,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
 
     // Query offset out of range to trigger the exception.
 
-    BOOST_REQUIRE_THROW(
+    BOOST_REQUIRE(
       log
         ->offset_range_size(
           model::next_offset(summaries.back().last),
@@ -3831,23 +3834,23 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
             .min_size = 0,
           },
           ss::default_priority_class())
-        .get(),
-      std::invalid_argument);
+        .get()
+      == std::nullopt);
 
     // Check that the last batch can be measured independently
-    res = log
-            ->offset_range_size(
-              summaries.back().base,
-              storage::log::offset_range_size_requirements_t{
-                .target_size = 0x10000,
-                .min_size = 0,
-              },
-              ss::default_priority_class())
-            .get();
+    auto res = log
+                 ->offset_range_size(
+                   summaries.back().base,
+                   storage::log::offset_range_size_requirements_t{
+                     .target_size = 0x10000,
+                     .min_size = 0,
+                   },
+                   ss::default_priority_class())
+                 .get();
 
     // Only one batch is returned
-    BOOST_REQUIRE_EQUAL(res.last_offset, lstat.committed_offset);
-    BOOST_REQUIRE_EQUAL(res.on_disk_size, acc_size.back() - prev_size.back());
+    BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
+    BOOST_REQUIRE_EQUAL(res->on_disk_size, acc_size.back() - prev_size.back());
 
     // Check that we can measure the size of the log tail. This is needed for
     // timed uploads.
@@ -3865,23 +3868,23 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
                   ss::default_priority_class())
                 .get();
 
-        BOOST_REQUIRE_EQUAL(res.last_offset, lstat.committed_offset);
+        BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
         BOOST_REQUIRE_EQUAL(
-          res.on_disk_size, acc_size.back() - prev_size.at(ix_batch));
+          res->on_disk_size, acc_size.back() - prev_size.at(ix_batch));
     }
 
     // Check that the min_size is respected
-    res = log
-            ->offset_range_size(
-              summaries.back().base,
-              storage::log::offset_range_size_requirements_t{
-                .target_size = 0x10000,
-                .min_size = summaries.back().batch_size + 1,
-              },
-              ss::default_priority_class())
-            .get();
-
-    BOOST_REQUIRE_EQUAL(res.last_offset, model::offset{});
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          summaries.back().base,
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = summaries.back().batch_size + 1,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
 
 #endif
 };
@@ -4014,20 +4017,22 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
           = log->offset_range_size(base, last, ss::default_priority_class())
               .get();
 
+        BOOST_REQUIRE(result.has_value());
+
         vlog(
           e2e_test_log.debug,
           "base: {}, last: {}, expected size: {}, actual size: {}",
           base,
           last,
           expected_size,
-          result.on_disk_size);
+          result->on_disk_size);
 
-        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
-        BOOST_REQUIRE_EQUAL(last, result.last_offset);
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+        BOOST_REQUIRE_EQUAL(last, result->last_offset);
 
         size_t consumed_size = 0;
         storage::log_reader_config c_reader_cfg(
-          base, result.last_offset, ss::default_priority_class());
+          base, result->last_offset, ss::default_priority_class());
         c_reader_cfg.skip_readers_cache = true;
         c_reader_cfg.skip_batch_cache = true;
         auto c_log_rdr = log->make_reader(std::move(c_reader_cfg)).get();
@@ -4035,7 +4040,7 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
           .size_bytes = &consumed_size,
         };
         std::move(c_log_rdr).consume(c_size_acc, model::no_timeout).get();
-        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
     }
 
     auto new_start_offset = model::next_offset(first_segment_last_offset);
@@ -4049,23 +4054,23 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
 
     // Check that out of range access triggers exception.
 
-    BOOST_REQUIRE_THROW(
+    BOOST_REQUIRE(
       log
         ->offset_range_size(
           model::offset(0),
           model::next_offset(new_start_offset),
           ss::default_priority_class())
-        .get(),
-      std::invalid_argument);
+        .get()
+      == std::nullopt);
 
-    BOOST_REQUIRE_THROW(
+    BOOST_REQUIRE(
       log
         ->offset_range_size(
           model::next_offset(new_start_offset),
           model::next_offset(lstat.committed_offset),
           ss::default_priority_class())
-        .get(),
-      std::invalid_argument);
+        .get()
+      == std::nullopt);
 
 #endif
 };
@@ -4206,8 +4211,8 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
                           },
                           ss::default_priority_class())
                         .get();
-
-        auto last_offset = result.last_offset;
+        BOOST_REQUIRE(result.has_value());
+        auto last_offset = result->last_offset;
 
         size_t expected_size = 0;
 
@@ -4220,8 +4225,8 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
           .size_bytes = &expected_size,
         };
         std::move(c_log_rdr).consume(c_size_acc, model::no_timeout).get();
-        BOOST_REQUIRE_EQUAL(expected_size, result.on_disk_size);
-        BOOST_REQUIRE(result.on_disk_size >= target_size);
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+        BOOST_REQUIRE(result->on_disk_size >= target_size);
     }
 
     auto new_start_offset = model::next_offset(first_segment_last_offset);
@@ -4235,7 +4240,7 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
 
     // Check that out of range access triggers exception.
 
-    BOOST_REQUIRE_THROW(
+    BOOST_REQUIRE(
       log
         ->offset_range_size(
           model::offset(0),
@@ -4244,27 +4249,27 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
             .min_size = 1,
           },
           ss::default_priority_class())
-        .get(),
-      std::invalid_argument);
+        .get()
+      == std::nullopt);
 
     // Query committed offset of the last batch, expect
     // no result.
 
-    auto res = log
-                 ->offset_range_size(
-                   nc_summaries.back().last,
-                   storage::log::offset_range_size_requirements_t{
-                     .target_size = 0x10000,
-                     .min_size = 0,
-                   },
-                   ss::default_priority_class())
-                 .get();
-
-    BOOST_REQUIRE_EQUAL(res.last_offset, model::offset{});
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          nc_summaries.back().last,
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 0,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
 
     // Query offset out of range to trigger the exception.
 
-    BOOST_REQUIRE_THROW(
+    BOOST_REQUIRE(
       log
         ->offset_range_size(
           model::next_offset(c_summaries.back().last),
@@ -4273,24 +4278,24 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
             .min_size = 0,
           },
           ss::default_priority_class())
-        .get(),
-      std::invalid_argument);
+        .get()
+      == std::nullopt);
 
     // Check that the last batch can be measured independently
-    res = log
-            ->offset_range_size(
-              c_summaries.back().base,
-              storage::log::offset_range_size_requirements_t{
-                .target_size = 0x10000,
-                .min_size = 0,
-              },
-              ss::default_priority_class())
-            .get();
+    auto res = log
+                 ->offset_range_size(
+                   c_summaries.back().base,
+                   storage::log::offset_range_size_requirements_t{
+                     .target_size = 0x10000,
+                     .min_size = 0,
+                   },
+                   ss::default_priority_class())
+                 .get();
 
     // Only one batch is returned
-    BOOST_REQUIRE_EQUAL(res.last_offset, lstat.committed_offset);
+    BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
     BOOST_REQUIRE_EQUAL(
-      res.on_disk_size, c_acc_size.back() - c_prev_size.back());
+      res->on_disk_size, c_acc_size.back() - c_prev_size.back());
 
     // Check that we can measure the size of the log tail. This is needed for
     // timed uploads.
@@ -4308,23 +4313,23 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
                   ss::default_priority_class())
                 .get();
 
-        BOOST_REQUIRE_EQUAL(res.last_offset, lstat.committed_offset);
+        BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
         BOOST_REQUIRE_EQUAL(
-          res.on_disk_size, c_acc_size.back() - c_prev_size.at(ix_batch));
+          res->on_disk_size, c_acc_size.back() - c_prev_size.at(ix_batch));
     }
 
     // Check that the min_size is respected
-    res = log
-            ->offset_range_size(
-              c_summaries.back().base,
-              storage::log::offset_range_size_requirements_t{
-                .target_size = 0x10000,
-                .min_size = c_summaries.back().batch_size + 1,
-              },
-              ss::default_priority_class())
-            .get();
-
-    BOOST_REQUIRE_EQUAL(res.last_offset, model::offset{});
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          c_summaries.back().base,
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = c_summaries.back().batch_size + 1,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
 
 #endif
 };
@@ -4424,7 +4429,8 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
                            },
                            ss::default_priority_class())
                          .get();
-            last_offset = res.last_offset;
+            BOOST_REQUIRE(res.has_value());
+            last_offset = res->last_offset;
             done = last_offset == log->offsets().committed_offset;
             vlog(
               e2e_test_log.info,
@@ -4432,10 +4438,10 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
               target_size,
               min_size,
               max_size,
-              res.on_disk_size,
-              res.last_offset);
-            BOOST_REQUIRE(res.on_disk_size > min_size);
-            BOOST_REQUIRE(res.on_disk_size < max_size);
+              res->on_disk_size,
+              res->last_offset);
+            BOOST_REQUIRE(res->on_disk_size > min_size);
+            BOOST_REQUIRE(res->on_disk_size < max_size);
 
             // scan the range using the storage reader and compare
 
@@ -4444,7 +4450,7 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
             acc.size_bytes = &measured_size;
 
             storage::log_reader_config reader_cfg(
-              base, res.last_offset, ss::default_priority_class());
+              base, res->last_offset, ss::default_priority_class());
             reader_cfg.skip_readers_cache = true;
             reader_cfg.skip_batch_cache = true;
             auto reader = log->make_reader(reader_cfg).get();
@@ -4453,8 +4459,8 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
               e2e_test_log.info,
               "Expected size: {}, actual size: {}",
               measured_size,
-              res.on_disk_size);
-            BOOST_REQUIRE_EQUAL(measured_size, res.on_disk_size);
+              res->on_disk_size);
+            BOOST_REQUIRE_EQUAL(measured_size, res->on_disk_size);
         }
     }
 

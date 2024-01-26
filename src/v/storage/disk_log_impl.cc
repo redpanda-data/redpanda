@@ -1816,7 +1816,8 @@ ss::future<size_t> disk_log_impl::get_file_offset(
     co_return size_bytes;
 }
 
-ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
+ss::future<std::optional<log::offset_range_size_result_t>>
+disk_log_impl::offset_range_size(
   model::offset first, model::offset last, ss::io_priority_class io_priority) {
     vlog(
       stlog.debug,
@@ -1853,24 +1854,24 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
     //   'segments' collection points to it.
     // - if the last offset of the log is less than 'last' the method throws.
     if (segments.empty()) {
-        vlog(stlog.error, "Can't find log segments to lock");
-        throw std::invalid_argument("Offset out of range");
+        vlog(stlog.debug, "Can't find log segments to lock");
+        co_return std::nullopt;
     }
     if (segments.front()->offsets().base_offset > first) {
         vlog(
-          stlog.error,
+          stlog.debug,
           "Offset {} is out of range, {}",
           first,
           segments.front()->offsets());
-        throw std::invalid_argument("First offset is out of range");
+        co_return std::nullopt;
     }
     if (segments.back()->offsets().committed_offset < last) {
         vlog(
-          stlog.error,
+          stlog.debug,
           "Offset {} is out of range, {}",
           last,
           segments.back()->offsets());
-        throw std::invalid_argument("Last offset is out of range");
+        co_return std::nullopt;
     }
 
     std::vector<ss::future<ss::rwlock::holder>> f_locks;
@@ -1976,7 +1977,8 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
     };
 }
 
-ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
+ss::future<std::optional<log::offset_range_size_result_t>>
+disk_log_impl::offset_range_size(
   model::offset first,
   offset_range_size_requirements_t target,
   ss::io_priority_class io_priority) {
@@ -1994,20 +1996,20 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
     // range that includes the offset still exists.
     if (base_it == _segs.end()) {
         vlog(
-          stlog.error,
+          stlog.debug,
           "Offset {} is not present in the log {}",
           first,
           offsets());
-        throw std::invalid_argument("Offset out of range");
+        co_return std::nullopt;
     } else {
         auto lstat = base_it->get()->offsets();
         if (first < lstat.base_offset || first > lstat.committed_offset) {
             vlog(
-              stlog.error,
+              stlog.debug,
               "Offset {} is not present in the segment {}",
               first,
               lstat);
-            throw std::invalid_argument("Offset out of range");
+            co_return std::nullopt;
         }
     }
 
@@ -2041,7 +2043,7 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
           "First segment out of range, offsets: {}, expected offset: {}",
           first_segment_offsets,
           first);
-        throw std::invalid_argument("First segment out of range");
+        co_return std::nullopt;
     }
 
     // Collect relevant segments
@@ -2170,12 +2172,14 @@ ss::future<log::offset_range_size_result_t> disk_log_impl::offset_range_size(
 
     if (current_size < target.min_size) {
         vlog(stlog.debug, "Discovered offset range is not large enough");
-        last_included_offset = model::offset{};
-        current_size = 0;
+        co_return std::nullopt;
     }
 
-    if (num_segments == 0) {
-        vlog(stlog.debug, "Can't find log segments to lock");
+    if (
+      num_segments == 0 || current_size == 0
+      || last_included_offset == model::offset{}) {
+        vlog(stlog.debug, "Can't find log segments");
+        co_return std::nullopt;
     }
 
     co_return offset_range_size_result_t{
