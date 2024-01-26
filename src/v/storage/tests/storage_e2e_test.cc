@@ -3697,6 +3697,10 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
 
 FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
 #ifdef NDEBUG
+    // This test generates 300 segments and creates a record batch map.
+    // Then it runs size-based offset_range_size method overload with
+    // randomly generated parameters 5000 times. The record batch map
+    // is used to find expected offset range size.
     size_t num_test_cases = 5000;
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
