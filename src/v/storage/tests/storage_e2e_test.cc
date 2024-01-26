@@ -2532,13 +2532,16 @@ FIXTURE_TEST(read_write_truncate, storage_test_fixture) {
               auto offset = log->offsets();
               info("truncate offsets: {}", offset);
               auto start = ss::steady_clock_type::now();
+              auto orig_cnt = log->get_log_truncation_counter();
               return log
                 ->truncate(storage::truncate_config(
                   offset.dirty_offset, ss::default_priority_class()))
-                .finally([start] {
+                .finally([start, orig_cnt, log] {
                     // assert that truncation took less than 5 seconds
                     BOOST_REQUIRE_LT(
                       (ss::steady_clock_type::now() - start) / 1ms, 5000);
+                    auto new_cnt = log->get_log_truncation_counter();
+                    BOOST_REQUIRE_GT(new_cnt, orig_cnt);
                     info("truncate_done");
                 });
           });
