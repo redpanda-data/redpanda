@@ -3585,6 +3585,10 @@ struct batch_size_accumulator {
 
 FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
 #ifdef NDEBUG
+    // The test generates 300 segments with random data and the record batch map
+    // for it. It generates parameters for the method randomly, invokes the
+    // method and validates the result using the batch map. It also checks some
+    // corner cases at the end of the test (out of range access, etc).
     size_t num_test_cases = 5000;
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
