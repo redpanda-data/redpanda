@@ -4077,6 +4077,12 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
 
 FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
 #ifdef NDEBUG
+    // This test generates 300 segments and creates a record batch map.
+    // Then it runs compaction and creates a second record batch map. Then it
+    // uses offset_range_size method to fetch segments of various sizes. We need
+    // to maps to be able to start on every offset, not only offsets that
+    // survived compaction. The pre-compaction map is used to pick starting
+    // point. The post-compaction map is used to calculate the expected size.
     size_t num_test_cases = 5000;
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
