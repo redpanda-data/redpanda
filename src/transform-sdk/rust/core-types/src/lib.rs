@@ -116,13 +116,16 @@ impl<'a> From<&'a WrittenRecord<'a>> for BorrowedRecord<'a> {
     }
 }
 
-/// A trait that can receive a stream of records and output them a destination topic.
+/// An internal trait that can receive a stream of records and output them a destination topic.
+///
+/// As a user of this framework you should not need to implement this, unless you're writing a mock
+/// implementation for testing.
 pub trait RecordSink {
     /// Write a record to the output topic returning any errors.
     fn write(&mut self, r: BorrowedRecord<'_>) -> Result<(), WriteError>;
 }
 
-/// A writer trait for output transformed records to the destination topic.
+/// A struct that writes transformed records to the output topic..
 pub struct RecordWriter<'a> {
     sink: &'a mut dyn RecordSink,
 }
