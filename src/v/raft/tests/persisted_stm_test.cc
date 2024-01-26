@@ -236,7 +236,7 @@ public:
             start_offset, last_included_offset, ss::default_priority_class()));
 
         auto batches = co_await model::consume_reader_to_memory(
-          std::move(rdr), model::no_timeout);
+          std::move(rdr), default_timeout());
 
         std::for_each(
           batches.begin(), batches.end(), [&inc_state](model::record_batch& b) {
@@ -389,7 +389,7 @@ struct persisted_stm_test_fixture : state_machine_fixture {
                   ss::default_priority_class()))
                 .then([](auto rdr) {
                     return model::consume_reader_to_memory(
-                      std::move(rdr), model::no_timeout);
+                      std::move(rdr), default_timeout());
                 })
                 .then([](ss::circular_buffer<model::record_batch> batches) {
                     return batches.back().last_offset();

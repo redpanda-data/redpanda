@@ -144,6 +144,10 @@ private:
     prefix_logger& _logger;
 };
 
+inline model::timeout_clock::time_point default_timeout() {
+    return model::timeout_clock::now() + 30s;
+}
+
 /**
  * Node hosting Raft replica
  */

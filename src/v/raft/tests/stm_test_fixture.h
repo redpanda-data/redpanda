@@ -127,7 +127,7 @@ struct simple_kv : public raft::state_machine_base {
             start_offset, last_included_offset, ss::default_priority_class()));
 
         auto batches = co_await model::consume_reader_to_memory(
-          std::move(rdr), model::no_timeout);
+          std::move(rdr), default_timeout());
 
         std::for_each(
           batches.begin(),
@@ -226,7 +226,7 @@ struct state_machine_fixture : raft_fixture {
         co_await parallel_for_each_node(
           [committed_offset](raft_node_instance& node) {
               return node.raft()->stm_manager()->wait(
-                committed_offset, model::no_timeout);
+                committed_offset, default_timeout());
           });
     }
 
