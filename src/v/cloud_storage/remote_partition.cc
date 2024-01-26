@@ -521,6 +521,7 @@ private:
               cur.error() == error_outcome::out_of_range
               && ss::visit(
                 query,
+                [&](model::offset) { return false; },
                 [&](kafka::offset query_offset) {
                     // Special case queries below the start offset of the log.
                     // The start offset may have advanced while the request was
@@ -540,7 +541,32 @@ private:
                     }
                     return false;
                 },
-                [](auto) { return false; })) {
+                [&](model::timestamp query_ts) {
+                    // Special case, it can happen when a timequery falls below
+                    // the clean offset. Caused when the query races with
+                    // retention/gc. log a warning, since the kafka client can
+                    // handle a failed query
+                    auto const& spillovers = _partition->_manifest_view
+                                               ->stm_manifest()
+                                               .get_spillover_map();
+                    if (
+                      spillovers.empty()
+                      || spillovers.get_max_timestamp_column()
+                             .last_value()
+                             .value_or(model::timestamp::max()())
+                           >= query_ts()) {
+                        vlog(
+                          _ctxlog.debug,
+                          "Manifest query raced with retention and the result "
+                          "is below the clean/start offset for {}",
+                          query_ts);
+                        return true;
+                    }
+
+                    // query was not meant for archive region. fallthrough and
+                    // log an error
+                    return false;
+                })) {
                 // error was handled
                 co_return;
             }
