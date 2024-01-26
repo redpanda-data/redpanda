@@ -195,30 +195,11 @@ class FlinkWorkloadProduce:
         self.words = self._generate_words()
 
         # Define the table schema
-        sink_table_schema = Schema.new_builder() \
+        self.sink_table_schema = Schema.new_builder() \
             .column('index', DataTypes.BIGINT()) \
             .column('subindex', DataTypes.BIGINT()) \
             .column('word', DataTypes.STRING()) \
             .build()
-
-        # Build descriptor with kafka connector and options
-        # see: https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/connectors/table/kafka/
-        sink_table_desc = TableDescriptor.for_connector('kafka') \
-            .schema(sink_table_schema) \
-            .option('connector', 'kafka') \
-            .option('topic', f'{self.config.topic_name}') \
-            .option('properties.bootstrap.servers', f'{self.config.brokers}') \
-            .option('properties.group.id', f'{self.config.producer_group}') \
-            .option('properties.transaction.timeout.ms', '15000') \
-            .option('scan.startup.mode', 'earliest-offset') \
-            .option('sink.delivery-guarantee', 'exactly-once') \
-            .option('sink.transactional-id-prefix', 'flink_transaction_test_1') \
-            .option('format', 'csv') \
-            .build()
-
-        # Create target table
-        self.sink_table = self.table_env.create_temporary_table(
-            'sink', sink_table_desc)
 
     def produce_words(self):
         """
@@ -231,7 +212,9 @@ class FlinkWorkloadProduce:
         """
         # Do the sending
         idx = 0
+        batch_count = 0
         while idx < self.config.count:
+            batch_count += 1
             # Prepare list of words that will be included in one INSERT cmd
             # aka batch
             words_to_go = self.config.count - idx
@@ -244,6 +227,28 @@ class FlinkWorkloadProduce:
                 word = self.id_to_word(random.randint(0, len(self.words) - 1))
                 row = f"({idx+count}, {count}, '{word}')"
                 values.append(row)
+
+            sys.stdout.write(f"Initializing batch {batch_count}'\n")
+            # Build descriptor with kafka connector and options
+            # see: https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/connectors/table/kafka/
+            sink_table_desc = TableDescriptor.for_connector('kafka') \
+                .schema(self.sink_table_schema) \
+                .option('connector', 'kafka') \
+                .option('topic', f'{self.config.topic_name}') \
+                .option('properties.bootstrap.servers', f'{self.config.brokers}') \
+                .option('properties.group.id', f'{self.config.producer_group}') \
+                .option('properties.transaction.timeout.ms', '15000') \
+                .option('scan.startup.mode', 'earliest-offset') \
+                .option('sink.delivery-guarantee', 'exactly-once') \
+                .option('sink.transactional-id-prefix',
+                        f'flink_transaction_test_{batch_count}') \
+                .option('format', 'csv') \
+                .build()
+
+            _temp_sink_name = f'sink_{batch_count}'
+            # Create target table
+            self.sink_table = self.table_env.create_temporary_table(
+                _temp_sink_name, sink_table_desc)
 
             # Note:
             # One insert operator is a good example of a transaction.
@@ -259,8 +264,9 @@ class FlinkWorkloadProduce:
             # i.e. yet once again, ~400 transactions
             sys.stdout.write(f"Sending {len(values)} values at '{idx}'\n")
             sys.stdout.flush()
-            self.table_env.execute_sql("INSERT INTO sink " +
+            self.table_env.execute_sql(f"INSERT INTO {_temp_sink_name} "
                                        f"VALUES {','.join(values)};")
+            self.table_env.drop_temporary_table(_temp_sink_name)
             idx += size
 
         return
