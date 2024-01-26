@@ -100,6 +100,8 @@ public:
 
     virtual size_t segment_count() const = 0;
     virtual storage::offset_stats offsets() const = 0;
+    // Returns counter which is incremented after every log suffix truncation
+    virtual size_t get_log_truncation_counter() const noexcept = 0;
     // Base offset of the first batch in the most recent term stored in log
     virtual model::offset find_last_term_start_offset() const = 0;
     virtual model::timestamp start_timestamp() const = 0;

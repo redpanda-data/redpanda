@@ -2145,6 +2145,7 @@ ss::future<> disk_log_impl::do_truncate(
 
     if (file_position == 0) {
         _segs.pop_back();
+        _suffix_truncation_indicator++;
         co_return co_await remove_segment_permanently(
           last_ptr, "truncate[post-translation]");
     }
@@ -2152,6 +2153,7 @@ ss::future<> disk_log_impl::do_truncate(
     auto cache_lock = co_await _readers_cache->evict_truncate(cfg.base_offset);
 
     try {
+        _suffix_truncation_indicator++;
         co_return co_await last_ptr->truncate(
           new_max_offset, file_position, new_max_timestamp);
     } catch (...) {
@@ -2166,6 +2168,10 @@ ss::future<> disk_log_impl::do_truncate(
           last,
           *this);
     }
+}
+
+size_t disk_log_impl::get_log_truncation_counter() const noexcept {
+    return _suffix_truncation_indicator;
 }
 
 model::offset disk_log_impl::read_start_offset() const {
