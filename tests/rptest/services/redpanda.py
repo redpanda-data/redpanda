@@ -2532,19 +2532,15 @@ class RedpandaService(RedpandaServiceBase):
         Update cluster configuration and wait for all nodes to report that they
         have seen the new config.
 
-        :param values: dict of property name to value. if value is None, key will be removed from cluster config
+        :param values: dict of property name to value.
         :param expect_restart: set to true if you wish to permit a node restart for needs_restart=yes properties.
                                If you set such a property without this flag, an assertion error will be raised.
         """
         if admin_client is None:
             admin_client = self._admin
 
-        patch_result = admin_client.patch_cluster_config(
-            upsert={
-                k: v
-                for k, v in values.items() if v is not None
-            },
-            remove=[k for k, v in values.items() if v is None])
+        patch_result = admin_client.patch_cluster_config(upsert=values,
+                                                         remove=[])
         new_version = patch_result['config_version']
 
         self._wait_for_config_version(new_version,
@@ -3263,14 +3259,6 @@ class RedpandaService(RedpandaServiceBase):
             )
             conf.update(
                 dict(http_authentication=self._security.http_authentication))
-
-        # in redpanda, cloud_storage_spillover_manifest_size takes preference over cloud_storage_spillover_manifest_max_segments.
-        # disable the former to use the latter
-        assert conf.get('cloud_storage_spillover_manifest_size', None) is None or \
-            conf.get('cloud_storage_spillover_manifest_max_segments', None) is None, \
-                  "cannot set cloud_storage_spillover_manifest_max_segments if cloud_storage_spillover_manifest_size is already set, it will not be used by redpanda"
-        if 'cloud_storage_spillover_manifest_max_segments' in conf:
-            conf['cloud_storage_spillover_manifest_size'] = None
 
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:
