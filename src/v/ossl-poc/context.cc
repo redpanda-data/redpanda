@@ -11,12 +11,16 @@
 
 #include "context.h"
 
+#include "json/stringbuffer.h"
+#include "latency_data.h"
 #include "logger.h"
 #include "ossl-poc/ssl_utils.h"
 #include "ossl_tls_service.h"
+#include "pandaproxy/json/rjson_util.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -24,6 +28,7 @@
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 
+#include <chrono>
 #include <limits>
 #include <memory>
 
@@ -202,6 +207,8 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
             lg.debug("SSL is initialized");
         }
 
+        ss::sstring rcv_buf;
+
         do {
             // SSL_read will pull the decrypted data out of the SSL session. buf
             // now contains plaintext data
@@ -209,37 +216,69 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
             lg.debug("SSL_read: {}", n);
             if (n > 0) {
                 lg.debug("Read {} bytes from SSL", n);
-                // Echo back exactly what we just read
-                // SSL_write will take plaintext data and encrypt it, putting
-                // cipher text into the write bio
-                SSL_write(_ssl.get(), buf.data(), n);
+                rcv_buf.append(buf.data(), n);
+                //  Echo back exactly what we just read
+                //  SSL_write will take plaintext data and encrypt it, putting
+                //  cipher text into the write bio
+                // SSL_write(_ssl.get(), buf.data(), n);
             }
         } while (n > 0);
 
-        ssl_err = SSL_get_error(_ssl.get(), n);
+        if (!rcv_buf.empty()) {
+            lg.debug("Received: {}", rcv_buf);
+            auto lat_data = pandaproxy::json::rjson_parse(
+              rcv_buf.c_str(), latency_data_handler<>{});
 
-        switch (ssl_err) {
-        case SSL_ERROR_NONE:
-            break;
-        case SSL_ERROR_WANT_WRITE:
-            lg.debug("Requesting more data to wbio");
-            return std::move(resp);
-        case SSL_ERROR_WANT_READ:
-            lg.debug("Requesting more read data");
-            do {
-                // Read out cipher text and send back to the client
-                n = BIO_read(_wbio, buf.data(), buf.size());
-                if (n > 0) {
-                    lg.debug("Read additional {} bytes", n);
-                    resp->buf().append(buf.data(), n);
-                } else if (!BIO_should_retry(_wbio)) {
-                    throw ossl_error(
-                      "Error reading from wbio on additional read");
-                }
-            } while (n > 0);
-            break;
-        default:
-            throw ossl_error("Error while performing SSL_read");
+            lat_data.rcv_time
+              = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  ss::lowres_system_clock::now().time_since_epoch())
+                  .count();
+            ::json::StringBuffer str_buf;
+            ::json::Writer<::json::StringBuffer> w(str_buf);
+            rjson_serialize(w, lat_data);
+            lg.debug("strbuf size: {}", str_buf.GetSize());
+            n = SSL_write(_ssl.get(), str_buf.GetString(), str_buf.GetSize());
+            lg.debug("SSL_write: {}", n);
+            ssl_err = SSL_get_error(_ssl.get(), n);
+            if (n > 0) {
+                do {
+                    // Read out cipher text and send back to the client
+                    n = BIO_read(_wbio, buf.data(), buf.size());
+                    if (n > 0) {
+                        lg.debug("Read encrypted {} bytes", n);
+                        resp->buf().append(buf.data(), n);
+                    } else if (!BIO_should_retry(_wbio)) {
+                        throw ossl_error(
+                          "Error reading from wbio on encrypted read");
+                    }
+                } while (n > 0);
+            }
+        } else {
+            ssl_err = SSL_get_error(_ssl.get(), n);
+
+            switch (ssl_err) {
+            case SSL_ERROR_NONE:
+                break;
+            case SSL_ERROR_WANT_WRITE:
+                lg.debug("Requesting more data to wbio");
+                return std::move(resp);
+            case SSL_ERROR_WANT_READ:
+                lg.debug("Requesting more read data");
+                do {
+                    // Read out cipher text and send back to the client
+                    n = BIO_read(_wbio, buf.data(), buf.size());
+                    if (n > 0) {
+                        lg.debug("Read additional {} bytes", n);
+                        resp->buf().append(buf.data(), n);
+                    } else if (!BIO_should_retry(_wbio)) {
+                        throw ossl_error(
+                          "Error reading from wbio on additional read");
+                    }
+                } while (n > 0);
+                break;
+            default:
+                throw ossl_error("Error while performing SSL_read");
+            }
         }
     }
 

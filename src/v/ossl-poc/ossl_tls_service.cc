@@ -56,18 +56,19 @@ ss::future<> ossl_tls_service::start() {
           "Failed to load key ({}) and cert ({})", _key_path, _cert_path));
     }
 
-    if (!SSL_CTX_set_min_proto_version(_ssl_ctx.get(), TLS1_2_VERSION)) {
-        throw ossl_error("Failed to set min version of TLSv1.2");
-    }
+    // if (!SSL_CTX_set_min_proto_version(_ssl_ctx.get(), TLS1_2_VERSION)) {
+    //     throw ossl_error("Failed to set min version of TLSv1.2");
+    // }
 
-    // This sets the valid cipher suite for TLSv1.3 only.  There is another call
-    // for TLSv1.2
-    if (!SSL_CTX_set_ciphersuites(
-          _ssl_ctx.get(),
-          "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_AES_128_CCM_"
-          "SHA256:TLS_AES_128_CCM_8_SHA256")) {
-        throw ossl_error("Failed to set TLSv1.3 cipher suites");
-    }
+    // // This sets the valid cipher suite for TLSv1.3 only.  There is another
+    // call
+    // // for TLSv1.2
+    // if (!SSL_CTX_set_ciphersuites(
+    //       _ssl_ctx.get(),
+    //       "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_AES_128_CCM_"
+    //       "SHA256:TLS_AES_128_CCM_8_SHA256")) {
+    //     throw ossl_error("Failed to set TLSv1.3 cipher suites");
+    // }
 
     ss::listen_options lo;
     lo.reuse_address = true;

@@ -21,7 +21,7 @@ using initialize_return = std::tuple<OSSL_PROVIDER_ptr, OSSL_PROVIDER_ptr>;
 initialize_return
 initialize_openssl(OSSL_LIB_CTX* libctx, const ss::sstring& module_path) {
     // Grab the path to the config file and feed it to the library context
-    auto conf_file = ::getenv("OPENSSL_CNF");
+    auto conf_file = ::getenv("OPENSSL_CONF");
     if (!OSSL_LIB_CTX_load_config(libctx, conf_file)) {
         throw ossl_error(
           ss::sstring("Failed to load config file ") + conf_file);
