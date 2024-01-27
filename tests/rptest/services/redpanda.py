@@ -1866,6 +1866,34 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         for topic in deletable:
             rpk.delete_topic(topic)
 
+    def cluster_healthy(self) -> bool:
+        """Check if cluster is healthy."""
+
+        # kubectl exec rp-clo88krkqkrfamptsst0-0 -n=redpanda -c=redpanda -- rpk cluster health
+        ret = self.kubectl.exec('rpk cluster health')
+
+        # bash$ rpk cluster health
+        # CLUSTER HEALTH OVERVIEW
+        # =======================
+        # Healthy:                          true
+        # Unhealthy reasons:                []
+        # Controller ID:                    0
+        # All nodes:                        [0 1 2]
+        # Nodes down:                       []
+        # Leaderless partitions (0):        []
+        # Under-replicated partitions (0):  []
+
+        lines = ret.decode().splitlines()
+        self.logger.debug(f'rpk cluster health lines: {lines}')
+        for line in lines:
+            part = line.partition(':')
+            if part[0].strip() == 'Healthy':
+                if part[2].strip() == 'true':
+                    return True
+                break
+
+        return False
+
 
 class RedpandaService(RedpandaServiceBase):
 
