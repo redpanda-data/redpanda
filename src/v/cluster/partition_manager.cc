@@ -9,6 +9,7 @@
 
 #include "cluster/partition_manager.h"
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/types.h"
 #include "base/vlog.h"
@@ -16,7 +17,6 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
-#include "cluster/archival_metadata_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/partition.h"

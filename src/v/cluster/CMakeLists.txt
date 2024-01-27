@@ -86,7 +86,6 @@ rpcgen(
 v_cc_library(
   NAME cluster
   SRCS
-    archival_metadata_stm.cc
     metadata_cache.cc
     partition_manager.cc
     scheduling/partition_allocator.cc
@@ -184,6 +183,7 @@ v_cc_library(
     plugin_table.cc
     plugin_frontend.cc
     plugin_backend.cc
+    ../archival/archival_metadata_stm.cc
     ../archival/archival_policy.cc
     ../archival/ntp_archiver_service.cc
     ../archival/probe.cc

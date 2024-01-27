@@ -9,10 +9,10 @@
 
 #include "raft/consensus_utils.h"
 
+#include "archival/archival_metadata_stm.h"
 #include "base/likely.h"
 #include "base/vassert.h"
 #include "bytes/iostream.h"
-#include "cluster/archival_metadata_stm.h"
 #include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
