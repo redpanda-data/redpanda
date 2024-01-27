@@ -276,6 +276,9 @@ class OMBValidationTest(RedpandaCloudTest):
         finally:
             self.rpk.delete_topic(swarm_topic_name)
 
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
+
     def _warn_metrics(self, metrics, validator):
         """Validates metrics and just warn if any fail."""
 
@@ -379,6 +382,9 @@ class OMBValidationTest(RedpandaCloudTest):
         # fail test if the latency is above expected including fudge factor
         benchmark.check_succeed()
 
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
+
     @cluster(num_nodes=CLUSTER_NODES)
     def test_common_workload(self):
         tier_limits = self.tier_limits
@@ -431,6 +437,8 @@ class OMBValidationTest(RedpandaCloudTest):
         benchmark_time_min = benchmark.benchmark_time() + 5
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
 
     @cluster(num_nodes=CLUSTER_NODES)
     def test_retention(self):
@@ -497,3 +505,5 @@ class OMBValidationTest(RedpandaCloudTest):
         benchmark_time_min = benchmark.benchmark_time() + 5
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
