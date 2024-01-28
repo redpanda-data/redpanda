@@ -136,37 +136,6 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
         co_return std::move(batch);
     }
 
-    // 0. Reset the transactional bit, we need not carry it forward.
-    // All the data batches retained until this point are committed.
-    // From this point on, these batches are treated like non transaction
-    // batches by subsequent compactions.
-    //
-    // We also do this so client does not apply aborted transactions for
-    // this batch. Broker passes a list of aborted transaction ranges to
-    // the client in the fetch response and the client collates that list
-    // with the list of fetched data batches. If any of the data batches
-    // with matching PIDs fall in the aborted transaction ranges, they are
-    // filtered out. Since compaction effectively removes all aborted data
-    // batches, there is no use of sending aborted ranges for compacted
-    // segments. Marking the batch as non transactional lets the fetch logic
-    // know the boundary between compacted and non compacted segments.
-
-    // An ideal way to do this is by invalidating aborted transaction metadata
-    // after compaction but currently we have no atomic way of doing it.
-    // Aborted transaction metadata lifecyle is completely decoupled from
-    // segment lifecycle and once that is fixed, we can undo unsetting the
-    // transactional bit.
-    auto& hdr = batch.header();
-    bool hdr_changed = false;
-    if (hdr.attrs.is_transactional()) {
-        hdr.attrs.unset_transactional_type();
-        // We do not recompute crc here as the batch records may
-        // be filtered in step 4 in which case we need to recompute
-        // it anyway. It is expensive to loop through the batch and
-        // is wasteful to do it twice.
-        hdr_changed = true;
-    }
-
     // 1. compute which records to keep
     std::vector<int32_t> offset_deltas;
     offset_deltas.reserve(batch.record_count());
@@ -195,10 +164,6 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
 
     // 3. keep all records
     if (offset_deltas.size() == static_cast<size_t>(batch.record_count())) {
-        if (hdr_changed) {
-            hdr.crc = model::crc_record_batch(batch);
-            hdr.header_crc = model::internal_header_only_crc(hdr);
-        }
         co_return std::move(batch);
     }
 
@@ -271,6 +236,7 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     // Additionally, the MaxTimestamp of an empty batch always retains the
     // previous value prior to becoming empty.
     //
+    auto& hdr = batch.header();
     const auto first_time = model::timestamp(
       hdr.first_timestamp() + first_timestamp_delta.value());
     auto last_time = hdr.max_timestamp;

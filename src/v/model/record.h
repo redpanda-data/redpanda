@@ -346,8 +346,6 @@ public:
 
     void set_transactional_type() { _attributes |= transactional_mask; }
 
-    void unset_transactional_type() { _attributes &= ~transactional_mask; }
-
     bool operator==(const record_batch_attributes& other) const {
         return _attributes == other._attributes;
     }
