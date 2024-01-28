@@ -21,6 +21,8 @@ from time import sleep
 from rptest.services.redpanda import RedpandaService
 
 from rptest.services.compacted_verifier import CompactedVerifier, Workload
+from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.services.metrics_check import MetricCheck
 
 
 class CompactionE2EIdempotencyTest(RedpandaTest):
@@ -155,6 +157,77 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         rw_verifier.remote_wait_consumer()
         rw_verifier.stop()
         rw_verifier.wait(timeout_sec=10)
+
+
+class CompactionWithRecoveryTest(RedpandaTest, PartitionMovementMixin):
+    def __init__(self, test_context):
+
+        self.segment_size = 1 * 1024 * 1024
+        self.num_moves = 50
+        # keep read size low to ensure reads fall within a transaction
+        extra_rp_conf = {
+            "raft_recovery_default_read_size": 1024,
+            "log_compaction_interval_ms": 2000
+        }
+        super(CompactionWithRecoveryTest,
+              self).__init__(test_context=test_context,
+                             extra_rp_conf=extra_rp_conf)
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    def test_tx_compaction_with_recovery(self):
+        """Ensures correctness of tx + compaction with partition moves"""
+
+        client = DefaultClient(self.redpanda)
+        topic = TopicSpec(partition_count=1,
+                          replication_factor=1,
+                          segment_bytes=self.segment_size,
+                          cleanup_policy=TopicSpec.CLEANUP_COMPACT)
+
+        self.topics = [topic]
+        client.create_topic(topic)
+
+        metric = 'vectorized_storage_log_compacted_segment_total'
+        m = MetricCheck(self.logger,
+                        self.redpanda,
+                        self.redpanda.partitions(self.topic)[0].leader,
+                        [metric],
+                        labels={
+                            'namespace': 'kafka',
+                            'topic': self.topic,
+                            'partition': '0',
+                        },
+                        reduce=sum)
+
+        workload = CompactedVerifier(self.test_context, self.redpanda,
+                                     Workload.TX)
+        workload.start()
+
+        workload.remote_start_producer(self.redpanda.brokers(),
+                                       self.topic,
+                                       1,
+                                       abort_probability=1)
+
+        # Wait for first round of compaction to kick in
+        wait_until(
+            lambda: m.evaluate([(metric, lambda _, metric: metric > 0)]),
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Timeed out waiting for first round of compaction to finish"
+        )
+
+        moves_done = 0
+        while moves_done < self.num_moves:
+            self._do_move_and_verify(topic=topic.name,
+                                     partition=0,
+                                     timeout_sec=300)
+            moves_done += 1
+            sleep(1)
+
+        workload.remote_stop_producer()
+        workload.remote_wait_producer()
+        workload.remote_start_consumer()
+        workload.remote_wait_consumer(timeout_sec=60)
 
 
 class CompactionE2ERebootTest(RedpandaTest):
