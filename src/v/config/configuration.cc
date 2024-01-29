@@ -2978,7 +2978,13 @@ configuration::configuration()
       "are allowed.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"BASIC"},
-      validate_http_authn_mechanisms) {}
+      validate_http_authn_mechanisms)
+  , enable_mpx_extensions(
+      *this,
+      "enable_mpx_extensions",
+      "Enables Redpanda MPX extensions",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
