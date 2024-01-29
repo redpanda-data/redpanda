@@ -44,6 +44,7 @@ void sizer::append(uint32_t v) { _offset += vint::vint_size(v); }
 void sizer::append(int32_t v) { _offset += vint::vint_size(v); }
 void sizer::append(uint64_t v) { _offset += vint::vint_size(int64_t(v)); }
 void sizer::append(int64_t v) { _offset += vint::vint_size(v); }
+void sizer::append_byte(uint8_t) { ++_offset; }
 
 writer::writer(array<uint8_t> buf)
   : _tmp(vint::max_length, 0)
@@ -99,6 +100,10 @@ void writer::append(uint64_t v) {
 void writer::append(int64_t v) {
     _offset += append_integer(_tmp, v, slice_remainder());
 }
+void writer::append_byte(uint8_t v) {
+    ensure_size(1);
+    _output[_offset++] = v;
+}
 
 void writer::ensure_size(size_t size) {
     auto remainder = slice_remainder();
@@ -115,6 +120,9 @@ array<uint8_t> writer::slice_remainder() { return _output.subspan(_offset); }
 reader::reader(ffi::array<uint8_t> buf)
   : _input(buf) {}
 ss::sstring reader::read_string(size_t size) {
+    return ss::sstring(read_string_view(size));
+}
+std::string_view reader::read_string_view(size_t size) {
     auto r = slice_remainder();
     if (r.size() < size) {
         throw std::out_of_range(ss::format(
@@ -123,11 +131,9 @@ ss::sstring reader::read_string(size_t size) {
           r.size(),
           _input.size()));
     }
-    ss::sstring s;
-    auto sv = array_as_string_view(slice_remainder());
-    s.append(sv.data(), size);
+    auto sv = array_as_string_view(slice_remainder()).substr(0, size);
     _offset += size;
-    return s;
+    return sv;
 }
 iobuf reader::read_iobuf(size_t size) {
     auto r = slice_remainder();
@@ -151,13 +157,30 @@ ss::sstring reader::read_sized_string() {
     int64_t size = read_varint();
     return read_string(size);
 }
+std::string_view reader::read_sized_string_view() {
+    int64_t size = read_varint();
+    return read_string_view(size);
+}
 int64_t reader::read_varint() {
     auto r = slice_remainder();
     auto [v, sz] = vint::deserialize(std::span<uint8_t>{r.data(), r.size()});
     _offset += sz;
     return v;
 }
-array<uint8_t> reader::slice_remainder() { return _input.subspan(_offset); }
+uint8_t reader::read_byte() {
+    auto r = slice_remainder();
+    if (r.empty()) {
+        throw std::out_of_range("ffi::array buffer empty, expected 1 byte");
+    }
+    ++_offset;
+    return r.front();
+}
+
+size_t reader::remaining_bytes() const { return slice_remainder().size(); }
+
+array<uint8_t> reader::slice_remainder() const {
+    return _input.subspan(_offset);
+}
 
 std::ostream& operator<<(std::ostream& o, val_type vt) {
     switch (vt) {
