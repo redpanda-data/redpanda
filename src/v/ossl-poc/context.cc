@@ -12,6 +12,7 @@
 #include "context.h"
 
 #include "json/stringbuffer.h"
+#include "kafka/protocol/wire.h"
 #include "latency_data.h"
 #include "logger.h"
 #include "ossl-poc/ssl_utils.h"
@@ -107,7 +108,15 @@ ss::future<> context::process_one_request() {
     // auto buf = co_await _conn->input().read();
     // lg.debug("Read {} bytes", buf.size());
 
-    auto resp = co_await on_read(_conn->input());
+    auto resp = co_await [this]() {
+        if (
+          _ossl_tls_service.use_gnu_tls()
+          == ossl_tls_service::use_gnu_tls_t::yes) {
+            return on_read_gnutls(_conn->input());
+        } else {
+            return on_read(_conn->input());
+        }
+    }();
 
     if (!resp->buf().empty()) {
         auto& buf = resp->buf();
@@ -145,6 +154,27 @@ context::ssl_status context::get_sslstatus(SSL* ssl, int n) {
     default:
         return context::ssl_status::SSLSTATUS_FAIL;
     }
+}
+ss::future<context::response_ptr>
+context::on_read_gnutls(ss::input_stream<char>& in) {
+    auto resp = std::make_unique<response>();
+    auto sz = co_await kafka::protocol::parse_size(in);
+    if (!sz) {
+        co_return std::move(resp);
+    }
+    if (sz.value() > 1024 * 1024) {
+        lg.warn("Received too large a size: {}", sz.value());
+        co_return std::move(resp);
+    }
+    lg.debug("Received {} bytes size", sz.value());
+    auto buf = co_await in.read_exactly(sz.value());
+    lg.debug("buf size: {}", buf.size());
+    auto json_msg = process_message(buf.get(), buf.size());
+    int32_t len = json_msg.size();
+    resp->buf().append(reinterpret_cast<const char*>(&len), sizeof(len));
+    resp->buf().append(json_msg.data(), json_msg.size());
+
+    co_return std::move(resp);
 }
 
 ss::future<context::response_ptr> context::on_read(ss::input_stream<char>& in) {
@@ -287,9 +317,10 @@ ss::future<context::response_ptr> context::on_read(ss::input_stream<char>& in) {
 }
 
 ss::sstring context::process_message(const char* buf, size_t len) {
-    lg.debug("Processing {}", ss::sstring(buf, len));
+    ss::sstring json_str(buf, len);
+    lg.debug("Processing (size: {}) {}", len, json_str);
     auto lat_data = pandaproxy::json::rjson_parse(
-      buf, latency_data_handler<>{});
+      json_str.c_str(), latency_data_handler<>{});
     lat_data.rcv_time = std::chrono::duration_cast<std::chrono::milliseconds>(
                           ss::lowres_system_clock::now().time_since_epoch())
                           .count();

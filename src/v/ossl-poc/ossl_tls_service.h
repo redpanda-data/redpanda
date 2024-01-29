@@ -31,11 +31,13 @@
  */
 class ossl_tls_service final {
 public:
+    using use_gnu_tls_t = ss::bool_class<struct use_gnu_tls_st>;
     ossl_tls_service(
       ss::sharded<ossl_context_service>& ssl_ctx_service,
       ss::socket_address addr,
       ss::sstring key_path,
-      ss::sstring cert_path);
+      ss::sstring cert_path,
+      use_gnu_tls_t use_gnu_tls);
     ~ossl_tls_service() = default;
 
     ossl_tls_service(const ossl_tls_service&) = delete;
@@ -50,6 +52,8 @@ public:
 
     ss::abort_source& abort_source() { return _as; }
 
+    use_gnu_tls_t use_gnu_tls() const { return _use_gnu_tls; }
+
 private:
     ss::sharded<ossl_context_service>& _ssl_ctx_service;
     std::optional<ss::server_socket> _listener;
@@ -61,6 +65,7 @@ private:
     SSL_CTX_ptr _ssl_ctx;
     ss::sstring _key_path;
     ss::sstring _cert_path;
+    use_gnu_tls_t _use_gnu_tls;
 
 private:
     ss::future<> accept();

@@ -18,6 +18,7 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/seastar.hh>
+#include <seastar/net/tls.hh>
 
 #include <openssl/ssl.h>
 
@@ -25,12 +26,14 @@ ossl_tls_service::ossl_tls_service(
   ss::sharded<ossl_context_service>& ssl_ctx_service,
   ss::socket_address addr,
   ss::sstring key_path,
-  ss::sstring cert_path)
+  ss::sstring cert_path,
+  use_gnu_tls_t use_gnu_tls)
   : _ssl_ctx_service(ssl_ctx_service)
   , _addr(addr)
   , _ssl_ctx(nullptr)
   , _key_path(std::move(key_path))
-  , _cert_path(std::move(cert_path)) {}
+  , _cert_path(std::move(cert_path))
+  , _use_gnu_tls(use_gnu_tls) {}
 
 ss::future<> ossl_tls_service::start() {
     lg.info("Starting TLS service...");
@@ -72,7 +75,15 @@ ss::future<> ossl_tls_service::start() {
 
     ss::listen_options lo;
     lo.reuse_address = true;
-    _listener = ss::listen(_addr, lo);
+    if (_use_gnu_tls == use_gnu_tls_t::yes) {
+        ss::tls::credentials_builder builder{};
+        co_await builder.set_x509_key_file(
+          _cert_path, _key_path, seastar::tls::x509_crt_format::PEM);
+        auto creds = builder.build_server_credentials();
+        _listener = ss::tls::listen(creds, ss::listen(_addr, lo));
+    } else {
+        _listener = ss::listen(_addr, lo);
+    }
 
     ssx::spawn_with_gate(_accept_gate, [this]() { return accept(); });
 }

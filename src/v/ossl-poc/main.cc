@@ -30,6 +30,7 @@ static const uint16_t default_port = 4567;
 
 int main(int argc, char* argv[]) {
     ss::app_template app;
+    bool use_gnutls = false;
     {
         namespace po = boost::program_options;
         app.add_options()(
@@ -38,7 +39,8 @@ int main(int argc, char* argv[]) {
           "port",
           po::value<uint16_t>()->default_value(default_port),
           "Port to use")(
-          "module-path", po::value<ss::sstring>(), "Path to the modules");
+          "module-path", po::value<ss::sstring>(), "Path to the modules")(
+          "use-gnutls", po::bool_switch(&use_gnutls), "Use GnuTLS");
     }
 
     ss::sharded<ossl_tls_service> ssl_service;
@@ -80,7 +82,9 @@ int main(int argc, char* argv[]) {
                 std::ref(ossl_context),
                 addr,
                 std::move(key_path),
-                std::move(cert_path))
+                std::move(cert_path),
+                use_gnutls ? ossl_tls_service::use_gnu_tls_t::yes
+                           : ossl_tls_service::use_gnu_tls_t::no)
               .get();
             deferred.emplace_back([&ssl_service] { ssl_service.stop().get(); });
             ssl_service.invoke_on_all(&ossl_tls_service::start).get();

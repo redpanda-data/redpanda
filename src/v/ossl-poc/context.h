@@ -68,6 +68,7 @@ private:
     using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
     bool is_finished_parsing() const;
     ss::future<response_ptr> on_read(ss::input_stream<char>&);
+    ss::future<response_ptr> on_read_gnutls(ss::input_stream<char>&);
 
 private:
     std::optional<std::reference_wrapper<boost::intrusive::list<context>>>

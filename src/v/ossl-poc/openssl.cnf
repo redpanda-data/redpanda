@@ -1,6 +1,6 @@
 config_diagnostics = 1
 openssl_conf = openssl_init
-.include /home/mboquard/dev/redpanda/vbuild/debug/clang/rp_deps_install/openssl/fipsmodule.cnf
+.include /home/mboquard/dev/redpanda/vbuild/release/clang/rp_deps_install/openssl/fipsmodule.cnf
 
 [openssl_init]
 providers = provider_sect
