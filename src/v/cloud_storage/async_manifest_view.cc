@@ -249,7 +249,7 @@ bool async_manifest_view_cursor::manifest_in_range(
           auto lo = p.get().get_last_offset();
           vlog(
             _view._ctxlog.debug,
-            "Spill manifest range: [{}/{}], cursor range: [{}/{}]",
+            "STM manifest range: [{}/{}], cursor range: [{}/{}]",
             so,
             lo,
             _begin,
@@ -261,7 +261,7 @@ bool async_manifest_view_cursor::manifest_in_range(
           auto lo = m->manifest.get_last_offset();
           vlog(
             _view._ctxlog.debug,
-            "STM manifest range: [{}/{}], cursor range: [{}/{}]",
+            "Spill manifest range: [{}/{}], cursor range: [{}/{}]",
             so,
             lo,
             _begin,
@@ -1297,8 +1297,9 @@ async_manifest_view::get_materialized_manifest(
             // Fast path for STM reads
             co_return std::ref(_stm_manifest);
         }
+        // query in not in the stm region
         if (
-          !in_stm(q) && std::holds_alternative<model::timestamp>(q)
+          std::holds_alternative<model::timestamp>(q)
           && _stm_manifest.get_archive_start_offset() == model::offset{}) {
             vlog(_ctxlog.debug, "Using STM manifest for timequery {}", q);
             co_return std::ref(_stm_manifest);
