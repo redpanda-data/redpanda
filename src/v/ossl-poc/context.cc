@@ -104,9 +104,10 @@ ss::future<> context::process() {
 }
 
 ss::future<> context::process_one_request() {
-    auto buf = co_await _conn->input().read();
-    lg.debug("Read {} bytes", buf.size());
-    auto resp = on_read(std::move(buf));
+    // auto buf = co_await _conn->input().read();
+    // lg.debug("Read {} bytes", buf.size());
+
+    auto resp = co_await on_read(_conn->input());
 
     if (!resp->buf().empty()) {
         auto& buf = resp->buf();
@@ -146,11 +147,13 @@ context::ssl_status context::get_sslstatus(SSL* ssl, int n) {
     }
 }
 
-context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
+ss::future<context::response_ptr> context::on_read(ss::input_stream<char>& in) {
     static const auto default_buffer_len = 4096;
     std::array<char, default_buffer_len> buf{};
 
     auto resp = std::make_unique<response>();
+
+    auto tb = co_await in.read();
 
     int n = 0;
     int ssl_err = 0;
@@ -192,14 +195,14 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
                 break;
             case SSL_ERROR_WANT_WRITE:
                 lg.debug("Need data to be written to SSL _rbio");
-                return std::move(resp);
+                co_return std::move(resp);
             default:
                 throw ossl_error("Failed to perform SSL_accept");
             }
 
             if (!SSL_is_init_finished(_ssl.get())) {
                 lg.debug("Not yet done");
-                return std::move(resp);
+                co_return std::move(resp);
             } else {
                 lg.debug("SSL has finished initialization");
             }
@@ -268,7 +271,7 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
                 break;
             case SSL_ERROR_WANT_WRITE:
                 lg.debug("Requesting more data to wbio");
-                return std::move(resp);
+                co_return std::move(resp);
             case SSL_ERROR_WANT_READ:
                 lg.debug("Requesting more read data");
                 do {
@@ -289,5 +292,5 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
         }
     }
 
-    return std::move(resp);
+    co_return std::move(resp);
 }

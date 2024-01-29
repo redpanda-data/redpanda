@@ -67,7 +67,7 @@ private:
     };
     using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
     bool is_finished_parsing() const;
-    response_ptr on_read(ss::temporary_buffer<char>);
+    ss::future<response_ptr> on_read(ss::input_stream<char>&);
 
 private:
     std::optional<std::reference_wrapper<boost::intrusive::list<context>>>
