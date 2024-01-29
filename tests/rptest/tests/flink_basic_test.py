@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 import os
 import csv
+import io
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.mark import matrix, ok_to_fail
@@ -181,15 +182,15 @@ class FlinkBasicTests(RedpandaTest):
             index_column = 1
             max_index = 0
             for f in list_files(data_path, node):
-                # Copy file locally
-                tmpfile = os.path.join("/tmp", "tmpcsvdata")
-                filepath = os.path.join(data_path, f)
-                node.account.copy_from(filepath, tmpfile)
-
+                # Read data into memory
+                csvdata = node.account.ssh_output(
+                    f"cat {os.path.join(data_path, f)}")
+                # Using StringsIO will eliminate file copy which proved to be unreliable
+                # Also, it will load data into memory only once along with csvreader
                 # processing file with csvreader will give most efficient memory
                 # usage. Only one row will present in memory at all times
                 # newline='' is critical, refer to: https://docs.python.org/3/library/csv.html
-                with open(tmpfile, newline='') as csvfile:
+                with io.StringIO(csvdata.decode(), newline='') as csvfile:
                     c_reader = csv.reader(csvfile, delimiter=',')
                     for row in c_reader:
                         # Second parameter is the quick and dirty value type map
@@ -197,8 +198,6 @@ class FlinkBasicTests(RedpandaTest):
                             row, [int, int, int, str, int, str])
                         if max_index < values[index_column]:
                             max_index = values[index_column]
-                # Cleanup
-                os.remove(tmpfile)
             return max_index
 
         # Load data output. There should be 1 partition file
