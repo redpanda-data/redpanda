@@ -520,7 +520,7 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     cluster::node::local_state::log_data_state monitor_update;
     monitor_update.data_target_size = target_size;
     monitor_update.data_current_size = usage.usage.total();
-    monitor_update.data_reclaimable_size = usage.reclaim.local_retention;
+    monitor_update.data_reclaimable_size = usage.reclaim.available;
     _local_monitor->local().set_log_data_state(monitor_update);
 
     /*
