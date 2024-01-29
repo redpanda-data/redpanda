@@ -27,6 +27,9 @@ public class TxWorkload extends GatedWorkload {
     public String topic;
     public int partitions;
     public int key_set_cardinality;
+    // [0, 1] 0 being no aborts and
+    // 1 being every request is an abort
+    public float abort_probability;
   }
 
   static class WriteInfo {
@@ -208,7 +211,8 @@ public class TxWorkload extends GatedWorkload {
 
       producer.beginTransaction();
 
-      boolean shouldAbort = random.nextInt(3) == 0;
+      boolean shouldAbort
+          = random.nextInt(100) < Math.round(args.abort_probability * 100);
 
       HashMap<String, WriteInfo> batch = new HashMap<>();
 

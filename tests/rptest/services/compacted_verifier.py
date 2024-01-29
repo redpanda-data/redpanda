@@ -163,7 +163,8 @@ class CompactedVerifier(Service):
                               connection,
                               topic,
                               partitions,
-                              key_set_cardinality=10):
+                              key_set_cardinality=10,
+                              abort_probability=0.3):
         self._partitions = partitions
         ip = self._node.account.hostname
         r = requests.post(f"http://{ip}:8080/start-producer",
@@ -172,7 +173,8 @@ class CompactedVerifier(Service):
                               "brokers": connection,
                               "topic": topic,
                               "partitions": partitions,
-                              "key_set_cardinality": key_set_cardinality
+                              "key_set_cardinality": key_set_cardinality,
+                              "abort_probability": abort_probability
                           })
         if r.status_code != 200:
             raise Exception(
