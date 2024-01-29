@@ -107,7 +107,7 @@ public:
             &_probe,
             [output](auto, auto data) {
                 output->push_back(std::move(data));
-                return wasm::write_success::yes;
+                return ssx::now(wasm::write_success::yes);
             })
           .then([output]() {
               perf_tests::do_not_optimize(model::transformed_data::make_batch(

@@ -121,12 +121,18 @@ MATCHER_P(SameBatchRef, ref, "") {
     }
     for (const auto& [a, b] : container::zip(a, b)) {
         if (a.key() != b.key()) {
+            *result_listener << "expected same key: " << a.key() << " vs "
+                             << b.key();
             return false;
         }
         if (a.value() != b.value()) {
+            *result_listener << "expected same value: " << a.value() << " vs "
+                             << b.value();
             return false;
         }
         if (a.headers() != b.headers()) {
+            *result_listener << "expected same headers: " << a.headers()
+                             << " vs " << b.headers();
             return false;
         }
     }
@@ -183,18 +189,20 @@ TEST_F(ProcessorTestFixture, TracksOffsets) {
     for (auto& b : first_batches) {
         push_batch(b.share());
     }
-    restart();
     for (auto& b : first_batches) {
         auto returned = read_batch();
-        EXPECT_THAT(b, SameBatch(returned));
+        EXPECT_THAT(b, SameBatch(returned)) << "first batch mismatch";
     }
+    // If we don't wait for the last commit to happen, it's possible that
+    // we restart and get duplicates.
+    wait_for_committed_offset(first_batches.back().last_offset());
     restart();
     for (auto& b : second_batches) {
         push_batch(b.share());
     }
     for (auto& b : second_batches) {
         auto returned = read_batch();
-        EXPECT_THAT(b, SameBatch(returned));
+        EXPECT_THAT(b, SameBatch(returned)) << "second batch mismatch";
     }
     EXPECT_EQ(error_count(), 0);
 }

@@ -277,7 +277,7 @@ TEST_F(WasmCacheTest, CanMultiplexTransforms) {
         ->transform(
           random_batch(),
           nullptr,
-          [](auto, auto) { return write_success::yes; })
+          [](auto, auto) { return ssx::now(write_success::yes); })
         .get(),
       std::runtime_error);
     EXPECT_EQ(state()->engine_restarts, 1);
@@ -286,7 +286,7 @@ TEST_F(WasmCacheTest, CanMultiplexTransforms) {
                       ->transform(
                         random_batch(),
                         nullptr,
-                        [](auto, auto) { return write_success::yes; })
+                        [](auto, auto) { return ssx::now(write_success::yes); })
                       .get());
     EXPECT_EQ(state()->engine_restarts, 1);
     engine_one->stop().get();

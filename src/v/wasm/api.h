@@ -34,7 +34,7 @@ using write_success = ss::bool_class<struct write_success_t>;
  * The topic is optional, and if omitted, then the "default" output topic should
  * be assumed.
  */
-using transform_callback = ss::noncopyable_function<write_success(
+using transform_callback = ss::noncopyable_function<ss::future<write_success>(
   std::optional<model::topic_view>, model::transformed_data)>;
 
 /**

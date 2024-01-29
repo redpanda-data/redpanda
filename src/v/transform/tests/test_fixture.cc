@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <stdexcept>
 
 namespace transform::testing {
 ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
@@ -103,14 +104,17 @@ ss::future<> fake_wasm_engine::transform(
     case mode::noop: {
         auto it = model::record_batch_iterator::create(batch);
         while (it.has_next()) {
-            cb(std::nullopt, model::transformed_data::from_record(it.next()));
+            auto transformed = model::transformed_data::from_record(it.next());
+            auto success = co_await cb(std::nullopt, std::move(transformed));
+            if (!success) {
+                throw std::runtime_error("transform write failed!");
+            }
         }
         break;
     }
     case mode::filter:
         break;
     }
-    co_return;
 }
 
 ss::future<> fake_offset_tracker::commit_offset(kafka::offset o) {

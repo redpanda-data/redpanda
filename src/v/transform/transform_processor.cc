@@ -24,6 +24,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
@@ -225,6 +226,7 @@ ss::future<> processor::run_transform_loop() {
         }
         auto offset = model::offset_cast(batch->last_offset());
         ss::chunked_fifo<model::transformed_data> transformed;
+        vlog(_logger.trace, "transforming offset {}", offset);
         co_await _engine->transform(
           std::move(*batch),
           _probe,
@@ -233,8 +235,10 @@ ss::future<> processor::run_transform_loop() {
             model::transformed_data data) {
               vassert(topic == std::nullopt, "not supported yet 🙂");
               transformed.push_back(std::move(data));
-              return wasm::write_success::yes;
+              return ss::make_ready_future<wasm::write_success>(
+                wasm::write_success::yes);
           });
+        vlog(_logger.trace, "transformed offset {}", offset);
         if (!transformed.empty()) {
             auto b = model::transformed_data::make_batch(
               model::timestamp::now(), std::move(transformed));

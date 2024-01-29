@@ -224,39 +224,43 @@ ss::future<int32_t> transform_module::read_next_record(
     co_return int32_t(record.payload_size);
 }
 
-int32_t transform_module::write_record(ffi::array<uint8_t> buf) {
+ss::future<int32_t> transform_module::write_record(ffi::array<uint8_t> buf) {
     if (!_call_ctx) {
-        return NO_ACTIVE_TRANSFORM;
+        co_return NO_ACTIVE_TRANSFORM;
     }
     iobuf b;
     b.append(buf.data(), buf.size());
     auto d = model::transformed_data::create_validated(std::move(b));
     if (!d) {
-        return INVALID_BUFFER;
+        co_return INVALID_BUFFER;
     }
-    auto result = _call_ctx->callback->emit(std::nullopt, *std::move(d));
-    return result == write_success::yes ? int32_t(buf.size()) : INVALID_WRITE;
+    auto result = co_await _call_ctx->callback->emit(
+      std::nullopt, *std::move(d));
+    co_return result == write_success::yes ? int32_t(buf.size())
+                                           : INVALID_WRITE;
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
-int32_t transform_module::write_record_with_options(
+ss::future<int32_t> transform_module::write_record_with_options(
   ffi::array<uint8_t> buf, ffi::array<uint8_t> options_buf) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
     if (!_call_ctx) {
-        return NO_ACTIVE_TRANSFORM;
+        co_return NO_ACTIVE_TRANSFORM;
     }
     iobuf b;
     b.append(buf.data(), buf.size());
     auto d = model::transformed_data::create_validated(std::move(b));
     if (!d) {
-        return INVALID_BUFFER;
+        co_return INVALID_BUFFER;
     }
     auto options = write_options::parse(options_buf);
     if (!options) {
-        return INVALID_BUFFER;
+        co_return INVALID_BUFFER;
     }
-    auto result = _call_ctx->callback->emit(options->topic, *std::move(d));
-    return result == write_success::yes ? int32_t(buf.size()) : INVALID_WRITE;
+    auto result = co_await _call_ctx->callback->emit(
+      options->topic, *std::move(d));
+    co_return result == write_success::yes ? int32_t(buf.size())
+                                           : INVALID_WRITE;
 }
 
 void transform_module::start() {

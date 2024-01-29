@@ -70,9 +70,8 @@ public:
     // Called before surfacing a record to the VM.
     virtual void pre_record() = 0;
     // Called for each record output from the VM.
-    virtual write_success
-      emit(std::optional<model::topic_view>, model::transformed_data)
-      = 0;
+    virtual ss::future<write_success>
+      emit(std::optional<model::topic_view>, model::transformed_data) = 0;
     // Called after a VM specifies it's done with a record.
     virtual void post_record() = 0;
 };
@@ -154,9 +153,10 @@ public:
       model::offset* offset_delta,
       ffi::array<uint8_t>);
 
-    int32_t write_record(ffi::array<uint8_t>);
+    ss::future<int32_t> write_record(ffi::array<uint8_t>);
 
-    int32_t write_record_with_options(ffi::array<uint8_t>, ffi::array<uint8_t>);
+    ss::future<int32_t>
+      write_record_with_options(ffi::array<uint8_t>, ffi::array<uint8_t>);
 
     // End ABI exports
 
