@@ -13,6 +13,8 @@
 
 #include "base/seastarx.h"
 #include "bytes/bytes.h"
+#include "serde/rw/array.h"
+#include "serde/rw/rw.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -69,6 +71,15 @@ public:
     friend std::ostream& operator<<(std::ostream&, const xid&);
 
     friend std::istream& operator>>(std::istream&, xid&);
+
+    friend inline void
+    read_nested(iobuf_parser& in, xid& id, size_t const bytes_left_limit) {
+        serde::read_nested(in, id._data, bytes_left_limit);
+    }
+
+    friend inline void write(iobuf& out, xid id) {
+        serde::write(out, id._data);
+    }
 
 private:
     friend struct fmt::formatter<xid>;
