@@ -12,9 +12,11 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
 #include "utils/named_type.h"
+#include "wasm/api.h"
 #include "wasm/ffi.h"
 #include "wasm/wasi.h"
 
@@ -68,7 +70,9 @@ public:
     // Called before surfacing a record to the VM.
     virtual void pre_record() = 0;
     // Called for each record output from the VM.
-    virtual void emit(model::transformed_data) = 0;
+    virtual write_success
+      emit(std::optional<model::topic_view>, model::transformed_data)
+      = 0;
     // Called after a VM specifies it's done with a record.
     virtual void post_record() = 0;
 };

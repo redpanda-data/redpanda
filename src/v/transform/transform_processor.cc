@@ -228,8 +228,12 @@ ss::future<> processor::run_transform_loop() {
         co_await _engine->transform(
           std::move(*batch),
           _probe,
-          [&transformed](model::transformed_data data) {
+          [&transformed](
+            std::optional<model::topic_view> topic,
+            model::transformed_data data) {
+              vassert(topic == std::nullopt, "not supported yet 🙂");
               transformed.push_back(std::move(data));
+              return wasm::write_success::yes;
           });
         if (!transformed.empty()) {
             auto b = model::transformed_data::make_batch(

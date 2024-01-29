@@ -754,8 +754,10 @@ private:
                 _measurement = _probe->latency_measurement();
             }
 
-            void emit(model::transformed_data data) final {
-                _cb(std::move(data));
+            write_success emit(
+              std::optional<model::topic_view> topic,
+              model::transformed_data data) final {
+                return _cb(topic, std::move(data));
             }
 
             void post_record() final { _measurement = nullptr; }

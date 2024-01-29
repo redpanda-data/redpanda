@@ -103,7 +103,7 @@ ss::future<> fake_wasm_engine::transform(
     case mode::noop: {
         auto it = model::record_batch_iterator::create(batch);
         while (it.has_next()) {
-            cb(model::transformed_data::from_record(it.next()));
+            cb(std::nullopt, model::transformed_data::from_record(it.next()));
         }
         break;
     }

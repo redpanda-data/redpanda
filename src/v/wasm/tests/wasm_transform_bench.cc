@@ -105,7 +105,10 @@ public:
           ->transform(
             std::move(batch),
             &_probe,
-            [output](auto data) { output->push_back(std::move(data)); })
+            [output](auto, auto data) {
+                output->push_back(std::move(data));
+                return wasm::write_success::yes;
+            })
           .then([output]() {
               perf_tests::do_not_optimize(model::transformed_data::make_batch(
                 model::timestamp::now(), std::move(*output)));

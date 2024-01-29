@@ -21,6 +21,7 @@
 #include "model/transform.h"
 #include "utils/named_type.h"
 #include "utils/vint.h"
+#include "wasm/api.h"
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
 #include "wasm/wasi.h"
@@ -35,6 +36,7 @@ namespace wasm {
 
 constexpr int32_t NO_ACTIVE_TRANSFORM = -1;
 constexpr int32_t INVALID_BUFFER = -2;
+constexpr int32_t INVALID_WRITE = -3;
 
 transform_module::transform_module(wasi::preview1_module* m)
   : _wasi_module(m) {}
@@ -203,8 +205,8 @@ int32_t transform_module::write_record(ffi::array<uint8_t> buf) {
     if (!d) {
         return INVALID_BUFFER;
     }
-    _call_ctx->callback->emit(*std::move(d));
-    return int32_t(buf.size());
+    auto result = _call_ctx->callback->emit(std::nullopt, *std::move(d));
+    return result == write_success::yes ? int32_t(buf.size()) : INVALID_WRITE;
 }
 
 void transform_module::start() {

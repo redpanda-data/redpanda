@@ -12,11 +12,13 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "wasm/fwd.h"
 
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
@@ -24,11 +26,16 @@
 
 namespace wasm {
 
+using write_success = ss::bool_class<struct write_success_t>;
+
 /**
  * The callback for when data emitted from the transform.
+ *
+ * The topic is optional, and if omitted, then the "default" output topic should
+ * be assumed.
  */
-using transform_callback
-  = ss::noncopyable_function<void(model::transformed_data)>;
+using transform_callback = ss::noncopyable_function<write_success(
+  std::optional<model::topic_view>, model::transformed_data)>;
 
 /**
  * A wasm engine is a running VM loaded with a user module and capable of
