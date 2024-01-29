@@ -57,7 +57,7 @@ struct node_state
 
 struct partition_status
   : serde::
-      envelope<partition_status, serde::version<2>, serde::compat_version<0>> {
+      envelope<partition_status, serde::version<3>, serde::compat_version<0>> {
     static constexpr size_t invalid_size_bytes = size_t(-1);
 
     model::partition_id id;
@@ -82,6 +82,12 @@ struct partition_status
      */
     std::optional<size_t> reclaimable_size_bytes;
 
+    /*
+     * the same as reclaimable_size_bytes, but instead of total reclaimable size
+     * this value corresponds to reclaimable size up to local retention setting.
+     */
+    std::optional<size_t> reclaimable_local_size_bytes;
+
     auto serde_fields() {
         return std::tie(
           id,
@@ -90,7 +96,8 @@ struct partition_status
           revision_id,
           size_bytes,
           under_replicated_replicas,
-          reclaimable_size_bytes);
+          reclaimable_size_bytes,
+          reclaimable_local_size_bytes);
     }
 
     friend std::ostream& operator<<(std::ostream&, const partition_status&);
