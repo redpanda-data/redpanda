@@ -102,6 +102,10 @@ public:
         return o << "{" << t() << "}";
     };
 
+    friend std::istream& operator>>(std::istream& i, base_named_type& t) {
+        return i >> t._value;
+    };
+
 protected:
     type _value = std::numeric_limits<T>::min();
 };
@@ -170,6 +174,10 @@ public:
 
     friend std::ostream& operator<<(std::ostream& o, const base_named_type& t) {
         return o << "{" << t() << "}";
+    };
+
+    friend std::istream& operator>>(std::istream& i, base_named_type& t) {
+        return i >> t._value;
     };
 
 protected:
