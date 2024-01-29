@@ -93,6 +93,9 @@ class TopicRecreateTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
 
         def topic_is_healthy():
+            if not swarm.is_alive(swarm.nodes[0]):
+                swarm.stop()
+                swarm.start()
             partitions = rpk.describe_topic(spec.name)
             hw_offsets = [p.high_watermark for p in partitions]
             offsets_present = [hw > 0 for hw in hw_offsets]
@@ -105,7 +108,10 @@ class TopicRecreateTest(RedpandaTest):
             self.client().delete_topic(spec.name)
             spec.replication_factor = rf
             self.client().create_topic(spec)
-            wait_until(topic_is_healthy, 30, 2)
+            wait_until(topic_is_healthy,
+                       30,
+                       2,
+                       err_msg=f"Topic {spec.name} health")
             sleep(5)
 
         swarm.stop()
