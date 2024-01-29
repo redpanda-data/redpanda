@@ -134,6 +134,7 @@ public:
     // Start ABI exports
 
     void check_abi_version_1();
+    void check_abi_version_2();
 
     ss::future<int32_t> read_batch_header(
       int64_t* base_offset,
@@ -154,6 +155,8 @@ public:
       ffi::array<uint8_t>);
 
     int32_t write_record(ffi::array<uint8_t>);
+
+    int32_t write_record_with_options(ffi::array<uint8_t>, ffi::array<uint8_t>);
 
     // End ABI exports
 
