@@ -178,3 +178,27 @@ class RpkACLTest(RedpandaTest):
                                                auth_password="any_pw",
                                                mechanism=self.mechanism)
         assert "Automatically generated password" not in out
+
+    @cluster(num_nodes=1)
+    def test_back_compat_flags(self):
+        """
+        This test ensures that we can use old flags ("--password")
+        mixed with new flags (-X pass, and --new-password)
+        """
+        user_1 = "foo_6"
+        # This uses --user, --password, and --new-password
+        out = self._rpk.sasl_create_user_basic(new_username=user_1,
+                                               new_password="my_pass",
+                                               auth_user=self.username,
+                                               auth_password=self.password,
+                                               mechanism=self.mechanism)
+        assert f'Created user "{user_1}"' in out
+
+        user_2 = "foo_7"
+        # This uses -X user, --password, and -X pass
+        out = self._rpk.sasl_create_user_basic_mix(new_username=user_2,
+                                                   new_password="my_pass",
+                                                   auth_user=self.username,
+                                                   auth_password=self.password,
+                                                   mechanism=self.mechanism)
+        assert f'Created user "{user_2}"' in out
