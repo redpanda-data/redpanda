@@ -80,4 +80,5 @@ private:
     SSL_ptr _ssl;
 
     ss::promise<> _wait_input_shutdown;
+    ss::sstring process_message(const char* buf, size_t len);
 };

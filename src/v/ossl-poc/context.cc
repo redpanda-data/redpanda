@@ -233,21 +233,12 @@ ss::future<context::response_ptr> context::on_read(ss::input_stream<char>& in) {
 
         if (!rcv_buf.empty()) {
             lg.debug("Received: {}", rcv_buf);
-            auto lat_data = pandaproxy::json::rjson_parse(
-              rcv_buf.c_str(), latency_data_handler<>{});
+            auto json_msg = process_message(rcv_buf.c_str(), rcv_buf.size());
 
-            lat_data.rcv_time
-              = std::chrono::duration_cast<std::chrono::milliseconds>(
-                  ss::lowres_system_clock::now().time_since_epoch())
-                  .count();
-            ::json::StringBuffer str_buf;
-            ::json::Writer<::json::StringBuffer> w(str_buf);
-            rjson_serialize(w, lat_data);
-            lg.debug("strbuf size: {}", str_buf.GetSize());
-            unsigned int len = str_buf.GetSize();
+            unsigned int len = json_msg.size();
             n = SSL_write(_ssl.get(), &len, sizeof(len));
-            lg.debug("SSL_write (size0: {}", n);
-            n = SSL_write(_ssl.get(), str_buf.GetString(), str_buf.GetSize());
+            lg.debug("SSL_write (size): {}", n);
+            n = SSL_write(_ssl.get(), json_msg.data(), json_msg.size());
             lg.debug("SSL_write: {}", n);
             ssl_err = SSL_get_error(_ssl.get(), n);
             if (n > 0) {
@@ -293,4 +284,17 @@ ss::future<context::response_ptr> context::on_read(ss::input_stream<char>& in) {
     }
 
     co_return std::move(resp);
+}
+
+ss::sstring context::process_message(const char* buf, size_t len) {
+    lg.debug("Processing {}", ss::sstring(buf, len));
+    auto lat_data = pandaproxy::json::rjson_parse(
+      buf, latency_data_handler<>{});
+    lat_data.rcv_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          ss::lowres_system_clock::now().time_since_epoch())
+                          .count();
+    ::json::StringBuffer str_buf;
+    ::json::Writer<::json::StringBuffer> w(str_buf);
+    rjson_serialize(w, lat_data);
+    return {str_buf.GetString(), str_buf.GetSize()};
 }
