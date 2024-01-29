@@ -3585,11 +3585,16 @@ struct batch_size_accumulator {
 
 FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
 #ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    size_t num_segments = 300;
+#else
+    size_t num_test_cases = 500;
+    size_t num_segments = 30;
+#endif
     // The test generates 300 segments with random data and the record batch map
     // for it. It generates parameters for the method randomly, invokes the
     // method and validates the result using the batch map. It also checks some
     // corner cases at the end of the test (out of range access, etc).
-    size_t num_test_cases = 5000;
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -3602,7 +3607,7 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < 300; i++) {
+    for (int i = 0; i < num_segments; i++) {
         append_random_batches(
           log,
           10,
@@ -3695,17 +3700,20 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
           ss::default_priority_class())
         .get()
       == std::nullopt);
-
-#endif
 };
 
 FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
 #ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    size_t num_segments = 300;
+#else
+    size_t num_test_cases = 500;
+    size_t num_segments = 30;
+#endif
     // This test generates 300 segments and creates a record batch map.
     // Then it runs size-based offset_range_size method overload with
     // randomly generated parameters 5000 times. The record batch map
     // is used to find expected offset range size.
-    size_t num_test_cases = 5000;
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -3718,7 +3726,7 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < 300; i++) {
+    for (int i = 0; i < num_segments; i++) {
         append_random_batches(
           log,
           10,
@@ -3893,12 +3901,16 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
           ss::default_priority_class())
         .get()
       == std::nullopt);
-
-#endif
 };
 
 FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
 #ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    size_t num_segments = 300;
+#else
+    size_t num_test_cases = 500;
+    size_t num_segments = 30;
+#endif
     // This test generates 300 segments and creates a record batch map.
     // Then it runs compaction and creates a second record batch map. Then it
     // uses offset_range_size method to fetch segments of various sizes. The
@@ -3906,7 +3918,6 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
     // map. The expected result (size of the offset range after compaction) is
     // calculated using post-compaction batch map. Test checks various corner
     // cases at the end.
-    size_t num_test_cases = 5000;
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -3925,7 +3936,7 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < 300; i++) {
+    for (int i = 0; i < num_segments; i++) {
         append_random_batches(
           log, 10, model::term_id(i), key_limited_random_batch_generator());
         if (first_segment_last_offset == model::offset{}) {
@@ -4086,19 +4097,22 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
           ss::default_priority_class())
         .get()
       == std::nullopt);
-
-#endif
 };
 
 FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
 #ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    size_t num_segments = 300;
+#else
+    size_t num_test_cases = 500;
+    size_t num_segments = 30;
+#endif
     // This test generates 300 segments and creates a record batch map.
     // Then it runs compaction and creates a second record batch map. Then it
     // uses offset_range_size method to fetch segments of various sizes. We need
     // to maps to be able to start on every offset, not only offsets that
     // survived compaction. The pre-compaction map is used to pick starting
     // point. The post-compaction map is used to calculate the expected size.
-    size_t num_test_cases = 5000;
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -4117,7 +4131,7 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < 300; i++) {
+    for (int i = 0; i < num_segments; i++) {
         append_random_batches(
           log, 10, model::term_id(0), key_limited_random_batch_generator());
         if (first_segment_last_offset == model::offset{}) {
@@ -4351,12 +4365,14 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
           ss::default_priority_class())
         .get()
       == std::nullopt);
-
-#endif
 };
 
 FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
 #ifdef NDEBUG
+    size_t num_segments = 300;
+#else
+    size_t num_segments = 30;
+#endif
     // This test attempts to consume the log incrementally using overload
     // of the offset_range_size that gets offset+size and returns size+last
     // offset; The idea is to get the size of the section and then to consume it
@@ -4393,7 +4409,7 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < 300; i++) {
+    for (int i = 0; i < num_segments; i++) {
         append_random_batches(
           log,
           10,
@@ -4484,6 +4500,4 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
             BOOST_REQUIRE_EQUAL(measured_size, res->on_disk_size);
         }
     }
-
-#endif
 };
