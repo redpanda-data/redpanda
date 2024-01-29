@@ -2547,7 +2547,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
     /*
      * cache this for access by the health
      */
-    _reclaimable_local_size_bytes = reclaim.local_retention;
+    _reclaimable_size_bytes = reclaim.available;
 
     co_return std::make_pair(usage, reclaim);
 }
@@ -3029,7 +3029,7 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
     co_return res;
 }
 
-size_t disk_log_impl::reclaimable_local_size_bytes() const {
+size_t disk_log_impl::reclaimable_size_bytes() const {
     /*
      * circumstances/configuration under which this log will be trimming back to
      * local retention size may change. catch these before reporting potentially
@@ -3045,7 +3045,7 @@ size_t disk_log_impl::reclaimable_local_size_bytes() const {
     if (deletion_exempt(config().ntp())) {
         return 0;
     }
-    return _reclaimable_local_size_bytes;
+    return _reclaimable_size_bytes;
 }
 
 } // namespace storage
