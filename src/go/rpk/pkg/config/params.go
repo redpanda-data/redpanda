@@ -822,52 +822,52 @@ func (p *Params) InstallFormatFlag(cmd *cobra.Command) {
 
 func (p *Params) backcompatFlagsToOverrides() {
 	if len(p.brokers) > 0 {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaBrokers, strings.Join(p.brokers, ",")))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xKafkaBrokers, strings.Join(p.brokers, ","))}, p.FlagOverrides...)
 	}
 	if p.user != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaSASLUser, p.user))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xKafkaSASLUser, p.user)}, p.FlagOverrides...)
 	}
 	if p.password != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaSASLPass, p.password))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xKafkaSASLPass, p.password)}, p.FlagOverrides...)
 	}
 	if p.saslMechanism != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaSASLMechanism, p.saslMechanism))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xKafkaSASLMechanism, p.saslMechanism)}, p.FlagOverrides...)
 	}
 
 	if p.enableKafkaTLS {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%t", xKafkaTLSEnabled, p.enableKafkaTLS))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%t", xKafkaTLSEnabled, p.enableKafkaTLS)}, p.FlagOverrides...)
 	}
 	if p.kafkaCAFile != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaCACert, p.kafkaCAFile))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xKafkaCACert, p.kafkaCAFile)}, p.FlagOverrides...)
 	}
 	if p.kafkaCertFile != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaClientCert, p.kafkaCertFile))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xKafkaClientCert, p.kafkaCertFile)}, p.FlagOverrides...)
 	}
 	if p.kafkaKeyFile != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaClientKey, p.kafkaKeyFile))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xKafkaClientKey, p.kafkaKeyFile)}, p.FlagOverrides...)
 	}
 
 	if len(p.adminURLs) > 0 {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminHosts, strings.Join(p.adminURLs, ",")))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xAdminHosts, strings.Join(p.adminURLs, ","))}, p.FlagOverrides...)
 	}
 	if p.enableAdminTLS {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%t", xAdminTLSEnabled, p.enableAdminTLS))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%t", xAdminTLSEnabled, p.enableAdminTLS)}, p.FlagOverrides...)
 	}
 	if p.adminCAFile != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminCACert, p.adminCAFile))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xAdminCACert, p.adminCAFile)}, p.FlagOverrides...)
 	}
 	if p.adminCertFile != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminClientCert, p.adminCertFile))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xAdminClientCert, p.adminCertFile)}, p.FlagOverrides...)
 	}
 	if p.adminKeyFile != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminClientKey, p.adminKeyFile))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xAdminClientKey, p.adminKeyFile)}, p.FlagOverrides...)
 	}
 
 	if p.cloudClientID != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xCloudClientID, p.cloudClientID))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xCloudClientID, p.cloudClientID)}, p.FlagOverrides...)
 	}
 	if p.cloudClientSecret != "" {
-		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xCloudClientSecret, p.cloudClientSecret))
+		p.FlagOverrides = append([]string{fmt.Sprintf("%s=%s", xCloudClientSecret, p.cloudClientSecret)}, p.FlagOverrides...)
 	}
 }
 
