@@ -144,10 +144,10 @@ public:
     virtual probe& get_probe() = 0;
 
     /*
-     * estimate amount of data beyond local retention. zero will be returned in
+     * estimate amount of data safely reclaimable. zero will be returned in
      * cases where this is not applicable, such as the log not being TS-enabled.
      */
-    virtual size_t reclaimable_local_size_bytes() const = 0;
+    virtual size_t reclaimable_size_bytes() const = 0;
 
 private:
     ntp_config _config;
