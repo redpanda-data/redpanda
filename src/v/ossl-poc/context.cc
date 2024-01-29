@@ -105,7 +105,7 @@ ss::future<> context::process() {
 
 ss::future<> context::process_one_request() {
     auto buf = co_await _conn->input().read();
-    lg.info("Read {} bytes", buf.size());
+    lg.debug("Read {} bytes", buf.size());
     auto resp = on_read(std::move(buf));
 
     if (!resp->buf().empty()) {
@@ -214,6 +214,10 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
             // now contains plaintext data
             n = SSL_read(_ssl.get(), buf.data(), buf.size());
             lg.debug("SSL_read: {}", n);
+            if (n == sizeof(int32_t)) {
+                // skip the size byte
+                continue;
+            }
             if (n > 0) {
                 lg.debug("Read {} bytes from SSL", n);
                 rcv_buf.append(buf.data(), n);
@@ -237,6 +241,9 @@ context::response_ptr context::on_read(ss::temporary_buffer<char> tb) {
             ::json::Writer<::json::StringBuffer> w(str_buf);
             rjson_serialize(w, lat_data);
             lg.debug("strbuf size: {}", str_buf.GetSize());
+            unsigned int len = str_buf.GetSize();
+            n = SSL_write(_ssl.get(), &len, sizeof(len));
+            lg.debug("SSL_write (size0: {}", n);
             n = SSL_write(_ssl.get(), str_buf.GetString(), str_buf.GetSize());
             lg.debug("SSL_write: {}", n);
             ssl_err = SSL_get_error(_ssl.get(), n);
