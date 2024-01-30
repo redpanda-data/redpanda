@@ -284,11 +284,15 @@ public:
 
     ss::circular_buffer<model::record_batch>
     read_and_validate_all_batches(ss::shared_ptr<storage::log> log) {
+        return read_and_validate_all_batches(
+          log, model::model_limits<model::offset>::max());
+    }
+
+    ss::circular_buffer<model::record_batch> read_and_validate_all_batches(
+      ss::shared_ptr<storage::log> log, model::offset max_offset) {
         auto lstats = log->offsets();
         storage::log_reader_config cfg(
-          lstats.start_offset,
-          lstats.committed_offset,
-          ss::default_priority_class());
+          lstats.start_offset, max_offset, ss::default_priority_class());
         auto reader = log->make_reader(std::move(cfg)).get0();
         return reader.consume(batch_validating_consumer{}, model::no_timeout)
           .get0();
