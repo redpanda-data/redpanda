@@ -90,6 +90,9 @@ transparent_hugepages  true     true
         # either x86-64 or i386.
         is_not_x86 = "86" not in uname
 
+        r = str(node.account.ssh_output("dmidecode -s system-product-name"))
+        isGCP = "Google Compute Engine" in r
+
         # Clocksource is only available for x86 architectures.
         expected = expected.replace(
             "clocksource            true     true       ",
@@ -98,10 +101,11 @@ transparent_hugepages  true     true
 
         expected = expected.replace(
             "disk_write_cache       true     false      Disk write cache tuner is only supported in GCP",
-            "disk_write_cache       true     true       ") if os.environ.get(
-                'CDT_CLOUD_PROVIDER', None) == 'gcp' else expected
+            "disk_write_cache       true     true       "
+        ) if isGCP else expected
 
         output = rpk.tune("list")
-        self.logger.debug(output)
+        if output != expected:
+            self.logger.debug(f"expected:\n{expected}\ngot:\n{output}")
 
         assert output == expected
