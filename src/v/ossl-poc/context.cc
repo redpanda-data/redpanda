@@ -162,7 +162,7 @@ context::on_read_gnutls(ss::input_stream<char>& in) {
     if (!sz) {
         co_return std::move(resp);
     }
-    if (sz.value() > 1024 * 1024) {
+    if (sz.value() > 512 * 1024 * 1024) { // can't be greater than 512MiB
         lg.warn("Received too large a size: {}", sz.value());
         co_return std::move(resp);
     }
