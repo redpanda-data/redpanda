@@ -21,9 +21,16 @@
 #include <seastar/core/gate.hh>
 
 #include <absl/container/flat_hash_map.h>
+
+struct oc_tracker;
+
 namespace raft {
 class consensus;
+class probe;
 
+/**
+ * @brief Oppurtunisically batches up replication requests.
+ */
 class replicate_batcher {
 public:
     class item {
@@ -34,12 +41,14 @@ public:
           ssx::semaphore_units u,
           std::optional<model::term_id> expected_term,
           consistency_level c_lvl,
-          std::optional<std::chrono::milliseconds> timeout)
+          std::optional<std::chrono::milliseconds> timeout,
+          shared_tracker tracker)
           : _record_count(record_count)
           , _data(std::move(batches))
           , _units(std::move(u))
           , _expected_term(expected_term)
-          , _consistency_lvl(c_lvl) {
+          , _consistency_lvl(c_lvl)
+          , _tracker(std::move(tracker)) {
             _timeout_timer.set_callback([this] { expire_with_timeout(); });
             if (timeout) {
                 _timeout_timer.arm(timeout.value());
@@ -111,6 +120,9 @@ public:
         bool _ready{false};
         ss::timer<> _timeout_timer;
         ss::promise<result<replicate_result>> _promise;
+
+    public:
+        shared_tracker _tracker;
     };
     using item_ptr = ss::lw_shared_ptr<item>;
     explicit replicate_batcher(consensus* ptr, size_t cache_size);
@@ -125,9 +137,13 @@ public:
       std::optional<model::term_id>,
       model::record_batch_reader,
       consistency_level,
-      std::optional<std::chrono::milliseconds> = std::nullopt);
+      std::optional<std::chrono::milliseconds> = std::nullopt,
+      shared_tracker tracker = nullptr);
 
-    ss::future<> flush(ssx::semaphore_units u, bool const transfer_flush);
+    ss::future<> flush(
+      ssx::semaphore_units u,
+      bool const transfer_flush,
+      shared_tracker tracker = nullptr);
 
     ss::future<> stop();
 
@@ -142,21 +158,26 @@ private:
       std::optional<model::term_id>,
       model::record_batch_reader,
       consistency_level,
-      std::optional<std::chrono::milliseconds>);
+      std::optional<std::chrono::milliseconds>,
+      shared_tracker tracker = nullptr);
 
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
       std::optional<model::term_id>,
       ss::circular_buffer<model::record_batch>,
       size_t,
       consistency_level,
-      std::optional<std::chrono::milliseconds>);
+      std::optional<std::chrono::milliseconds>,
+      shared_tracker tracker = nullptr);
 
     ss::future<result<replicate_result>> cache_and_wait_for_result(
       ss::promise<> enqueued,
       std::optional<model::term_id> expected_term,
       model::record_batch_reader r,
       consistency_level consistency_lvl,
-      std::optional<std::chrono::milliseconds> timeout);
+      std::optional<std::chrono::milliseconds> timeout,
+      shared_tracker tracker = nullptr);
+
+    probe& probe();
 
     consensus* _ptr;
     ssx::semaphore _max_batch_size_sem;

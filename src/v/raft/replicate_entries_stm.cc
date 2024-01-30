@@ -22,6 +22,7 @@
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
+#include "raft/probe.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
 #include "rpc/types.h"
@@ -54,7 +55,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::flush_log() {
     using ret_t = result<append_entries_reply>;
     auto flush_f = ss::now();
     if (_is_flush_required) {
-        flush_f = _ptr->flush_log().discard_result();
+        flush_f = _ptr->flush_log(_trackers).discard_result();
     }
 
     auto f = flush_f
@@ -286,7 +287,9 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
         }
     });
     _units = ss::make_lw_shared<units_t>(std::move(u));
+    record("b_append_to_self");
     _append_result = co_await append_to_self();
+    record("a_append_to_self");
 
     if (!_append_result) {
         co_return build_replicate_result();
@@ -342,6 +345,8 @@ result<replicate_result> replicate_entries_stm::build_replicate_result() const {
 
 ss::future<result<replicate_result>>
 replicate_entries_stm::wait_for_majority() {
+    record("b_wait_for_majority");
+
     if (!_append_result) {
         co_return build_replicate_result();
     }
@@ -364,10 +369,15 @@ replicate_entries_stm::wait_for_majority() {
                                && _ptr->_log->get_term(appended_offset)
                                     != appended_term;
 
-        return committed || truncated;
+        const bool cond = committed || truncated;
+
+        this->_ptr->get_probe().majority_wait_cv_cond_called(cond);
+
+        return cond;
     };
     try {
         co_await _ptr->_commit_index_updated.wait(stop_cond);
+        record("a_commit_index_updated");
         co_return process_result(appended_offset, appended_term);
 
     } catch (const ss::broken_condition_variable&) {
@@ -436,13 +446,15 @@ ss::future<> replicate_entries_stm::wait_for_shutdown() {
 replicate_entries_stm::replicate_entries_stm(
   consensus* p,
   append_entries_request r,
-  absl::flat_hash_map<vnode, follower_req_seq> seqs)
+  absl::flat_hash_map<vnode, follower_req_seq> seqs,
+  tracker_vector trackers)
   : _ptr(p)
   , _meta(r.metadata())
   , _is_flush_required(r.is_flush_required())
   , _batches(std::move(r).release_batches())
   , _followers_seq(std::move(seqs))
-  , _ctxlog(_ptr->_ctxlog) {}
+  , _ctxlog(_ptr->_ctxlog)
+  , _trackers(std::move(trackers)) {}
 
 replicate_entries_stm::~replicate_entries_stm() {
     vassert(

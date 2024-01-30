@@ -40,6 +40,8 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 
+struct oc_latency;
+
 namespace kafka {
 
 class server final
@@ -72,7 +74,7 @@ public:
       ssx::singleton_thread_worker&,
       const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
 
-    ~server() noexcept override = default;
+    ~server() noexcept override;
     server(const server&) = delete;
     server& operator=(const server&) = delete;
     server(server&&) noexcept = delete;
@@ -174,6 +176,8 @@ public:
 
     sasl_probe& sasl_probe() { return *_sasl_probe; }
 
+    oc_latency& oc_probe() { return *_oc_probe; }
+
     ssx::singleton_thread_worker& thread_worker() { return _thread_worker; }
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
@@ -239,6 +243,7 @@ private:
     metrics::internal_metric_groups _metrics;
     std::unique_ptr<class latency_probe> _probe;
     std::unique_ptr<class sasl_probe> _sasl_probe;
+    std::unique_ptr<oc_latency> _oc_probe;
     ssx::singleton_thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;

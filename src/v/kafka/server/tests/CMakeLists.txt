@@ -16,7 +16,6 @@ rp_test(
   LABELS kafka
 )
 
-
 v_cc_library(
   NAME
     kafka_test_utils

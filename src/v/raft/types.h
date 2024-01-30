@@ -24,6 +24,7 @@
 #include "reflection/async_adl.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
+#include "utils/oc_latency.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/io_priority_class.hh>
@@ -36,6 +37,8 @@
 
 #include <cstdint>
 #include <exception>
+
+struct oc_tracker;
 
 namespace raft {
 using clock_type = ss::lowres_clock;
@@ -517,9 +520,11 @@ struct replicate_stages {
 enum class consistency_level { quorum_ack, leader_ack, no_ack };
 
 struct replicate_options {
-    explicit replicate_options(consistency_level l)
+    explicit replicate_options(
+      consistency_level l, shared_tracker tracker = nullptr)
       : consistency(l)
-      , timeout(std::nullopt) {}
+      , timeout(std::nullopt)
+      , tracker(std::move(tracker)) {}
 
     replicate_options(consistency_level l, std::chrono::milliseconds timeout)
       : consistency(l)
@@ -527,6 +532,7 @@ struct replicate_options {
 
     consistency_level consistency;
     std::optional<std::chrono::milliseconds> timeout;
+    shared_tracker tracker{nullptr};
 };
 
 struct transfer_leadership_options {

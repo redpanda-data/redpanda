@@ -760,7 +760,7 @@ group_manager::recover_offsets(group_offsets_snapshot snap) {
           "Recovering group {} from snapshot on {}",
           kafka_r.data.group_id,
           offsets_ntp);
-        auto stages = offset_commit(std::move(kafka_r));
+        auto stages = offset_commit(std::move(kafka_r), nullptr);
         co_await std::move(stages.dispatched);
         auto kafka_res = co_await std::move(stages.result);
         error_code first_error = error_code::none;
@@ -1408,8 +1408,8 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
       });
 }
 
-group::offset_commit_stages
-group_manager::offset_commit(offset_commit_request&& r) {
+group::offset_commit_stages group_manager::offset_commit(
+  offset_commit_request&& r, shared_tracker tracker) {
     auto error = validate_group_status(
       r.ntp, r.data.group_id, offset_commit_api::key);
     if (error != error_code::none) {
@@ -1443,7 +1443,8 @@ group_manager::offset_commit(offset_commit_request&& r) {
         }
     }
 
-    auto stages = group->handle_offset_commit(std::move(r));
+    tracker->record("b_hoc");
+    auto stages = group->handle_offset_commit(std::move(r), tracker);
     stages.result = stages.result.finally([group] {});
     return stages;
 }

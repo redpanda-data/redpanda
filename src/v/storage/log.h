@@ -20,6 +20,7 @@
 #include "storage/ntp_config.h"
 #include "storage/segment_reader.h"
 #include "storage/types.h"
+#include "utils/oc_latency_fwd.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -91,6 +92,7 @@ public:
     // final operation. Invalid state after
     virtual ss::future<> remove() = 0;
 
+    virtual ss::future<> flush(tracker_vector tv) = 0;
     virtual ss::future<> flush() = 0;
 
     virtual ss::future<std::optional<timequery_result>>

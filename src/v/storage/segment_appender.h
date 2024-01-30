@@ -22,6 +22,7 @@
 #include "storage/fwd.h"
 #include "storage/segment_appender_chunk.h"
 #include "storage/storage_resources.h"
+#include "utils/oc_latency_fwd.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -122,7 +123,7 @@ public:
     ss::future<> append(const iobuf& io);
     ss::future<> truncate(size_t n);
     ss::future<> close();
-    ss::future<> flush();
+    ss::future<> flush(tracker_vector tv = {});
 
     struct callbacks {
         virtual ~callbacks() = default;
@@ -152,7 +153,7 @@ public:
 private:
     using chunk_ptr = ss::lw_shared_ptr<chunk>;
 
-    void dispatch_background_head_write();
+    void dispatch_background_head_write(tracker_vector tv);
     ss::future<> do_next_adaptive_fallocation();
     ss::future<> hydrate_last_half_page();
     ss::future<> do_truncation(size_t);

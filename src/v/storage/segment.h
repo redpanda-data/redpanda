@@ -21,6 +21,7 @@
 #include "storage/segment_reader.h"
 #include "storage/types.h"
 #include "storage/version.h"
+#include "utils/oc_latency_fwd.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
@@ -90,7 +91,7 @@ public:
     segment& operator=(const segment&) = delete;
 
     ss::future<> close();
-    ss::future<> flush();
+    ss::future<> flush(tracker_vector tv = {});
     ss::future<> release_appender(readers_cache*);
     ss::future<> truncate(
       model::offset, size_t physical, model::timestamp new_max_timestamp);
@@ -215,7 +216,7 @@ private:
       size_t physical,
       model::timestamp new_max_timestamp);
     ss::future<> do_close();
-    ss::future<> do_flush();
+    ss::future<> do_flush(tracker_vector tv);
     ss::future<> do_release_appender(
       segment_appender_ptr,
       std::optional<batch_cache_index>,

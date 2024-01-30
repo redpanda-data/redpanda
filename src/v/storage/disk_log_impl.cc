@@ -39,6 +39,7 @@
 #include "storage/types.h"
 #include "storage/version.h"
 #include "utils/human.h"
+#include "utils/oc_latency_fwd.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -1541,15 +1542,17 @@ log_appender disk_log_impl::make_appender(log_append_config cfg) {
       std::make_unique<disk_log_appender>(*this, cfg, now, next_offset));
 }
 
-ss::future<> disk_log_impl::flush() {
+ss::future<> disk_log_impl::flush(tracker_vector tv) {
     vassert(!_closed, "flush on closed log - {}", *this);
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
     vlog(
       stlog.trace, "flush on segment with offsets {}", _segs.back()->offsets());
-    return _segs.back()->flush();
+    return _segs.back()->flush(tv);
 }
+
+ss::future<> disk_log_impl::flush() { return flush({}); }
 
 size_t disk_log_impl::max_segment_size() const {
     // override for segment size

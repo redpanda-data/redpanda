@@ -25,6 +25,12 @@ using intrusive_list_hook = boost::intrusive::list_member_hook<
   boost::intrusive::link_mode<boost::intrusive::auto_unlink>>;
 
 /**
+ * An auto-unlink intrusive base class.
+ */
+using intrusive_list_base = boost::intrusive::list_base_hook<
+  boost::intrusive::link_mode<boost::intrusive::auto_unlink>>;
+
+/**
  * An intrusive list.
  *
  * An intrusive_list always uses an auto-unlink hook.

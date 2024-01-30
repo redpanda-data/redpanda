@@ -85,13 +85,21 @@ namespace raft {
 ///                     v               Wait for (1) or (2)
 ///         Store entry offset & term
 
+inline void record_vector(tracker_vector& v, const char* what) {
+    for (auto& t : v) {
+        t->record(what);
+    }
+}
+
 class replicate_entries_stm {
 public:
     using units_t = std::vector<ssx::semaphore_units>;
     replicate_entries_stm(
       consensus*,
       append_entries_request,
-      absl::flat_hash_map<vnode, follower_req_seq>);
+      absl::flat_hash_map<vnode, follower_req_seq>,
+      tracker_vector);
+
     ~replicate_entries_stm();
 
     /// caller have to pass semaphore units, the apply call will do the
@@ -129,6 +137,8 @@ private:
 
     result<replicate_result> build_replicate_result() const;
 
+    void record(const char* what) { record_vector(_trackers, what); }
+
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
     protocol_metadata _meta;
@@ -145,6 +155,7 @@ private:
     ss::lw_shared_ptr<std::vector<ssx::semaphore_units>> _units;
     std::optional<result<storage::append_result>> _append_result;
     uint16_t _requests_count = 0;
+    tracker_vector _trackers;
 };
 
 } // namespace raft

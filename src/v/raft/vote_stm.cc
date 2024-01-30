@@ -15,6 +15,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/probe.h"
 #include "raft/raftgen_service.h"
 #include "ssx/semaphore.h"
 

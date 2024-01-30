@@ -27,6 +27,7 @@
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
+#include "utils/oc_latency.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/do_with.hh>
@@ -93,7 +94,7 @@ ss::future<> segment::close() {
 
     auto units = co_await _resources.get_close_flush_units();
 
-    co_await do_flush();
+    co_await do_flush({});
     co_await do_close();
 
     if (is_tombstone()) {
@@ -265,7 +266,7 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
     if (_destructive_ops.try_write_lock()) {
         _destructive_ops.write_unlock();
         return write_lock().then([this](ss::rwlock::holder h) {
-            return do_flush()
+            return do_flush({})
               .then([this] {
                   auto a = std::exchange(_appender, nullptr);
                   auto c
@@ -280,7 +281,7 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
         });
     } else {
         return read_lock().then([this, readers_cache](ss::rwlock::holder h) {
-            return do_flush()
+            return do_flush({})
               .then([this, readers_cache] {
                   release_appender_in_background(readers_cache);
               })
@@ -322,20 +323,23 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
       });
 }
 
-ss::future<> segment::flush() {
+ss::future<> segment::flush(tracker_vector tv) {
     check_segment_not_closed("flush()");
-    return read_lock().then([this](ss::rwlock::holder h) {
-        return do_flush().finally([h = std::move(h)] {});
+    record(tv, "AY_before_readlock");
+    return read_lock().then([this, tv = std::move(tv)](ss::rwlock::holder h) {
+        record(tv, "AY_after_readlock");
+        return do_flush(tv).finally([h = std::move(h)] {});
     });
 }
-ss::future<> segment::do_flush() {
+
+ss::future<> segment::do_flush(tracker_vector tv) {
     _generation_id++;
     if (!_appender) {
         return ss::make_ready_future<>();
     }
     auto o = _tracker.dirty_offset;
     auto fsize = _appender->file_byte_offset();
-    return _appender->flush().then([this, o, fsize] {
+    return _appender->flush(std::move(tv)).then([this, o, fsize] {
         // never move committed offset backward, there may be multiple
         // outstanding flushes once the one executed later in terms of offset
         // finishes we guarantee that all previous flushes finished.
@@ -384,7 +388,7 @@ ss::future<> segment::do_truncate(
     _tracker.dirty_offset = new_max_offset;
     _reader->set_file_size(physical);
     vlog(
-      stlog.trace,
+      stlog.info,
       "truncating segment {} at {}",
       _reader->filename(),
       new_max_offset);

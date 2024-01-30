@@ -93,6 +93,7 @@ struct configuration final : public config_store {
 
     // Raft
     deprecated_property seed_server_meta_topic_partitions;
+    property<bool> use_new_cv;
     bounded_property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
     bounded_property<std::chrono::milliseconds> raft_heartbeat_timeout_ms;
     property<size_t> raft_heartbeat_disconnect_failures;

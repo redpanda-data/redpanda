@@ -22,6 +22,7 @@
 #include "storage/types.h"
 #include "utils/moving_average.h"
 #include "utils/mutex.h"
+#include "utils/oc_latency_fwd.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -66,6 +67,7 @@ public:
 
     ss::future<std::optional<ss::sstring>> close() final;
     ss::future<> remove() final;
+    ss::future<> flush(tracker_vector tv) final;
     ss::future<> flush() final;
     ss::future<> truncate(truncate_config) final;
     ss::future<> truncate_prefix(truncate_prefix_config) final;

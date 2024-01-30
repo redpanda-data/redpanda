@@ -19,6 +19,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
+#include "raft/probe.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
 #include "rpc/errc.h"

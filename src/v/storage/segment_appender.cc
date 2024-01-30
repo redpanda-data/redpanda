@@ -19,10 +19,12 @@
 #include "storage/logger.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/storage_resources.h"
+#include "utils/oc_latency_fwd.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
 
@@ -170,7 +172,7 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
             written += sz;
             _bytes_flush_pending += sz;
             if (_head->is_full()) {
-                dispatch_background_head_write();
+                dispatch_background_head_write({});
             }
         }
         if (written == n) {
@@ -202,7 +204,7 @@ void segment_appender::handle_inactive_timer() {
          * append: data was sitting in the write back buffer. the segment
          * appears to be inactive so go ahead and write that data to disk.
          */
-        dispatch_background_head_write();
+        dispatch_background_head_write({});
     }
 
     /*
@@ -467,7 +469,7 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
     });
 }
 
-void segment_appender::dispatch_background_head_write() {
+void segment_appender::dispatch_background_head_write(tracker_vector tv) {
     vassert(_head, "dispatching write requires active chunk");
     vassert(
       _head->bytes_pending() > 0,
@@ -535,64 +537,73 @@ void segment_appender::dispatch_background_head_write() {
      */
     auto units = ss::get_units(*head_sem, 1);
 
+    record(tv, "AW_dbhw_before_ws");
     (void)ss::with_semaphore(
       _concurrent_flushes,
       1,
-      [w, this, head_sem, units = std::move(units)]() mutable {
+      [w,
+       this,
+       head_sem,
+       units = std::move(units),
+       tv = std::move(tv)]() mutable {
+          record(tv, "AW_dbhw_after_ws");
           return units
-            .then([this, w](ssx::semaphore_units u) mutable {
-                const auto dma_size = w->chunk_end - w->chunk_begin;
+            .then(
+              [this, w, tv = std::move(tv)](ssx::semaphore_units u) mutable {
+                  record(tv, "AW_dbhw_after_units");
+                  const auto dma_size = w->chunk_end - w->chunk_begin;
 
-                vassert(
-                  dma_size <= _chunk_size && w->chunk_end > w->chunk_begin
-                    && w->chunk_end <= _chunk_size,
-                  "Bad write bounds _chunk_size: {}, chunk_begin: {}, "
-                  "chunk_end: {}",
-                  _chunk_size,
-                  w->chunk_begin,
-                  w->chunk_end);
+                  vassert(
+                    dma_size <= _chunk_size && w->chunk_end > w->chunk_begin
+                      && w->chunk_end <= _chunk_size,
+                    "Bad write bounds _chunk_size: {}, chunk_begin: {}, "
+                    "chunk_end: {}",
+                    _chunk_size,
+                    w->chunk_begin,
+                    w->chunk_end);
 
-                // prevent any more writes from merging into this entry
-                // as it is about to be dma_write'd.
-                w->set_state(write_state::DISPATCHED);
-                ++_inflight_dispatched;
-                ++_dispatched_writes;
+                  // prevent any more writes from merging into this entry
+                  // as it is about to be dma_write'd.
+                  w->set_state(write_state::DISPATCHED);
+                  ++_inflight_dispatched;
+                  ++_dispatched_writes;
 
-                return _out
+                  return _out
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                  .dma_write(
-                    w->file_start_offset,
-                    w->chunk->data() + w->chunk_begin,
-                    dma_size,
-                    _opts.priority)
+                    .dma_write(
+                      w->file_start_offset,
+                      w->chunk->data() + w->chunk_begin,
+                      dma_size,
+                      _opts.priority)
 #pragma clang diagnostic pop
-                  .then([this, w](size_t got) {
-                      /*
-                       * the continuation that captured full=true is the end
-                       * of the dependency chain for this chunk. it can be
-                       * returned to cache.
-                       */
-                      if (w->full) {
-                          w->chunk->reset();
-                          internal::chunks().add(w->chunk);
-                      }
+                    .then([this, w, tv = std::move(tv)](size_t got) {
+                        record(tv, "AW_dbhw_after_dma_write");
+                        /*
+                         * the continuation that captured full=true is the end
+                         * of the dependency chain for this chunk. it can be
+                         * returned to cache.
+                         */
+                        if (w->full) {
+                            w->chunk->reset();
+                            internal::chunks().add(w->chunk);
+                        }
 
-                      // release our reference to the chunk since this
-                      // structure might hang around for a while in the
-                      // _inflight list but we can free this chunk to re-use
-                      // now as we won't use it again
-                      w->chunk = nullptr;
+                        // release our reference to the chunk since this
+                        // structure might hang around for a while in the
+                        // _inflight list but we can free this chunk to re-use
+                        // now as we won't use it again
+                        w->chunk = nullptr;
 
-                      const auto expected = w->chunk_end - w->chunk_begin;
-                      if (unlikely(expected != got)) {
-                          return size_missmatch_error(
-                            "chunk::write", expected, got);
-                      }
-                      return maybe_advance_stable_offset(w);
-                  })
-                  .finally([u = std::move(u)] {});
-            })
+                        const auto expected = w->chunk_end - w->chunk_begin;
+                        if (unlikely(expected != got)) {
+                            return size_missmatch_error(
+                              "chunk::write", expected, got);
+                        }
+                        return maybe_advance_stable_offset(w);
+                    })
+                    .finally([u = std::move(u)] {});
+              })
             .finally([head_sem] {});
       })
       .handle_exception([this](std::exception_ptr e) {
@@ -600,14 +611,15 @@ void segment_appender::dispatch_background_head_write() {
       });
 }
 
-ss::future<> segment_appender::flush() {
+ss::future<> segment_appender::flush(tracker_vector tv) {
     _inactive_timer.cancel();
 
     // dispatched write will drive flush completion
     if (_head && _head->bytes_pending()) {
         auto& w = _flush_ops.emplace_back(file_byte_offset());
-        dispatch_background_head_write();
-        return w.p.get_future();
+        dispatch_background_head_write(tv);
+        return w.p.get_future().then(
+          [tv = std::move(tv)] { record(tv, "AW_saflush_case_1"); });
     }
 
     if (file_byte_offset() <= _flushed_offset) {
@@ -620,7 +632,8 @@ ss::future<> segment_appender::flush() {
      */
     if (!_inflight.empty()) {
         auto& w = _flush_ops.emplace_back(file_byte_offset());
-        return w.p.get_future();
+        return w.p.get_future().then(
+          [tv = std::move(tv)] { record(tv, "AW_saflush_case_2"); });
     }
 
     vassert(
@@ -630,15 +643,17 @@ ss::future<> segment_appender::flush() {
       _stable_offset,
       *this);
 
-    return _out.flush().handle_exception([this](std::exception_ptr e) {
-        vassert(false, "Could not flush: {} - {}", e, *this);
-    });
+    return _out.flush()
+      .then([tv = std::move(tv)] { record(tv, "AW_saflush_case_3"); })
+      .handle_exception([this](std::exception_ptr e) {
+          vassert(false, "Could not flush: {} - {}", e, *this);
+      });
 }
 
 ss::future<> segment_appender::hard_flush() {
     _inactive_timer.cancel();
     if (_head && _head->bytes_pending()) {
-        dispatch_background_head_write();
+        dispatch_background_head_write({});
     }
     return ss::with_semaphore(
              _concurrent_flushes,

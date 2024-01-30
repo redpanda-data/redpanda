@@ -64,6 +64,7 @@
 #include "ssx/thread_worker.h"
 #include "strings/string_switch.h"
 #include "strings/utf8.h"
+#include "utils/oc_latency.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/loop.hh>
@@ -169,6 +170,7 @@ server::server(
       "kafka/server-mem-fetch")
   , _probe(std::make_unique<class latency_probe>())
   , _sasl_probe(std::make_unique<class sasl_probe>())
+  , _oc_probe(std::make_unique<oc_latency>())
   , _thread_worker(tw)
   , _replica_selector(
       std::make_unique<rack_aware_replica_selector>(_metadata_cache.local()))
@@ -186,6 +188,8 @@ server::server(
 
     _sasl_probe->setup_metrics(cfg->local().name);
 }
+
+server::~server() noexcept = default;
 
 void server::setup_metrics() {
     namespace sm = ss::metrics;
@@ -1663,6 +1667,8 @@ ss::future<response_ptr> create_acls_handler::handle(
 template<>
 process_result_stages
 offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
+    auto tracker = ctx.connection()->server().oc_probe().new_tracker();
+
     offset_commit_request request;
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
@@ -1675,6 +1681,7 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         request_context rctx;
         offset_commit_request request;
         ss::smp_service_group ssg;
+        shared_tracker tracker;
 
         // topic partitions found not to existent prior to processing. responses
         // for these are patched back into the final response after processing.
@@ -1692,13 +1699,16 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         offset_commit_ctx(
           request_context&& rctx,
           offset_commit_request&& request,
-          ss::smp_service_group ssg)
+          ss::smp_service_group ssg,
+          oc_tracker&& tracker)
           : rctx(std::move(rctx))
           , request(std::move(request))
-          , ssg(ssg) {}
+          , ssg(ssg)
+          , tracker(make_shared_tracker(std::move(tracker))) {}
     };
 
-    offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
+    offset_commit_ctx octx(
+      std::move(ctx), std::move(request), ssg, std::move(tracker));
 
     /*
      * offset commit will operate normally on topic-partitions in the request
@@ -1834,15 +1844,23 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         return process_result_stages::single_stage(
           octx.rctx.respond(std::move(resp)));
     }
+
+    octx.tracker->record("after_auth");
+
     ss::promise<> dispatch;
     auto dispatch_f = dispatch.get_future();
+
     auto f = ss::do_with(
       std::move(octx),
       [dispatch = std::move(dispatch)](offset_commit_ctx& octx) mutable {
           auto stages = octx.rctx.groups().offset_commit(
-            std::move(octx.request));
-          stages.dispatched.forward_to(std::move(dispatch));
+            std::move(octx.request), octx.tracker);
+          stages
+            .dispatched /* .then([&] { octx.tracker.record("dispatched"); }) */
+            .forward_to(std::move(dispatch));
           return stages.result.then([&octx](offset_commit_response resp) {
+              octx.tracker->record("result");
+
               if (unlikely(!octx.nonexistent_tps.empty())) {
                   /*
                    * copy over partitions for topics that had some partitions

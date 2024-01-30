@@ -17,6 +17,8 @@
 
 namespace raft {
 
+probe::~probe() = default;
+
 std::vector<ss::metrics::label_instance>
 probe::create_metric_labels(const model::ntp& ntp) {
     namespace sm = ss::metrics;
@@ -111,6 +113,19 @@ void probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Number of log truncations"),
           labels),
         sm::make_counter(
+          "majority_wait_cv_wakes_total",
+          [this] { return _majority_wait_cv_wakes; },
+          sm::description("Count of times waiters on the majority "
+                          "wait condvar were woken (including spurious)"),
+          labels),
+        sm::make_counter(
+          "majority_wait_cv_wakes_spurious_total",
+          [this] { return majority_wait_cv_wakes_spurious; },
+          sm::description(
+            "Count of times waiters on the majority "
+            "wait condvar were woken spuriously (condition was false)"),
+          labels),
+        sm::make_counter(
           "leadership_changes",
           [this] { return _leadership_changes; },
           sm::description("Number of leadership changes"),
@@ -144,6 +159,12 @@ void probe::setup_metrics(const model::ntp& ntp) {
           "replicate_batch_flush_requests",
           [this] { return _replicate_batch_flushed; },
           sm::description("Number of replicate batch flushes"),
+          labels),
+        sm::make_counter(
+          "replicate_batch_flush_items",
+          [this] { return _replicate_batch_flushed_items; },
+          sm::description(
+            "Total number of items (batches) flushed by replicate batcher"),
           labels),
         sm::make_counter(
           "lightweight_heartbeat_requests",

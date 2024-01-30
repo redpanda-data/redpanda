@@ -307,6 +307,12 @@ configuration::configuration()
       false)
   , seed_server_meta_topic_partitions(
       *this, "seed_server_meta_topic_partitions")
+  , use_new_cv(
+      *this,
+      "use_new_cv",
+      "Milliseconds for raft leader heartbeats",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , raft_heartbeat_interval_ms(
       *this,
       "raft_heartbeat_interval_ms",
