@@ -283,9 +283,13 @@ class FlinkBasicTests(RedpandaTest):
                    err_msg="Flink transaction workload produced "
                    "no data files after 5 min")
 
-        # make sure that there is no active jobs
-        # 10 min for safety
-        self.flink.wait(timeout_sec=600)
+        # make sure that there is no active jobs with 20 min timeout.
+        # This big value is for safety due to overloads on docker env at
+        # CDT run. Under the hood, 'flink.wait_node' which is used
+        # by 'service.wait' has 'detect_idle_jobs' bool var that will check if
+        # job has been completely idle for 30 sec and skip it if so.
+        # To access that var, use 'wait_node' directly instead
+        self.flink.wait(timeout_sec=1200)
 
         # Since there is a possibility that after job is finished
         # data is still be written from buffers, make sure that

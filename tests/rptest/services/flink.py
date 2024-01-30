@@ -490,13 +490,14 @@ class FlinkService(Service):
         # return True if >0
         return len(active_jobs) > 0
 
-    def wait_node(self, node, timeout_sec=300):
+    def wait_node(self, node, timeout_sec=300, detect_idle_jobs=True):
         """
             Wait for all jobs to finish, default timeout is half an hour
         """
         # Flush internal metrics
         self._metric = {}
-        wait_until(lambda: not self._has_active_jobs(node),
+        wait_until(lambda: not self._has_active_jobs(
+            node, detect_idle_jobs=detect_idle_jobs),
                    timeout_sec=timeout_sec,
                    backoff_sec=5)
 
