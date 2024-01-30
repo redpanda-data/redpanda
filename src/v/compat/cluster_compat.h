@@ -350,6 +350,7 @@ struct compat_check<cluster::topic_properties> {
         json_write(record_value_subject_name_strategy_compat);
         json_write(initial_retention_local_target_bytes);
         json_write(initial_retention_local_target_ms);
+        json_write(mpx_virtual_cluster_id);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -381,6 +382,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(record_value_subject_name_strategy_compat);
         json_read(initial_retention_local_target_bytes);
         json_read(initial_retention_local_target_ms);
+        json_read(mpx_virtual_cluster_id);
         return obj;
     }
 
@@ -407,6 +409,7 @@ struct compat_check<cluster::topic_properties> {
           std::nullopt};
         obj.initial_retention_local_target_ms
           = tristate<std::chrono::milliseconds>{std::nullopt};
+        obj.mpx_virtual_cluster_id = std::nullopt;
 
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -482,6 +485,8 @@ struct compat_check<cluster::topic_configuration> {
         obj.properties.initial_retention_local_target_ms
           = tristate<std::chrono::milliseconds>{std::nullopt};
 
+        obj.properties.mpx_virtual_cluster_id = std::nullopt;
+
         if (cfg != obj) {
             throw compat_error(fmt::format(
               "Verify of {{cluster::topic_property}} decoding "
@@ -544,6 +549,7 @@ struct compat_check<cluster::create_topics_request> {
               = tristate<size_t>{std::nullopt};
             topic.properties.initial_retention_local_target_ms
               = tristate<std::chrono::milliseconds>{std::nullopt};
+            topic.properties.mpx_virtual_cluster_id = std::nullopt;
         }
         if (req != obj) {
             throw compat_error(fmt::format(
@@ -606,6 +612,7 @@ struct compat_check<cluster::create_topics_reply> {
               = tristate<size_t>{std::nullopt};
             topic.properties.initial_retention_local_target_ms
               = tristate<std::chrono::milliseconds>{std::nullopt};
+            topic.properties.mpx_virtual_cluster_id = std::nullopt;
         }
         if (reply != obj) {
             throw compat_error(fmt::format(

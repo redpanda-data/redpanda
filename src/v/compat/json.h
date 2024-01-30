@@ -503,6 +503,12 @@ inline void read_value(json::Value const& rd, security::acl_host& host) {
     host = security::acl_host(address);
 }
 
+inline void read_value(json::Value const& rd, model::vcluster_id& v) {
+    ss::sstring xid_str;
+    read_value(rd, xid_str);
+    v = model::vcluster_id(xid::from_string(xid_str));
+}
+
 inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const security::acl_host& host) {
     w.StartObject();
@@ -808,6 +814,11 @@ void rjson_serialize(
         rjson_serialize(w, t.value());
     }
     w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::vcluster_id& v) {
+    rjson_serialize(w, ssx::sformat("{}", v));
 }
 
 #define json_write(_fname) json::write_member(wr, #_fname, obj._fname)
