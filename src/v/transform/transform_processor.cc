@@ -19,6 +19,7 @@
 #include "model/transform.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "random/simple_time_jitter.h"
+#include "ssx/future-util.h"
 #include "transform/logger.h"
 #include "wasm/api.h"
 
@@ -31,6 +32,8 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <algorithm>
+#include <iterator>
 #include <optional>
 
 namespace transform {
@@ -103,18 +106,27 @@ processor::processor(
   , _meta(std::move(meta))
   , _engine(std::move(engine))
   , _source(std::move(source))
-  , _sinks(std::move(sinks))
   , _offset_tracker(std::move(offset_tracker))
   , _state_callback(std::move(cb))
   , _probe(p)
   , _consumer_transform_pipe(max_buffer_size)
-  , _transform_producer_pipe(max_buffer_size)
+  , _outputs()
   , _task(ss::now())
   , _logger(tlog, ss::format("{}/{}", _meta.name(), _ntp.tp.partition())) {
     vassert(
-      _sinks.size() == 1,
-      "expected only a single sink, got: {}",
-      _sinks.size());
+      sinks.size() == 1, "expected only a single sink, got: {}", sinks.size());
+    const auto& outputs = _meta.output_topics;
+    vassert(
+      outputs.size() == sinks.size(),
+      "expected the same number of output topics and sinks");
+    _outputs.reserve(outputs.size());
+    for (size_t i : boost::irange(outputs.size())) {
+        _outputs.emplace(
+          outputs[i].tp,
+          output{
+            .queue = transfer_queue<transformed_output>(max_buffer_size),
+            .sink = std::move(sinks[i])});
+    }
     // The processor needs to protect against multiple stops (or calling stop
     // before start), to do that we use the state in _as. Start out with an
     // abort so that we handle being stopped before we're started.
@@ -137,7 +149,7 @@ ss::future<> processor::start() {
             return when_all_shutdown(
               run_consumer_loop(start_offset),
               run_transform_loop(),
-              run_producer_loop());
+              run_all_producers());
         });
     }));
 }
@@ -152,7 +164,9 @@ ss::future<> processor::stop() {
     _as.request_abort_ex(ex);
     co_await std::exchange(_task, ss::now());
     _consumer_transform_pipe.clear();
-    _transform_producer_pipe.clear();
+    for (auto& [_, output] : _outputs) {
+        output.queue.clear();
+    }
     co_await _source->stop();
     co_await _offset_tracker->stop();
     co_await _engine->stop();
@@ -230,41 +244,62 @@ ss::future<> processor::run_transform_loop() {
         co_await _engine->transform(
           std::move(*batch),
           _probe,
-          [&transformed](
+          [this](
             std::optional<model::topic_view> topic,
             model::transformed_data data) {
-              vassert(topic == std::nullopt, "not supported yet 🙂");
-              transformed.push_back(std::move(data));
-              return ss::make_ready_future<wasm::write_success>(
-                wasm::write_success::yes);
+              auto output_topic = topic.value_or(
+                model::topic_view(_meta.output_topics.front().tp));
+              auto it = _outputs.find(output_topic);
+              if (it == _outputs.end()) {
+                  return ssx::now(wasm::write_success::no);
+              }
+              return it->second.queue.push({std::move(data)}, &_as).then([] {
+                  return wasm::write_success::yes;
+              });
           });
         vlog(_logger.trace, "transformed offset {}", offset);
-        if (!transformed.empty()) {
-            auto b = model::transformed_data::make_batch(
-              model::timestamp::now(), std::move(transformed));
-            co_await _transform_producer_pipe.push({std::move(b)}, &_as);
+        // Mark all queues as processsed up to this point.
+        for (auto& [_, output] : _outputs) {
+            co_await output.queue.push({offset}, &_as);
         }
-        co_await _transform_producer_pipe.push({offset}, &_as);
     }
 }
 
-ss::future<> processor::run_producer_loop() {
+ss::future<> processor::run_all_producers() {
+    std::vector<ss::future<>> futures;
+    for (auto& [topic, output] : _outputs) {
+        futures.push_back(run_producer_loop(&output.queue, output.sink.get()));
+    }
+    return ss::when_all_succeed(
+      std::make_move_iterator(futures.begin()),
+      std::make_move_iterator(futures.end()));
+}
+
+ss::future<> processor::run_producer_loop(
+  transfer_queue<transformed_output>* queue, sink* sink) {
     while (!_as.abort_requested()) {
-        auto popped = co_await _transform_producer_pipe.pop_all(&_as);
+        auto popped = co_await queue->pop_all(&_as);
         if (popped.empty()) {
             continue;
         }
         kafka::offset latest_offset;
-        ss::chunked_fifo<model::record_batch> batches;
+        ss::chunked_fifo<model::transformed_data> datas;
         for (auto& entry : popped) {
             ss::visit(
               entry.data,
-              [&batches](model::record_batch& b) {
-                  batches.push_back(std::move(b));
+              [&datas](model::transformed_data& b) {
+                  datas.push_back(std::move(b));
               },
               [&latest_offset](kafka::offset o) { latest_offset = o; });
         }
-        co_await _sinks[0]->write(std::move(batches));
+        ss::chunked_fifo<model::record_batch> batches;
+        if (!datas.empty()) {
+            // TODO(rockwood): Limit batch sizes so we don't overshoot
+            // max batch size limits.
+            batches.push_back(model::transformed_data::make_batch(
+              model::timestamp::now(), std::move(datas)));
+        }
+        co_await sink->write(std::move(batches));
         if (latest_offset != kafka::offset()) {
             co_await _offset_tracker->commit_offset(latest_offset);
             report_lag(_source->latest_offset() - latest_offset);
@@ -308,11 +343,11 @@ size_t transformed_output::memory_usage() const {
     return sizeof(transformed_output)
            + ss::visit(
              data,
-             [](const model::record_batch& b) {
+             [](const model::transformed_data& d) {
                  // Account for the size of this struct, but don't double count
-                 // sizeof(model::record_batch), which b.memory_usage() accounts
-                 // for.
-                 return b.memory_usage() - sizeof(model::record_batch);
+                 // sizeof(model::transformed_data), which d.memory_usage()
+                 // accounts for.
+                 return d.memory_usage() - sizeof(model::transformed_data);
              },
              [](kafka::offset) { return size_t(0); });
 }
