@@ -11,6 +11,7 @@ import random
 import itertools
 import math
 import re
+import signal
 import time
 import json
 
@@ -25,7 +26,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from contextlib import contextmanager
-from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.failure_injector import FailureInjectorCloud
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer,
     KgoVerifierRandomConsumer)
@@ -163,6 +164,14 @@ class HighThroughputTestTrafficGenerator:
                 'egress_throughput': consumer_bytes_read / consumer_total_time
             }
         }
+
+
+def pod_container_ready(kubectl, pod_name):
+    # kubectl get pod rp-clo88krkqkrfamptsst0-0 -n=redpanda -o=jsonpath='{.status.containerStatuses[0].ready}'
+    return kubectl.cmd([
+        'get', 'pod', pod_name, '-n=redpanda',
+        "-o=jsonpath='{.status.containerStatuses[0].ready}'"
+    ]).decode()
 
 
 @contextmanager
@@ -736,12 +745,11 @@ class HighThroughputTest(PreallocNodesTest):
             self.stage_rolling_restart()
 
             # Hard stop, then restart.
-            self.stage_stop_wait_start(forced_stop=True, downtime=0)
+            self.stage_stop_wait_start(forced_stop=True)
 
             # Stop a node, wait for enough time for movement to occur, then
             # restart.
-            self.stage_stop_wait_start(forced_stop=False,
-                                       downtime=self.unavailable_timeout)
+            self.stage_stop_wait_start(forced_stop=False)
 
             # Block traffic to/from one node.
             self.stage_block_node_traffic()
@@ -754,48 +762,60 @@ class HighThroughputTest(PreallocNodesTest):
 
     # Stages for the "test_restarts"
 
-    def stage_rolling_restart(self):
-        self.logger.info(f"Rolling restarting nodes")
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                            start_timeout=600,
-                                            stop_timeout=600)
+    def stage_rolling_restart(self, timeout_sec=180):
+        """Sequentially restart each pod in the redpanda cluster.
 
-    def stage_block_node_traffic(self):
+        Using `kubectl delete pod`.
+
+        :param timeout_sec: seconds to wait for a restarted node to be ready before raising timeout exception
+        """
+
+        for pod in self.redpanda.pods:
+            pod_name = pod.name
+            self.redpanda.restart_pod(pod_name)
+            delete_cmd = ['delete', 'pod', pod_name, '-n=redpanda']
+            self.logger.info(f'deleting pod {pod_name}')
+            # kubectl delete pod rp-clo88krkqkrfamptsst0-0 -n=redpanda'
+            self.redpanda.kubectl.cmd(delete_cmd)
+
+            wait_until(
+                lambda: pod_container_ready(self.redpanda.kubectl, pod_name
+                                            ) == 'true',
+                timeout_sec=timeout_sec,
+                err_msg=
+                f'pod {pod_name} sent signal {signal} failed to stop in {timeout_sec} seconds'
+            )
+
+    def stage_block_node_traffic(self, timeout_sec=180):
         wait_time = 120
-        node = self.get_node()
-        self.logger.info(f"Isolating node {node.name}")
-        with FailureInjector(self.redpanda) as fi:
-            fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
-            self.logger.info(
-                f"Running for {wait_time}s while failure injected")
+        pod_name = self.get_broker_pod().name
+        self.logger.info(f'isolating pod {pod_name}')
+        with FailureInjectorCloud(self.redpanda) as fi:
+            fi.isolate(pod_name)
+            self.logger.info(f'waiting for {wait_time}s after pod is isolated')
             time.sleep(wait_time)
 
         self.logger.info(
-            f"Running for {wait_time}s after injected failure removed")
-        time.sleep(wait_time)
-        self.logger.info(
-            f"Waiting for the cluster to return to a healthy state")
-        wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
-
-    def stage_stop_wait_start(self, forced_stop: bool, downtime: int):
-        node = self.get_node()
-        self.logger.info(
-            f"Stopping node {node.name} {'ungracefully' if forced_stop else 'gracefully'}"
+            f'waiting for the cluster to return to a healthy state')
+        wait_until(
+            lambda: pod_container_ready(self.redpanda.kubectl, pod_name
+                                        ) == 'true',
+            timeout_sec=timeout_sec,
+            err_msg=
+            f'pod {pod_name} sent signal {signal} failed to stop in {timeout_sec} seconds'
         )
-        self.redpanda.stop_node(node,
-                                forced=forced_stop,
-                                timeout=60 if forced_stop else 180)
 
-        self.logger.info(f"Node downtime {downtime} s")
-        time.sleep(downtime)
-
-        restart_timeout = 300 + int(900 * downtime / 60)
+    def stage_stop_wait_start(self, forced_stop: bool):
+        pod_name = self.get_broker_pod().name
         self.logger.info(
-            f"Restarting node {node.name} for {restart_timeout} s")
-        self.redpanda.start_node(node, timeout=600)
-        wait_until(self.redpanda.healthy,
-                   timeout_sec=restart_timeout,
-                   backoff_sec=1)
+            f"Stopping node {pod_name} {'ungracefully' if forced_stop else 'gracefully'}"
+        )
+        sig = int(signal.SIGTERM)
+        if forced_stop:
+            sig = int(signal.SIGSEGV)
+        self.redpanda.restart_pod(pod_name,
+                                  signal=sig,
+                                  timeout=60 if forced_stop else 180)
 
     @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
@@ -1733,15 +1753,8 @@ class HighThroughputTest(PreallocNodesTest):
 
         self.logger.info(f"Starting stage_hard_restart")
 
-        # hard stop all nodes
-        self.logger.info("stopping all redpanda nodes")
-        for node in self.redpanda.nodes:
-            self.redpanda.stop_node(node, forced=True)
-
-        # start all nodes again
-        self.logger.info("starting all redpanda nodes")
-        for node in self.redpanda.nodes:
-            self.redpanda.start_node(node, timeout=600)
+        for pod in self.redpanda.pods:
+            self.redpanda.restart_pod(pod.name, timeout=600)
 
         # wait until the cluster is health once more
         self.logger.info("waiting for RP cluster to be healthy")
