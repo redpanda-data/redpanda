@@ -12,6 +12,7 @@
 #include "base/vassert.h"
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
+#include "model/fundamental.h"
 #include "resource_mgmt/available_memory.h"
 #include "ssx/future-util.h"
 #include "storage/logger.h"
@@ -189,6 +190,8 @@ batch_cache::~batch_cache() noexcept {
 
 void batch_cache::evict(range_ptr&& e) {
     if (e) {
+        vassert(!e->_dirty, "Requested to evict a range with dirty data.");
+
         // it's necessary to cause `e` to be sinked so the move constructor
         // invalidates the caller's range_ptr. simply interacting with the
         // r-value reference `e` wouldn't do that.
@@ -246,7 +249,7 @@ size_t batch_cache::reclaim(size_t size) {
         }
 
         // skip any range that has a live reference.
-        if (unlikely(it->pinned())) {
+        if (unlikely(it->pinned() || it->_dirty)) {
             ++it;
             continue;
         }
@@ -384,6 +387,11 @@ batch_cache_index::read_result batch_cache_index::read(
 
 void batch_cache_index::truncate(model::offset offset) {
     lock_guard lk(*this);
+
+    vassert(
+      _min_dirty_offset == model::offset{},
+      "It is not allowed to call truncate() with dirty data in the index.");
+
     if (auto it = find_first(offset); it != _index.end()) {
         // rule out if possible, otherwise always be pessimistic
         if (
@@ -396,6 +404,24 @@ void batch_cache_index::truncate(model::offset offset) {
         });
         _index.erase(it, _index.end());
     }
+}
+
+void batch_cache_index::mark_clean() {
+    if (_min_dirty_offset == model::offset{}) {
+        // No dirty data in the cache.
+        return;
+    }
+
+    lock_guard lk(*this);
+
+    if (auto it = find_first(_min_dirty_offset); it != _index.end()) {
+        std::for_each(it, _index.end(), [](index_type::value_type& e) {
+            e.second.range()->mark_clean();
+        });
+    }
+
+    // No more dirty entries left.
+    _min_dirty_offset = model::offset{};
 }
 
 void batch_cache::background_reclaimer::start() {

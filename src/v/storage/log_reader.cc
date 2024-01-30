@@ -158,7 +158,7 @@ void log_segment_batch_reader::add_one(model::record_batch&& batch) {
     _state.buffer_size += size_bytes;
     _probe.add_bytes_read(size_bytes);
     if (!_config.skip_batch_cache) {
-        _seg.cache_put(b);
+        _seg.cache_put(b, dirty_batch_cache_entry::no);
     }
 }
 ss::future<result<records_t>>

@@ -14,6 +14,7 @@
 #include "compression/compression.h"
 #include "config/configuration.h"
 #include "ssx/future-util.h"
+#include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/file_sanitizer.h"
 #include "storage/fs_utils.h"
@@ -342,6 +343,9 @@ ss::future<> segment::do_flush() {
         _tracker.committed_offset = std::max(o, _tracker.committed_offset);
         _tracker.stable_offset = _tracker.committed_offset;
         _reader->set_file_size(std::max(fsize, _reader->file_size()));
+        if (_cache) {
+            _cache->mark_clean();
+        }
         clear_cached_disk_usage();
     });
 }
@@ -540,7 +544,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
             .last_offset = b.last_offset(),
             .byte_size = (size_t)b.size_bytes()};
           // cache always copies the batch
-          cache_put(b);
+          cache_put(b, dirty_batch_cache_entry::yes);
           return ret;
       });
     auto index_fut = compaction_index_batch(b);

@@ -183,9 +183,12 @@ FIXTURE_TEST(index_get, batch_cache_test_fixture) {
     storage::batch_cache_index index2(cache);
 
     // [10][11:20][21:30]
-    index.put(make_batch(1, model::offset(10)));
-    index.put(make_batch(10, model::offset(11)));
-    index.put(make_batch(10, model::offset(21)));
+    index.put(
+      make_batch(1, model::offset(10)), storage::dirty_batch_cache_entry::no);
+    index.put(
+      make_batch(10, model::offset(11)), storage::dirty_batch_cache_entry::no);
+    index.put(
+      make_batch(10, model::offset(21)), storage::dirty_batch_cache_entry::no);
 
     // before first
     BOOST_CHECK(!index.get(model::offset(0)));
@@ -220,8 +223,10 @@ FIXTURE_TEST(index_get, batch_cache_test_fixture) {
     BOOST_CHECK(!index.get(model::offset(40)));
 
     // [11:20]   [41:50]
-    index2.put(make_batch(10, model::offset(11)));
-    index2.put(make_batch(10, model::offset(41)));
+    index2.put(
+      make_batch(10, model::offset(11)), storage::dirty_batch_cache_entry::no);
+    index2.put(
+      make_batch(10, model::offset(41)), storage::dirty_batch_cache_entry::no);
 
     // in the gap
     BOOST_CHECK(!index2.get(model::offset(21)));
@@ -235,7 +240,7 @@ FIXTURE_TEST(index_truncate_smoke, batch_cache_test_fixture) {
     // add batches of increasing size
     model::offset base(0);
     for (size_t size = 1; size < 10; size++) {
-        index.put(make_batch(size, base));
+        index.put(make_batch(size, base), storage::dirty_batch_cache_entry::no);
         base += model::offset(size);
     }
 
@@ -256,9 +261,12 @@ FIXTURE_TEST(index_truncate_hole, batch_cache_test_fixture) {
     storage::batch_cache_index index(cache);
 
     // [10][11:20]  [41:50]
-    index.put(make_batch(1, model::offset(10)));
-    index.put(make_batch(10, model::offset(11)));
-    index.put(make_batch(10, model::offset(41)));
+    index.put(
+      make_batch(1, model::offset(10)), storage::dirty_batch_cache_entry::no);
+    index.put(
+      make_batch(10, model::offset(11)), storage::dirty_batch_cache_entry::no);
+    index.put(
+      make_batch(10, model::offset(41)), storage::dirty_batch_cache_entry::no);
 
     index.truncate(model::offset(25));
     // all batches belong to the same range, all of them will be evicted
@@ -271,9 +279,12 @@ FIXTURE_TEST(index_truncate_hole_missing_prev, batch_cache_test_fixture) {
     storage::batch_cache_index index(cache);
 
     // [10][11:20]  [41:50]
-    index.put(make_batch(1, model::offset(10)));
-    index.put(make_batch(10, model::offset(11)));
-    index.put(make_batch(10, model::offset(41)));
+    index.put(
+      make_batch(1, model::offset(10)), storage::dirty_batch_cache_entry::no);
+    index.put(
+      make_batch(10, model::offset(11)), storage::dirty_batch_cache_entry::no);
+    index.put(
+      make_batch(10, model::offset(41)), storage::dirty_batch_cache_entry::no);
 
     index.testing_evict_from_cache(model::offset(11));
     BOOST_CHECK(index.testing_exists_in_index(model::offset(11)));
@@ -292,7 +303,7 @@ FIXTURE_TEST(test_random_batch_sizes, batch_cache_test_fixture) {
     for (int i = 0; i < 1000; ++i) {
         auto batch = make_random_batch(
           random_generators::get_int<size_t>(10, 16_KiB), model::offset(i));
-        index.put(batch);
+        index.put(batch, storage::dirty_batch_cache_entry::no);
         batches.push_back(std::move(batch));
     }
 

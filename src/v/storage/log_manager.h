@@ -239,6 +239,9 @@ public:
 
     gc_config default_gc_config() const;
 
+    // TODO(nv): Remove. Temporary shortcut for testing.
+    batch_cache& testing_batch_cache() { return _batch_cache; }
+
 private:
     using logs_type
       = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
