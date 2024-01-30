@@ -27,6 +27,7 @@
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 #include "storage/segment_utils.h"
+#include "storage/tests/common.h"
 #include "storage/tests/disk_log_builder_fixture.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
@@ -268,6 +269,121 @@ FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
     auto headers = append_random_batches(log, 10);
     log->flush().get0();
     auto batches = read_and_validate_all_batches(log);
+
+    // range from base of beging to last of end
+    auto range = read_range_to_vector(
+      log, batches[3].base_offset(), batches[7].last_offset());
+    BOOST_REQUIRE_EQUAL(range.size(), 5);
+    BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
+    BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
+    // Range is inclusive base offset points to batch[7] so it have to be
+    // included
+    range = read_range_to_vector(
+      log, batches[3].base_offset(), batches[7].base_offset());
+    BOOST_REQUIRE_EQUAL(range.size(), 5);
+    BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
+    BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
+
+    range = read_range_to_vector(
+      log, batches[3].last_offset(), batches[7].base_offset());
+    BOOST_REQUIRE_EQUAL(range.size(), 5);
+    BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
+    BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
+    // range from base of beging to the middle of end
+    range = read_range_to_vector(
+      log,
+      batches[3].base_offset(),
+      batches[7].base_offset() + model::offset(batches[7].record_count() / 2));
+    BOOST_REQUIRE_EQUAL(range.size(), 5);
+    BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
+    BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
+};
+
+FIXTURE_TEST(
+  test_reading_range_from_a_log_with_write_caching, storage_test_fixture) {
+    storage::log_manager mgr = make_log_manager();
+    info("Configuration: {}", mgr.config());
+    auto ntp = model::ntp("default", "test", 0);
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto headers = append_random_batches(
+      log,
+      10,
+      model::term_id(0),
+      {},
+      storage::log_append_config::fsync::no,
+      false);
+
+    // Reclaim everything from cache.
+    storage::testing_details::log_manager_accessor::batch_cache(mgr).clear();
+
+    auto batches = read_and_validate_all_batches(log);
+    BOOST_REQUIRE_EQUAL(batches.size(), headers.size());
+
+    // range from base of beging to last of end
+    auto range = read_range_to_vector(
+      log, batches[3].base_offset(), batches[7].last_offset());
+    BOOST_REQUIRE_EQUAL(range.size(), 5);
+    BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
+    BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
+    // Range is inclusive base offset points to batch[7] so it have to be
+    // included
+    range = read_range_to_vector(
+      log, batches[3].base_offset(), batches[7].base_offset());
+    BOOST_REQUIRE_EQUAL(range.size(), 5);
+    BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
+    BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
+
+    range = read_range_to_vector(
+      log, batches[3].last_offset(), batches[7].base_offset());
+    BOOST_REQUIRE_EQUAL(range.size(), 5);
+    BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
+    BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
+    // range from base of beging to the middle of end
+    range = read_range_to_vector(
+      log,
+      batches[3].base_offset(),
+      batches[7].base_offset() + model::offset(batches[7].record_count() / 2));
+    BOOST_REQUIRE_EQUAL(range.size(), 5);
+    BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
+    BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
+};
+
+FIXTURE_TEST(test_truncation_with_write_caching, storage_test_fixture) {
+    storage::log_manager mgr = make_log_manager();
+    info("Configuration: {}", mgr.config());
+    auto ntp = model::ntp("default", "test", 0);
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto headers = append_random_batches(
+      log,
+      10,
+      model::term_id(0),
+      {},
+      storage::log_append_config::fsync::no,
+      false);
+
+    const auto truncate_batch_ix = headers.size() - 2;
+    const auto truncate_offset = [&]() {
+        model::offset o{0};
+        for (auto i = 0; i < truncate_batch_ix; i++) {
+            o += headers[i].record_count;
+        }
+        return o;
+    }();
+
+    log
+      ->truncate(
+        storage::truncate_config(truncate_offset, ss::default_priority_class()))
+      .get();
+
+    // Reclaim everything from cache.
+    storage::testing_details::log_manager_accessor::batch_cache(mgr).clear();
+
+    auto batches = read_and_validate_all_batches(log);
+    BOOST_REQUIRE_EQUAL(batches.size(), truncate_batch_ix);
 
     // range from base of beging to last of end
     auto range = read_range_to_vector(

@@ -48,6 +48,10 @@
 
 namespace storage {
 
+namespace testing_details {
+class log_manager_accessor;
+};
+
 // class log_config {
 struct log_config {
     log_config(
@@ -283,6 +287,8 @@ private:
     ss::abort_source _abort_source;
 
     friend std::ostream& operator<<(std::ostream&, const log_manager&);
+
+    friend class testing_details::log_manager_accessor;
 };
 
 } // namespace storage

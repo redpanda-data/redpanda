@@ -13,6 +13,7 @@
 #include "base/units.h"
 #include "base/vassert.h"
 #include "container/intrusive_list_helpers.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "resource_mgmt/available_memory.h"
 #include "ssx/semaphore.h"
@@ -107,6 +108,9 @@ class batch_cache {
     using reclaim_result = ss::memory::reclaiming_result;
 
 public:
+    using is_dirty_entry
+      = ss::bool_class<struct batch_cache_is_dirty_entry_tag>;
+
     struct reclaim_options {
         ss::lowres_clock::duration growth_window;
         ss::lowres_clock::duration stable_window;
@@ -147,7 +151,9 @@ public:
 
         explicit range(batch_cache_index& index);
         explicit range(
-          batch_cache_index& index, const model::record_batch& batch);
+          batch_cache_index& index,
+          const model::record_batch& batch,
+          is_dirty_entry dirty);
 
         ~range() noexcept = default;
         range(range&&) noexcept = delete;
@@ -168,13 +174,21 @@ public:
         void pin() { _pinned = true; }
         void unpin() { _pinned = false; }
         bool pinned() const { return _pinned; }
+
+        void mark_clean(model::offset up_to) {
+            if (_max_dirty_offset <= up_to) {
+                _max_dirty_offset = model::offset{};
+            }
+        }
+        bool clean() const { return _max_dirty_offset == model::offset{}; };
+
         size_t memory_size() const;
         size_t bytes_left() const;
         double waste() const;
         bool empty() const;
         // checks if record batch will fit into current range
         bool fits(const model::record_batch& b) const;
-        uint32_t add(const model::record_batch&);
+        uint32_t add(const model::record_batch&, is_dirty_entry);
 
     private:
         friend class batch_cache;
@@ -190,6 +204,59 @@ public:
         std::vector<model::offset> _offsets;
 
         bool _pinned{false};
+
+        // Maximum dirty batch offset that is stored in this range. If a range
+        // contains any dirty batch offsets we prevent its eviction so that
+        // readers get cache hits until the data is persisted to disk and we can
+        // rehydrate on a miss.
+        //
+        // Dirty batches are inserted with monotonically increasing offsets and
+        // marked as clean with an upper bound.
+        //
+        // You can imagine the put operation moving one cursor forward and
+        // mark_clean operation moving another one from behind. Once they
+        // overlap, the range is considered clean.
+        //
+        // Let's take the following example range with clean and dirty batches:
+        //
+        // +------------+------------|------------+----------+
+        // |  c=10..15  |  d=16..18  |  d=19..25  |  c=4..6  |
+        // +------------+------------|------------+----------+
+        //                                        ^
+        //              _max_dirty_offset=25 -----+
+        //
+        // Note 1: Dirty batches always are monotonically increasing but clean
+        //   batches might not be as they might have been added by concurrent
+        //   read operations.
+        //
+        // Note 2: We don't actually track whether a particular batch is clean
+        //   or dirty. The `c` and `d` on the diagram are for illustration
+        //   purposes only.
+        //
+        // Requesting to mark the range as clean up to offset 20 won't do
+        // anything. The range would still be considered dirty.
+        //
+        // +------------+------------|------------+----------+
+        // |  c=10..15  |  c=16..18  |  d=19..25  |  c=4..6  |
+        // +------------+------------|------------+----------+
+        //                                  ^     ^
+        //           _max_dirty_offset=25 --+-----+
+        //                                  |
+        //           mark_clean(20) --------+
+        //
+        // However, requesting to mark clean up to offset 25 will effectively
+        // mark the entire range as clean and reset the _max_dirty_offset to
+        // it's default value.
+        //
+        // +------------+------------|------------+----------+
+        // |  c=10..15  |  c=16..18  |  c=19..25  |  c=4..6  |
+        // +------------+------------|------------+----------+
+        //                                        ^
+        //           _max_dirty_offset=25 --------+
+        //                                        |
+        //           mark_clean(25) --------------+
+        model::offset _max_dirty_offset;
+
         size_t _size = 0;
         intrusive_list_hook _hook;
         batch_cache_index& _index;
@@ -258,7 +325,7 @@ public:
      * The returned weak_ptr will be invalidated if its memory is reclaimed. To
      * evict the range, move it into batch_cache::evict().
      */
-    entry put(batch_cache_index&, const model::record_batch&);
+    entry put(batch_cache_index&, const model::record_batch&, is_dirty_entry);
 
     /**
      * \brief Remove a batch from the cache.
@@ -390,6 +457,51 @@ private:
 };
 
 class batch_cache_index {
+    /// A data structure for tracking the dirty state of a batch cache index and
+    /// minimum and maximum dirty offsets.
+    ///
+    /// We use it to optimize the \ref batch_cache_index::mark_clean routine
+    /// where we narrow the set of offsets and ranges we have to iterate
+    /// through when marking them as clean and to facilitate invariants:
+    /// 1. Dirty offsets are monotonic (an assumption we also leverage for
+    /// tracking the dirty state of \ref batch_cache::range).
+    /// 2. Truncation is requested only with a clean index (we can evict only at
+    /// range level).
+    /// 3. At the end of batch cache / batch cache index lifetime there are no
+    /// dirty batches left in the index (should help catch bugs in other
+    /// components).
+    class dirty_tracker {
+    public:
+        /// Marks a range of offsets as dirty.
+        ///
+        /// \param range The range of offsets to mark as dirty.
+        ///              The first element of the pair represents the starting
+        ///              offset, and the second element represents the ending
+        ///              offset.
+        void mark_dirty(const std::pair<model::offset, model::offset> range);
+
+        /// Marks the offsets as clean up to and including the specified offset.
+        ///
+        /// \param up_to_inclusive The offset, inclusive, up to which the cache
+        ///                        should be marked as clean.
+        ///
+        void mark_clean(const model::offset up_to_inclusive);
+
+        auto min() const { return _min; };
+
+        bool clean() const { return _min == model::offset{}; }
+
+        friend std::ostream&
+        operator<<(std::ostream& o, const dirty_tracker& t) {
+            o << "{min: " << t._min << ", max: " << t._max << "}";
+            return o;
+        }
+
+    private:
+        model::offset _min;
+        model::offset _max;
+    };
+
     using index_type = absl::btree_map<model::offset, batch_cache::entry>;
 
 public:
@@ -406,6 +518,10 @@ public:
       : _cache(&cache) {}
     ~batch_cache_index() {
         lock_guard lk(*this);
+        vassert(
+          _dirty_tracker.clean(),
+          "Destroying batch_cache_index ({}) tracking dirty batches.",
+          *this);
         std::for_each(
           _index.begin(), _index.end(), [this](index_type::value_type& e) {
               _cache->evict(std::move(e.second.range()));
@@ -418,7 +534,8 @@ public:
 
     bool empty() const { return _index.empty(); }
 
-    void put(const model::record_batch& batch) {
+    void
+    put(const model::record_batch& batch, batch_cache::is_dirty_entry dirty) {
         lock_guard lk(*this);
         auto offset = batch.header().base_offset;
         if (likely(!_index.contains(offset))) {
@@ -428,8 +545,17 @@ public:
              * entries are initialized in the cache and index, clean-up happens
              * correctly on either side.
              */
-            auto p = _cache->put(*this, batch);
+            auto p = _cache->put(*this, batch, dirty);
+            if (dirty) {
+                _dirty_tracker.mark_dirty(
+                  {batch.base_offset(), batch.last_offset()});
+            }
             _index.emplace(offset, std::move(p));
+        } else {
+            vassert(
+              dirty == batch_cache::is_dirty_entry::no,
+              "Dirty entry already present in batch cache index. This is a "
+              "bug.");
         }
     }
 
@@ -469,6 +595,13 @@ public:
      * Removes all batches that _may_ contain the specified offset.
      */
     void truncate(model::offset offset);
+
+    /**
+     * Marks the offsets as clean up to and including the specified offset.
+     * \param up_to_inclusive The offset, inclusive, up to which the cache
+     *                        should be marked as clean.
+     */
+    void mark_clean(model::offset up_to_inclusive);
 
     /*
      * Testing interface used to evict a batch from the cache identified by
@@ -565,6 +698,8 @@ private:
     batch_cache* _cache;
     index_type _index;
     batch_cache::range_ptr _small_batches_range = nullptr;
+
+    dirty_tracker _dirty_tracker;
 
     friend std::ostream& operator<<(std::ostream&, const batch_cache_index&);
 };
