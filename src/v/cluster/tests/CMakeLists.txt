@@ -146,6 +146,19 @@ rp_test(
 rp_test(
   UNIT_TEST
   GTEST
+  BINARY_NAME namespaced_cache_test
+  SOURCES 
+    namespaced_cache_test.cc
+  LIBRARIES 
+    v::gtest_main 
+    v::serde
+  ARGS "-- -c 1"
+  LABELS cluster
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
   BINARY_NAME cluster_recovery_test
   SOURCES
     cluster_recovery_table_test.cc
