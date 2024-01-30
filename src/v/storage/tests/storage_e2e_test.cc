@@ -251,7 +251,8 @@ FIXTURE_TEST(test_segment_rolling, storage_test_fixture) {
       false);
     auto new_lstats = log->offsets();
     BOOST_REQUIRE_GE(new_lstats.committed_offset, lstats.committed_offset);
-    auto new_batches = read_and_validate_all_batches(log);
+    auto new_batches = read_and_validate_all_batches(
+      log, lstats.committed_offset);
     BOOST_REQUIRE_EQUAL(last_term_start_offset, batches.front().base_offset());
     BOOST_REQUIRE_EQUAL(
       new_lstats.committed_offset, new_batches.back().last_offset());

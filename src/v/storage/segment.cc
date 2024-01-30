@@ -648,8 +648,13 @@ void segment::advance_stable_offset(size_t filepos) {
     }
 
     _reader->set_file_size(it->first);
+
+    // Maintain `stable_offset <= dirty_offset` invariant.
+    // `advance_stable_offset` may be called before the continuation attached to
+    // the `segment_appender::append` where we are advancing the dirty offset.
     _tracker.stable_offset = it->second;
     _tracker.dirty_offset = std::max(_tracker.dirty_offset, it->second);
+
     _inflight.erase(_inflight.begin(), std::next(it));
 
     // after data gets flushed out of the appender recheck on disk size
