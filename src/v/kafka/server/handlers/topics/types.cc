@@ -194,6 +194,10 @@ to_cluster_type(const creatable_topic& t) {
       = get_tristate_value<std::chrono::milliseconds>(
         config_entries, topic_property_initial_retention_local_target_ms);
 
+    cfg.properties.mpx_virtual_cluster_id
+      = get_config_value<model::vcluster_id>(
+        config_entries, topic_property_mpx_virtual_cluster_id);
+
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
 
@@ -363,6 +367,10 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
           = from_config_type(*properties.initial_retention_local_target_ms);
     }
 
+    if (properties.mpx_virtual_cluster_id.has_value()) {
+        config_entries[topic_property_mpx_virtual_cluster_id]
+          = from_config_type(properties.mpx_virtual_cluster_id.value());
+    }
     /// Final topic_property not encoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
     return config_entries;
