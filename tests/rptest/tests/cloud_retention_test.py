@@ -103,20 +103,9 @@ class CloudRetentionTest(PreallocNodesTest):
                                        msg_count=msg_count,
                                        custom_node=self.preallocated_nodes)
 
-        consumer = KgoVerifierConsumerGroupConsumer(
-            self.test_context,
-            self.redpanda,
-            self.topic_name,
-            msg_size,
-            readers=3,
-            loop=True,
-            max_msgs=max_read_msgs,
-            nodes=self.preallocated_nodes)
-
         producer.start(clean=False)
 
         producer.wait_for_offset_map()
-        consumer.start(clean=False)
 
         producer.wait_for_acks(msg_count, timeout_sec=600, backoff_sec=5)
         producer.wait()
@@ -191,6 +180,17 @@ class CloudRetentionTest(PreallocNodesTest):
         wait_until(lambda: check_total_size(include_below_start_offset=True),
                    timeout_sec=60,
                    backoff_sec=5)
+
+        consumer = KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic_name,
+            msg_size,
+            readers=3,
+            loop=True,
+            max_msgs=max_read_msgs,
+            nodes=self.preallocated_nodes)
+        consumer.start(clean=False)
 
         consumer.wait()
         self.logger.info("finished consuming")
