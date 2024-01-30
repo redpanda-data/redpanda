@@ -514,6 +514,7 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     monitor_update.data_target_size = target_size;
     monitor_update.data_current_size = usage.usage.total();
     monitor_update.data_reclaimable_size = usage.reclaim.available;
+    monitor_update.data_reclaimable_local_size = usage.reclaim.local_retention;
     _local_monitor->local().set_log_data_state(monitor_update);
 
     /*
