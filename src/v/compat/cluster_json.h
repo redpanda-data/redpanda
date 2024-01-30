@@ -604,6 +604,13 @@ inline void rjson_serialize(
       w,
       "initial_retention_local_target_ms",
       tps.initial_retention_local_target_ms);
+    if (tps.mpx_virtual_cluster_id) {
+        write_member(
+          w,
+          "virtual_cluster_id",
+          ssx::sformat("{}", tps.mpx_virtual_cluster_id.value()()));
+    }
+
     w.EndObject();
 }
 
@@ -666,6 +673,12 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
       rd,
       "initial_retention_local_target_ms",
       obj.initial_retention_local_target_ms);
+    std::optional<ss::sstring> vcluster_str;
+    read_member(rd, "virtual_cluster_id", vcluster_str);
+    if (vcluster_str) {
+        obj.mpx_virtual_cluster_id = cluster::vcluster_id(
+          xid::from_string(*vcluster_str));
+    }
 }
 
 inline void rjson_serialize(

@@ -180,10 +180,8 @@ inline absl::btree_set<Value> random_btree_set(Fn&& gen, size_t size = 20) {
     return random_set<absl::btree_set, Value>(std::forward<Fn>(gen), size);
 }
 
-inline cluster::producer_ptr
-random_producer_state(cluster::producer_state_manager& psm) {
+inline cluster::producer_ptr random_producer_state() {
     return ss::make_lw_shared<cluster::producer_state>(
-      psm,
       model::producer_identity{
         random_generators::get_int<int64_t>(),
         random_generators::get_int<int16_t>()},

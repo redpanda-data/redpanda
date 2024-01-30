@@ -1471,13 +1471,14 @@ struct remote_topic_properties
  * Type representing MPX virtual cluster. MPX uses XID to identify clusters.
  */
 using vcluster_id = named_type<xid, struct v_cluster_id_tag>;
+
 /**
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<6>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<7>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -1510,7 +1511,8 @@ struct topic_properties
       std::optional<pandaproxy::schema_registry::subject_name_strategy>
         record_value_subject_name_strategy_compat,
       tristate<size_t> initial_retention_local_target_bytes,
-      tristate<std::chrono::milliseconds> initial_retention_local_target_ms)
+      tristate<std::chrono::milliseconds> initial_retention_local_target_ms,
+      std::optional<vcluster_id> mpx_virtual_cluster_id)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1542,7 +1544,8 @@ struct topic_properties
           record_value_subject_name_strategy_compat)
       , initial_retention_local_target_bytes(
           initial_retention_local_target_bytes)
-      , initial_retention_local_target_ms(initial_retention_local_target_ms) {}
+      , initial_retention_local_target_ms(initial_retention_local_target_ms)
+      , mpx_virtual_cluster_id(mpx_virtual_cluster_id) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1584,6 +1587,7 @@ struct topic_properties
     tristate<size_t> initial_retention_local_target_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> initial_retention_local_target_ms{
       std::nullopt};
+    std::optional<vcluster_id> mpx_virtual_cluster_id;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1620,7 +1624,8 @@ struct topic_properties
           record_value_subject_name_strategy,
           record_value_subject_name_strategy_compat,
           initial_retention_local_target_bytes,
-          initial_retention_local_target_ms);
+          initial_retention_local_target_ms,
+          mpx_virtual_cluster_id);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
