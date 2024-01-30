@@ -15,15 +15,20 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
+#include "model/transform.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "random/simple_time_jitter.h"
 #include "transform/logger.h"
 #include "wasm/api.h"
 
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <optional>
 
@@ -32,9 +37,15 @@ namespace transform {
 namespace {
 
 class queue_output_consumer {
+    static constexpr size_t buffer_chunk_size = 8;
+
 public:
-    queue_output_consumer(ss::queue<model::record_batch>* output, probe* probe)
+    queue_output_consumer(
+      transfer_queue<model::record_batch, buffer_chunk_size>* output,
+      ss::abort_source* as,
+      probe* probe)
       : _output(output)
+      , _as(as)
       , _probe(probe) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
@@ -43,14 +54,15 @@ public:
         // model::record_batch.
         _last_offset = model::offset_cast(b.last_offset());
         _probe->increment_read_bytes(b.size_bytes());
-        co_await _output->push_eventually(std::move(b));
+        co_await _output->push(std::move(b), _as);
         co_return ss::stop_iteration::no;
     }
     std::optional<kafka::offset> end_of_stream() const { return _last_offset; }
 
 private:
     std::optional<kafka::offset> _last_offset;
-    ss::queue<model::record_batch>* _output;
+    transfer_queue<model::record_batch, buffer_chunk_size>* _output;
+    ss::abort_source* _as;
     probe* _probe;
 };
 
@@ -58,32 +70,6 @@ struct drain_result {
     ss::chunked_fifo<model::record_batch> batches;
     kafka::offset latest_offset;
 };
-
-ss::future<drain_result>
-drain_queue(ss::queue<transformed_batch>* queue, probe* p) {
-    static constexpr size_t max_batches_bytes = 1_MiB;
-    if (queue->empty()) {
-        co_await queue->not_empty();
-    }
-    drain_result result;
-    size_t batches_size = 0;
-    while (!queue->empty()) {
-        auto batch_size = queue->front().batch.size_bytes();
-        batches_size += queue->front().batch.size_bytes();
-        // ensure if there is a large batch we make some progress
-        // otherwise cap how much data we send to the sink at once.
-        if (!result.batches.empty() && batches_size > max_batches_bytes) {
-            break;
-        }
-        p->increment_write_bytes(batch_size);
-        auto transformed = queue->pop();
-        result.latest_offset = transformed.input_offset;
-        if (transformed.batch.record_count() > 0) {
-            result.batches.push_back(std::move(transformed.batch));
-        }
-    }
-    co_return result;
-}
 
 /**
  * A specific exception to throw on processor::stop so that we're not accidently
@@ -94,6 +80,10 @@ class processor_shutdown_exception : public std::exception {
         return "processor shutting down";
     }
 };
+
+// TODO(rockwood): This is an arbitrary value, we should instead be
+// limiting the size based on the amount of memory in the transform subsystem.
+constexpr size_t max_buffer_size = 64_KiB;
 
 } // namespace
 
@@ -116,8 +106,8 @@ processor::processor(
   , _offset_tracker(std::move(offset_tracker))
   , _state_callback(std::move(cb))
   , _probe(p)
-  , _consumer_transform_pipe(1)
-  , _transform_producer_pipe(1)
+  , _consumer_transform_pipe(max_buffer_size)
+  , _transform_producer_pipe(max_buffer_size)
   , _task(ss::now())
   , _logger(tlog, ss::format("{}/{}", _meta.name(), _ntp.tp.partition())) {
     vassert(
@@ -139,8 +129,6 @@ ss::future<> processor::start() {
     _as = {};
     co_await _source->start();
     co_await _offset_tracker->start();
-    _consumer_transform_pipe = ss::queue<model::record_batch>(1);
-    _transform_producer_pipe = ss::queue<transformed_batch>(1);
     _task = handle_processor_task(_engine->start().then([this] {
         return load_start_offset().then([this](kafka::offset start_offset) {
             // Mark that we're running now that the start offset is loaded.
@@ -161,9 +149,9 @@ ss::future<> processor::stop() {
     }
     auto ex = std::make_exception_ptr(processor_shutdown_exception());
     _as.request_abort_ex(ex);
-    _consumer_transform_pipe.abort(ex);
-    _transform_producer_pipe.abort(ex);
     co_await std::exchange(_task, ss::now());
+    _consumer_transform_pipe.clear();
+    _transform_producer_pipe.clear();
     co_await _source->stop();
     co_await _offset_tracker->stop();
     co_await _engine->stop();
@@ -214,7 +202,7 @@ ss::future<> processor::run_consumer_loop(kafka::offset offset) {
     while (!_as.abort_requested()) {
         auto reader = co_await _source->read_batch(offset, &_as);
         auto last_offset = co_await std::move(reader).consume(
-          queue_output_consumer(&_consumer_transform_pipe, _probe),
+          queue_output_consumer(&_consumer_transform_pipe, &_as, _probe),
           model::no_timeout);
         if (!last_offset) {
             vlog(
@@ -231,20 +219,48 @@ ss::future<> processor::run_consumer_loop(kafka::offset offset) {
 
 ss::future<> processor::run_transform_loop() {
     while (!_as.abort_requested()) {
-        auto batch = co_await _consumer_transform_pipe.pop_eventually();
-        auto offset = model::offset_cast(batch.last_offset());
-        batch = co_await _engine->transform(std::move(batch), _probe);
-        co_await _transform_producer_pipe.push_eventually(
-          {.batch = std::move(batch), .input_offset = offset});
+        auto batch = co_await _consumer_transform_pipe.pop_one(&_as);
+        if (!batch) {
+            continue;
+        }
+        auto offset = model::offset_cast(batch->last_offset());
+        ss::chunked_fifo<model::transformed_data> transformed;
+        co_await _engine->transform(
+          std::move(*batch),
+          _probe,
+          [&transformed](model::transformed_data data) {
+              transformed.push_back(std::move(data));
+          });
+        if (!transformed.empty()) {
+            auto b = model::transformed_data::make_batch(
+              model::timestamp::now(), std::move(transformed));
+            co_await _transform_producer_pipe.push({std::move(b)}, &_as);
+        }
+        co_await _transform_producer_pipe.push({offset}, &_as);
     }
 }
 
 ss::future<> processor::run_producer_loop() {
     while (!_as.abort_requested()) {
-        auto drained = co_await drain_queue(&_transform_producer_pipe, _probe);
-        co_await _sinks[0]->write(std::move(drained.batches));
-        co_await _offset_tracker->commit_offset(drained.latest_offset);
-        report_lag(_source->latest_offset() - drained.latest_offset);
+        auto popped = co_await _transform_producer_pipe.pop_all(&_as);
+        if (popped.empty()) {
+            continue;
+        }
+        kafka::offset latest_offset;
+        ss::chunked_fifo<model::record_batch> batches;
+        for (auto& entry : popped) {
+            ss::visit(
+              entry.data,
+              [&batches](model::record_batch& b) {
+                  batches.push_back(std::move(b));
+              },
+              [&latest_offset](kafka::offset o) { latest_offset = o; });
+        }
+        co_await _sinks[0]->write(std::move(batches));
+        if (latest_offset != kafka::offset()) {
+            co_await _offset_tracker->commit_offset(latest_offset);
+            report_lag(_source->latest_offset() - latest_offset);
+        }
     }
 }
 
@@ -279,4 +295,18 @@ bool processor::is_running() const {
     return !_as.abort_requested();
 }
 int64_t processor::current_lag() const { return _last_reported_lag; }
+
+size_t transformed_output::memory_usage() const {
+    return sizeof(transformed_output)
+           + ss::visit(
+             data,
+             [](const model::record_batch& b) {
+                 // Account for the size of this struct, but don't double count
+                 // sizeof(model::record_batch), which b.memory_usage() accounts
+                 // for.
+                 return b.memory_usage() - sizeof(model::record_batch);
+             },
+             [](kafka::offset) { return size_t(0); });
+}
+
 } // namespace transform

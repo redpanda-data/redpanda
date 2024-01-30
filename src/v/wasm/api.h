@@ -17,10 +17,18 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "wasm/fwd.h"
 
+#include <seastar/util/noncopyable_function.hh>
+
 #include <chrono>
 #include <memory>
 
 namespace wasm {
+
+/**
+ * The callback for when data emitted from the transform.
+ */
+using transform_callback
+  = ss::noncopyable_function<void(model::transformed_data)>;
 
 /**
  * A wasm engine is a running VM loaded with a user module and capable of
@@ -30,8 +38,8 @@ namespace wasm {
  */
 class engine {
 public:
-    virtual ss::future<model::record_batch>
-    transform(model::record_batch batch, transform_probe* probe) = 0;
+    virtual ss::future<>
+    transform(model::record_batch, transform_probe*, transform_callback) = 0;
 
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() = 0;

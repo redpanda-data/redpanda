@@ -244,10 +244,15 @@ public:
     static std::optional<transformed_data> create_validated(iobuf);
 
     /**
+     * Create a transformed record from a record, generally used in testing.
+     */
+    static transformed_data from_record(record);
+
+    /**
      * Create a batch from transformed_data.
      */
-    static model::record_batch
-      make_batch(model::timestamp, ss::chunked_fifo<transformed_data>);
+    static record_batch
+      make_batch(timestamp, ss::chunked_fifo<transformed_data>);
 
     /**
      * Generate a serialized record from the following metadata.

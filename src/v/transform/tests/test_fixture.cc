@@ -15,6 +15,7 @@
 #include "model/record.h"
 #include "model/transform.h"
 #include "transform/logger.h"
+#include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -94,16 +95,22 @@ ss::future<> fake_offset_tracker::start() { co_return; }
 
 void fake_wasm_engine::set_mode(mode m) { _mode = m; }
 
-ss::future<model::record_batch>
-fake_wasm_engine::transform(model::record_batch batch, wasm::transform_probe*) {
+ss::future<> fake_wasm_engine::transform(
+  model::record_batch batch,
+  wasm::transform_probe*,
+  wasm::transform_callback cb) {
     switch (_mode) {
-    case mode::noop:
-        co_return batch;
-    case mode::filter: {
-        co_return model::transformed_data::make_batch(
-          batch.header().max_timestamp, {});
+    case mode::noop: {
+        auto it = model::record_batch_iterator::create(batch);
+        while (it.has_next()) {
+            cb(model::transformed_data::from_record(it.next()));
+        }
+        break;
     }
+    case mode::filter:
+        break;
     }
+    co_return;
 }
 
 ss::future<> fake_offset_tracker::commit_offset(kafka::offset o) {

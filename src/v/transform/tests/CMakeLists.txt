@@ -68,3 +68,18 @@ rp_test(
   ARGS "-- -c 1"
   LABELS transform
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME
+    transfer_queue_test
+  SOURCES
+    transfer_queue_test.cc
+  LIBRARIES 
+    v::gtest_main
+    v::model_test_utils
+    v::transform
+  ARGS "-- -c 1"
+  LABELS transform
+)

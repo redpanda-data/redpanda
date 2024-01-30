@@ -74,13 +74,15 @@ public:
       : _underlying(std::move(underlying))
       , _factory(std::move(f)) {}
 
-    ss::future<model::record_batch>
-    transform(model::record_batch batch, transform_probe* probe) override {
+    ss::future<> transform(
+      model::record_batch batch,
+      transform_probe* probe,
+      transform_callback cb) override {
         auto u = co_await _mu.get_units();
-        auto fut = co_await ss::coroutine::as_future<model::record_batch>(
-          _underlying->transform(std::move(batch), probe));
+        auto fut = co_await ss::coroutine::as_future(
+          _underlying->transform(std::move(batch), probe, std::move(cb)));
         if (!fut.failed()) {
-            co_return fut.get();
+            co_return;
         }
         // Restart the engine
         try {
