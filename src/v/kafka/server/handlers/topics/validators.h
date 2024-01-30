@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
@@ -299,6 +300,30 @@ struct configuration_value_validator {
 
         try {
             boost::lexical_cast<typename T::validated_type>(iter->second);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+};
+struct vcluster_id_validator {
+    static constexpr const char* error_message = "invalid virtual cluster id";
+    static constexpr error_code ec = error_code::invalid_config;
+
+    static bool is_valid(const creatable_topic& c) {
+        if (!config::shard_local_cfg().enable_mpx_extensions()) {
+            return true;
+        }
+        auto config_entries = config_map(c.configs);
+
+        auto it = config_entries.find(topic_property_mpx_virtual_cluster_id);
+
+        if (it == config_entries.end()) {
+            return true;
+        }
+
+        try {
+            cluster::vcluster_id::type::from_string(it->second);
             return true;
         } catch (...) {
             return false;
