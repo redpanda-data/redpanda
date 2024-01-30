@@ -110,12 +110,14 @@ transport::connect(rpc::clock_type::time_point connection_timeout) {
                 } catch (...) {
                     auto e = std::current_exception();
                     if (net::is_disconnect_exception(e)) {
-                        rpc::rpclog.info(
+                        vlog(
+                          rpc::rpclog.info,
                           "Disconnected from server {}: {}",
                           server_address(),
                           e);
                     } else {
-                        rpc::rpclog.error(
+                        vlog(
+                          rpc::rpclog.error,
                           "Error dispatching client reads to {}: {}",
                           server_address(),
                           e);
