@@ -91,7 +91,7 @@ class ConsumerGroupTest(RedpandaTest):
 
         def group_is_ready():
             gr = rpk.group_describe(group=group, summary=True)
-            return gr.members == consumer_count
+            return gr.members == consumer_count and gr.state == "Stable"
 
         wait_until(group_is_ready, 60, 1)
         return consumers
