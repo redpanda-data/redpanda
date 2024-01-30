@@ -51,6 +51,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kubectl import KubectlTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
@@ -4262,6 +4263,24 @@ class RedpandaService(RedpandaServiceBase):
         self._log_config.enable_finject_logging()
 
         self.logger.info(f"Set up failure injection config for nodes: {nodes}")
+
+    def validate_broker_storage(self):
+        viewer = OfflineLogViewer(self)
+        for node in self.nodes:
+            try:
+                stdout, stderr = viewer.validate_segments(node)
+            except RemoteCommandError as e:
+                for line in e.msg.decode("utf-8").splitlines():
+                    self.logger.info(line)
+                raise
+            output = f"{stdout.decode('utf-8')}\n{stderr.decode('utf-8')}"
+            if "Corruption detected" not in output:
+                continue
+            self.logger.debug(f"Corruption details for node {node.name}:")
+            for line in output.splitlines():
+                self.logger.debug(line)
+            raise RuntimeError(
+                f"Detected segment corruption on node {node}:\n{output}")
 
     def validate_controller_log(self):
         """

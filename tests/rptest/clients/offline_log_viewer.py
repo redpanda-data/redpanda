@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import json
+from rptest.util import ssh_output_stderr
 
 
 class OfflineLogViewer:
@@ -42,3 +43,9 @@ class OfflineLogViewer:
 
     def read_consumer_offsets(self, node):
         return self._json_cmd(node, "--type consumer_offsets")
+
+    def validate_segments(self, node):
+        validate_path = "python3 /opt/scripts/offline_log_viewer/validate.py"
+        cmd = f"{validate_path} --path {self._redpanda.DATA_DIR}"
+        output = ssh_output_stderr(self._redpanda, node, cmd, allow_fail=False)
+        return output
