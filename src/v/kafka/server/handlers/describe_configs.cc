@@ -115,7 +115,8 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, model::timestamp_type> ||
         std::is_same_v<T, config::data_directory_path> ||
         std::is_same_v<T, v8_engine::data_policy> ||
-        std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy>;
+        std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> || 
+        std::is_same_v<T, model::vcluster_id>;
 
     constexpr auto is_long_type = is_long<T> ||
         // Long type since seconds is atleast a 35-bit signed integral
@@ -261,6 +262,49 @@ static void add_topic_config(
       .documentation = documentation,
     });
 }
+/**
+ * Special overload for topic configuration which does not have the default per
+ * cluster value
+ */
+template<typename T, typename Func>
+static void add_topic_config(
+  describe_configs_result& result,
+  std::string_view override_name,
+  const std::optional<T>& overrides,
+  bool include_synonyms,
+  std::optional<ss::sstring> documentation,
+  Func&& describe_f) {
+    describe_configs_source src = overrides
+                                    ? describe_configs_source::topic
+                                    : describe_configs_source::default_config;
+
+    std::vector<describe_configs_synonym> synonyms;
+    if (include_synonyms) {
+        synonyms.reserve(2);
+        if (overrides) {
+            synonyms.push_back(describe_configs_synonym{
+              .name = ss::sstring(override_name),
+              .value = describe_f(*overrides),
+              .source = static_cast<int8_t>(describe_configs_source::topic),
+            });
+        }
+        synonyms.push_back(describe_configs_synonym{
+          .name = ss::sstring(override_name),
+          .value = std::nullopt,
+          .source = static_cast<int8_t>(
+            describe_configs_source::default_config),
+        });
+    }
+
+    result.configs.push_back(describe_configs_resource_result{
+      .name = ss::sstring(override_name),
+      .value = describe_f(overrides),
+      .config_source = src,
+      .synonyms = std::move(synonyms),
+      .config_type = property_config_type<T>(),
+      .documentation = documentation,
+    });
+}
 
 /**
  * For faking DEFAULT_CONFIG status for properties that are actually
@@ -367,6 +411,26 @@ static void add_topic_config_if_requested(
           overrides,
           include_synonyms,
           documentation);
+    }
+}
+
+template<typename T, typename Func>
+static void add_topic_config_if_requested(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  std::string_view override_name,
+  const std::optional<T>& overrides,
+  bool include_synonyms,
+  std::optional<ss::sstring> documentation,
+  Func&& describe_f) {
+    if (config_property_requested(resource.configuration_keys, override_name)) {
+        add_topic_config(
+          result,
+          override_name,
+          overrides,
+          include_synonyms,
+          documentation,
+          std::forward<Func>(describe_f));
     }
 }
 
@@ -810,6 +874,25 @@ ss::future<response_ptr> describe_configs_handler::handle(
               maybe_make_documentation(
                 request.data.include_documentation,
                 config::shard_local_cfg().log_segment_ms.desc()));
+
+            if (config::shard_local_cfg().enable_mpx_extensions()) {
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_mpx_virtual_cluster_id,
+                  topic_config->properties.mpx_virtual_cluster_id,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation,
+                    "Identifier of virtual cluster that the topic is "
+                    "affiliated with"),
+                  [](const std::optional<model::vcluster_id> property) {
+                      if (!property) {
+                          return ss::sstring("-");
+                      }
+                      return ssx::sformat("{}", (*property)());
+                  });
+            }
 
             constexpr std::string_view key_validation
               = "Enable validation of the schema id for keys on a record";
