@@ -2149,17 +2149,27 @@ using topic_configuration_assignment
 struct topic_result
   : serde::envelope<topic_result, serde::version<0>, serde::compat_version<0>> {
     topic_result() noexcept = default;
-    explicit topic_result(model::topic_namespace t, errc ec = errc::success)
+    explicit topic_result(
+      model::topic_namespace t,
+      errc ec = errc::success,
+      std::optional<int32_t> pc = {},
+      std::optional<int16_t> rf = {})
       : tp_ns(std::move(t))
-      , ec(ec) {}
+      , ec(ec)
+      , partition_count(pc)
+      , replication_factor(rf) {}
     model::topic_namespace tp_ns;
-    errc ec;
+    errc ec{};
+    std::optional<int32_t> partition_count{};
+    std::optional<int16_t> replication_factor{};
 
     friend bool operator==(const topic_result&, const topic_result&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const topic_result& r);
 
-    auto serde_fields() { return std::tie(tp_ns, ec); }
+    auto serde_fields() {
+        return std::tie(tp_ns, partition_count, replication_factor, ec);
+    }
 };
 
 struct create_topics_request
