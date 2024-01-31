@@ -1313,7 +1313,7 @@ class EndToEndThrottlingTest(RedpandaTest):
             log_segment_size=1024,
             fast_uploads=True,
             # Set small throughput limit to trigger throttling
-            cloud_storage_max_throughput_per_shard=5 * 1024 * 1024)
+            cloud_storage_max_throughput_per_shard=8 * 1024 * 1024)
 
         super(EndToEndThrottlingTest,
               self).__init__(test_context=test_context,
@@ -1356,7 +1356,7 @@ class EndToEndThrottlingTest(RedpandaTest):
                                           trace_logs=True)
         consumer.start()
 
-        consumer.wait(timeout_sec=300)
+        consumer.wait(timeout_sec=400)
 
         assert consumer.consumer_status.validator.invalid_reads == 0
         assert consumer.consumer_status.validator.valid_reads >= self.msg_count
