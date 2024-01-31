@@ -6,7 +6,11 @@ The document covers style and convention not enforced by clang-format.
 
 Header files have the `.h` extension, source files use the `.cc` extension.
 
-Test files go in the `tests` directory of the module they belong to. That is,
+Public header files (meaning other libraries can `#include` them directly), should go
+in an `includes` directory within the library they belong to. For example, a library named
+`foo` should have public header files within `src/v/foo/include/foo`.
+
+Test files go in the `tests` directory of the library they belong to. That is,
 the tests for a feature named `foo` and located in `src/v/foo` will be located
 in `src/v/foo/tests`.
 
