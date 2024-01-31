@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "bytes/random.h"
 #include "container/zip.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -16,16 +17,23 @@
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
+#include "model/timestamp.h"
 #include "model/transform.h"
 #include "transform/tests/test_fixture.h"
 #include "transform/transform_processor.h"
 
+#include <seastar/core/chunked_fifo.hh>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <functional>
+#include <iterator>
 #include <memory>
 #include <ranges>
 #include <tuple>
+#include <vector>
 
 namespace transform {
 namespace {
@@ -71,22 +79,50 @@ public:
     void wait_for_committed_offset(kafka::offset o) {
         _offset_tracker->wait_for_committed_offset(o).get();
     }
+    void wait_for_all_committed() {
+        wait_for_committed_offset(kafka::prev_offset(_offset));
+    }
 
     using transform_mode = testing::fake_wasm_engine::mode;
     void set_transform_mode(testing::fake_wasm_engine::mode m) {
         _engine->set_mode(m);
     }
 
-    model::record_batch make_tiny_batch() {
-        return model::test::make_random_batch(model::test::record_batch_spec{
-          .offset = kafka::offset_cast(_offset++),
-          .allow_compression = false,
-          .count = 1});
+    std::vector<model::record> make_records(size_t n) {
+        std::vector<model::record> records;
+        std::generate_n(std::back_inserter(records), n, [&records] {
+            return model::test::make_random_record(
+              int(records.size()), random_generators::make_iobuf());
+        });
+        return records;
     }
-    void push_batch(model::record_batch batch) {
+
+    void push_batch(const std::vector<model::record>& records) {
+        ss::chunked_fifo<model::transformed_data> data;
+        for (const auto& r : records) {
+            data.push_back(model::transformed_data::from_record(r.copy()));
+        }
+        auto batch = model::transformed_data::make_batch(
+          model::timestamp::now(), std::move(data));
+        batch.header().base_offset = kafka::offset_cast(_offset);
+        _offset += batch.record_count();
         _src->push_batch(std::move(batch)).get();
     }
-    model::record_batch read_batch() { return _sinks[0]->read().get(); }
+
+    void push_record(const model::record& record) {
+        std::vector<model::record> batch;
+        batch.push_back(record.copy());
+        push_batch(batch);
+    }
+
+    std::vector<model::record> read_records(size_t n) {
+        std::vector<model::record> records;
+        while (n > records.size()) {
+            auto read = _sinks[0]->read().get().copy_records();
+            std::move(read.begin(), read.end(), std::back_inserter(records));
+        }
+        return records;
+    }
     uint64_t error_count() const { return _error_count; }
     int64_t lag() const { return _p->current_lag(); }
 
@@ -110,37 +146,36 @@ private:
     probe _probe;
 };
 
-MATCHER_P(SameBatchRef, ref, "") {
-    const model::record_batch& batch = ref.get();
-    const auto& a = arg.copy_records();
-    const auto& b = batch.copy_records();
-    if (a.size() != b.size()) {
-        *result_listener << "expected same size: " << a.size() << " vs "
-                         << b.size();
+MATCHER(SameRecordEq, "") {
+    const model::record& a = std::get<0>(arg);
+    const model::record& b = std::get<1>(arg).get();
+    if (a.key() != b.key()) {
+        *result_listener << "expected same key: " << a.key() << " vs "
+                         << b.key();
         return false;
     }
-    for (const auto& [a, b] : container::zip(a, b)) {
-        if (a.key() != b.key()) {
-            *result_listener << "expected same key: " << a.key() << " vs "
-                             << b.key();
-            return false;
-        }
-        if (a.value() != b.value()) {
-            *result_listener << "expected same value: " << a.value() << " vs "
-                             << b.value();
-            return false;
-        }
-        if (a.headers() != b.headers()) {
-            *result_listener << "expected same headers: " << a.headers()
-                             << " vs " << b.headers();
-            return false;
-        }
+    if (a.value() != b.value()) {
+        *result_listener << "expected same value: " << a.value() << " vs "
+                         << b.value();
+        return false;
+    }
+    if (a.headers() != b.headers()) {
+        *result_listener << "expected same headers: " << a.headers() << " vs "
+                         << b.headers();
+        return false;
     }
     return true;
 }
 
-auto SameBatch(const model::record_batch& batch) {
-    return SameBatchRef(std::ref(batch));
+// A helper to ensure all records have the same key/value/headers (but doesn't
+// check other metadata).
+auto SameRecords(std::vector<model::record>& expected) {
+    std::vector<std::reference_wrapper<const model::record>> expected_refs;
+    expected_refs.reserve(expected.size());
+    for (const auto& r : expected) {
+        expected_refs.push_back(std::ref(r));
+    }
+    return ::testing::Pointwise(SameRecordEq(), expected_refs);
 }
 
 } // namespace
@@ -153,96 +188,80 @@ TEST_F(ProcessorTestFixture, HandlesDoubleStops) {
 TEST_F(ProcessorTestFixture, HandlesDoubleStarts) { start(); }
 
 TEST_F(ProcessorTestFixture, ProcessOne) {
-    auto batch = make_tiny_batch();
-    push_batch(batch.share());
-    auto returned = read_batch();
-    EXPECT_THAT(batch, SameBatch(returned));
+    auto batch = make_records(1);
+    push_batch(batch);
+    auto returned = read_records(1);
+    EXPECT_THAT(returned, SameRecords(batch));
     EXPECT_EQ(error_count(), 0);
 }
 
 TEST_F(ProcessorTestFixture, ProcessMany) {
-    std::vector<model::record_batch> batches;
-    constexpr int num_batches = 32;
-    std::generate_n(std::back_inserter(batches), num_batches, [this] {
-        return make_tiny_batch();
-    });
-    for (auto& b : batches) {
-        push_batch(b.share());
-    }
-    for (auto& b : batches) {
-        auto returned = read_batch();
-        EXPECT_THAT(b, SameBatch(returned));
-    }
+    constexpr size_t n = 32;
+    auto batch = make_records(n);
+    push_batch(batch);
+    auto returned = read_records(n);
+    EXPECT_THAT(returned, SameRecords(batch));
     EXPECT_EQ(error_count(), 0);
 }
 
 TEST_F(ProcessorTestFixture, TracksOffsets) {
-    constexpr int num_batches = 32;
-    std::vector<model::record_batch> first_batches;
-    std::generate_n(std::back_inserter(first_batches), num_batches, [this] {
-        return make_tiny_batch();
-    });
-    std::vector<model::record_batch> second_batches;
-    std::generate_n(std::back_inserter(second_batches), num_batches, [this] {
-        return make_tiny_batch();
-    });
+    constexpr int num_records = 32;
+    auto first_batches = make_records(num_records);
+    auto second_batches = make_records(num_records);
     for (auto& b : first_batches) {
-        push_batch(b.share());
+        push_record(b.share());
     }
-    for (auto& b : first_batches) {
-        auto returned = read_batch();
-        EXPECT_THAT(b, SameBatch(returned)) << "first batch mismatch";
-    }
+    auto returned = read_records(num_records);
+    EXPECT_THAT(returned, SameRecords(first_batches)) << "first batch mismatch";
     // If we don't wait for the last commit to happen, it's possible that
     // we restart and get duplicates.
-    wait_for_committed_offset(first_batches.back().last_offset());
+    wait_for_all_committed();
     restart();
     for (auto& b : second_batches) {
-        push_batch(b.share());
+        push_record(b.share());
     }
-    for (auto& b : second_batches) {
-        auto returned = read_batch();
-        EXPECT_THAT(b, SameBatch(returned)) << "second batch mismatch";
-    }
+    returned = read_records(num_records);
+    EXPECT_THAT(returned, SameRecords(second_batches))
+      << "second batch mismatch";
     EXPECT_EQ(error_count(), 0);
 }
 
 TEST_F(ProcessorTestFixture, HandlesEmptyBatches) {
-    auto batch_one = make_tiny_batch();
-    push_batch(batch_one.copy());
-    wait_for_committed_offset(batch_one.last_offset());
-    EXPECT_THAT(read_batch(), SameBatch(batch_one));
+    auto batch_one = make_records(1);
+    push_batch(batch_one);
+    wait_for_all_committed();
+    EXPECT_THAT(read_records(1), SameRecords(batch_one));
 
-    auto batch_two = make_tiny_batch();
+    auto batch_two = make_records(1);
     set_transform_mode(transform_mode::filter);
-    push_batch(batch_two.copy());
+    push_batch(batch_two);
     // We never will read batch two, it was filtered out
     // but we should still get a commit for batch two
-    wait_for_committed_offset(batch_two.last_offset());
+    wait_for_all_committed();
 
-    auto batch_three = make_tiny_batch();
+    auto batch_three = make_records(1);
     set_transform_mode(transform_mode::noop);
-    push_batch(batch_three.copy());
-    wait_for_committed_offset(batch_three.last_offset());
-    EXPECT_THAT(read_batch(), SameBatch(batch_three));
+    push_batch(batch_three);
+    wait_for_all_committed();
+    EXPECT_THAT(read_records(1), SameRecords(batch_three));
 }
 
 TEST_F(ProcessorTestFixture, LagOffByOne) {
     EXPECT_EQ(lag(), 0);
-    auto batch_one = make_tiny_batch();
-    push_batch(batch_one.copy());
-    wait_for_committed_offset(batch_one.last_offset());
-    EXPECT_THAT(read_batch(), SameBatch(batch_one));
+    auto batch_one = make_records(1);
+    push_batch(batch_one);
+    wait_for_all_committed();
+    EXPECT_THAT(read_records(1), SameRecords(batch_one));
     EXPECT_EQ(lag(), 0);
 }
 
 TEST_F(ProcessorTestFixture, LagOverflowBug) {
     stop();
-    auto batch_one = make_tiny_batch();
-    push_batch(batch_one.copy());
+    auto batch_one = make_records(1);
+    push_batch(batch_one);
     start();
-    wait_for_committed_offset(batch_one.last_offset());
-    EXPECT_THAT(read_batch(), SameBatch(batch_one));
+    wait_for_all_committed();
+    EXPECT_THAT(read_records(1), SameRecords(batch_one));
     EXPECT_EQ(lag(), 0);
 }
 

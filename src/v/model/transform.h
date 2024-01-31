@@ -260,6 +260,13 @@ public:
     iobuf to_serialized_record(
       record_attributes, int64_t timestamp_delta, int32_t offset_delta) &&;
 
+    /**
+     * The memory usage for this struct and it's data.
+     */
+    size_t memory_usage() const;
+
+    bool operator==(const transformed_data&) const = default;
+
 private:
     explicit transformed_data(iobuf d);
 

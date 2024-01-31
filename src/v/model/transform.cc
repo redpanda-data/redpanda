@@ -257,4 +257,8 @@ iobuf transformed_data::to_serialized_record(
     return out;
 }
 
+size_t transformed_data::memory_usage() const {
+    return sizeof(*this) + _data.size_bytes();
+}
+
 } // namespace model
