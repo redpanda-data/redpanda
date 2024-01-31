@@ -84,10 +84,16 @@ public:
 private:
     ss::future<> run_consumer_loop(kafka::offset);
     ss::future<> run_transform_loop();
-    ss::future<> run_all_producers();
-    ss::future<> run_producer_loop(transfer_queue<transformed_output>*, sink*);
+    ss::future<> run_all_producers(
+      absl::flat_hash_map<model::output_topic_index, kafka::offset>);
+    ss::future<> run_producer_loop(
+      model::output_topic_index,
+      transfer_queue<transformed_output>*,
+      sink*,
+      kafka::offset);
     ss::future<> poll_sleep();
-    ss::future<kafka::offset> load_start_offset();
+    ss::future<absl::flat_hash_map<model::output_topic_index, kafka::offset>>
+    load_latest_committed();
     void report_lag(int64_t);
 
     template<typename... Future>
@@ -109,6 +115,7 @@ private:
       _consumer_transform_pipe;
 
     struct output {
+        model::output_topic_index index;
         transfer_queue<transformed_output> queue;
         std::unique_ptr<sink> sink;
     };

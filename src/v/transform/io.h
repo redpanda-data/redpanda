@@ -92,16 +92,19 @@ public:
     virtual ss::future<> wait_for_previous_flushes(ss::abort_source*) = 0;
 
     /**
-     * Load the latest offset we've committed.
+     * Load the latest offset for all output topics we've committed.
      */
-    virtual ss::future<std::optional<kafka::offset>>
-    load_committed_offset() = 0;
+    virtual ss::future<
+      absl::flat_hash_map<model::output_topic_index, kafka::offset>>
+    load_committed_offsets() = 0;
 
     /**
-     * Commit progress. The offset here is how far on the input partition we've
-     * transformed and successfully written to the output topic.
+     * Commit progress for a given output topic. The offset here is how far on
+     * the input partition we've transformed and successfully written to the
+     * output topic.
      */
-    virtual ss::future<> commit_offset(kafka::offset) = 0;
+    virtual ss::future<>
+      commit_offset(model::output_topic_index, kafka::offset) = 0;
 };
 
 } // namespace transform

@@ -95,14 +95,17 @@ public:
     ss::future<> stop() override;
     ss::future<> wait_for_previous_flushes(ss::abort_source*) override;
 
-    ss::future<std::optional<kafka::offset>> load_committed_offset() override;
+    ss::future<absl::flat_hash_map<model::output_topic_index, kafka::offset>>
+    load_committed_offsets() override;
 
-    ss::future<> commit_offset(kafka::offset o) override;
+    ss::future<>
+      commit_offset(model::output_topic_index, kafka::offset) override;
 
-    ss::future<> wait_for_committed_offset(kafka::offset);
+    ss::future<>
+      wait_for_committed_offset(model::output_topic_index, kafka::offset);
 
 private:
-    std::optional<kafka::offset> _committed;
+    absl::flat_hash_map<model::output_topic_index, kafka::offset> _committed;
     ss::condition_variable _cond_var;
 };
 

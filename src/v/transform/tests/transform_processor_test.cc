@@ -23,6 +23,7 @@
 #include "transform/transform_processor.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/condition-variable.hh>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -73,14 +74,21 @@ public:
     }
     void TearDown() override { _p->stop().get(); }
 
-    void wait_for_committed_offset(model::offset o) {
-        wait_for_committed_offset(model::offset_cast(o));
+    bool wait_for_committed_offset(model::offset o) {
+        return wait_for_committed_offset(model::offset_cast(o));
     }
-    void wait_for_committed_offset(kafka::offset o) {
-        _offset_tracker->wait_for_committed_offset(o).get();
+    bool wait_for_committed_offset(kafka::offset o) {
+        try {
+            _offset_tracker
+              ->wait_for_committed_offset(model::output_topic_index(0), o)
+              .get();
+            return true;
+        } catch (const ss::condition_variable_timed_out&) {
+            return false;
+        }
     }
-    void wait_for_all_committed() {
-        wait_for_committed_offset(kafka::prev_offset(_offset));
+    bool wait_for_all_committed() {
+        return wait_for_committed_offset(kafka::prev_offset(_offset));
     }
 
     using transform_mode = testing::fake_wasm_engine::mode;
@@ -215,7 +223,7 @@ TEST_F(ProcessorTestFixture, TracksOffsets) {
     EXPECT_THAT(returned, SameRecords(first_batches)) << "first batch mismatch";
     // If we don't wait for the last commit to happen, it's possible that
     // we restart and get duplicates.
-    wait_for_all_committed();
+    ASSERT_TRUE(wait_for_all_committed());
     restart();
     for (auto& b : second_batches) {
         push_record(b.share());
@@ -229,7 +237,7 @@ TEST_F(ProcessorTestFixture, TracksOffsets) {
 TEST_F(ProcessorTestFixture, HandlesEmptyBatches) {
     auto batch_one = make_records(1);
     push_batch(batch_one);
-    wait_for_all_committed();
+    ASSERT_TRUE(wait_for_all_committed());
     EXPECT_THAT(read_records(1), SameRecords(batch_one));
 
     auto batch_two = make_records(1);
@@ -237,12 +245,12 @@ TEST_F(ProcessorTestFixture, HandlesEmptyBatches) {
     push_batch(batch_two);
     // We never will read batch two, it was filtered out
     // but we should still get a commit for batch two
-    wait_for_all_committed();
+    ASSERT_TRUE(wait_for_all_committed());
 
     auto batch_three = make_records(1);
     set_transform_mode(transform_mode::noop);
     push_batch(batch_three);
-    wait_for_all_committed();
+    ASSERT_TRUE(wait_for_all_committed());
     EXPECT_THAT(read_records(1), SameRecords(batch_three));
 }
 
@@ -250,7 +258,7 @@ TEST_F(ProcessorTestFixture, LagOffByOne) {
     EXPECT_EQ(lag(), 0);
     auto batch_one = make_records(1);
     push_batch(batch_one);
-    wait_for_all_committed();
+    ASSERT_TRUE(wait_for_all_committed());
     EXPECT_THAT(read_records(1), SameRecords(batch_one));
     EXPECT_EQ(lag(), 0);
 }
@@ -260,7 +268,7 @@ TEST_F(ProcessorTestFixture, LagOverflowBug) {
     auto batch_one = make_records(1);
     push_batch(batch_one);
     start();
-    wait_for_all_committed();
+    ASSERT_TRUE(wait_for_all_committed());
     EXPECT_THAT(read_records(1), SameRecords(batch_one));
     EXPECT_EQ(lag(), 0);
 }

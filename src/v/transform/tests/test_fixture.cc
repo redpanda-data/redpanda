@@ -18,6 +18,7 @@
 #include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/lowres_clock.hh>
 
 #include <gtest/gtest.h>
@@ -117,20 +118,24 @@ ss::future<> fake_wasm_engine::transform(
     }
 }
 
-ss::future<> fake_offset_tracker::commit_offset(kafka::offset o) {
-    _committed = o;
+ss::future<> fake_offset_tracker::commit_offset(
+  model::output_topic_index idx, kafka::offset o) {
+    _committed[idx] = o;
     _cond_var.broadcast();
     co_return;
 }
 
-ss::future<std::optional<kafka::offset>>
-fake_offset_tracker::load_committed_offset() {
+ss::future<absl::flat_hash_map<model::output_topic_index, kafka::offset>>
+fake_offset_tracker::load_committed_offsets() {
     co_return _committed;
 }
 
-ss::future<> fake_offset_tracker::wait_for_committed_offset(kafka::offset o) {
-    return _cond_var.wait(
-      1s, [this, o] { return _committed && *_committed >= o; });
+ss::future<> fake_offset_tracker::wait_for_committed_offset(
+  model::output_topic_index index, kafka::offset o) {
+    return _cond_var.wait(1s, [this, index, o] {
+        auto it = _committed.find(index);
+        return it != _committed.end() && it->second >= o;
+    });
 }
 
 ss::future<> fake_offset_tracker::wait_for_previous_flushes(ss::abort_source*) {
