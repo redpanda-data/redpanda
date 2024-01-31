@@ -249,7 +249,12 @@ ss::future<response_ptr> create_topics_handler::handle(
           valid_range_end,
           std::back_inserter(response.data.topics),
           [&ctx](const creatable_topic& t) {
-              auto result = generate_successfull_result(t);
+              if (ctx.topics_frontend().topic_exists(
+                    to_cluster_type(t).cfg.tp_ns)) {
+                  return generate_creatable_topic_result(
+                    t, error_code::topic_already_exists);
+              }
+              auto result = generate_creatable_topic_result(t);
               if (ctx.header().version >= api_version(5)) {
                   // TODO(Rob): it looks like get_default_properties is used
                   // only there so there is a high chance of diverging
