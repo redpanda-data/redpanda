@@ -406,13 +406,17 @@ void parse_and_set_optional(
     }
     // set property value if preset, otherwise do nothing
     if (op == config_resource_operation::set && value) {
-        auto v = boost::lexical_cast<T>(*value);
-        auto v_error = validator(*value, v);
-        if (v_error) {
-            throw validation_error(*v_error);
-        }
-        property.value = std::move(v);
         property.op = cluster::incremental_update_operation::set;
+        try {
+            auto v = boost::lexical_cast<T>(*value);
+            auto v_error = validator(*value, v);
+            if (v_error) {
+                throw validation_error(*v_error);
+            }
+            property.value = std::move(v);
+        } catch (std::runtime_error const&) {
+            throw boost::bad_lexical_cast();
+        }
         return;
     }
 }
