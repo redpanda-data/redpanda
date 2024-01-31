@@ -1911,6 +1911,10 @@ topics_frontend::get_partition_state(model::ntp ntp) {
     co_return results;
 }
 
+bool topics_frontend::topic_exists(model::topic_namespace_view tp_ns) {
+    return _topics.local().contains(tp_ns);
+}
+
 void topics_frontend::print_rf_warning_message() {
     const auto min_rf = _minimum_topic_replication();
     const auto& topics = _topics.local().topics_map();

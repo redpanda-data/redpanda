@@ -194,6 +194,9 @@ public:
     /// less than the minimum specified in minimum_topic_replication
     void print_rf_warning_message();
 
+    /// Check whether the specified topic appears in the local topic table
+    bool topic_exists(model::topic_namespace_view);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
