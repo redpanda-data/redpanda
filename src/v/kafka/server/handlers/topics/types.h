@@ -136,8 +136,13 @@ struct topic_op_result {
 };
 
 inline creatable_topic_result
-from_cluster_topic_result(const cluster::topic_result& err) {
-    return {.name = err.tp_ns.tp, .error_code = map_topic_error_code(err.ec)};
+from_cluster_topic_result(const cluster::topic_result& res) {
+    return {
+      .name = res.tp_ns.tp,
+      .error_code = map_topic_error_code(res.ec),
+      .num_partitions = res.partition_count.value_or(-1),
+      .replication_factor = res.replication_factor.value_or(-1),
+    };
 }
 
 config_map_t config_map(const std::vector<createable_topic_config>& config);
