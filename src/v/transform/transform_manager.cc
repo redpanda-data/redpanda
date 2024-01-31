@@ -172,7 +172,7 @@ public:
             return it->second.probe();
         }
         auto probe = ss::make_lw_shared<transform::probe>();
-        probe->setup_metrics(meta.name());
+        probe->setup_metrics(meta);
         return probe;
     }
 

@@ -27,19 +27,19 @@ struct processor_state_change {
 /** A per transform probe. */
 class probe : public wasm::transform_probe {
 public:
-    void setup_metrics(ss::sstring);
+    void setup_metrics(const model::transform_metadata&);
 
     void increment_read_bytes(uint64_t bytes);
     void increment_write_bytes(uint64_t bytes);
     void increment_failure();
     void state_change(processor_state_change);
-    void report_lag(int64_t delta);
+    void report_lag(model::output_topic_index, int64_t delta);
 
 private:
     uint64_t _read_bytes = 0;
     uint64_t _write_bytes = 0;
     uint64_t _failures = 0;
-    uint64_t _lag = 0;
+    std::vector<uint64_t> _lag;
     absl::flat_hash_map<model::transform_report::processor::state, uint64_t>
       _processor_state;
 };

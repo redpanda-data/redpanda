@@ -94,7 +94,7 @@ private:
     ss::future<> poll_sleep();
     ss::future<absl::flat_hash_map<model::output_topic_index, kafka::offset>>
     load_latest_committed();
-    void report_lag(int64_t);
+    void report_lag(model::output_topic_index, int64_t);
 
     template<typename... Future>
     ss::future<> when_all_shutdown(Future&&...);
@@ -125,6 +125,6 @@ private:
     ss::future<> _task;
     prefix_logger _logger;
 
-    int64_t _last_reported_lag = 0;
+    std::vector<int64_t> _last_reported_lag;
 };
 } // namespace transform

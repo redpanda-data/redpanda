@@ -51,6 +51,7 @@ public:
         sinks.push_back(std::move(sink));
         auto offset_tracker = std::make_unique<testing::fake_offset_tracker>();
         _offset_tracker = offset_tracker.get();
+        _probe.setup_metrics(testing::my_metadata);
         _p = std::make_unique<transform::processor>(
           testing::my_transform_id,
           testing::my_ntp,

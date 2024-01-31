@@ -118,6 +118,7 @@ processor::processor(
       outputs.size() == sinks.size(),
       "expected the same number of output topics and sinks");
     _outputs.reserve(outputs.size());
+    _last_reported_lag.reserve(outputs.size());
     for (size_t i : boost::irange(outputs.size())) {
         _outputs.emplace(
           outputs[i].tp,
@@ -125,6 +126,7 @@ processor::processor(
             .index = model::output_topic_index(i),
             .queue = transfer_queue<transformed_output>(max_buffer_size),
             .sink = std::move(sinks[i])});
+        _last_reported_lag.push_back(0);
     }
     // The processor needs to protect against multiple stops (or calling stop
     // before start), to do that we use the state in _as. Start out with an
@@ -183,7 +185,9 @@ ss::future<> processor::stop() {
     co_await _offset_tracker->stop();
     co_await _engine->stop();
     // reset lag now that we've stopped
-    report_lag(0);
+    for (const auto& [_, output] : _outputs) {
+        report_lag(output.index, 0);
+    }
 }
 
 ss::future<> processor::poll_sleep() {
@@ -226,7 +230,7 @@ processor::load_latest_committed() {
             // lag(2)
             last_processed_offset = kafka::offset(-1);
         }
-        report_lag(latest - last_processed_offset);
+        report_lag(output.index, latest - last_processed_offset);
     }
     co_return latest_committed;
 }
@@ -360,8 +364,7 @@ ss::future<> processor::run_producer_loop(
         }
         if (latest_offset > last_committed) {
             co_await _offset_tracker->commit_offset(index, latest_offset);
-            // TODO(rockwood): How do we want to report lag?
-            report_lag(_source->latest_offset() - latest_offset);
+            report_lag(index, _source->latest_offset() - latest_offset);
             last_committed = latest_offset;
         }
     }
@@ -384,10 +387,10 @@ ss::future<> processor::handle_processor_task(ss::future<> fut) {
     }
 }
 
-void processor::report_lag(int64_t lag) {
-    int64_t delta = lag - _last_reported_lag;
-    _probe->report_lag(delta);
-    _last_reported_lag = lag;
+void processor::report_lag(model::output_topic_index idx, int64_t lag) {
+    int64_t delta = lag - _last_reported_lag[idx()];
+    _probe->report_lag(idx, delta);
+    _last_reported_lag[idx()] = lag;
 }
 
 model::transform_id processor::id() const { return _id; }
@@ -397,7 +400,11 @@ bool processor::is_running() const {
     // Only mark this as running if we've called start without calling stop.
     return !_as.abort_requested();
 }
-int64_t processor::current_lag() const { return _last_reported_lag; }
+
+int64_t processor::current_lag() const {
+    return *std::max_element(
+      _last_reported_lag.begin(), _last_reported_lag.end());
+}
 
 size_t transformed_output::memory_usage() const {
     return sizeof(transformed_output)
