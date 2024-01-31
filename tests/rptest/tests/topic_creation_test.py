@@ -11,10 +11,12 @@
 import random
 import string
 import itertools
+import json
 from time import sleep
 from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from rptest.clients.kcl import RawKCL, KclCreateTopicsRequestTopic
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.kafka_cat import KafkaCat
@@ -360,6 +362,89 @@ class CreateTopicsTest(RedpandaTest):
             self.redpanda.nodes[0],
             "Topic {kafka-topic3} has a replication factor")
         assert num_found == 0, f'Expected to find 0 messages about topic-3, but found {num_found}'
+
+
+class CreateTopicsResponseTest(RedpandaTest):
+    SUCCESS_EC = 0
+    TOPIC_EXISTS_EC = 36
+
+    DEFAULT_CLEANUP_POLICY = 'delete'
+    DEFAULT_CONFIG_SOURCE = 5
+
+    def __init__(self, test_context):
+        super(CreateTopicsResponseTest,
+              self).__init__(test_context=test_context)
+        self.kcl_client = RawKCL(self.redpanda)
+        self.admin = Admin(self.redpanda)
+
+    # we don't really care about the name aside from its not being random
+    # so just construct it from the partition count and replication factor
+    def create_topic(self, p_cnt, r_fac):
+        ctrt = KclCreateTopicsRequestTopic(f"foo-{p_cnt}-{r_fac}", p_cnt,
+                                           r_fac)
+        try:
+            res = json.loads(
+                self.kcl_client.raw_create_topics(6, topics=[ctrt]))
+            return res['Topics'][0]
+        except:
+            return {}
+
+    def get_np(self, tp):
+        return tp['NumPartitions']
+
+    def get_rf(self, tp):
+        return tp['ReplicationFactor']
+
+    def get_ec(self, tp):
+        return tp['ErrorCode']
+
+    def get_configs(self, tp):
+        return tp['Configs']
+
+    def get_config_by_name(self, tp, name):
+        cfgs = self.get_configs(tp)
+        return next((cfg for cfg in cfgs if cfg['Name'] == name), None)
+
+    @cluster(num_nodes=3)
+    @matrix(
+        partition_count=[3, -1],
+        replication_factor=[3, -1],
+    )
+    def test_create_topic_responses(self, partition_count, replication_factor):
+        """
+        Validates that create_topic responses are populated with real values when
+        default placeholders are supplied in the request
+        """
+
+        cfg = self.admin.get_cluster_config()
+        expected_np = partition_count if partition_count > 0 else cfg[
+            'default_topic_partitions']
+        expected_rf = replication_factor if replication_factor > 0 else cfg[
+            'default_topic_replications']
+
+        topic = self.create_topic(partition_count, replication_factor)
+        assert self.get_np(topic) == expected_np
+        assert self.get_rf(topic) == expected_rf
+        assert self.get_ec(topic) == self.SUCCESS_EC
+
+        topic = self.create_topic(partition_count, replication_factor)
+        assert self.get_np(topic) == expected_np
+        assert self.get_rf(topic) == expected_rf
+        assert self.get_ec(topic) == self.TOPIC_EXISTS_EC
+
+    @cluster(num_nodes=3)
+    def test_create_topic_response_configs(self):
+        """
+        Validates that configs returned in create_topics responses are
+          a. qualified with an appropriate "source"
+          b. serialized correctly
+        """
+
+        topic = self.create_topic(1, 1)
+        cleanup_policy = self.get_config_by_name(topic, 'cleanup.policy')
+        assert cleanup_policy is not None
+        assert cleanup_policy['Value'] == self.DEFAULT_CLEANUP_POLICY
+        assert cleanup_policy['Source'] == self.DEFAULT_CONFIG_SOURCE
 
 
 class CreateSITopicsTest(RedpandaTest):
