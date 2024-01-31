@@ -43,6 +43,12 @@ from rptest.util import (
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP, quiesce_uploads
 
+# This is allowed because manifest reset test disables remote.write dynamically which may race with
+# ntp_archiver startup/shutdown
+REST_LOG_ALLOW_LIST = [
+    "Adjacent segment merging refusing to run on topic with remote.write disabled"
+]
+
 
 class EndToEndShadowIndexingBase(EndToEndTest):
     segment_size = 1048576  # 1 Mb
@@ -244,7 +250,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         assert consumer.consumer_status.validator.invalid_reads == 0
         assert consumer.consumer_status.validator.valid_reads >= msg_count_before_reset + msg_count_after_reset
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=REST_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_reset_spillover(self, cloud_storage_type):
         """
