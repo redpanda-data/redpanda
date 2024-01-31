@@ -382,6 +382,12 @@ public:
     std::optional<replication_factor>
       get_topic_replication_factor(model::topic_namespace_view) const;
 
+    ///\brief Returns partition count config of a single topic
+    ///
+    /// If topic does not exist it returns an empty optional
+    std::optional<int32_t>
+      get_topic_partition_count(model::topic_namespace_view) const;
+
     ///\brief Returns partition assignments of single topic.
     ///
     /// If topic does not exists it returns an empty optional

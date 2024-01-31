@@ -1460,6 +1460,14 @@ std::optional<replication_factor> topic_table::get_topic_replication_factor(
     return {};
 }
 
+std::optional<int32_t>
+topic_table::get_topic_partition_count(model::topic_namespace_view tp) const {
+    if (auto it = _topics.find(tp); it != _topics.end()) {
+        return it->second.get_configuration().partition_count;
+    }
+    return {};
+}
+
 std::optional<assignments_set>
 topic_table::get_topic_assignments(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
