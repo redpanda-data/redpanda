@@ -26,7 +26,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>
 
-#include <absl/container/node_hash_map.h>
+#include <absl/container/btree_map.h>
 
 namespace storage {
 
@@ -164,7 +164,7 @@ private:
     // Protect _db and _next_offset across asynchronous mutations.
     mutex _db_mut;
     model::offset _next_offset;
-    absl::node_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;
+    absl::btree_map<bytes, iobuf, bytes_type_cmp> _db;
     std::optional<ntp_sanitizer_config> _ntp_sanitizer_config;
 
     ss::future<> put(key_space ks, bytes key, std::optional<iobuf> value);
