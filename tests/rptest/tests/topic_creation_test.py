@@ -311,7 +311,8 @@ class CreateTopicsResponseTest(RedpandaTest):
 
     # we don't really care about the name aside from its not being random
     # so just construct it from the partition count and replication factor
-    def create_topics(self, p_cnt, r_fac, n=1):
+
+    def create_topics(self, p_cnt, r_fac, n=1, validate_only=False):
         topics = []
         for i in range(0, n):
             topics.append({
@@ -320,7 +321,9 @@ class CreateTopicsResponseTest(RedpandaTest):
                 'replication_factor': r_fac
             })
 
-        return self.kcl_client.create_topics(6, topics=topics)
+        return self.kcl_client.create_topics(6,
+                                             topics=topics,
+                                             validate_only=validate_only)
 
     def get_np(self, tp):
         return tp['NumPartitions']
@@ -389,6 +392,23 @@ class CreateTopicsResponseTest(RedpandaTest):
                 'Value'] == self.DEFAULT_CLEANUP_POLICY, f"cleanup.policy = {cleanup_policy['Value']}, expected {self.DEFAULT_CLEANUP_POLICY}"
             assert cleanup_policy[
                 'Source'] == self.DEFAULT_CONFIG_SOURCE, f"cleanup.policy = {cleanup_policy['Source']}, expected {self.DEFAULT_CONFIG_SOURCE}"
+
+    @cluster(num_nodes=3)
+    def test_create_topic_validate_only(self):
+        """
+        Validates that create topics calls with validate only flag return
+        the correct error code depending on whether or not the topic already
+        exists.
+        """
+
+        topic = self.create_topics(1, 1, validate_only=True)[0]
+        self.check_topic_resp(topic, 1, 1, self.SUCCESS_EC)
+
+        topic = self.create_topics(1, 1)[0]
+        self.check_topic_resp(topic, 1, 1, self.SUCCESS_EC)
+
+        topic = self.create_topics(1, 1, validate_only=True)[0]
+        self.check_topic_resp(topic, -1, -1, self.TOPIC_EXISTS_EC)
 
 
 class CreateSITopicsTest(RedpandaTest):
