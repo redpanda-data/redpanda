@@ -189,6 +189,8 @@ segment_index::find_below_size_bytes(size_t distance) {
 
     if (it != _state.position_index.begin()) {
         it = std::prev(it);
+    } else {
+        return std::nullopt;
     }
 
     int i = std::distance(_state.position_index.begin(), it);

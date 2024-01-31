@@ -50,6 +50,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <fmt/format.h>
@@ -1825,6 +1826,7 @@ disk_log_impl::offset_range_size(
       first,
       last,
       offsets());
+
     // build the collection
     const auto segments = [&] {
         auto base_it = _segs.lower_bound(first);
@@ -1844,14 +1846,11 @@ disk_log_impl::offset_range_size(
 
     // The following checks are needed to maintain the following invariants:
     // - the 'first' offset of the offset range exists and the first segment in
-    // the
-    //   'segments' collection points to it.
+    //   the 'segments' collection points to it.
     // - if the log was truncated and start offset is greater than 'first' the
-    // method
-    //   should throw the exception.
+    //   method should return nullopt.
     // - the 'last' offset of the offset range exists and the the last segment
-    // in the
-    //   'segments' collection points to it.
+    //   in the 'segments' collection points to it.
     // - if the last offset of the log is less than 'last' the method throws.
     if (segments.empty()) {
         vlog(stlog.debug, "Can't find log segments to lock");
@@ -1882,6 +1881,13 @@ disk_log_impl::offset_range_size(
 
     auto holders = co_await ss::when_all_succeed(
       std::begin(f_locks), std::end(f_locks));
+
+    // Check if anything was closed after the scheduling point.
+    for (const auto& s : segments) {
+        if (s->is_closed()) {
+            co_return std::nullopt;
+        }
+    }
 
     // Left subscan
     auto ix_left = segments.front()->index().find_nearest(first);
@@ -2017,18 +2023,48 @@ disk_log_impl::offset_range_size(
     auto first_segment = *base_it;
     size_t first_segment_size = first_segment->file_size();
     auto first_segment_offsets = first_segment->offsets();
-    auto r_lock = co_await first_segment->read_lock();
+
+    auto [f_locks, segments] = [&]() {
+        std::vector<ss::future<ss::rwlock::holder>> f_locks;
+        std::vector<ss::lw_shared_ptr<segment>> segments;
+        size_t locked_range_size = 0;
+        model::offset last_locked_offset;
+        for (auto& s : _segs) {
+            locked_range_size += s->size_bytes();
+            f_locks.emplace_back(s->read_lock());
+            segments.emplace_back(s);
+            last_locked_offset = s->offsets().committed_offset;
+            if (locked_range_size > (target.target_size + first_segment_size)) {
+                // The size of the locked range consist of full segments only.
+                // It's not guaranteed that the first segment will contribute
+                // much to the resulting size because the staring point could be
+                // at the end of the segment. Because of that we're not taking
+                // its size into account here.
+                break;
+            }
+        }
+        return std::make_tuple(std::move(f_locks), std::move(segments));
+    }();
+    auto holders = co_await ss::when_all_succeed(
+      std::begin(f_locks), std::end(f_locks));
+
+    for (const auto& s : segments) {
+        if (s->is_closed()) {
+            co_return std::nullopt;
+        }
+    }
+
     if (
       first_segment_offsets.base_offset <= first
       && first_segment_offsets.committed_offset >= first) {
-        // The segment is first partially We're doing subscan here but
-        // most of the time it won't require the actual scanning because
-        // in this mode the offset range will end on index entry or segment
-        // end. When we subsequently creating uploads using this method
+        // The first segment is accounted only partially. We're doing subscan
+        // here but most of the time it won't require the actual scanning
+        // because in this mode the offset range will end on index entry or
+        // segment end. When we subsequently creating uploads using this method
         // only the first upload will have to do scanning to find the
         // offset.
         auto ix_res = first_segment->index().find_nearest(first);
-        //
+
         first_segment_file_pos = co_await get_file_offset(
           first_segment,
           ix_res,
@@ -2046,6 +2082,9 @@ disk_log_impl::offset_range_size(
         co_return std::nullopt;
     }
 
+    // No scheduling points below this point, some invariants has to be
+    // validated
+
     // Collect relevant segments
     size_t current_size = 0;
     // Last offset included to the result, default value means that we didn't
@@ -2054,6 +2093,9 @@ disk_log_impl::offset_range_size(
     size_t num_segments = 0;
     auto it = _segs.lower_bound(first);
     for (; it < _segs.end(); it++) {
+        if (it->get()->is_closed()) {
+            co_return std::nullopt;
+        }
         if (*it == first_segment) {
             vlog(
               stlog.debug,
@@ -2065,7 +2107,6 @@ disk_log_impl::offset_range_size(
               first_segment_offsets);
             current_size += first_segment_size - first_segment_file_pos;
         } else {
-            auto r_lock = co_await it->get()->read_lock();
             auto sz = it->get()->file_size();
             current_size += sz;
             vlog(

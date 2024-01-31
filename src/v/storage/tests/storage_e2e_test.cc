@@ -4023,9 +4023,17 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
           [](const batch_summary& lhs, const batch_summary& rhs) {
               return lhs.last < rhs.last;
           });
-        c_it_last = std::prev(c_it_last);
+        bool fully_compacted_range = false;
+        if (c_it_last != c_summaries.begin()) {
+            c_it_last = std::prev(c_it_last);
+        } else {
+            // fully compacted
+            fully_compacted_range = true;
+        }
         auto c_ix_last = std::distance(c_summaries.begin(), c_it_last);
-        auto expected_size = c_acc_size[c_ix_last] - c_prev_size[c_ix_base];
+        auto expected_size = fully_compacted_range
+                               ? 0
+                               : c_acc_size[c_ix_last] - c_prev_size[c_ix_base];
         vlog(
           e2e_test_log.debug,
           "NON-COMPACTED offset range: {}-{} (indexes: {}-{}), "
