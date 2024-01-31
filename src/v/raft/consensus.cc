@@ -262,6 +262,7 @@ void consensus::shutdown_input() {
         _vote_timeout.cancel();
         _as.request_abort();
         _commit_index_updated.broken();
+        _majority_replicated_index_updated.broken();
         _follower_reply.broken();
     }
 }
@@ -3473,12 +3474,20 @@ ss::future<> consensus::remove_persistent_state() {
 void consensus::maybe_update_last_visible_index(model::offset offset) {
     _visibility_upper_bound_index = std::max(
       _visibility_upper_bound_index, offset);
-    _majority_replicated_index = std::max(_majority_replicated_index, offset);
+    do_update_majority_replicated_index(offset);
     if (is_elected_leader()) {
         _last_leader_visible_offset = std::max(
           _last_leader_visible_offset, last_visible_index());
     }
     _consumable_offset_monitor.notify(last_visible_index());
+}
+
+void consensus::do_update_majority_replicated_index(model::offset offset) {
+    auto previous_majority_replicated_index = _majority_replicated_index;
+    _majority_replicated_index = std::max(_majority_replicated_index, offset);
+    if (previous_majority_replicated_index != _majority_replicated_index) {
+        _majority_replicated_index_updated.broadcast();
+    }
 }
 
 void consensus::maybe_update_majority_replicated_index() {
@@ -3493,9 +3502,7 @@ void consensus::maybe_update_majority_replicated_index() {
         }
         return model::offset{};
     });
-    _majority_replicated_index = std::max(
-      _majority_replicated_index, majority_match);
-
+    do_update_majority_replicated_index(majority_match);
     _last_leader_visible_offset = std::max(
       _last_leader_visible_offset, last_visible_index());
     _consumable_offset_monitor.notify(last_visible_index());

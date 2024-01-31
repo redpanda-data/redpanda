@@ -653,6 +653,7 @@ private:
 
     void maybe_update_last_visible_index(model::offset);
     void maybe_update_majority_replicated_index();
+    void do_update_majority_replicated_index(model::offset new_value);
 
     voter_priority next_target_priority();
     voter_priority get_node_priority(vnode) const;
@@ -841,6 +842,7 @@ private:
     std::unique_ptr<probe> _probe;
     ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
+    ss::condition_variable _majority_replicated_index_updated;
 
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
