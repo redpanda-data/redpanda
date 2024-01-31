@@ -181,12 +181,12 @@ class FlinkService(Service):
     STATE_FINISHED = 'FINISHED'
     STATE_CANCELED = 'CANCELED'
 
-    def __init__(self, context, redpanda, topic, *args, **kwargs):
+    def __init__(self, context, *args, **kwargs):
         # No custom node support at this time
-        nodes_for_allocate = 1
+        nodes_to_allocate = 1
         # Init service
         super(FlinkService, self).__init__(context,
-                                           num_nodes=nodes_for_allocate,
+                                           num_nodes=nodes_to_allocate,
                                            *args,
                                            **kwargs)
 
@@ -490,13 +490,14 @@ class FlinkService(Service):
         # return True if >0
         return len(active_jobs) > 0
 
-    def wait_node(self, node, timeout_sec=300):
+    def wait_node(self, node, timeout_sec=300, detect_idle_jobs=True):
         """
             Wait for all jobs to finish, default timeout is half an hour
         """
         # Flush internal metrics
         self._metric = {}
-        wait_until(lambda: not self._has_active_jobs(node),
+        wait_until(lambda: not self._has_active_jobs(
+            node, detect_idle_jobs=detect_idle_jobs),
                    timeout_sec=timeout_sec,
                    backoff_sec=5)
 
