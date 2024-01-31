@@ -408,13 +408,13 @@ class RawKCL(KCL):
 
     Callers should expect raw kafka responses json encoded with franz-go key naming scheme
     """
-    def raw_create_topics(self, version, topics):
+    def raw_create_topics(self, version, topics, validate_only=False):
         assert version >= 0 and version <= 6, "version out of supported redpanda range for this API"
         create_topics_request = {
             'Version':
             version,
             'ValidateOnly':
-            False,
+            validate_only,
             'TimeoutMillis':
             60000,
             'Topics': [{

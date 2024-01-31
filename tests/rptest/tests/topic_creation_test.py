@@ -379,12 +379,14 @@ class CreateTopicsResponseTest(RedpandaTest):
 
     # we don't really care about the name aside from its not being random
     # so just construct it from the partition count and replication factor
-    def create_topic(self, p_cnt, r_fac):
+    def create_topic(self, p_cnt, r_fac, validate_only=False):
         ctrt = KclCreateTopicsRequestTopic(f"foo-{p_cnt}-{r_fac}", p_cnt,
                                            r_fac)
         try:
             res = json.loads(
-                self.kcl_client.raw_create_topics(6, topics=[ctrt]))
+                self.kcl_client.raw_create_topics(6,
+                                                  topics=[ctrt],
+                                                  validate_only=validate_only))
             return res['Topics'][0]
         except:
             return {}
@@ -445,6 +447,23 @@ class CreateTopicsResponseTest(RedpandaTest):
         assert cleanup_policy is not None
         assert cleanup_policy['Value'] == self.DEFAULT_CLEANUP_POLICY
         assert cleanup_policy['Source'] == self.DEFAULT_CONFIG_SOURCE
+
+    @cluster(num_nodes=3)
+    def test_create_topic_validate_only(self):
+        """
+        Validates that create topics calls with validate only flag return
+        the correct error code depending on whether or not the topic already
+        exists.
+        """
+
+        topic = self.create_topic(1, 1, validate_only=True)
+        assert self.get_ec(topic) == self.SUCCESS_EC
+
+        topic = self.create_topic(1, 1)
+        assert self.get_ec(topic) == self.SUCCESS_EC
+
+        topic = self.create_topic(1, 1, validate_only=True)
+        assert self.get_ec(topic) == self.TOPIC_EXISTS_EC
 
 
 class CreateSITopicsTest(RedpandaTest):
