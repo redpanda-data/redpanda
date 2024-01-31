@@ -245,7 +245,16 @@ public:
       model::node_id,
       result<append_entries_reply>,
       follower_req_seq,
-      model::offset);
+      model::offset,
+      tracker_vector,
+      bool);
+
+    void process_append_entries_reply(
+      model::node_id,
+      result<append_entries_reply>,
+      follower_req_seq,
+      model::offset,
+      tracker_vector);
 
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&, replicate_options);
@@ -587,8 +596,10 @@ private:
     size_t estimate_recovering_followers() const;
     bool needs_recovery(const follower_index_metadata&, model::offset);
     void dispatch_recovery(follower_index_metadata&);
-    void maybe_update_leader_commit_idx();
-    ss::future<> do_maybe_update_leader_commit_idx(ssx::semaphore_units);
+    void maybe_update_leader_commit_idx(tracker_vector trackers);
+    void maybe_update_leader_commit_idx(tracker_vector trackers, bool);
+    ss::future<> do_maybe_update_leader_commit_idx(
+      ssx::semaphore_units, tracker_vector trackers);
 
     clock_type::time_point majority_heartbeat() const;
     /*

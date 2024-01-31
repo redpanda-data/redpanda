@@ -76,8 +76,7 @@ public:
     ss::future<offset_delete_response>
     offset_delete(offset_delete_request&& request);
 
-    group::offset_commit_stages
-    offset_commit(offset_commit_request&& request, shared_tracker tracker);
+    group::offset_commit_stages offset_commit(offset_commit_request&& request);
 
     ss::future<txn_offset_commit_response>
     txn_offset_commit(txn_offset_commit_request&& request);
@@ -115,8 +114,8 @@ private:
     template<typename Request, typename FwdFunc>
     auto route_stages(Request r, FwdFunc func);
 
-    template<typename Request, typename FwdFunc>
-    auto route_stages_co(Request r, shared_tracker tracker, FwdFunc func);
+    // template<typename Request, typename FwdFunc>
+    // auto route_stages_co(Request r, shared_tracker tracker, FwdFunc func);
 
     using sharded_groups = absl::
       node_hash_map<ss::shard_id, std::vector<std::pair<model::ntp, group_id>>>;

@@ -595,7 +595,7 @@ ss::future<> recovery_stm::replicate(
               _ptr->get_probe().recovery_request_error();
           }
           _ptr->process_append_entries_reply(
-            _node_id.id(), r.value(), seq, dirty_offset);
+            _node_id.id(), r.value(), seq, dirty_offset, {});
           // If follower stats aren't present we have to stop recovery as
           // follower was removed from configuration
           if (!_ptr->_fstats.contains(_node_id)) {

@@ -149,8 +149,7 @@ public:
     ss::future<leave_group_response> leave_group(leave_group_request&& request);
 
     /// \brief Handle a OffsetCommit request
-    group::offset_commit_stages
-    offset_commit(offset_commit_request&& request, shared_tracker tracker);
+    group::offset_commit_stages offset_commit(offset_commit_request&& request);
 
     ss::future<txn_offset_commit_response>
     txn_offset_commit(txn_offset_commit_request&& request);

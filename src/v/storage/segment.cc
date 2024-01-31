@@ -6,7 +6,6 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
-
 #include "storage/segment.h"
 
 #include "base/vassert.h"
@@ -326,10 +325,11 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
 ss::future<> segment::flush(tracker_vector tv) {
     check_segment_not_closed("flush()");
     record(tv, "AY_before_readlock");
-    return read_lock().then([this, tv = std::move(tv)](ss::rwlock::holder h) {
-        record(tv, "AY_after_readlock");
-        return do_flush(tv).finally([h = std::move(h)] {});
-    });
+    return read_lock().then(
+      [this, tv = std::move(tv)](ss::rwlock::holder h) mutable {
+          record(tv, "AY_after_readlock");
+          return do_flush(std::move(tv)).finally([h = std::move(h)] {});
+      });
 }
 
 ss::future<> segment::do_flush(tracker_vector tv) {

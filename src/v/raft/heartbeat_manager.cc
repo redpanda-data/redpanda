@@ -435,7 +435,8 @@ void heartbeat_manager::process_reply(
               n,
               result<append_entries_reply>(r.error()),
               req_meta.seq,
-              req_meta.dirty_offset);
+              req_meta.dirty_offset,
+              {});
         }
         return;
     }
@@ -575,7 +576,8 @@ void heartbeat_manager::process_reply(
             .may_recover = m.data.may_recover,
           }),
           meta_it->second.seq,
-          meta_it->second.dirty_offset);
+          meta_it->second.dirty_offset,
+          {});
     }
 }
 
@@ -617,7 +619,8 @@ void heartbeat_manager::process_reply(
               n,
               result<append_entries_reply>(r.error()),
               req_meta.seq,
-              req_meta.dirty_offset);
+              req_meta.dirty_offset,
+              {});
             consensus->get_probe().heartbeat_request_error();
         }
         return;
@@ -683,7 +686,8 @@ void heartbeat_manager::process_reply(
           n,
           result<append_entries_reply>(m),
           meta_it->second.seq,
-          meta_it->second.dirty_offset);
+          meta_it->second.dirty_offset,
+          {});
     }
 }
 

@@ -79,6 +79,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::flush_log() {
                    reply.last_dirty_log_index = new_committed_offset;
                    reply.last_flushed_log_index = new_committed_offset;
                    reply.result = reply_result::success;
+                   record("a_stm_flush_log");
                    return ret_t(reply);
                })
                .handle_exception(
@@ -128,6 +129,10 @@ replicate_entries_stm::send_append_entries_request(
               _ptr->use_all_serde_append_entries())
             .then([this, target_node_id = n.id()](
                     result<append_entries_reply> reply) {
+                if (first_reply) {
+                    first_reply = false;
+                    record("a_first_append_entries_reply");
+                }
                 return _ptr->validate_reply_target_node(
                   "append_entries_replicate", reply, target_node_id);
             })
@@ -166,8 +171,23 @@ ss::future<> replicate_entries_stm::dispatch_one(vnode id) {
                        if (!reply) {
                            _ptr->get_probe().replicate_request_error();
                        }
+
+                       bool is_self = id == _ptr->self();
+                       auto trackers = is_self || _first_remote
+                                         ? _trackers
+                                         : tracker_vector{};
+
+                       if (!is_self) {
+                           _first_remote = false;
+                       }
+
                        _ptr->process_append_entries_reply(
-                         id.id(), reply, seq, _dirty_offset);
+                         id.id(),
+                         reply,
+                         seq,
+                         _dirty_offset,
+                         std::move(trackers),
+                         is_self);
                    });
              })
       .handle_exception_type([](const ss::gate_closed_exception&) {});
@@ -324,6 +344,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
             // release memory reservations, and destroy data
             _batches.reset();
             _units.release();
+            record("a_release_units");
         });
     });
 

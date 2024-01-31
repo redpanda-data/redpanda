@@ -1667,7 +1667,7 @@ ss::future<response_ptr> create_acls_handler::handle(
 template<>
 process_result_stages
 offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
-    auto tracker = ctx.connection()->server().oc_probe().new_tracker();
+    // auto tracker = ctx.connection()->server().oc_probe().new_tracker();
 
     offset_commit_request request;
     request.decode(ctx.reader(), ctx.header().version);
@@ -1681,7 +1681,7 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         request_context rctx;
         offset_commit_request request;
         ss::smp_service_group ssg;
-        shared_tracker tracker;
+        // shared_tracker tracker;
 
         // topic partitions found not to existent prior to processing. responses
         // for these are patched back into the final response after processing.
@@ -1699,16 +1699,13 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         offset_commit_ctx(
           request_context&& rctx,
           offset_commit_request&& request,
-          ss::smp_service_group ssg,
-          oc_tracker&& tracker)
+          ss::smp_service_group ssg)
           : rctx(std::move(rctx))
           , request(std::move(request))
-          , ssg(ssg)
-          , tracker(make_shared_tracker(std::move(tracker))) {}
+          , ssg(ssg) {}
     };
 
-    offset_commit_ctx octx(
-      std::move(ctx), std::move(request), ssg, std::move(tracker));
+    offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
 
     /*
      * offset commit will operate normally on topic-partitions in the request
@@ -1845,7 +1842,7 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           octx.rctx.respond(std::move(resp)));
     }
 
-    octx.tracker->record("after_auth");
+    // octx.tracker->record("after_auth");
 
     ss::promise<> dispatch;
     auto dispatch_f = dispatch.get_future();
@@ -1854,12 +1851,12 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
       std::move(octx),
       [dispatch = std::move(dispatch)](offset_commit_ctx& octx) mutable {
           auto stages = octx.rctx.groups().offset_commit(
-            std::move(octx.request), octx.tracker);
+            std::move(octx.request));
           stages
             .dispatched /* .then([&] { octx.tracker.record("dispatched"); }) */
             .forward_to(std::move(dispatch));
           return stages.result.then([&octx](offset_commit_response resp) {
-              octx.tracker->record("result");
+              //   octx.tracker->record("result");
 
               if (unlikely(!octx.nonexistent_tps.empty())) {
                   /*

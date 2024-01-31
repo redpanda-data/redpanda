@@ -2224,8 +2224,7 @@ void group::update_store_offset_builder(
     builder.add_raw_kv(std::move(kv.key), std::move(kv.value));
 }
 
-group::offset_commit_stages
-group::store_offsets(offset_commit_request&& r, shared_tracker tracker) {
+group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
 
@@ -2303,16 +2302,16 @@ group::store_offsets(offset_commit_request&& r, shared_tracker tracker) {
     auto batch = std::move(builder).build();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    tracker->record("b_ris");
+    // tracker->record("b_ris");
     auto replicate_stages = _partition->raft()->replicate_in_stages(
       _term,
       std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack, tracker));
+      raft::replicate_options(raft::consistency_level::quorum_ack));
 
     auto f = replicate_stages.replicate_finished.then(
-      [this, req = std::move(r), commits = std::move(offset_commits), tracker](
+      [this, req = std::move(r), commits = std::move(offset_commits)](
         result<raft::replicate_result> r) mutable {
-          tracker->record("a_ris");
+          //   tracker->record("a_ris");
           auto error = error_code::none;
           if (!r) {
               vlog(
@@ -2468,14 +2467,14 @@ group::handle_abort_tx(cluster::abort_group_tx_request r) {
 }
 
 group::offset_commit_stages
-group::handle_offset_commit(offset_commit_request&& r, shared_tracker tracker) {
+group::handle_offset_commit(offset_commit_request&& r) {
     if (in_state(group_state::dead)) {
         return offset_commit_stages(
           offset_commit_response(r, error_code::coordinator_not_available));
 
     } else if (r.data.generation_id < 0 && in_state(group_state::empty)) {
         // <kafka>The group is only using Kafka to store offsets.</kafka>
-        return store_offsets(std::move(r), tracker);
+        return store_offsets(std::move(r));
 
     } else if (auto ec = validate_existing_member(
                  r.data.member_id, r.data.group_instance_id, "offset-commit");
@@ -2493,7 +2492,7 @@ group::handle_offset_commit(offset_commit_request&& r, shared_tracker tracker) {
         // rebalance in progress signal to the consumer</kafka>
         auto member = get_member(r.data.member_id);
         schedule_next_heartbeat_expiration(member);
-        return store_offsets(std::move(r), tracker);
+        return store_offsets(std::move(r));
     } else if (in_state(group_state::completing_rebalance)) {
         return offset_commit_stages(
           offset_commit_response(r, error_code::rebalance_in_progress));

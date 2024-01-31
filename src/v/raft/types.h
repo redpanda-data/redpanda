@@ -520,15 +520,18 @@ struct replicate_stages {
 enum class consistency_level { quorum_ack, leader_ack, no_ack };
 
 struct replicate_options {
-    explicit replicate_options(
-      consistency_level l, shared_tracker tracker = nullptr)
+    replicate_options(consistency_level l, shared_tracker tracker = nullptr)
       : consistency(l)
       , timeout(std::nullopt)
       , tracker(std::move(tracker)) {}
 
-    replicate_options(consistency_level l, std::chrono::milliseconds timeout)
+    replicate_options(
+      consistency_level l,
+      std::chrono::milliseconds timeout,
+      shared_tracker tracker = nullptr)
       : consistency(l)
-      , timeout(timeout) {}
+      , timeout(timeout)
+      , tracker(std::move(tracker)) {}
 
     consistency_level consistency;
     std::optional<std::chrono::milliseconds> timeout;

@@ -39,6 +39,7 @@
 #include "ssx/future-util.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
+#include "utils/oc_latency_fwd.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
@@ -538,13 +539,30 @@ void consensus::process_append_entries_reply(
   model::node_id physical_node,
   result<append_entries_reply> r,
   follower_req_seq seq_id,
-  model::offset dirty_offset) {
+  model::offset dirty_offset,
+  tracker_vector trackers) {
+    return process_append_entries_reply(
+      physical_node,
+      std::move(r),
+      seq_id,
+      dirty_offset,
+      std::move(trackers),
+      false);
+}
+
+void consensus::process_append_entries_reply(
+  model::node_id physical_node,
+  result<append_entries_reply> r,
+  follower_req_seq seq_id,
+  model::offset dirty_offset,
+  tracker_vector trackers,
+  bool is_self) {
     auto is_success = update_follower_index(
       physical_node, r, seq_id, dirty_offset);
     if (is_success) {
         maybe_promote_to_voter(r.value().node_id);
         maybe_update_majority_replicated_index();
-        maybe_update_leader_commit_idx();
+        maybe_update_leader_commit_idx(std::move(trackers), is_self);
         _follower_reply.broadcast();
     }
 }
@@ -699,7 +717,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
                    .then([this, id = target.id(), seq, dirty_offset](
                            result<append_entries_reply> reply) {
                        process_append_entries_reply(
-                         id, reply, seq, dirty_offset);
+                         id, reply, seq, dirty_offset, {});
                    });
 
         send_futures.push_back(std::move(f));
@@ -1312,7 +1330,7 @@ consensus::abort_configuration_change(model::revision_id revision) {
     // index, it may be required for single participant raft groups
     if (is_leader()) {
         maybe_update_majority_replicated_index();
-        maybe_update_leader_commit_idx();
+        maybe_update_leader_commit_idx({});
     }
     co_return errc::success;
 }
@@ -2845,7 +2863,7 @@ ss::future<> consensus::refresh_commit_index() {
               return f;
           }
           return f.then([this, u = std::move(u)]() mutable {
-              return do_maybe_update_leader_commit_idx(std::move(u));
+              return do_maybe_update_leader_commit_idx(std::move(u), {});
           });
       })
       .handle_exception_type([](const ss::broken_semaphore&) {
@@ -2853,22 +2871,44 @@ ss::future<> consensus::refresh_commit_index() {
       });
 }
 
-void consensus::maybe_update_leader_commit_idx() {
-    ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
-                          return _op_lock.get_units().then(
-                            [this](ssx::semaphore_units u) mutable {
-                                // do not update committed index if not the
-                                // leader, this check has to be done under the
-                                // semaphore
-                                if (!is_elected_leader()) {
-                                    return ss::now();
-                                }
-                                return do_maybe_update_leader_commit_idx(
-                                  std::move(u));
-                            });
-                      }).handle_exception([this](const std::exception_ptr& e) {
-        vlog(_ctxlog.warn, "Error updating leader commit index", e);
-    });
+void consensus::maybe_update_leader_commit_idx(tracker_vector trackers) {
+    maybe_update_leader_commit_idx(std::move(trackers), false);
+}
+
+void consensus::maybe_update_leader_commit_idx(
+  tracker_vector trackers, bool is_self) {
+    ssx::background
+      = ssx::spawn_with_gate_then(
+          _bg,
+          [this, trackers = std::move(trackers), is_self]() mutable {
+              if (is_self) {
+                  record(trackers, "b_update_leader_get_op_lock_self");
+              } else {
+                  record(trackers, "b_update_leader_get_op_lock_remote");
+              }
+              return _op_lock.get_units().then(
+                [this, trackers = std::move(trackers), is_self](
+                  ssx::semaphore_units u) mutable {
+                    // do not update committed index if not the
+                    // leader, this check has to be done under the
+                    // semaphore
+                    if (!is_elected_leader()) {
+                        return ss::now();
+                    }
+                    if (is_self) {
+                        record(
+                          trackers, "b_maybe_update_leader_commit_idx_self");
+                    } else {
+                        record(
+                          trackers, "b_maybe_update_leader_commit_idx_remote");
+                    }
+                    return do_maybe_update_leader_commit_idx(
+                      std::move(u), std::move(trackers));
+                });
+          })
+          .handle_exception([this](const std::exception_ptr& e) {
+              vlog(_ctxlog.warn, "Error updating leader commit index", e);
+          });
 }
 /**
  * The `maybe_commit_configuration` method is the place where configuration
@@ -2943,8 +2983,8 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
     }
 }
 
-ss::future<>
-consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
+ss::future<> consensus::do_maybe_update_leader_commit_idx(
+  ssx::semaphore_units u, tracker_vector trackers) {
     // Raft paper:
     //
     // If there exists an N such that N > commitIndex, a majority
@@ -2981,6 +3021,7 @@ consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
         update_confirmed_term();
         _commit_index = majority_match;
         vlog(_ctxlog.trace, "Leader commit index updated {}", _commit_index);
+        record(trackers, "a_leader_commit_updated");
 
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index();

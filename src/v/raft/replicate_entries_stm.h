@@ -156,6 +156,8 @@ private:
     std::optional<result<storage::append_result>> _append_result;
     uint16_t _requests_count = 0;
     tracker_vector _trackers;
+    bool first_reply = true;
+    bool _first_remote = true;
 };
 
 } // namespace raft

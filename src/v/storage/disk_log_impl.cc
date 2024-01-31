@@ -1549,7 +1549,7 @@ ss::future<> disk_log_impl::flush(tracker_vector tv) {
     }
     vlog(
       stlog.trace, "flush on segment with offsets {}", _segs.back()->offsets());
-    return _segs.back()->flush(tv);
+    return _segs.back()->flush(std::move(tv));
 }
 
 ss::future<> disk_log_impl::flush() { return flush({}); }

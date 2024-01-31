@@ -234,6 +234,11 @@ ss::future<> replicate_batcher::flush(
         if (item_cache.empty()) {
             co_return;
         }
+        for (auto& i : item_cache) {
+            if (i->_tracker) {
+                i->_tracker->record("rp_b_op_lock");
+            }
+        }
         auto u = co_await _ptr->_op_lock.get_units();
         for (auto& i : item_cache) {
             if (i->_tracker) {
