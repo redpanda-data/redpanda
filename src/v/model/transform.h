@@ -81,16 +81,20 @@ struct transform_metadata
     }
 };
 
+using output_topic_index = named_type<uint32_t, struct output_topic_index_tag>;
+
 // key / value types used to track consumption offsets by transforms.
 struct transform_offsets_key
   : serde::envelope<
       transform_offsets_key,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     transform_id id;
     // id of the partition from transform's input/source topic.
     partition_id partition;
+    // The index of the output topic within the transform metadata.
+    output_topic_index output_topic;
 
     auto operator<=>(const transform_offsets_key&) const = default;
 
@@ -99,10 +103,12 @@ struct transform_offsets_key
 
     template<typename H>
     friend H AbslHashValue(H h, const transform_offsets_key& k) {
-        return H::combine(std::move(h), k.id(), k.partition());
+        return H::combine(
+          std::move(h), k.id(), k.partition(), k.output_topic());
     }
 
-    auto serde_fields() { return std::tie(id, partition); }
+    void serde_read(iobuf_parser& in, const serde::header& h);
+    void serde_write(iobuf& out) const;
 };
 
 struct transform_offsets_value

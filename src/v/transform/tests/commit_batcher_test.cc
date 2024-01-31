@@ -211,13 +211,22 @@ public:
         auto co = committed_offset::parse(s);
         _batcher
           ->commit_offset(
-            {.id = co.id, .partition = co.partition}, {.offset = co.offset})
+            {
+              .id = co.id,
+              .partition = co.partition,
+              .output_topic = model::output_topic_index{0},
+            },
+            {.offset = co.offset})
           .get();
     }
 
     void unload(std::string_view s) {
         auto co = committed_offset::parse(absl::StrCat(s, "@0"));
-        _batcher->unload({.id = co.id, .partition = co.partition});
+        _batcher->unload({
+          .id = co.id,
+          .partition = co.partition,
+          .output_topic = model::output_topic_index{0},
+        });
     }
 
     void advance(ss::manual_clock::duration d) {

@@ -253,14 +253,19 @@ public:
       model::partition_id pid,
       rpc::client* client,
       commit_batcher<>* batcher)
-      : _key({.id = tid, .partition = pid})
+      : _key(
+        {.id = tid,
+         .partition = pid,
+         .output_topic = model::output_topic_index{}})
       , _client(client)
       , _batcher(batcher) {}
 
     ss::future<> start() override { return ss::now(); }
 
     ss::future<> stop() override {
-        _batcher->unload(_key);
+        model::transform_offsets_key key = _key;
+        key.output_topic = model::output_topic_index{0};
+        _batcher->unload(key);
         return ss::now();
     }
 
@@ -269,7 +274,9 @@ public:
     }
 
     ss::future<std::optional<kafka::offset>> load_committed_offset() override {
-        auto result = co_await _client->offset_fetch(_key);
+        model::transform_offsets_key key = _key;
+        key.output_topic = model::output_topic_index{0};
+        auto result = co_await _client->offset_fetch(key);
         if (result.has_error()) {
             cluster::errc ec = result.error();
             throw std::runtime_error(ss::format(
@@ -284,7 +291,9 @@ public:
     }
 
     ss::future<> commit_offset(kafka::offset offset) override {
-        return _batcher->commit_offset(_key, {.offset = offset});
+        model::transform_offsets_key key = _key;
+        key.output_topic = model::output_topic_index{0};
+        return _batcher->commit_offset(key, {.offset = offset});
     }
 
 private:
