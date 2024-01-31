@@ -22,6 +22,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/util/shared_token_bucket.hh>
 
 #include <chrono>
 #include <optional>
@@ -48,17 +49,21 @@ public:
     ~snc_quotas_probe() noexcept = default;
 
     void rec_balancer_step() noexcept { ++_balancer_runs; }
-    void rec_traffic_in(const size_t bytes) noexcept { _traffic_in += bytes; }
+    void rec_traffic_in(const size_t bytes) noexcept { _traffic.in += bytes; }
+    void rec_traffic_eg(const size_t bytes) noexcept { _traffic.eg += bytes; }
 
     void setup_metrics();
 
     uint64_t get_balancer_runs() const noexcept { return _balancer_runs; }
 
+    auto get_traffic_in() const { return _traffic.in; }
+    auto get_traffic_eg() const { return _traffic.eg; }
+
 private:
     class snc_quota_manager& _qm;
     metrics::internal_metric_groups _metrics;
     uint64_t _balancer_runs = 0;
-    size_t _traffic_in = 0;
+    ingress_egress_state<size_t> _traffic = {};
 };
 
 class snc_quota_context {
@@ -91,8 +96,16 @@ class snc_quota_manager
 public:
     using clock = ss::lowres_clock;
     using quota_t = bottomless_token_bucket::quota_t;
+    using bucket_t = ss::internal::shared_token_bucket<
+      uint64_t,
+      std::ratio<1>,
+      ss::internal::capped_release::no,
+      clock>;
+    using buckets_t = kafka::ingress_egress_state<
+      std::unique_ptr<kafka::snc_quota_manager::bucket_t>>;
+    static buckets_t make_node_buckets();
 
-    snc_quota_manager();
+    explicit snc_quota_manager(const buckets_t& node_quota);
     snc_quota_manager(const snc_quota_manager&) = delete;
     snc_quota_manager& operator=(const snc_quota_manager&) = delete;
     snc_quota_manager(snc_quota_manager&&) = delete;
@@ -222,6 +235,7 @@ private:
     ingress_egress_state<std::optional<quota_t>> _node_quota_default;
     ingress_egress_state<quota_t> _shard_quota_minimum;
     ingress_egress_state<bottomless_token_bucket> _shard_quota;
+    ingress_egress_state<bucket_t*> _node_quota;
 
     // service
     snc_quotas_probe _probe;

@@ -94,9 +94,15 @@ void snc_quotas_probe::setup_metrics() {
     }
     metric_defs.emplace_back(sm::make_counter(
       "traffic_intake",
-      _traffic_in,
+      _traffic.in,
       sm::description("Amount of Kafka traffic received from the clients "
                       "that is taken into processing, in bytes")));
+
+    metric_defs.emplace_back(sm::make_counter(
+      "traffic_egress",
+      _traffic.eg,
+      sm::description("Amount of Kafka traffic published to the clients "
+                      "that was taken into processing, in bytes")));
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("kafka:quotas"),
@@ -126,9 +132,27 @@ quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
     }
 }
 
+auto make_node_bucket(auto const& cfg) {
+    int64_t rate = cfg().value_or(0);
+    // TODO: The limit cannot be changed at runtime, which poses a problem
+    // if the rate is created as 0 and is then increased
+    int64_t limit = rate;
+    // TODO: A threshold of 1 too small, but allows profiling the atomic ops
+    int64_t threshold = 1;
+    return std::make_unique<kafka::snc_quota_manager::bucket_t>(
+      rate, limit, threshold);
+};
+
 } // namespace
 
-snc_quota_manager::snc_quota_manager()
+snc_quota_manager::buckets_t snc_quota_manager::make_node_buckets() {
+    auto const& cfg = config::shard_local_cfg();
+    return {
+      .in = make_node_bucket(cfg.kafka_throughput_limit_node_in_bps),
+      .eg = make_node_bucket(cfg.kafka_throughput_limit_node_out_bps)};
+}
+
+snc_quota_manager::snc_quota_manager(const buckets_t& node_quota)
   : _max_kafka_throttle_delay(
     config::shard_local_cfg().max_kafka_throttle_delay_ms.bind())
   , _kafka_throughput_limit_node_bps{
@@ -151,13 +175,24 @@ snc_quota_manager::snc_quota_manager()
            _kafka_quota_balancer_window()},
       .eg {node_to_shard_quota(_node_quota_default.eg),
            _kafka_quota_balancer_window()}}
+  , _node_quota{.in = node_quota.in.get(), .eg = node_quota.eg.get()}
   , _probe(*this)
 {
     update_shard_quota_minimum();
-    _kafka_throughput_limit_node_bps.in.watch(
-      [this] { update_node_quota_default(); });
-    _kafka_throughput_limit_node_bps.eg.watch(
-      [this] { update_node_quota_default(); });
+    _kafka_throughput_limit_node_bps.in.watch([this] {
+        if (ss::this_shard_id() == quota_balancer_shard) {
+            _node_quota.in->update_rate(
+              _kafka_throughput_limit_node_bps.in().value_or(0));
+        }
+        update_node_quota_default();
+    });
+    _kafka_throughput_limit_node_bps.eg.watch([this] {
+        if (ss::this_shard_id() == quota_balancer_shard) {
+            _node_quota.eg->update_rate(
+              _kafka_throughput_limit_node_bps.eg().value_or(0));
+        }
+        update_node_quota_default();
+    });
     _kafka_quota_balancer_window.watch([this] {
         const auto v = _kafka_quota_balancer_window();
         vlog(klog.debug, "qm - Set shard TP token bucket window: {}", v);
@@ -227,6 +262,15 @@ delay_t eval_delay(const bottomless_token_bucket& tb) noexcept {
     // but that one has to be 1)
     static_assert(delay_t::period::num == 1);
     return delay_t(muldiv(-tb.tokens(), delay_t::period::den, tb.quota()));
+}
+
+/// Evaluate throttling delay required based on the state of a token bucket
+delay_t eval_node_delay(snc_quota_manager::bucket_t& tb) noexcept {
+    if (tb.rate() == 0) {
+        return delay_t::zero();
+    }
+    return std::chrono::duration_cast<delay_t>(
+      tb.duration_for(tb.deficiency(tb.grab(0))));
 }
 
 } // namespace
@@ -303,9 +347,17 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
 
     // throttling delay the connection should be requested to throttle
     // this time
-    res.request = std::min(
-      _max_kafka_throttle_delay(),
-      std::max(eval_delay(_shard_quota.in), eval_delay(_shard_quota.eg)));
+    if (config::shard_local_cfg().kafka_quota_balancer_v2) {
+        res.request = std::min(
+          _max_kafka_throttle_delay(),
+          std::max(
+            eval_node_delay(*_node_quota.in),
+            eval_node_delay(*_node_quota.eg)));
+    } else {
+        res.request = std::min(
+          _max_kafka_throttle_delay(),
+          std::max(eval_delay(_shard_quota.in), eval_delay(_shard_quota.eg)));
+    }
     ctx._throttled_until = now + res.request;
 
     return res;
@@ -318,7 +370,12 @@ void snc_quota_manager::record_request_receive(
     if (ctx._exempt) {
         return;
     }
-    _shard_quota.in.use(request_size, now);
+    if (config::shard_local_cfg().kafka_quota_balancer_v2) {
+        _node_quota.in->replenish(now);
+        _node_quota.in->grab(request_size);
+    } else {
+        _shard_quota.in.use(request_size, now);
+    }
 }
 
 void snc_quota_manager::record_request_intake(
@@ -336,7 +393,13 @@ void snc_quota_manager::record_response(
     if (ctx._exempt) {
         return;
     }
-    _shard_quota.eg.use(request_size, now);
+    if (config::shard_local_cfg().kafka_quota_balancer_v2) {
+        _node_quota.eg->replenish(now);
+        _node_quota.eg->grab(request_size);
+    } else {
+        _shard_quota.eg.use(request_size, now);
+    }
+    _probe.rec_traffic_eg(request_size);
 }
 
 ss::lowres_clock::duration

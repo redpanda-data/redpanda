@@ -24,6 +24,9 @@
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/sleep.hh>
+#include <seastar/util/bool_class.hh>
+
 #include <boost/test/tools/old/interface.hpp>
 
 #include <vector>
@@ -241,7 +244,102 @@ single_batch(model::partition_id p_id, const size_t volume) {
 
 namespace ch = std::chrono;
 
+namespace {
+
+enum class execution { seq, par };
+
+/// Runs func in a thread on the given shard
+template<typename Func>
+auto async_submit_to(unsigned int shard, Func&& func) {
+    return ss::smp::submit_to(shard, [&func, shard]() {
+        return ss::async(std::forward<Func>(func), shard);
+    });
+}
+
+/// std::transform_reduce, but with an api that matches ss::map_reduce
+///
+/// Mapper must be synchronous
+template<typename Range, typename Mapper, typename Initial, typename Reduce>
+auto transform_reduce(
+  Range&& rng, Mapper&& mapper, Initial&& initial, Reduce&& reduce) {
+    return std::transform_reduce(
+      rng.begin(),
+      rng.end(),
+      std::forward<Initial>(initial),
+      std::forward<Reduce>(reduce),
+      std::forward<Mapper>(mapper));
+}
+
+template<typename Mapper, typename Initial, typename Reduce>
+auto map_reduce_thread_per_core(
+  Mapper&& mapper, Initial&& initial, Reduce&& reduce) {
+    return ss::map_reduce(
+      boost::irange(0u, ss::smp::count),
+      [&mapper](auto shard) {
+          return async_submit_to(shard, std::forward<Mapper>(mapper));
+      },
+      std::forward<Initial>(initial),
+      std::forward<Reduce>(reduce));
+}
+
+template<typename Mapper, typename Initial, typename Reduce>
+auto transform_reduce_thread_per_core(
+  Mapper&& mapper, Initial&& initial, Reduce&& reduce) {
+    return transform_reduce(
+      boost::irange(0u, ss::smp::count),
+      [&mapper](auto shard) {
+          return async_submit_to(shard, std::forward<Mapper>(mapper)).get();
+      },
+      std::forward<Initial>(initial),
+      std::forward<Reduce>(reduce));
+}
+
+/// Run mapper in a thread on each core, and then reduce on the original core,
+/// returning a synchrous result
+///
+/// execution::par - Run mapper on each core in parallel
+/// execution::par - Run mapper on each core sequentially
+template<typename Mapper, typename Initial, typename Reduce>
+auto transform_reduce_thread_per_core(
+  execution policy, Mapper&& mapper, Initial&& initial, Reduce&& reduce) {
+    switch (policy) {
+    case execution::seq:
+        return transform_reduce_thread_per_core(
+          std::forward<Mapper>(mapper),
+          std::forward<Initial>(initial),
+          std::forward<Reduce>(reduce));
+    case execution::par:
+        return map_reduce_thread_per_core(
+                 std::forward<Mapper>(mapper),
+                 std::forward<Initial>(initial),
+                 std::forward<Reduce>(reduce))
+          .get();
+    }
+}
+
+/// Return a tuple of the result of applying BinaryOp element-wise to each tuple
+template<typename BinaryOp>
+struct tuple_binary_op {
+    auto operator()(auto&& t1, auto&& t2) const {
+        return std::apply(
+          [&](auto&&... args1) {
+              return std::apply(
+                [&](auto&&... args2) {
+                    return std::make_tuple(BinaryOp{}(
+                      std::forward<decltype(args1)>(args1),
+                      std::forward<decltype(args2)>(args2))...);
+                },
+                std::forward<decltype(t2)>(t2));
+          },
+          std::forward<decltype(t1)>(t1));
+    }
+};
+
+} // namespace
+
 struct throughput_limits_fixure : prod_consume_fixture {
+    using honour_throttle = ss::bool_class<class hounour_throttle_tag>;
+
     static constexpr size_t kafka_packet_in_overhead = 127;
     static constexpr size_t kafka_packet_eg_overhead = 62;
 
@@ -402,7 +500,184 @@ struct throughput_limits_fixure : prod_consume_fixture {
             << (stop - start - time_estimated) * 100.0 / time_estimated << "%");
         return kafka_out_data_len;
     }
+
+    auto do_produce(
+      unsigned i,
+      size_t batches_cnt,
+      size_t batch_size,
+      honour_throttle honour_throttle) {
+        const model::partition_id p_id{i};
+        size_t data_len{0};
+        size_t total_len{0};
+        ch::milliseconds total_throttle_time{};
+        ch::milliseconds throttle_time{};
+        for (size_t k{0}; k != batches_cnt; ++k) {
+            if (honour_throttle) {
+                ss::sleep(throttle_time).get();
+            }
+            auto res
+              = produce_raw(producers[i], single_batch(p_id, batch_size)).get();
+            throttle_time = res.data.throttle_time_ms;
+            total_throttle_time += throttle_time;
+            data_len += batch_size;
+            total_len += batch_size + kafka_packet_in_overhead;
+        }
+        return std::make_tuple(data_len, total_len, total_throttle_time);
+    }
+
+    auto do_consume(
+      unsigned int i, size_t data_cap, honour_throttle honour_throttle) {
+        const model::partition_id p_id{i};
+        size_t data_len{0};
+        size_t total_len{0};
+        ch::milliseconds total_throttle_time{};
+        ch::milliseconds throttle_time{};
+        while (data_len < data_cap) {
+            if (honour_throttle) {
+                ss::sleep(throttle_time).get();
+            }
+            const auto fetch_resp = fetch_next(consumers[i], p_id).get();
+            BOOST_REQUIRE_EQUAL(fetch_resp.data.topics.size(), 1);
+            BOOST_REQUIRE_EQUAL(fetch_resp.data.topics[0].partitions.size(), 1);
+            BOOST_TEST_REQUIRE(
+              fetch_resp.data.topics[0].partitions[0].records.has_value());
+            const auto kafka_data_len = fetch_resp.data.topics[0]
+                                          .partitions[0]
+                                          .records.value()
+                                          .size_bytes();
+            throttle_time = fetch_resp.data.throttle_time_ms;
+            total_throttle_time += throttle_time;
+            data_len += kafka_data_len;
+            total_len += kafka_data_len + kafka_packet_eg_overhead;
+        }
+        return std::make_tuple(data_len, total_len, total_throttle_time);
+    }
+
+    auto get_recorded_traffic() {
+        return app.snc_quota_mgr
+          .map_reduce0(
+            [](kafka::snc_quota_manager& snc) {
+                return std::make_tuple(
+                  snc.get_snc_quotas_probe().get_traffic_in(),
+                  snc.get_snc_quotas_probe().get_traffic_eg());
+            },
+            std::make_tuple(size_t{0}, size_t{0}),
+            tuple_binary_op<std::plus<>>{})
+          .get();
+    };
+
+    void test_throughput(honour_throttle honour_throttle, execution policy) {
+        using clock = kafka::snc_quota_manager::clock;
+        // configure
+        constexpr int64_t rate_limit_in = 9_KiB;
+        constexpr int64_t rate_limit_out = 7_KiB;
+        constexpr size_t batch_size = 256;
+        // Determined experimentally
+        const size_t tolerance_percent = std::max(8u, ss::smp::count);
+        config_set(
+          "kafka_throughput_limit_node_in_bps",
+          std::make_optional(rate_limit_in));
+        config_set(
+          "kafka_throughput_limit_node_out_bps",
+          std::make_optional(rate_limit_out));
+        config_set("fetch_max_bytes", batch_size);
+        config_set("max_kafka_throttle_delay_ms", 30'000ms);
+        config_set("kafka_quota_balancer_v2", true);
+
+        wait_for_controller_leadership().get();
+        start(ss::smp::count);
+
+        // PRODUCE smaller batches for ~5s to each partition
+        const auto batches_cnt = 5 /* 5s */ * rate_limit_in / ss::smp::count
+                                 / (batch_size + kafka_packet_in_overhead);
+        auto start_in = clock::now();
+        auto [kafka_in_data_len, kafka_in_total_len, throttle_time_in]
+          = transform_reduce_thread_per_core(
+            policy,
+            [&](auto i) {
+                return do_produce(i, batches_cnt, batch_size, honour_throttle);
+            },
+            std::make_tuple(size_t{0}, size_t{0}, ch::milliseconds{0}),
+            tuple_binary_op<std::plus<>>{});
+        auto duration_in = clock::now() - start_in;
+        auto [produce_recorded_in, produce_recorded_eg]
+          = get_recorded_traffic();
+
+        // CONSUME
+        auto start_eg = clock::now();
+        auto [kafka_eg_data_len, kafka_eg_total_len, throttle_time_out]
+          = transform_reduce_thread_per_core(
+            policy,
+            [&](auto i) {
+                const model::partition_id p_id{i};
+                const auto data_cap = (kafka_in_data_len / ss::smp::count)
+                                      - batch_size * 2;
+                return do_consume(i, data_cap, honour_throttle);
+            },
+            std::make_tuple(size_t{0}, size_t{0}, ch::milliseconds{0}),
+            tuple_binary_op<std::plus<>>{});
+        auto duration_eg = clock::now() - start_eg;
+        auto [consume_recorded_in, consume_recorded_eg]
+          = tuple_binary_op<std::minus<>>{}(
+            get_recorded_traffic(),
+            std::make_tuple(produce_recorded_in, produce_recorded_eg));
+
+        // otherwise test is not valid:
+        BOOST_REQUIRE_GT(kafka_in_data_len, kafka_eg_data_len);
+
+        BOOST_CHECK_GT(produce_recorded_in, produce_recorded_eg);
+        BOOST_CHECK_LT(consume_recorded_in, consume_recorded_eg);
+
+        BOOST_CHECK_EQUAL(produce_recorded_in, kafka_in_total_len);
+        BOOST_CHECK_EQUAL(consume_recorded_eg, kafka_eg_total_len);
+
+        const auto time_estimated_in = std::chrono::milliseconds{
+          kafka_in_total_len * 1000 / rate_limit_in};
+
+        const auto time_estimated_eg = std::chrono::milliseconds{
+          kafka_eg_total_len * 1000 / rate_limit_out};
+
+        BOOST_TEST_CHECK(
+          abs(duration_in - time_estimated_in)
+            < time_estimated_in * tolerance_percent / 100,
+          "Total ingress time: stop-start["
+            << duration_in << "] ≈ time_estimated[" << time_estimated_in
+            << "] ±" << tolerance_percent
+            << "%, error: " << std::setprecision(3)
+            << (duration_in - time_estimated_in) * 100.0 / time_estimated_in
+            << "%");
+
+        BOOST_TEST_CHECK(
+          abs(duration_eg - time_estimated_eg)
+            < time_estimated_eg * tolerance_percent / 100,
+          "Total egress time: stop-start["
+            << duration_eg << "] ≈ time_estimated[" << time_estimated_eg
+            << "] ±" << tolerance_percent
+            << "%, error: " << std::setprecision(3)
+            << (duration_eg - time_estimated_eg) * 100.0 / time_estimated_eg
+            << "%");
+    }
 };
+
+FIXTURE_TEST(
+  test_node_throughput_limits_no_throttle_seq, throughput_limits_fixure) {
+    test_throughput(honour_throttle::no, execution::seq);
+}
+
+FIXTURE_TEST(
+  test_node_throughput_limits_with_throttle_seq, throughput_limits_fixure) {
+    test_throughput(honour_throttle::yes, execution::seq);
+}
+
+FIXTURE_TEST(
+  test_node_throughput_limits_no_throttle_par, throughput_limits_fixure) {
+    test_throughput(honour_throttle::no, execution::par);
+}
+
+FIXTURE_TEST(
+  test_node_throughput_limits_with_throttle_par, throughput_limits_fixure) {
+    test_throughput(honour_throttle::yes, execution::par);
+}
 
 FIXTURE_TEST(test_node_throughput_limits_static, throughput_limits_fixure) {
     // configure
