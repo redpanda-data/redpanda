@@ -483,7 +483,6 @@ ss::future<> kvstore::load_snapshot_from_reader(snapshot_reader& reader) {
     }
 
     auto lock = co_await _db_mut.get_units();
-    _db.reserve(batch.header().record_count);
     co_await batch.for_each_record_async([this](model::record r) {
         auto key = iobuf_to_bytes(r.release_key());
         _probe.add_cached_bytes(key.size() + r.value().size_bytes());
