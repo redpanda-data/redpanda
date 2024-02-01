@@ -221,6 +221,13 @@ ss::future<response_ptr> create_topics_handler::handle(
           std::back_inserter(response.data.topics),
           [&ctx](const creatable_topic& t) {
               auto result = generate_successfull_result(t);
+              if (ctx.metadata_cache().contains(model::topic_namespace_view{
+                    model::kafka_namespace, t.name})) {
+                  result.error_code = error_code::topic_already_exists;
+                  return result;
+              }
+              result.num_partitions = t.num_partitions;
+              result.replication_factor = t.replication_factor;
               if (ctx.header().version >= api_version(5)) {
                   auto default_properties
                     = ctx.metadata_cache().get_default_properties();
