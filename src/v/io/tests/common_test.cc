@@ -44,3 +44,32 @@ TEST(Common, MakeRandomDataAlignment) {
     EXPECT_EQ(reinterpret_cast<uintptr_t>(d2.get()) % 8192, 0);
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 }
+
+TEST(Common, MakePage) {
+    auto p0 = make_page(4096);
+    auto p1 = make_page(8192, 1);
+    auto p2 = make_page(16384, 2);
+    auto p3 = make_page(8192, 1);
+
+    EXPECT_EQ(p0->offset(), 4096);
+    EXPECT_EQ(p1->offset(), 8192);
+    EXPECT_EQ(p2->offset(), 16384);
+    EXPECT_EQ(p3->offset(), 8192);
+
+    EXPECT_EQ(p0->size(), 4096);
+    EXPECT_EQ(p1->size(), 4096);
+    EXPECT_EQ(p2->size(), 4096);
+    EXPECT_EQ(p3->size(), 4096);
+
+    EXPECT_NE(p0->data(), p1->data());
+    EXPECT_NE(p0->data(), p2->data());
+    EXPECT_NE(p1->data(), p2->data());
+    EXPECT_EQ(p1->data(), p3->data());
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(p0->data().get()) % 4096, 0);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(p1->data().get()) % 4096, 0);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(p2->data().get()) % 4096, 0);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(p3->data().get()) % 4096, 0);
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+}

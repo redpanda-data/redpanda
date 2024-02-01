@@ -69,3 +69,9 @@ seastar::future<seastar::temporary_buffer<char>> make_random_data(
 
     co_return co_await make_random_data(size, alignment, &eng);
 }
+
+seastar::lw_shared_ptr<io::page>
+make_page(uint64_t offset, std::optional<uint64_t> seed) {
+    return seastar::make_lw_shared<io::page>(
+      offset, make_random_data(4096, 4096, seed).get());
+}
