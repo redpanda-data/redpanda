@@ -47,7 +47,9 @@ type HTTPResponseError struct {
 
 type (
 	// Auth affixes auth to an http request.
-	Auth      interface{ apply(req *http.Request) }
+	Auth interface{ apply(req *http.Request) }
+	// Opt is an option to configure an admin client.
+	Opt       interface{ apply(*pester.Client) }
 	BasicAuth struct {
 		Username string
 		Password string
@@ -118,7 +120,7 @@ func getAuth(p *config.RpkProfile) (Auth, error) {
 
 // NewClient returns an AdminAPI client that talks to each of the addresses in
 // the rpk.admin_api section of the config.
-func NewClient(fs afero.Fs, p *config.RpkProfile) (*AdminAPI, error) {
+func NewClient(fs afero.Fs, p *config.RpkProfile, opts ...Opt) (*AdminAPI, error) {
 	a := &p.AdminAPI
 
 	addrs := a.Addresses
@@ -130,7 +132,7 @@ func NewClient(fs afero.Fs, p *config.RpkProfile) (*AdminAPI, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newAdminAPI(addrs, auth, tc, p.FromCloud)
+	return newAdminAPI(addrs, auth, tc, p.FromCloud, opts...)
 }
 
 // NewHostClient returns an AdminAPI that talks to the given host, which is
@@ -170,7 +172,7 @@ func NewAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config) (*AdminAPI, er
 	return newAdminAPI(urls, auth, tlsConfig, false)
 }
 
-func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config, forCloud bool) (*AdminAPI, error) {
+func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config, forCloud bool, opts ...Opt) (*AdminAPI, error) {
 	// General purpose backoff, includes 503s and other errors
 	const retryBackoffMs = 1500
 
@@ -205,6 +207,9 @@ func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config, forCloud bool)
 
 	client.Timeout = 10 * time.Second
 
+	for _, opt := range opts {
+		opt.apply(client)
+	}
 	a := &AdminAPI{
 		urls:           make([]string, len(urls)),
 		retryClient:    client,
@@ -634,4 +639,15 @@ func (he HTTPResponseError) DecodeGenericErrorBody() (GenericErrorBody, error) {
 func (he HTTPResponseError) Error() string {
 	return fmt.Sprintf("request %s %s failed: %s, body: %q\n",
 		he.Method, he.URL, http.StatusText(he.Response.StatusCode), he.Body)
+}
+
+type clientOpt struct{ fn func(*pester.Client) }
+
+func (opt clientOpt) apply(cl *pester.Client) { opt.fn(cl) }
+
+// ClientTimeout sets the client timeout, overriding the default of 10s.
+func ClientTimeout(t time.Duration) Opt {
+	return clientOpt{func(cl *pester.Client) {
+		cl.Timeout = t
+	}}
 }
