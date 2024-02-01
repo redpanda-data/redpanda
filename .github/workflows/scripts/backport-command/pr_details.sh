@@ -31,7 +31,7 @@ fixing_issue_urls=$(gh api graphql -f query='{
       }
     }
   }
-}' --jq .data.resource.closingIssuesReferences.nodes.[].url)
+}' --jq '.data.resource.closingIssuesReferences.nodes | map(.url) | join(" ")')
 
 suffix=$((RANDOM % 1000))
 git config --global user.email "$GIT_EMAIL"
