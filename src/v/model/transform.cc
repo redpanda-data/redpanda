@@ -289,4 +289,8 @@ size_t transformed_data::memory_usage() const {
     return sizeof(*this) + _data.size_bytes();
 }
 
+transformed_data transformed_data::copy() const {
+    return transformed_data(_data.copy());
+}
+
 } // namespace model

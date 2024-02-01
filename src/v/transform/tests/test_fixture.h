@@ -15,6 +15,7 @@
 #include "model/record.h"
 #include "model/tests/randoms.h"
 #include "model/transform.h"
+#include "ssx/semaphore.h"
 #include "transform/io.h"
 #include "utils/notification_list.h"
 #include "wasm/api.h"
@@ -23,40 +24,50 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/condition-variable.hh>
 
+#include <optional>
+#include <utility>
+
 namespace transform::testing {
 
 constexpr model::transform_id my_transform_id{42};
 // NOLINTBEGIN(cert-err58-cpp)
 static const model::ntp my_ntp = model::random_ntp();
-static const model::transform_metadata my_metadata{
+static const model::transform_metadata my_single_output_metadata{
   .name = model::transform_name("xform"),
   .input_topic = model::topic_namespace(my_ntp.ns, my_ntp.tp.topic),
   .output_topics = {model::random_topic_namespace()},
   .environment = {{"FOO", "bar"}},
   .uuid = uuid_t::create(),
   .source_ptr = model::offset(9)};
+static const model::transform_metadata my_multiple_output_metadata{
+  .name = model::transform_name("xform-multi-output"),
+  .input_topic = model::topic_namespace(my_ntp.ns, my_ntp.tp.topic),
+  .output_topics = {
+    model::random_topic_namespace(),
+    model::random_topic_namespace(), 
+    model::random_topic_namespace(),
+  },
+  .environment = {{"FOO", "bar"}},
+  .uuid = uuid_t::create(),
+  .source_ptr = model::offset(10)};
 // NOLINTEND(cert-err58-cpp)
 
 class fake_wasm_engine : public wasm::engine {
 public:
-    enum class mode {
-        noop,
-        filter,
-    };
-
     ss::future<> transform(
       model::record_batch batch,
       wasm::transform_probe*,
       wasm::transform_callback) override;
 
-    void set_mode(mode m);
+    void set_output_topics(std::vector<model::topic> topics);
+    void set_use_default_output_topic();
 
     ss::future<> start() override;
     ss::future<> stop() override;
 
 private:
     bool _started = false;
-    mode _mode = mode::noop;
+    std::optional<std::vector<model::topic>> _output_topics;
 };
 
 class fake_source : public source {
@@ -83,10 +94,23 @@ public:
     ss::future<> write(ss::chunked_fifo<model::record_batch> batches) override;
 
     ss::future<model::record_batch> read();
+    bool empty() const { return _batches.empty(); }
+
+    /**
+     * Pause writes for this sink. All calls to `write` will not resolve until
+     * `uncork` is called.
+     */
+    void cork();
+
+    /**
+     * Unpause a sink that was paused via `cork`.
+     */
+    void uncork();
 
 private:
     ss::chunked_fifo<model::record_batch> _batches;
     ss::condition_variable _cond_var;
+    ssx::semaphore _cork = {ssx::semaphore::max_counter(), "fake_sink"};
 };
 
 class fake_offset_tracker : public offset_tracker {

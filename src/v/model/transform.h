@@ -273,6 +273,11 @@ public:
 
     bool operator==(const transformed_data&) const = default;
 
+    /**
+     * Explicitly make a copy of this transformed data.
+     */
+    transformed_data copy() const;
+
 private:
     explicit transformed_data(iobuf d);
 
