@@ -10,11 +10,17 @@
  */
 #pragma once
 
+#include "io/io_queue.h"
 #include "io/page.h"
+#include "io/persistence.h"
 #include "random/generators.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/temporary_buffer.hh>
+
+#include <deque>
+#include <map>
 
 namespace io = experimental::io;
 
@@ -41,3 +47,69 @@ make_page(uint64_t offset, std::optional<uint64_t> seed = std::nullopt);
  * Sleep for a random number of milliseconds chosen from the range (min, max).
  */
 void sleep_ms(unsigned min, unsigned max);
+
+/**
+ * A workload generator that can be used to submit random reads and writes to a
+ * io queue. Reads are automatically generated for regions previously written.
+ * Random data is generated, but the generation is deterministic using the block
+ * offset as the seed. This allows multiple inflight I/Os to the same block to
+ * result in the same final state, simplifying the accounting needed for testing
+ * correctness.
+ */
+class io_queue_workload_generator {
+public:
+    /*
+     * Writes are generated to positions bounded by max_file_size. The test ends
+     * after there have been num_io_ops reads and writes completed. A random
+     * delay between (min_ms, max_ms) milliseconds will be inserted between
+     * generating a new operation.
+     */
+    io_queue_workload_generator(
+      size_t max_file_size,
+      size_t num_io_ops,
+      std::function<void(io::page&)> submit_read,
+      std::function<void(io::page&)> submit_write,
+      unsigned min_ms = 0,
+      unsigned max_ms = 10);
+
+    seastar::future<> run();
+
+    /*
+     * Call this when a request has completed. It updates the state of the
+     * requests that are being tracked.
+     */
+    void handle_complete(io::page& page);
+
+    // Completed reads
+    [[nodiscard]] const auto& reads() const { return completed_reads; }
+
+    // Completed writes
+    [[nodiscard]] const auto& writes() const { return completed_writes; }
+
+private:
+    seastar::future<> generate_writes();
+    seastar::future<> generate_reads();
+    [[nodiscard]] io::page* select_random_write() const;
+
+    seastar::gate gate;
+
+    size_t max_file_size;
+    size_t num_io_ops;
+    std::function<void(io::page&)> submit_read;
+    std::function<void(io::page&)> submit_write;
+    unsigned min_ms;
+    unsigned max_ms;
+
+    std::deque<seastar::lw_shared_ptr<io::page>> submitted_reads;
+    std::deque<seastar::lw_shared_ptr<io::page>> submitted_writes;
+    std::deque<io::page*> completed_reads;
+    std::map<uint64_t, io::page*> completed_writes;
+
+    /*
+     * for small files tests there may not be enough unique page offsets in the
+     * backing file in order to use the size of the completed_writes map to
+     * bound the test size (e.g. 1000 writes to a 16 KB file) would have a
+     * completed_writes map of only size 4 * 4K no matter how long the test ran.
+     */
+    size_t completed_writes_count{0};
+};
