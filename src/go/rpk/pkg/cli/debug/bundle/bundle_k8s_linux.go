@@ -90,7 +90,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	}
 	steps = append(steps, []step{
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions),
-		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval),
+		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval, bp.cpuProfilerWait),
 	}...)
 
 	for _, s := range steps {
@@ -270,7 +270,7 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 
 // saveSingleAdminAPICalls saves per-node admin API requests in the 'admin/'
 // directory of the bundle zip.
-func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, metricsInterval time.Duration) step {
+func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, metricsInterval, profilerWait time.Duration) step {
 	return func() error {
 		var rerrs *multierror.Error
 		var funcs []func() error
@@ -285,7 +285,7 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 					TLS:       p.AdminAPI.TLS,
 				},
 			}
-			cl, err := adminapi.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p, adminapi.ClientTimeout(profilerWait+2*time.Second))
 			if err != nil {
 				rerrs = multierror.Append(rerrs, fmt.Errorf("unable to initialize admin client for %q: %v", a, err))
 				continue
@@ -319,6 +319,12 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 				},
 				func() error {
 					return requestAndSave(ctx, ps, fmt.Sprintf("admin/disk_stat_cache_%v.json", aName), cl.DiskCache)
+				},
+				func() error {
+					f := func(ctx context.Context) ([]byte, error) {
+						return cl.RawCPUProfile(ctx, profilerWait)
+					}
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/cpu_profile_%v.json", aName), f)
 				},
 				func() error {
 					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_metrics.txt", aName), cl.PrometheusMetrics)

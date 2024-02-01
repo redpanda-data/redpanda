@@ -13,10 +13,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 const (
-	debugEndpoint          = "/v1/debug/self_test"
+	debugEndpoint          = "/v1/debug"
+	selfTestEndpoint       = debugEndpoint + "/self_test"
+	cpuProfilerEndpoint    = debugEndpoint + "/cpu_profile"
 	DiskcheckTagIdentifier = "disk"
 	NetcheckTagIdentifier  = "network"
 )
@@ -139,7 +143,7 @@ func (a *AdminAPI) StartSelfTest(ctx context.Context, nodeIds []int, params []an
 	}
 	err := a.sendToLeader(ctx,
 		http.MethodPost,
-		fmt.Sprintf("%s/start", debugEndpoint),
+		fmt.Sprintf("%s/start", selfTestEndpoint),
 		body,
 		&testID)
 	return testID, err
@@ -149,7 +153,7 @@ func (a *AdminAPI) StopSelfTest(ctx context.Context) error {
 	return a.sendToLeader(
 		ctx,
 		http.MethodPost,
-		fmt.Sprintf("%s/stop", debugEndpoint),
+		fmt.Sprintf("%s/stop", selfTestEndpoint),
 		nil,
 		nil,
 	)
@@ -157,7 +161,7 @@ func (a *AdminAPI) StopSelfTest(ctx context.Context) error {
 
 func (a *AdminAPI) SelfTestStatus(ctx context.Context) ([]SelfTestNodeReport, error) {
 	var response []SelfTestNodeReport
-	err := a.sendAny(ctx, http.MethodGet, fmt.Sprintf("%s/status", debugEndpoint), nil, &response)
+	err := a.sendAny(ctx, http.MethodGet, fmt.Sprintf("%s/status", selfTestEndpoint), nil, &response)
 	return response, err
 }
 
@@ -185,4 +189,11 @@ func (a *AdminAPI) ControllerStatus(ctx context.Context) (ControllerStatus, erro
 func (a *AdminAPI) DebugPartition(ctx context.Context, namespace, topic string, partitionID int) (DebugPartition, error) {
 	var response DebugPartition
 	return response, a.sendAny(ctx, http.MethodGet, fmt.Sprintf("/v1/debug/partition/%v/%v/%v", namespace, topic, partitionID), nil, &response)
+}
+
+// RawCPUProfile returns the raw response of the CPU profiler.
+func (a *AdminAPI) RawCPUProfile(ctx context.Context, wait time.Duration) ([]byte, error) {
+	var response []byte
+	path := fmt.Sprintf("%v?wait_ms=%v", cpuProfilerEndpoint, strconv.Itoa(int(wait.Milliseconds())))
+	return response, a.sendAny(ctx, http.MethodGet, path, nil, &response)
 }

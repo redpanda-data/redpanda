@@ -34,7 +34,8 @@ class RpkRemoteTool:
             self._rpk_binary(), 'debug', 'bundle', "--output", output_file,
             "--api-urls",
             self._redpanda.admin_endpoints()
-        ])
+        ],
+                             timeout=45)
 
     def cluster_config_force_reset(self, property_name):
         return self._execute([

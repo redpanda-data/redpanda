@@ -145,7 +145,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveMountedFilesystems(ps),
 		saveNTPDrift(ps),
 		saveResourceUsageData(ps, bp.y),
-		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval),
+		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval, bp.cpuProfilerWait),
 		saveSlabInfo(ps),
 		saveSocketData(ctx, ps),
 		saveSysctl(ctx, ps),
