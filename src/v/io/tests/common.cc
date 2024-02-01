@@ -18,14 +18,13 @@
 #include <random>
 #include <span>
 
-seastar::future<seastar::temporary_buffer<char>>
-make_random_data(size_t size, std::optional<uint64_t> alignment) {
-    static constexpr size_t chunk_size = 32_KiB;
+using engine_type
+  = std::independent_bits_engine<std::mt19937, CHAR_BIT, unsigned char>;
 
-    static thread_local std::random_device rd;
-    static thread_local std::
-      independent_bits_engine<std::mt19937, CHAR_BIT, unsigned char>
-        eng(rd());
+namespace {
+seastar::future<seastar::temporary_buffer<char>> make_random_data(
+  size_t size, std::optional<uint64_t> alignment, engine_type* eng) {
+    static constexpr size_t chunk_size = 32_KiB;
 
     auto data = [&] {
         if (alignment.has_value()) {
@@ -45,11 +44,28 @@ make_random_data(size_t size, std::optional<uint64_t> alignment) {
         }
 
         auto chunk = span.subspan(offset, len);
-        std::generate(chunk.begin(), chunk.end(), [&] { return eng(); });
+        std::generate(chunk.begin(), chunk.end(), [&] { return (*eng)(); });
         offset += len;
 
         co_await seastar::maybe_yield();
     }
 
     co_return data;
+}
+} // namespace
+
+seastar::future<seastar::temporary_buffer<char>> make_random_data(
+  size_t size,
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  std::optional<uint64_t> alignment,
+  std::optional<uint64_t> seed) {
+    static thread_local std::random_device rd;
+    static thread_local engine_type eng(rd());
+
+    if (seed.has_value()) {
+        engine_type seeded_eng(seed.value());
+        co_return co_await make_random_data(size, alignment, &seeded_eng);
+    }
+
+    co_return co_await make_random_data(size, alignment, &eng);
 }

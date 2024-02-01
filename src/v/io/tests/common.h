@@ -14,7 +14,10 @@
 #include <seastar/core/temporary_buffer.hh>
 
 /**
- * Generate random data for use in tests.
+ * Generate random data for use in tests. If seed is unspecified then a
+ * pre-seeded random generator will be used.
  */
-seastar::future<seastar::temporary_buffer<char>>
-make_random_data(size_t size, std::optional<uint64_t> alignment = std::nullopt);
+seastar::future<seastar::temporary_buffer<char>> make_random_data(
+  size_t size,
+  std::optional<uint64_t> alignment = std::nullopt,
+  std::optional<uint64_t> seed = std::nullopt);
