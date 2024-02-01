@@ -16,6 +16,7 @@
 #include "raft/persisted_stm.h"
 #include "utils/fixed_string.h"
 
+#include <seastar/core/preempt.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <type_traits>
@@ -233,9 +234,18 @@ public:
             co_return errc::not_leader;
         }
         kv_data_t copy;
-        for (const auto& entry : _kvs) {
-            copy.insert(entry);
-            co_await ss::coroutine::maybe_yield();
+        auto it = _kvs.begin();
+        while (it != _kvs.end()) {
+            copy.insert(*it);
+            ++it;
+            if (ss::need_preempt() && it != _kvs.end()) {
+                // The iterator could have be invalidated if there was a write
+                // during the yield. We'll use the ordered nature of the btree
+                // to support resuming the iterator after the suspension point.
+                Key checkpoint = it->first;
+                co_await ss::yield();
+                it = _kvs.lower_bound(checkpoint);
+            }
         }
         co_return std::move(copy);
     }
