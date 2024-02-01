@@ -48,3 +48,22 @@ TEST(Page, SetData) {
     EXPECT_EQ(p.data().size(), size);
     EXPECT_EQ(p.data(), d1);
 }
+
+TEST(Page, Flags) {
+    io::page p(1, {});
+
+    EXPECT_FALSE(p.test_flag(io::page::flags::read));
+    p.set_flag(io::page::flags::read);
+    EXPECT_TRUE(p.test_flag(io::page::flags::read));
+
+    EXPECT_FALSE(p.test_flag(io::page::flags::write));
+    p.set_flag(io::page::flags::write);
+    EXPECT_TRUE(p.test_flag(io::page::flags::write));
+    EXPECT_TRUE(p.test_flag(io::page::flags::read));
+
+    p.clear_flag(io::page::flags::read);
+    EXPECT_FALSE(p.test_flag(io::page::flags::read));
+    p.clear_flag(io::page::flags::write);
+    EXPECT_FALSE(p.test_flag(io::page::flags::write));
+    EXPECT_FALSE(p.test_flag(io::page::flags::read));
+}

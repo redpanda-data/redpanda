@@ -12,6 +12,7 @@
 
 #include <seastar/core/temporary_buffer.hh>
 
+#include <bitset>
 #include <cstdint>
 
 namespace experimental::io {
@@ -52,10 +53,34 @@ public:
     [[nodiscard]] seastar::temporary_buffer<char>& data() noexcept;
     [[nodiscard]] const seastar::temporary_buffer<char>& data() const noexcept;
 
+    /*
+     * read,write: page is queued for read or write
+     */
+    enum class flags { read, write, num_flags };
+
+    /**
+     * set a page flag.
+     */
+    void set_flag(flags) noexcept;
+
+    /**
+     * clear a page flag.
+     */
+    void clear_flag(flags) noexcept;
+
+    /**
+     * Return true if the flag is set, and false otherwise.
+     */
+    [[nodiscard]] bool test_flag(flags) const noexcept;
+
 private:
+    static constexpr auto num_page_flags
+      = static_cast<std::underlying_type_t<flags>>(flags::num_flags);
+
     uint64_t offset_;
     uint64_t size_;
     seastar::temporary_buffer<char> data_;
+    std::bitset<num_page_flags> flags_;
 };
 
 } // namespace experimental::io
