@@ -45,6 +45,7 @@
 #include <seastar/core/fair_queue.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -476,7 +477,8 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
 }
 
 segment_set disk_log_impl::find_sliding_range(
-  const compaction_config& cfg, std::optional<model::offset> new_start_offset) {
+  const compaction_config& cfg,
+  std::optional<model::offset> new_start_offset) const {
     // Collect all segments that have stable data.
     segment_set::underlying_t buf;
     for (const auto& seg : _segs) {
@@ -2257,12 +2259,14 @@ int64_t compaction_backlog_term(
  * According to this assumption compaction backlog consist of two components
  *
  * 1) size of not yet self compacted segments
- * 2) size of all possible adjacent segments compactions
+ * 2) size of not yet window compacted segments (if applicable), scaled by the
+ *    expected compaction ratio
+ * 3) size of all possible adjacent segments compactions
  *
- * Component 1. of a compaction backlog is simply a sum of sizes of all not self
- * compacted segments.
+ * Component 1, 2. of a compaction backlog is simply a sum of sizes of all not
+ * self compacted and window compacted segments.
  *
- * Calculation of 2nd part of compaction backlog is based on the observation
+ * Calculation of 3rd part of compaction backlog is based on the observation
  * that adjacent segment compactions can be presented as a tree
  * (each leaf represents a log segment)
  *                              ┌────┐
@@ -2328,10 +2332,35 @@ int64_t disk_log_impl::compaction_backlog() const {
     // or enabling compaction on a previously non-compacted topic.
     static constexpr size_t limit_segments_this_term = 1024;
 
-    for (auto& s : _segs) {
-        if (!s->finished_self_compaction()) {
-            backlog += static_cast<int64_t>(s->size_bytes());
+    if (config::shard_local_cfg().log_compaction_use_sliding_window()) {
+        ss::abort_source never_abort;
+        // NOTE: the backlog estimate is just that -- an estimate. Don't bother
+        // passing in real offsets, priority classes, etc.
+        auto segs = find_sliding_range(compaction_config{
+          model::offset::max(), ss::default_priority_class(), never_abort});
+        for (auto& s : segs) {
+            if (!s->finished_self_compaction()) {
+                backlog += static_cast<int64_t>(s->size_bytes());
+            }
+            // TODO: using the average compaction ratio here is a crude
+            // approximation, since the ratio also includes the size reduction
+            // from windowed compaction itself.
+            if (!s->finished_windowed_compaction()) {
+                backlog += static_cast<int64_t>(s->size_bytes() * cf);
+            }
         }
+    } else {
+        for (auto& s : _segs) {
+            if (!s->finished_self_compaction()) {
+                backlog += static_cast<int64_t>(s->size_bytes());
+            }
+        }
+    }
+
+    // Compute the adjacent segment merge backlog. Note that we consider all
+    // segments rather than just those in the sliding window because all
+    // segments may be subject to merging.
+    for (auto& s : _segs) {
         // if has appender do not include into adjacent segments calculation
         if (s->has_appender()) {
             continue;

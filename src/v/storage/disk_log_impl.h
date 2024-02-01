@@ -148,7 +148,7 @@ public:
     // window compaction.
     segment_set find_sliding_range(
       const compaction_config& cfg,
-      std::optional<model::offset> new_start_offset = std::nullopt);
+      std::optional<model::offset> new_start_offset = std::nullopt) const;
 
     void set_last_compaction_window_start_offset(model::offset o) {
         _last_compaction_window_start_offset = o;
