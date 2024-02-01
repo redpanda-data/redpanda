@@ -14,6 +14,7 @@ rp_test(
   BINARY_NAME transform_logging
   SOURCES
     model_test.cc
+    log_manager_test.cc
   LIBRARIES
     v::transform_logging
     v::transform_logging_test_utils

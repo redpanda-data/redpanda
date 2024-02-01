@@ -13,8 +13,10 @@
 
 #include "bytes/streambuf.h"
 #include "json/istreamwrapper.h"
+#include "random/generators.h"
 
 #include <istream>
+#include <random>
 
 namespace transform::logging::testing {
 
@@ -25,6 +27,15 @@ json::Document parse_json(iobuf resp) {
     json::IStreamWrapper wrapper(stream);
     doc.ParseStream(wrapper);
     return doc;
+}
+
+std::string get_message_body(iobuf msg) {
+    auto doc = parse_json(std::move(msg));
+    return {doc["body"].GetString()};
+}
+
+model::transform_name random_transform_name(size_t len) {
+    return model::transform_name{random_generators::gen_alphanum_string(len)};
 }
 
 } // namespace transform::logging::testing

@@ -37,3 +37,11 @@ struct sstring_eq {
         return lhs == rhs;
     }
 };
+
+struct sstring_less {
+    using is_transparent = std::true_type;
+
+    bool operator()(std::string_view lhs, std::string_view rhs) const {
+        return lhs < rhs;
+    }
+};
