@@ -49,6 +49,7 @@ public:
     /**
      * Data stored in this page.
      */
+    [[nodiscard]] seastar::temporary_buffer<char>& data() noexcept;
     [[nodiscard]] const seastar::temporary_buffer<char>& data() const noexcept;
 
 private:
