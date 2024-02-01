@@ -450,6 +450,65 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
     BOOST_REQUIRE_GT(total_size, 0);
 }
 
+FIXTURE_TEST(fetch_leader_ack, redpanda_thread_fixture) {
+    // Ensures that fetching works as expected even when data is produced with
+    // relaxed consistency.
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    model::offset offset(0);
+    auto ntp = make_default_ntp(topic, pid);
+
+    wait_for_controller_leadership().get0();
+
+    add_topic(model::topic_namespace_view(ntp)).get();
+    wait_for_partition_offset(ntp, model::offset(0)).get0();
+
+    kafka::fetch_request req;
+    req.data.max_bytes = std::numeric_limits<int32_t>::max();
+    req.data.min_bytes = 1;
+    req.data.max_wait_ms = std::chrono::milliseconds(5000);
+    req.data.session_id = kafka::invalid_fetch_session_id;
+    req.data.topics = {{
+      .name = topic,
+      .fetch_partitions = {{
+        .partition_index = pid,
+        .fetch_offset = offset,
+      }},
+    }};
+
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto fresp = client.dispatch(req, kafka::api_version(4));
+    auto shard = app.shard_table.local().shard_for(ntp);
+    app.partition_manager
+      .invoke_on(
+        *shard,
+        [ntp](cluster::partition_manager& mgr) {
+            auto partition = mgr.get(ntp);
+            auto batches = model::test::make_random_batches(
+              model::offset(0), 5);
+            auto rdr = model::make_memory_record_batch_reader(
+              std::move(batches));
+            return partition->raft()->replicate(
+              std::move(rdr),
+              raft::replicate_options(raft::consistency_level::leader_ack));
+        })
+      .discard_result()
+      .get0();
+
+    auto resp = fresp.get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    BOOST_REQUIRE(resp.data.topics.size() == 1);
+    BOOST_REQUIRE(resp.data.topics[0].name == topic());
+    BOOST_REQUIRE(resp.data.topics[0].partitions.size() == 1);
+    BOOST_REQUIRE(
+      resp.data.topics[0].partitions[0].error_code == kafka::error_code::none);
+    BOOST_REQUIRE(resp.data.topics[0].partitions[0].partition_index == pid);
+    BOOST_REQUIRE(resp.data.topics[0].partitions[0].records);
+    BOOST_REQUIRE(resp.data.topics[0].partitions[0].records->size_bytes() > 0);
+}
+
 FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
     model::topic topic("foo");
     model::partition_id pid(0);
