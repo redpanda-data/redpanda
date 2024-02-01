@@ -13,6 +13,7 @@
 #include "base/units.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/util/later.hh>
 
 #include <random>
@@ -74,4 +75,9 @@ seastar::lw_shared_ptr<io::page>
 make_page(uint64_t offset, std::optional<uint64_t> seed) {
     return seastar::make_lw_shared<io::page>(
       offset, make_random_data(4096, 4096, seed).get());
+}
+
+void sleep_ms(unsigned min, unsigned max) {
+    const auto ms = random_generators::get_int(min, max);
+    seastar::sleep(std::chrono::milliseconds(ms)).get();
 }

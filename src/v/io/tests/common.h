@@ -36,3 +36,8 @@ seastar::future<seastar::temporary_buffer<char>> make_random_data(
  */
 seastar::lw_shared_ptr<io::page>
 make_page(uint64_t offset, std::optional<uint64_t> seed = std::nullopt);
+
+/**
+ * Sleep for a random number of milliseconds chosen from the range (min, max).
+ */
+void sleep_ms(unsigned min, unsigned max);
