@@ -100,9 +100,9 @@ class KcatConsumer(BackgroundThreadService):
 
         if partition:
             self._cmd += ["-p", f"{partition}"]
-        assert (offset is
-                None) or (first_timestamp is
-                          None), "Cannot specify both offset and timestamp"
+        assert (offset is None) or (
+            first_timestamp
+            is None), "Cannot specify both offset and timestamp"
 
         if offset is not None:
             # <value>  (absolute offset)
