@@ -99,6 +99,10 @@ def read_topic_properties_serde(rdr: Reader, version):
             'initial_retention_local_target_ms':
             rdr.read_tristate(Reader.read_uint64)
         }
+    if version >= 7:
+        topic_properties |= {
+            'mpx_virtual_cluster_id': rdr.read_optional(Reader.read_bytes)
+        }
 
     return topic_properties
 
@@ -119,7 +123,7 @@ def read_topic_configuration_assignment_serde(rdr: Reader):
                     rdr.read_int16(),
                     'properties':
                     rdr.read_envelope(read_topic_properties_serde,
-                                      max_version=6),
+                                      max_version=7),
                 }, 1),
             'assignments':
             rdr.read_serde_vector(lambda r: r.read_envelope(
