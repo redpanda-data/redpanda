@@ -19,6 +19,8 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/temporary_buffer.hh>
 
+#include <gtest/gtest.h>
+
 #include <deque>
 #include <map>
 
@@ -148,4 +150,25 @@ private:
 
     bool stop_{false};
     seastar::future<> injector{seastar::make_ready_future<>()};
+};
+
+/**
+ * Helper test fixture that constructs a persistence instance.
+ */
+class StorageTest : public ::testing::Test {
+public:
+    void SetUp() override {
+        if (disk_persistence()) {
+            storage_ = std::make_unique<io::disk_persistence>();
+        } else {
+            storage_ = std::make_unique<io::memory_persistence>();
+        }
+    }
+
+    io::persistence* storage() { return storage_.get(); }
+
+private:
+    [[nodiscard]] virtual bool disk_persistence() const = 0;
+
+    std::unique_ptr<io::persistence> storage_;
 };
