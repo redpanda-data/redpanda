@@ -149,3 +149,40 @@ io::page* io_queue_workload_generator::select_random_write() const {
     }
     return nullptr;
 }
+
+io_queue_fault_injector::io_queue_fault_injector(
+  io::persistence* storage,
+  io::io_queue* queue,
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  unsigned min_ms,
+  unsigned max_ms)
+  : storage(storage)
+  , queue(queue)
+  , min_ms(min_ms)
+  , max_ms(max_ms) {}
+
+void io_queue_fault_injector::start() {
+    injector = seastar::async([this] {
+        while (!stop_) {
+            auto op = random_generators::get_int(0, 1);
+            if (op == 0) {
+                storage->fail_next_open(
+                  std::runtime_error("injected open failure"));
+
+            } else if (op == 1) {
+                auto file = io::testing_details::io_queue_accessor::get_file(
+                  queue);
+                if (file != nullptr) {
+                    file->fail_next_close(
+                      std::runtime_error("injected close failure"));
+                }
+            }
+            sleep_ms(min_ms, max_ms);
+        }
+    });
+}
+
+seastar::future<> io_queue_fault_injector::stop() {
+    stop_ = true;
+    return std::move(injector);
+}

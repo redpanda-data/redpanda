@@ -22,6 +22,13 @@
 #include <deque>
 #include <map>
 
+namespace experimental::io::testing_details {
+class io_queue_accessor {
+public:
+    static auto get_file(io::io_queue* queue) { return queue->file_; }
+};
+} // namespace experimental::io::testing_details
+
 namespace io = experimental::io;
 
 /**
@@ -112,4 +119,33 @@ private:
      * completed_writes map of only size 4 * 4K no matter how long the test ran.
      */
     size_t completed_writes_count{0};
+};
+
+/*
+ * Injects random failures into the storage layer (e.g. fail next open()) and
+ * the file object backing an io_queue (e.g. fail next close()).
+ */
+class io_queue_fault_injector {
+public:
+    /*
+     * A random delay between (min_ms, max_ms) milliseconds will be inserted
+     * between faults.
+     */
+    io_queue_fault_injector(
+      io::persistence* storage,
+      io::io_queue* queue,
+      unsigned min_ms = 1,
+      unsigned max_ms = 50);
+
+    void start();
+    seastar::future<> stop();
+
+private:
+    io::persistence* storage;
+    io::io_queue* queue;
+    unsigned min_ms;
+    unsigned max_ms;
+
+    bool stop_{false};
+    seastar::future<> injector{seastar::make_ready_future<>()};
 };
