@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include "container/intrusive_list_helpers.h"
+
 #include <seastar/core/temporary_buffer.hh>
 
 #include <bitset>
@@ -56,7 +58,7 @@ public:
     /*
      * read,write: page is queued for read or write
      */
-    enum class flags { read, write, num_flags };
+    enum class flags { read, write, queued, num_flags };
 
     /**
      * set a page flag.
@@ -72,6 +74,12 @@ public:
      * Return true if the flag is set, and false otherwise.
      */
     [[nodiscard]] bool test_flag(flags) const noexcept;
+
+    /**
+     * Intrusive list hook for I/O queue membership.
+     */
+    // NOLINTNEXTLINE(*-non-private-member-variables-in-classes)
+    intrusive_list_hook io_queue_hook;
 
 private:
     static constexpr auto num_page_flags
