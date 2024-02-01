@@ -12,51 +12,61 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "cluster/namespaced_cache.h"
 #include "cluster/producer_state.h"
 #include "config/property.h"
 
 #include <seastar/core/sharded.hh>
 
 namespace cluster {
-
-class producer_state_manager
-  : public ss::peering_sharded_service<producer_state_manager> {
+class producer_state_manager {
 public:
-    explicit producer_state_manager(
-      config::binding<uint64_t> max_producer_ids,
-      std::chrono::milliseconds producer_expiration_ms);
+    explicit producer_state_manager(config::binding<uint64_t> max_producer_ids);
 
     ss::future<> start();
     ss::future<> stop();
-
-    // register = link + producer_count++
-    // note: register is a reserved word in c++
-    void register_producer(producer_state&);
-    void deregister_producer(producer_state&);
-    // temporary relink already accounted producer
-    void link(producer_state&);
+    /**
+     * Adds producer state to the producer state manager cache
+     */
+    void register_producer(producer_state&, std::optional<vcluster_id>);
+    /**
+     * Removes producer from the producer state manager. (This method does not
+     * call eviction hook)
+     */
+    void deregister_producer(producer_state&, std::optional<vcluster_id>);
+    /**
+     * Touch a producer in underlying queue
+     */
+    void touch(producer_state&, std::optional<vcluster_id>);
 
 private:
-    static constexpr std::chrono::seconds period{5};
+    /**
+     *  Constant to be used when a partition has no vcluster_id assigned.
+     */
+    static constexpr vcluster_id no_vcluster{xid::data_t{0x00}};
+
+    struct producer_state_evictor {
+        bool operator()(producer_state&) const noexcept;
+    };
+
+    struct producer_state_disposer {
+        void operator()(producer_state&) const noexcept;
+    };
+    using cache_t = namespaced_cache<
+      producer_state,
+      vcluster_id,
+      &producer_state::_hook,
+      producer_state_evictor,
+      producer_state_disposer>;
+
     void setup_metrics();
-    void evict_excess_producers();
-    void do_evict_excess_producers();
 
-    bool can_evict_producer(const producer_state&) const;
-
-    size_t _num_producers = 0;
-    // if a producer is inactive for this long, it will be gc-ed
-    std::chrono::milliseconds _producer_expiration_ms;
-    // maximum # of active producers allowed on this shard across
-    // all partitions. When exceeded, producers are evctied on an
+    // maximum number of active producers allowed on this shard across
+    // all partitions. When exceeded, producers are evicted on an
     // LRU basis.
     config::binding<uint64_t> _max_ids;
-    // list of all producers on this shard. producer lifetime is tied to
-    // raft group which owns it. linking/unlinking and LRU-ness maintenance
-    // is the responsibility of the producers themselves.
-    // Check producer_state::run_func()
-    intrusive_list<producer_state, &producer_state::_hook> _lru_producers;
-    ss::timer<ss::steady_clock_type> _reaper;
+    // cache of all producers on this shard
+    cache_t _cache;
     ss::gate _gate;
     metrics::internal_metric_groups _metrics;
 

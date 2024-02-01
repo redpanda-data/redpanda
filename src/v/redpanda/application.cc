@@ -1424,11 +1424,9 @@ void application::wire_up_redpanda_services(
 
     syschecks::systemd_message("Initializing producer state manager").get();
     construct_service(
-      producer_manager,
-      ss::sharded_parameter([]() {
+      producer_manager, ss::sharded_parameter([]() {
           return config::shard_local_cfg().max_concurrent_producer_ids.bind();
-      }),
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
+      }))
       .get();
 
     producer_manager.invoke_on_all(&cluster::producer_state_manager::start)

@@ -724,34 +724,25 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         ans = rpk.cluster_config_set("max_concurrent_producer_ids",
                                      str(max_concurrent_producer_ids))
 
-        test_producer = ck.Producer({
-            'bootstrap.servers':
-            self.redpanda.brokers(),
-            'enable.idempotence':
-            True,
-        })
-
         topic = self.topics[0].name
-        test_producer.produce(topic,
-                              '0',
-                              '0',
-                              partition=0,
-                              on_delivery=self.on_delivery)
-        test_producer.flush()
 
-        max_producers = 51
+        def _produce_one(producer, idx):
+            self.logger.debug(f"producing using {idx} producer")
+            producer.produce(topic,
+                             f"record-key-producer-{idx}",
+                             f"record-value-producer-{idx}",
+                             partition=0,
+                             on_delivery=self.on_delivery)
+            producer.flush()
+
+        max_producers = 50
         producers = []
-        for i in range(max_producers - 1):
+        for i in range(max_producers):
             p = ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'enable.idempotence': True,
             })
-            p.produce(topic,
-                      str(i + 1),
-                      str(i + 1),
-                      partition=0,
-                      on_delivery=self.on_delivery)
-            p.flush()
+            _produce_one(p, i)
             producers.append(p)
 
         # Wait until eviction kicks in.
@@ -778,31 +769,23 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                    err_msg="Producers not evicted in time")
 
         try:
-            test_producer.produce(topic,
-                                  'test',
-                                  'test',
-                                  partition=0,
-                                  on_delivery=self.on_delivery)
-            test_producer.flush()
+            _produce_one(producers[0], 0)
             assert False, "We can not produce after cleaning in rm_stm"
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
             kafka_error.code(
             ) == ck.cimpl.KafkaError.OUT_OF_ORDER_SEQUENCE_NUMBER
 
-        last_worked_producers = max_producers - max_concurrent_producer_ids - 1
-        for i in range(max_concurrent_producer_ids):
-            producers[last_worked_producers + i].produce(
-                topic,
-                str(max_producers + i),
-                str(max_producers + i),
-                partition=0,
-                on_delivery=self.on_delivery)
-            producers[last_worked_producers + i].flush()
+        # validate that the producers are evicted with LRU policy,
+        # starting from this producer there should be no sequence
+        # number errors as those producer state should not be evicted
+        last_not_evicted_producer_idx = max_producers - max_concurrent_producer_ids + 1
+        for i in range(last_not_evicted_producer_idx, len(producers)):
+            _produce_one(producers[i], i)
 
-        should_be_consumed = max_producers + max_concurrent_producer_ids - 1
+        expected_records = len(
+            producers) - last_not_evicted_producer_idx + max_producers
         num_consumed = 0
-        prev_rec = bytes("0", 'UTF-8')
 
         consumer = ck.Consumer({
             'bootstrap.servers': self.redpanda.brokers(),
@@ -812,20 +795,13 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
         consumer.subscribe([topic])
 
-        while num_consumed < should_be_consumed:
+        while num_consumed < expected_records:
             self.redpanda.logger.debug(
-                f"Consumed {num_consumed}. Should consume at the end {should_be_consumed}"
-            )
+                f"Consumed {num_consumed} of of {expected_records}")
             records = self.consume(consumer)
-
-            for record in records:
-                assert prev_rec == record.key(
-                ), f"Expected {prev_rec}. Got {record.key()}"
-                prev_rec = bytes(str(int(prev_rec) + 1), 'UTF-8')
-
             num_consumed += len(records)
 
-        assert num_consumed == should_be_consumed
+        assert num_consumed == expected_records
 
 
 @contextmanager

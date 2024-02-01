@@ -777,9 +777,9 @@ cluster::tx_snapshot_v4 make_tx_snapshot_v4() {
         cluster::random_expiration_snapshot)};
 }
 
-cluster::tx_snapshot make_tx_snapshot_v5(cluster::producer_state_manager& mgr) {
+cluster::tx_snapshot make_tx_snapshot_v5() {
     auto producers = tests::random_frag_vector(
-      tests::random_producer_state, 50, mgr);
+      tests::random_producer_state, 50);
     fragmented_vector<cluster::producer_state_snapshot> snapshots;
     for (auto producer : producers) {
         snapshots.push_back(producer->snapshot(kafka::offset{0}));
@@ -905,7 +905,7 @@ FIXTURE_TEST(test_snapshot_v3_v4_v5_equivalence, rm_stm_test_fixture) {
     }
 
     {
-        snap_v5 = make_tx_snapshot_v5(_producer_state_manager.local());
+        snap_v5 = make_tx_snapshot_v5();
         snap_v5.offset = stm.last_applied_offset();
         auto num_producers_from_snapshot = snap_v5.producers.size();
         auto highest_pid_from_snapshot = snap_v5.highest_producer_id;

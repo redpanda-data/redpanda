@@ -11,6 +11,7 @@
 
 #include "bytes/iostream.h"
 #include "cluster/logger.h"
+#include "cluster/producer_state_manager.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_snapshot_utils.h"
 #include "kafka/protocol/wire.h"
@@ -286,14 +287,12 @@ producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
     if (it != _producers.end()) {
         return it->second;
     }
-    auto result = _producers.emplace(
-      pid,
-      ss::make_lw_shared<producer_state>(
-        _producer_state_manager.local(), pid, _raft->group(), [pid, this] {
-            cleanup_producer_state(pid);
-        }));
-    ;
-    return result.first->second;
+    auto producer = ss::make_lw_shared<producer_state>(
+      pid, _raft->group(), [pid, this] { cleanup_producer_state(pid); });
+    _producer_state_manager.local().register_producer(*producer, std::nullopt);
+    _producers.emplace(pid, producer);
+
+    return producer;
 }
 
 void rm_stm::cleanup_producer_state(model::producer_identity pid) {
@@ -317,9 +316,12 @@ void rm_stm::cleanup_producer_state(model::producer_identity pid) {
 
 ss::future<> rm_stm::reset_producers() {
     co_await ss::max_concurrent_for_each(
-      _producers.begin(), _producers.end(), 32, [](auto& it) {
+      _producers.begin(), _producers.end(), 32, [this](auto& it) {
           auto& producer = it.second;
-          return producer->shutdown_input().discard_result();
+          producer->shutdown_input();
+          _producer_state_manager.local().deregister_producer(
+            *producer, std::nullopt);
+          return ss::now();
       });
     _producers.clear();
 }
@@ -1077,10 +1079,14 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
         co_return errc::generic_tx_error;
     }
     auto producer = maybe_create_producer(bid.pid);
-    co_return co_await producer->run_with_lock([&](ssx::semaphore_units units) {
-        return do_sync_and_transactional_replicate(
-          producer, bid, std::move(rdr), std::move(units));
-    });
+    co_return co_await producer
+      ->run_with_lock([&](ssx::semaphore_units units) {
+          return do_sync_and_transactional_replicate(
+            producer, bid, std::move(rdr), std::move(units));
+      })
+      .finally([this, producer] {
+          _producer_state_manager.local().touch(*producer, std::nullopt);
+      });
 }
 
 ss::future<result<kafka_result>> rm_stm::do_sync_and_idempotent_replicate(
@@ -1195,15 +1201,19 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued) {
     auto producer = maybe_create_producer(bid.pid);
-    co_return co_await producer->run_with_lock([&](ssx::semaphore_units units) {
-        return do_sync_and_idempotent_replicate(
-          producer,
-          bid,
-          std::move(br),
-          opts,
-          std::move(enqueued),
-          std::move(units));
-    });
+    co_return co_await producer
+      ->run_with_lock([&](ssx::semaphore_units units) {
+          return do_sync_and_idempotent_replicate(
+            producer,
+            bid,
+            std::move(br),
+            opts,
+            std::move(enqueued),
+            std::move(units));
+      })
+      .finally([this, producer] {
+          _producer_state_manager.local().touch(*producer, std::nullopt);
+      });
 }
 
 ss::future<result<kafka_result>> rm_stm::replicate_msg(
@@ -1769,7 +1779,10 @@ void rm_stm::apply_data(
         const auto last_offset = header.last_offset();
         const auto last_kafka_offset = from_log_offset(header.last_offset());
         auto producer = maybe_create_producer(bid.pid);
-        producer->update(bid, last_kafka_offset);
+        auto needs_touch = producer->update(bid, last_kafka_offset);
+        if (needs_touch) {
+            _producer_state_manager.local().touch(*producer, std::nullopt);
+        }
 
         if (bid.is_transactional) {
             vlog(
@@ -1899,12 +1912,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             continue;
         }
         auto pid = entry._id;
-        _producers.emplace(
-          pid,
-          ss::make_lw_shared<producer_state>(
-            _producer_state_manager.local(),
-            [this, pid] { cleanup_producer_state(pid); },
-            std::move(entry)));
+        maybe_create_producer(pid);
     }
 
     abort_index last{.last = model::offset(-1)};
