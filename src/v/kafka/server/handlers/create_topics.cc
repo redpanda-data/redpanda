@@ -115,6 +115,18 @@ append_topic_configs(request_context& ctx, create_topics_response& response) {
     }
 }
 
+static void append_topic_properties(
+  request_context& ctx, create_topics_response& response) {
+    for (auto& ct_result : response.data.topics) {
+        auto cfg = ctx.metadata_cache().get_topic_cfg(
+          model::topic_namespace_view{model::kafka_namespace, ct_result.name});
+        if (cfg) {
+            ct_result.num_partitions = cfg->partition_count;
+            ct_result.replication_factor = cfg->replication_factor;
+        }
+    };
+}
+
 template<>
 ss::future<response_ptr> create_topics_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
@@ -260,6 +272,7 @@ ss::future<response_ptr> create_topics_handler::handle(
               std::vector<cluster::topic_result> c_res) mutable {
           // Append controller results to validation errors
           append_cluster_results(c_res, response.data.topics);
+          append_topic_properties(ctx, response);
           if (ctx.header().version >= api_version(5)) {
               append_topic_configs(ctx, response);
           }
