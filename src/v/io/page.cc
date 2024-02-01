@@ -21,6 +21,8 @@ uint64_t page::offset() const noexcept { return offset_; }
 
 uint64_t page::size() const noexcept { return size_; }
 
+seastar::temporary_buffer<char>& page::data() noexcept { return data_; }
+
 const seastar::temporary_buffer<char>& page::data() const noexcept {
     return data_;
 }

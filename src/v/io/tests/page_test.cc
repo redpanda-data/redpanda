@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #include "io/page.h"
+#include "io/tests/common.h"
 #include "test_utils/test.h"
 
 namespace io = experimental::io;
@@ -27,4 +28,23 @@ TEST(Page, NonEmpty) {
     EXPECT_EQ(p.offset(), 1);
     EXPECT_EQ(p.size(), size);
     EXPECT_EQ(p.data().size(), size);
+}
+
+TEST(Page, SetData) {
+    constexpr auto size = 10;
+
+    auto d0 = make_random_data(size).get();
+    io::page p(1, d0.share());
+
+    EXPECT_EQ(p.size(), size);
+    EXPECT_EQ(p.data().size(), size);
+    EXPECT_EQ(p.data(), d0);
+
+    auto d1 = make_random_data(size).get();
+    ASSERT_NE(d1, d0);
+    p.data() = d1.share();
+
+    EXPECT_EQ(p.size(), size);
+    EXPECT_EQ(p.data().size(), size);
+    EXPECT_EQ(p.data(), d1);
 }
