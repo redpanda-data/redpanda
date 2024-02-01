@@ -72,10 +72,11 @@ ss::future<> producer::stop() {
     /// triggered when the timeout below expires
     _ingest_as.request_abort();
 
-    /// partition::stop() will invoke send(), it is a last chance best effort
-    /// attempt for the current queued records to be sent.
+    /// produce_partition::drain() will invoke send(), it is a last chance best
+    /// effort attempt for the current queued records to be sent.
     co_await ssx::parallel_transform(
-      _partitions, [](partitions_t::value_type p) { return p.second->stop(); });
+      _partitions,
+      [](partitions_t::value_type p) { return p.second->maybe_drain(); });
 
     /// send() is wrapped by a gate, and can be aborted with the internal
     /// abort source (_as). This future triggers the abort source after the
@@ -105,6 +106,20 @@ ss::future<> producer::stop() {
     co_await _gate.close();
     exit.request_abort();
     co_await std::move(abort);
+    vlog(kclog.debug, "Waiting for inflight state of false");
+    /// Wait until the produce_partition has no inflight records. That is
+    /// because if in_flight is true, drain() and stop() will actually not call
+    /// consume -> send(). This may have been the case when maybe_drain() above
+    /// was called.
+    co_await ssx::parallel_transform(
+      _partitions,
+      [](partitions_t::value_type p) { return p.second->await_in_flight(); });
+    vlog(kclog.debug, "Calling produce_partition::stop()");
+    /// At this point in time there are no inflight requests, for any data that
+    /// remains in the buffers stop() will be guaranteed to call send() which
+    /// will return error responses to the initial caller
+    co_await ssx::parallel_transform(
+      _partitions, [](partitions_t::value_type p) { return p.second->stop(); });
     vlog(kclog.debug, "Producer stopped");
 }
 
