@@ -7,7 +7,7 @@ FLINK_VERSION=1.18.1
 FLINK_SCALA_VERSION=2.12
 FLINK_FILE=flink-${FLINK_VERSION}-bin-scala_${FLINK_SCALA_VERSION}.tgz
 # Instead of using main download link, use our s3. Alternative is to use archive.apache.org,
-# but it will ban frequent downloads after some time. 
+# but it will ban frequent downloads after some time.
 # This will prevent us from getting an HTTP:404 when new version will be introduced
 # old: FLINK_URL=https://downloads.apache.org/flink/flink-${FLINK_VERSION}/${FLINK_FILE}
 DEPS_BASEURL=https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies
