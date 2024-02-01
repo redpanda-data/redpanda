@@ -513,7 +513,6 @@ private:
           model::producer_identity,
           model::offset>
           estimated;
-        model::offset last_end_tx{-1};
 
         // depending on the inflight state we may use last_applied or
         // committed_index as LSO; the alternation between them may
