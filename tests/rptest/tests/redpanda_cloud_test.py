@@ -36,5 +36,10 @@ class RedpandaCloudTest(RedpandaTestBase):
         # for easy access but we should fix callers and remove this
         self.config_profile_name = self.redpanda.config_profile_name
 
+    def setup(self):
+        super().setup()
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy before start of test'
+
     def client(self):
         return self._client
