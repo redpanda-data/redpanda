@@ -2620,12 +2620,28 @@ class RedpandaService(Service):
             metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
             for family in metrics:
                 for sample in family.samples:
-                    if ns and sample.labels["namespace"] != ns:
+                    if sample.name != metric_name:
                         continue
-                    if topic and sample.labels["topic"] != topic:
-                        continue
-                    if sample.name == metric_name:
-                        count += int(sample.value)
+                    labels = sample.labels
+                    if ns:
+                        if "redpanda_namespace" in labels:
+                            if labels["redpanda_namespace"] != ns:
+                                continue
+                        elif "namespace" in labels:
+                            if labels["namespace"] != ns:
+                                continue
+                        else:
+                            assert False, f"Missing namespace label: {sample}"
+                    if topic:
+                        if "redpanda_topic" in labels:
+                            if labels["redpanda_topic"] != topic:
+                                continue
+                        elif "topic" in labels:
+                            if labels["topic"] != topic:
+                                continue
+                        else:
+                            assert False, f"Missing topic label: {sample}"
+                    count += int(sample.value)
         return count
 
     def _extract_samples(self, metrics, sample_pattern: str,
