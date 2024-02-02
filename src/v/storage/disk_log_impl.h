@@ -26,6 +26,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/io_priority_class.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -73,6 +74,28 @@ public:
     ss::future<> gc(gc_config) final;
 
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
+
+    /// Compute number of bytes between the two offset (including both offsets)
+    ///
+    /// The 'first' offset should be the first offset of the batch. The 'last'
+    /// should be the last offset of the batch. The offset range is inclusive.
+    ss::future<std::optional<offset_range_size_result_t>> offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::io_priority_class io_priority) override;
+
+    /// Find the offset range based on size requirements
+    ///
+    /// The 'first' offset should be the first offset of the batch. The 'target'
+    /// contains size requirements. The desired target size and smallest
+    /// acceptable size.
+    ss::future<std::optional<offset_range_size_result_t>> offset_range_size(
+      model::offset first,
+      offset_range_size_requirements_t target,
+      ss::io_priority_class io_priority) override;
+
+    /// Return true if the offset range contains compacted data
+    bool is_compacted(model::offset first, model::offset last) const override;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
@@ -171,6 +194,14 @@ private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
+
+    /// Compute file offset of the batch inside the segment
+    ss::future<size_t> get_file_offset(
+      ss::lw_shared_ptr<segment> s,
+      std::optional<segment_index::entry> index_entry,
+      model::offset target,
+      model::boundary_type boundary,
+      ss::io_priority_class priority);
 
     ss::future<model::record_batch_reader>
       make_unchecked_reader(log_reader_config);

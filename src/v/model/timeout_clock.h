@@ -35,4 +35,13 @@ time_from_now(model::timeout_clock::duration d) {
     return d < remaining ? now + d : model::no_timeout;
 }
 
+inline model::timeout_clock::duration
+time_until(model::timeout_clock::time_point deadline) {
+    const auto now = model::timeout_clock::now();
+    if (deadline < now) {
+        return model::timeout_clock::duration(0);
+    }
+    return deadline - now;
+}
+
 } // namespace model

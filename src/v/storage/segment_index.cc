@@ -10,6 +10,7 @@
 #include "storage/segment_index.h"
 
 #include "base/vassert.h"
+#include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
 #include "storage/index_state.h"
@@ -157,6 +158,43 @@ segment_index::find_nearest(model::timestamp t) {
     }
 
     return translate_index_entry(_state, *entry);
+}
+
+std::optional<segment_index::entry>
+segment_index::find_above_size_bytes(size_t distance) {
+    if (_state.empty()) {
+        return std::nullopt;
+    }
+    auto it = std::upper_bound(
+      std::begin(_state.position_index),
+      std::end(_state.position_index),
+      distance);
+
+    if (it == _state.position_index.end()) {
+        return std::nullopt;
+    }
+    int i = std::distance(_state.position_index.begin(), it);
+    return translate_index_entry(_state, _state.get_entry(i));
+}
+
+std::optional<segment_index::entry>
+segment_index::find_below_size_bytes(size_t distance) {
+    if (_state.empty()) {
+        return std::nullopt;
+    }
+    auto it = std::upper_bound(
+      std::begin(_state.position_index),
+      std::end(_state.position_index),
+      distance);
+
+    if (it != _state.position_index.begin()) {
+        it = std::prev(it);
+    } else {
+        return std::nullopt;
+    }
+
+    int i = std::distance(_state.position_index.begin(), it);
+    return translate_index_entry(_state, _state.get_entry(i));
 }
 
 std::optional<segment_index::entry>
