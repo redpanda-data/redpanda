@@ -42,8 +42,7 @@ const (
 // that use the key "$ref" can refer to another schema via URL. For more details
 // on references, see the following link:
 //
-//	https://docs.confluent.io/platform/current/schema-registry/serdes-develop/index.html#schema-references
-//	https://docs.confluent.io/platform/current/schema-registry/develop/api.html
+//	https://docs.redpanda.com/current/manage/schema-reg/schema-reg-api/#reference-a-schema
 type Reference struct {
 	Name    string
 	Subject string
