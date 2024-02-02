@@ -8,20 +8,13 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
 
-#include "bytes/iobuf.h"
-#include "json/document.h"
-#include "model/transform.h"
+#include "seastarx.h"
 
-#include <string>
+#include <seastar/util/log.hh>
 
-namespace transform::logging::testing {
-
-json::Document parse_json(iobuf resp);
-std::string get_message_body(iobuf);
-
-model::transform_name random_transform_name(size_t len = 12);
-
-} // namespace transform::logging::testing
+namespace transform::logging {
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+extern ss::logger tlg_log;
+} // namespace transform::logging

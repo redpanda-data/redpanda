@@ -211,6 +211,29 @@ configuration::configuration()
       },
       10_MiB,
       {.min = 1_MiB, .max = 128_MiB})
+  , data_transforms_logging_buffer_capacity_bytes(
+      *this,
+      "data_transforms_logging_buffer_capacity_bytes",
+      "Buffer capacity for transform logs, per shard. Buffer occupancy is "
+      "calculated as the total size of buffered (i.e. emitted but not yet "
+      "produced) log messages.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      100_KiB,
+      {.min = 100_KiB, .max = 2_MiB})
+  , data_transforms_logging_flush_interval_ms(
+      *this,
+      "data_transforms_logging_flush_interval_ms",
+      "Flush interval for transform logs. When a timer expires, pending logs "
+      "are collected and published to the transform_logs topic.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      500ms)
+  , data_transforms_logging_line_max_bytes(
+      *this,
+      "data_transforms_logging_line_max_bytes",
+      "Transform log lines will be truncate to this length. Truncation occurs "
+      "after any character escaping.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_KiB)
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",
