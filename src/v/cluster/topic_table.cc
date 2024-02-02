@@ -65,11 +65,12 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
       = cmd.value.cfg.properties.remote_topic_properties ? std::make_optional(
           cmd.value.cfg.properties.remote_topic_properties->remote_revision)
                                                          : std::nullopt;
+    auto assignments_size = cmd.value.assignments.size();
     auto md = topic_metadata_item{
       .metadata = topic_metadata(
         std::move(cmd.value), model::revision_id(offset()), remote_revision)};
     // calculate delta
-    md.partitions.reserve(cmd.value.assignments.size());
+    md.partitions.reserve(assignments_size);
     auto rev_id = model::revision_id{offset};
     for (auto& pas : md.get_assignments()) {
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.id);
