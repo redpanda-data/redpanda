@@ -9,7 +9,9 @@
 
 from collections import namedtuple
 import json
+import random
 import re
+import string
 import subprocess
 import time
 import itertools
@@ -404,13 +406,42 @@ class RawKCL(KCL):
 
     Callers should expect raw kafka responses json encoded with franz-go key naming scheme
     """
-    def raw_create_topics(self, version, topics):
+    def create_topics(self,
+                      version,
+                      topics: list[dict] = [],
+                      validate_only: bool = False):
+        """
+        Create some topics based on the provided dicts
+        Valid fields, which will be propagated into the request, are:
+          - 'name' - default 12 random ascii letters
+          - 'partition_count' - default -1
+          - 'replication_factor' - default -1
+        """
+        tps = []
+        for tp in topics:
+            tps.append(
+                KclCreateTopicsRequestTopic(
+                    tp.get('name',
+                           ''.join(random.choices(string.ascii_letters,
+                                                  k=12))),
+                    tp.get('partition_count', -1),
+                    tp.get('replication_factor', -1),
+                ))
+        try:
+            return json.loads(
+                self.raw_create_topics(version,
+                                       tps,
+                                       validate_only=validate_only))['Topics']
+        except:
+            return []
+
+    def raw_create_topics(self, version, topics, validate_only=False):
         assert version >= 0 and version <= 6, "version out of supported redpanda range for this API"
         create_topics_request = {
             'Version':
             version,
             'ValidateOnly':
-            False,
+            validate_only,
             'TimeoutMillis':
             60000,
             'Topics': [{
