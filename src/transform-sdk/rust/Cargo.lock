@@ -548,11 +548,19 @@ dependencies = [
  "quickcheck",
  "rand",
  "redpanda-transform-sdk-types",
+ "redpanda-transform-sdk-varint",
 ]
 
 [[package]]
 name = "redpanda-transform-sdk-types"
 version = "0.0.0-dev"
+
+[[package]]
+name = "redpanda-transform-sdk-varint"
+version = "0.0.0-dev"
+dependencies = [
+ "quickcheck",
+]
 
 [[package]]
 name = "regex"

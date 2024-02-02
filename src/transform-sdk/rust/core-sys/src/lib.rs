@@ -29,9 +29,6 @@ mod stub_abi;
 #[cfg(not(target_os = "wasi"))]
 use stub_abi as abi;
 mod serde;
-mod varint;
-
-extern crate redpanda_transform_sdk_types;
 
 use redpanda_transform_sdk_types::*;
 
