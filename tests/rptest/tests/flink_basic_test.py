@@ -8,12 +8,15 @@
 # by the Apache License, Version 2.0
 import os
 import csv
+import io
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.mark import matrix, ok_to_fail
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
 from rptest.e2e_tests.workload_manager import WorkloadManager
 from rptest.services.cluster import cluster
 from rptest.services.flink import FlinkService
@@ -28,7 +31,7 @@ class FlinkBasicTests(RedpandaTest):
         # Prepare FlinkService
         self.topic_name = "flink_workload_topic"
         self.topics = [TopicSpec(name=self.topic_name)]
-        self.flink = FlinkService(test_context, self.redpanda, self.topic)
+        self.flink = FlinkService(test_context)
         # Prepare client
         config = self.redpanda.security_config()
         user = config.get("sasl_plain_username")
@@ -38,6 +41,7 @@ class FlinkBasicTests(RedpandaTest):
                                       user=user,
                                       passwd=passwd,
                                       protocol=protocol)
+        self.rpk = RpkTool(self.redpanda)
         # Prepare Workloads
         self.workload_manager = WorkloadManager(self.logger)
 
@@ -173,6 +177,55 @@ class FlinkBasicTests(RedpandaTest):
             Test uses same workload with different modes to produce
             and consume/process given number of transactions
         """
+        def get_max_data_index(data_path, node):
+            # Max index and target column
+            index_column = 1
+            max_index = 0
+            for f in list_files(data_path, node):
+                # Read data into memory
+                csvdata = node.account.ssh_output(
+                    f"cat {os.path.join(data_path, f)}")
+                # Using StringsIO will eliminate file copy which proved to be unreliable
+                # Also, it will load data into memory only once along with csvreader
+                # processing file with csvreader will give most efficient memory
+                # usage. Only one row will present in memory at all times
+                # newline='' is critical, refer to: https://docs.python.org/3/library/csv.html
+                with io.StringIO(csvdata.decode(), newline='') as csvfile:
+                    c_reader = csv.reader(csvfile, delimiter=',')
+                    for row in c_reader:
+                        # Second parameter is the quick and dirty value type map
+                        values = self._serialize_csv_row(
+                            row, [int, int, int, str, int, str])
+                        if max_index < values[index_column]:
+                            max_index = values[index_column]
+            return max_index
+
+        # Load data output. There should be 1 partition file
+        # with offset at the env equals to _workload_config['count']
+        # Example filename:
+        #     /workloads/data/part-cfbe2720-7117-40fd-8c28-fca31a459ff8-0-0
+        # Data sample:
+        # ...
+        # 542,415,31,"2024-01-09 22:22:43.647",17,TiJJtOuzOkiOsGmws
+        # ...
+        def list_files(data_path, node):
+            files = []
+            try:
+                # Note that there is no need to check file name as tmp file will
+                # have filename started with '.part' and it will not be listed by
+                # bare 'ls -1' command
+                files = node.account.ssh_output(f"ls -1 {data_path}")
+                files = files.decode().splitlines()
+            except RemoteCommandError:
+                # Ignore ssh_output command errors
+                # as folder will not be existent just yet
+                pass
+            return files
+
+        # Tunables
+        random_words_dict_size = 64
+        batch_size = 64
+        total_events = 256
 
         # Start Flink
         self.flink.start()
@@ -180,20 +233,20 @@ class FlinkBasicTests(RedpandaTest):
         # Load python workload to target node
         # Hardcoded file
         # TODO: Add workload config management
-        _data_path = "/workloads/data"
+        data_path = "/workloads/data"
         # Currently, each INSERT operator will generate 1 subjob
         # So this config will generate 256 / 64 jobs
         _workload_config = {
             "log_level": "DEBUG",
             "brokers": self.redpanda.brokers(),
-            "data_path": "file://" + _data_path,
+            "data_path": "file://" + data_path,
             "producer_group": "flink_group",
             "consumer_group": "flink_group",
             "topic_name": self.topic_name,
             "mode": "produce",
-            "word_size": 64,
-            "batch_size": 32,
-            "count": 512
+            "word_size": random_words_dict_size,
+            "batch_size": batch_size,
+            "count": total_events
         }
 
         # Get workload
@@ -221,71 +274,44 @@ class FlinkBasicTests(RedpandaTest):
         assert len(_failed) == 0, \
             f"Flink reports failed consume job for transaction workload {_failed}"
 
-        # Load data output. There should be 1 partition file
-        # with offset at the env equals to _workload_config['count']
-        # Example filename:
-        #     /workloads/data/part-cfbe2720-7117-40fd-8c28-fca31a459ff8-0-0
-        # Data sample:
-        # ...
-        # 542,415,31,"2024-01-09 22:22:43.647",17,TiJJtOuzOkiOsGmws
-        # ...
-        def list_files(path):
-            files = []
-            try:
-                # Note that there is no need to check file name as tmp file will
-                # have filename started with '.part' and it will not be listed by
-                # bare 'ls -1' command
-                files = self.flink.node.account.ssh_output(
-                    f"ls -1 {_data_path}")
-                files = files.decode().splitlines()
-            except RemoteCommandError:
-                # Ignore ssh_output command errors
-                # as folder will not be existent just yet
-                pass
-            return files
-
-        # Wait for file, timeout 5 min (10 sec * 30 iterations)
-        self.logger.info("Waiting for consume workload data file")
-        wait_until(lambda: len(list_files(_data_path)) > 0,
-                   timeout_sec=300,
+        # Wait for file, timeout 10 min (20 sec * 30 iterations)
+        # This will make sure that consumer started working
+        self.logger.info("Waiting for consumer to start writing data")
+        wait_until(lambda: len(list_files(data_path, self.flink.node)) > 0,
+                   timeout_sec=600,
                    backoff_sec=10,
-                   err_msg="Flink transaction workload produced"
+                   err_msg="Flink transaction workload produced "
                    "no data files after 5 min")
 
-        # Load data file and parse it
-        # For most efficient way of processing data it would be more
-        # convenient to copy script to target node and run it there
-        # But this is basic test, and copying file locally is a more
-        # simple approach in this case.
+        # make sure that there is no active jobs with 20 min timeout.
+        # This big value is for safety due to overloads on docker env at
+        # CDT run. Under the hood, 'flink.wait_node' which is used
+        # by 'service.wait' has 'detect_idle_jobs' bool var that will check if
+        # job has been completely idle for 30 sec and skip it if so.
+        # To access that var, use 'wait_node' directly instead
+        self.flink.wait(timeout_sec=1200)
 
-        # Max index and target column
-        index_column = 1
-        max_index = 0
-        for f in list_files(_data_path):
-            # Copy file locally
-            tmpfile = os.path.join("/tmp", "tmpcsvdata")
-            filepath = os.path.join(_data_path, f)
-            self.flink.node.account.copy_from(filepath, tmpfile)
+        # Since there is a possibility that after job is finished
+        # data is still be written from buffers, make sure that
+        # desired index is reached. I.e. index in data files
+        # has to reach target_index
+        target_index = total_events - 1
+        self.logger.info("Waiting for consumer to emit message "
+                         f"with index {target_index}")
+        wait_until(lambda: get_max_data_index(data_path, self.flink.node) ==
+                   target_index,
+                   timeout_sec=300,
+                   backoff_sec=60,
+                   err_msg="Flink transaction workload failed to consume "
+                   f"{total_events} messages after 5 min")
 
-            # processing file with csvreader will give most efficient memory
-            # usage. Only one row will present in memory at all times
-            # newline='' is critical, refer to: https://docs.python.org/3/library/csv.html
-            with open(tmpfile, newline='') as csvfile:
-                c_reader = csv.reader(csvfile, delimiter=',')
-                for row in c_reader:
-                    # Second parameter is the quick and dirty value type map
-                    values = self._serialize_csv_row(
-                        row, [int, int, int, str, int, str])
-                    if max_index < values[index_column]:
-                        max_index = values[index_column]
-            # Cleanup
-            os.remove(tmpfile)
-
+        max_index = get_max_data_index(data_path, self.flink.node)
         # Stop flink
         self.flink.stop()
 
-        # 'count - 1' coz index starts with '0'
-        target_index = _workload_config['count'] - 1
+        # Assert the fail, this is for illustrative purposes and
+        # probably will always pass since wait_until will fail
+        # if max_index would be wrong
         assert max_index == target_index, \
             f"Flink workload consume max offset is incorrect: {max_index} " \
             f"(should be: {target_index})"

@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -27,6 +28,10 @@
 #include <seastar/util/noncopyable_function.hh>
 
 namespace transform {
+
+struct list_committed_offsets_options {
+    bool show_unknown = false;
+};
 
 /**
  * The transform service is responsible for intersecting the current state of
@@ -71,6 +76,14 @@ public:
      * List all transforms from the entire cluster.
      */
     ss::future<model::cluster_transform_report> list_transforms();
+
+    /**
+     * List the committed offsets for each transform/partition.
+     */
+    ss::future<result<
+      ss::chunked_fifo<model::transform_committed_offset>,
+      cluster::errc>>
+      list_committed_offsets(list_committed_offsets_options);
 
     /**
      * Create a reporter of the transform subsystem.

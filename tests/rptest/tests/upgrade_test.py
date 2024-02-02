@@ -506,7 +506,9 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                 'cloud_storage_manifest_max_upload_interval_sec':
                 1,
                 'cloud_storage_spillover_manifest_max_segments':
-                2
+                2,
+                'cloud_storage_spillover_manifest_size':
+                None,
             },
                                        node=new_version_node)
 

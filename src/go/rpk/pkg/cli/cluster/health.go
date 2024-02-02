@@ -46,6 +46,9 @@ following conditions are met:
 			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
+			// --exit-when-healthy only makes sense with --watch, so we enable
+			// watch if --exit-when-healthy is provided.
+			watch = exit || watch
 			var lastOverview adminapi.ClusterHealthOverview
 			for {
 				ret, err := cl.GetHealthOverview(cmd.Context())
@@ -65,7 +68,7 @@ following conditions are met:
 	p.InstallSASLFlags(cmd)
 
 	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Blocks and writes out all cluster health changes")
-	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "When used with watch, exits after cluster is back in healthy state")
+	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "Exits after cluster is back in healthy state")
 	return cmd
 }
 

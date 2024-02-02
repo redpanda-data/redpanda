@@ -132,11 +132,15 @@ PERF_TEST_F(fetch_plan_fixture, test_fetch_plan) {
 
     BOOST_TEST_CHECKPOINT("HERE");
 
+    kafka::request_header header{
+      .key = kafka::fetch_handler::api::key,
+      .version = kafka::fetch_handler::max_supported};
+
     // use this initial request to populate the fetch session
     // in the session cache
     kafka::fetch_session_id sess_id;
     {
-        auto rctx = make_request_context(fetch_req, conn);
+        auto rctx = make_request_context(fetch_req, header, conn);
         // set up a fetch session
         auto ctx = rctx.fetch_sessions().maybe_get_session(fetch_req);
         BOOST_REQUIRE_EQUAL(ctx.has_error(), false);
@@ -157,7 +161,7 @@ PERF_TEST_F(fetch_plan_fixture, test_fetch_plan) {
     fetch_req.data.session_epoch = 1;
     fetch_req.data.topics.clear();
 
-    auto rctx = make_request_context(fetch_req);
+    auto rctx = make_request_context(fetch_req, header);
     BOOST_REQUIRE_EQUAL(rctx.fetch_sessions().size(), 1);
 
     // add all partitions to fetch metadata

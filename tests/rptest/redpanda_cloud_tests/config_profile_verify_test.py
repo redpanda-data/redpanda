@@ -20,15 +20,15 @@ from rptest.clients.installpack import InstallPackClient
 import subprocess
 import json
 
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 
-class ConfigProfileVerifyTest(Test):
+
+class ConfigProfileVerifyTest(RedpandaCloudTest):
     """
     Verify cluster infra/config match config profile used to launch - only applies to cloudv2
     """
     def __init__(self, test_context):
-        super(ConfigProfileVerifyTest,
-              self).__init__(test_context=test_context)
-        self.redpanda = make_redpanda_service(test_context, 3)
+        super().__init__(test_context=test_context)
         self._ctx = test_context
         self._ipClient = InstallPackClient(
             self.redpanda._cloud_cluster.config.install_pack_url_template,
@@ -36,13 +36,14 @@ class ConfigProfileVerifyTest(Test):
             self.redpanda._cloud_cluster.config.install_pack_auth)
 
     def setUp(self):
-        self.redpanda.start()
-        self._ip = self._ipClient.getInstallPack(self.redpanda.get_version(0))
-        self._clusterId = self.redpanda._cloud_cluster.cluster_id
+        super().setUp()
+        cloud_cluster = self.redpanda._cloud_cluster
+        install_pack_version = cloud_cluster.get_install_pack_version()
+        self._ip = self._ipClient.getInstallPack(install_pack_version)
+        self._clusterId = cloud_cluster.cluster_id
         self._configProfile = self._ip['config_profiles'][
-            self.redpanda._cloud_cluster.config.config_profile_name]
+            cloud_cluster.config.config_profile_name]
 
-    @cluster(num_nodes=3, check_allowed_error_logs=False)
     def test_config_profile_verify(self):
         self.logger.debug("Here we go")
 
@@ -55,7 +56,7 @@ class ConfigProfileVerifyTest(Test):
         self._check_rp_config()
 
     def _check_rp_config(self):
-        confRes = self.redpanda._kubectl.exec(
+        confRes = self.redpanda.kubectl.exec(
             "rpk redpanda admin config print --host 0")
         clusterConfig = json.loads(confRes)
         self.logger.debug(
@@ -71,7 +72,7 @@ class ConfigProfileVerifyTest(Test):
                 assert False
 
     def _check_gcp_nodes(self):
-        cmd = self.redpanda._kubectl._ssh_prefix() + [
+        cmd = self.redpanda.kubectl._ssh_prefix() + [
             'gcloud', 'compute', 'instances', 'list', '--filter',
             '"tags.items=redpanda-node tags.items=redpanda-{}"'.format(
                 self._clusterId), '--format="json(name,machineType,disks)"'
@@ -102,7 +103,7 @@ class ConfigProfileVerifyTest(Test):
             assert total == self._configProfile['storage_size_bytes']
 
     def _check_aws_nodes(self):
-        cmd = self.redpanda._kubectl._ssh_prefix() + [
+        cmd = self.redpanda.kubectl._ssh_prefix() + [
             'aws', 'ec2', 'describe-instances',
             '--filters="Name=tag:Name, Values=redpanda-{}-rp"'.format(
                 self._clusterId),

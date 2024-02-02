@@ -42,6 +42,9 @@ using transform_id = named_type<int64_t, struct transform_id_tag>;
  */
 using transform_name = named_type<ss::sstring, struct transform_name_tag>;
 
+using transform_name_view
+  = named_type<std::string_view, struct transform_name_view_tag>;
+
 /**
  * Metadata for a WebAssembly powered data transforms.
  */
@@ -113,6 +116,18 @@ struct transform_offsets_value
     operator<<(std::ostream&, const transform_offsets_value&);
 
     auto serde_fields() { return std::tie(offset); }
+};
+
+using transform_offsets_map
+  = absl::btree_map<transform_offsets_key, transform_offsets_value>;
+
+/**
+ * A flattened entry of transorm_offsets_map to return to the admin API.
+ */
+struct transform_committed_offset {
+    transform_name name;
+    partition_id partition;
+    kafka::offset offset;
 };
 
 inline const model::topic transform_offsets_topic("transform_offsets");
@@ -229,10 +244,15 @@ public:
     static std::optional<transformed_data> create_validated(iobuf);
 
     /**
+     * Create a transformed record from a record, generally used in testing.
+     */
+    static transformed_data from_record(record);
+
+    /**
      * Create a batch from transformed_data.
      */
-    static model::record_batch
-      make_batch(model::timestamp, ss::chunked_fifo<transformed_data>);
+    static record_batch
+      make_batch(timestamp, ss::chunked_fifo<transformed_data>);
 
     /**
      * Generate a serialized record from the following metadata.

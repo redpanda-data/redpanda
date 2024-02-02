@@ -74,6 +74,8 @@ Tinygo - By default tinygo are release builds (-opt=2) for maximum performance.
 					// We want LLVM to use all it's tricks to
 					// make our code fast.
 					"-opt", "2",
+					// Enable SIMD acceleration!
+					"-llvm-features", "+simd128",
 					// Print out an error before aborting, this
 					// greatly aids debugging.
 					"-panic", "print",
@@ -126,6 +128,8 @@ func buildRust(ctx context.Context, fs afero.Fs, cfg project.Config, extraArgs [
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
+	// Enable SIMD acceleration
+	cmd.Env = append(os.Environ(), "RUSTFLAGS=-Ctarget-feature=+simd128")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build failed %v", err)
 	}

@@ -162,6 +162,7 @@
 using namespace std::chrono_literals;
 
 using admin::apply_validator;
+using admin::get_boolean_query_param;
 using admin::lw_shared_container;
 
 ss::logger adminlog{"admin_api_server"};
@@ -445,22 +446,6 @@ admin_server::parse_json_body(ss::http::request* req) {
 }
 
 namespace {
-
-/**
- * Helper for requests with boolean URL query parameters that should
- * be treated as false if absent, or true if "true" (case insensitive) or "1"
- */
-bool get_boolean_query_param(
-  const ss::http::request& req, std::string_view name) {
-    auto key = ss::sstring(name);
-    if (!req.query_parameters.contains(key)) {
-        return false;
-    }
-
-    const ss::sstring& str_param = req.query_parameters.at(key);
-    return ss::internal::case_insensitive_cmp()(str_param, "true")
-           || str_param == "1";
-}
 
 /**
  * Helper for requests with decimal_integer URL query parameters.
@@ -913,6 +898,7 @@ fill_maintenance_status(const cluster::broker_state& b_state) {
 ss::future<std::vector<ss::httpd::broker_json::broker>>
 get_brokers(cluster::controller* const controller) {
     cluster::node_report_filter filter;
+    filter.include_partitions = cluster::include_partitions_info::no;
 
     return controller->get_health_monitor()
       .local()

@@ -395,7 +395,8 @@ void partition_manager::check_partitions_shutdown_state() {
     const auto now = ss::lowres_clock::now();
     for (auto& state : _partitions_shutting_down) {
         if (state.last_update_timestamp < now - _partition_shutdown_timeout()) {
-            clusterlog.error(
+            vlog(
+              clusterlog.error,
               "partition {} shutdown takes longer than expected, current "
               "shutdown stage: {} time since last update: {} seconds",
               state.partition->ntp(),

@@ -17,6 +17,8 @@
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
+#include "model/transform.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "random/generators.h"
 #include "storage/parser_utils.h"
@@ -26,6 +28,7 @@
 #include "wasm/tests/wasm_logger.h"
 #include "wasm/wasmtime.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/util/file.hh>
 
 #include <fmt/chrono.h>
@@ -193,7 +196,17 @@ void WasmTestFixture::load_wasm(const std::string& path) {
 }
 
 model::record_batch WasmTestFixture::transform(const model::record_batch& b) {
-    return _engine->transform(b.copy(), _probe.get()).get();
+    ss::chunked_fifo<model::transformed_data> transformed;
+    _engine
+      ->transform(
+        b.copy(),
+        _probe.get(),
+        [&transformed](model::transformed_data data) {
+            transformed.push_back(std::move(data));
+        })
+      .get();
+    return model::transformed_data::make_batch(
+      model::timestamp::now(), std::move(transformed));
 }
 model::record_batch WasmTestFixture::make_tiny_batch() {
     return model::test::make_random_batch(model::test::record_batch_spec{

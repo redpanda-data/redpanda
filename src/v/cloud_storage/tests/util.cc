@@ -609,7 +609,8 @@ partition_manifest hydrate_manifest(
     static ss::abort_source never_abort;
 
     partition_manifest m(manifest_ntp, manifest_revision);
-    retry_chain_node rtc(never_abort, 30s, 200ms);
+    ss::lowres_clock::update();
+    retry_chain_node rtc(never_abort, 300s, 200ms);
     auto [res, _] = api.try_download_partition_manifest(bucket, m, rtc).get();
     BOOST_REQUIRE(res == cloud_storage::download_result::success);
     return m;

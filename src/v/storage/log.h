@@ -126,6 +126,43 @@ public:
     virtual size_t size_bytes() const = 0;
     // Byte size of the log for all segments after offset 'o'
     virtual uint64_t size_bytes_after_offset(model::offset o) const = 0;
+
+    struct offset_range_size_result_t {
+        size_t on_disk_size;
+        model::offset last_offset;
+    };
+
+    struct offset_range_size_requirements_t {
+        size_t target_size;
+        size_t min_size;
+    };
+
+    /// Compute number of bytes between the two offset (including both offsets)
+    ///
+    /// The 'first' offset should be the first offset of the batch. The 'last'
+    /// should be the last offset of the batch. The offset range is inclusive.
+    virtual ss::future<std::optional<offset_range_size_result_t>>
+    offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::io_priority_class io_priority)
+      = 0;
+
+    /// Find the offset range based on size requirements
+    ///
+    /// The 'first' offset should be the first offset of the batch. The 'target'
+    /// contains size requirements. The desired target size and smallest
+    /// acceptable size.
+    virtual ss::future<std::optional<offset_range_size_result_t>>
+    offset_range_size(
+      model::offset first,
+      offset_range_size_requirements_t target,
+      ss::io_priority_class io_priority)
+      = 0;
+
+    virtual bool is_compacted(model::offset first, model::offset last) const
+      = 0;
+
     virtual ss::future<>
       update_configuration(ntp_config::default_overrides) = 0;
 
@@ -145,10 +182,10 @@ public:
     virtual probe& get_probe() = 0;
 
     /*
-     * estimate amount of data beyond local retention. zero will be returned in
+     * estimate amount of data safely reclaimable. zero will be returned in
      * cases where this is not applicable, such as the log not being TS-enabled.
      */
-    virtual size_t reclaimable_local_size_bytes() const = 0;
+    virtual size_t reclaimable_size_bytes() const = 0;
     /**
      * Returns new log start offset for given retention settings.
      */

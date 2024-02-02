@@ -27,13 +27,119 @@ use std::time::SystemTime;
 #[derive(Debug)]
 pub struct WriteEvent<'a> {
     /// The record for which the event was generated for.
-    pub record: BorrowedRecord<'a>,
+    pub record: WrittenRecord<'a>,
 }
 
-/// A writer trait for output transformed records to the destination topic.
-pub trait RecordWriter {
+/// A written [`Record`] within Redpanda.
+///
+/// A [`WrittenRecord`] is handed to `on_record_written` event handlers as the record that Redpanda
+/// wrote. The record contains a key value pair with some headers, along with the record's
+/// timestamp.
+#[derive(Debug)]
+pub struct WrittenRecord<'a> {
+    record: BorrowedRecord<'a>,
+    timestamp: SystemTime,
+}
+
+impl<'a> WrittenRecord<'a> {
+    /// Create a new record without any copies.
+    ///
+    /// NOTE: This method is useful for tests to mock out custom events to your transform function.
+    pub fn from_record(record: impl Into<BorrowedRecord<'a>>, timestamp: SystemTime) -> Self {
+        let record = record.into();
+        Self { record, timestamp }
+    }
+
+    /// Create a new record without any copies.
+    ///
+    /// NOTE: This method is useful for tests to mock out custom events to your transform function.
+    pub fn new(key: Option<&'a [u8]>, value: Option<&'a [u8]>, timestamp: SystemTime) -> Self {
+        Self {
+            record: BorrowedRecord::new(key, value),
+            timestamp,
+        }
+    }
+
+    /// Create a new record without any copies.
+    ///
+    /// NOTE: This method is useful for tests to mock out custom events to your transform function.
+    pub fn new_with_headers(
+        key: Option<&'a [u8]>,
+        value: Option<&'a [u8]>,
+        timestamp: SystemTime,
+        headers: Vec<BorrowedHeader<'a>>,
+    ) -> Self {
+        Self {
+            record: BorrowedRecord::new_with_headers(key, value, headers),
+            timestamp,
+        }
+    }
+
+    /// Returns the record's key or `None` if there is no key.
+    pub fn key(&self) -> Option<&'a [u8]> {
+        self.record.key()
+    }
+
+    /// Returns the record's value or `None` if there is no value.
+    pub fn value(&self) -> Option<&'a [u8]> {
+        self.record.value()
+    }
+
+    /// Returns the record's timestamp.
+    ///
+    /// NOTE: Record timestamps in Redpanda have millisecond resolution.
+    pub fn timestamp(&self) -> SystemTime {
+        self.timestamp
+    }
+
+    /// Return the headers for this record.
+    pub fn headers(&self) -> &[BorrowedHeader<'a>] {
+        self.record.headers()
+    }
+}
+
+impl<'a> AsRef<BorrowedRecord<'a>> for WrittenRecord<'a> {
+    fn as_ref(&self) -> &BorrowedRecord<'a> {
+        &self.record
+    }
+}
+
+impl<'a> From<WrittenRecord<'a>> for BorrowedRecord<'a> {
+    fn from(r: WrittenRecord<'a>) -> Self {
+        r.record
+    }
+}
+
+impl<'a> From<&'a WrittenRecord<'a>> for BorrowedRecord<'a> {
+    fn from(r: &'a WrittenRecord) -> Self {
+        r.record.clone()
+    }
+}
+
+/// An internal trait that can receive a stream of records and output them a destination topic.
+///
+/// As a user of this framework you should not need to implement this, unless you're writing a mock
+/// implementation for testing.
+pub trait RecordSink {
     /// Write a record to the output topic returning any errors.
-    fn write(&mut self, r: Record) -> Result<(), WriteError>;
+    fn write(&mut self, r: BorrowedRecord<'_>) -> Result<(), WriteError>;
+}
+
+/// A struct that writes transformed records to the output topic..
+pub struct RecordWriter<'a> {
+    sink: &'a mut dyn RecordSink,
+}
+
+impl<'a> RecordWriter<'a> {
+    // Creates a new [`RecordWriter`] using the specified `sink`.
+    pub fn new(sink: &'a mut dyn RecordSink) -> Self {
+        Self { sink }
+    }
+
+    /// Write a record to the output topic returning any errors.
+    pub fn write<'b>(&mut self, r: impl Into<BorrowedRecord<'b>>) -> Result<(), WriteError> {
+        self.sink.write(r.into())
+    }
 }
 
 /// An error that can occur when writing records to the output topic.
@@ -55,7 +161,7 @@ impl std::fmt::Display for WriteError {
 impl std::error::Error for WriteError {}
 
 /// A zero-copy [`BorrowedRecord`] header.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BorrowedHeader<'a> {
     key: &'a [u8],
     value: Option<&'a [u8]>,
@@ -83,44 +189,39 @@ impl<'a> BorrowedHeader<'a> {
     }
 }
 
+impl<'a> From<&'a BorrowedHeader<'a>> for BorrowedHeader<'a> {
+    fn from(r: &'a BorrowedHeader) -> Self {
+        r.clone()
+    }
+}
+
 /// A zero-copy representation of a [`Record`] within Redpanda.
-///
-/// A [`BorrowedRecord`] is handed to `on_record_written` event handlers as the record that Redpanda
-/// wrote.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BorrowedRecord<'a> {
     key: Option<&'a [u8]>,
     value: Option<&'a [u8]>,
-    timestamp: SystemTime,
     headers: Vec<BorrowedHeader<'a>>,
 }
 
 impl<'a> BorrowedRecord<'a> {
     /// Create a new record without any copies.
-    ///
-    /// NOTE: This method is useful for tests to mock out custom events to your transform function.
-    pub fn new(key: Option<&'a [u8]>, value: Option<&'a [u8]>, timestamp: SystemTime) -> Self {
+    pub fn new(key: Option<&'a [u8]>, value: Option<&'a [u8]>) -> Self {
         Self {
             key,
             value,
-            timestamp,
             headers: Vec::new(),
         }
     }
 
     /// Create a new record without any copies.
-    ///
-    /// NOTE: This method is useful for tests to mock out custom events to your transform function.
     pub fn new_with_headers(
         key: Option<&'a [u8]>,
         value: Option<&'a [u8]>,
-        timestamp: SystemTime,
         headers: Vec<BorrowedHeader<'a>>,
     ) -> Self {
         Self {
             key,
             value,
-            timestamp,
             headers,
         }
     }
@@ -135,16 +236,15 @@ impl<'a> BorrowedRecord<'a> {
         self.value
     }
 
-    /// Returns the record's timestamp.
-    ///
-    /// NOTE: Record timestamps in Redpanda have millisecond resolution.
-    pub fn timestamp(&self) -> SystemTime {
-        self.timestamp
-    }
-
     /// Return the headers for this record.
     pub fn headers(&self) -> &[BorrowedHeader<'a>] {
         &self.headers
+    }
+}
+
+impl<'a> From<&'a BorrowedRecord<'a>> for BorrowedRecord<'a> {
+    fn from(r: &'a BorrowedRecord) -> Self {
+        r.clone()
     }
 }
 
@@ -182,6 +282,12 @@ impl RecordHeader {
     /// Sets the value for this header.
     pub fn set_value(&mut self, v: Vec<u8>) {
         self.value = Some(v);
+    }
+}
+
+impl<'a> From<&'a RecordHeader> for BorrowedHeader<'a> {
+    fn from(header: &'a RecordHeader) -> Self {
+        Self::new(header.key(), header.value())
     }
 }
 
@@ -255,7 +361,13 @@ impl Record {
     }
 
     /// Returns a collection of headers for this record.
-    pub fn headers(&self) -> &[RecordHeader] {
-        &self.headers[..]
+    pub fn headers(&self) -> impl ExactSizeIterator<Item = BorrowedHeader> {
+        self.headers.iter().map(|h| h.into())
+    }
+}
+
+impl<'a> From<&'a Record> for BorrowedRecord<'a> {
+    fn from(record: &'a Record) -> Self {
+        Self::new_with_headers(record.key(), record.value(), record.headers().collect())
     }
 }

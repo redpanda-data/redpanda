@@ -51,7 +51,10 @@
 #include <iterator>
 #include <numeric>
 #include <optional>
+#include <stdexcept>
 #include <vector>
+
+static ss::logger e2e_test_log("storage_e2e_test");
 
 void validate_offsets(
   model::offset base,
@@ -3658,3 +3661,967 @@ FIXTURE_TEST(test_skipping_compaction_below_start_offset, log_builder_fixture) {
 
     b.stop().get();
 }
+
+struct batch_summary {
+    model::offset base;
+    model::offset last;
+    size_t batch_size;
+};
+struct batch_summary_accumulator {
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        size_t sz = summaries->empty() ? 0 : acc_size->back();
+        batch_summary summary{
+          .base = b.base_offset(),
+          .last = b.last_offset(),
+          .batch_size = b.data().size_bytes()
+                        + model::packed_record_batch_header_size,
+        };
+        summaries->push_back(summary);
+        acc_size->push_back(sz + summary.batch_size);
+        prev_size->push_back(sz);
+        co_return ss::stop_iteration::no;
+    }
+    bool end_of_stream() const { return false; }
+
+    std::vector<batch_summary>* summaries;
+    std::vector<size_t>* acc_size;
+    std::vector<size_t>* prev_size;
+};
+
+struct batch_size_accumulator {
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        auto batch_size = b.data().size_bytes()
+                          + model::packed_record_batch_header_size;
+        *size_bytes += batch_size;
+        co_return ss::stop_iteration::no;
+    }
+    bool end_of_stream() const { return false; }
+    size_t* size_bytes;
+};
+
+FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
+#ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    size_t num_segments = 300;
+#else
+    size_t num_test_cases = 500;
+    size_t num_segments = 30;
+#endif
+    // The test generates 300 segments with random data and the record batch map
+    // for it. It generates parameters for the method randomly, invokes the
+    // method and validates the result using the batch map. It also checks some
+    // corner cases at the end of the test (out of range access, etc).
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (int i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          custom_ts_batch_generator(model::timestamp::now()));
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll(ss::default_priority_class()).get();
+    }
+
+    std::vector<batch_summary> summaries;
+    std::vector<size_t> acc_size;
+    std::vector<size_t> prev_size;
+
+    storage::log_reader_config reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto reader = log->make_reader(reader_cfg).get();
+
+    batch_summary_accumulator acc{
+      .summaries = &summaries,
+      .acc_size = &acc_size,
+      .prev_size = &prev_size,
+    };
+    std::move(reader).consume(acc, model::no_timeout).get();
+
+    for (size_t i = 0; i < num_test_cases; i++) {
+        auto ix_base = model::test::get_int((size_t)0, summaries.size() - 1);
+        auto ix_last = model::test::get_int(ix_base, summaries.size() - 1);
+        auto base = summaries[ix_base].base;
+        auto last = summaries[ix_last].last;
+
+        auto expected_size = acc_size[ix_last] - prev_size[ix_base];
+        auto result
+          = log->offset_range_size(base, last, ss::default_priority_class())
+              .get();
+
+        BOOST_REQUIRE(result.has_value());
+
+        vlog(
+          e2e_test_log.debug,
+          "base: {}, last: {}, expected size: {}, actual size: {}",
+          base,
+          last,
+          expected_size,
+          result->on_disk_size);
+
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+        BOOST_REQUIRE_EQUAL(last, result->last_offset);
+
+        // Validate using the segment reader
+        size_t consumed_size = 0;
+        storage::log_reader_config reader_cfg(
+          base, result->last_offset, ss::default_priority_class());
+        reader_cfg.skip_readers_cache = true;
+        reader_cfg.skip_batch_cache = true;
+        auto log_rdr = log->make_reader(std::move(reader_cfg)).get();
+        batch_size_accumulator size_acc{
+          .size_bytes = &consumed_size,
+        };
+        std::move(log_rdr).consume(size_acc, model::no_timeout).get();
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+    }
+
+    auto new_start_offset = model::next_offset(first_segment_last_offset);
+    log
+      ->truncate_prefix(storage::truncate_prefix_config(
+        new_start_offset, ss::default_priority_class()))
+      .get();
+
+    auto lstat = log->offsets();
+    BOOST_REQUIRE_EQUAL(lstat.start_offset, new_start_offset);
+
+    // Check that out of range access triggers exception.
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          model::offset(0),
+          model::next_offset(new_start_offset),
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          model::next_offset(new_start_offset),
+          model::next_offset(lstat.committed_offset),
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+};
+
+FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
+#ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    size_t num_segments = 300;
+#else
+    size_t num_test_cases = 500;
+    size_t num_segments = 30;
+#endif
+    // This test generates 300 segments and creates a record batch map.
+    // Then it runs size-based offset_range_size method overload with
+    // randomly generated parameters 5000 times. The record batch map
+    // is used to find expected offset range size.
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (int i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          custom_ts_batch_generator(model::timestamp::now()));
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll(ss::default_priority_class()).get();
+    }
+
+    std::vector<batch_summary> summaries;
+    std::vector<size_t> acc_size;
+    std::vector<size_t> prev_size;
+
+    storage::log_reader_config reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto reader = log->make_reader(reader_cfg).get();
+
+    batch_summary_accumulator acc{
+      .summaries = &summaries,
+      .acc_size = &acc_size,
+      .prev_size = &prev_size,
+    };
+    std::move(reader).consume(acc, model::no_timeout).get();
+
+    for (size_t i = 0; i < num_test_cases; i++) {
+        // - pick 'base' randomly
+        // - pick target upload size randomly
+        // - do the query
+        // - use the offset field of the result to compute
+        //   the expected upload size
+        // - compare it to on_disk_size field of the result
+        auto base_ix = model::test::get_int((size_t)0, summaries.size() - 1);
+        auto base = summaries[base_ix].base;
+        auto max_size = acc_size.back() - prev_size[base_ix];
+        auto min_size = storage::segment_index::default_data_buffer_step;
+        auto target_size = model::test::get_int(min_size, max_size);
+        auto result = log
+                        ->offset_range_size(
+                          base,
+                          storage::log::offset_range_size_requirements_t{
+                            .target_size = target_size,
+                            .min_size = 0,
+                          },
+                          ss::default_priority_class())
+                        .get();
+
+        BOOST_REQUIRE(result.has_value());
+        auto last_offset = result->last_offset;
+        size_t result_ix = 0;
+        for (auto s : summaries) {
+            if (s.last == last_offset) {
+                break;
+            }
+            result_ix++;
+        }
+        auto expected_size = acc_size[result_ix] - prev_size[base_ix];
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+
+        // Validate using the segment reader
+        size_t consumed_size = 0;
+        storage::log_reader_config reader_cfg(
+          base, result->last_offset, ss::default_priority_class());
+        reader_cfg.skip_readers_cache = true;
+        reader_cfg.skip_batch_cache = true;
+        auto log_rdr = log->make_reader(std::move(reader_cfg)).get();
+        batch_size_accumulator size_acc{
+          .size_bytes = &consumed_size,
+        };
+        std::move(log_rdr).consume(size_acc, model::no_timeout).get();
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+    }
+
+    auto new_start_offset = model::next_offset(first_segment_last_offset);
+    log
+      ->truncate_prefix(storage::truncate_prefix_config(
+        new_start_offset, ss::default_priority_class()))
+      .get();
+
+    auto lstat = log->offsets();
+    BOOST_REQUIRE_EQUAL(lstat.start_offset, new_start_offset);
+
+    // Check that out of range access triggers exception.
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          model::offset(0),
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 1,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+
+    // Query committed offset of the last batch, expect
+    // no result.
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          summaries.back().last,
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 0,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+
+    // Query offset out of range to trigger the exception.
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          model::next_offset(summaries.back().last),
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 0,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+
+    // Check that the last batch can be measured independently
+    auto res = log
+                 ->offset_range_size(
+                   summaries.back().base,
+                   storage::log::offset_range_size_requirements_t{
+                     .target_size = 0x10000,
+                     .min_size = 0,
+                   },
+                   ss::default_priority_class())
+                 .get();
+
+    // Only one batch is returned
+    BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
+    BOOST_REQUIRE_EQUAL(res->on_disk_size, acc_size.back() - prev_size.back());
+
+    // Check that we can measure the size of the log tail. This is needed for
+    // timed uploads.
+    size_t tail_length = 5;
+
+    for (size_t i = 0; i < tail_length; i++) {
+        auto ix_batch = summaries.size() - 1 - i;
+        res = log
+                ->offset_range_size(
+                  summaries.at(ix_batch).base,
+                  storage::log::offset_range_size_requirements_t{
+                    .target_size = 0x10000,
+                    .min_size = 0,
+                  },
+                  ss::default_priority_class())
+                .get();
+
+        BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
+        BOOST_REQUIRE_EQUAL(
+          res->on_disk_size, acc_size.back() - prev_size.at(ix_batch));
+    }
+
+    // Check that the min_size is respected
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          summaries.back().base,
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = summaries.back().batch_size + 1,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+};
+
+FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
+#ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    size_t num_segments = 300;
+#else
+    size_t num_test_cases = 500;
+    size_t num_segments = 30;
+#endif
+    // This test generates 300 segments and creates a record batch map.
+    // Then it runs compaction and creates a second record batch map. Then it
+    // uses offset_range_size method to fetch segments of various sizes. The
+    // parameters for the method are picked up randomly from the pre-compaction
+    // map. The expected result (size of the offset range after compaction) is
+    // calculated using post-compaction batch map. Test checks various corner
+    // cases at the end.
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("kafka", "test-topic", 0);
+
+    storage::ntp_config::default_overrides overrides{
+      .cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction,
+    };
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (int i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log, 10, model::term_id(i), key_limited_random_batch_generator());
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll(ss::default_priority_class()).get();
+    }
+
+    // Build the maps before and after compaction (nc_ vs c_) to reflect the
+    // changes
+    std::vector<batch_summary> nc_summaries;
+    std::vector<size_t> nc_acc_size;
+    std::vector<size_t> nc_prev_size;
+
+    std::vector<batch_summary> c_summaries;
+    std::vector<size_t> c_acc_size;
+    std::vector<size_t> c_prev_size;
+
+    // Read non-compacted version
+    storage::log_reader_config nc_reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto nc_reader = log->make_reader(nc_reader_cfg).get();
+    batch_summary_accumulator nc_acc{
+      .summaries = &nc_summaries,
+      .acc_size = &nc_acc_size,
+      .prev_size = &nc_prev_size,
+    };
+    std::move(nc_reader).consume(nc_acc, model::no_timeout).get();
+
+    // Compact topic
+    vlog(e2e_test_log.info, "Starting compaction");
+    storage::housekeeping_config h_cfg(
+      model::timestamp::min(),
+      std::nullopt,
+      log->offsets().committed_offset,
+      ss::default_priority_class(),
+      as);
+    log->housekeeping(h_cfg).get();
+
+    // Read compacted version
+    storage::log_reader_config c_reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto c_reader = log->make_reader(c_reader_cfg).get();
+    batch_summary_accumulator c_acc{
+      .summaries = &c_summaries,
+      .acc_size = &c_acc_size,
+      .prev_size = &c_prev_size,
+    };
+    std::move(c_reader).consume(c_acc, model::no_timeout).get();
+
+    auto num_compacted = nc_summaries.size() - c_summaries.size();
+    vlog(
+      e2e_test_log.info,
+      "Number of compacted batches: {} (before {}, after {})",
+      num_compacted,
+      nc_summaries.size(),
+      c_summaries.size());
+    vlog(
+      e2e_test_log.info,
+      "Size before compaction {}, size after compaction {}",
+      nc_acc_size.back(),
+      c_acc_size.back());
+    BOOST_REQUIRE(num_compacted > 0);
+
+    for (size_t i = 0; i < num_test_cases; i++) {
+        auto ix_base = model::test::get_int((size_t)0, nc_summaries.size() - 1);
+        auto ix_last = model::test::get_int(ix_base, nc_summaries.size() - 1);
+        auto base = nc_summaries[ix_base].base;
+        auto last = nc_summaries[ix_last].last;
+
+        // To find expected size we need to first search c_summaries
+        auto c_it_base = std::lower_bound(
+          c_summaries.begin(),
+          c_summaries.end(),
+          batch_summary{.base = base},
+          [](const batch_summary& lhs, const batch_summary& rhs) {
+              return lhs.base < rhs.base;
+          });
+        auto c_ix_base = std::distance(c_summaries.begin(), c_it_base);
+        auto c_it_last = std::upper_bound(
+          c_summaries.begin(),
+          c_summaries.end(),
+          batch_summary{.last = last},
+          [](const batch_summary& lhs, const batch_summary& rhs) {
+              return lhs.last < rhs.last;
+          });
+        bool fully_compacted_range = false;
+        if (c_it_last != c_summaries.begin()) {
+            c_it_last = std::prev(c_it_last);
+        } else {
+            // fully compacted
+            fully_compacted_range = true;
+        }
+        auto c_ix_last = std::distance(c_summaries.begin(), c_it_last);
+        auto expected_size = fully_compacted_range
+                               ? 0
+                               : c_acc_size[c_ix_last] - c_prev_size[c_ix_base];
+        vlog(
+          e2e_test_log.debug,
+          "NON-COMPACTED offset range: {}-{} (indexes: {}-{}), "
+          "COMPACTED offset range: {}-{} (indexes: {}-{})",
+          base,
+          last,
+          ix_base,
+          ix_last,
+          c_summaries[c_ix_base].base,
+          c_summaries[c_ix_last].last,
+          c_ix_base,
+          c_ix_last);
+
+        auto result
+          = log->offset_range_size(base, last, ss::default_priority_class())
+              .get();
+
+        BOOST_REQUIRE(result.has_value());
+
+        vlog(
+          e2e_test_log.debug,
+          "base: {}, last: {}, expected size: {}, actual size: {}",
+          base,
+          last,
+          expected_size,
+          result->on_disk_size);
+
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+        BOOST_REQUIRE_EQUAL(last, result->last_offset);
+
+        size_t consumed_size = 0;
+        storage::log_reader_config c_reader_cfg(
+          base, result->last_offset, ss::default_priority_class());
+        c_reader_cfg.skip_readers_cache = true;
+        c_reader_cfg.skip_batch_cache = true;
+        auto c_log_rdr = log->make_reader(std::move(c_reader_cfg)).get();
+        batch_size_accumulator c_size_acc{
+          .size_bytes = &consumed_size,
+        };
+        std::move(c_log_rdr).consume(c_size_acc, model::no_timeout).get();
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+    }
+
+    auto new_start_offset = model::next_offset(first_segment_last_offset);
+    log
+      ->truncate_prefix(storage::truncate_prefix_config(
+        new_start_offset, ss::default_priority_class()))
+      .get();
+
+    auto lstat = log->offsets();
+    BOOST_REQUIRE_EQUAL(lstat.start_offset, new_start_offset);
+
+    // Check that out of range access triggers exception.
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          model::offset(0),
+          model::next_offset(new_start_offset),
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          model::next_offset(new_start_offset),
+          model::next_offset(lstat.committed_offset),
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+};
+
+FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
+#ifdef NDEBUG
+    size_t num_test_cases = 5000;
+    size_t num_segments = 300;
+#else
+    size_t num_test_cases = 500;
+    size_t num_segments = 30;
+#endif
+    // This test generates 300 segments and creates a record batch map.
+    // Then it runs compaction and creates a second record batch map. Then it
+    // uses offset_range_size method to fetch segments of various sizes. We need
+    // to maps to be able to start on every offset, not only offsets that
+    // survived compaction. The pre-compaction map is used to pick starting
+    // point. The post-compaction map is used to calculate the expected size.
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("kafka", "test-topic", 0);
+
+    storage::ntp_config::default_overrides overrides{
+      .cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction,
+    };
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (int i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log, 10, model::term_id(0), key_limited_random_batch_generator());
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll(ss::default_priority_class()).get();
+    }
+
+    // Build the maps before and after compaction (nc_ vs c_) to reflect the
+    // changes
+    std::vector<batch_summary> nc_summaries;
+    std::vector<size_t> nc_acc_size;
+    std::vector<size_t> nc_prev_size;
+
+    std::vector<batch_summary> c_summaries;
+    std::vector<size_t> c_acc_size;
+    std::vector<size_t> c_prev_size;
+
+    // Read non-compacted version
+    storage::log_reader_config nc_reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto nc_reader = log->make_reader(nc_reader_cfg).get();
+    batch_summary_accumulator nc_acc{
+      .summaries = &nc_summaries,
+      .acc_size = &nc_acc_size,
+      .prev_size = &nc_prev_size,
+    };
+    std::move(nc_reader).consume(nc_acc, model::no_timeout).get();
+
+    // Compact topic
+    vlog(e2e_test_log.info, "Starting compaction");
+    storage::housekeeping_config h_cfg(
+      model::timestamp::min(),
+      std::nullopt,
+      log->offsets().committed_offset,
+      ss::default_priority_class(),
+      as);
+    log->housekeeping(h_cfg).get();
+
+    // Read compacted version
+    storage::log_reader_config c_reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto c_reader = log->make_reader(c_reader_cfg).get();
+    batch_summary_accumulator c_acc{
+      .summaries = &c_summaries,
+      .acc_size = &c_acc_size,
+      .prev_size = &c_prev_size,
+    };
+    std::move(c_reader).consume(c_acc, model::no_timeout).get();
+
+    auto num_compacted = nc_summaries.size() - c_summaries.size();
+    vlog(
+      e2e_test_log.info,
+      "Number of compacted batches: {} (before {}, after {})",
+      num_compacted,
+      nc_summaries.size(),
+      c_summaries.size());
+    vlog(
+      e2e_test_log.info,
+      "Size before compaction {}, size after compaction {}",
+      nc_acc_size.back(),
+      c_acc_size.back());
+    BOOST_REQUIRE(num_compacted > 0);
+
+    for (const auto& s : c_summaries) {
+        vlog(
+          e2e_test_log.debug,
+          "compacted segment {}-{} size: {}",
+          s.base,
+          s.last,
+          s.batch_size);
+    }
+
+    for (size_t i = 0; i < num_test_cases; i++) {
+        // - pick 'base' randomly (use non-compacted list to make sure
+        //   that some requests are starting inside the gaps)
+        // - translate to compacted index
+        // - pick target upload size randomly
+        // - do the query
+        // - query the log and compare the result
+        auto base_ix = model::test::get_int((size_t)0, nc_summaries.size() - 1);
+        auto base = nc_summaries[base_ix].base;
+        // convert to compacted
+        auto c_it_base = std::lower_bound(
+          c_summaries.begin(),
+          c_summaries.end(),
+          batch_summary{.base = base},
+          [](const batch_summary& lhs, const batch_summary& rhs) {
+              return lhs.base < rhs.base;
+          });
+        auto c_ix_base = std::distance(c_summaries.begin(), c_it_base);
+        // we should use size after compaction in the query
+        auto max_size = c_acc_size.back() - c_prev_size[c_ix_base];
+        auto min_size = 1UL;
+        auto target_size = model::test::get_int(min_size, max_size);
+
+        vlog(
+          e2e_test_log.debug,
+          "NON-COMPACTED start offset: {}, COMPACTED start offset: {}, target "
+          "size: {}",
+          base,
+          c_summaries[c_ix_base].base,
+          c_ix_base,
+          target_size);
+
+        auto result = log
+                        ->offset_range_size(
+                          base,
+                          storage::log::offset_range_size_requirements_t{
+                            .target_size = target_size,
+                            .min_size = 0,
+                          },
+                          ss::default_priority_class())
+                        .get();
+        BOOST_REQUIRE(result.has_value());
+        auto last_offset = result->last_offset;
+
+        size_t expected_size = 0;
+
+        storage::log_reader_config c_reader_cfg(
+          base, last_offset, ss::default_priority_class());
+        c_reader_cfg.skip_readers_cache = true;
+        c_reader_cfg.skip_batch_cache = true;
+        auto c_log_rdr = log->make_reader(std::move(c_reader_cfg)).get();
+        batch_size_accumulator c_size_acc{
+          .size_bytes = &expected_size,
+        };
+        std::move(c_log_rdr).consume(c_size_acc, model::no_timeout).get();
+        BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
+        BOOST_REQUIRE(result->on_disk_size >= target_size);
+    }
+
+    auto new_start_offset = model::next_offset(first_segment_last_offset);
+    log
+      ->truncate_prefix(storage::truncate_prefix_config(
+        new_start_offset, ss::default_priority_class()))
+      .get();
+
+    auto lstat = log->offsets();
+    BOOST_REQUIRE_EQUAL(lstat.start_offset, new_start_offset);
+
+    // Check that out of range access triggers exception.
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          model::offset(0),
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 1,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+
+    // Query committed offset of the last batch, expect
+    // no result.
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          nc_summaries.back().last,
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 0,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+
+    // Query offset out of range to trigger the exception.
+
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          model::next_offset(c_summaries.back().last),
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = 0,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+
+    // Check that the last batch can be measured independently
+    auto res = log
+                 ->offset_range_size(
+                   c_summaries.back().base,
+                   storage::log::offset_range_size_requirements_t{
+                     .target_size = 0x10000,
+                     .min_size = 0,
+                   },
+                   ss::default_priority_class())
+                 .get();
+
+    // Only one batch is returned
+    BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
+    BOOST_REQUIRE_EQUAL(
+      res->on_disk_size, c_acc_size.back() - c_prev_size.back());
+
+    // Check that we can measure the size of the log tail. This is needed for
+    // timed uploads.
+    size_t tail_length = 5;
+
+    for (size_t i = 0; i < tail_length; i++) {
+        auto ix_batch = c_summaries.size() - 1 - i;
+        res = log
+                ->offset_range_size(
+                  c_summaries.at(ix_batch).base,
+                  storage::log::offset_range_size_requirements_t{
+                    .target_size = 0x10000,
+                    .min_size = 0,
+                  },
+                  ss::default_priority_class())
+                .get();
+
+        BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
+        BOOST_REQUIRE_EQUAL(
+          res->on_disk_size, c_acc_size.back() - c_prev_size.at(ix_batch));
+    }
+
+    // Check that the min_size is respected
+    BOOST_REQUIRE(
+      log
+        ->offset_range_size(
+          c_summaries.back().base,
+          storage::log::offset_range_size_requirements_t{
+            .target_size = 0x10000,
+            .min_size = c_summaries.back().batch_size + 1,
+          },
+          ss::default_priority_class())
+        .get()
+      == std::nullopt);
+};
+
+FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
+#ifdef NDEBUG
+    size_t num_segments = 300;
+#else
+    size_t num_segments = 30;
+#endif
+    // This test attempts to consume the log incrementally using overload
+    // of the offset_range_size that gets offset+size and returns size+last
+    // offset; The idea is to get the size of the section and then to consume it
+    // using the reader and compare. Then repeat starting from the last offset
+    // + 1. The total size of the log should be consumed.
+    // The test is repeated with different target sizes starting from very
+    // small. The small step is not expected to always return small log regions
+    // because it's limited by the sampling step of the index.
+    struct size_target {
+        size_t target;
+        size_t min_size;
+        size_t max_size;
+    };
+    std::vector<size_target> size_classes = {
+      // can overshoot quite a lot because of the index step (32KiB)
+      {100, 0, 50_KiB},
+      {2000, 1_KiB, 50_KiB},
+      {10_KiB, 1_KiB, 50_KiB},
+      {50_KiB, 1_KiB, 100_KiB},
+      {500_KiB, 1_KiB, 550_KiB},
+      {1_MiB, 1_KiB, 1_MiB + 50_KiB},
+      {10_MiB, 1_KiB, 10_MiB + 50_KiB},
+      {100_MiB, 1_KiB, 100_MiB + 50_KiB},
+    };
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (int i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          custom_ts_batch_generator(model::timestamp::now()));
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll(ss::default_priority_class()).get();
+    }
+    for (auto& s : log->segments()) {
+        if (s->size_bytes() == 0) {
+            continue;
+        }
+        vlog(
+          e2e_test_log.info,
+          "Index {} has {} elements",
+          s->index().path(),
+          s->index().size());
+        BOOST_REQUIRE(s->index().size() > 0);
+    }
+
+    std::vector<batch_summary> summaries;
+    std::vector<size_t> acc_size;
+    std::vector<size_t> prev_size;
+
+    storage::log_reader_config reader_cfg(
+      model::offset(0), model::offset::max(), ss::default_priority_class());
+    auto reader = log->make_reader(reader_cfg).get();
+
+    batch_summary_accumulator acc{
+      .summaries = &summaries,
+      .acc_size = &acc_size,
+      .prev_size = &prev_size,
+    };
+    std::move(reader).consume(acc, model::no_timeout).get();
+
+    // Total log size in bytes
+    auto full_log_size = acc_size.back();
+
+    BOOST_REQUIRE_EQUAL(log->size_bytes(), full_log_size);
+
+    for (auto [target_size, min_size, max_size] : size_classes) {
+        model::offset last_offset;
+        bool done = false;
+        while (!done) {
+            auto base = model::next_offset(last_offset);
+            auto res = log
+                         ->offset_range_size(
+                           base,
+                           storage::log::offset_range_size_requirements_t{
+                             .target_size = target_size,
+                             .min_size = min_size,
+                           },
+                           ss::default_priority_class())
+                         .get();
+            BOOST_REQUIRE(res.has_value());
+            last_offset = res->last_offset;
+            done = last_offset == log->offsets().committed_offset;
+            vlog(
+              e2e_test_log.info,
+              "Requested {}({}min, {}max) bytes, got {} bytes for offset {}",
+              target_size,
+              min_size,
+              max_size,
+              res->on_disk_size,
+              res->last_offset);
+            BOOST_REQUIRE(res->on_disk_size > min_size);
+            BOOST_REQUIRE(res->on_disk_size < max_size);
+
+            // scan the range using the storage reader and compare
+
+            size_t measured_size = 0;
+            batch_size_accumulator acc{};
+            acc.size_bytes = &measured_size;
+
+            storage::log_reader_config reader_cfg(
+              base, res->last_offset, ss::default_priority_class());
+            reader_cfg.skip_readers_cache = true;
+            reader_cfg.skip_batch_cache = true;
+            auto reader = log->make_reader(reader_cfg).get();
+            std::move(reader).consume(acc, model::no_timeout).get();
+            vlog(
+              e2e_test_log.info,
+              "Expected size: {}, actual size: {}",
+              measured_size,
+              res->on_disk_size);
+            BOOST_REQUIRE_EQUAL(measured_size, res->on_disk_size);
+        }
+    }
+};

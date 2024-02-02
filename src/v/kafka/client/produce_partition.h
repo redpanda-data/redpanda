@@ -51,7 +51,28 @@ public:
         vassert(_in_flight, "handle_response requires a batch in flight");
         _batcher.handle_response(std::move(res));
         _in_flight = false;
+        if (_await_in_flight) {
+            _await_in_flight->set_value();
+            _await_in_flight = std::nullopt;
+        }
         arm_consumer();
+    }
+
+    ss::future<> await_in_flight() {
+        if (!_in_flight) {
+            return ss::now();
+        }
+        vassert(!_await_in_flight, "Double call to await_in_flight()");
+        _await_in_flight = ss::promise<>();
+        return _await_in_flight->get_future();
+    }
+
+    ss::future<> maybe_drain() {
+        /// Immediately force flush of buffer
+        if (consumer_can_run()) {
+            _timer.cancel();
+            _consumer(co_await do_consume());
+        }
     }
 
     ss::future<> stop() {
@@ -120,6 +141,7 @@ private:
     int32_t _size_bytes{};
     bool _in_flight{};
     ss::gate _gate;
+    std::optional<ss::promise<>> _await_in_flight;
 };
 
 } // namespace kafka::client

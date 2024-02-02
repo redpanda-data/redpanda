@@ -37,6 +37,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/bool_class.hh>
@@ -45,10 +46,12 @@
 #include <seastar/util/optimized_optional.hh>
 
 #include <absl/strings/escaping.h>
+#include <wasmtime/store.h>
 
 #include <alloca.h>
 #include <cmath>
 #include <csignal>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -468,24 +471,25 @@ public:
         _probe.report_memory_usage(0);
     }
 
-    ss::future<model::record_batch>
-    transform(model::record_batch batch, transform_probe* probe) override {
+    ss::future<> transform(
+      model::record_batch batch,
+      transform_probe* probe,
+      transform_callback cb) override {
         vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
         if (batch.record_count() == 0) {
-            co_return std::move(batch);
+            co_return;
         }
         if (batch.compressed()) {
             batch = co_await storage::internal::decompress_batch(
               std::move(batch));
         }
-        ss::future<model::record_batch> fut = co_await ss::coroutine::as_future(
-          invoke_transform(std::move(batch), probe));
+        ss::future<> fut = co_await ss::coroutine::as_future(
+          invoke_transform(std::move(batch), probe, std::move(cb)));
         report_memory_usage();
         if (fut.failed()) {
             probe->transform_error();
             std::rethrow_exception(fut.get_exception());
         }
-        co_return std::move(fut).get();
     }
 
     template<typename T>
@@ -724,18 +728,48 @@ private:
         _transform_module.stop(ex);
     }
 
-    ss::future<model::record_batch>
-    invoke_transform(model::record_batch batch, transform_probe* p) {
-        std::unique_ptr<transform_probe::hist_t::measurement> m;
-        auto transformed = co_await _transform_module.for_each_record_async(
-          std::move(batch),
-          [this, &m, p, ctx = wasmtime_store_context(_store.get())]() {
-              reset_fuel(ctx);
-              m = p->latency_measurement();
-          });
-        m = nullptr;
-        co_return model::transformed_data::make_batch(
-          model::timestamp::now(), std::move(transformed));
+    ss::future<> invoke_transform(
+      model::record_batch batch, transform_probe* p, transform_callback cb) {
+        class callback_impl final : public record_callback {
+        public:
+            callback_impl(
+              wasmtime_context_t* context,
+              size_t fuel_amt,
+              transform_callback cb,
+              transform_probe* p)
+              : _context(context)
+              , _fuel_amt(fuel_amt)
+              , _cb(std::move(cb))
+              , _probe(p) {}
+
+            void pre_record() final {
+                handle<wasmtime_error_t, wasmtime_error_delete> error(
+                  wasmtime_context_set_fuel(_context, _fuel_amt));
+                check_error(error.get());
+                _measurement = _probe->latency_measurement();
+            }
+
+            void emit(model::transformed_data data) final {
+                _cb(std::move(data));
+            }
+
+            void post_record() final { _measurement = nullptr; }
+
+        private:
+            wasmtime_context_t* _context;
+            size_t _fuel_amt;
+            transform_callback _cb;
+            transform_probe* _probe;
+            std::unique_ptr<transform_probe::hist_t::measurement> _measurement;
+        };
+        callback_impl callback(
+          wasmtime_store_context(_store.get()),
+          _runtime->per_invocation_fuel_amount(),
+          std::move(cb),
+          p);
+
+        co_await _transform_module.for_each_record_async(
+          std::move(batch), &callback);
     }
 
     wasmtime_runtime* _runtime;

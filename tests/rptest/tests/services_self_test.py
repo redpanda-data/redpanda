@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from subprocess import CalledProcessError
 from ducktape.mark import matrix
 from ducktape.tests.test import Test
 
@@ -18,7 +19,7 @@ from rptest.services.failure_injector import FailureSpec, make_failure_injector
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
-from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type, make_redpanda_service
+from rptest.services.redpanda import RedpandaServiceCloud, SISettings, CloudStorageType, get_cloud_storage_type, make_redpanda_service, make_redpanda_service_mixed
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import BucketView
 from rptest.util import expect_exception
@@ -256,7 +257,8 @@ class SimpleSelfTest(Test):
     """
     def __init__(self, test_context):
         super(SimpleSelfTest, self).__init__(test_context)
-        self.redpanda = make_redpanda_service(test_context, 3)
+        self.redpanda = make_redpanda_service_mixed(test_context,
+                                                    min_brokers=3)
 
     def setUp(self):
         self.redpanda.start()
@@ -282,6 +284,34 @@ class SimpleSelfTest(Test):
         rpk.create_topic(topic_name)
         self.logger.info(f'deleting topic {topic_name}')
         rpk.delete_topic(topic_name)
+
+
+class KubectlSelfTest(Test):
+    """
+    Verify that the kubectl test works. Only does anything when running
+    in the cloud.
+    """
+    def __init__(self, test_context):
+        super().__init__(test_context)
+        self.redpanda = make_redpanda_service_mixed(test_context)
+
+    def setUp(self):
+        self.redpanda.start()
+
+    @cluster(num_nodes=3)
+    def test_kubectl_tool(self):
+        rp = self.redpanda
+
+        if isinstance(rp, RedpandaServiceCloud):
+            version_out = rp.kubectl.cmd(['version', '--client']).decode()
+            assert 'Client Version' in version_out, f'Did not find expceted output, output was: {version_out}'
+
+            try:
+                # foobar, of course, is not a valid kubectl command
+                rp.kubectl.cmd(['foobar'])
+                assert False, 'expected this command to throw'
+            except CalledProcessError:
+                pass
 
 
 class FailureInjectorSelfTest(Test):

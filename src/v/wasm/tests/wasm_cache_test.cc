@@ -79,12 +79,14 @@ public:
         co_return;
     }
 
-    ss::future<model::record_batch>
-    transform(model::record_batch batch, transform_probe*) override {
+    ss::future<> transform(
+      model::record_batch batch,
+      transform_probe*,
+      transform_callback) override {
         if (_state->engine_transform_should_throw) {
             throw std::runtime_error("test error");
         }
-        co_return batch;
+        co_return;
     }
 
 private:
@@ -269,10 +271,12 @@ TEST_F(WasmCacheTest, CanMultiplexTransforms) {
     engine_two->start().get();
     state()->engine_transform_should_throw = true;
     EXPECT_THROW(
-      engine_one->transform(random_batch(), nullptr).get(), std::runtime_error);
+      engine_one->transform(random_batch(), nullptr, [](auto) {}).get(),
+      std::runtime_error);
     EXPECT_EQ(state()->engine_restarts, 1);
     state()->engine_transform_should_throw = false;
-    EXPECT_NO_THROW(engine_two->transform(random_batch(), nullptr).get());
+    EXPECT_NO_THROW(
+      engine_two->transform(random_batch(), nullptr, [](auto) {}).get());
     EXPECT_EQ(state()->engine_restarts, 1);
     engine_one->stop().get();
     engine_two->stop().get();

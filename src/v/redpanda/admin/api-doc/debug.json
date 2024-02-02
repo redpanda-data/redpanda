@@ -601,6 +601,13 @@
                             "required": false,
                             "allowMultiple": false,
                             "type": "long"
+                        },
+                        {
+                            "name": "wait_ms",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
                         }
                     ]
                 }

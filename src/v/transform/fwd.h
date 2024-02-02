@@ -19,6 +19,7 @@ template<typename ClockType>
 class commit_batcher;
 class processor;
 class probe;
+class log_manager;
 namespace rpc {
 class client;
 class local_service;

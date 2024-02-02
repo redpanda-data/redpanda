@@ -44,6 +44,9 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
       partition_label(ntp.tp.partition()),
     };
 
+    auto aggregate_labels = std::vector<sm::label>{
+      sm::shard_label, partition_label};
+
     _metrics.add_group(
       prometheus_sanitize::metrics_name("ntp_archiver"),
       {
@@ -69,7 +72,7 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
           labels),
       },
       {},
-      std::vector<sm::label>{sm::shard_label});
+      aggregate_labels);
 }
 
 void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {

@@ -64,6 +64,11 @@ bool validate_record_payload(const iobuf& buf) {
     return parser.bytes_left() == 0;
 }
 
+void append_vint_to_iobuf(iobuf& b, int64_t v) {
+    auto vb = vint::to_bytes(v);
+    b.append(vb.data(), vb.size());
+}
+
 } // namespace
 
 std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
@@ -205,6 +210,22 @@ model::record_batch transformed_data::make_batch(
     return batch;
 }
 
+transformed_data transformed_data::from_record(record r) {
+    iobuf payload;
+    append_vint_to_iobuf(payload, r.key_size());
+    payload.append(r.release_key());
+    append_vint_to_iobuf(payload, r.value_size());
+    payload.append(r.release_value());
+    append_vint_to_iobuf(payload, int64_t(r.headers().size()));
+    for (auto& header : r.headers()) {
+        append_vint_to_iobuf(payload, header.key_size());
+        payload.append(header.release_key());
+        append_vint_to_iobuf(payload, header.value_size());
+        payload.append(header.release_value());
+    }
+    return transformed_data(std::move(payload));
+}
+
 iobuf transformed_data::to_serialized_record(
   record_attributes attrs, int64_t timestamp_delta, int32_t offset_delta) && {
     iobuf out;
@@ -212,8 +233,8 @@ iobuf transformed_data::to_serialized_record(
     // placeholder for the final length.
     auto placeholder = out.reserve(vint::max_length);
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto attr = ss::cpu_to_be(attrs.value());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     out.append(reinterpret_cast<const char*>(&attr), sizeof(attr));
 
     bytes td = vint::to_bytes(timestamp_delta);

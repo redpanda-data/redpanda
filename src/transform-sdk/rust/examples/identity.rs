@@ -12,25 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate redpanda_transform_sdk as redpanda;
-
 use anyhow::Result;
-use redpanda::*;
+use redpanda_transform_sdk::*;
 
+// This example shows the basic usage of the crate:
+// This transform does nothing but copy the same data from an
+// input topic to an output topic.
 fn main() {
+    // Make sure to register your callback and perform other setup in main
     on_record_written(my_transform);
 }
 
-fn my_transform(event: WriteEvent, writer: &mut dyn RecordWriter) -> Result<()> {
-    writer.write(Record::new_with_headers(
-        event.record.key().map(|b| b.to_owned()),
-        event.record.value().map(|b| b.to_owned()),
-        event
-            .record
-            .headers()
-            .iter()
-            .map(|h| h.to_owned())
-            .collect(),
-    ))?;
+// This will be called for each record in the source topic.
+//
+// The output records returned will be written to the destination topic.
+fn my_transform(event: WriteEvent, writer: &mut RecordWriter) -> Result<()> {
+    writer.write(event.record)?;
     Ok(())
 }

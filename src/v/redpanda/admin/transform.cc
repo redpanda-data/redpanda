@@ -9,12 +9,15 @@
  * by the Apache License, Version 2.0
  */
 
+#include "model/transform.h"
+
 #include "bytes/streambuf.h"
 #include "json/document.h"
 #include "json/istreamwrapper.h"
 #include "json/validator.h"
 #include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/server.h"
+#include "redpanda/admin/util.h"
 #include "transform/api.h"
 
 namespace {
@@ -36,6 +39,9 @@ void admin_server::register_wasm_transform_routes() {
     register_route<superuser>(
       ss::httpd::transform_json::delete_transform,
       [this](auto req) { return delete_transform(std::move(req)); });
+    register_route<superuser>(
+      ss::httpd::transform_json::list_committed_offsets,
+      [this](auto req) { return list_committed_offsets(std::move(req)); });
 }
 
 ss::future<ss::json::json_return_type>
@@ -79,11 +85,9 @@ admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
         throw transforms_not_enabled();
     }
     auto report = co_await _transform_service->local().list_transforms();
-    ss::json::json_list<ss::httpd::transform_json::transform_metadata>
-      list_result;
 
-    co_return ss::json::json_return_type(
-      ss::json::stream_range_as_array(report.transforms, [](const auto& entry) {
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      std::move(report.transforms), [](const auto& entry) {
           const model::transform_report& t = entry.second;
           ss::httpd::transform_json::transform_metadata meta;
           meta.name = t.metadata.name();
@@ -215,4 +219,27 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
 
     co_await throw_on_error(*req, ec, model::controller_ntp);
     co_return ss::json::json_void();
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::list_committed_offsets(std::unique_ptr<ss::http::request> req) {
+    if (!_transform_service->local_is_initialized()) {
+        throw transforms_not_enabled();
+    }
+    auto result = co_await _transform_service->local().list_committed_offsets(
+      {.show_unknown = admin::get_boolean_query_param(*req, "show_unknown")});
+    if (result.has_error()) {
+        co_await throw_on_error(*req, result.error(), model::controller_ntp);
+        co_return ss::json::json_void();
+    }
+
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      admin::lw_shared_container(std::move(result).value()),
+      [](const model::transform_committed_offset& committed) {
+          ss::httpd::transform_json::committed_offset response;
+          response.transform_name = committed.name();
+          response.offset = committed.offset();
+          response.partition = committed.partition();
+          return response;
+      }));
 }

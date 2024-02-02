@@ -18,6 +18,8 @@
 #include "storage/tests/randoms.h"
 #include "test_utils/randoms.h"
 
+#include <iterator>
+
 namespace cluster::node {
 
 inline local_state random_local_state() {
@@ -60,9 +62,10 @@ inline partition_status random_partition_status() {
 }
 
 inline topic_status random_topic_status() {
-    return topic_status(
-      model::random_topic_namespace(),
-      tests::random_chunked_fifo(random_partition_status));
+    auto d = tests::random_vector(random_partition_status);
+    cluster::partition_statuses_t partitions;
+    std::move(d.begin(), d.end(), std::back_inserter(partitions));
+    return {model::random_topic_namespace(), std::move(partitions)};
 }
 
 inline drain_manager::drain_status random_drain_status() {

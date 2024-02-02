@@ -312,7 +312,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             'cloud_storage_cache_chunk_size':
             self.chunk_size,
 
-            # Avoid confiugring spillover so tests can do it themselves.
+            # Avoid configuring spillover so tests can do it themselves.
             'cloud_storage_spillover_manifest_size':
             None,
         })

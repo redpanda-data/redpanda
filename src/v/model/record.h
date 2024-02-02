@@ -82,7 +82,7 @@ public:
       , _val_size(v_len)
       , _value(std::move(v)) {}
 
-    int32_t memory_usage() const {
+    size_t memory_usage() const {
         return sizeof(*this) + _key.size_bytes() + _value.size_bytes();
     }
     record_header share() {
@@ -167,13 +167,13 @@ public:
 
     // Used for acquiring units from semaphores limiting
     // memory resources.
-    int32_t memory_usage() const {
+    size_t memory_usage() const {
         return sizeof(*this) + _key.size_bytes() + _value.size_bytes()
                + std::accumulate(
                  _headers.begin(),
                  _headers.end(),
-                 int32_t(0),
-                 [](int32_t acc, const record_header& h) {
+                 size_t(0),
+                 [](size_t acc, const record_header& h) {
                      return acc + h.memory_usage();
                  });
     }
@@ -718,7 +718,7 @@ public:
                || (_header.attrs.is_control() && _header.producer_id >= 0);
     }
 
-    int32_t memory_usage() const {
+    size_t memory_usage() const {
         return sizeof(*this) + _records.size_bytes();
     }
 

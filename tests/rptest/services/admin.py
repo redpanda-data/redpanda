@@ -84,6 +84,12 @@ class RedpandaNode(NamedTuple):
     id: int
 
 
+class CommittedWasmOffset(NamedTuple):
+    name: str
+    partition: int
+    offset: int
+
+
 class Admin:
     """
     Wrapper for Redpanda admin REST API.
@@ -401,7 +407,7 @@ class Admin:
         return self._request("GET", "cluster_config/schema", node=node).json()
 
     def patch_cluster_config(self,
-                             upsert: dict[str, str | None] = {},
+                             upsert: dict[str, str | int | None] = {},
                              remove: list[str] = [],
                              force: bool = False,
                              dry_run: bool = False,
@@ -1145,11 +1151,23 @@ class Admin:
                              node=node,
                              **kwargs).json()
 
-    def get_cpu_profile(self, node=None):
+    def get_cpu_profile(self, node=None, wait_ms=None):
         """
         Get the CPU profile of a node.
         """
-        return self._request("get", "debug/cpu_profile", node=node).json()
+        path = "debug/cpu_profile"
+        params = {}
+        timeout = DEFAULT_TIMEOUT
+
+        if wait_ms:
+            params["wait_ms"] = wait_ms
+            timeout = max(2 * (int(wait_ms) // 1_000), timeout)
+
+        return self._request("get",
+                             path,
+                             node=node,
+                             timeout=timeout,
+                             params=params).json()
 
     def get_local_offsets_translated(self,
                                      offsets,
@@ -1235,3 +1253,16 @@ class Admin:
     def get_tx_manager_recovery_status(self,
                                        node: Optional[ClusterNode] = None):
         return self._request("GET", "recovery/migrate_tx_manager", node=node)
+
+    def transforms_list_committed_offsets(
+            self,
+            show_unknown: bool = False,
+            node: Optional[ClusterNode] = None) -> list[CommittedWasmOffset]:
+        path = "transform/debug/committed_offsets"
+        if show_unknown:
+            path += "?show_unknown=true"
+        raw = self._request("GET", path, node=node).json()
+        return [
+            CommittedWasmOffset(c["transform_name"], c["partition"],
+                                c["offset"]) for c in raw
+        ]

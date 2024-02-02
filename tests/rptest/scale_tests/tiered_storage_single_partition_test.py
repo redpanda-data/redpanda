@@ -92,6 +92,8 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
             f"Configuring to spill metadata after {spillover_segments} segments"
         )
         self.redpanda.set_cluster_config({
+            'cloud_storage_spillover_manifest_size':
+            None,
             'cloud_storage_spillover_manifest_max_segments':
             spillover_segments
         })

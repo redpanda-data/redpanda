@@ -39,6 +39,40 @@ struct record_metadata {
     model::offset offset;
 };
 
+/**
+ * Callbacks for the transform lifecycle as records go through the VM.
+ *
+ * Generally the lifecycle callbacks are firing in a pattern as follows:
+ *
+ * pre_record();
+ * emit({...});
+ * emit({...});
+ * emit({...});
+ * post_record();
+ * pre_record();
+ * post_record();
+ * pre_record();
+ * emit({...});
+ * post_record();
+ *
+ */
+class record_callback {
+public:
+    record_callback() = default;
+    record_callback(const record_callback&) = delete;
+    record_callback(record_callback&&) = delete;
+    record_callback& operator=(const record_callback&) = delete;
+    record_callback& operator=(record_callback&&) = delete;
+    virtual ~record_callback() = default;
+
+    // Called before surfacing a record to the VM.
+    virtual void pre_record() = 0;
+    // Called for each record output from the VM.
+    virtual void emit(model::transformed_data) = 0;
+    // Called after a VM specifies it's done with a record.
+    virtual void post_record() = 0;
+};
+
 // The data needed during a single transformation of a record_batch
 struct batch_transform_context {
     model::record_batch_header batch_header;
@@ -48,10 +82,7 @@ struct batch_transform_context {
     size_t max_input_record_size{0};
     // The remaining records to transform
     ss::chunked_fifo<record_metadata> records;
-    // The output data
-    ss::chunked_fifo<model::transformed_data> output_data;
-    // Called for every record that is consumed
-    ss::noncopyable_function<void()> record_callback;
+    record_callback* callback;
 };
 
 /**
@@ -76,8 +107,7 @@ public:
      * batch, transform all the records, with a callback everytime a record is
      * consumed by the VM.
      */
-    ss::future<ss::chunked_fifo<model::transformed_data>> for_each_record_async(
-      model::record_batch, ss::noncopyable_function<void()> record_callback);
+    ss::future<> for_each_record_async(model::record_batch, record_callback*);
 
     /**
      * Start the transform module, marking it that the guest is about to start

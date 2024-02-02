@@ -5,6 +5,7 @@ rp_test(
   BINARY_NAME io
   SOURCES
     common.cc
+    common_test.cc
     cache_test.cc
     interval_map_test.cc
     persistence_test.cc

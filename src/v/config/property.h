@@ -457,6 +457,8 @@ public:
     friend class mock_property<T>;
     template<typename U>
     friend inline binding<U> mock_binding(U&&);
+    template<typename U>
+    friend inline binding<U> mock_binding(U const&);
 };
 
 /**
@@ -473,6 +475,10 @@ inline binding<T> mock_binding(T&& value) {
     return binding<T>(std::forward<T>(value));
 }
 
+template<typename T>
+inline binding<T> mock_binding(T const& value) {
+    return binding<T>(T(value));
+}
 /**
  * A conversion property binding contains the result of application of
  * a conversion function to property value. The result is update in-place

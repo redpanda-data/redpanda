@@ -347,3 +347,11 @@ std::ostream& operator<<(std::ostream& os, const bytes_view& b) {
     return os;
 }
 } // namespace std
+
+bool bytes_type_cmp::operator()(const bytes& lhs, const bytes_view& rhs) const {
+    return lhs < rhs;
+}
+
+bool bytes_type_cmp::operator()(const bytes& lhs, const bytes& rhs) const {
+    return lhs < rhs;
+}

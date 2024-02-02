@@ -7,11 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from abc import ABC, abstractmethod
 import os
 from typing import Any, Callable, Sequence
 
 from ducktape.tests.test import Test, TestContext
-from rptest.services.redpanda import CloudTierName, SISettings, make_redpanda_service, CloudStorageType
+from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud, SISettings, make_redpanda_service, CloudStorageType
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
@@ -21,57 +22,25 @@ from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersio
 from rptest.clients.rpk import RpkTool
 
 
-class RedpandaTest(Test):
-    """
-    Base class for tests that use the Redpanda service.
-    """
-
+class RedpandaTestBase(ABC, Test):
     # List of topics to be created automatically when the cluster starts. Each
     # topic is defined by an instance of a TopicSpec.
+    #
+    # TD: seems like this should be an instance property, not a class property?
     topics: Sequence[TopicSpec] = []
 
-    def __init__(self,
-                 test_context: TestContext,
-                 num_brokers: int | None = None,
-                 cloud_tier: str | None = None,
-                 apply_cloud_tier_to_noncloud: bool = False,
-                 extra_rp_conf: dict[str, Any] | None = None,
-                 si_settings: SISettings | None = None,
-                 **kwargs: Any):
-        """
-        Any trailing keyword arguments are passed through to the
-        RedpandaService constructor.
-        """
-        super(RedpandaTest, self).__init__(test_context)
+    def __init__(self, test_context: TestContext):
+        super().__init__(test_context)
+
         self.scale = Scale(test_context)
-        self.si_settings = si_settings
 
-        if num_brokers is None and cloud_tier is None:
-            # Default to a 3 node cluster if sufficient nodes are available, else
-            # a single node cluster.  This is just a default: tests are welcome
-            # to override constructor to pass an explicit size.  This logic makes
-            # it convenient to mix 3 node and 1 node cases in the same class, by
-            # just modifying the @cluster node count per test.
-            if test_context.cluster.available().size() >= 3:
-                num_brokers = 3
-            else:
-                num_brokers = 1
+    def setUp(self):
+        self.__redpanda.start()
+        self._create_initial_topics()
 
-        self.redpanda = make_redpanda_service(
-            test_context,
-            num_brokers,
-            cloud_tier=cloud_tier,
-            apply_cloud_tier_to_noncloud=apply_cloud_tier_to_noncloud,
-            extra_rp_conf=extra_rp_conf,
-            si_settings=self.si_settings,
-            **kwargs)
-        self._client = DefaultClient(self.redpanda)
-
-    def early_exit_hook(self):
-        """
-        Hook for `skip_debug_mode` decorator
-        """
-        self.redpanda.set_skip_if_no_redpanda_log(True)
+    @abstractmethod
+    def client(self) -> DefaultClient:
+        pass
 
     @property
     def topic(self):
@@ -99,6 +68,70 @@ class RedpandaTest(Test):
         """
         return os.environ.get('CI', None) != 'false'
 
+    def _create_initial_topics(self):
+        config = self.__redpanda.security_config()
+        user = config.get("sasl_plain_username")
+        passwd = config.get("sasl_plain_password")
+        protocol = config.get("security_protocol", "SASL_PLAINTEXT")
+        client = KafkaCliTools(self.__redpanda,
+                               user=user,
+                               passwd=passwd,
+                               protocol=protocol)
+        for spec in self.topics:
+            self.logger.debug(f"Creating initial topic {spec}")
+            client.create_topic(spec)
+
+    # TODO: TD helper to get a typed redpanda but this can be removed by making this
+    # class generic on the type of service
+    @property
+    def __redpanda(self) -> RedpandaService | RedpandaServiceCloud:
+        return getattr(self, 'redpanda')
+
+
+class RedpandaTest(RedpandaTestBase):
+    """
+    Base class for tests that use the Redpanda service.
+    """
+    def __init__(self,
+                 test_context: TestContext,
+                 num_brokers: int | None = None,
+                 cloud_tier: str | None = None,
+                 extra_rp_conf: dict[str, Any] | None = None,
+                 si_settings: SISettings | None = None,
+                 **kwargs: Any):
+        """
+        Any trailing keyword arguments are passed through to the
+        RedpandaService constructor.
+        """
+        super().__init__(test_context)
+
+        self.si_settings = si_settings
+
+        if num_brokers is None and cloud_tier is None:
+            # Default to a 3 node cluster if sufficient nodes are available, else
+            # a single node cluster.  This is just a default: tests are welcome
+            # to override constructor to pass an explicit size.  This logic makes
+            # it convenient to mix 3 node and 1 node cases in the same class, by
+            # just modifying the @cluster node count per test.
+            if test_context.cluster.available().size() >= 3:
+                num_brokers = 3
+            else:
+                num_brokers = 1
+
+        self.redpanda = make_redpanda_service(test_context,
+                                              num_brokers,
+                                              cloud_tier=cloud_tier,
+                                              extra_rp_conf=extra_rp_conf,
+                                              si_settings=self.si_settings,
+                                              **kwargs)
+        self._client = DefaultClient(self.redpanda)
+
+    def early_exit_hook(self):
+        """
+        Hook for `skip_debug_mode` decorator
+        """
+        self.redpanda.set_skip_if_no_redpanda_log(True)
+
     @property
     def azure_blob_storage(self):
         return self.si_settings.cloud_storage_type == CloudStorageType.ABS
@@ -107,25 +140,8 @@ class RedpandaTest(Test):
     def cloud_storage_client(self):
         return self.redpanda.cloud_storage_client
 
-    def setUp(self):
-        self.redpanda.start()
-        self._create_initial_topics()
-
     def client(self):
         return self._client
-
-    def _create_initial_topics(self):
-        config = self.redpanda.security_config()
-        user = config.get("sasl_plain_username")
-        passwd = config.get("sasl_plain_password")
-        protocol = config.get("security_protocol", "SASL_PLAINTEXT")
-        client = KafkaCliTools(self.redpanda,
-                               user=user,
-                               passwd=passwd,
-                               protocol=protocol)
-        for spec in self.topics:
-            self.logger.debug(f"Creating initial topic {spec}")
-            client.create_topic(spec)
 
     def load_version_range(self, initial_version: RedpandaVersion):
         """

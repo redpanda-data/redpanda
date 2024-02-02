@@ -39,9 +39,8 @@ constexpr int32_t INVALID_BUFFER = -2;
 transform_module::transform_module(wasi::preview1_module* m)
   : _wasi_module(m) {}
 
-ss::future<ss::chunked_fifo<model::transformed_data>>
-transform_module::for_each_record_async(
-  model::record_batch input, ss::noncopyable_function<void()> cb) {
+ss::future<> transform_module::for_each_record_async(
+  model::record_batch input, record_callback* cb) {
     vassert(
       input.header().attrs.compression() == model::compression::none,
       "wasm transforms expect uncompressed batches");
@@ -82,14 +81,12 @@ transform_module::for_each_record_async(
       .batch_data = std::move(input).release_data(),
       .max_input_record_size = max_size,
       .records = std::move(records),
-      .output_data = {},
-      .record_callback = std::move(cb),
+      .callback = cb,
     });
 
     co_await host_wait_for_proccessing();
 
     auto result = std::exchange(_call_ctx, std::nullopt);
-    co_return std::move(result->output_data);
 }
 
 void transform_module::check_abi_version_1() {
@@ -110,6 +107,12 @@ ss::future<int32_t> transform_module::read_batch_header(
   int16_t* producer_epoch,
   int32_t* base_sequence) {
     // NOLINTEND(bugprone-easily-swappable-parameters)
+
+    // If we are processing a batch (this isn't the first time this is called),
+    // then we need to notify that we've finished processing this batch.
+    if (_call_ctx) {
+        _call_ctx->callback->post_record();
+    }
 
     co_await guest_wait_for_batch();
 
@@ -144,6 +147,15 @@ ss::future<int32_t> transform_module::read_next_record(
     if (!_call_ctx || _call_ctx->records.empty()) {
         co_return NO_ACTIVE_TRANSFORM;
     }
+
+    // Callback that we finished processing the previous record,
+    // but don't call this the first record that has been read.
+    if (
+      _call_ctx->records.size()
+      != size_t(_call_ctx->batch_header.record_count)) {
+        _call_ctx->callback->post_record();
+    }
+
     co_await ss::coroutine::maybe_yield();
 
     auto record = _call_ctx->records.front();
@@ -176,7 +188,7 @@ ss::future<int32_t> transform_module::read_next_record(
     _call_ctx->batch_data.trim_front(record.payload_size);
 
     // Call back so we can refuel.
-    _call_ctx->record_callback();
+    _call_ctx->callback->pre_record();
 
     co_return int32_t(record.payload_size);
 }
@@ -191,7 +203,7 @@ int32_t transform_module::write_record(ffi::array<uint8_t> buf) {
     if (!d) {
         return INVALID_BUFFER;
     }
-    _call_ctx->output_data.push_back(*std::move(d));
+    _call_ctx->callback->emit(*std::move(d));
     return int32_t(buf.size());
 }
 

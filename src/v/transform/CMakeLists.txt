@@ -25,3 +25,4 @@ v_cc_library(
 
 add_subdirectory(tests)
 add_subdirectory(rpc)
+add_subdirectory(logging)

@@ -21,6 +21,7 @@ from rptest.services.redpanda import SaslCredentials, SecurityConfig, MetricsEnd
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.util import wait_until_result
 from ducktape.errors import TimeoutError
+from ducktape.mark import ok_to_fail
 
 # How much memory to assign to redpanda per partition. Redpanda will be started
 # with MIB_PER_PARTITION * PARTITIONS_PER_SHARD * CORE_COUNT memory
@@ -269,8 +270,8 @@ class AuditLogTest(RedpandaTest):
                               workers=self._repeater_worker_count(scale),
                               max_buffered_records=max_buffered_records,
                               **repeater_kwargs) as repeater:
-            # soak for two minutes
-            soak_time_seconds = 120
+            # soak for 5 minutes
+            soak_time_seconds = 60 * 5
             soak_await_bytes = soak_time_seconds * scale.expect_bandwidth
             soak_await_msgs = soak_await_bytes / repeater_msg_size
             # Add some leeway to avoid flakiness
@@ -301,6 +302,7 @@ class AuditLogTest(RedpandaTest):
             # to me able to assert on other properties of the test run.
             return make_result_set(t1, repeater)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/16199
     @cluster(num_nodes=5)
     def test_audit_log(self):
         """

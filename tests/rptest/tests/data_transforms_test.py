@@ -18,10 +18,11 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.services.transform_verifier_service import TransformVerifierProduceConfig, TransformVerifierProduceStatus, TransformVerifierService, TransformVerifierConsumeConfig, TransformVerifierConsumeStatus
-from rptest.services.admin import Admin
+from rptest.services.admin import Admin, CommittedWasmOffset
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+from rptest.tests.cluster_config_test import wait_for_version_sync
 
 
 class WasmException(Exception):
@@ -43,6 +44,7 @@ class BaseDataTransformsTest(RedpandaTest):
         super(BaseDataTransformsTest,
               self).__init__(*args, extra_rp_conf=extra_rp_conf, **kwargs)
         self._rpk = RpkTool(self.redpanda)
+        self._admin = Admin(self.redpanda)
 
     def _deploy_wasm(self, name: str, input_topic: TopicSpec,
                      output_topic: TopicSpec):
@@ -119,6 +121,29 @@ class BaseDataTransformsTest(RedpandaTest):
             retry_on_exc=True,
         )
 
+    def _list_committed_offsets(self) -> list[CommittedWasmOffset]:
+        response = []
+
+        def do_list():
+            nonlocal response
+            response = self._admin.transforms_list_committed_offsets(
+                show_unknown=True)
+            return True
+
+        wait_until(
+            do_list,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"unable to list committed offsets",
+            retry_on_exc=True,
+        )
+        return response
+
+    def _modify_cluster_config(self, upsert):
+        patch_result = self._admin.patch_cluster_config(upsert=upsert)
+        wait_for_version_sync(self._admin, self.redpanda,
+                              patch_result['config_version'])
+
     def _produce_input_topic(
             self,
             topic: TopicSpec,
@@ -159,16 +184,6 @@ class DataTransformsTest(BaseDataTransformsTest):
     """
     topics = [TopicSpec(partition_count=9), TopicSpec(partition_count=9)]
 
-    @cluster(num_nodes=3)
-    def test_lifecycle(self):
-        """
-        Test that a Wasm binary can be deployed, reach steady state and then be deleted.
-        """
-        self._deploy_wasm(name="identity-xform",
-                          input_topic=self.topics[0],
-                          output_topic=self.topics[1])
-        self._delete_wasm(name="identity-xform")
-
     @cluster(num_nodes=4)
     @matrix(transactional=[False, True])
     def test_identity(self, transactional):
@@ -186,6 +201,43 @@ class DataTransformsTest(BaseDataTransformsTest):
                                                      status=producer_status)
         self.logger.info(f"{consumer_status}")
         assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+
+    @cluster(num_nodes=3)
+    def test_tracked_offsets_cleaned_up(self):
+        """
+        Test that a Wasm binary can be deployed, reach steady state and then be deleted.
+        """
+        self._modify_cluster_config({'data_transforms_commit_interval_ms': 1})
+        self._deploy_wasm(name="identity-xform",
+                          input_topic=self.topics[0],
+                          output_topic=self.topics[1])
+
+        def all_offsets_committed():
+            committed = self._list_committed_offsets()
+            self.logger.debug(
+                f"committed offsets: {committed}, expecting length: {self.topics[0].partition_count}"
+            )
+            return len(committed) == self.topics[0].partition_count
+
+        wait_until(
+            all_offsets_committed,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"all offsets did not commit",
+            retry_on_exc=True,
+        )
+        self._delete_wasm(name="identity-xform")
+        # TODO(rockwood): Cleanup offsets after deploys
+        # def all_offsets_removed():
+        #     committed = self._list_committed_offsets()
+        #     return len(committed) == 0
+        # wait_until(
+        #     all_offsets_removed,
+        #     timeout_sec=30,
+        #     backoff_sec=1,
+        #     err_msg=f"all offsets where not removed",
+        #     retry_on_exc=True,
+        # )
 
 
 class DataTransformsChainingTest(BaseDataTransformsTest):
@@ -244,7 +296,6 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
                 'data_transforms_commit_interval_ms': 500,
             },
             **kwargs)
-        self._admin = Admin(self.redpanda)
 
     topics = [
         TopicSpec(partition_count=20),

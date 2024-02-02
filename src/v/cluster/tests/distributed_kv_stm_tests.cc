@@ -60,6 +60,7 @@ FIXTURE_TEST(test_stm_basic, stm_test_fixture) {
 
     BOOST_REQUIRE_EQUAL(stm.get(0).get0().value(), test_value{99});
     BOOST_REQUIRE_EQUAL(stm.get(1).get0().value(), test_value{100});
+    BOOST_REQUIRE_EQUAL(stm.list().get().value().size(), 2);
 
     // delete key
     BOOST_REQUIRE(stm.remove(0).get0() == cluster::errc::success);
@@ -67,6 +68,33 @@ FIXTURE_TEST(test_stm_basic, stm_test_fixture) {
     BOOST_REQUIRE(!stm.get(0).get0().value());
     // other mapping should be retained.
     BOOST_REQUIRE_EQUAL(stm.get(1).get0().value(), test_value{100});
+    kvs.erase(0);
+    BOOST_REQUIRE_EQUAL(stm.list().get().value().size(), 1);
+}
+
+FIXTURE_TEST(test_stm_list, stm_test_fixture) {
+    create_stm_and_start_raft(1);
+    auto& stm = *_stm;
+    stm.start().get0();
+    wait_for_confirmed_leader();
+
+    auto result = stm.coordinator(0).get0();
+    BOOST_REQUIRE(result);
+    BOOST_REQUIRE_EQUAL(result.value(), 0);
+
+    absl::btree_map<test_key, test_value> kvs;
+    for (int i = 0; i < 100; ++i) {
+        kvs[i] = i * i;
+    }
+    // List and put can be called concurrently. We don't make any guarentees
+    // (it's eventually consistent), but it shouldn't crash.
+    for (int i = 0; i < 1000; ++i) {
+        kvs[i] = i;
+        auto put_fut = stm.put(kvs);
+        auto list_fut = stm.list();
+        BOOST_REQUIRE_EQUAL(put_fut.get(), cluster::errc::success);
+        BOOST_REQUIRE(list_fut.get().has_value());
+    }
 }
 
 FIXTURE_TEST(test_batched_put, stm_test_fixture) {

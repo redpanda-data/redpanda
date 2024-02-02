@@ -68,8 +68,8 @@ struct partition_status
     std::optional<uint8_t> under_replicated_replicas;
 
     /*
-     * estimated amount of data above local retention that is subject to
-     * reclaim under disk pressure. this is useful for the partition balancer
+     * estimated amount of data subject to reclaim under disk pressure without
+     * violating safety guarantees. this is useful for the partition balancer
      * which is interested in free space on a node. a node may have very little
      * physical free space, but have effective free space represented by
      * reclaimable size bytes.
@@ -97,13 +97,18 @@ struct partition_status
     friend bool operator==(const partition_status&, const partition_status&)
       = default;
 };
+/**
+ * We keep the chunk size in partition status small to make sure that we do not
+ * waste to much of memory for topics with small number of partitions.
+ */
+using partition_statuses_t = ss::chunked_fifo<partition_status, 8>;
 
 struct topic_status
   : serde::envelope<topic_status, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     topic_status() = default;
-    topic_status(model::topic_namespace, ss::chunked_fifo<partition_status>);
+    topic_status(model::topic_namespace, partition_statuses_t);
     topic_status& operator=(const topic_status&);
     topic_status(const topic_status&);
     topic_status& operator=(topic_status&&) = default;
@@ -111,7 +116,7 @@ struct topic_status
     ~topic_status() = default;
 
     model::topic_namespace tp_ns;
-    ss::chunked_fifo<partition_status> partitions;
+    partition_statuses_t partitions;
     friend std::ostream& operator<<(std::ostream&, const topic_status&);
     friend bool operator==(const topic_status&, const topic_status&);
 

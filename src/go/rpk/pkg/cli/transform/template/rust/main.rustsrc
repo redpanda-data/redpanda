@@ -9,16 +9,7 @@ fn main() {
 
 // my_transform is where you read the record that was written, and then you can
 // return new records that will be written to the output topic
-fn my_transform(event: WriteEvent, writer: &mut dyn RecordWriter) -> Result<(), Box<dyn Error>> {
-    writer.write(Record::new_with_headers(
-        event.record.key().map(|b| b.to_owned()),
-        event.record.value().map(|b| b.to_owned()),
-        event
-            .record
-            .headers()
-            .iter()
-            .map(|h| h.to_owned())
-            .collect(),
-    ))?;
+fn my_transform(event: WriteEvent, writer: &mut RecordWriter) -> Result<(), Box<dyn Error>> {
+    writer.write(event.record)?;
     Ok(())
 }

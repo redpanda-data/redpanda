@@ -518,7 +518,6 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
             _topic_manifest_dirty = false;
         }
     } catch (const ss::gate_closed_exception&) {
-    } catch (const ss::broken_named_semaphore&) {
     } catch (const ss::abort_requested_exception&) {
     } catch (...) {
         vlog(
@@ -1221,8 +1220,6 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
     } catch (const ss::gate_closed_exception&) {
         response = cloud_storage::upload_result::cancelled;
     } catch (const ss::abort_requested_exception&) {
-        response = cloud_storage::upload_result::cancelled;
-    } catch (const ss::broken_named_semaphore&) {
         response = cloud_storage::upload_result::cancelled;
     } catch (const std::exception& e) {
         vlog(_rtclog.error, "failed to upload segment {}: {}", path, e);
@@ -2203,12 +2200,14 @@ ss::future<> ntp_archiver::apply_archive_retention() {
               _rtclog.debug,
               "Search for archive retention point failed as Redpanda is "
               "shutting down");
+            co_return;
+        } else {
+            vlog(
+              _rtclog.error,
+              "Failed to compute archive retention: {}",
+              res.error());
+            throw std::system_error(res.error());
         }
-        vlog(
-          _rtclog.error,
-          "Failed to compute archive retention: {}",
-          res.error());
-        throw std::system_error(res.error());
     }
 
     if (

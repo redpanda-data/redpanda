@@ -443,6 +443,21 @@ class RpkTool:
 
         return self._run(cmd)
 
+    def sasl_create_user_basic_mix(self,
+                                   new_username,
+                                   auth_user="",
+                                   auth_password="",
+                                   new_password="",
+                                   mechanism="SCRAM-SHA-256"):
+        cmd = [
+            "acl", "user", "create", new_username, "--password", new_password,
+            "--mechanism", mechanism, "-X",
+            "admin.hosts=" + self._redpanda.admin_endpoints()
+        ]
+        cmd += ["-X", "user=" + auth_user, "-X", "pass=" + auth_password]
+
+        return self._run(cmd)
+
     def sasl_update_user(self, user, new_password):
         cmd = [
             "acl", "user", "update", user, "--new-password", new_password,

@@ -44,8 +44,10 @@ public:
         filter,
     };
 
-    ss::future<model::record_batch>
-    transform(model::record_batch batch, wasm::transform_probe*) override;
+    ss::future<> transform(
+      model::record_batch batch,
+      wasm::transform_probe*,
+      wasm::transform_callback) override;
 
     void set_mode(mode m);
 

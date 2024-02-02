@@ -7,6 +7,7 @@ v_cc_library(
     page.cc
     page_set.cc
     clang-tidy-helper.cc
+    logger.cc
   DEPS
     Seastar::seastar
     absl::btree

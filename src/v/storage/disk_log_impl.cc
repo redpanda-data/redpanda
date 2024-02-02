@@ -45,9 +45,12 @@
 #include <seastar/core/fair_queue.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/io_priority_class.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <fmt/format.h>
@@ -57,6 +60,7 @@
 #include <iterator>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 
 using namespace std::literals::chrono_literals;
 
@@ -1731,6 +1735,514 @@ disk_log_impl::make_cached_reader(log_reader_config config) {
       .then([this](auto rdr) { return _readers_cache->put(std::move(rdr)); });
 }
 
+namespace details {
+// This accumulator is used to compute size of the on-disk representation of the
+// record batches
+struct batch_size_accumulator {
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        vassert(
+          result_size_bytes != nullptr,
+          "batch_size_accumulator is not initialized properly");
+        // Target is exclusive:
+        // 'target' offset corresponds to the base offset of the
+        // batch that shouldn't be added to the result:
+        //
+        //            target---v
+        //     |++++++++++++++[X      ]           |
+        //
+        // Target is inclusive:
+        // 'target' offset corresponds to the last offset of the
+        // batch that should be added to the final result:
+        //
+        //                  target---v
+        //     |++++++++++++++[+++++++]X          |
+        //
+        if (boundary == model::boundary_type::inclusive) {
+            if (b.last_offset() > target) {
+                co_return ss::stop_iteration::yes;
+            }
+            *result_size_bytes += model::packed_record_batch_header_size
+                                  + b.data().size_bytes();
+            co_return ss::stop_iteration::no;
+        } else {
+            if (b.base_offset() >= target) {
+                co_return ss::stop_iteration::yes;
+            }
+            *result_size_bytes += model::packed_record_batch_header_size
+                                  + b.data().size_bytes();
+            co_return ss::stop_iteration::no;
+        }
+    }
+    bool end_of_stream() const { return false; }
+
+    size_t* result_size_bytes{nullptr};
+    model::offset target;
+    model::boundary_type boundary;
+};
+} // namespace details
+
+ss::future<size_t> disk_log_impl::get_file_offset(
+  ss::lw_shared_ptr<segment> s,
+  std::optional<segment_index::entry> maybe_index_entry,
+  model::offset target,
+  model::boundary_type boundary,
+  ss::io_priority_class priority) {
+    auto index_entry = maybe_index_entry.value_or(segment_index::entry{
+      .offset = s->offsets().base_offset,
+      .filepos = 0,
+    });
+    size_t size_bytes{index_entry.filepos};
+    details::batch_size_accumulator acc{
+      .result_size_bytes = &size_bytes,
+      .target = target,
+      .boundary = boundary,
+    };
+
+    storage::log_reader_config reader_cfg(index_entry.offset, target, priority);
+
+    reader_cfg.skip_batch_cache = true;
+    reader_cfg.skip_readers_cache = true;
+
+    auto reader = co_await make_reader(reader_cfg);
+
+    try {
+        co_await std::move(reader).consume(acc, model::no_timeout);
+    } catch (...) {
+        vlog(
+          stlog.error,
+          "Error detected while consuming {}",
+          std::current_exception());
+        throw;
+    }
+    co_return size_bytes;
+}
+
+ss::future<std::optional<log::offset_range_size_result_t>>
+disk_log_impl::offset_range_size(
+  model::offset first, model::offset last, ss::io_priority_class io_priority) {
+    vlog(
+      stlog.debug,
+      "Offset range size, first: {}, last: {}, lstat: {}",
+      first,
+      last,
+      offsets());
+
+    // build the collection
+    const auto segments = [&] {
+        auto base_it = _segs.lower_bound(first);
+        std::vector<ss::lw_shared_ptr<storage::segment>> segments;
+        for (auto it = base_it; it != _segs.end(); it++) {
+            const auto& offsets = it->get()->offsets();
+            if (offsets.committed_offset < first) {
+                continue;
+            }
+            if (offsets.base_offset > last) {
+                break;
+            }
+            segments.push_back(*it);
+        }
+        return segments;
+    }();
+
+    // The following checks are needed to maintain the following invariants:
+    // - the 'first' offset of the offset range exists and the first segment in
+    //   the 'segments' collection points to it.
+    // - if the log was truncated and start offset is greater than 'first' the
+    //   method should return nullopt.
+    // - the 'last' offset of the offset range exists and the the last segment
+    //   in the 'segments' collection points to it.
+    // - if the last offset of the log is less than 'last' the method throws.
+    if (segments.empty()) {
+        vlog(stlog.debug, "Can't find log segments to lock");
+        co_return std::nullopt;
+    }
+    if (segments.front()->offsets().base_offset > first) {
+        vlog(
+          stlog.debug,
+          "Offset {} is out of range, {}",
+          first,
+          segments.front()->offsets());
+        co_return std::nullopt;
+    }
+    if (segments.back()->offsets().committed_offset < last) {
+        vlog(
+          stlog.debug,
+          "Offset {} is out of range, {}",
+          last,
+          segments.back()->offsets());
+        co_return std::nullopt;
+    }
+
+    std::vector<ss::future<ss::rwlock::holder>> f_locks;
+    f_locks.reserve(segments.size());
+    for (auto& s : segments) {
+        f_locks.emplace_back(s->read_lock());
+    }
+
+    auto holders = co_await ss::when_all_succeed(
+      std::begin(f_locks), std::end(f_locks));
+
+    // Check if anything was closed after the scheduling point.
+    for (const auto& s : segments) {
+        if (s->is_closed()) {
+            co_return std::nullopt;
+        }
+    }
+
+    // Left subscan
+    auto ix_left = segments.front()->index().find_nearest(first);
+    if (ix_left.has_value()) {
+        // We have found an index entry.
+        vlog(
+          stlog.debug,
+          "Scanning (left) log segment {} from the file offset {} (RP offset "
+          "{})",
+          segments.front()->offsets(),
+          ix_left->filepos,
+          ix_left->offset);
+    } else {
+        // Scan from the beginning of the segment.
+        vlog(
+          stlog.debug,
+          "Scanning (left) log segment {} from the start",
+          segments.front()->offsets());
+    }
+    auto left_scan_bytes = co_await get_file_offset(
+      segments.front(),
+      ix_left,
+      first,
+      model::boundary_type::exclusive,
+      io_priority);
+
+    // Right subscan
+    auto ix_right = segments.back()->index().find_nearest(last);
+    if (ix_right.has_value()) {
+        vlog(
+          stlog.debug,
+          "Scanning (right) log segment {} from the file offset {} (RP offset "
+          "{})",
+          segments.back()->offsets(),
+          ix_right->filepos,
+          ix_right->offset);
+    } else {
+        // Scan from the beginning of the segment.
+        vlog(
+          stlog.debug,
+          "Scanning (right) log segment {} from the start",
+          segments.back()->offsets());
+    }
+    auto right_scan_bytes = co_await get_file_offset(
+      segments.back(),
+      ix_right,
+      last,
+      model::boundary_type::inclusive,
+      io_priority);
+
+    // compute size
+    size_t total_size = 0;
+    if (segments.size() > 1) {
+        size_t mid_size = 0;
+        size_t ix_last = segments.size() - 1;
+        size_t left_size = segments.front()->size_bytes() - left_scan_bytes;
+        size_t right_size = right_scan_bytes;
+        for (size_t i = 1; i < ix_last; i++) {
+            mid_size += segments[i]->size_bytes();
+        }
+        total_size = left_size + mid_size + right_size;
+        vlog(
+          stlog.debug,
+          "Computed size components: {}-{}-{}, total: {}, left scan bytes: {}, "
+          "right scan bytes: {}, num segments: {}, "
+          "offset range: {}-{}",
+          left_size,
+          mid_size,
+          right_size,
+          total_size,
+          left_scan_bytes,
+          right_scan_bytes,
+          segments.size(),
+          first,
+          last);
+    } else {
+        // Both left and right scans were performed on the same segment.
+        total_size = right_scan_bytes - left_scan_bytes;
+        vlog(
+          stlog.debug,
+          "Computed size total: {}, left scan bytes: {}, right scan bytes: {}, "
+          "num segments: {}, offset range: {}-{}",
+          total_size,
+          left_scan_bytes,
+          right_scan_bytes,
+          segments.size(),
+          first,
+          last);
+    }
+    co_return offset_range_size_result_t{
+      .on_disk_size = total_size,
+      .last_offset = last,
+    };
+}
+
+ss::future<std::optional<log::offset_range_size_result_t>>
+disk_log_impl::offset_range_size(
+  model::offset first,
+  offset_range_size_requirements_t target,
+  ss::io_priority_class io_priority) {
+    vlog(
+      stlog.debug,
+      "Offset range size, first: {}, target size: {}/{}, lstat: {}",
+      first,
+      target.target_size,
+      target.min_size,
+      offsets());
+    auto base_it = _segs.lower_bound(first);
+
+    // Invariant: 'first' offset should be present in the log. If the segment is
+    // compacted it's OK if it's missing if the segment that stores the offset
+    // range that includes the offset still exists.
+    if (base_it == _segs.end()) {
+        vlog(
+          stlog.debug,
+          "Offset {} is not present in the log {}",
+          first,
+          offsets());
+        co_return std::nullopt;
+    } else {
+        auto lstat = base_it->get()->offsets();
+        if (first < lstat.base_offset || first > lstat.committed_offset) {
+            vlog(
+              stlog.debug,
+              "Offset {} is not present in the segment {}",
+              first,
+              lstat);
+            co_return std::nullopt;
+        }
+    }
+
+    size_t first_segment_file_pos = 0;
+    auto first_segment = *base_it;
+    size_t first_segment_size = first_segment->file_size();
+    auto first_segment_offsets = first_segment->offsets();
+
+    auto [f_locks, segments] = [&]() {
+        std::vector<ss::future<ss::rwlock::holder>> f_locks;
+        std::vector<ss::lw_shared_ptr<segment>> segments;
+        size_t locked_range_size = 0;
+        model::offset last_locked_offset;
+        for (auto& s : _segs) {
+            locked_range_size += s->size_bytes();
+            f_locks.emplace_back(s->read_lock());
+            segments.emplace_back(s);
+            last_locked_offset = s->offsets().committed_offset;
+            if (locked_range_size > (target.target_size + first_segment_size)) {
+                // The size of the locked range consist of full segments only.
+                // It's not guaranteed that the first segment will contribute
+                // much to the resulting size because the staring point could be
+                // at the end of the segment. Because of that we're not taking
+                // its size into account here.
+                break;
+            }
+        }
+        return std::make_tuple(std::move(f_locks), std::move(segments));
+    }();
+    auto holders = co_await ss::when_all_succeed(
+      std::begin(f_locks), std::end(f_locks));
+
+    for (const auto& s : segments) {
+        if (s->is_closed()) {
+            co_return std::nullopt;
+        }
+    }
+
+    if (
+      first_segment_offsets.base_offset <= first
+      && first_segment_offsets.committed_offset >= first) {
+        // The first segment is accounted only partially. We're doing subscan
+        // here but most of the time it won't require the actual scanning
+        // because in this mode the offset range will end on index entry or
+        // segment end. When we subsequently creating uploads using this method
+        // only the first upload will have to do scanning to find the
+        // offset.
+        auto ix_res = first_segment->index().find_nearest(first);
+
+        first_segment_file_pos = co_await get_file_offset(
+          first_segment,
+          ix_res,
+          first,
+          model::boundary_type::exclusive,
+          io_priority);
+    } else {
+        // We expect to find first offset inside the first segment.
+        // If this is not the case the log was likely truncated concurrently.
+        vlog(
+          stlog.debug,
+          "First segment out of range, offsets: {}, expected offset: {}",
+          first_segment_offsets,
+          first);
+        co_return std::nullopt;
+    }
+
+    // No scheduling points below this point, some invariants has to be
+    // validated
+
+    // Collect relevant segments
+    size_t current_size = 0;
+    // Last offset included to the result, default value means that we didn't
+    // find anything
+    model::offset last_included_offset;
+    size_t num_segments = 0;
+    auto it = _segs.lower_bound(first);
+    for (; it < _segs.end(); it++) {
+        if (it->get()->is_closed()) {
+            co_return std::nullopt;
+        }
+        if (*it == first_segment) {
+            vlog(
+              stlog.debug,
+              "First offset {} located at {}, offset range size: {}, Segment "
+              "offsets: {}",
+              first,
+              first_segment_file_pos,
+              first_segment_size - first_segment_file_pos,
+              first_segment_offsets);
+            current_size += first_segment_size - first_segment_file_pos;
+        } else {
+            auto sz = it->get()->file_size();
+            current_size += sz;
+            vlog(
+              stlog.debug,
+              "Adding {} bytes to the offset range. Segment offsets: {}, "
+              "current_size: {}",
+              sz,
+              it->get()->offsets(),
+              current_size);
+        }
+        num_segments++;
+        if (current_size > target.target_size) {
+            // Segment size overshoots and we need to use segment index
+            // to find the end offset and its file pos.
+            // We accumulated enough segments to satisfy the query. There're
+            // few cases:
+            // - The beginning and the end of the range is inside the same
+            // segment. The 'num_segments' will be equal to one if this is the
+            // case.
+            // - The beginning and the end are located in different
+            // segments. In both cases we need to find the finish line. The
+            // size calculation is affected by these two possibilities.
+            vlog(
+              stlog.debug,
+              "Offset range size overshoot by {}, current segment size "
+              "{}, current offset range size: {}",
+              current_size - target.target_size,
+              it->get()->file_size(),
+              current_size);
+
+            size_t truncate_after = 0;
+            if (num_segments == 1) {
+                // There are two cases here.
+                // 1. The segment has at least target_size bytes after
+                // base_file_pos,
+                // 2. The segment is too small. In this case we need to clamp
+                // the result.
+                truncate_after = first_segment_file_pos + target.target_size;
+                truncate_after = std::clamp(
+                  truncate_after,
+                  first_segment_file_pos,
+                  it->get()->file_size());
+            } else {
+                // In this case we need to find the truncation point
+                // always starting from the beginning of the segment.
+                //
+                // prev is guaranteed to be smaller than target_size
+                // because we reached this branch.
+                auto prev = current_size - it->get()->file_size();
+                auto delta = target.target_size - prev;
+                truncate_after = delta;
+            }
+            auto last_index_entry = it->get()->index().find_above_size_bytes(
+              truncate_after);
+            if (
+              last_index_entry.has_value()
+              && model::prev_offset(last_index_entry->offset) > first) {
+                vlog(
+                  stlog.debug,
+                  "Setting offset range to {} - {}, {} bytes of the last "
+                  "segment are included",
+                  first,
+                  last_index_entry->offset,
+                  last_index_entry->filepos);
+
+                last_included_offset = model::prev_offset(
+                  last_index_entry->offset);
+
+                // We're including only part of the file so the total size
+                // of the range has to be adjusted
+                current_size
+                  -= (it->get()->file_size() - last_index_entry->filepos);
+            } else {
+                // There is no index entry that we can use to find the size
+                // of the offset range in this case
+                vlog(
+                  stlog.debug,
+                  "Setting offset range to {} - {} (end of segment), "
+                  "truncation point: {}, base_file_pos: {}",
+                  first,
+                  it->get()->offsets().committed_offset,
+                  truncate_after,
+                  first_segment_file_pos);
+                last_included_offset = it->get()->offsets().committed_offset;
+            }
+            break;
+        } else if (current_size > target.min_size) {
+            vlog(
+              stlog.debug,
+              "Setting offset range to {} - {}",
+              first,
+              it->get()->offsets().committed_offset);
+            // We can include full segment to the list of segments
+            last_included_offset = it->get()->offsets().committed_offset;
+            continue;
+        }
+    }
+
+    vlog(
+      stlog.debug,
+      "Discovered offset size: {}, last included offset: {}",
+      current_size,
+      last_included_offset);
+
+    if (current_size < target.min_size) {
+        vlog(stlog.debug, "Discovered offset range is not large enough");
+        co_return std::nullopt;
+    }
+
+    if (
+      num_segments == 0 || current_size == 0
+      || last_included_offset == model::offset{}) {
+        vlog(stlog.debug, "Can't find log segments");
+        co_return std::nullopt;
+    }
+
+    co_return offset_range_size_result_t{
+      .on_disk_size = current_size,
+      .last_offset = last_included_offset,
+    };
+}
+
+bool disk_log_impl::is_compacted(
+  model::offset first, model::offset last) const {
+    for (auto it = _segs.lower_bound(first); it != _segs.end(); it++) {
+        const auto& lstat = it->get()->offsets();
+        if (lstat.base_offset > last) {
+            break;
+        }
+        if (it->get()->is_compacted_segment()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 ss::future<model::record_batch_reader>
 disk_log_impl::make_reader(log_reader_config config) {
     vassert(!_closed, "make_reader on closed log - {}", *this);
@@ -1748,6 +2260,9 @@ disk_log_impl::make_reader(log_reader_config config) {
           std::move(lease), config, *_probe);
         return ss::make_ready_future<model::record_batch_reader>(
           std::move(empty));
+    }
+    if (config.skip_readers_cache) {
+        return make_unchecked_reader(config);
     }
     return make_cached_reader(config);
 }
@@ -2550,7 +3065,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
     /*
      * cache this for access by the health
      */
-    _reclaimable_local_size_bytes = reclaim.local_retention;
+    _reclaimable_size_bytes = reclaim.available;
 
     co_return std::make_pair(usage, reclaim);
 }
@@ -3032,7 +3547,7 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
     co_return res;
 }
 
-size_t disk_log_impl::reclaimable_local_size_bytes() const {
+size_t disk_log_impl::reclaimable_size_bytes() const {
     /*
      * circumstances/configuration under which this log will be trimming back to
      * local retention size may change. catch these before reporting potentially
@@ -3048,7 +3563,7 @@ size_t disk_log_impl::reclaimable_local_size_bytes() const {
     if (deletion_exempt(config().ntp())) {
         return 0;
     }
-    return _reclaimable_local_size_bytes;
+    return _reclaimable_size_bytes;
 }
 
 } // namespace storage

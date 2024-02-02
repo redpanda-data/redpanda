@@ -44,6 +44,11 @@
             "name": "offset_fetch",
             "input_type": "offset_fetch_request",
             "output_type": "offset_fetch_response"
+        },
+        {
+            "name": "list_committed_offsets",
+            "input_type": "list_commits_request",
+            "output_type": "list_commits_reply"
         }
     ]
 }

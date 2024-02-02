@@ -46,6 +46,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/optimized_optional.hh>
 
 namespace transform {
@@ -710,6 +711,33 @@ model::cluster_transform_report service::compute_default_report() {
 std::unique_ptr<rpc::reporter>
 service::create_reporter(ss::sharded<service>* s) {
     return std::make_unique<wrapped_service_reporter>(s);
+}
+
+ss::future<
+  result<ss::chunked_fifo<model::transform_committed_offset>, cluster::errc>>
+service::list_committed_offsets(list_committed_offsets_options options) {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return cluster::errc::feature_disabled;
+    }
+    auto _ = _gate.hold();
+    auto result = co_await _rpc_client->local().list_committed_offsets();
+    if (result.has_error()) {
+        co_return result.error();
+    }
+    auto all_transforms = _plugin_frontend->local().all_transforms();
+    ss::chunked_fifo<model::transform_committed_offset> commits;
+    for (const auto& [k, v] : result.value()) {
+        auto it = all_transforms.find(k.id);
+        if (it != all_transforms.end()) {
+            commits.emplace_back(it->second.name, k.partition, v.offset);
+        } else if (options.show_unknown) {
+            commits.emplace_back(
+              model::transform_name(), k.partition, v.offset);
+        }
+        co_await ss::coroutine::maybe_yield();
+    }
+    co_return commits;
 }
 
 } // namespace transform

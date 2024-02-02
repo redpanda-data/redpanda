@@ -14,6 +14,10 @@ from typing import Optional, Any
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.node_container import NodeContainer
+
+from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, RedpandaServiceCloud
 from rptest.services.utils import BadLogLines
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 
@@ -36,7 +40,12 @@ class OpenMessagingBenchmarkWorkers(Service):
         }
     }
 
-    def __init__(self, ctx, num_workers=None, nodes: Optional[list] = None):
+    nodes: list[ClusterNode] | NodeContainer
+
+    def __init__(self,
+                 ctx,
+                 num_workers=None,
+                 nodes: Optional[list[ClusterNode]] = None):
         """
         :param num_workers: allocate this many nodes as workers (mutually exclusive with `nodes`)
         :param nodes: use these pre-allocated nodes as workers (mutually exclusive with `num_workers`)
@@ -158,12 +167,14 @@ class OpenMessagingBenchmark(Service):
         },
     }
 
+    nodes: list[ClusterNode] | NodeContainer
+
     def __init__(self,
                  ctx,
-                 redpanda,
+                 redpanda: RedpandaService | RedpandaServiceCloud,
                  driver: str | dict[str, Any] = "SIMPLE_DRIVER",
                  workload: str | WorkloadTuple = "SIMPLE_WORKLOAD",
-                 node=None,
+                 node: ClusterNode | None = None,
                  worker_nodes=None,
                  topology="swarm",
                  num_workers=NUM_WORKERS):
@@ -183,6 +194,7 @@ class OpenMessagingBenchmark(Service):
         if node:
             self.nodes = [node]
 
+        self._metrics = []
         self._ctx = ctx
         self.topology = topology
         self.redpanda = redpanda
@@ -214,7 +226,7 @@ class OpenMessagingBenchmark(Service):
 
     def _create_benchmark_driver_file(self, node):
         # if testing redpanda cloud, override with default superuser
-        if hasattr(self.redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+        if isinstance(self.redpanda, RedpandaServiceCloud):
             u, p, m = self.redpanda._superuser
             self.driver['sasl_username'] = u
             self.driver['sasl_password'] = p
@@ -234,6 +246,12 @@ class OpenMessagingBenchmark(Service):
             self._ctx, num_workers=self.num_workers, nodes=self.worker_nodes)
         self.workers.start()
 
+    @property
+    def metrics(self):
+        """Metrics from the results of an OMB run.
+        """
+        return self._metrics
+
     def start_node(self, node, timeout_sec=5 * 60, **kwargs):
         idx = self.idx(node)
         self.logger.info("Open Messaging Benchmark: benchmark node - %d on %s",
@@ -246,20 +264,22 @@ class OpenMessagingBenchmark(Service):
         self._create_benchmark_workload_file(node)
         self._create_benchmark_driver_file(node)
 
+        assert self.workers
         worker_nodes = self.workers.get_adresses()
 
         self.logger.info(
             f"Starting Open Messaging Benchmark with workers: {worker_nodes}")
 
-        rp_node = None
-        if self.redpanda.num_nodes > 0:
-            rp_node = self.redpanda.nodes[0]
-        rp_version = "unknown_version"
-        try:
-            rp_version = self.redpanda.get_version(rp_node)
-        except AssertionError:
-            # In some builds (particularly in dev), version string may not be populated
-            pass
+        # This version is used for the charts, in the cloud we use the
+        # install pack version, otherwise the redpanda version
+        if isinstance(self.redpanda, RedpandaServiceCloud):
+            rp_version = self.redpanda.install_pack_version()
+        else:
+            try:
+                rp_version = self.redpanda.get_version(self.redpanda.nodes[0])
+            except AssertionError:
+                # In some builds (particularly in dev), version string may not be populated
+                rp_version = "unknown_version"
 
         start_cmd = f"cd {OpenMessagingBenchmark.OPENMESSAGING_DIR}; \
                     bin/benchmark \
@@ -315,6 +335,7 @@ class OpenMessagingBenchmark(Service):
             raise BadLogLines(bad_lines)
 
     def check_succeed(self, validate_metrics=True):
+        assert self.workers
         self.workers.check_has_errors()
         for node in self.nodes:
             # Here we check that OMB finished and put result in file
@@ -337,10 +358,14 @@ class OpenMessagingBenchmark(Service):
         metrics['publishLatencyMin'] = min(metrics['publishLatencyMin'])
         metrics['endToEndLatencyMin'] = min(metrics['endToEndLatencyMin'])
 
+        self._metrics = metrics
+
         if validate_metrics:
-            OMBSampleConfigurations.validate_metrics(metrics, self.validator)
+            OMBSampleConfigurations.validate_metrics(self._metrics,
+                                                     self.validator)
 
     def wait_node(self, node, timeout_sec):
+        assert timeout_sec is not None
         process_pid = node.account.java_pids("benchmark")
         if len(process_pid) == 0:
             return True

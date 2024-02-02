@@ -12,6 +12,7 @@ import os
 import random
 import string
 import sys
+import subprocess
 
 from dataclasses import dataclass
 
@@ -29,11 +30,25 @@ MODE_PRODUCE = 'produce'
 MODE_CONSUME = 'consume'
 
 
+def shell(cmd) -> list[str]:
+    # Run single command
+    _cmd = cmd.split(" ")
+    p = subprocess.Popen(_cmd,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         text=True)
+    p.wait()
+    # get stdout, expect no errors
+    _out = p.communicate()[0].splitlines()
+    # _rcode = p.returncode
+    p.kill()
+    return _out
+
+
 @dataclass(kw_only=True)
 class WorkloadConfig:
     # Default values are set for CDT run inside EC2 instance
     connector_path: str = "File:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar"
-    python_lib_path: str = "File:///opt/flink/opt/flink-python-1.18.0.jar"
     python_archive: str = "/opt/flink/flink_venv.tgz"
     logger_path: str = "/workloads"
     log_level: str = "DEBUG"
@@ -128,12 +143,25 @@ class FlinkWorkloadProduce:
         table_env = StreamTableEnvironment.create(
             stream_execution_environment=env, environment_settings=settings)
 
+        # Tune table idle state handling
+        # Clear the state if it has not changed
+        table_env.get_config().set("table.exec.state.ttl", "60 s")
+        # If a source does not received anything after 5 sec mark it as idle
+        table_env.get_config().set("table.exec.source.idle-timeout", "5000 ms")
+
         # Alternative way to add connector, just for illustrative purposes
         table_env.get_config().set("pipeline.jars", self.config.connector_path)
         # This is needed for Scalar functions work
         # See https://nightlies.apache.org/flink/flink-docs-master/docs/dev/python/dependency_management/
+        lib_path_list = shell("find /opt/flink/opt/ -name flink-python*")
+        if len(lib_path_list) < 1:
+            raise RuntimeError("Failed to find flink-python-....jar "
+                               "at '/opt/flink/opt/")
+        elif len(lib_path_list) > 1:
+            self.logger.info(f"Found multiple libs: {lib_path_list}")
+        self.logger.info(f"Using python classlib at '{lib_path_list[0]}'")
         table_env.get_config().set("pipeline.classpaths",
-                                   self.config.python_lib_path)
+                                   f"file://{lib_path_list[0]}")
 
         # Add python venv archive to table_api
         table_env.add_python_archive(self.config.python_archive, "venv")
@@ -167,30 +195,11 @@ class FlinkWorkloadProduce:
         self.words = self._generate_words()
 
         # Define the table schema
-        sink_table_schema = Schema.new_builder() \
+        self.sink_table_schema = Schema.new_builder() \
             .column('index', DataTypes.BIGINT()) \
             .column('subindex', DataTypes.BIGINT()) \
             .column('word', DataTypes.STRING()) \
             .build()
-
-        # Build descriptor with kafka connector and options
-        # see: https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/connectors/table/kafka/
-        sink_table_desc = TableDescriptor.for_connector('kafka') \
-            .schema(sink_table_schema) \
-            .option('connector', 'kafka') \
-            .option('topic', f'{self.config.topic_name}') \
-            .option('properties.bootstrap.servers', f'{self.config.brokers}') \
-            .option('properties.group.id', f'{self.config.producer_group}') \
-            .option('properties.transaction.timeout.ms', '15000') \
-            .option('scan.startup.mode', 'earliest-offset') \
-            .option('sink.delivery-guarantee', 'exactly-once') \
-            .option('sink.transactional-id-prefix', 'flink_transaction_test_1') \
-            .option('format', 'csv') \
-            .build()
-
-        # Create target table
-        self.sink_table = self.table_env.create_temporary_table(
-            'sink', sink_table_desc)
 
     def produce_words(self):
         """
@@ -203,7 +212,9 @@ class FlinkWorkloadProduce:
         """
         # Do the sending
         idx = 0
+        batch_count = 0
         while idx < self.config.count:
+            batch_count += 1
             # Prepare list of words that will be included in one INSERT cmd
             # aka batch
             words_to_go = self.config.count - idx
@@ -216,6 +227,28 @@ class FlinkWorkloadProduce:
                 word = self.id_to_word(random.randint(0, len(self.words) - 1))
                 row = f"({idx+count}, {count}, '{word}')"
                 values.append(row)
+
+            sys.stdout.write(f"Initializing batch {batch_count}'\n")
+            # Build descriptor with kafka connector and options
+            # see: https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/connectors/table/kafka/
+            sink_table_desc = TableDescriptor.for_connector('kafka') \
+                .schema(self.sink_table_schema) \
+                .option('connector', 'kafka') \
+                .option('topic', f'{self.config.topic_name}') \
+                .option('properties.bootstrap.servers', f'{self.config.brokers}') \
+                .option('properties.group.id', f'{self.config.producer_group}') \
+                .option('properties.transaction.timeout.ms', '15000') \
+                .option('scan.startup.mode', 'earliest-offset') \
+                .option('sink.delivery-guarantee', 'exactly-once') \
+                .option('sink.transactional-id-prefix',
+                        f'flink_transaction_test_{batch_count}') \
+                .option('format', 'csv') \
+                .build()
+
+            _temp_sink_name = f'sink_{batch_count}'
+            # Create target table
+            self.sink_table = self.table_env.create_temporary_table(
+                _temp_sink_name, sink_table_desc)
 
             # Note:
             # One insert operator is a good example of a transaction.
@@ -231,8 +264,9 @@ class FlinkWorkloadProduce:
             # i.e. yet once again, ~400 transactions
             sys.stdout.write(f"Sending {len(values)} values at '{idx}'\n")
             sys.stdout.flush()
-            self.table_env.execute_sql("INSERT INTO sink " +
+            self.table_env.execute_sql(f"INSERT INTO {_temp_sink_name} "
                                        f"VALUES {','.join(values)};")
+            self.table_env.drop_temporary_table(_temp_sink_name)
             idx += size
 
         return

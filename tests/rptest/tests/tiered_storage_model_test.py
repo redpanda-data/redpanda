@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from threading import Condition
 from collections import defaultdict
 
-from ducktape.mark import matrix, ok_to_fail
+from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
@@ -547,7 +547,6 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
         self.stop_flag = True
         self.thread_pool.shutdown()
 
-    @ok_to_fail  #see https://github.com/redpanda-data/redpanda/issues/16208
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=get_cloud_storage_type(),
             test_case=get_tiered_storage_test_cases(fast_run=True))

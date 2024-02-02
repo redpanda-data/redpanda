@@ -19,7 +19,7 @@ from rptest.util import expect_exception
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 
-from rptest.services.redpanda import CloudStorageType, RedpandaService, get_cloud_storage_type, make_redpanda_service
+from rptest.services.redpanda import CloudStorageType, MetricsEndpoint, RedpandaService, get_cloud_storage_type, make_redpanda_service
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
@@ -245,6 +245,13 @@ class TestReadReplicaService(EndToEndTest):
             backoff_sec=5,
             err_msg="Could not create read replica topic. Most likely " +
             "because topic manifest is not in S3.")
+        if num_messages > 0:
+            wait_until(lambda: self.second_cluster.metric_sum(
+                "redpanda_kafka_max_offset",
+                topic=self.topic_name,
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0,
+                       timeout_sec=10,
+                       backoff_sec=1)
 
     def _bucket_usage(self) -> BucketUsage:
         assert self.redpanda and self.redpanda.cloud_storage_client

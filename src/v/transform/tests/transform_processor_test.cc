@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "container/zip.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -19,9 +20,12 @@
 #include "transform/tests/test_fixture.h"
 #include "transform/transform_processor.h"
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <ranges>
+#include <tuple>
 
 namespace transform {
 namespace {
@@ -105,6 +109,34 @@ private:
     uint64_t _error_count = 0;
     probe _probe;
 };
+
+MATCHER_P(SameBatchRef, ref, "") {
+    const model::record_batch& batch = ref.get();
+    const auto& a = arg.copy_records();
+    const auto& b = batch.copy_records();
+    if (a.size() != b.size()) {
+        *result_listener << "expected same size: " << a.size() << " vs "
+                         << b.size();
+        return false;
+    }
+    for (const auto& [a, b] : container::zip(a, b)) {
+        if (a.key() != b.key()) {
+            return false;
+        }
+        if (a.value() != b.value()) {
+            return false;
+        }
+        if (a.headers() != b.headers()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto SameBatch(const model::record_batch& batch) {
+    return SameBatchRef(std::ref(batch));
+}
+
 } // namespace
 
 TEST_F(ProcessorTestFixture, HandlesDoubleStops) {
@@ -118,7 +150,7 @@ TEST_F(ProcessorTestFixture, ProcessOne) {
     auto batch = make_tiny_batch();
     push_batch(batch.share());
     auto returned = read_batch();
-    EXPECT_EQ(batch, returned);
+    EXPECT_THAT(batch, SameBatch(returned));
     EXPECT_EQ(error_count(), 0);
 }
 
@@ -133,7 +165,7 @@ TEST_F(ProcessorTestFixture, ProcessMany) {
     }
     for (auto& b : batches) {
         auto returned = read_batch();
-        EXPECT_EQ(b, returned);
+        EXPECT_THAT(b, SameBatch(returned));
     }
     EXPECT_EQ(error_count(), 0);
 }
@@ -154,7 +186,7 @@ TEST_F(ProcessorTestFixture, TracksOffsets) {
     restart();
     for (auto& b : first_batches) {
         auto returned = read_batch();
-        EXPECT_EQ(b, returned);
+        EXPECT_THAT(b, SameBatch(returned));
     }
     restart();
     for (auto& b : second_batches) {
@@ -162,7 +194,7 @@ TEST_F(ProcessorTestFixture, TracksOffsets) {
     }
     for (auto& b : second_batches) {
         auto returned = read_batch();
-        EXPECT_EQ(b, returned);
+        EXPECT_THAT(b, SameBatch(returned));
     }
     EXPECT_EQ(error_count(), 0);
 }
@@ -171,7 +203,7 @@ TEST_F(ProcessorTestFixture, HandlesEmptyBatches) {
     auto batch_one = make_tiny_batch();
     push_batch(batch_one.copy());
     wait_for_committed_offset(batch_one.last_offset());
-    EXPECT_EQ(read_batch(), batch_one);
+    EXPECT_THAT(read_batch(), SameBatch(batch_one));
 
     auto batch_two = make_tiny_batch();
     set_transform_mode(transform_mode::filter);
@@ -184,7 +216,7 @@ TEST_F(ProcessorTestFixture, HandlesEmptyBatches) {
     set_transform_mode(transform_mode::noop);
     push_batch(batch_three.copy());
     wait_for_committed_offset(batch_three.last_offset());
-    EXPECT_EQ(read_batch(), batch_three);
+    EXPECT_THAT(read_batch(), SameBatch(batch_three));
 }
 
 TEST_F(ProcessorTestFixture, LagOffByOne) {
@@ -192,7 +224,7 @@ TEST_F(ProcessorTestFixture, LagOffByOne) {
     auto batch_one = make_tiny_batch();
     push_batch(batch_one.copy());
     wait_for_committed_offset(batch_one.last_offset());
-    EXPECT_EQ(read_batch(), batch_one);
+    EXPECT_THAT(read_batch(), SameBatch(batch_one));
     EXPECT_EQ(lag(), 0);
 }
 
@@ -202,7 +234,7 @@ TEST_F(ProcessorTestFixture, LagOverflowBug) {
     push_batch(batch_one.copy());
     start();
     wait_for_committed_offset(batch_one.last_offset());
-    EXPECT_EQ(read_batch(), batch_one);
+    EXPECT_THAT(read_batch(), SameBatch(batch_one));
     EXPECT_EQ(lag(), 0);
 }
 

@@ -137,6 +137,14 @@ public:
               return do_offset_fetch(mgr.get(ntp), req);
           });
     }
+    ss::future<result<model::transform_offsets_map, cluster::errc>>
+    list_committed_offsets_on_shard(
+      ss::shard_id shard, const model::ntp& ntp) final {
+        return invoke_func_on_shard_impl(
+          shard, [this, ntp](cluster::partition_manager& mgr) mutable {
+              return do_list_committed_offsets(mgr.get(ntp));
+          });
+    }
 
 private:
     static constexpr auto coordinator_partition = model::partition_id{0};
@@ -212,6 +220,16 @@ private:
             }
         }
         co_return response;
+    }
+
+    ss::future<result<model::transform_offsets_map, cluster::errc>>
+    do_list_committed_offsets(ss::lw_shared_ptr<cluster::partition> partition) {
+        if (!partition) {
+            co_return cluster::errc::not_leader;
+        }
+        auto stm
+          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
+        co_return co_await stm->list();
     }
 
     ss::future<cluster::errc> invoke_on_shard_impl(

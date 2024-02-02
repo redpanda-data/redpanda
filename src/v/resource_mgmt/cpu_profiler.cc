@@ -18,7 +18,9 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/internal/cpu_profiler.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/util/later.hh>
 
 #include <iterator>
@@ -36,25 +38,22 @@ cpu_profiler::cpu_profiler(
 }
 
 ss::future<> cpu_profiler::start() {
-    seastar::engine().set_cpu_profiler_period(_sample_period());
-    seastar::engine().set_cpu_profiler_enabled(_enabled());
-
-    if (_enabled()) {
-        // Arm the timer to fire whenever the profiler collects
-        // the maximum number of traces it can retain.
-        _query_timer.arm_periodic(ss::max_number_of_traces * _sample_period());
-    }
+    on_sample_period_change();
+    on_enabled_change();
 
     return ss::now();
 }
 
 ss::future<> cpu_profiler::stop() {
+    _as.request_abort();
     _query_timer.cancel();
     co_await _gate.close();
+    ss::engine().set_cpu_profiler_enabled(false);
 }
 
-ss::future<std::vector<cpu_profiler::shard_samples>>
-cpu_profiler::results(std::optional<ss::shard_id> shard_id) {
+ss::future<std::vector<cpu_profiler::shard_samples>> cpu_profiler::results(
+  std::optional<ss::shard_id> shard_id,
+  std::optional<ss::lowres_clock::time_point> filter_before) {
     if (_gate.is_closed()) {
         co_return std::vector<shard_samples>{};
     }
@@ -64,7 +63,8 @@ cpu_profiler::results(std::optional<ss::shard_id> shard_id) {
 
     if (shard_id) {
         auto shard_result = co_await container().invoke_on(
-          shard_id.value(), [](auto& s) { return s.shard_results(); });
+          shard_id.value(),
+          [filter_before](auto& s) { return s.shard_results(filter_before); });
 
         results.emplace_back(
           shard_result.shard,
@@ -72,7 +72,7 @@ cpu_profiler::results(std::optional<ss::shard_id> shard_id) {
           std::move(shard_result.samples));
     } else {
         results = co_await container().map_reduce0(
-          [](auto& s) { return s.shard_results(); },
+          [filter_before](auto& s) { return s.shard_results(filter_before); },
           std::vector<shard_samples>{},
           [](std::vector<shard_samples> results, shard_samples shard_result) {
               results.emplace_back(
@@ -86,10 +86,15 @@ cpu_profiler::results(std::optional<ss::shard_id> shard_id) {
     co_return results;
 }
 
-cpu_profiler::shard_samples cpu_profiler::shard_results() const {
+cpu_profiler::shard_samples cpu_profiler::shard_results(
+  std::optional<ss::lowres_clock::time_point> filter_before) const {
     size_t dropped_samples = 0;
     absl::node_hash_map<ss::simple_backtrace, size_t> backtraces;
     for (auto& results_buffer : _results_buffers) {
+        if (filter_before && results_buffer.polled_time < *filter_before) {
+            continue;
+        }
+
         dropped_samples += results_buffer.dropped_samples;
         for (auto& result : results_buffer.samples) {
             backtraces[result.user_backtrace]++;
@@ -122,7 +127,13 @@ void cpu_profiler::poll_samples() {
     resourceslog.trace(
       "Polled {} samples from the CPU profiler", results_buffer.size());
 
-    _results_buffers.emplace_front(dropped_samples, std::move(results_buffer));
+    _results_buffers.emplace_front(
+      dropped_samples, std::move(results_buffer), ss::lowres_clock::now());
+}
+
+bool cpu_profiler::is_enabled() const {
+    auto currently_overriden = _override_enabled > 0;
+    return _enabled() || currently_overriden;
 }
 
 void cpu_profiler::on_enabled_change() {
@@ -130,10 +141,16 @@ void cpu_profiler::on_enabled_change() {
         return;
     }
 
-    ss::engine().set_cpu_profiler_enabled(_enabled());
+    if (ss::engine().get_cpu_profiler_enabled() == is_enabled()) {
+        return;
+    }
+
+    ss::engine().set_cpu_profiler_enabled(is_enabled());
     _query_timer.cancel();
 
-    if (_enabled()) {
+    if (is_enabled()) {
+        // Arm the timer to fire whenever the profiler collects
+        // the maximum number of traces it can retain.
         _query_timer.arm_periodic(ss::max_number_of_traces * _sample_period());
     }
 }
@@ -143,7 +160,45 @@ void cpu_profiler::on_sample_period_change() {
         return;
     }
 
+    if (ss::engine().get_cpu_profiler_period() == _sample_period()) {
+        return;
+    }
+
     ss::engine().set_cpu_profiler_period(_sample_period());
+
+    if (is_enabled()) {
+        // Arm the timer to fire whenever the profiler collects
+        // the maximum number of traces it can retain.
+        _query_timer.rearm_periodic(
+          ss::max_number_of_traces * _sample_period());
+    }
+}
+
+ss::future<std::vector<cpu_profiler::shard_samples>>
+cpu_profiler::collect_results_for_period(
+  std::chrono::milliseconds timeout, std::optional<ss::shard_id> shard_id) {
+    if (_gate.is_closed()) {
+        co_return std::vector<shard_samples>{};
+    }
+    auto holder = _gate.hold();
+
+    _override_enabled++;
+    // enable the profiler if disabled pre-override.
+    on_enabled_change();
+
+    auto polling_start_time = ss::lowres_clock::now();
+
+    try {
+        co_await ss::sleep_abortable(timeout, _as);
+    } catch (const ss::sleep_aborted&) {
+        resourceslog.debug("Sleep aborted while collecting CPU profile");
+    }
+
+    _override_enabled--;
+    // check if profiler should be disabled post-override.
+    on_enabled_change();
+
+    co_return co_await results(shard_id, polling_start_time);
 }
 
 } // namespace resources

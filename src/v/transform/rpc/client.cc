@@ -49,6 +49,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <boost/fusion/sequence/intrinsic/back.hpp>
 #include <boost/outcome/basic_result.hpp>
+#include <boost/range/irange.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -855,4 +856,86 @@ ss::future<> client::update_wasm_binary_size() {
       cluster::error_category().message(int(ec)));
 }
 
+ss::future<result<model::transform_offsets_map, cluster::errc>>
+client::list_committed_offsets() {
+    auto cfg = _topic_metadata->find_topic_cfg(model::transform_offsets_nt);
+    if (!cfg) {
+        co_return model::transform_offsets_map{};
+    }
+    using ret_t = result<model::transform_offsets_map, cluster::errc>;
+    co_return co_await ss::map_reduce(
+      boost::irange(0, cfg->partition_count),
+      [this](int32_t id) {
+          auto partition = model::partition_id(id);
+          return do_list_committed_offsets(partition);
+      },
+      ret_t(model::transform_offsets_map{}),
+      [](ret_t agg, ret_t one) {
+          if (agg.has_error()) {
+              return agg;
+          }
+          if (one.has_error()) {
+              return one;
+          }
+          agg.value().merge(one.value());
+          return agg;
+      });
+}
+
+ss::future<result<model::transform_offsets_map, cluster::errc>>
+client::do_list_committed_offsets(model::partition_id partition) {
+    return retry(
+      [this, partition] { return do_list_committed_offsets_once(partition); });
+}
+
+ss::future<result<model::transform_offsets_map, cluster::errc>>
+client::do_list_committed_offsets_once(model::partition_id partition) {
+    auto leader = _leaders->get_leader_node(offsets_ntp(partition));
+    if (!leader) {
+        co_return cluster::errc::not_leader;
+    }
+    if (leader == _self) {
+        co_return co_await do_local_list_committed_offsets(partition);
+    } else {
+        co_return co_await do_remote_list_committed_offsets(
+          *leader, partition, timeout);
+    }
+}
+
+ss::future<result<model::transform_offsets_map, cluster::errc>>
+client::do_local_list_committed_offsets(model::partition_id partition) {
+    return _local_service->local().list_committed_offsets(
+      list_commits_request(partition));
+}
+
+ss::future<result<model::transform_offsets_map, cluster::errc>>
+client::do_remote_list_committed_offsets(
+  model::node_id node,
+  model::partition_id partition,
+  model::timeout_clock::duration timeout) {
+    vlog(log.trace, "list_committed_offsets(node={}): {}", node, partition);
+    auto resp = co_await _connections->local()
+                  .with_node_client<impl::transform_rpc_client_protocol>(
+                    _self,
+                    ss::this_shard_id(),
+                    node,
+                    timeout,
+                    [partition, timeout](
+                      impl::transform_rpc_client_protocol proto) mutable {
+                        return proto.list_committed_offsets(
+                          list_commits_request(partition),
+                          ::rpc::client_opts(
+                            model::timeout_clock::now() + timeout));
+                    })
+                  .then(&::rpc::get_ctx_data<list_commits_reply>);
+    vlog(log.trace, "list_committed_offsets(node={}): {}", node, resp);
+    if (resp.has_error()) {
+        co_return map_errc(resp.error());
+    }
+    auto reply = std::move(resp).value();
+    if (reply.errc != cluster::errc::success) {
+        co_return reply.errc;
+    }
+    co_return reply.map;
+}
 } // namespace transform::rpc

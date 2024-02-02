@@ -13,10 +13,9 @@
 // limitations under the License.
 
 use crate::varint;
-use std::time::SystemTime;
 
 use crate::varint::{Decoded, VarintDecodeError};
-use redpanda_transform_sdk_types::{BorrowedHeader, BorrowedRecord, Record};
+use redpanda_transform_sdk_types::{BorrowedHeader, BorrowedRecord};
 
 type KeyValuePair<'a> = (Option<&'a [u8]>, Option<&'a [u8]>);
 
@@ -40,7 +39,6 @@ fn read_header_from_payload(
 
 pub(crate) fn read_record_from_payload(
     payload: &[u8],
-    timestamp: SystemTime,
 ) -> Result<BorrowedRecord<'_>, VarintDecodeError> {
     let kv = read_kv(payload)?;
     let mut payload = &payload[kv.read..];
@@ -54,12 +52,10 @@ pub(crate) fn read_record_from_payload(
         headers.push(header_result.value);
     }
     let (key, value) = kv.value;
-    Ok(BorrowedRecord::new_with_headers(
-        key, value, timestamp, headers,
-    ))
+    Ok(BorrowedRecord::new_with_headers(key, value, headers))
 }
 
-pub(crate) fn write_record_payload(r: &Record, payload: &mut Vec<u8>) {
+pub(crate) fn write_record_payload(r: BorrowedRecord, payload: &mut Vec<u8>) {
     varint::write_sized_buffer(payload, r.key());
     varint::write_sized_buffer(payload, r.value());
     varint::write(payload, r.headers().len() as i64);
@@ -71,12 +67,10 @@ pub(crate) fn write_record_payload(r: &Record, payload: &mut Vec<u8>) {
 
 #[cfg(test)]
 mod tests {
-    use std::time::SystemTime;
-
-    use super::{read_record_from_payload, write_record_payload, Record};
+    use super::{read_record_from_payload, write_record_payload};
     use anyhow::{ensure, Result};
     use rand::prelude::*;
-    use redpanda_transform_sdk_types::RecordHeader;
+    use redpanda_transform_sdk_types::{Record, RecordHeader};
 
     #[test]
     fn payload_roundtrips() {
@@ -119,15 +113,15 @@ mod tests {
 
     fn validate_roundtrip(owned: &Record) -> Result<()> {
         let mut buf: Vec<u8> = Vec::new();
-        write_record_payload(owned, &mut buf);
-        let borrowed = read_record_from_payload(&buf, SystemTime::UNIX_EPOCH)?;
+        write_record_payload(owned.into(), &mut buf);
+        let borrowed = read_record_from_payload(&buf)?;
         ensure!(borrowed.key() == owned.key(), "keys not equal");
         ensure!(borrowed.value() == owned.value(), "values not equal");
         ensure!(
             borrowed.headers().len() == owned.headers().len(),
             "header count not equal"
         );
-        for (b, o) in borrowed.headers().iter().zip(owned.headers().iter()) {
+        for (b, o) in borrowed.headers().iter().zip(owned.headers()) {
             ensure!(b.key() == o.key(), "header keys not equal");
             ensure!(b.value() == o.value(), "header values not equal");
         }

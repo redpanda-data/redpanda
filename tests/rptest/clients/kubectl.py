@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from logging import Logger
 import os
 import subprocess
 
@@ -133,14 +134,25 @@ class KubectlTool:
             self._kubectl_installed = True
         return
 
+    @property
+    def logger(self) -> Logger:
+        return self._redpanda.logger
+
     def _cmd(self, cmd):
         # Log and run
         ssh_prefix = self._ssh_prefix()
         remote_cmd = ssh_prefix + cmd
         self._redpanda.logger.info(remote_cmd)
-        return subprocess.check_output(remote_cmd)
+        try:
+            return subprocess.check_output(remote_cmd, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            self.logger.info(
+                f'Command failed (rc={e.returncode}).\n' +
+                f'--------- stdout -----------\n{e.stdout.decode()}' +
+                f'--------- stderr -----------\n{e.stderr.decode()}')
+            raise
 
-    def cmd(self, kcmd):
+    def cmd(self, kcmd: list[str]):
         """Execute a kubectl command on the agent node.
         """
         # prepare

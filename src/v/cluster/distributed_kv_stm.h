@@ -16,6 +16,9 @@
 #include "raft/persisted_stm.h"
 #include "utils/fixed_string.h"
 
+#include <seastar/core/preempt.hh>
+#include <seastar/coroutine/maybe_yield.hh>
+
 #include <type_traits>
 
 namespace cluster {
@@ -79,6 +82,8 @@ template<
 requires std::is_trivially_copyable_v<Key>
          && std::is_trivially_copyable_v<Value>
 class distributed_kv_stm final : public raft::persisted_stm<> {
+    using kv_data_t = absl::btree_map<Key, Value>;
+
 public:
     static constexpr std::string_view name = Name;
     explicit distributed_kv_stm(
@@ -222,6 +227,29 @@ public:
         co_return it->second;
     }
 
+    ss::future<result<kv_data_t, cluster::errc>> list() {
+        auto holder = _gate.hold();
+        auto units = co_await _snapshot_lock.hold_read_lock();
+        if (!co_await sync(sync_timeout)) {
+            co_return errc::not_leader;
+        }
+        kv_data_t copy;
+        auto it = _kvs.begin();
+        while (it != _kvs.end()) {
+            copy.insert(*it);
+            ++it;
+            if (ss::need_preempt() && it != _kvs.end()) {
+                // The iterator could have be invalidated if there was a write
+                // during the yield. We'll use the ordered nature of the btree
+                // to support resuming the iterator after the suspension point.
+                Key checkpoint = it->first;
+                co_await ss::yield();
+                it = _kvs.lower_bound(checkpoint);
+            }
+        }
+        co_return std::move(copy);
+    }
+
     ss::future<errc> put(absl::btree_map<Key, Value> kvs) {
         auto holder = _gate.hold();
         auto units = co_await _snapshot_lock.hold_read_lock();
@@ -346,7 +374,6 @@ private:
 
     using coordinator_assignment_t
       = absl::btree_map<Key, coordinator_assignment_data>;
-    using kv_data_t = absl::btree_map<Key, Value>;
 
     struct snapshot
       : serde::envelope<snapshot, serde::version<0>, serde::compat_version<0>> {

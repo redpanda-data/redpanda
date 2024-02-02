@@ -15,7 +15,7 @@ import time
 import json
 
 from threading import Thread
-from typing import Any
+from typing import Any, cast
 
 from ducktape.errors import TimeoutError as TimeoutException
 from ducktape.mark import ignore, parametrize
@@ -36,13 +36,15 @@ from rptest.services.openmessaging_benchmark_configs import \
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda_cloud import CloudTierName, get_config_profile_name, PROVIDER_AWS
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
-                                      SISettings, RedpandaServiceCloud)
+                                      RedpandaService, SISettings,
+                                      RedpandaServiceCloud)
 from rptest.services.rpk_consumer import RpkConsumer
-#from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from rptest.util import firewall_blocked
 from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.redpanda_cloud_tests.cloudv2_object_store_blocked import cloudv2_object_store_blocked
+from rptest.utils.test_mixins import PreallocNodesMixin
 
 KiB = 1024
 MiB = KiB * KiB
@@ -213,7 +215,7 @@ def omb_runner(context: TestContext, redpanda: RedpandaServiceCloud,
         bench.stop()
 
 
-class HighThroughputTest(PreallocNodesTest):
+class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
     msg_size = 4 * KiB
     # Min segment size across all tiers
     min_segment_size = 16 * MiB
@@ -223,37 +225,13 @@ class HighThroughputTest(PreallocNodesTest):
     # Default value
     msg_timeout = 120
 
-    redpanda: RedpandaServiceCloud
-
     def __init__(self, test_ctx: TestContext, *args: Any, **kwargs: Any):
         self._ctx = test_ctx
-        # Get tier name
-        self.config_profile_name = get_config_profile_name(
-            RedpandaServiceCloud.get_cloud_globals(self._ctx.globals))
-        extra_rp_conf = None
-        num_brokers = None
 
-        if self.config_profile_name == CloudTierName.DOCKER:
-            # TODO: Bake the docker config into a higher layer that will
-            # automatically load these settings upon call to make_rp_service
-            num_brokers = 3
-            extra_rp_conf = {
-                'log_segment_size': 128 * MiB,
-                'cloud_storage_cache_size': 20 * GiB,
-                'kafka_connections_max': 100,
-            }
-
-        super(HighThroughputTest,
-              self).__init__(test_ctx,
-                             *args,
-                             node_prealloc_count=3,
-                             num_brokers=num_brokers,
-                             extra_rp_conf=extra_rp_conf,
-                             cloud_tier=self.config_profile_name,
-                             disable_cloud_storage_diagnostics=True,
-                             **kwargs)
-
-        assert isinstance(self.redpanda, RedpandaServiceCloud)
+        super(HighThroughputTest, self).__init__(test_context=test_ctx,
+                                                 *args,
+                                                 node_prealloc_count=3,
+                                                 **kwargs)
 
         # Load install pack and check profile
         install_pack = self.redpanda.get_install_pack()
@@ -278,7 +256,7 @@ class HighThroughputTest(PreallocNodesTest):
             config_profile['machine_type']]
 
         tier_product = self.redpanda.get_product()
-        assert tier_product, "Could not get product into "
+        assert tier_product, "Could not get product info"
         """
         The _partitions_upper_limit represents a rough value for the estimated
         maximum number of partitions that can be made on a new cluster via 1st
@@ -304,7 +282,7 @@ class HighThroughputTest(PreallocNodesTest):
                 cloud_storage_cache_size=cluster_config[
                     'cloud_storage_cache_size'],
             )
-            self.redpanda.set_si_settings(si_settings)
+            cast(RedpandaService, self.redpanda).set_si_settings(si_settings)
             self.s3_port = si_settings.cloud_storage_api_endpoint_port
 
         test_ctx.logger.info(
@@ -756,6 +734,7 @@ class HighThroughputTest(PreallocNodesTest):
 
     def stage_rolling_restart(self):
         self.logger.info(f"Rolling restarting nodes")
+        assert False, "rolling restart not implemented"
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
                                             start_timeout=600,
                                             stop_timeout=600)
@@ -782,6 +761,7 @@ class HighThroughputTest(PreallocNodesTest):
         self.logger.info(
             f"Stopping node {node.name} {'ungracefully' if forced_stop else 'gracefully'}"
         )
+        assert False, "stop_node not valid for Cloud"
         self.redpanda.stop_node(node,
                                 forced=forced_stop,
                                 timeout=60 if forced_stop else 180)
@@ -1477,6 +1457,9 @@ class HighThroughputTest(PreallocNodesTest):
 
         partition_size_check: list[MetricCheck] = []
         partition_size_metric = "vectorized_storage_log_partition_size"
+
+        # https://github.com/redpanda-data/cloudv2/issues/10685#issuecomment-1893009486
+        raise NotImplementedError('partition_size_check not implemented')
 
         for node in self.redpanda.nodes:
             partition_size_check.append(

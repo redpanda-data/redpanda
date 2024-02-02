@@ -197,8 +197,7 @@ class InfiniteRetentionTest(PreallocNodesTest):
             'cloud_storage_manifest_max_upload_interval_sec':
             self.params.manifest_upload_interval,
             # Default retention is infinite
-            'delete_retention_ms':
-            self.params.retention_ms,
+            'delete_retention_ms': self.params.retention_ms,
             # enable merging to generate more re-uploads
             'cloud_storage_enable_segment_merging':
             self.params.cloud_storage_enable_segment_merging,
@@ -224,6 +223,9 @@ class InfiniteRetentionTest(PreallocNodesTest):
             # evict it frequently
             'cloud_storage_materialized_manifest_ttl_ms':
             self.params.cloud_storage_materialized_manifest_ttl_ms,
+
+            # disable spillover: it will be explicitly set in the tests when needed
+            'cloud_storage_spillover_manifest_size': None,
         }
         super().__init__(test_context, node_prealloc_count=1, *args, **kwargs)
 

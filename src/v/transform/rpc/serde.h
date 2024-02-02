@@ -417,4 +417,43 @@ struct generate_report_reply
 
     model::cluster_transform_report report;
 };
+
+struct list_commits_request
+  : serde::envelope<
+      list_commits_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    list_commits_request() = default;
+    explicit list_commits_request(model::partition_id partition)
+      : partition(partition) {}
+
+    auto serde_fields() { return std::tie(partition); }
+
+    friend std::ostream& operator<<(std::ostream&, const list_commits_request&);
+
+    model::partition_id partition;
+};
+
+struct list_commits_reply
+  : serde::envelope<
+      list_commits_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    list_commits_reply() = default;
+    explicit list_commits_reply(
+      cluster::errc ec, model::transform_offsets_map m)
+      : errc(ec)
+      , map(std::move(m)) {}
+
+    auto serde_fields() { return std::tie(errc, map); }
+
+    friend std::ostream& operator<<(std::ostream&, const list_commits_reply&);
+
+    cluster::errc errc{cluster::errc::success};
+    model::transform_offsets_map map;
+};
 } // namespace transform::rpc

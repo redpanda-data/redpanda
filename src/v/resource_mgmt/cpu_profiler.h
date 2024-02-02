@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "config/property.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/internal/cpu_profiler.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
@@ -69,17 +70,33 @@ public:
 
     // Collects `shard_results()` for each shard in a node and returns
     // them as a vector.
-    ss::future<std::vector<shard_samples>>
-    results(std::optional<ss::shard_id> shard_id);
+    ss::future<std::vector<shard_samples>> results(
+      std::optional<ss::shard_id> shard_id,
+      std::optional<ss::lowres_clock::time_point> filter_before = std::nullopt);
 
     // Returns the samples and dropped samples from the shard this function
     // is called on.
-    shard_samples shard_results() const;
+    //
+    // `filter_before` will filter out any samples taken before a specified
+    // time_point before from the returned samples.
+    shard_samples shard_results(
+      std::optional<ss::lowres_clock::time_point> filter_before
+      = std::nullopt) const;
+
+    // Enables the profiler for `timeout` milliseconds, then returns samples
+    // collected during that time period.
+    ss::future<std::vector<shard_samples>> collect_results_for_period(
+      std::chrono::milliseconds timeout, std::optional<ss::shard_id> shard_id);
 
 private:
     // Used to poll seastar at set intervals to capture all samples
     ss::timer<ss::lowres_clock> _query_timer;
     ss::gate _gate;
+
+    // Counts active overrides
+    unsigned _override_enabled{0};
+    // Used to abort sleeping `collect_results_for_period` tasks when stopping.
+    ss::abort_source _as;
 
     // Configuration for seastar's cpu profiler
     config::binding<bool> _enabled;
@@ -88,6 +105,7 @@ private:
     struct profiler_result {
         size_t dropped_samples;
         std::vector<seastar::cpu_profiler_trace> samples;
+        ss::lowres_clock::time_point polled_time;
     };
 
     // Buffers to copy sampled traces from seastar into so
@@ -100,6 +118,8 @@ private:
 
     void on_enabled_change();
     void on_sample_period_change();
+
+    bool is_enabled() const;
 };
 
 } // namespace resources

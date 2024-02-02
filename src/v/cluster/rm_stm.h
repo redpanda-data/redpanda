@@ -376,7 +376,6 @@ private:
 
     ss::future<> apply(const model::record_batch&) override;
     void apply_fence(model::record_batch&&);
-    void apply_prepare(rm_stm::prepare_marker);
     void apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, const model::record_batch_header&);
 
@@ -429,10 +428,6 @@ private:
               mt::map<absl::flat_hash_map, model::producer_identity, tx_range>(
                 _tracker))
           , ongoing_set(mt::set<absl::btree_set, model::offset>(_tracker))
-          , prepared(mt::map<
-                     absl::flat_hash_map,
-                     model::producer_identity,
-                     prepare_marker>(_tracker))
           , current_txes(
               mt::map<absl::flat_hash_map, model::producer_identity, tx_data>(
                 _tracker))
@@ -463,11 +458,6 @@ private:
           ongoing_map;
         // a heap of the first offsets of the ongoing transactions
         mt::set_t<absl::btree_set, model::offset> ongoing_set;
-        mt::unordered_map_t<
-          absl::flat_hash_map,
-          model::producer_identity,
-          prepare_marker>
-          prepared;
         fragmented_vector<tx_range> aborted;
         fragmented_vector<abort_index> abort_indexes;
         abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
@@ -485,7 +475,6 @@ private:
         void forget(const model::producer_identity& pid) {
             fence_pid_epoch.erase(pid.get_id());
             ongoing_map.erase(pid);
-            prepared.erase(pid);
             current_txes.erase(pid);
             expiration.erase(pid);
         }
@@ -494,7 +483,6 @@ private:
             fence_pid_epoch.clear();
             ongoing_map.clear();
             ongoing_set.clear();
-            prepared.clear();
             current_txes.clear();
             expiration.clear();
             aborted.clear();
@@ -525,7 +513,6 @@ private:
           model::producer_identity,
           model::offset>
           estimated;
-        model::offset last_end_tx{-1};
 
         // depending on the inflight state we may use last_applied or
         // committed_index as LSO; the alternation between them may

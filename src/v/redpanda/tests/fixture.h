@@ -781,15 +781,18 @@ public:
               &kafka::server::convert_api_names_to_key_bitmap));
     }
 
-    kafka::request_context
-    make_request_context(kafka::fetch_request& request, conn_ptr conn = {}) {
+    template<typename RequestType>
+    requires requires(
+      RequestType r,
+      kafka::protocol::encoder& writer,
+      kafka::api_version version) {
+        { r.encode(writer, version) } -> std::same_as<void>;
+    }
+    kafka::request_context make_request_context(
+      RequestType request, kafka::request_header& header, conn_ptr conn = {}) {
         if (!conn) {
             conn = make_connection_context();
         }
-
-        kafka::request_header header{
-          .key = kafka::fetch_handler::api::key,
-          .version = kafka::fetch_handler::max_supported};
 
         iobuf buf;
         kafka::protocol::encoder writer(buf);
@@ -802,12 +805,16 @@ public:
           std::chrono::milliseconds(0));
     }
 
-    kafka::request_context make_request_context() {
+    kafka::request_context make_fetch_request_context() {
         kafka::fetch_request request;
         // do not use incremental fetch requests
         request.data.max_wait_ms = std::chrono::milliseconds::zero();
 
-        return make_request_context(request);
+        kafka::request_header header{
+          .key = kafka::fetch_handler::api::key,
+          .version = kafka::fetch_handler::max_supported};
+
+        return make_request_context(request, header);
     }
 
     application app;

@@ -378,7 +378,7 @@ enum part_status { HEALTHY, LEADERLESS, URP };
 
 topic_status
 make_ts(ss::sstring name, const std::vector<part_status>& status_list) {
-    ss::chunked_fifo<cluster::partition_status> statuses;
+    cluster::partition_statuses_t statuses;
 
     partition_id pid{0};
     for (auto status : status_list) {

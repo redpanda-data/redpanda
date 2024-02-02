@@ -23,6 +23,8 @@
 
 #include <seastar/core/align.hh>
 #include <seastar/core/aligned_buffer.hh>
+#include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/testing/perf_tests.hh>
 #include <seastar/util/file.hh>
 
@@ -97,9 +99,18 @@ public:
             .record_sizes = std::vector<size_t>(BatchSize, RecordSize),
           });
         perf_tests::start_measuring_time();
-        return _engine->transform(std::move(batch), &_probe).then([](auto) {
-            perf_tests::stop_measuring_time();
-        });
+        auto output
+          = ss::make_lw_shared<ss::chunked_fifo<model::transformed_data>>();
+        return _engine
+          ->transform(
+            std::move(batch),
+            &_probe,
+            [output](auto data) { output->push_back(std::move(data)); })
+          .then([output]() {
+              perf_tests::do_not_optimize(model::transformed_data::make_batch(
+                model::timestamp::now(), std::move(*output)));
+              perf_tests::stop_measuring_time();
+          });
     }
 
 private:

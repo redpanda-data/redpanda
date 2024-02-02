@@ -19,3 +19,5 @@ area/redpanda:
 
 area/wasm:
 - src/transform-sdk/**/*
+- src/v/transform/**/*
+- src/v/wasm/**/*

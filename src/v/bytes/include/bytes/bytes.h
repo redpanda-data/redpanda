@@ -177,3 +177,9 @@ operator^(const std::array<char, Size>& a, const std::array<char, Size>& b) {
       a.begin(), a.end(), b.begin(), out.begin(), std::bit_xor<>());
     return out;
 }
+
+struct bytes_type_cmp {
+    using is_transparent = std::true_type;
+    bool operator()(const bytes& lhs, const bytes_view& rhs) const;
+    bool operator()(const bytes& lhs, const bytes& rhs) const;
+};

@@ -711,7 +711,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                 },
                 .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
                 .under_replicated_replicas = p.second->get_under_replicated(),
-                .reclaimable_size_bytes = p.second->reclaimable_local_size_bytes(),
+                .reclaimable_size_bytes = p.second->reclaimable_size_bytes(),
               };
           });
     } else {
@@ -726,7 +726,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                 },
                 .size_bytes = partition->size_bytes() + partition->non_log_disk_size_bytes(),
                 .under_replicated_replicas = partition->get_under_replicated(),
-                .reclaimable_size_bytes = partition->reclaimable_local_size_bytes(),
+                .reclaimable_size_bytes = partition->reclaimable_size_bytes(),
                 });
             }
         }
@@ -735,8 +735,8 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
     return reports;
 }
 
-using reports_acc_t = absl::
-  node_hash_map<model::topic_namespace, ss::chunked_fifo<partition_status>>;
+using reports_acc_t
+  = absl::node_hash_map<model::topic_namespace, partition_statuses_t>;
 
 reports_acc_t reduce_reports_map(
   reports_acc_t acc, ss::chunked_fifo<ntp_report> current_reports) {

@@ -8,17 +8,21 @@
 # by the Apache License, Version 2.0
 
 import functools
+from itertools import chain
 import time
+from typing import Protocol
 import psutil
 
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, RedpandaServiceCloud
 from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.mark._mark import Mark
+from ducktape.tests.test import TestContext
 
 
 def cluster(log_allow_list=None,
             check_allowed_error_logs=True,
             check_for_storage_usage_inconsistencies=True,
+            is_cloud_cluster=False,
             **kwargs):
     """
     Drop-in replacement for Ducktape `cluster` that imposes additional
@@ -32,13 +36,17 @@ def cluster(log_allow_list=None,
         """
         Most tests have a single RedpandaService at self.redpanda, but
         it is legal to create multiple instances, e.g. for read replica tests.
-        
+
         We find all replicas by traversing ducktape's internal service registry.
         """
-        yield test.redpanda
+        rp = test.redpanda
+        assert isinstance(rp, RedpandaServiceBase) or isinstance(
+            rp, RedpandaServiceCloud)
+        yield rp
 
         for svc in test.test_context.services:
-            if isinstance(svc, RedpandaService) and svc is not test.redpanda:
+            if isinstance(svc, RedpandaServiceBase) or isinstance(
+                    svc, RedpandaServiceCloud) and svc is not test.redpanda:
                 yield svc
 
     def log_local_load(test_name, logger, t_initial, initial_disk_stats):
@@ -52,6 +60,7 @@ def cluster(log_allow_list=None,
         memory = psutil.virtual_memory()
         swap = psutil.swap_memory()
         disk_stats = psutil.disk_io_counters()
+        assert disk_stats is not None, 'psutil.disk_io_counters() failed'
         disk_deltas = {}
         disk_rates = {}
         runtime = time.time() - t_initial
@@ -70,18 +79,26 @@ def cluster(log_allow_list=None,
     def cluster_use_metadata_adder(f):
         Mark.mark(f, ClusterUseMetadata(**kwargs))
 
+        class HasRedpanda(Protocol):
+            redpanda: RedpandaServiceBase | RedpandaServiceCloud
+            test_context: TestContext
+
         @functools.wraps(f)
-        def wrapped(self, *args, **kwargs):
+        def wrapped(self: HasRedpanda, *args, **kwargs):
             # This decorator will only work on test classes that have a RedpandaService,
             # such as RedpandaTest subclasses
             assert hasattr(self, 'redpanda')
+
+            # some checks only make sense on "vanilla" Redpanda nodes, i.e., those created on
+            # VMs or docker containers inside a ducktape node, where we have ssh access, for
+            # other environemnts we will skip those checks
 
             t_initial = time.time()
             disk_stats_initial = psutil.disk_io_counters()
             try:
                 r = f(self, *args, **kwargs)
             except:
-                if not hasattr(self, 'redpanda') or self.redpanda is None:
+                if self.redpanda is None:
                     # We failed so early there isn't even a RedpandaService instantiated
                     raise
 
@@ -98,15 +115,16 @@ def cluster(log_allow_list=None,
                     # (https://github.com/redpanda-data/redpanda/issues/5004)
                     # self.redpanda.decode_backtraces()
 
-                    redpanda.cloud_storage_diagnostics()
-
-                    redpanda.raise_on_crash(log_allow_list=log_allow_list)
+                    if isinstance(redpanda, RedpandaServiceBase):
+                        redpanda.cloud_storage_diagnostics()
+                        redpanda.raise_on_crash(log_allow_list=log_allow_list)
 
                 raise
             else:
-                if not hasattr(self, 'redpanda') or self.redpanda is None:
-                    # We passed without instantiating a RedpandaService, for example
-                    # in a skipped test
+                if not isinstance(self.redpanda, RedpandaServiceBase):
+                    # If None we passed without instantiating a RedpandaService, for example
+                    # in a skipped test.
+                    # Also skip if we are running against the cloud
                     return r
 
                 log_local_load(self.test_context.test_name,
@@ -117,7 +135,7 @@ def cluster(log_allow_list=None,
                 # load on the system and destabilize other tests.  Detect this with a
                 # post-test check for total bytes written.
                 debug_mode_data_limit = 64 * 1024 * 1024
-                if hasattr(self, 'debug_mode') and self.debug_mode is True:
+                if getattr(self, 'debug_mode', False) is True:
                     bytes_written = self.redpanda.estimate_bytes_written()
                     if bytes_written is not None:
                         self.redpanda.logger.info(
@@ -131,6 +149,14 @@ def cluster(log_allow_list=None,
                     redpanda.logger.info(
                         f"Test passed, doing log checks on {redpanda.who_am_i()}..."
                     )
+
+                    # the following checks don't work on cloud instances but we don't expect
+                    # any of those as we already early-outed above when Redpanda is not
+                    # RSB (technically, it might be that self.redpanda is RSB but some
+                    # additional redpanda in the registry is, but that situation never arises
+                    # in practice in our current tests)
+                    assert isinstance(redpanda, RedpandaServiceBase)
+
                     if check_allowed_error_logs:
                         # Only do log inspections on tests that are otherwise
                         # successful.  This executes *before* the end-of-test

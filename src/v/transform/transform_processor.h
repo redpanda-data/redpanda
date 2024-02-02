@@ -19,6 +19,7 @@
 #include "model/transform.h"
 #include "transform/io.h"
 #include "transform/probe.h"
+#include "transform/transfer_queue.h"
 #include "utils/prefix_logger.h"
 #include "wasm/fwd.h"
 
@@ -26,15 +27,19 @@
 #include <seastar/core/queue.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <variant>
+
 namespace transform {
 
 /**
- * A holder of the result of a transform, along with the input offset the batch
- * was read at.
+ * A holder of the result of a transform, which is either a batch of data or a
+ * committed offset.
  */
-struct transformed_batch {
-    model::record_batch batch;
-    kafka::offset input_offset;
+struct transformed_output {
+    std::variant<model::record_batch, kafka::offset> data;
+
+    // How much memory this object is using.
+    size_t memory_usage() const;
 };
 
 /**
@@ -95,8 +100,11 @@ private:
     state_callback _state_callback;
     probe* _probe;
 
-    ss::queue<model::record_batch> _consumer_transform_pipe;
-    ss::queue<transformed_batch> _transform_producer_pipe;
+    static constexpr size_t buffer_chunk_size = 8;
+    transfer_queue<model::record_batch, buffer_chunk_size>
+      _consumer_transform_pipe;
+    transfer_queue<transformed_output, buffer_chunk_size>
+      _transform_producer_pipe;
 
     ss::abort_source _as;
     ss::future<> _task;

@@ -172,54 +172,6 @@ static model::record_batch make_tx_control_batch(
     return std::move(builder).build();
 }
 
-static rm_stm::prepare_marker parse_prepare_batch(model::record_batch&& b) {
-    const auto& hdr = b.header();
-    auto bid = model::batch_identity::from(hdr);
-
-    vassert(
-      b.record_count() == 1,
-      "model::record_batch_type::tx_prepare batch must contain a single "
-      "record");
-    auto r = b.copy_records();
-    auto& record = *r.begin();
-    auto val_buf = record.release_value();
-
-    iobuf_parser val_reader(std::move(val_buf));
-    auto version = reflection::adl<int8_t>{}.from(val_reader);
-    vassert(
-      version == rm_stm::prepare_control_record_version,
-      "unknown prepare record version: {} expected: {}",
-      version,
-      rm_stm::prepare_control_record_version);
-    auto tm_partition = model::partition_id(
-      reflection::adl<int32_t>{}.from(val_reader));
-    auto tx_seq = model::tx_seq(reflection::adl<int64_t>{}.from(val_reader));
-
-    auto key_buf = record.release_key();
-    iobuf_parser key_reader(std::move(key_buf));
-    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
-      key_reader);
-    vassert(
-      hdr.type == batch_type,
-      "broken model::record_batch_type::tx_prepare batch. expected batch type "
-      "{} got: {}",
-      hdr.type,
-      batch_type);
-    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
-    vassert(
-      p_id == bid.pid.id,
-      "broken model::record_batch_type::tx_prepare batch. expected pid {} got: "
-      "{}",
-      bid.pid.id,
-      p_id);
-
-    return rm_stm::prepare_marker{
-      .tm_partition = tm_partition,
-      .tx_seq = tx_seq,
-      .pid = bid.pid,
-    };
-}
-
 static model::control_record_type
 parse_control_batch(const model::record_batch& b) {
     const auto& hdr = b.header();
@@ -616,15 +568,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         co_return tx_errc::stale;
     }
     auto synced_term = _insync_term;
-    // catching up with all previous end_tx operations (commit | abort)
-    // to avoid writing the same commit | abort marker twice
-    if (_mem_state.last_end_tx >= model::offset{0}) {
-        if (!co_await wait_no_throw(
-              _mem_state.last_end_tx, model::timeout_clock::now() + timeout)) {
-            co_return tx_errc::stale;
-        }
-    }
-
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
     if (fence_it == _log_state.fence_pid_epoch.end()) {
         // begin_tx should have set a fence
@@ -666,34 +609,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
               tx_seqs_it->second.tx_seq);
             co_return tx_errc::request_rejected;
         }
-    } else {
-        auto prepare_it = _log_state.prepared.find(pid);
-        if (prepare_it == _log_state.prepared.end()) {
-            co_return tx_errc::none;
-        } else if (prepare_it->second.tx_seq > tx_seq) {
-            // rare situation:
-            //   * tm_stm prepares (tx_seq+1)
-            //   * prepare on this rm passes but tm_stm failed to write to disk
-            //   * during recovery tm_stm recommits (tx_seq)
-            // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
-            vlog(
-              _ctx_log.trace,
-              "Already commited pid:{} tx_seq:{} - a higher tx_seq:{} was "
-              "observed",
-              pid,
-              tx_seq,
-              prepare_it->second.tx_seq);
-            co_return tx_errc::none;
-        } else if (prepare_it->second.tx_seq < tx_seq) {
-            vlog(
-              _ctx_log.error,
-              "Can't commit pid:{} tx_seq:{} - it conflicts with observed "
-              "tx_seq:{}",
-              pid,
-              tx_seq,
-              prepare_it->second.tx_seq);
-            co_return tx_errc::request_rejected;
-        }
     }
 
     auto batch = make_tx_control_batch(
@@ -721,10 +636,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
             co_await _raft->step_down("do_commit_tx wait error");
         }
         co_return tx_errc::timeout;
-    }
-
-    if (_mem_state.last_end_tx < r.value().last_offset) {
-        _mem_state.last_end_tx = r.value().last_offset;
     }
 
     co_return tx_errc::none;
@@ -790,19 +701,6 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
       pid,
       tx_seq.value_or(model::tx_seq(-1)),
       synced_term);
-    // catching up with all previous end_tx operations (commit | abort)
-    // to avoid writing the same commit | abort marker twice
-    if (_mem_state.last_end_tx >= model::offset{0}) {
-        if (!co_await wait_no_throw(
-              _mem_state.last_end_tx, model::timeout_clock::now() + timeout)) {
-            vlog(
-              _ctx_log.trace,
-              "Can't catch up to abort pid:{} tx_seq:{}",
-              pid,
-              tx_seq.value_or(model::tx_seq(-1)));
-            co_return tx_errc::stale;
-        }
-    }
 
     if (!is_known_session(pid)) {
         vlog(
@@ -886,9 +784,6 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
             co_await _raft->step_down("abort_tx replication error");
         }
         co_return tx_errc::timeout;
-    }
-    if (_mem_state.last_end_tx < r.value().last_offset) {
-        _mem_state.last_end_tx = r.value().last_offset;
     }
 
     if (!co_await wait_no_throw(
@@ -1560,16 +1455,6 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         co_return tx_errc::leader_not_found;
     }
     auto synced_term = _insync_term;
-    // catching up with all previous end_tx operations (commit | abort)
-    // to avoid writing the same commit | abort marker twice
-    if (_mem_state.last_end_tx >= model::offset{0}) {
-        if (!co_await wait_no_throw(
-              _mem_state.last_end_tx,
-              model::timeout_clock::now() + _sync_timeout)) {
-            co_return tx_errc::timeout;
-        }
-    }
-
     if (!is_known_session(pid)) {
         co_return tx_errc::pid_not_found;
     }
@@ -1626,9 +1511,6 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                     co_return tx_errc::unknown_server_error;
                 }
 
-                if (_mem_state.last_end_tx < cr.value().last_offset) {
-                    _mem_state.last_end_tx = cr.value().last_offset;
-                }
                 if (!co_await wait_no_throw(
                       cr.value().last_offset,
                       model::timeout_clock::now() + _sync_timeout)) {
@@ -1672,9 +1554,6 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                     co_return tx_errc::unknown_server_error;
                 }
 
-                if (_mem_state.last_end_tx < cr.value().last_offset) {
-                    _mem_state.last_end_tx = cr.value().last_offset;
-                }
                 if (!co_await wait_no_throw(
                       cr.value().last_offset,
                       model::timeout_clock::now() + _sync_timeout)) {
@@ -1729,9 +1608,21 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
             co_return tx_errc::unknown_server_error;
         }
 
-        if (_mem_state.last_end_tx < cr.value().last_offset) {
-            _mem_state.last_end_tx = cr.value().last_offset;
+        if (!co_await wait_no_throw(
+              model::offset(cr.value().last_offset()),
+              model::timeout_clock::now() + _sync_timeout)) {
+            vlog(
+              _ctx_log.trace,
+              "timeout on waiting until {} is applied (try_abort_old_tx "
+              "pid:{})",
+              cr.value().last_offset(),
+              pid);
+            if (_raft->is_leader() && _raft->term() == synced_term) {
+                co_await _raft->step_down("try_abort_old_tx apply error");
+            }
+            co_return tx_errc::timeout;
         }
+
         co_return tx_errc::none;
     }
 }
@@ -1782,7 +1673,15 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
     if (hdr.type == model::record_batch_type::tx_fence) {
         apply_fence(b.copy());
     } else if (hdr.type == model::record_batch_type::tx_prepare) {
-        apply_prepare(parse_prepare_batch(b.copy()));
+        // prepare phase was used pre-transactions GA. Ideally these
+        // batches should not appear anymore and should not be a part
+        // of Redpanda deployments from the recent past. Still logging
+        // it at warn for debugging.
+        vlog(
+          _ctx_log.warn,
+          "Ignored prepare batch at offset: {} from producer: {}",
+          b.base_offset(),
+          b.header().producer_id);
     } else if (hdr.type == model::record_batch_type::raft_data) {
         auto bid = model::batch_identity::from(hdr);
         if (hdr.attrs.is_control()) {
@@ -1796,12 +1695,6 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
         abort_old_txes();
     }
     co_return;
-}
-
-void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
-    auto pid = prepare.pid;
-    _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
-    _log_state.prepared.try_emplace(pid, prepare);
 }
 
 void rm_stm::apply_control(
@@ -1825,7 +1718,6 @@ void rm_stm::apply_control(
     // there are only two types of control batches
     if (crt == model::control_record_type::tx_abort) {
         _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
-        _log_state.prepared.erase(pid);
         _log_state.current_txes.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
@@ -1846,7 +1738,6 @@ void rm_stm::apply_control(
         }
     } else if (crt == model::control_record_type::tx_commit) {
         _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
-        _log_state.prepared.erase(pid);
         _log_state.current_txes.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
@@ -1889,14 +1780,6 @@ void rm_stm::apply_data(
               header.base_offset,
               last_offset,
               last_kafka_offset);
-            if (_log_state.prepared.contains(bid.pid)) {
-                vlog(
-                  _ctx_log.error,
-                  "Adding a record with pid:{} to a tx after it was prepared",
-                  bid.pid);
-                return;
-            }
-
             auto ongoing_it = _log_state.ongoing_map.find(bid.pid);
             if (ongoing_it != _log_state.ongoing_map.end()) {
                 if (ongoing_it->second.last < last_offset) {
@@ -1988,9 +1871,6 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         _log_state.ongoing_map.emplace(entry.pid, entry);
         _log_state.ongoing_set.insert(entry.first);
     }
-    for (auto& entry : data.prepared) {
-        _log_state.prepared.emplace(entry.pid, entry);
-    }
     for (auto it = std::make_move_iterator(data.aborted.begin());
          it != std::make_move_iterator(data.aborted.end());
          it++) {
@@ -2069,9 +1949,6 @@ void rm_stm::fill_snapshot_wo_seqs(T& snapshot) {
     }
     for (auto& entry : _log_state.ongoing_map) {
         snapshot.ongoing.push_back(entry.second);
-    }
-    for (auto& entry : _log_state.prepared) {
-        snapshot.prepared.push_back(entry.second);
     }
     for (auto& entry : _log_state.aborted) {
         snapshot.aborted.push_back(entry);
@@ -2394,13 +2271,12 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::mem_state& state) {
 std::ostream& operator<<(std::ostream& o, const rm_stm::log_state& state) {
     fmt::print(
       o,
-      "{{ fence_epochs: {}, ongoing_m: {}, ongoing_set: {}, prepared: {}, "
+      "{{ fence_epochs: {}, ongoing_m: {}, ongoing_set: {}, "
       "aborted: {}, abort_indexes: {}, tx_seqs: {}, expiration: "
       "{}}}",
       state.fence_pid_epoch.size(),
       state.ongoing_map.size(),
       state.ongoing_set.size(),
-      state.prepared.size(),
       state.aborted.size(),
       state.abort_indexes.size(),
       state.current_txes.size(),

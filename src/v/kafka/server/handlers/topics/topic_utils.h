@@ -178,7 +178,7 @@ void generate_not_controller_errors(Iter begin, Iter end, ErrIter out_it) {
 }
 
 // Wait for leaders of all topic partitons for given set of results
-ss::future<std::vector<model::node_id>> wait_for_leaders(
+ss::future<> wait_for_leaders(
   cluster::metadata_cache&,
   std::vector<cluster::topic_result>,
   model::timeout_clock::time_point);

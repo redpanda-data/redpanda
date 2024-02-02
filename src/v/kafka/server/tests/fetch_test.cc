@@ -164,7 +164,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
           .timeout = model::no_timeout,
           .isolation_level = model::isolation_level::read_uncommitted,
         };
-        auto rctx = make_request_context();
+        auto rctx = make_fetch_request_context();
         auto octx = kafka::op_context(
           std::move(rctx), ss::default_smp_service_group());
         auto shard = octx.rctx.shards().shard_for(ktp).value();
@@ -319,7 +319,7 @@ FIXTURE_TEST(fetch_response_iterator_test, redpanda_thread_fixture) {
           make_partition_response(1));
         return response;
     };
-    auto fetch_request = make_request_context();
+    auto fetch_request = make_fetch_request_context();
     auto response = make_test_fetch_response();
 
     int i = 0;

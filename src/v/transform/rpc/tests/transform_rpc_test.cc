@@ -316,12 +316,11 @@ public:
         _offsets.insert_or_assign(key, val);
     }
 
+    model::transform_offsets_map list() { return _offsets; }
+
 private:
     int _num_partitions = 3;
-    absl::flat_hash_map<
-      model::transform_offsets_key,
-      model::transform_offsets_value>
-      _offsets;
+    model::transform_offsets_map _offsets;
 };
 
 class fake_partition_manager : public partition_manager {
@@ -456,6 +455,20 @@ public:
             }
         }
         co_return resp;
+    }
+
+    ss::future<result<model::transform_offsets_map, cluster::errc>>
+    list_committed_offsets_on_shard(
+      ss::shard_id shard_id, const model::ntp& ntp) override {
+        auto owner = shard_owner(ntp);
+        if (!owner || shard_id != *owner) {
+            co_return cluster::errc::not_leader;
+        }
+        if (_errors_to_inject > 0) {
+            --_errors_to_inject;
+            co_return cluster::errc::timeout;
+        }
+        co_return _offset_tracker->list();
     }
 
 private:
@@ -952,6 +965,18 @@ TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
             read_result = client()->offset_fetch(request_key).get();
             ASSERT_TRUE(!read_result.has_error());
             ASSERT_EQ(read_result.value()->offset, request_val.offset);
+        }
+    }
+    auto offsets = client()->list_committed_offsets().get().value();
+    EXPECT_EQ(offsets.size(), num_transforms * num_src_partitions);
+    for (int i = 0; i < num_transforms; ++i) {
+        for (int32_t j = 0; j < num_src_partitions; ++j) {
+            model::transform_offsets_key key;
+            key.id = model::transform_id(i);
+            key.partition = model::partition_id(j);
+            auto it = offsets.find(key);
+            ASSERT_FALSE(it == offsets.end());
+            EXPECT_EQ(it->second.offset, kafka::offset(j));
         }
     }
 }

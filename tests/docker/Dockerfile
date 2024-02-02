@@ -246,11 +246,12 @@ RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offs
 # install python dependencies and rptest package.
 # rptest package installed in editable mode so it can be overridden.
 # passes --force so system pip packages can be updated
+# passes `--no-binary confluent-kafka` to ensure that the confluent-kafka
+#        package is built with GSSAPI support enabled. For binary compatibility
+#        reasons, this feature is disabled in publically available wheels
 COPY --chown=0:0 --chmod=0755 tests/setup.py /root/tests/
 RUN python3 -m pip install --upgrade --force pip && \
-    python3 -m pip install --force --no-cache-dir -e /root/tests/
-
-RUN python3 -m pip install --force-reinstall --no-cache-dir --no-binary :all: confluent-kafka==2.2.0
+    python3 -m pip install --force --no-cache-dir --no-binary confluent-kafka -e /root/tests/
 
 # seastar addrress to line utility depends on 'file' pkg
 RUN apt update && \
