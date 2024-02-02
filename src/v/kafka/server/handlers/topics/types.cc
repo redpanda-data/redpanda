@@ -228,7 +228,7 @@ to_cluster_type(const creatable_topic& t) {
 template<typename T>
 static ss::sstring from_config_type(const T& v) {
     if constexpr (std::is_enum_v<T>) {
-        return ss::to_sstring(static_cast<std::underlying_type_t<T>>(v));
+        return ssx::sformat("{}", v);
     } else if constexpr (std::is_same_v<bool, T>) {
         return v ? "true" : "false";
     } else if constexpr (std::is_same_v<T, std::chrono::milliseconds>) {
