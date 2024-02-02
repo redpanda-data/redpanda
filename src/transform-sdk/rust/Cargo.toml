@@ -27,6 +27,7 @@ resolver = "2"
 members = [
   "core-sys",
   "core-types",
+  "varint",
   "examples/*",
 ]
 
