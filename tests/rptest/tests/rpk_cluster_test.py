@@ -127,6 +127,7 @@ class RpkClusterTest(RedpandaTest):
             # and 1 cluster_view and node_config per node:
             assert f'{root_name}/admin/cluster_view_{n.account.hostname}-9644.json' in files
             assert f'{root_name}/admin/node_config_{n.account.hostname}-9644.json' in files
+            assert f'{root_name}/admin/cpu_profile_{n.account.hostname}-9644.json' in files
 
     @cluster(num_nodes=3)
     def test_get_config(self):

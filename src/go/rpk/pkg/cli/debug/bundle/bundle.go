@@ -44,6 +44,7 @@ type bundleParams struct {
 	metricsInterval         time.Duration
 	partitions              []topicPartitionFilter
 	labelSelector           map[string]string
+	cpuProfilerWait         time.Duration
 }
 
 type topicPartitionFilter struct {
@@ -69,12 +70,19 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 		timeout         time.Duration
 		metricsInterval time.Duration
+		cpuProfilerWait time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "bundle",
 		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect",
 		Long:  bundleHelpText,
 		Run: func(cmd *cobra.Command, args []string) {
+			//  Redpanda queries for samples from Seastar every ~13 seconds by
+			//  default. Setting wait_ms to anything less than 13 seconds will
+			//  result in no samples being returned.
+			if cpuProfilerWait < 15*time.Second {
+				out.Die("--cpu-profiler-wait must be higher than 15 seconds")
+			}
 			path, err := determineFilepath(fs, outFile, cmd.Flags().Changed(outputFlag))
 			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
 
@@ -119,6 +127,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				timeout:                 timeout,
 				metricsInterval:         metricsInterval,
 				partitions:              partitions,
+				cpuProfilerWait:         cpuProfilerWait,
 			}
 			if len(labelSelector) > 0 {
 				labelsMap, err := labels.ConvertSelectorToLabelsMap(strings.Join(labelSelector, ","))
@@ -148,7 +157,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVarP(&outFile, outputFlag, "o", "", "The file path where the debug file will be written (default ./<timestamp>-bundle.zip)")
-	f.DurationVar(&timeout, "timeout", 12*time.Second, "How long to wait for child commands to execute (e.g. 30s, 1.5m)")
+	f.DurationVar(&timeout, "timeout", 31*time.Second, "How long to wait for child commands to execute (e.g. 30s, 1.5m)")
 	f.DurationVar(&metricsInterval, "metrics-interval", 10*time.Second, "Interval between metrics snapshots (e.g. 30s, 1.5m)")
 	f.StringVar(&logsSince, "logs-since", "", "Include log entries on or newer than the specified date (journalctl date format, e.g. YYYY-MM-DD")
 	f.StringVar(&logsUntil, "logs-until", "", "Include log entries on or older than the specified date (journalctl date format, e.g. YYYY-MM-DD")
@@ -158,6 +167,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	f.StringVarP(&namespace, "namespace", "n", "redpanda", "The namespace to use to collect the resources from (k8s only)")
 	f.StringArrayVarP(&labelSelector, "label-selector", "l", []string{"app.kubernetes.io/name=redpanda"}, "Comma-separated label selectors to filter your resources. e.g: <label>=<value>,<label>=<value> (k8s only)")
 	f.StringArrayVarP(&partitionFlag, "partition", "p", nil, "Comma-separated partition IDs; when provided, rpk saves extra admin API requests for those partitions. Check help for extended usage")
+	f.DurationVar(&cpuProfilerWait, "cpu-profiler-wait", 30*time.Second, "For how long to collect samples for the cpu profiler (e.g. 30s, 1.5m). Must be higher than 15s")
 
 	return cmd
 }
@@ -243,7 +253,7 @@ COMMON FILES
 
  - Admin API calls: Multiple requests to gather information such as: Cluster and
    broker configurations, cluster health data, balancer status, cloud storage
-   status, and license key information.
+   status, cpu profiles, and license key information.
 
  - Broker metrics: The broker's Prometheus metrics, fetched through its
    admin API (/metrics and /public_metrics).
