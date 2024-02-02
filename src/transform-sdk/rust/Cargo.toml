@@ -28,6 +28,7 @@ members = [
   "core-sys",
   "core-types",
   "varint",
+  "sr-types",
   "examples/*",
 ]
 
