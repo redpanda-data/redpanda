@@ -15,7 +15,7 @@
 use core::fmt;
 use std::error::Error;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DecodeError {
     Overflow,
     ShortRead,
