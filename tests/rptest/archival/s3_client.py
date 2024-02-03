@@ -76,6 +76,7 @@ class S3Client:
             self._signature_version = signature_version
         self._before_call_headers = before_call_headers
         self._cli = self.make_client()
+        self.register_custom_events()
         self.logger = logger
 
     def make_client(self):
@@ -95,6 +96,39 @@ class S3Client:
             event_system = cl.meta.events
             event_system.register('before-call.s3.*', self._add_header)
         return cl
+
+    def register_custom_events(self):
+        # src: https://stackoverflow.com/questions/58828800/adding-custom-headers-to-all-boto3-requests
+        def process_custom_arguments(params, context, **kwargs):
+            if (custom_headers := params.pop("custom_headers", None)):
+                context["custom_headers"] = custom_headers
+
+        # Here we extract the headers from the request context and actually set them
+        def add_custom_headers(params, context, **kwargs):
+            if (custom_headers := context.get("custom_headers")):
+                params["headers"].update(custom_headers)
+
+        event_system = self._cli.meta.events
+        # Right now, there is an issue when running inside GCP
+        # when bucket is actually an S3-like bucket inside Google Clooud
+        # and boto3 adds own header instead of "x-goog-copy-source"
+
+        # Example, boto3 default:
+        # "x-amz-copy-source": "panda-bucket-bee49752-c10c-11ee-9d4e-ff8d5ff47a80/002fef90/kafka/test/0_24/194-257-1055502-1-v1.log.1",
+
+        # This adds custom header kwargs handling and it can be used like this
+        #         custom_headers = {"x-goog-copy-source": src_uri}
+        #         return self._cli.copy_object(Bucket=bucket,
+        #                                      Key=dst,
+        #                                      CopySource=src_uri,
+        #                                      custom_headers=custom_headers)
+        # Similar event callbacks can be added to other functions when needed
+        # Wildcards supported.
+        event_system.register('before-parameter-build.s3.CopyObject',
+                              process_custom_arguments)
+        event_system.register('before-call.s3.CopyObject', add_custom_headers)
+
+        return
 
     def create_bucket(self, name):
         """Create bucket in S3"""
@@ -332,9 +366,11 @@ class S3Client:
         """Copy object to another location within the bucket"""
         try:
             src_uri = f"{bucket}/{src}"
+            custom_headers = {"x-goog-copy-source": src_uri}
             return self._cli.copy_object(Bucket=bucket,
                                          Key=dst,
-                                         CopySource=src_uri)
+                                         CopySource=src_uri,
+                                         custom_headers=custom_headers)
         except ClientError as err:
             self.logger.debug(f"error response copying {bucket}/{src}: {err}")
             if err.response['Error']['Code'] == 'SlowDown':
