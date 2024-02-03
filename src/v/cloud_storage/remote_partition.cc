@@ -21,6 +21,7 @@
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "ssx/watchdog.h"
 #include "storage/log_reader.h"
 #include "storage/parser_errc.h"
 #include "storage/types.h"
@@ -864,6 +865,13 @@ ss::future<> remote_partition::run_eviction_loop() {
     while (true) {
         co_await _has_evictions_cvar.wait(
           [this] { return !_eviction_pending.empty(); });
+        // This watchdog is used to detect situations when the eviction loop
+        // got stuck. The deadline is set to 5 minutes to avoid false positives.
+        // The callback is self sufficient and can outlive the remote_partition
+        // instance.
+        watchdog wd(300s, [ntp = get_ntp()] {
+            vlog(cst_log.error, "Eviction loop for partition {} stuck", ntp);
+        });
         auto eviction_in_flight = std::exchange(_eviction_pending, {});
         co_await ss::max_concurrent_for_each(
           eviction_in_flight, 200, [](auto&& rs_variant) {
