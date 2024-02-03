@@ -330,6 +330,9 @@ client_pool::acquire(ss::abort_source& as) {
             }
         }
     } catch (const ss::broken_condition_variable&) {
+    } catch (const ss::broken_named_semaphore&) {
+        // this is thrown at shutdown_connections/stop if we are waiting on
+        // _self_config_barrier
     }
     if (_gate.is_closed() || _as.abort_requested()) {
         throw ss::gate_closed_exception();
