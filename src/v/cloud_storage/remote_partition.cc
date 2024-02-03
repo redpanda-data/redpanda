@@ -1081,6 +1081,9 @@ remote_partition::aborted_transactions(offset_range offsets) {
 
 ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
+    watchdog wd(300s, [ntp = get_ntp()] {
+        vlog(cst_log.error, "remote_partition {} stop operation stuck", ntp);
+    });
 
     // Prevent further segment materialization, readers, etc.
     _as.request_abort();
