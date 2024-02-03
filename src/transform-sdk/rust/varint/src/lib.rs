@@ -61,7 +61,8 @@ impl<T> Decoded<T> {
     }
 }
 
-const MAX_LENGTH: usize = 10;
+// The maximum encoded size of an i64
+pub const MAX_LENGTH: usize = 10;
 
 fn zigzag_encode(x: i64) -> u64 {
     ((x << 1) ^ (x >> 63)) as u64
