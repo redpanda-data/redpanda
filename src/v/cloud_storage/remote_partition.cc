@@ -877,13 +877,13 @@ ss::future<> remote_partition::start() {
 
 void remote_partition::evict_segment_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
-    _eviction_pending.push_back(std::move(reader));
+    _eviction_pending.emplace_back(std::move(reader));
     _has_evictions_cvar.signal();
 }
 
 void remote_partition::evict_segment(
   ss::lw_shared_ptr<remote_segment> segment) {
-    _eviction_pending.push_back(std::move(segment));
+    _eviction_pending.emplace_back(std::move(segment));
     _has_evictions_cvar.signal();
 }
 
