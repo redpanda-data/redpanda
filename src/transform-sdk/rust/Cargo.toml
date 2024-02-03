@@ -30,6 +30,7 @@ members = [
   "varint",
   "sr-types",
   "sr-sys",
+  "sr",
   "examples/*",
 ]
 
