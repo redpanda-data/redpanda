@@ -541,8 +541,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "redpanda-transform-sdk-sr-sys"
+version = "0.0.0-dev"
+dependencies = [
+ "redpanda-transform-sdk-sr-types",
+ "redpanda-transform-sdk-varint",
+]
+
+[[package]]
 name = "redpanda-transform-sdk-sr-types"
 version = "0.0.0-dev"
+dependencies = [
+ "redpanda-transform-sdk-varint",
+]
 
 [[package]]
 name = "redpanda-transform-sdk-sys"

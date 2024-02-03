@@ -63,7 +63,7 @@ def publish(version: str, dry_run: bool):
 
     # The order matters here so that we get the right versions in the registry
     # before deploying the next crate
-    for pkg in ["-varint", "-sr-types", "-types", "-sys", ""]:
+    for pkg in ["-varint", "-sr-types", "-sr-sys", "-types", "-sys", ""]:
         publish_package(f"redpanda-transform-sdk{pkg}", dry_run)
 
 
