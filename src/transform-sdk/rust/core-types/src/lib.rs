@@ -35,7 +35,7 @@ pub struct WriteEvent<'a> {
 /// A [`WrittenRecord`] is handed to `on_record_written` event handlers as the record that Redpanda
 /// wrote. The record contains a key value pair with some headers, along with the record's
 /// timestamp.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct WrittenRecord<'a> {
     record: BorrowedRecord<'a>,
     timestamp: SystemTime,
@@ -143,7 +143,7 @@ impl<'a> RecordWriter<'a> {
 }
 
 /// An error that can occur when writing records to the output topic.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum WriteError {
     /// Unknown error from the broker with the corresponding error code.
@@ -161,7 +161,7 @@ impl std::fmt::Display for WriteError {
 impl std::error::Error for WriteError {}
 
 /// A zero-copy [`BorrowedRecord`] header.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BorrowedHeader<'a> {
     key: &'a [u8],
     value: Option<&'a [u8]>,
@@ -196,7 +196,7 @@ impl<'a> From<&'a BorrowedHeader<'a>> for BorrowedHeader<'a> {
 }
 
 /// A zero-copy representation of a [`Record`] within Redpanda.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BorrowedRecord<'a> {
     key: Option<&'a [u8]>,
     value: Option<&'a [u8]>,
@@ -252,7 +252,7 @@ impl<'a> From<&'a BorrowedRecord<'a>> for BorrowedRecord<'a> {
 ///
 /// Headers are opaque to the broker and are purely a mechanism for the producer and consumers to
 /// pass information.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RecordHeader {
     key: Vec<u8>,
     value: Option<Vec<u8>>,
@@ -296,7 +296,7 @@ impl<'a> From<&'a RecordHeader> for BorrowedHeader<'a> {
 /// A record is a key-value pair of bytes, along with a collection of [`RecordHeader`].
 ///
 /// Records are generated as the result of any transforms that act upon a [`BorrowedRecord`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Record {
     key: Option<Vec<u8>>,
     value: Option<Vec<u8>>,
