@@ -21,6 +21,7 @@
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "ssx/future-util.h"
 #include "ssx/watchdog.h"
 #include "storage/log_reader.h"
 #include "storage/parser_errc.h"
@@ -874,9 +875,21 @@ ss::future<> remote_partition::run_eviction_loop() {
         });
         auto eviction_in_flight = std::exchange(_eviction_pending, {});
         co_await ss::max_concurrent_for_each(
-          eviction_in_flight, 200, [](auto&& rs_variant) {
+          eviction_in_flight, 200, [this](auto&& rs_variant) {
               return std::visit(
-                [](auto&& rs) { return rs->stop(); }, rs_variant);
+                [this](auto&& rs) {
+                    try {
+                        return ssx::ignore_shutdown_exceptions(rs->stop());
+                    } catch (...) {
+                        vlog(
+                          _ctxlog.error,
+                          "Unexpected exception in the background eviction "
+                          "fiber {}",
+                          std::current_exception());
+                        throw;
+                    }
+                },
+                rs_variant);
           });
     }
 }
