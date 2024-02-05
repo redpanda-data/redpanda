@@ -152,10 +152,10 @@ private:
             co_await ss::maybe_yield();
         }
 
+        iobuf nb;
+        nb.append(name().data(), name().size());
         co_return io::json_batch{
-          model::transform_name{name().data(), name().size()},
-          std::move(ev_json),
-          std::move(*buffer_units)};
+          std::move(nb), std::move(ev_json), std::move(*buffer_units)};
     }
 
     ss::future<> do_flush(model::partition_id pid, io::json_batches events) {

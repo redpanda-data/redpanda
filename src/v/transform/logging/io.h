@@ -20,15 +20,12 @@ namespace transform::logging {
 
 namespace io {
 struct json_batch {
-    json_batch(
-      model::transform_name n,
-      ss::chunked_fifo<iobuf> e,
-      ssx::semaphore_units units)
+    json_batch(iobuf n, ss::chunked_fifo<iobuf> e, ssx::semaphore_units units)
       : name(std::move(n))
       , events(std::move(e))
       , _units(std::move(units)) {}
 
-    model::transform_name name;
+    iobuf name;
     ss::chunked_fifo<iobuf> events;
 
 private:
