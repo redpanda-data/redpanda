@@ -2200,12 +2200,14 @@ ss::future<> ntp_archiver::apply_archive_retention() {
               _rtclog.debug,
               "Search for archive retention point failed as Redpanda is "
               "shutting down");
+            co_return;
+        } else {
+            vlog(
+              _rtclog.error,
+              "Failed to compute archive retention: {}",
+              res.error());
+            throw std::system_error(res.error());
         }
-        vlog(
-          _rtclog.error,
-          "Failed to compute archive retention: {}",
-          res.error());
-        throw std::system_error(res.error());
     }
 
     if (
