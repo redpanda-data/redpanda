@@ -1930,10 +1930,13 @@ consensus::do_append_entries(append_entries_request&& r) {
         vlog(
           _ctxlog.info,
           "Truncating log in term: {}, Request previous log index: {} is "
-          "earlier than log end offset: {}. Truncating to: {}",
+          "earlier than log end offset: {}, last visible index: {}, leader "
+          "last visible index: {}. Truncating to: {}",
           request_metadata.term,
           request_metadata.prev_log_index,
           lstats.dirty_offset,
+          last_visible_index(),
+          _last_leader_visible_offset,
           truncate_at);
         _probe->log_truncated();
 
