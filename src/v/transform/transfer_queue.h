@@ -30,7 +30,8 @@ concept MemoryMeasurable = requires(const T v) {
 constexpr size_t default_items_per_chunk = 128;
 
 /**
- * A queue for transfering variable sized entries between fibers.
+ * A single producer single consumer queue for transfering variable sized
+ * entries between fibers.
  *
  * If needing a fixed number of elements (or have entries with fixed memory
  * requirements) ss::queue is a better option. This queue limits based on the
@@ -50,8 +51,7 @@ public:
      * at which to limit in the queue.
      */
     explicit transfer_queue(size_t max_memory_usage)
-      : _max_memory(max_memory_usage)
-      , _memory_sem(max_memory_usage, "transform::transfer_queue") {}
+      : _max_memory(max_memory_usage) {}
 
     /**
      * Push an entry into the queue, waiting for there to be available memory.
@@ -62,17 +62,17 @@ public:
      * If the abort source fires, we will noop the push and drop the entry on
      * the floor.
      */
-    ss::future<> push(T entry, ss::abort_source* as) {
+    ss::future<> push(T entry, ss::abort_source* as) noexcept {
         // We want to be able to always insert at least one item, so cap memory
         // usage by _max_memory so we don't overload our semaphore and so we
         // can't get stuck.
         size_t mem = std::min(entry.memory_usage(), _max_memory);
-        try {
-            co_await _memory_sem.wait(*as, mem);
-        } catch (const ss::semaphore_aborted&) {
+        co_await wait_for_free_memory(as, mem);
+        if (as->abort_requested()) {
             co_return;
         }
         _entries.push_back(std::move(entry));
+        _used_memory += mem;
         _cond_var.signal();
     }
 
@@ -82,14 +82,15 @@ public:
      * If the provided about_source is aborted, then this method will return
      * `std::nullopt`.
      */
-    ss::future<std::optional<T>> pop_one(ss::abort_source* as) {
+    ss::future<std::optional<T>> pop_one(ss::abort_source* as) noexcept {
         co_await wait_for_non_empty(as);
         if (as->abort_requested() || _entries.empty()) {
             co_return std::nullopt;
         }
         T entry = std::move(_entries.front());
         _entries.pop_front();
-        _memory_sem.signal(std::min(entry.memory_usage(), _max_memory));
+        _used_memory -= std::min(entry.memory_usage(), _max_memory);
+        _cond_var.signal();
         co_return entry;
     }
 
@@ -100,29 +101,39 @@ public:
      * container.
      */
     ss::future<ss::chunked_fifo<T, items_per_chunk>>
-    pop_all(ss::abort_source* as) {
+    pop_all(ss::abort_source* as) noexcept {
         co_await wait_for_non_empty(as);
         if (as->abort_requested()) {
             co_return ss::chunked_fifo<T, items_per_chunk>{};
         }
-        _memory_sem.signal(current_memory_usage());
+        _used_memory = 0;
+        _cond_var.signal();
         co_return std::exchange(_entries, {});
     }
 
     /**
      * Remove all entries from this queue.
      */
-    void clear() {
+    void clear() noexcept {
         _entries.clear();
-        _memory_sem.signal(current_memory_usage());
+        _used_memory = 0;
     }
 
 private:
-    size_t current_memory_usage() const {
-        return _max_memory - _memory_sem.available_units();
+    ss::future<>
+    wait_for_free_memory(ss::abort_source* as, size_t needed_memory) noexcept {
+        auto sub = as->subscribe([this]() noexcept { _cond_var.signal(); });
+        if (sub) {
+            co_await _cond_var.wait([this, as, needed_memory] {
+                if (as->abort_requested()) {
+                    return true;
+                }
+                return (_used_memory + needed_memory) <= _max_memory;
+            });
+        }
     }
 
-    ss::future<> wait_for_non_empty(ss::abort_source* as) {
+    ss::future<> wait_for_non_empty(ss::abort_source* as) noexcept {
         auto sub = as->subscribe([this]() noexcept { _cond_var.signal(); });
         if (sub) {
             co_await _cond_var.wait([this, as] {
@@ -134,7 +145,16 @@ private:
     ss::chunked_fifo<T, items_per_chunk> _entries;
     ss::condition_variable _cond_var;
     size_t _max_memory;
-    ssx::semaphore _memory_sem;
+    // A semaphore is a natural fit here, but at the time of writing there is a
+    // stack-use-after-return issue with `ss::semaphore::wait(ss::abort_source,
+    // size_t)`, so instead, manually implement the semaphore with our existing
+    // condition_variable.
+    //
+    // N.B. Reusing our existing condition variable for this only works because
+    // this is a SPSC queue. Multiple producers or multiple consumers could
+    // cause race conditions between modifying this and the _cond_var unblocking
+    // another fiber.
+    size_t _used_memory = 0;
 };
 
 } // namespace transform
