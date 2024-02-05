@@ -1260,6 +1260,7 @@ void application::wire_up_runtime_services(
           &controller->get_topics_state(),
           &partition_manager,
           &_transform_rpc_client,
+          &metadata_cache,
           sched_groups.transforms_sg())
           .get();
     }
