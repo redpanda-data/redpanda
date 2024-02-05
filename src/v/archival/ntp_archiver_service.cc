@@ -2470,9 +2470,10 @@ ss::future<> ntp_archiver::apply_spillover() {
     if (manifest_size_limit.has_value()) {
         vlog(
           _rtclog.debug,
-          "Manifest size: {}, manifest size limit (x2): {}",
+          "Manifest size: {}, manifest size limit (x2): {}, start offset: {}",
           manifest().segments_metadata_bytes(),
-          manifest_size_limit.value() * 2);
+          manifest_size_limit.value() * 2,
+          manifest().get_start_offset());
     } else {
         vlog(
           _rtclog.debug,
