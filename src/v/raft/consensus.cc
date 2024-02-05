@@ -1910,11 +1910,11 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 3
     if (request_metadata.prev_log_index < last_log_offset) {
-        if (unlikely(request_metadata.prev_log_index < _commit_index)) {
+        if (unlikely(request_metadata.prev_log_index < last_visible_index())) {
             reply.result = append_entries_reply::status::success;
             // clamp dirty offset to the current commit index not to allow
             // leader reasoning about follower log beyond that point
-            reply.last_dirty_log_index = _commit_index;
+            reply.last_dirty_log_index = last_visible_index();
             reply.last_flushed_log_index = _commit_index;
             vlog(
               _ctxlog.info,
