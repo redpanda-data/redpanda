@@ -9,9 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/outcome.h"
 #include "cluster/errc.h"
 #include "model/record.h"
 #include "ssx/semaphore.h"
+#include "transform/logging/errc.h"
 #include "transform/logging/event.h"
 
 #pragma once
@@ -53,16 +55,17 @@ public:
     client& operator=(client&&) = delete;
     virtual ~client() = default;
 
+    virtual ss::future<errc> initialize() = 0;
+
     /*
      * Collect io::json_batches into model::record_batch(es) and publish
      *
      * Implementations should aim to batch outgoing records maximally and
      * respect cluster-wide batch size limits.
      */
-    virtual ss::future<> write(model::partition_id, io::json_batches) = 0;
+    virtual ss::future<errc> write(model::partition_id, io::json_batches) = 0;
 
-    virtual model::partition_id
-    compute_output_partition(model::transform_name_view name)
-      = 0;
+    virtual result<model::partition_id, errc>
+    compute_output_partition(model::transform_name_view name) = 0;
 };
 } // namespace transform::logging
