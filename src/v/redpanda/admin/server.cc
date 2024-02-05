@@ -1162,6 +1162,14 @@ ss::future<> admin_server::throw_on_error(
         }
     } else if (ec.category() == wasm::error_category()) {
         switch (wasm::errc(ec.value())) {
+        case wasm::errc::invalid_module_missing_abi:
+            throw ss::httpd::bad_request_exception(
+              "Invalid WebAssembly - the binary is missing required transform "
+              "functions. Does the broker support this version of the Data "
+              "Transforms SDK?");
+        case wasm::errc::invalid_module_missing_wasi:
+            throw ss::httpd::bad_request_exception(
+              "invalid WebAssembly - missing required WASI functions");
         case wasm::errc::invalid_module:
             throw ss::httpd::bad_request_exception(
               "invalid WebAssembly module");
