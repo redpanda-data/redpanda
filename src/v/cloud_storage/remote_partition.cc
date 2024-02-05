@@ -859,7 +859,8 @@ remote_partition::remote_partition(
   cache& c,
   cloud_storage_clients::bucket_name bucket,
   partition_probe& probe)
-  : _rtc(_as)
+  : _ntp(m->get_ntp())
+  , _rtc(_as)
   , _ctxlog(cst_log, _rtc, m->get_ntp().path())
   , _api(api)
   , _cache(c)
@@ -897,7 +898,7 @@ ss::future<> remote_partition::run_eviction_loop() {
         // got stuck. The deadline is set to 5 minutes to avoid false positives.
         // The callback is self sufficient and can outlive the remote_partition
         // instance.
-        watchdog wd(300s, [ntp = get_ntp()] {
+        watchdog wd(300s, [ntp = _ntp] {
             vlog(cst_log.error, "Eviction loop for partition {} stuck", ntp);
         });
         auto eviction_in_flight = std::exchange(_eviction_pending, {});
@@ -925,7 +926,7 @@ kafka::offset remote_partition::first_uploaded_offset() {
     vassert(
       _manifest_view->stm_manifest().size() > 0,
       "The manifest for {} is not expected to be empty",
-      _manifest_view->stm_manifest().get_ntp());
+      _ntp);
     auto so
       = _manifest_view->stm_manifest().full_log_start_kafka_offset().value();
     vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
@@ -936,15 +937,13 @@ kafka::offset remote_partition::next_kafka_offset() {
     vassert(
       _manifest_view->stm_manifest().size() > 0,
       "The manifest for {} is not expected to be empty",
-      _manifest_view->get_ntp());
+      _ntp);
     auto next = _manifest_view->stm_manifest().get_next_kafka_offset().value();
     vlog(_ctxlog.debug, "remote partition next_kafka_offset: {}", next);
     return next;
 }
 
-const model::ntp& remote_partition::get_ntp() const {
-    return _manifest_view->get_ntp();
-}
+const model::ntp& remote_partition::get_ntp() const { return _ntp; }
 
 bool remote_partition::is_data_available() const {
     const auto& stmm = _manifest_view->stm_manifest();
@@ -1330,7 +1329,7 @@ void remote_partition::finalize() {
     auto serialized_manifest = stm_manifest.to_iobuf();
 
     finalize_data data{
-      .ntp = stm_manifest.get_ntp(),
+      .ntp = get_ntp(),
       .revision = stm_manifest.get_revision_id(),
       .bucket = _bucket,
       .key
