@@ -72,11 +72,18 @@ inline const model::ntp wasm_binaries_internal_ntp(
   model::topic("wasm_binaries"),
   model::partition_id(0));
 
+inline const model::topic
+  transform_log_internal_topic("_redpanda.transform_logs");
+
+inline const model::topic_namespace transform_log_internal_nt(
+  model::kafka_namespace, model::transform_log_internal_topic);
+
 inline bool is_user_topic(topic_namespace_view tp_ns) {
     return tp_ns.ns == kafka_namespace
            && tp_ns.tp != kafka_consumer_offsets_topic
            && tp_ns.tp != schema_registry_internal_tp.topic
-           && tp_ns.tp != kafka_audit_logging_topic;
+           && tp_ns.tp != kafka_audit_logging_topic
+           && tp_ns.tp != transform_log_internal_topic;
 }
 
 inline bool is_user_topic(const ntp& ntp) {

@@ -1312,6 +1312,9 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     if (config::shard_local_cfg().audit_enabled()) {
         kafka_nodelete_topics.push_back(model::kafka_audit_logging_topic());
     }
+    if (config::shard_local_cfg().data_transforms_enabled()) {
+        kafka_nodelete_topics.push_back(model::transform_log_internal_topic());
+    }
     auto nodelete_it = std::partition(
       request.data.topic_names.begin(),
       request.data.topic_names.end(),
