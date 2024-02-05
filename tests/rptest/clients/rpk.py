@@ -1614,7 +1614,11 @@ class RpkTool:
         cmd += rest
         return self._execute(cmd)
 
-    def deploy_wasm(self, name, input_topic, output_topic):
+    def deploy_wasm(self,
+                    name,
+                    input_topic,
+                    output_topic,
+                    file="tinygo/identity.wasm"):
         self._run_wasm([
             "deploy",
             "--name",
@@ -1624,7 +1628,7 @@ class RpkTool:
             "--output-topic",
             output_topic,
             "--file",
-            "/opt/transforms/tinygo/identity.wasm",
+            f"/opt/transforms/{file}",
         ])
 
     def delete_wasm(self, name):

@@ -14,7 +14,7 @@ import random
 from requests.exceptions import RequestException
 
 from ducktape.mark import matrix
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.services.transform_verifier_service import TransformVerifierProduceConfig, TransformVerifierProduceStatus, TransformVerifierService, TransformVerifierConsumeConfig, TransformVerifierConsumeStatus
@@ -94,12 +94,12 @@ class BaseDataTransformsTest(RedpandaTest):
         """
         Delete a wasm transform and wait for all processors to stop.
         """
-        def do_deploy():
+        def do_delete():
             self._rpk.delete_wasm(name)
             return True
 
         wait_until(
-            do_deploy,
+            do_delete,
             timeout_sec=30,
             backoff_sec=5,
             err_msg=f"unable to delete wasm transform {name}",
@@ -177,6 +177,28 @@ class BaseDataTransformsTest(RedpandaTest):
             timeout_sec=timeout_sec)
         return typing.cast(TransformVerifierConsumeStatus, result)
 
+    def _deploy_invalid(self, file: str, expected_msg: str):
+        def do_deploy():
+            try:
+                self._rpk.deploy_wasm("invalid",
+                                      self.topics[0].name,
+                                      self.topics[1].name,
+                                      file=file)
+                raise AssertionError(
+                    "Unexpectedly was able to deploy transform")
+            except RpkException as e:
+                if expected_msg in e.stdout or expected_msg in e.stderr:
+                    return True
+                # Could be a flaky thing that needs to be retried due to network, etc.
+                return False
+
+        wait_until(
+            do_deploy,
+            timeout_sec=30,
+            backoff_sec=5,
+            err_msg=f"unable to deploy invalid wasm transform",
+        )
+
 
 class DataTransformsTest(BaseDataTransformsTest):
     """
@@ -201,6 +223,20 @@ class DataTransformsTest(BaseDataTransformsTest):
                                                      status=producer_status)
         self.logger.info(f"{consumer_status}")
         assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+
+    @cluster(num_nodes=3)
+    def test_validation(self):
+        """
+        Test that invalid wasm binaries are validated at deploy time.
+        """
+        self._deploy_invalid(file="validation/garbage.wasm",
+                             expected_msg="invalid WebAssembly module")
+        self._deploy_invalid(file="validation/add_two.wasm",
+                             expected_msg="missing required WASI functions")
+        self._deploy_invalid(
+            file="validation/wasi.wasm",
+            expected_msg=
+            "Does the broker support this version of the Data Transforms SDK?")
 
     @cluster(num_nodes=3)
     def test_tracked_offsets_cleaned_up(self):
