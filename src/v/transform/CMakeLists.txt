@@ -20,6 +20,7 @@ v_cc_library(
     v::wasm
     v::model
     v::transform_rpc
+    v::transform_logging
 )
 
 add_subdirectory(tests)
