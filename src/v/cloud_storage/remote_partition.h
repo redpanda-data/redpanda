@@ -217,6 +217,7 @@ private:
     iterator get_or_materialize_segment(
       const remote_segment_path& path, const segment_meta&, segment_units);
 
+    model::ntp _ntp;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     ss::gate _gate;

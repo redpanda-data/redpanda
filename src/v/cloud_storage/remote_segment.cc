@@ -28,6 +28,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
+#include "ssx/watchdog.h"
 #include "storage/parser.h"
 #include "storage/segment_index.h"
 #include "utils/retry_chain_node.h"
@@ -242,6 +243,10 @@ ss::future<> remote_segment::stop() {
         vlog(_ctxlog.warn, "remote segment {} already stopped", _path);
         co_return;
     }
+
+    watchdog wd(300s, [path = _path] {
+        vlog(cst_log.error, "remote_segment {} stop operation stuck", path);
+    });
 
     vlog(_ctxlog.debug, "remote segment stop");
     _bg_cvar.broken();
@@ -1459,6 +1464,13 @@ ss::future<> remote_segment_batch_reader::stop() {
           "stopped");
         co_return;
     }
+
+    watchdog wd(300s, [path = _seg->get_segment_path()] {
+        vlog(
+          cst_log.error,
+          "remote_segment_batch_reader {} stop operation stuck",
+          path);
+    });
 
     vlog(
       _ctxlog.debug,
