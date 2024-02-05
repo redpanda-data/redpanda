@@ -14,6 +14,7 @@
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/strings/escaping.h>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
@@ -298,7 +299,7 @@ TEST_F(TransformLogManagerTest, MessageTruncation) {
 
     // test that truncation occurs _after_ control char escaping
     ss::sstring in_msg(line_max, char{0x7f});
-    auto escaped = replace_control_chars_in_string(in_msg);
+    auto escaped = absl::CHexEscape(in_msg);
     EXPECT_GT(escaped.length(), line_max);
 
     enqueue_log(in_msg);
@@ -332,7 +333,7 @@ TEST_F(TransformLogManagerTest, IllegalMessages) {
     EXPECT_EQ(logs().size(), 1);
 
     auto msg = testing::get_message_body(logs().front().copy());
-    EXPECT_EQ(msg, replace_control_chars_in_string(control_char_msg.data()));
+    EXPECT_EQ(msg, absl::CHexEscape(control_char_msg.data()));
 }
 
 TEST_F(TransformLogManagerTest, ConfigTuning) {

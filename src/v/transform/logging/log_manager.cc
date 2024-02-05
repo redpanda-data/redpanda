@@ -26,6 +26,8 @@
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/as_future.hh>
 
+#include <absl/strings/escaping.h>
+
 namespace transform::logging {
 namespace {
 using namespace std::chrono_literals;
@@ -250,7 +252,7 @@ void manager<ClockType>::enqueue_log(
             return std::nullopt;
         } else if (contains_control_character(sub_view)) {
             // escape control chars and truncate (again, if necessary)
-            auto res = replace_control_chars_in_string(sub_view);
+            auto res = absl::CHexEscape(sub_view);
             return res.substr(0, msg_len(res));
         }
         return ss::sstring{sub_view.data(), sub_view.size()};
