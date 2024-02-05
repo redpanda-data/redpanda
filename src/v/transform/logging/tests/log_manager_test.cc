@@ -1,7 +1,9 @@
 #include "config/mock_property.h"
 #include "model/namespace.h"
 #include "model/transform.h"
+#include "outcome.h"
 #include "test_utils/async.h"
+#include "transform/logging/errc.h"
 #include "transform/logging/event.h"
 #include "transform/logging/io.h"
 #include "transform/logging/log_manager.h"
@@ -38,7 +40,7 @@ class fake_client final : public transform::logging::client {
 public:
     fake_client() = default;
 
-    ss::future<>
+    ss::future<errc>
     write(model::partition_id pid, io::json_batches batches) override {
         while (!batches.empty()) {
             auto events = std::move(batches.front());
@@ -50,21 +52,30 @@ public:
               std::back_inserter(_logs));
         }
 
-        return ss::now();
+        co_return errc::success;
     }
 
-    model::partition_id
+    result<model::partition_id, errc>
     compute_output_partition(model::transform_name_view name) override {
+        if (_partition_ec.has_value()) {
+            return *_partition_ec;
+        }
         size_t h = std::hash<model::transform_name>{}(
           model::transform_name{name().data(), name().size()});
         return model::partition_id{static_cast<int>(h % 4)};
     }
 
+    ss::future<errc> initialize() override { co_return errc::success; }
+
     const ss::chunked_fifo<iobuf>& logs() const { return _logs; }
+
+    void set_partition_ec(std::optional<errc> ec) { _partition_ec = ec; }
 
 private:
     ss::chunked_fifo<iobuf> _logs;
     absl::flat_hash_map<model::partition_id, size_t> _pid_event_counts;
+
+    std::optional<errc> _partition_ec{};
 };
 
 } // namespace
@@ -84,6 +95,10 @@ public:
           _line_limit.bind(),
           _flush_ms.bind());
         start_manager();
+    }
+
+    void set_find_partition_ec(std::optional<errc> ec) {
+        _client->set_partition_ec(ec);
     }
 
     void TearDown() override {
@@ -355,6 +370,41 @@ TEST_F(TransformLogManagerTest, ConfigTuning) {
     // reflect the new line limit
     EXPECT_EQ(logs().size(), 2);
     EXPECT_EQ(last_log_msg().size(), lim2);
+}
+
+TEST_F(TransformLogManagerTest, ComputePartitionError) {
+    constexpr int N = 100;
+    set_find_partition_ec(errc::topic_not_found);
+    auto names = get_random_transform_names(4);
+
+    for (int i = 0; i < N; ++i) {
+        enqueue_log(
+          ss::log_level::info,
+          model::transform_name_view{names.at(i % names.size())()},
+          ss::sstring(i + 1, 'a'));
+    }
+
+    advance_clock();
+
+    // logs should all have been dropped prior to hitting the client
+    EXPECT_EQ(logs().size(), 0);
+
+    set_find_partition_ec(std::nullopt);
+
+    advance_clock();
+
+    EXPECT_EQ(logs().size(), 0);
+
+    for (int i = 0; i < N; ++i) {
+        enqueue_log(
+          ss::log_level::info,
+          model::transform_name_view{names.at(i % names.size())()},
+          ss::sstring(i + 1, 'a'));
+    }
+
+    advance_clock();
+
+    EXPECT_EQ(logs().size(), N);
 }
 
 } // namespace transform::logging

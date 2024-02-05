@@ -15,6 +15,7 @@
 #include "config/configuration.h"
 #include "model/namespace.h"
 #include "random/simple_time_jitter.h"
+#include "transform/logging/errc.h"
 #include "transform/logging/io.h"
 #include "transform/logging/logger.h"
 #include "utils/utf8.h"
@@ -70,6 +71,7 @@ public:
     }
 
 private:
+    bool _inited{false};
     template<typename BuffersT>
     ss::future<> flush_loop(BuffersT* bufs) {
         while (!_as->abort_requested()) {
@@ -89,6 +91,10 @@ private:
             } catch (const ss::broken_condition_variable&) {
                 break;
             } catch (const ss::condition_variable_timed_out&) {
+            }
+            if (!_inited) {
+                _inited = co_await _client->initialize()
+                          == logging::errc::success;
             }
             co_await flush(bufs);
         }
@@ -111,13 +117,23 @@ private:
           local_bufs, MAX_CONCURRENCY, [this, &batches](auto& pr) {
               auto& [name, events] = pr;
               model::transform_name_view nv{name};
-              auto pid = _client->compute_output_partition(nv);
+              auto pid_res = _client->compute_output_partition(nv);
+              if (pid_res.has_error()) {
+                  vlog(
+                    tlg_log.warn,
+                    "Partition lookup failed for transform '{}': {}",
+                    name,
+                    std::error_code{pid_res.assume_error()}.message());
+                  return ss::now();
+              }
 
               return do_serialize_log_events(nv, std::move(events))
-                .then([pid, &batches](auto batch) -> ss::future<> {
-                    batches[pid].emplace_back(std::move(batch));
-                    return ss::now();
-                });
+                .then(
+                  [pid = pid_res.assume_value(),
+                   &batches](auto batch) -> ss::future<> {
+                      batches[pid].emplace_back(std::move(batch));
+                      return ss::now();
+                  });
           });
 
         co_await ss::max_concurrent_for_each(
@@ -164,7 +180,10 @@ private:
         // capacity have been adopted by `json_batch`es. These units will be
         // released (i.e. buffer capacity freed) only once those records have
         // been produced.
-        co_await _client->write(pid, std::move(events));
+        std::error_code ec = co_await _client->write(pid, std::move(events));
+        if (ec != errc::success) {
+            vlog(tlg_log.warn, "Flush failed: {}", ec.message());
+        }
     }
     ss::abort_source* _as = nullptr;
     transform::logging::client* _client = nullptr;
@@ -200,7 +219,7 @@ manager<ClockType>::~manager() = default;
 
 template<typename ClockType>
 ss::future<> manager<ClockType>::start() {
-    return _flusher->template start<>(&_log_buffers);
+    co_return co_await _flusher->template start<>(&_log_buffers);
 }
 
 template<typename ClockType>
