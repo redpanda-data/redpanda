@@ -49,6 +49,7 @@ public:
       , _jitter(_interval_ms(), jitter_amt) {
         _interval_ms.watch([this]() {
             _jitter = simple_time_jitter<ClockType>{_interval_ms(), jitter_amt};
+            wakeup();
         });
     }
 
