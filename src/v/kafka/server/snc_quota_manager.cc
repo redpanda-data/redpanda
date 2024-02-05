@@ -138,7 +138,9 @@ auto make_node_bucket(auto const& cfg) {
     // if the rate is created as 0 and is then increased
     int64_t limit = rate;
     // TODO: A threshold of 1 too small, but allows profiling the atomic ops
-    int64_t threshold = 1;
+    int64_t threshold = config::shard_local_cfg()
+                          .kafka_throughput_replenish_threshold()
+                          .value_or(1);
     return std::make_unique<kafka::snc_quota_manager::bucket_t>(
       rate, limit, threshold);
 };

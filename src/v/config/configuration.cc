@@ -2783,6 +2783,14 @@ configuration::configuration()
       "Use the new, improved, super-awesome quota balancer",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , kafka_throughput_replenish_threshold(
+      *this,
+      "kafka_throughput_replenish_threshold",
+      "Threshold for refilling the token bucket. Will be clamped between 1 and "
+      "rate.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      {.min = 1})
   , kafka_quota_balancer_window(
       *this,
       "kafka_quota_balancer_window_ms",
