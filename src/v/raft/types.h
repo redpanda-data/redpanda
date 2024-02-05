@@ -320,7 +320,7 @@ enum class reply_result : uint8_t {
 struct append_entries_reply
   : serde::envelope<
       append_entries_reply,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -349,6 +349,10 @@ struct append_entries_reply
     // older nodes are always ready for recovery.
     bool may_recover = true;
 
+    // hint from follower indicating that it was requested to truncate a log
+    // that was already committed or made visible.
+    bool force_stepdown = false;
+
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
 
@@ -366,7 +370,8 @@ struct append_entries_reply
           last_dirty_log_index,
           last_term_base_offset,
           result,
-          may_recover);
+          may_recover,
+          force_stepdown);
     }
 };
 

@@ -538,6 +538,11 @@ void consensus::process_append_entries_reply(
   model::offset dirty_offset) {
     auto is_success = update_follower_index(
       physical_node, r, seq_id, dirty_offset);
+    if (is_success && r.value().force_stepdown) {
+        ssx::spawn_with_gate(
+          _bg, [this] { return step_down("follower_with_longer_log_found"); });
+        return;
+    }
     if (is_success) {
         maybe_promote_to_voter(r.value().node_id);
         maybe_update_majority_replicated_index();
@@ -2020,6 +2025,8 @@ consensus::do_append_entries(append_entries_request&& r) {
               "present, request: {}, current state: {}",
               request_metadata,
               meta());
+            // force current leader step down
+            reply.force_stepdown = true;
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
