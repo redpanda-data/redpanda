@@ -503,6 +503,49 @@ SEASTAR_THREAD_TEST_CASE(property_conversion_bind) {
     BOOST_TEST(watch_count == 6);
 }
 
+SEASTAR_THREAD_TEST_CASE(property_bind_with_multiple_config_stores) {
+    // check that a copy of a configuration store, created for validating an
+    // incoming value, does not propagate the value to the bindings to the
+    // original configuration store
+
+    // main config store
+    auto cfg = test_config();
+    // set a property to a defined value
+    constexpr auto boolean_expected_value = false;
+    cfg.boolean.set_value(boolean_expected_value);
+    // create a like it's done in the codebase
+    auto boolean_bind = cfg.boolean.bind();
+    boolean_bind.watch([&] {
+        BOOST_TEST_CONTEXT("this watcher should not be called in this test") {
+            BOOST_CHECK_MESSAGE(false, "watcher called");
+            BOOST_CHECK_EQUAL(cfg.boolean.value(), boolean_expected_value);
+        }
+    });
+
+    BOOST_CHECK(cfg.boolean.value() == boolean_expected_value);
+    BOOST_TEST_CONTEXT("simulating patch_cluster_config") {
+        // tmp copy meant to validate an incoming value (see
+        // admin/server.cc::patch_cluster_config)
+        auto cfg_tmp = test_config();
+        // Populate the temporary config object with existing values
+        cfg.for_each([&](auto const& p) {
+            auto& tmp_p = cfg_tmp.get(p.name());
+            tmp_p = p;
+        });
+
+        BOOST_CHECK(cfg_tmp.boolean.value() == boolean_expected_value);
+        auto anti_value = YAML::Load(
+          fmt::format("{}", !boolean_expected_value));
+        auto& boolean_prop = cfg_tmp.get("boolean");
+        BOOST_CHECK_MESSAGE(
+          boolean_prop.validate(anti_value) == std::nullopt,
+          "sanity check: the test should pass validation");
+
+        // this is expected not to trigger the booload_bind watcher
+        boolean_prop.set_value(anti_value);
+    }
+}
+
 SEASTAR_THREAD_TEST_CASE(property_aliasing) {
     auto cfg = test_config();
 
