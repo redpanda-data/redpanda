@@ -20,6 +20,8 @@
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "ssx/future-util.h"
+#include "ssx/watchdog.h"
 #include "storage/log_reader.h"
 #include "storage/parser_errc.h"
 #include "storage/types.h"
@@ -857,7 +859,8 @@ remote_partition::remote_partition(
   cache& c,
   cloud_storage_clients::bucket_name bucket,
   partition_probe& probe)
-  : _rtc(_as)
+  : _ntp(m->get_ntp())
+  , _rtc(_as)
   , _ctxlog(cst_log, _rtc, m->get_ntp().path())
   , _api(api)
   , _cache(c)
@@ -875,13 +878,13 @@ ss::future<> remote_partition::start() {
 
 void remote_partition::evict_segment_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
-    _eviction_pending.push_back(std::move(reader));
+    _eviction_pending.emplace_back(std::move(reader));
     _has_evictions_cvar.signal();
 }
 
 void remote_partition::evict_segment(
   ss::lw_shared_ptr<remote_segment> segment) {
-    _eviction_pending.push_back(std::move(segment));
+    _eviction_pending.emplace_back(std::move(segment));
     _has_evictions_cvar.signal();
 }
 
@@ -891,11 +894,30 @@ ss::future<> remote_partition::run_eviction_loop() {
     while (true) {
         co_await _has_evictions_cvar.wait(
           [this] { return !_eviction_pending.empty(); });
+        // This watchdog is used to detect situations when the eviction loop
+        // got stuck. The deadline is set to 5 minutes to avoid false positives.
+        // The callback is self sufficient and can outlive the remote_partition
+        // instance.
+        watchdog wd(300s, [ntp = _ntp] {
+            vlog(cst_log.error, "Eviction loop for partition {} stuck", ntp);
+        });
         auto eviction_in_flight = std::exchange(_eviction_pending, {});
         co_await ss::max_concurrent_for_each(
-          eviction_in_flight, 200, [](auto&& rs_variant) {
+          eviction_in_flight, 200, [this](auto&& rs_variant) {
               return std::visit(
-                [](auto&& rs) { return rs->stop(); }, rs_variant);
+                [this](auto&& rs) {
+                    try {
+                        return ssx::ignore_shutdown_exceptions(rs->stop());
+                    } catch (...) {
+                        vlog(
+                          _ctxlog.error,
+                          "Unexpected exception in the background eviction "
+                          "fiber {}",
+                          std::current_exception());
+                        throw;
+                    }
+                },
+                rs_variant);
           });
     }
 }
@@ -904,7 +926,7 @@ kafka::offset remote_partition::first_uploaded_offset() {
     vassert(
       _manifest_view->stm_manifest().size() > 0,
       "The manifest for {} is not expected to be empty",
-      _manifest_view->stm_manifest().get_ntp());
+      _ntp);
     auto so
       = _manifest_view->stm_manifest().full_log_start_kafka_offset().value();
     vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
@@ -915,15 +937,13 @@ kafka::offset remote_partition::next_kafka_offset() {
     vassert(
       _manifest_view->stm_manifest().size() > 0,
       "The manifest for {} is not expected to be empty",
-      _manifest_view->get_ntp());
+      _ntp);
     auto next = _manifest_view->stm_manifest().get_next_kafka_offset().value();
     vlog(_ctxlog.debug, "remote partition next_kafka_offset: {}", next);
     return next;
 }
 
-const model::ntp& remote_partition::get_ntp() const {
-    return _manifest_view->get_ntp();
-}
+const model::ntp& remote_partition::get_ntp() const { return _ntp; }
 
 bool remote_partition::is_data_available() const {
     const auto& stmm = _manifest_view->stm_manifest();
@@ -1060,6 +1080,9 @@ remote_partition::aborted_transactions(offset_range offsets) {
 
 ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
+    watchdog wd(300s, [ntp = get_ntp()] {
+        vlog(cst_log.error, "remote_partition {} stop operation stuck", ntp);
+    });
 
     // Prevent further segment materialization, readers, etc.
     _as.request_abort();
@@ -1306,7 +1329,7 @@ void remote_partition::finalize() {
     auto serialized_manifest = stm_manifest.to_iobuf();
 
     finalize_data data{
-      .ntp = stm_manifest.get_ntp(),
+      .ntp = get_ntp(),
       .revision = stm_manifest.get_revision_id(),
       .bucket = _bucket,
       .key
