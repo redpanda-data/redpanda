@@ -54,8 +54,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 # not to emit spurious errors
                 "raft_io_timeout_ms": 20000,
             },
-            # 2 nodes for kgo producer/consumer workloads
-            node_prealloc_count=3,
+            # 4 nodes for kgo producer/consumer workloads
+            node_prealloc_count=4,
             *args,
             **kwargs)
 
@@ -187,7 +187,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                      msg_count,
                      consumers_count,
                      compaction_enabled=False,
-                     key_set_cardinality=None):
+                     key_set_cardinality=None,
+                     acks=-1):
             self.test_context = test_context
             self.logger = logger
             self.topic = topic_name
@@ -199,6 +200,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             self.consumer_count = consumers_count
             self.compaction_enabled = compaction_enabled
             self.key_set_cardinality = key_set_cardinality
+            self.acks = acks
 
         def _start_producer(self):
             self.producer = KgoVerifierProducer(
@@ -209,7 +211,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 self.msg_count,
                 custom_node=self.nodes,
                 rate_limit_bps=self.rate_limit_bps,
-                key_set_cardinality=self.key_set_cardinality)
+                key_set_cardinality=self.key_set_cardinality,
+                acks=self.acks)
 
             self.producer.start(clean=False)
 
@@ -262,7 +265,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             assert self.consumer.consumer_status.validator.invalid_reads == 0, f"Invalid reads in topic: {self.topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
 
     @skip_debug_mode
-    @cluster(num_nodes=8,
+    @cluster(num_nodes=9,
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
              PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
@@ -338,6 +341,29 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             consumers_count=self.consumers_count,
             compaction_enabled=False)
 
+        leader_acks_topic = TopicSpec(
+            name='tp-leader-acks',
+            partition_count=self.max_partitions,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_DELETE,
+            segment_bytes=default_segment_size,
+            redpanda_remote_read=with_tiered_storage,
+            redpanda_remote_write=with_tiered_storage)
+        self.client().create_topic(leader_acks_topic)
+
+        leader_ack_producer_consumer = RandomNodeOperationsTest.producer_consumer(
+            test_context=self.test_context,
+            logger=self.logger,
+            topic_name=leader_acks_topic.name,
+            redpanda=self.redpanda,
+            nodes=[self.preallocated_nodes[3]],
+            msg_size=self.msg_size,
+            rate_limit_bps=self.rate_limit,
+            msg_count=self.msg_count,
+            consumers_count=self.consumers_count,
+            compaction_enabled=False,
+            acks=1)
+
         compacted_topic = TopicSpec(name='tp-workload-compaction',
                                     partition_count=self.max_partitions,
                                     cleanup_policy=TopicSpec.CLEANUP_COMPACT,
@@ -361,6 +387,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         regular_producer_consumer.start()
         compacted_producer_consumer.start()
+        leader_ack_producer_consumer.start()
 
         if enable_fast_partition_movement():
             # if running with tiered storage create a topic with fast partition
@@ -436,6 +463,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         # stop producer and consumer and verify results
         regular_producer_consumer.verify()
         compacted_producer_consumer.verify()
+        leader_ack_producer_consumer.verify()
 
         if enable_fast_partition_movement():
             fast_producer_consumer.verify()
