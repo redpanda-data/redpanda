@@ -37,6 +37,11 @@ public:
         // transactions spanning compacted and non-compacted segments.
         // For more details, check the details in the commit that added
         // this.
+        // Note: This offset tracking is not needed after
+        // https://github.com/redpanda-data/redpanda/pull/16295
+        // but only retained for old data segments where abort markers
+        // were compacted away. Perhaps multiple major releases later
+        // this code can be removed.
         std::optional<model::offset> first_tx_batch_offset;
     };
 
