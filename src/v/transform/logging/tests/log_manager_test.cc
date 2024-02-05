@@ -196,6 +196,10 @@ TEST_F(TransformLogManagerTest, LargeBuffer) {
         ss::maybe_yield().get();
     }
 
+    // Drain the task queue so that we don't get races where this advance should
+    // trigger the flush, but there is currently a pending flush, which doesn't
+    // acuse the advance_clock to actually trigger a flush.
+    tests::drain_task_queue().get();
     advance_clock();
 
     EXPECT_EQ(logs().size(), N);
