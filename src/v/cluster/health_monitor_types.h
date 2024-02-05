@@ -68,8 +68,8 @@ struct partition_status
     std::optional<uint8_t> under_replicated_replicas;
 
     /*
-     * estimated amount of data above local retention that is subject to
-     * reclaim under disk pressure. this is useful for the partition balancer
+     * estimated amount of data subject to reclaim under disk pressure without
+     * violating safety guarantees. this is useful for the partition balancer
      * which is interested in free space on a node. a node may have very little
      * physical free space, but have effective free space represented by
      * reclaimable size bytes.
