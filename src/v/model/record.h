@@ -614,7 +614,6 @@ private:
     iobuf_const_parser _parser;
 };
 
-// 57 bytes
 constexpr uint32_t packed_record_batch_header_size
   = sizeof(model::record_batch_header::header_crc)          // 4
     + sizeof(model::record_batch_header::size_bytes)        // 4
@@ -629,6 +628,7 @@ constexpr uint32_t packed_record_batch_header_size
     + sizeof(model::record_batch_header::producer_epoch)    // 2
     + sizeof(model::record_batch_header::base_sequence)     // 4
     + sizeof(model::record_batch_header::record_count);     // 4
+static_assert(packed_record_batch_header_size == 61);
 
 class record_batch
   : public serde::envelope<
