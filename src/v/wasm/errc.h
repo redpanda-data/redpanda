@@ -26,8 +26,12 @@ enum class errc {
     engine_not_running,
     // Engine wasm shutdown
     engine_shutdown,
-    // invalid module
-    invalid_module
+    // invalid module without wasi _start
+    invalid_module_missing_wasi,
+    // invalid module without abi marker
+    invalid_module_missing_abi,
+    // invalid module otherwise
+    invalid_module,
 };
 
 struct errc_category final : public std::error_category {
@@ -47,8 +51,12 @@ struct errc_category final : public std::error_category {
             return "WebAssembly not running";
         case errc::engine_shutdown:
             return "WebAssembly engine shutdown";
+        case errc::invalid_module_missing_wasi:
+            return "invalid WebAssembly - not compiled for wasi/wasm32";
+        case errc::invalid_module_missing_abi:
+            return "invalid WebAssembly - invalid SDK";
         case errc::invalid_module:
-            return "invalid WebAssembly module";
+            return "invalid WebAssembly";
         default:
             return "wasm::errc::unknown(" + std::to_string(c) + ")";
         }

@@ -1599,12 +1599,14 @@ ss::future<> wasmtime_runtime::validate(iobuf buf) {
     if (!has_wasi_main) {
         vlog(wasm_log.warn, "invalid module: missing _start function");
         throw wasm_exception(
-          "invalid module: missing _start function", errc::user_code_failure);
+          "invalid module: missing _start function",
+          errc::invalid_module_missing_wasi);
     }
     if (!has_exported_memory) {
         vlog(wasm_log.warn, "invalid module: missing memory export");
         throw wasm_exception(
-          "invalid module: missing memory export", errc::user_code_failure);
+          "invalid module: missing memory export",
+          errc::invalid_module_missing_wasi);
     }
     bool has_abi_check_fn = false;
     for (const auto& module_import : decls.imports) {
@@ -1618,7 +1620,7 @@ ss::future<> wasmtime_runtime::validate(iobuf buf) {
         vlog(wasm_log.warn, "invalid module: missing abi function");
         throw wasm_exception(
           "invalid module: missing transform sdk ABI check function",
-          errc::user_code_failure);
+          errc::invalid_module_missing_abi);
     }
 }
 
