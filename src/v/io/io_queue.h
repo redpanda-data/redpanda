@@ -68,6 +68,11 @@ public:
 
     /**
      * Stops the I/O queue's background dispatcher.
+     *
+     * It is recommended that close() be invoked prior to stopping the queue.
+     * While Seastar will close the file handle automatically, ensuring that the
+     * queue is drained before the file handle is closed will avoid errors
+     * within Seastar related to closing file handles with pending I/O.
      */
     seastar::future<> stop() noexcept;
 
