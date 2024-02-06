@@ -1203,20 +1203,31 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
   model::record_batch_reader br,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued) {
-    auto producer = maybe_create_producer(bid.pid);
-    co_return co_await producer
-      ->run_with_lock([&](ssx::semaphore_units units) {
-          return do_sync_and_idempotent_replicate(
-            producer,
-            bid,
-            std::move(br),
-            opts,
-            std::move(enqueued),
-            std::move(units));
-      })
-      .finally([this, producer] {
-          _producer_state_manager.local().touch(*producer, _vcluster_id);
-      });
+    try {
+        auto producer = maybe_create_producer(bid.pid);
+        co_return co_await producer
+          ->run_with_lock([&](ssx::semaphore_units units) {
+              return do_sync_and_idempotent_replicate(
+                producer,
+                bid,
+                std::move(br),
+                opts,
+                std::move(enqueued),
+                std::move(units));
+          })
+          .finally([this, producer] {
+              _producer_state_manager.local().touch(*producer, _vcluster_id);
+          });
+    } catch (const cache_full_error& e) {
+        vlog(
+          _ctx_log.warn,
+          "unable to register producer {} with vcluster: {} - {}",
+          bid.pid,
+          _vcluster_id,
+          e.what());
+        enqueued->set_value();
+        co_return errc::producer_ids_vcluster_limit_exceeded;
+    }
 }
 
 ss::future<result<kafka_result>> rm_stm::replicate_msg(
