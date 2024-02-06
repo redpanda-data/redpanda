@@ -273,7 +273,7 @@ public:
      * Returns the approximate in-memory size of this vector in bytes.
      */
     size_t memory_size() const {
-        return _frags.size() * (sizeof(_frags[0]) + elems_per_frag * sizeof(T));
+        return (_frags.size() * sizeof(_frags[0])) + (_capacity * sizeof(T));
     }
 
     /**
