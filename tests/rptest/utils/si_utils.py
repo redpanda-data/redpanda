@@ -143,7 +143,8 @@ SegmentMetadata = namedtuple(
     'SegmentMetadata',
     ['ntp', 'revision', 'base_offset', 'term', 'md5', 'size'])
 
-SegmentPathComponents = namedtuple('SegmentPathComponents', ['ntpr', 'name'])
+SegmentPathComponents = namedtuple('SegmentPathComponents',
+                                   ['ntpr', 'name', 'base_offset'])
 
 MISSING_DATA_ERRORS = [
     "No segments found. Empty partition manifest generated",
@@ -313,8 +314,11 @@ def parse_s3_segment_path(path) -> SegmentPathComponents:
     partition = int(part_rev[0])
     revision = int(part_rev[1])
     fname = items[4]
+    base_offset = int(fname.split('-')[0])
     ntpr = NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
-    return SegmentPathComponents(ntpr=ntpr, name=fname)
+    return SegmentPathComponents(ntpr=ntpr,
+                                 name=fname,
+                                 base_offset=base_offset)
 
 
 def _parse_checksum_entry(path, value, ignore_rev):
