@@ -112,8 +112,11 @@ public:
     requires std::input_iterator<Iter>
     fragmented_vector(Iter begin, Iter end)
       : fragmented_vector() {
+        if constexpr (std::random_access_iterator<Iter>) {
+            reserve(std::distance(begin, end));
+        }
         // Improvement: Write a more efficient implementation for
-        // random_access_iterators
+        // std::contiguous_iterator<Iter>
         for (auto it = begin; it != end; ++it) {
             push_back(*it);
         }
