@@ -10,6 +10,7 @@
  */
 #include "io/io_queue.h"
 
+#include "base/vassert.h"
 #include "io/logger.h"
 
 #include <seastar/core/coroutine.hh>
@@ -146,8 +147,7 @@ seastar::future<> io_queue::dispatch() noexcept {
             dispatch_write(page, std::move(units));
 
         } else {
-            assert(false);
-            std::terminate();
+            vassert(false, "Expected a read or write flag");
         }
     }
 }
@@ -172,8 +172,7 @@ void io_queue::dispatch_read(
                 }
             })
             .handle_exception([this](std::exception_ptr eptr) {
-                log.error("Read failed to {}: {}", path_, eptr);
-                std::terminate();
+                vassert(false, "Read failed to {}: {}", path_, eptr);
             });
       });
 }
@@ -203,8 +202,7 @@ void io_queue::dispatch_write(
                 }
             })
             .handle_exception([this](std::exception_ptr eptr) {
-                log.error("Write failed to {}: {}", path_, eptr);
-                std::terminate();
+                vassert(false, "Write failed to {}: {}", path_, eptr);
             });
       });
 }
