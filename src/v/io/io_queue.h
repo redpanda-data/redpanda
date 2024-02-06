@@ -79,7 +79,8 @@ public:
     /**
      * Open the queue and begin dispatching pending I/O requests.
      *
-     * Requires that opened() be false.
+     * Requires that opened() be false. The queue will remain in the closed
+     * state if an exceptional future is returned.
      */
     seastar::future<> open() noexcept;
 
