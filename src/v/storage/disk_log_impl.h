@@ -292,6 +292,8 @@ private:
     ss::future<std::optional<size_t>>
       disk_usage_target_time_retention(gc_config);
 
+    size_t get_log_truncation_counter() const noexcept override;
+
 private:
     size_t max_segment_size() const;
     // Computes the segment size based on the latest max_segment_size
@@ -343,6 +345,9 @@ private:
     // not, in order to ensure that writers wait for a background roll to
     // complete if one is ongoing.
     mutex _segments_rolling_lock;
+    // This counter is incremented when the log is truncated. It doesn't
+    // count logical truncations and can be incremented multiple times.
+    size_t _suffix_truncation_indicator{0};
 
     std::optional<model::offset> _cloud_gc_offset;
     std::optional<model::offset> _last_compaction_window_start_offset;

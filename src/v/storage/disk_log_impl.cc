@@ -1546,6 +1546,8 @@ ss::future<> disk_log_impl::flush() {
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
+    vlog(
+      stlog.trace, "flush on segment with offsets {}", _segs.back()->offsets());
     return _segs.back()->flush();
 }
 
@@ -2555,6 +2557,7 @@ ss::future<> disk_log_impl::do_truncate(
 
     auto stats = offsets();
 
+    vlog(stlog.trace, "do_truncate at {}, log {}", cfg.base_offset, stats);
     if (cfg.base_offset > stats.dirty_offset || _segs.empty()) {
         co_return;
     }
@@ -2599,6 +2602,12 @@ ss::future<> disk_log_impl::do_truncate(
     }
 
     auto initial_generation_id = last->get_generation_id();
+    vlog(
+      stlog.trace,
+      "do_truncate at {}, start {}, initial_size {}",
+      cfg.base_offset,
+      start,
+      initial_size);
 
     // an unchecked reader is created which does not enforce the logical
     // starting offset. this is needed because we really do want to read
@@ -2642,9 +2651,16 @@ ss::future<> disk_log_impl::do_truncate(
           *this));
     }
     auto [new_max_offset, file_position, new_max_timestamp] = phs.value();
+    vlog(
+      stlog.trace,
+      "do_truncate at {}, new_max_offset {}, file_position {}",
+      cfg.base_offset,
+      new_max_offset,
+      file_position);
 
     if (file_position == 0) {
         _segs.pop_back();
+        _suffix_truncation_indicator++;
         co_return co_await remove_segment_permanently(
           last_ptr, "truncate[post-translation]");
     }
@@ -2652,6 +2668,7 @@ ss::future<> disk_log_impl::do_truncate(
     auto cache_lock = co_await _readers_cache->evict_truncate(cfg.base_offset);
 
     try {
+        _suffix_truncation_indicator++;
         co_return co_await last_ptr->truncate(
           new_max_offset, file_position, new_max_timestamp);
     } catch (...) {
@@ -2666,6 +2683,10 @@ ss::future<> disk_log_impl::do_truncate(
           last,
           *this);
     }
+}
+
+size_t disk_log_impl::get_log_truncation_counter() const noexcept {
+    return _suffix_truncation_indicator;
 }
 
 model::offset disk_log_impl::read_start_offset() const {
