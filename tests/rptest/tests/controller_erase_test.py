@@ -42,6 +42,11 @@ class ControllerEraseTest(RedpandaTest):
         """
 
         admin = Admin(self.redpanda)
+        # disable controller snapshot in partial removal test to make sure that
+        # the deleted segment is not snapshot before restarting the node
+        if partial:
+            self.redpanda.set_cluster_config(
+                {"controller_snapshot_max_age_sec": 3600})
 
         # Do a bunch of metadata operations to put something in the controller log
         transfers_leadership_count = 4
