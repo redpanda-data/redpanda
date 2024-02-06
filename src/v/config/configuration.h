@@ -567,6 +567,7 @@ struct configuration final : public config_store {
 
     // MPX
     property<bool> enable_mpx_extensions;
+    bounded_property<uint64_t> virtual_cluster_min_producer_ids;
 
     configuration();
 
