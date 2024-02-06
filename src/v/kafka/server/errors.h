@@ -97,6 +97,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::invalid_partition_operation:
     case cluster::errc::concurrent_modification_error:
     case cluster::errc::transform_count_limit_exceeded:
+    case cluster::errc::producer_ids_vcluster_limit_exceeded:
         break;
     }
     return error_code::unknown_server_error;

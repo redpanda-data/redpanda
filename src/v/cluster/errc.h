@@ -79,6 +79,7 @@ enum class errc : int16_t {
     invalid_partition_operation,
     concurrent_modification_error,
     transform_count_limit_exceeded,
+    producer_ids_vcluster_limit_exceeded,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -229,6 +230,8 @@ struct errc_category final : public std::error_category {
             return "Concurrent modification error";
         case errc::transform_count_limit_exceeded:
             return "Too many transforms deployed";
+        case errc::producer_ids_vcluster_limit_exceeded:
+            return "To many vclusters registered in producer state cache";
         }
         return "cluster::errc::unknown";
     }
