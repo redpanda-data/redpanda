@@ -152,7 +152,7 @@ public:
         --_size;
         if (_frags.back().empty()) {
             _frags.pop_back();
-            _capacity -= elems_per_frag;
+            _capacity -= std::min(elems_per_frag, _capacity);
         }
         update_generation();
     }
