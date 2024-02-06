@@ -157,6 +157,10 @@ void io_queue::dispatch_read(
             ->dma_read(
               page.offset(), page.data().get_write(), page.data().size())
             .then([this, &page, units = std::move(units)](auto) {
+                /*
+                 * unlike writes, reads are not requeued. the caller should
+                 * handle read/write coherency.
+                 */
                 running_.erase(request_list_type::s_iterator_to(page));
                 if (complete_) {
                     complete_(page);
@@ -179,6 +183,12 @@ void io_queue::dispatch_write(
             ->dma_write(page.offset(), page.data().get(), page.data().size())
             .then([this, &page, units = std::move(units)](auto) {
                 running_.erase(request_list_type::s_iterator_to(page));
+                /*
+                 * the queued flag is cleared before dispatch_write is invoked,
+                 * but while the write is in flight, submit_write may be called
+                 * again. for example, if more data was written into the page
+                 * and the page needs to be written again. it's requeued here.
+                 */
                 if (page.test_flag(page::flags::queued)) {
                     pending_.push_back(page);
                     cond_.signal();
