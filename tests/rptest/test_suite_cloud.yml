@@ -11,6 +11,7 @@
 cloud:
   included:
     - redpanda_cloud_tests/config_profile_verify_test.py
+    - redpanda_cloud_tests/high_throughput_test.py::HighThroughputTest.test_add_and_decommission
     - redpanda_cloud_tests/high_throughput_test.py::HighThroughputTest.test_decommission_and_add
     - redpanda_cloud_tests/observe_test.py
     - redpanda_cloud_tests/omb_validation_test.py
