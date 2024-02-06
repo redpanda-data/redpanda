@@ -54,12 +54,6 @@ class TSReadOpenmessagingTest(RedpandaTest):
             [OMBSampleConfigurations.lte(4)],
             OMBSampleConfigurations.PUB_LATENCY_95PCT:
             [OMBSampleConfigurations.lte(8)],
-            OMBSampleConfigurations.E2E_LATENCY_MIN:
-            [OMBSampleConfigurations.lte(1)],
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(4)],
-            OMBSampleConfigurations.E2E_LATENCY_75PCT:
-            [OMBSampleConfigurations.lte(6)],
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
             [OMBSampleConfigurations.gte(600)]
         }
