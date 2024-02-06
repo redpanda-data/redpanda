@@ -18,6 +18,8 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.mark._mark import Mark
 from ducktape.tests.test import TestContext
 
+from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
+
 
 def cluster(log_allow_list=None,
             check_allowed_error_logs=True,
@@ -95,6 +97,10 @@ def cluster(log_allow_list=None,
 
             t_initial = time.time()
             disk_stats_initial = psutil.disk_io_counters()
+            if log_allow_list is not None:
+                for entry in log_allow_list:
+                    if isinstance(entry, AllowLogsOnPredicate):
+                        entry.initialize(self)
             try:
                 r = f(self, *args, **kwargs)
             except:
