@@ -73,6 +73,7 @@ struct batch_t {
     /// Set to true to completely erase the batch from the segment
     /// to check compacted segments.
     bool hole{false};
+    std::optional<model::timestamp> timestamp{std::nullopt};
 };
 
 /// \returns generated batches and committed offset + 1
@@ -92,7 +93,8 @@ make_random_batches(model::offset o, const std::vector<batch_t>& batches) {
           batch.type,
           batch.record_sizes.size() != batch.num_records
             ? std::nullopt
-            : std::make_optional(batch.record_sizes));
+            : std::make_optional(batch.record_sizes),
+          batch.timestamp);
         o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));
