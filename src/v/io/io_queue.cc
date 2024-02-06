@@ -12,6 +12,7 @@
 
 #include "base/vassert.h"
 #include "io/logger.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
@@ -156,7 +157,7 @@ void io_queue::dispatch_read(
   page& page, seastar::semaphore_units<> units) noexcept {
     log.debug("Reading {} at {}~{}", path_, page.offset(), page.data().size());
 
-    std::ignore = seastar::with_gate(
+    ssx::background = seastar::with_gate(
       gate_, [this, &page, units = std::move(units)]() mutable {
           return file_
             ->dma_read(
@@ -181,7 +182,7 @@ void io_queue::dispatch_write(
   page& page, seastar::semaphore_units<> units) noexcept {
     log.debug("Writing {} at {}~{}", path_, page.offset(), page.data().size());
 
-    std::ignore = seastar::with_gate(
+    ssx::background = seastar::with_gate(
       gate_, [this, &page, units = std::move(units)]() mutable {
           return file_
             ->dma_write(page.offset(), page.data().get(), page.data().size())
