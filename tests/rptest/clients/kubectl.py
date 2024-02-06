@@ -79,7 +79,7 @@ class KubectlTool:
             'tsh',
             'ssh',
             f'--proxy={self._tp_proxy}',
-            '--auth=okta'
+            '--auth=okta',
             f'--identity={self.TELEPORT_IDENT_FILE}',
             self._remote_uri,
         ]
