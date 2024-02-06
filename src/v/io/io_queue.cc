@@ -124,6 +124,11 @@ seastar::future<> io_queue::dispatch() noexcept {
 
         auto units = co_await seastar::get_units(ops_, 1);
 
+        /*
+         * dispatch loop and close() run concurrently, and synchronize ont he
+         * ops_ semaphore. if dispatch wakes up after close() completed, then we
+         * need to identify that case here--we no longer have a file descriptor.
+         */
         if (file_ == nullptr) {
             continue;
         }
