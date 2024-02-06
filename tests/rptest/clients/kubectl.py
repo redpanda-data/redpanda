@@ -72,12 +72,14 @@ class KubectlTool:
                 'tsh',
                 'ssh',
                 f'--proxy={self._tp_proxy}',
+                '--auth=okta',
                 self._remote_uri,
             ]
         return [
             'tsh',
             'ssh',
             f'--proxy={self._tp_proxy}',
+            '--auth=okta'
             f'--identity={self.TELEPORT_IDENT_FILE}',
             self._remote_uri,
         ]
@@ -97,9 +99,12 @@ class KubectlTool:
         if self._tp_proxy is None:
             return ['scp', src, dest]
         if self._tp_token is None:
-            return ['tsh', 'scp', f'--proxy={self._tp_proxy}', src, dest]
+            return [
+                'tsh', 'scp', f'--proxy={self._tp_proxy}', '--auth=okta', src,
+                dest
+            ]
         return [
-            'tsh', 'scp', f'--proxy={self._tp_proxy}',
+            'tsh', 'scp', f'--proxy={self._tp_proxy}', '--auth=okta',
             f'--identity={self.TELEPORT_IDENT_FILE}', src, dest
         ]
 
