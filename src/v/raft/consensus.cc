@@ -2628,6 +2628,7 @@ ss::future<consensus::flushed> consensus::flush_log() {
         co_return flushed::no;
     }
     auto flushed_up_to = _log->offsets().dirty_offset;
+    const auto prior_truncations = _log->get_log_truncation_counter();
     _probe->log_flushed();
     _not_flushed_bytes = 0;
     co_await _log->flush();
@@ -2636,8 +2637,17 @@ ss::future<consensus::flushed> consensus::flush_log() {
      * log flush may be interleaved with trucation, hence we need to check
      * if log was truncated, if so we do nothing, flushed offset will be
      * updated in the truncation path.
+     *
+     * On a follower the log flush may be interleaved with truncation and
+     * append. In this case the dirty_offset will not be moving back (e.g the
+     * log can be truncated by -1 and then +1 message will be added making
+     * dirty_offset equal to the old value and the committed_offset equal to
+     * dirty_offset - 1). In this case we shouldn't do anything as well. The
+     * truncation path should update the flushed offset.
      */
-    if (flushed_up_to > lstats.dirty_offset) {
+    if (
+      flushed_up_to > lstats.dirty_offset
+      || _log->get_log_truncation_counter() > prior_truncations) {
         co_return flushed::yes;
     }
 
