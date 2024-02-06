@@ -26,6 +26,7 @@
 #include "wasm/errc.h"
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
+#include "wasm/parser/parser.h"
 #include "wasm/schema_registry_module.h"
 #include "wasm/transform_module.h"
 #include "wasm/transform_probe.h"
@@ -45,6 +46,7 @@
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/optimized_optional.hh>
 
+#include <absl/algorithm/container.h>
 #include <absl/strings/escaping.h>
 #include <wasmtime/store.h>
 
@@ -59,6 +61,7 @@
 #include <span>
 #include <unistd.h>
 #include <utility>
+#include <variant>
 #include <wasm.h>
 #include <wasmtime.h>
 
@@ -113,6 +116,8 @@ public:
 
     ss::future<ss::shared_ptr<factory>>
     make_factory(model::transform_metadata meta, iobuf buf) override;
+
+    ss::future<> validate(iobuf buf) override;
 
     wasm_engine_t* engine() const;
 
@@ -1572,6 +1577,85 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
         return wasmtime_error_new(msg.c_str());
     };
     return nullptr;
+}
+
+bool is_wasi_main(const parser::module_export& mod_export) {
+    // Expect a function called _start with no parameters or results.
+    return mod_export
+           == parser::module_export{
+             .item_name = "_start",
+             .description = parser::declaration::function{}};
+}
+
+bool is_exported_memory(const parser::module_export& mod_export) {
+    return mod_export.item_name == "memory"
+           && std::holds_alternative<parser::declaration::memory>(
+             mod_export.description);
+}
+
+bool is_transform_abi_check_fn(const parser::module_import& mod_import) {
+    return mod_import
+           == parser::module_import{
+             .module_name = ss::sstring(transform_module::name),
+             .item_name = "check_abi_version_1",
+             .description = parser::declaration::function{}};
+}
+
+ss::future<> wasmtime_runtime::validate(iobuf buf) {
+    parser::module_declarations decls;
+    try {
+        decls = co_await parser::extract_declarations(std::move(buf));
+    } catch (const parser::module_too_large_exception& ex) {
+        vlog(wasm_log.warn, "invalid module (too large): {}", ex);
+        throw wasm_exception(ex.what(), errc::invalid_module);
+    } catch (const parser::parse_exception& ex) {
+        vlog(wasm_log.warn, "invalid module (unable to parse): {}", ex);
+        throw wasm_exception(ex.what(), errc::invalid_module);
+    }
+    bool has_wasi_main = false;
+
+    bool has_exported_memory = false;
+
+    for (const auto& module_export : decls.exports) {
+        if (is_wasi_main(module_export)) {
+            has_wasi_main = true;
+            if (has_exported_memory) {
+                break;
+            }
+        } else if (is_exported_memory(module_export)) {
+            has_exported_memory = true;
+            if (has_wasi_main) {
+                break;
+            }
+        }
+        co_await ss::coroutine::maybe_yield();
+    }
+    if (!has_wasi_main) {
+        vlog(wasm_log.warn, "invalid module: missing _start function");
+        throw wasm_exception(
+          "invalid module: missing _start function",
+          errc::invalid_module_missing_wasi);
+    }
+    if (!has_exported_memory) {
+        vlog(wasm_log.warn, "invalid module: missing memory export");
+        throw wasm_exception(
+          "invalid module: missing memory export",
+          errc::invalid_module_missing_wasi);
+    }
+    bool has_abi_check_fn = false;
+    for (const auto& module_import : decls.imports) {
+        if (is_transform_abi_check_fn(module_import)) {
+            has_abi_check_fn = true;
+            break;
+        }
+        co_await ss::coroutine::maybe_yield();
+    }
+    if (!has_abi_check_fn) {
+        vlog(wasm_log.warn, "invalid module: missing abi function");
+        throw wasm_exception(
+          "invalid module: missing transform sdk ABI check function",
+          errc::invalid_module_missing_abi);
+    }
 }
 
 } // namespace

@@ -127,6 +127,8 @@ public:
 
     state* get_state() { return &_state; }
 
+    ss::future<> validate(iobuf) override { co_return; }
+
 private:
     state _state;
 };

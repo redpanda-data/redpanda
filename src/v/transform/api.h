@@ -27,6 +27,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <system_error>
+
 namespace transform {
 
 struct list_committed_offsets_options {
@@ -64,13 +66,13 @@ public:
     /**
      * Deploy a transform to the cluster.
      */
-    ss::future<cluster::errc>
+    ss::future<std::error_code>
       deploy_transform(model::transform_metadata, iobuf);
 
     /**
      * Delete a transform from the cluster.
      */
-    ss::future<cluster::errc> delete_transform(model::transform_name);
+    ss::future<std::error_code> delete_transform(model::transform_name);
 
     /**
      * List all transforms from the entire cluster.
@@ -82,7 +84,7 @@ public:
      */
     ss::future<result<
       ss::chunked_fifo<model::transform_committed_offset>,
-      cluster::errc>>
+      std::error_code>>
       list_committed_offsets(list_committed_offsets_options);
 
     /**
