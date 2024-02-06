@@ -8,15 +8,21 @@
 # by the Apache License, Version 2.0
 
 import math
+import json
 import time
+import random
+import sys
 import concurrent.futures
 from collections import Counter
 
+from confluent_kafka import KafkaError, KafkaException
+from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.mark import matrix, ok_to_fail, parametrize
 from ducktape.utils.util import wait_until, TimeoutError
 import numpy
 
 from rptest.services.cluster import cluster
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import nodes_report_cloud_segments
@@ -27,6 +33,7 @@ from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_tr
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 from rptest.utils.scale_parameters import ScaleParameters
+from rptest.util import inject_remote_script
 
 # An unreasonably large fetch request: we submit requests like this in the
 # expectation that the server will properly clamp the amount of data it
@@ -989,3 +996,309 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"Expected throughput {expect_mbps:.2f}MiB/s, got throughput {actual_mbps:.2f}MiB/s"
                 )
                 raise
+
+    def _try_parse_json(self, node, jsondata):
+        try:
+            return json.loads(jsondata)
+        except ValueError:
+            self.logger.debug(
+                f"{str(node.account)}: Could not parse as json: {str(jsondata)}"
+            )
+            return None
+
+    def _write_and_random_read_many_topics(self, num_topics, topic_names):
+        """
+            Test checks that each of the many topics can be written to.
+
+            Pick X number of topics, write 1000 messages in each
+            Pick random one among them, consume all messages
+            Iterate.
+        """
+        def _send_messages(topic):
+            """
+                Simple function that sends indices as messages
+            """
+            errors = []
+
+            def acked(err, msg):
+                """
+                    Simple and unsafe callback
+                """
+                if err is not None:
+                    errors.append(f"FAIL: {str(msg)}: {str(err)}")
+
+            # Sent indices as values
+            p = kclient.get_producer()
+            sent_count = 0
+            for idx in range(1, message_count + 1):
+                # Async message sending func
+                p.produce(topic,
+                          key=f"key_{idx}",
+                          value=f"{idx:04}",
+                          callback=acked)
+                # Make sure message sent, aka sync
+                p.flush()
+                sent_count += 1
+            # Return stats and errors
+            return sent_count, errors
+
+        def check_consecutive(numbers_list):
+            n = len(numbers_list) - 1
+            # Calculate iterative difference for the array. It should be 1.
+            return (sum(numpy.diff(sorted(numbers_list)) == 1) >= n)
+
+        # Prepare librdkafka python client
+        kclient = PythonLibrdkafka(self.redpanda)
+        # Messages to produce
+        message_count = 100
+        self.logger.info(
+            f"Producing {message_count} messages to {num_topics} random topics"
+        )
+        # Pick random topics to send messages to
+        total_topics = len(topic_names) - 1
+        if total_topics > num_topics:
+            random_topic_indices = [
+                random.randint(0, total_topics) for i in range(num_topics)
+            ]
+            next_topic_batch = []
+            while len(random_topic_indices) > 0:
+                next_topic_batch.append(
+                    topic_names[random_topic_indices.pop()])
+            new_topic_names = list(set(topic_names) - set(next_topic_batch))
+        else:
+            next_topic_batch = topic_names
+            new_topic_names = []
+
+        # Send messages
+        messages_sent = 0
+        errors = []
+        with concurrent.futures.ThreadPoolExecutor(16) as executor:
+            for c, thread_errors in executor.map(_send_messages,
+                                                 next_topic_batch):
+                messages_sent += c
+                errors += thread_errors
+        self.logger.info(f"Total of {messages_sent} messages sent")
+
+        total_errors = len(errors)
+        if total_errors > 0:
+            self.logger.error(f"{total_errors} Errors detected "
+                              "while sending messages")
+
+        # Select random topic from the list
+        target_topic = next_topic_batch[random.randint(0,
+                                                       len(next_topic_batch))]
+        # Consumer specific config
+        consumer_extra_config = {
+            "auto.offset.reset": "smallest",
+            "group.id": "topic_swarm_group"
+        }
+        self.logger.info(f"Start consuming from {target_topic}")
+        # Consumer
+        start_time_s = time.time()
+        consumer = kclient.get_consumer(consumer_extra_config)
+        numbers = []
+        # Message consuming loop
+        try:
+            consumer.subscribe([target_topic])
+            while True:
+                # Poll for the message
+                msg = consumer.poll(timeout=1.0)
+                if msg is None:
+                    continue
+                # On error, check for the EOF
+                if msg.error():
+                    if msg.error().code() == KafkaError._PARTITION_EOF:
+                        # End of partition event
+                        self.logger.info(f"Consumer of '{msg.topic()}' "
+                                         f"[{msg.partition()}] reached "
+                                         f"end at offset {msg.offset()}")
+                        break
+                    # If not EOF, raise it
+                    elif msg.error():
+                        raise KafkaException(msg.error())
+                else:
+                    # Save value from the message
+                    numbers.append(int(msg.value()))
+                # calculate elapsed time
+                elapsed = time.time() - start_time_s
+                # Exit on target number reached or timeout
+                if len(numbers) == message_count or elapsed > 300:
+                    break
+        finally:
+            # Close down consumer to commit final offsets.
+            consumer.close()
+
+        self.logger.info(f"Consumed {len(numbers)} messages")
+        # Check that we received all numbers
+        if not check_consecutive(numbers):
+            self.logger.error(
+                f"Produced and consumed messages mismatch for {target_topic}")
+
+        # Return list of topics that was not used
+        return new_topic_names, errors
+
+    @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_topic_swarm(self):
+        def log_timings_with_percentiles(timings):
+            # Extract data
+            created_count = timings.get('count_created', -1)
+
+            # Add min/max time to the log
+            tmin = timings.get('creation-time-min', 0)
+            tmax = timings.get('creation-time-max', 0)
+            tp_str = f"...{created_count} topics: " \
+                "min = {:>7,.3f}s, " \
+                "max = {:>7,.3f}s, ".format(tmin, tmax)
+
+            # Calculate percentiles for latest batch
+            prc = [25, 50, 75, 90, 95, 99]
+            creation_times = timings.get('creation_times', [])
+            tprc = numpy.percentile(creation_times, prc)
+            for i in range(len(prc)):
+                tp_str += "p{} ={:7,.3f}s, ".format(prc[i], tprc[i])
+            # Log them
+            self.logger.debug(tp_str)
+
+        # Max number of partitions for i3en.xlarge
+        # default settings is 1000 partitions per shard/cpu
+        # (9 nodes × 4 vcpus/shards × 1000) / 3 replicas
+        # 12000
+
+        # Parameters
+        topic_count = 11950
+        batch_size = 2048
+        topic_name_length = 200
+        num_partitions = 1
+        num_replicas = 3
+        use_kafka_batching = True
+
+        # Start kafka
+        self.redpanda.start()
+
+        # Brokers list suitable for script arguments
+        brokers = ",".join(self.redpanda.brokers_list())
+
+        # With current settings, there should be single available node
+        node = self.cluster.alloc(ClusterSpec.simple_linux(1))[0]
+
+        # Prepare command
+        remote_script_path = inject_remote_script(node, "topic_operations.py")
+        cmd = f"python3 {remote_script_path} "
+        cmd += f"--brokers '{brokers}' "
+        cmd += f"--batch-size '{batch_size}' "
+        cmd += "create "
+        cmd += f"--topic-count {topic_count} "
+        cmd += "--kafka-batching " if use_kafka_batching else ""
+        cmd += f"--topic-name-length {topic_name_length} "
+        cmd += f"--partitions {num_partitions} "
+        cmd += f"--replicas {num_replicas}"
+        hostname = node.account.hostname
+        self.logger.info(f"Starting topic creation script on '{hostname}")
+        self.logger.debug(f"...cmd: {cmd}")
+
+        data = {}
+        for line in node.account.ssh_capture(cmd):
+            # The script will produce jsons one, per line
+            # And it will have timings only
+            self.logger.debug(f"received {sys.getsizeof(line)}B "
+                              f"from '{hostname}'.")
+            data = self._try_parse_json(node, line.strip())
+            if data is not None:
+                if 'error' in data:
+                    self.logger.warning(f"Node '{hostname}' reported "
+                                        f"error:\n{data['error']}")
+                    raise RuntimeError(data['error'])
+                else:
+                    # Extract data
+                    timings = data.get('timings', {})
+                    log_timings_with_percentiles(timings)
+            else:
+                data = {}
+
+        topic_details = data.get('topics', [])
+        current_count = len(topic_details)
+        self.logger.info(f"Created {current_count} topics")
+        assert len(topic_details) == topic_count, \
+            f"Topic count not reached: {current_count}/{topic_count}"
+
+        # Validate topics
+        topics = self.rpk.list_topics(detailed=True)
+
+        # Validate topic creation
+        self.logger.info("Validating created topics")
+        topics_ok = []
+        topics_failed = []
+
+        # Searches for a topic in our list
+        def get_topic_index(name):
+            for idx in range(len(topic_details)):
+                if name == topic_details[idx]['name']:
+                    return idx
+            return -1
+
+        # Validate RP topics against requested details
+        for name, partitions, replicas in topics:
+            err = "ok"
+            idx = get_topic_index(name)
+            if idx < 0:
+                # RP has topic that is not ours
+                # Cluster was clean and it is an issue
+                err = f"Unexpected topic found: {name}"
+            elif int(replicas) != topic_details[idx]['replicas']:
+                # Replication factor is wrong
+                err = f"Replication factor error: current {replicas}, " \
+                f"target {topic_details[idx]['replicas']}"
+            elif int(partitions) != topic_details[idx]['partitions']:
+                # Partitions number is wrong
+                err = f"Partitions number error: current {partitions}, " \
+                f"target {topic_details[idx]['partitions']}"
+            else:
+                # Topic passed the check
+                topics_ok.append(topic_details[idx]['name'])
+                continue
+            # one of errors happened, add topic to failed list
+            # And add error message
+            failed_topic = (topic_details[idx], err)
+            self.logger.warning(f"Topic {topic_details[idx]['name']}, {err}")
+            topics_failed.append(failed_topic)
+
+        # Check that no errors happened
+        failed = len(topics_failed)
+        assert failed < 1, f"{failed} RP topics has errors"
+
+        topics_available = []
+        topics_unavailable = []
+        # Validate our list against RP
+        for topic in topic_details:
+            # make sure topic is present in RP
+            if topic['name'] not in topics_ok:
+                topics_unavailable.append(topic['name'])
+            else:
+                topics_available.append(topic['name'])
+        unavailable = len(topics_unavailable)
+        assert unavailable < 1, f"{unavailable} topics are missing in RP"
+
+        # Free node that used to create topics
+        self.cluster.free_single(node)
+
+        # Move on to traffic checks
+        topics_to_go = topics_available
+        self.logger.info(
+            f"Starting Produce/Consume stage for {len(topics_to_go)} topics")
+        producer_errors = []
+        while len(topics_to_go) > 0:
+            topics_to_go, errors = self._write_and_random_read_many_topics(
+                batch_size, topics_to_go)
+            producer_errors += errors
+            self.logger.info(
+                f"iteration complete, topics left {len(topics_to_go)}")
+
+        total_errors = len(producer_errors)
+        if total_errors > 0:
+            _errors_str = '\n'.join(producer_errors)
+            self.logger.error(f"Producer errors:\n{_errors_str}")
+        assert total_errors < 1, \
+            f"{total_errors} errors detected while sending messages"
+        self.logger.info("Produce/Consume stage complete")
+
+        return

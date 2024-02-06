@@ -76,10 +76,9 @@ class TopicSwarm():
             return value: topic details list
         """
         def make_superuser_client():
-            return KafkaAdminClient(
-                bootstrap_servers=self.brokers,
-                request_timeout_ms=30000,
-                api_version_auto_timeout_ms=3000)
+            return KafkaAdminClient(bootstrap_servers=self.brokers,
+                                    request_timeout_ms=30000,
+                                    api_version_auto_timeout_ms=3000)
 
         # Kafka client
         self.logger.info("Creating kafka client")
@@ -240,6 +239,9 @@ class TopicSwarm():
                         topic_index += 1
             batch_creation_time_s = time.time() - batch_start_s
 
+            # Keep counting
+            count_created += batch_size
+
             # Peek creation timings
             timings['count_created'] = count_created
             timings['batch_timings_s'].append(batch_creation_time_s)
@@ -258,8 +260,6 @@ class TopicSwarm():
                     "Topic creation took too long during latest "
                     f"batch. Total created {count_created}")
 
-            # Keep counting
-            count_created += batch_size
         timings['end_time_s'] = time.time()
         return (topics, timings)
 
