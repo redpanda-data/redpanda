@@ -1,37 +1,35 @@
-#Copyright 2023 Redpanda Data, Inc.
+# Copyright 2023 Redpanda Data, Inc.
 #
-#Licensed as a Redpanda Enterprise file under the Redpanda Community
-#License(the "License"); you may not use this file except in compliance with
-#the License.You may obtain a copy of the License at
+# Licensed as a Redpanda Enterprise file under the Redpanda Community
+# License(the "License"); you may not use this file except in compliance with
+# the License.You may obtain a copy of the License at
 #
-#https: // github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+# https: // github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
+import collections
+import itertools
+import json
+import random
+import re
+import time
+from dataclasses import dataclass
+from typing import DefaultDict, Optional, Tuple
+
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+from requests.exceptions import HTTPError
+
+from rptest.archival.s3_client import ObjectMetadata
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings, get_cloud_storage_type, MetricsEndpoint
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.redpanda import SISettings, get_cloud_storage_type, MetricsEndpoint
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
+from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 from rptest.utils.si_utils import parse_s3_segment_path, quiesce_uploads, BucketView, NTP, NTPR, SpillMeta
-from rptest.archival.s3_client import ObjectMetadata
-from rptest.util import wait_until_result
-
-from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
-from rptest.util import wait_until_result
-
-import collections
-from dataclasses import dataclass
-
-import json
-import random
-import time
-import itertools
-
-from dataclasses import dataclass
-from typing import DefaultDict, Optional, Tuple
-from requests.exceptions import HTTPError
 
 SCRUBBER_LOG_ALLOW_LIST = [
     # Attempts to compute the retention point for the cloud log will fail
@@ -218,6 +216,7 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         self.bucket_name = self.si_settings.cloud_storage_bucket
         self.rpk = RpkTool(self.redpanda)
+        self.expected_error_logs = []
 
     def _produce(self):
         # Use a smaller working set for debug builds to keep the test timely
@@ -330,7 +329,8 @@ class CloudStorageScrubberTest(RedpandaTest):
                                                 to_delete.key,
                                                 verify=True)
 
-        ntpr = parse_s3_segment_path(to_delete.key).ntpr
+        segment_name_components = parse_s3_segment_path(to_delete.key)
+        ntpr = segment_name_components.ntpr
 
         self.logger.info(
             f"Waiting for missing segment anomaly {to_delete.key} to be reported"
@@ -353,6 +353,10 @@ class CloudStorageScrubberTest(RedpandaTest):
             err_msg="Missing segment anomaly not reported")
 
         expected_anomalies[ntpr].missing_segments.add(missing_seg)
+        expected_offset = segment_name_components.base_offset + 1
+        self.expected_error_logs.append(
+            re.compile(
+                fr"Can't apply spillover_cmd.*base_offset: {expected_offset}"))
 
     def _delete_spillover_manifest_and_await_anomaly(
             self, expected_anomalies: DefaultDict[NTPR, Anomalies]):
@@ -506,7 +510,7 @@ class CloudStorageScrubberTest(RedpandaTest):
                 found = True
                 break
 
-        assert found, f"Could not find a segment to remove from the STM manifest: {removed_ranges=}"
+        assert found, f"Could not find a segment to remove from the STM manifest"
 
         self.logger.info(f"Removing segment with meta {seg_to_remove_meta}")
         self.logger.info(f"Anomaly should be detected at {detect_at_seg_meta}")
@@ -601,7 +605,9 @@ class CloudStorageScrubberTest(RedpandaTest):
         assert missing_spills == 1, "No missing spillovers repoted via metrics"
         assert offset_gaps >= 1, "No offset gaps reported via metrics"
 
-    @cluster(num_nodes=4, log_allow_list=SCRUBBER_LOG_ALLOW_LIST)
+    @cluster(num_nodes=4,
+             log_allow_list=SCRUBBER_LOG_ALLOW_LIST +
+             [AllowLogsOnPredicate(method="match_missing_segment")])
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_scrubber(self, cloud_storage_type):
         """
@@ -632,3 +638,6 @@ class CloudStorageScrubberTest(RedpandaTest):
             "missing_segments", "metadata_offset_gaps",
             "missing_spillover_manifests"
         })
+
+    def match_missing_segment(self, log_entry: str) -> bool:
+        return any(expr.search(log_entry) for expr in self.expected_error_logs)
