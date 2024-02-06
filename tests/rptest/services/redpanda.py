@@ -1770,8 +1770,8 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
     def sockets_clear(self, node: RemoteClusterNode):
         return True
 
-    def all_up(self):
-        return self._cloud_cluster.isAlive
+    def all_up(self) -> bool:
+        return self.cluster_healthy()
 
     def metrics(
             self,
