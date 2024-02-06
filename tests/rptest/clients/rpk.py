@@ -488,7 +488,7 @@ class RpkTool:
 
         return True
 
-    def list_topics(self):
+    def list_topics(self, detailed=False):
         cmd = ["list"]
 
         output = self._run_topic(cmd)
@@ -498,7 +498,7 @@ class RpkTool:
         def topic_line(line):
             parts = line.split()
             assert len(parts) == 3
-            return parts[0]
+            return parts[0] if not detailed else parts
 
         lines = output.splitlines()
         for i, line in enumerate(lines):
