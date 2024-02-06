@@ -634,6 +634,8 @@ consteval std::string_view property_type_name() {
                            pandaproxy::schema_registry::
                              schema_id_validation_mode>) {
         return "string";
+    } else if constexpr (std::is_same_v<type, model::fetch_read_strategy>) {
+        return "string";
     } else {
         static_assert(
           utils::unsupported_type<T>::value, "Type name not defined");
