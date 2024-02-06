@@ -2984,7 +2984,14 @@ configuration::configuration()
       "enable_mpx_extensions",
       "Enables Redpanda MPX extensions",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      false) {}
+      false)
+  , virtual_cluster_min_producer_ids(
+      *this,
+      "virtual_cluster_min_producer_ids",
+      "Minium number of active producers per virtual cluster",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::numeric_limits<uint64_t>::max(),
+      {.min = 1}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
