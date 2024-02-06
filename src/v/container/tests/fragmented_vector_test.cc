@@ -399,6 +399,38 @@ TEST(Vector, FromIterRangeConstructor) {
     EXPECT_THAT(fv, ElementsAre(1, 2, 3));
 }
 
+TEST(ChunkedVector, PushPop) {
+    for (int i = 0; i < 100; ++i) {
+        chunked_vector<int32_t> vec;
+        for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+            bool push_back = vec.empty() || bool(random_generators::get_int(1));
+            if (push_back) {
+                vec.push_back(i);
+            } else {
+                vec.pop_back();
+            }
+            EXPECT_TRUE(fragmented_vector_validator::validate(vec));
+        }
+    }
+}
+
+TEST(ChunkedVector, PushPopN) {
+    for (int i = 0; i < 100; ++i) {
+        chunked_vector<int32_t> vec;
+        for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+            // Slight preference to make larger vectors because we could be
+            // popping back multiple
+            bool push_back = vec.empty() || bool(random_generators::get_int(2));
+            if (push_back) {
+                vec.push_back(i);
+            } else {
+                vec.pop_back_n(random_generators::get_int(vec.size()));
+            }
+            EXPECT_TRUE(fragmented_vector_validator::validate(vec));
+        }
+    }
+}
+
 TEST(ChunkedVector, FirstChunkCapacityDoubles) {
     chunked_vector<int32_t> vec;
     for (int i = 0; i < vec.elements_per_fragment(); ++i) {
