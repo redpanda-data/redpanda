@@ -2558,7 +2558,8 @@ void application::start_runtime_services(
             config::shard_local_cfg().enable_idempotence.value(),
             tx_gateway_frontend,
             producer_manager,
-            feature_table);
+            feature_table,
+            controller->get_topics_state());
           pm.register_factory<cluster::log_eviction_stm_factory>(
             storage.local().kvs());
           pm.register_factory<cluster::archival_metadata_stm_factory>(

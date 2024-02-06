@@ -14,6 +14,7 @@
 #include "cluster/producer_state_manager.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_snapshot_utils.h"
+#include "cluster/types.h"
 #include "kafka/protocol/wire.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
@@ -225,7 +226,8 @@ rm_stm::rm_stm(
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<producer_state_manager>& producer_state_manager)
+  ss::sharded<producer_state_manager>& producer_state_manager,
+  std::optional<model::vcluster_id> vcluster_id)
   : raft::persisted_stm<>(rm_stm_snapshot, logger, c)
   , _tx_locks(
       mt::
@@ -250,6 +252,7 @@ rm_stm::rm_stm(
       config::shard_local_cfg().tx_log_stats_interval_s.bind())
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
   , _producer_state_manager(producer_state_manager)
+  , _vcluster_id(vcluster_id)
   , _producers(
       mt::map<absl::btree_map, model::producer_identity, cluster::producer_ptr>(
         _tx_root_tracker.create_child("producers"))) {
@@ -308,7 +311,7 @@ producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
     }
     auto producer = ss::make_lw_shared<producer_state>(
       pid, _raft->group(), [pid, this] { cleanup_producer_state(pid); });
-    _producer_state_manager.local().register_producer(*producer, std::nullopt);
+    _producer_state_manager.local().register_producer(*producer, _vcluster_id);
     _producers.emplace(pid, producer);
 
     return producer;
@@ -339,7 +342,7 @@ ss::future<> rm_stm::reset_producers() {
           auto& producer = it.second;
           producer->shutdown_input();
           _producer_state_manager.local().deregister_producer(
-            *producer, std::nullopt);
+            *producer, _vcluster_id);
           return ss::now();
       });
     _producers.clear();
@@ -1085,7 +1088,7 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
             producer, bid, std::move(rdr), std::move(units));
       })
       .finally([this, producer] {
-          _producer_state_manager.local().touch(*producer, std::nullopt);
+          _producer_state_manager.local().touch(*producer, _vcluster_id);
       });
 }
 
@@ -1212,7 +1215,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
             std::move(units));
       })
       .finally([this, producer] {
-          _producer_state_manager.local().touch(*producer, std::nullopt);
+          _producer_state_manager.local().touch(*producer, _vcluster_id);
       });
 }
 
@@ -1775,7 +1778,7 @@ void rm_stm::apply_data(
         auto producer = maybe_create_producer(bid.pid);
         auto needs_touch = producer->update(bid, last_kafka_offset);
         if (needs_touch) {
-            _producer_state_manager.local().touch(*producer, std::nullopt);
+            _producer_state_manager.local().touch(*producer, _vcluster_id);
         }
 
         if (bid.is_transactional) {
@@ -1906,9 +1909,18 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         auto pid = entry._id;
         auto producer = ss::make_lw_shared<producer_state>(
           [pid, this] { cleanup_producer_state(pid); }, std::move(entry));
-        _producer_state_manager.local().register_producer(
-          *producer, std::nullopt);
-        _producers.emplace(pid, producer);
+        try {
+            _producer_state_manager.local().register_producer(
+              *producer, _vcluster_id);
+            _producers.emplace(pid, producer);
+        } catch (const cache_full_error& e) {
+            vlog(
+              _ctx_log.warn,
+              "unable to register producer {} with vcluster: {} - {}",
+              pid,
+              _vcluster_id,
+              e.what());
+        }
     }
 
     abort_index last{.last = model::offset(-1)};
@@ -2362,12 +2374,14 @@ rm_stm_factory::rm_stm_factory(
   bool enable_idempotence,
   ss::sharded<tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cluster::producer_state_manager>& producer_state_manager,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<topic_table>& topics)
   : _enable_transactions(enable_transactions)
   , _enable_idempotence(enable_idempotence)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _producer_state_manager(producer_state_manager)
-  , _feature_table(feature_table) {}
+  , _feature_table(feature_table)
+  , _topics(topics) {}
 
 bool rm_stm_factory::is_applicable_for(const storage::ntp_config& cfg) const {
     const auto& ntp = cfg.ntp();
@@ -2380,12 +2394,18 @@ bool rm_stm_factory::is_applicable_for(const storage::ntp_config& cfg) const {
 void rm_stm_factory::create(
 
   raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+    auto topic_md = _topics.local().get_topic_metadata_ref(
+      model::topic_namespace_view(raft->ntp()));
+
     auto stm = builder.create_stm<cluster::rm_stm>(
       clusterlog,
       raft,
       _tx_gateway_frontend,
       _feature_table,
-      _producer_state_manager);
+      _producer_state_manager,
+      topic_md.has_value()
+        ? topic_md->get().get_configuration().properties.mpx_virtual_cluster_id
+        : std::nullopt);
 
     raft->log()->stm_manager()->add_stm(stm);
 }
