@@ -177,10 +177,14 @@ public:
         return validate(v);
     }
 
-    void reset() override { _value = default_value(); }
+    void reset() override {
+        auto v = default_value();
+        update_value(std::move(v));
+    }
 
     base_property& operator=(const base_property& pr) override {
-        _value = dynamic_cast<const property<T>&>(pr)._value;
+        auto v = dynamic_cast<const property<T>&>(pr)._value;
+        update_value(std::move(v));
         return *this;
     }
 
