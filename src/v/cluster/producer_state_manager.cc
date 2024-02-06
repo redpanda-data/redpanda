@@ -14,6 +14,7 @@
 #include "cluster/logger.h"
 #include "cluster/producer_state.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -24,10 +25,17 @@ namespace cluster {
 
 producer_state_manager::producer_state_manager(
   config::binding<uint64_t> max_producer_ids,
-  std::chrono::milliseconds producer_expiration_ms)
+  std::chrono::milliseconds producer_expiration_ms,
+  config::binding<size_t> virtual_cluster_min_producer_ids)
   : _producer_expiration_ms(producer_expiration_ms)
   , _max_ids(std::move(max_producer_ids))
-  , _cache(_max_ids, _max_ids) {
+  , _virtual_cluster_min_producer_ids(
+      std::move(virtual_cluster_min_producer_ids))
+  , _cache(
+      _max_ids,
+      _virtual_cluster_min_producer_ids,
+      pre_eviction_hook{},
+      post_eviction_hook(*this)) {
     setup_metrics();
 }
 
