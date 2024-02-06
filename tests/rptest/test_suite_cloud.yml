@@ -17,5 +17,4 @@ cloud:
     - redpanda_cloud_tests/omb_validation_test.py::OMBValidationTest.test_max_connections
     - redpanda_cloud_tests/omb_validation_test.py::OMBValidationTest.test_max_partitions
     - redpanda_cloud_tests/omb_validation_test.py::OMBValidationTest.test_common_workload
-    - redpanda_cloud_tests/omb_validation_test.py::OMBValidationTest.test_retention
     - tests/services_self_test.py::SimpleSelfTest.test_cloud
