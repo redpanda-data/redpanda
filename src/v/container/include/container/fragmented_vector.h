@@ -112,8 +112,11 @@ public:
     requires std::input_iterator<Iter>
     fragmented_vector(Iter begin, Iter end)
       : fragmented_vector() {
+        if constexpr (std::random_access_iterator<Iter>) {
+            reserve(std::distance(begin, end));
+        }
         // Improvement: Write a more efficient implementation for
-        // random_access_iterators
+        // std::contiguous_iterator<Iter>
         for (auto it = begin; it != end; ++it) {
             push_back(*it);
         }
@@ -140,10 +143,10 @@ public:
     template<class... Args>
     T& emplace_back(Args&&... args) {
         maybe_add_capacity();
-        _frags.back().emplace_back(std::forward<Args>(args)...);
+        T& emplaced = _frags.back().emplace_back(std::forward<Args>(args)...);
         ++_size;
         update_generation();
-        return _frags.back().back();
+        return emplaced;
     }
 
     void pop_back() {
@@ -152,7 +155,7 @@ public:
         --_size;
         if (_frags.back().empty()) {
             _frags.pop_back();
-            _capacity -= elems_per_frag;
+            _capacity -= std::min(elems_per_frag, _capacity);
         }
         update_generation();
     }
@@ -270,7 +273,7 @@ public:
      * Returns the approximate in-memory size of this vector in bytes.
      */
     size_t memory_size() const {
-        return _frags.size() * (sizeof(_frags[0]) + elems_per_frag * sizeof(T));
+        return (_frags.size() * sizeof(_frags[0])) + (_capacity * sizeof(T));
     }
 
     /**
