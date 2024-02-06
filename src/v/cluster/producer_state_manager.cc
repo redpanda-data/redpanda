@@ -14,6 +14,7 @@
 #include "cluster/logger.h"
 #include "cluster/producer_state.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
@@ -22,9 +23,12 @@
 namespace cluster {
 
 producer_state_manager::producer_state_manager(
-  config::binding<uint64_t> max_producer_ids)
+  config::binding<uint64_t> max_producer_ids,
+  config::binding<size_t> virtual_cluster_min_producer_ids)
   : _max_ids(std::move(max_producer_ids))
-  , _cache(_max_ids, _max_ids) {
+  , _virtual_cluster_min_producer_ids(
+      std::move(virtual_cluster_min_producer_ids))
+  , _cache(_max_ids, _virtual_cluster_min_producer_ids) {
     setup_metrics();
 }
 

@@ -21,7 +21,9 @@
 namespace cluster {
 class producer_state_manager {
 public:
-    explicit producer_state_manager(config::binding<uint64_t> max_producer_ids);
+    explicit producer_state_manager(
+      config::binding<uint64_t> max_producer_ids,
+      config::binding<size_t> virtual_cluster_min_producer_ids);
 
     ss::future<> start();
     ss::future<> stop();
@@ -65,6 +67,7 @@ private:
     // all partitions. When exceeded, producers are evicted on an
     // LRU basis.
     config::binding<uint64_t> _max_ids;
+    config::binding<size_t> _virtual_cluster_min_producer_ids;
     // cache of all producers on this shard
     cache_t _cache;
     ss::gate _gate;
