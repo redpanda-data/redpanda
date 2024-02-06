@@ -23,11 +23,26 @@ public:
     explicit partition_probe(const model::ntp& ntp);
 
     void add_bytes_read(uint64_t read) { _bytes_read += read; }
+    void add_bytes_skip(uint64_t skip) { _bytes_skip += skip; }
+    void add_bytes_accept(uint64_t accept) { _bytes_accept += accept; }
     void add_records_read(uint64_t read) { _records_read += read; }
     void chunk_size(uint64_t size) { _chunk_size = size; }
 
+    uint64_t get_bytes_read() const noexcept { return _bytes_read; }
+    uint64_t get_bytes_skip() const noexcept { return _bytes_skip; }
+    uint64_t get_bytes_accept() const noexcept { return _bytes_accept; }
+    uint64_t get_records_read() const noexcept { return _records_read; }
+    uint64_t get_chunk_size() const noexcept { return _chunk_size; }
+
 private:
+    // Number of bytes that partition reader have received
     uint64_t _bytes_read = 0;
+    // This is used in tests and not exposed to the metrics endpoint
+    // Number of bytes skipped by the segment batch reader
+    uint64_t _bytes_skip = 0;
+    // This is used in tests and not exposed to the metrics endpoint
+    // Number of bytes accepted by the segment batch reader
+    uint64_t _bytes_accept = 0;
     uint64_t _records_read = 0;
     uint64_t _chunk_size = 0;
 
