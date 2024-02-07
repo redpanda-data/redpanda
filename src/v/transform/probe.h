@@ -36,6 +36,8 @@ public:
     void report_lag(model::output_topic_index, int64_t delta);
 
 private:
+    friend class ProcessorTestFixture;
+
     uint64_t _read_bytes = 0;
     std::vector<uint64_t> _write_bytes;
     uint64_t _failures = 0;

@@ -40,7 +40,49 @@
 #include <vector>
 
 namespace transform {
+
 namespace {
+
+MATCHER(SameRecordEq, "") {
+    const model::record& a = std::get<0>(arg);
+    const model::record& b = std::get<1>(arg).get();
+    if (a.key() != b.key()) {
+        *result_listener << "expected same key: " << a.key() << " vs "
+                         << b.key();
+        return false;
+    }
+    if (a.value() != b.value()) {
+        *result_listener << "expected same value: " << a.value() << " vs "
+                         << b.value();
+        return false;
+    }
+    if (a.headers() != b.headers()) {
+        *result_listener << "expected same headers: " << a.headers() << " vs "
+                         << b.headers();
+        return false;
+    }
+    return true;
+}
+
+// A helper to ensure all records have the same key/value/headers (but doesn't
+// check other metadata).
+auto SameRecords(std::vector<model::record>& expected) {
+    std::vector<std::reference_wrapper<const model::record>> expected_refs;
+    expected_refs.reserve(expected.size());
+    for (const auto& r : expected) {
+        expected_refs.push_back(std::ref(r));
+    }
+    return ::testing::Pointwise(SameRecordEq(), expected_refs);
+}
+
+struct stats_snapshot {
+    uint64_t read_bytes;
+    std::vector<uint64_t> write_bytes;
+    std::vector<uint64_t> lag;
+};
+
+} // namespace
+
 class ProcessorTestFixture
   : public ::testing::TestWithParam<model::transform_metadata> {
 public:
@@ -196,6 +238,14 @@ public:
 
     ss::future<> initiate_stop() { return _p->stop(); }
 
+    stats_snapshot current_stats() {
+        return {
+          .read_bytes = _probe._read_bytes,
+          .write_bytes = _probe._write_bytes,
+          .lag = _probe._lag,
+        };
+    }
+
 private:
     static constexpr kafka::offset start_offset = kafka::offset(0);
 
@@ -209,40 +259,6 @@ private:
     probe _probe;
 };
 
-MATCHER(SameRecordEq, "") {
-    const model::record& a = std::get<0>(arg);
-    const model::record& b = std::get<1>(arg).get();
-    if (a.key() != b.key()) {
-        *result_listener << "expected same key: " << a.key() << " vs "
-                         << b.key();
-        return false;
-    }
-    if (a.value() != b.value()) {
-        *result_listener << "expected same value: " << a.value() << " vs "
-                         << b.value();
-        return false;
-    }
-    if (a.headers() != b.headers()) {
-        *result_listener << "expected same headers: " << a.headers() << " vs "
-                         << b.headers();
-        return false;
-    }
-    return true;
-}
-
-// A helper to ensure all records have the same key/value/headers (but doesn't
-// check other metadata).
-auto SameRecords(std::vector<model::record>& expected) {
-    std::vector<std::reference_wrapper<const model::record>> expected_refs;
-    expected_refs.reserve(expected.size());
-    for (const auto& r : expected) {
-        expected_refs.push_back(std::ref(r));
-    }
-    return ::testing::Pointwise(SameRecordEq(), expected_refs);
-}
-
-} // namespace
-
 TEST_P(ProcessorTestFixture, HandlesDoubleStops) {
     stop();
     stop();
@@ -250,11 +266,18 @@ TEST_P(ProcessorTestFixture, HandlesDoubleStops) {
 
 TEST_P(ProcessorTestFixture, HandlesDoubleStarts) { start(); }
 
+using ::testing::Contains;
+using ::testing::Gt;
+
 TEST_P(ProcessorTestFixture, ProcessOne) {
     auto batch = make_records(1);
     push_batch(batch);
     auto returned = read_records(1);
     EXPECT_THAT(returned, SameRecords(batch));
+    auto stats = current_stats();
+    EXPECT_GT(stats.read_bytes, 0);
+    EXPECT_THAT(stats.write_bytes, Contains(Gt(0)));
+    EXPECT_EQ(stats.write_bytes.size(), GetParam().output_topics.size());
     EXPECT_EQ(error_count(), 0);
 }
 
@@ -344,6 +367,8 @@ INSTANTIATE_TEST_SUITE_P(
 // output topics.
 using MultipleOutputsProcessorTestFixture = ProcessorTestFixture;
 
+using ::testing::Each;
+
 TEST_P(MultipleOutputsProcessorTestFixture, ProcessOne) {
     set_tee_output();
     auto batch = make_records(1);
@@ -352,6 +377,10 @@ TEST_P(MultipleOutputsProcessorTestFixture, ProcessOne) {
         auto returned = read_records(output, 1);
         EXPECT_THAT(returned, SameRecords(batch));
     }
+    auto stats = current_stats();
+    EXPECT_GT(stats.read_bytes, 0);
+    EXPECT_THAT(stats.write_bytes, Each(Gt(0)));
+    EXPECT_EQ(stats.write_bytes.size(), GetParam().output_topics.size());
     EXPECT_EQ(error_count(), 0);
 }
 
