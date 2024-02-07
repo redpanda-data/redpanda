@@ -399,6 +399,32 @@ TEST(Vector, FromIterRangeConstructor) {
     EXPECT_THAT(fv, ElementsAre(1, 2, 3));
 }
 
+TEST(Vector, FromInitializerListConstructor) {
+    {
+        fragmented_vector<int> fv({});
+
+        EXPECT_THAT(fv, IsValid());
+        EXPECT_THAT(fv, ElementsAre());
+    }
+
+    {
+        fragmented_vector<int> fv({1, 2, 3});
+
+        EXPECT_THAT(fv, IsValid());
+        EXPECT_THAT(fv, ElementsAre(1, 2, 3));
+    }
+
+    {
+        chunked_vector<int> fv({1, 2, 3});
+
+        EXPECT_THAT(fv, IsValid());
+        EXPECT_THAT(fv, ElementsAre(1, 2, 3));
+        // chunked_vector should have a "tight" capacity when constructed
+        // from a list
+        EXPECT_EQ(fv.capacity(), 3);
+    }
+}
+
 TEST(ChunkedVector, PushPop) {
     for (int i = 0; i < 100; ++i) {
         chunked_vector<int32_t> vec;
