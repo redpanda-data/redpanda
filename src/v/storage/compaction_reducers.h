@@ -183,12 +183,9 @@ private:
 };
 
 /**
- * Filters out the following record batches from compaction.
- * - Aborted transaction raft data bathes
- * - Transactional control metadata batches (commit/abort etc)
- *
- * Resulting compacted segment includes only committed transaction's
- * data without the transactional markers.
+ * Filters out the aborted transaction data batches from the segment.
+ * Retains the control batches (commit/abort) thus preserving the
+ * transaction boundaries.
  *
  * Note: fence batches are retained to preserve the epochs from pids.
  * The state machine uses this information to preserve the monotonicity
