@@ -177,10 +177,6 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
             co_return;
         }
 
-        // barrier. do not hold the units!
-        auto units = co_await ss::get_units(_concurrent_flushes, 1);
-        units.return_all();
-
         auto chunk = co_await internal::chunks().get();
         vassert(!_head, "cannot overwrite existing chunk");
         _head = std::move(chunk);
