@@ -18,12 +18,15 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "utils/expiring_promise.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/sharded.hh>
+#include <seastar/util/later.hh>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/node_hash_map.h>
 
+#include <cstdint>
 #include <optional>
 
 namespace cluster {
@@ -34,7 +37,26 @@ namespace cluster {
 /// partition leaders. Partition leaders are updated through notification
 /// received by cluster::metadata_dissemination_service.
 class partition_leaders_table {
+private:
+    using version = named_type<uint64_t, struct plt_version_tag>;
+
 public:
+    class concurrent_modification_error final : public std::exception {
+    public:
+        concurrent_modification_error(
+          version initial_version, version current_version)
+          : _msg(ssx::sformat(
+            "Partition leaders table was modified during operation. "
+            "(initial_version: {}, current_version: {}) ",
+            initial_version,
+            current_version)) {}
+
+        const char* what() const noexcept final { return _msg.c_str(); }
+
+    private:
+        ss::sstring _msg;
+    };
+
     explicit partition_leaders_table(ss::sharded<topic_table>&);
 
     ss::future<> stop();
@@ -71,13 +93,16 @@ public:
       model::term_id term) {
         { f(tp_ns, pid, leader, term) } -> std::same_as<void>;
     }
-    void for_each_leader(Func&& f) const {
+    ss::future<> for_each_leader(Func&& f) const {
+        auto version_snapshot = _version;
         for (auto& [tp_ns, partition_leaders] : _topic_leaders) {
             for (auto& [p_id, leader_info] : partition_leaders) {
                 f(tp_ns,
                   p_id,
                   leader_info.current_leader,
                   leader_info.update_term);
+                co_await ss::coroutine::maybe_yield();
+                throw_if_modified(version_snapshot);
             }
         }
     }
@@ -159,6 +184,12 @@ private:
     std::optional<std::reference_wrapper<const leader_meta>>
       find_leader_meta(model::topic_namespace_view, model::partition_id) const;
 
+    void throw_if_modified(version current_version) const {
+        if (unlikely(current_version != _version)) {
+            throw concurrent_modification_error(current_version, _version);
+        }
+    }
+
     topics_t _topic_leaders;
 
     uint64_t _leaderless_partition_count{0};
@@ -177,6 +208,11 @@ private:
     ss::sharded<topic_table>& _topic_table;
 
     ntp_callbacks<leader_change_cb_t> _watchers;
+    /**
+     * Store version to check for concurrent updates, when version was
+     * incremented while iterating over the list of leaders
+     */
+    version _version{0};
 };
 
 } // namespace cluster

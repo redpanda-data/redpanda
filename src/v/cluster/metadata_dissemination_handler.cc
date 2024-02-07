@@ -72,26 +72,25 @@ metadata_dissemination_handler::do_update_leadership(
     co_return update_leadership_reply{};
 }
 
-static get_leadership_reply
+static ss::future<get_leadership_reply>
 make_get_leadership_reply(const partition_leaders_table& leaders) {
     fragmented_vector<ntp_leader> ret;
 
-    leaders.for_each_leader([&ret](
-                              model::topic_namespace_view tp_ns,
-                              model::partition_id pid,
-                              std::optional<model::node_id> leader,
-                              model::term_id term) mutable {
+    co_await leaders.for_each_leader([&ret](
+                                       model::topic_namespace_view tp_ns,
+                                       model::partition_id pid,
+                                       std::optional<model::node_id> leader,
+                                       model::term_id term) mutable {
         ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
     });
 
-    return get_leadership_reply{std::move(ret)};
+    co_return get_leadership_reply{std::move(ret)};
 }
 
 ss::future<get_leadership_reply> metadata_dissemination_handler::get_leadership(
   get_leadership_request, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this]() mutable {
-        return ss::make_ready_future<get_leadership_reply>(
-          make_get_leadership_reply(_leaders.local()));
+        return make_get_leadership_reply(_leaders.local());
     });
 }
 

@@ -204,6 +204,10 @@ void partition_leaders_table::update_partition_leader(
         if (!leader_id) {
             ++_leaderless_partition_count;
         }
+        /**
+         * We only increment version if any of the maps content was modified
+         */
+        ++_version;
     }
 
     vlog(
@@ -292,6 +296,7 @@ void partition_leaders_table::remove_leader(
         if (t_it->second.empty()) {
             _topic_leaders.erase(t_it);
         }
+        ++_version;
     }
 }
 
@@ -299,6 +304,7 @@ void partition_leaders_table::reset() {
     vlog(clusterlog.trace, "resetting leaders");
     _topic_leaders.clear();
     _leaderless_partition_count = 0;
+    ++_version;
 }
 
 partition_leaders_table::leaders_info_t
