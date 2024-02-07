@@ -16,6 +16,7 @@
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "compat/check.h"
+#include "container/fragmented_vector.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -789,7 +790,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       tests::random_named_int<model::term_id>(),
       tests::random_named_int<model::node_id>(),
       tests::random_named_int<model::revision_id>()));
-    ss::chunked_fifo<cluster::ntp_leader_revision> l_revs;
+    fragmented_vector<cluster::ntp_leader_revision> l_revs;
     l_revs.emplace_back(
       model::random_ntp(),
       tests::random_named_int<model::term_id>(),
