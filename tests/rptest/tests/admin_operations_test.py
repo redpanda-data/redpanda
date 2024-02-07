@@ -11,6 +11,7 @@ import random
 import threading
 from rptest.services.admin import Admin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+import uuid
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -53,3 +54,23 @@ class AdminOperationsTest(RedpandaTest):
         self.admin_fuzz.start()
         self.admin_fuzz.wait(50, 360)
         self.admin_fuzz.stop()
+
+
+class UUIDFormatTest(RedpandaTest):
+    def __init__(self, test_context, *args, **kwargs):
+        super().__init__(test_context=test_context,
+                         num_brokers=1,
+                         *args,
+                         **kwargs)
+
+    @cluster(num_nodes=1)
+    def test_uuid_format(self):
+        """
+        test that GET get_cluster_uuid returns a correctly formatted uuid, see https://github.com/redpanda-data/redpanda/issues/16162
+        """
+        cluster_uuid = Admin(self.redpanda).get_cluster_uuid(
+            self.redpanda.nodes[0])
+        assert cluster_uuid is not None, "expected uuid from cluster"
+        # try to decode cluster_uuid and compare the result to the input, since UUID ignores {}-
+        assert str(uuid.UUID(cluster_uuid)) == cluster_uuid.lower(), \
+                f"get_cluster_uuid response '{cluster_uuid}' is not formatted properly"
