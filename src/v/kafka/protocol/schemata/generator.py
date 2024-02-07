@@ -468,6 +468,7 @@ override_member_container = {
     'metadata_response_topic': 'small_fragment_vector',
     'fetchable_partition_response': 'small_fragment_vector',
     'offset_fetch_response_partition': 'small_fragment_vector',
+    'creatable_topic': 'small_fragment_vector'
 }
 
 
