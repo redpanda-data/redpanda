@@ -375,7 +375,7 @@ ss::future<storage::index_state> do_copy_segment_data(
   ss::rwlock::holder rw_lock_holder,
   storage_resources& resources,
   offset_delta_time apply_offset,
-  ss::sharded<features::feature_table>&) {
+  ss::sharded<features::feature_table>& feature_table) {
     // preserve broker_timestamp from the segment's index
     auto old_broker_timestamp = seg->index().broker_timestamp();
 
@@ -418,12 +418,17 @@ ss::future<storage::index_state> do_copy_segment_data(
         return ss::make_ready_future<bool>(compacted_list.contains(o));
     };
 
+    model::offset segment_last_offset{};
+    if (likely(feature_table.local().is_active(
+          features::feature::compaction_placeholder_batch))) {
+        segment_last_offset = seg->offsets().committed_offset;
+    }
     auto copy_reducer = copy_data_segment_reducer(
       std::move(should_keep),
       appender.get(),
       seg->path().is_internal_topic(),
       apply_offset,
-      seg->offsets().committed_offset);
+      segment_last_offset);
 
     // create the segment, get the in-memory index for the new segment
     auto new_index = co_await create_segment_full_reader(
