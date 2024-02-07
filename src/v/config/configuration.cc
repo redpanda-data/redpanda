@@ -148,7 +148,7 @@ configuration::configuration()
       "rpc_server_compress_replies",
       "Enable compression for internal rpc server replies",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      true)
+      false)
   , enable_coproc(*this, "enable_coproc")
   , coproc_max_inflight_bytes(*this, "coproc_max_inflight_bytes")
   , coproc_max_ingest_bytes(*this, "coproc_max_ingest_bytes")
