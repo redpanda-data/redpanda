@@ -368,3 +368,24 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_constructor_from_iter_range) {
 
     test_details::fragmented_vector_accessor::check_consistency(fv);
 }
+
+BOOST_AUTO_TEST_CASE(fragmented_vector_constructor_from_initalizer_list) {
+    auto assert_valid = [](const fragmented_vector<int>& v) {
+        return test_details::fragmented_vector_accessor::check_consistency(v);
+    };
+
+    {
+        fv_int fv({});
+
+        assert_valid(fv);
+        BOOST_CHECK_EQUAL(fv, fv_int{});
+    }
+
+    {
+        fv_int fv({1, 2, 3});
+
+        assert_valid(fv);
+        auto expected = fv_int{1, 2, 3};
+        BOOST_CHECK_EQUAL(fv, expected);
+    }
+}
