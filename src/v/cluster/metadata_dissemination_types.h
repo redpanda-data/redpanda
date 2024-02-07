@@ -16,6 +16,7 @@
 #include "model/metadata.h"
 #include "reflection/adl.h"
 #include "serde/serde.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 
@@ -105,7 +106,7 @@ struct update_leadership_request_v2
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     static constexpr int8_t version = 0;
-    ss::chunked_fifo<ntp_leader_revision> leaders;
+    fragmented_vector<ntp_leader_revision> leaders;
 
     update_leadership_request_v2() noexcept = default;
 
@@ -120,7 +121,7 @@ struct update_leadership_request_v2
     };
 
     update_leadership_request_v2 copy() const {
-        ss::chunked_fifo<ntp_leader_revision> leaders_cp;
+        fragmented_vector<ntp_leader_revision> leaders_cp;
         leaders_cp.reserve(leaders.size());
         std::copy(
           leaders.begin(), leaders.end(), std::back_inserter(leaders_cp));
@@ -135,7 +136,7 @@ struct update_leadership_request_v2
     }
 
     explicit update_leadership_request_v2(
-      ss::chunked_fifo<ntp_leader_revision> leaders)
+      fragmented_vector<ntp_leader_revision> leaders)
       : leaders(std::move(leaders)) {}
 
     auto serde_fields() { return std::tie(leaders); }

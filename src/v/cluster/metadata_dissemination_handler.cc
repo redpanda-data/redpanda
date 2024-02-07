@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/loop.hh>
@@ -47,12 +48,12 @@ metadata_dissemination_handler::update_leadership_v2(
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::do_update_leadership(
-  ss::chunked_fifo<ntp_leader_revision> leaders) {
+  fragmented_vector<ntp_leader_revision> leaders) {
     vlog(clusterlog.trace, "Received a metadata update");
     co_await ss::parallel_for_each(
       boost::irange<ss::shard_id>(0, ss::smp::count),
       [this, leaders = std::move(leaders)](ss::shard_id shard) {
-          ss::chunked_fifo<ntp_leader_revision> local_leaders;
+          fragmented_vector<ntp_leader_revision> local_leaders;
           local_leaders.reserve(leaders.size());
           std::copy(
             leaders.begin(), leaders.end(), std::back_inserter(local_leaders));

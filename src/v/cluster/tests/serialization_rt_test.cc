@@ -31,6 +31,7 @@
 #include "test_utils/rpc.h"
 #include "tristate.h"
 #include "units.h"
+#include "utils/fragmented_vector.h"
 #include "v8_engine/data_policy.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -789,7 +790,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       tests::random_named_int<model::term_id>(),
       tests::random_named_int<model::node_id>(),
       tests::random_named_int<model::revision_id>()));
-    ss::chunked_fifo<cluster::ntp_leader_revision> l_revs;
+    fragmented_vector<cluster::ntp_leader_revision> l_revs;
     l_revs.emplace_back(
       model::random_ntp(),
       tests::random_named_int<model::term_id>(),

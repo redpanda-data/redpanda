@@ -15,6 +15,7 @@
 #include "model/metadata.h"
 #include "model/tests/randoms.h"
 #include "test_utils/randoms.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 
@@ -23,7 +24,7 @@ namespace compat {
 template<>
 struct instance_generator<cluster::update_leadership_request_v2> {
     static cluster::update_leadership_request_v2 random() {
-        ss::chunked_fifo<cluster::ntp_leader_revision> values;
+        fragmented_vector<cluster::ntp_leader_revision> values;
         values.emplace_back(
           model::random_ntp(),
           tests::random_named_int<model::term_id>(),
