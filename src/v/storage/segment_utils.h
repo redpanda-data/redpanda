@@ -212,7 +212,9 @@ struct clean_segment_value
 };
 
 inline bool is_compactible(const model::record_batch_header& h) {
-    if (h.attrs.is_control()) {
+    if (
+      h.attrs.is_control()
+      || h.type == model::record_batch_type::compaction_placeholder) {
         // Keep control batches to ensure we maintain transaction boundaries.
         // They should be rare.
         return false;

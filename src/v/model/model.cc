@@ -365,6 +365,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::tx_registry";
     case record_batch_type::cluster_recovery_cmd:
         return o << "batch_type::cluster_recovery_cmd";
+    case record_batch_type::compaction_placeholder:
+        return o << "batch_type::compaction_placeholder";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";

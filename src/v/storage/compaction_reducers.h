@@ -248,6 +248,8 @@ private:
     bool handle_tx_data_batch(const model::record_batch&);
     bool handle_non_tx_control_batch(const model::record_batch&);
     void consume_aborted_txs(model::offset);
+    model::record_batch
+    make_placeholder_batch(model::offset base, model::offset end);
 
     index_rebuilder_reducer _delegate;
     // A min heap of aborted transactions based on begin offset.
