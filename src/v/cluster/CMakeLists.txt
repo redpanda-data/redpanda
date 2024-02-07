@@ -205,6 +205,9 @@ v_cc_library(
     tx_topic_manager.cc
     shard_placement_table.cc
     shard_balancer.cc
+    ../cloud_storage/topic_manifest.cc
+  HDRS
+    ../cloud_storage/topic_manifest.h
   DEPS
     Seastar::seastar
     bootstrap_rpc
