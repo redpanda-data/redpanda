@@ -394,7 +394,8 @@ static cluster::topic_configuration make_topic_config(
     topic_properties.timestamp_type = manifest_props.timestamp_type;
     topic_properties.shadow_indexing = model::shadow_indexing_mode::full;
     topic_properties.recovery = true;
-    topic_properties.mpx_virtual_cluster_id = manifest_props.virtual_cluster_id;
+    topic_properties.mpx_virtual_cluster_id
+      = manifest_props.mpx_virtual_cluster_id;
 
     if (request.retention_bytes().has_value()) {
         topic_properties.retention_local_target_bytes = tristate<size_t>{

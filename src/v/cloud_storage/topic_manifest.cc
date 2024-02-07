@@ -207,19 +207,24 @@ struct topic_manifest_handler
     std::optional<model::initial_revision_id> _revision_id{};
 
     // optional fields
-    manifest_topic_configuration::topic_properties _properties{
-      .retention_bytes = tristate<size_t>(disable_tristate),
-      .retention_duration = tristate<std::chrono::milliseconds>(
-        disable_tristate)};
+    cluster::topic_properties _properties{};
     std::optional<ss::sstring> compaction_strategy_sv;
     std::optional<ss::sstring> timestamp_type_sv;
     std::optional<ss::sstring> compression_sv;
     std::optional<ss::sstring> cleanup_policy_bitflags_sv;
     std::optional<ss::sstring> virtual_cluster_id_sv;
+
+    topic_manifest_handler() noexcept {
+        // tristate decoding requires that the default starting value is
+        // `disabled_tristate`
+        _properties.retention_bytes = tristate<size_t>(disable_tristate),
+        _properties.retention_duration = tristate<std::chrono::milliseconds>(
+          disable_tristate);
+    };
 };
 
 topic_manifest::topic_manifest(
-  const manifest_topic_configuration& cfg, model::initial_revision_id rev)
+  const cluster::topic_configuration& cfg, model::initial_revision_id rev)
   : _topic_config(cfg)
   , _rev(rev) {}
 
@@ -262,12 +267,12 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
           fmt::format, "Missing _revision_id value in parsed topic manifest"));
     }
 
-    _topic_config = manifest_topic_configuration{
-      .tp_ns = model::topic_namespace(
-        handler._namespace.value(), handler._topic.value()),
-      .partition_count = handler._partition_count.value(),
-      .replication_factor = handler._replication_factor.value(),
-      .properties = handler._properties};
+    _topic_config = cluster::topic_configuration{
+      model::ns(handler._namespace.value()),
+      model::topic(handler._topic.value()),
+      handler._partition_count.value(),
+      handler._replication_factor.value()};
+    _topic_config->properties = handler._properties;
 
     if (handler.compaction_strategy_sv) {
         try {
@@ -328,7 +333,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
 
     if (handler.virtual_cluster_id_sv) {
         try {
-            _topic_config->properties.virtual_cluster_id
+            _topic_config->properties.mpx_virtual_cluster_id
               = boost::lexical_cast<model::vcluster_id>(
                 handler.virtual_cluster_id_sv.value());
         } catch (const std::runtime_error& e) {
@@ -472,10 +477,10 @@ void topic_manifest::serialize(std::ostream& out) const {
         }
     }
 
-    if (_topic_config->properties.virtual_cluster_id) {
+    if (_topic_config->properties.mpx_virtual_cluster_id) {
         w.Key("virtual_cluster_id");
         w.String(fmt::format(
-          "{}", _topic_config->properties.virtual_cluster_id.value()));
+          "{}", _topic_config->properties.mpx_virtual_cluster_id.value()));
     }
     w.EndObject();
 }
