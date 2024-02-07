@@ -148,6 +148,16 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
           }
           return acc + b.num_records;
       });
+    std::optional<model::timestamp> base_ts;
+    std::optional<model::timestamp> last_ts;
+    for (const auto& b : batches) {
+        if (b.timestamp.has_value()) {
+            last_ts = b.timestamp;
+            if (!base_ts.has_value()) {
+                base_ts = b.timestamp;
+            }
+        }
+    }
     auto [segment_bytes, next_offset] = generate_segment(base, batches);
     std::vector<model::record_batch_header> hdr;
     std::vector<iobuf> rec;
@@ -167,6 +177,8 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
     s.num_config_batches = num_config_batches;
     s.num_config_records = num_config_records;
     s.delta_offset_overlap = 0;
+    s.base_timestamp = base_ts;
+    s.last_timestamp = last_ts;
     return s;
 }
 
@@ -464,8 +476,8 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
           .size_bytes = s.bytes.size(),
           .base_offset = s.base_offset,
           .committed_offset = s.max_offset,
-          .base_timestamp = {},
-          .max_timestamp = {},
+          .base_timestamp = s.base_timestamp.value_or(model::timestamp()),
+          .max_timestamp = s.last_timestamp.value_or(model::timestamp()),
           .delta_offset = segment_delta,
           .ntp_revision = m.get_revision_id(),
           .delta_offset_end = model::offset_delta(delta)
@@ -745,6 +757,68 @@ std::vector<model::record_batch_header> scan_remote_partition(
     std::move(reader).release();
 
     return headers_read;
+}
+
+/// Similar to previous function but uses timequery to start the scan
+scan_result scan_remote_partition(
+  cloud_storage_fixture& imposter,
+  model::timestamp timestamp,
+  model::offset max,
+  size_t maybe_max_segments,
+  size_t maybe_max_readers) {
+    // The lowres clock could become stale after reactor stall. In this
+    // case, if the reactor stall was longer than 1s and the next the next
+    // call to ss::lowres_clock::now() will result in a sudden jump forward
+    // in time and the timeout for the next operation will be computed
+    // incorrectly.
+    ss::lowres_clock::update();
+    auto conf = imposter.get_configuration();
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    if (maybe_max_segments) {
+        config::shard_local_cfg()
+          .cloud_storage_max_materialized_segments_per_shard(
+            maybe_max_segments);
+    }
+    if (maybe_max_readers) {
+        config::shard_local_cfg().cloud_storage_max_segment_readers_per_shard(
+          maybe_max_readers);
+    }
+    auto manifest = hydrate_manifest(imposter.api.local(), bucket);
+    storage::log_reader_config reader_config(
+      model::offset(0), max, ss::default_priority_class());
+    reader_config.first_timestamp = timestamp;
+
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      imposter.api, imposter.cache, manifest, bucket);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view,
+      imposter.api.local(),
+      imposter.cache.local(),
+      bucket,
+      probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    auto bytes_read = probe.get_bytes_read();
+    auto bytes_skip = probe.get_bytes_skip();
+    auto bytes_accept = probe.get_bytes_skip();
+    auto records_read = probe.get_records_read();
+
+    auto reader = partition->make_reader(reader_config).get().reader;
+
+    auto headers_read
+      = reader.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader).release();
+
+    return {
+      .headers = std::move(headers_read),
+      .bytes_read = probe.get_bytes_read() - bytes_read,
+      .records_read = probe.get_records_read() - records_read,
+      .bytes_skip = probe.get_bytes_skip() - bytes_skip,
+      .bytes_accept = probe.get_bytes_accept() - bytes_accept,
+    };
 }
 
 void reupload_compacted_segments(

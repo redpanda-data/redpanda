@@ -1202,6 +1202,7 @@ public:
               "[{}] accept_batch_start skip because record batch type is {}",
               _config.client_address,
               header.type);
+            _parent._probe.add_bytes_skip(header.size_bytes);
             return batch_consumer::consume_result::skip_batch;
         }
 
@@ -1219,6 +1220,7 @@ public:
               rp_to_kafka(header.last_offset()),
               header.last_offset(),
               _config.start_offset);
+            _parent._probe.add_bytes_skip(header.size_bytes);
             return batch_consumer::consume_result::skip_batch;
         }
 
@@ -1239,8 +1241,10 @@ public:
               "[{}] accept_batch_start skip because header timestamp is {}",
               _config.client_address,
               header.first_timestamp);
+            _parent._probe.add_bytes_skip(header.size_bytes);
             return batch_consumer::consume_result::skip_batch;
         }
+        _parent._probe.add_bytes_accept(header.size_bytes);
         // we want to consume the batch
         return batch_consumer::consume_result::accept_batch;
     }

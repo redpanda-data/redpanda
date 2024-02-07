@@ -81,6 +81,8 @@ struct in_memory_segment {
     // Only used to emulate an older version of Redpanda that had offset
     // overlap between segments.
     int delta_offset_overlap{0};
+    std::optional<model::timestamp> base_timestamp;
+    std::optional<model::timestamp> last_timestamp;
 };
 
 std::ostream& operator<<(std::ostream& o, const in_memory_segment& ims);
@@ -177,6 +179,28 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
 std::vector<model::record_batch_header> scan_remote_partition(
   cloud_storage_fixture& imposter,
   model::offset base,
+  model::offset max = model::offset::max(),
+  size_t maybe_max_segments = 0,
+  size_t maybe_max_readers = 0);
+
+struct scan_result {
+    std::vector<model::record_batch_header> headers;
+    // number of bytes consumed (acquired from the metrics probe)
+    uint64_t bytes_read = 0;
+    // number of bytes consumed (acquired from the metrics probe)
+    uint64_t records_read = 0;
+    // number of bytes skipped by the segment reader (acquired from the metrics
+    // probe)
+    uint64_t bytes_skip = 0;
+    // number of bytes accepted by the segment reader (acquired from the metrics
+    // probe)
+    uint64_t bytes_accept = 0;
+};
+
+/// Similar to prev function but uses timequery
+scan_result scan_remote_partition(
+  cloud_storage_fixture& imposter,
+  model::timestamp timestamp,
   model::offset max = model::offset::max(),
   size_t maybe_max_segments = 0,
   size_t maybe_max_readers = 0);
