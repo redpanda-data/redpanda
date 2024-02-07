@@ -595,7 +595,7 @@ configuration::configuration()
        .example = model::fetch_read_strategy_to_string(
          model::fetch_read_strategy::non_polling),
        .visibility = visibility::tunable},
-      model::fetch_read_strategy::non_polling,
+      model::fetch_read_strategy::polling,
       {
         model::fetch_read_strategy::polling,
         model::fetch_read_strategy::non_polling,
