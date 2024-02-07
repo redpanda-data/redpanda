@@ -711,7 +711,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                                   timeout_sec=self.msg_timeout)
 
             # Run a rolling restart.
-            self.stage_rolling_restart()
+            self.redpanda.rolling_restart_pods()
 
             # Hard stop, then restart.
             self.stage_stop_wait_start(forced_stop=True, downtime=0)
@@ -729,15 +729,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                    " detected, code: RequestTimeout"),
         re.compile("cloud_storage - .* - Exceeded cache size limit!"),
     ]
-
-    # Stages for the "test_restarts"
-
-    def stage_rolling_restart(self):
-        self.logger.info(f"Rolling restarting nodes")
-        assert False, "rolling restart not implemented"
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                            start_timeout=600,
-                                            stop_timeout=600)
 
     def stage_block_node_traffic(self):
         wait_time = 120

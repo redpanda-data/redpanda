@@ -1673,6 +1673,88 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         return self.get_install_pack()['config_profiles'][
             self.config_profile_name]
 
+    def restart_pod(self, pod_name: str, timeout: int = 180):
+        """Restart a pod by name
+
+        Using kubectl delete to gracefully stop the pod,
+        the pod will automatically be restarted by the cluster.
+        Block until pod container is ready.
+        The list of pod names can be found in self.pods property.
+
+        :param pod_name: string of pod name, e.g. 'rp-clo88krkqkrfamptsst0-5'
+        :param timeout: seconds to wait until pod is ready after kubectl delete
+        """
+        self.logger.info(f'restarting pod {pod_name}')
+
+        def pod_container_ready(pod_name: str):
+            # kubectl get pod rp-clo88krkqkrfamptsst0-0 -n=redpanda -o=jsonpath='{.status.containerStatuses[0].ready}'
+            return self.kubectl.cmd([
+                'get', 'pod', pod_name, '-n=redpanda',
+                "-o=jsonpath='{.status.containerStatuses[0].ready}'"
+            ]).decode()
+
+        delete_cmd = ['delete', 'pod', pod_name, '-n=redpanda']
+        self.logger.info(
+            f'deleting pod {pod_name} so the cluster can recreate it')
+        # kubectl delete pod rp-clo88krkqkrfamptsst0-0 -n=redpanda'
+        self.kubectl.cmd(delete_cmd)
+
+        self.logger.info(
+            f'waiting for pod {pod_name} container status ready with timeout {timeout}'
+        )
+        wait_until(lambda: pod_container_ready(pod_name) == 'true',
+                   timeout_sec=timeout,
+                   backoff_sec=1,
+                   err_msg=f'pod {pod_name} container status not ready')
+        self.logger.info(f'pod {pod_name} container status ready')
+
+    def rolling_restart_pods(self, pod_timeout: int = 180):
+        """Restart all pods in the cluster one at a time.
+
+        Restart a pod in the cluster and does not restart another
+        until the previous one has finished.
+        Block until cluster is ready after all restarts are finished.
+
+        :param timeout: seconds to wait for each pod to be ready after restart
+        """
+
+        cluster_name = f'rp-{self._cloud_cluster.cluster_id}'
+        pod_names = [p.name for p in self.pods]
+        self.logger.info(f'rolling restart on pods: {pod_names}')
+
+        def cluster_ready_replicas(cluster_name: str):
+            # kubectl get cluster rp-clo88krkqkrfamptsst0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
+            ret = self.kubectl.cmd([
+                'get', 'cluster', cluster_name, '-n=redpanda',
+                "-o=jsonpath='{.status.readyReplicas}'"
+            ]).decode()
+            # seems like readyReplicas will be empty if 0 are ready
+            return int(0 if not ret else ret)
+
+        # kubectl get cluster rp-clo88krkqkrfamptsst0 -n=redpanda -o=jsonpath='{.status.replicas}'
+        expected_replicas = int(
+            self.kubectl.cmd([
+                'get', 'cluster', cluster_name, '-n=redpanda',
+                "-o=jsonpath='{.status.replicas}'"
+            ]).decode())
+
+        for pod_name in pod_names:
+            self.restart_pod(pod_name, pod_timeout)
+
+        self.logger.info(
+            f'waiting for cluster {cluster_name} to have readyReplicas {expected_replicas} with timeout {pod_timeout}'
+        )
+        wait_until(
+            lambda: cluster_ready_replicas(cluster_name) == expected_replicas,
+            timeout_sec=pod_timeout,
+            backoff_sec=1,
+            err_msg=
+            f'cluster {cluster_name} failed to arrive at readyReplicas {expected_replicas}'
+        )
+        self.logger.info(
+            f'cluster {cluster_name} arrived at readyReplicas {expected_replicas}'
+        )
+
     def stop(self, **kwargs):
         if self._cloud_cluster.config.delete_cluster:
             self._cloud_cluster.delete()
