@@ -12,6 +12,7 @@
 
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/types.h"
 #include "json/document.h"
 
 #include <optional>
@@ -23,7 +24,7 @@ class topic_manifest final : public base_manifest {
 public:
     /// Create manifest for specific ntp
     explicit topic_manifest(
-      const manifest_topic_configuration& cfg, model::initial_revision_id rev);
+      const cluster::topic_configuration& cfg, model::initial_revision_id rev);
 
     /// Create empty manifest that supposed to be updated later
     topic_manifest();
@@ -56,7 +57,7 @@ public:
     /// Change topic-manifest revision
     void set_revision(model::initial_revision_id id) noexcept { _rev = id; }
 
-    std::optional<manifest_topic_configuration> const&
+    std::optional<cluster::topic_configuration> const&
     get_topic_config() const noexcept {
         return _topic_config;
     }
@@ -71,7 +72,7 @@ private:
     /// from manifest.json file
     void do_update(const topic_manifest_handler& handler);
 
-    std::optional<manifest_topic_configuration> _topic_config;
+    std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;
 };
 } // namespace cloud_storage
