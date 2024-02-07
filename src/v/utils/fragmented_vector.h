@@ -19,6 +19,7 @@
 #include <climits>
 #include <compare>
 #include <cstddef>
+#include <initializer_list>
 #include <iterator>
 #include <span>
 #include <stdexcept>
@@ -93,6 +94,35 @@ public:
     fragmented_vector(fragmented_vector&& other) noexcept {
         *this = std::move(other);
     }
+
+    /**
+     * @brief Create a vector from a begin, end iterator pair.
+     *
+     * This has the same semantics as the corresponding std::vector
+     * constructor.
+     */
+    template<typename Iter>
+    requires std::input_iterator<Iter>
+    fragmented_vector(Iter begin, Iter end)
+      : fragmented_vector() {
+        if constexpr (std::random_access_iterator<Iter>) {
+            reserve(std::distance(begin, end));
+        }
+        // Improvement: Write a more efficient implementation for
+        // std::contiguous_iterator<Iter>
+        for (auto it = begin; it != end; ++it) {
+            push_back(*it);
+        }
+    }
+
+    /**
+     * @brief Construct a new vector using an initializer list
+     *
+     * In the same manner as the corresponding std::vector method.
+     */
+    fragmented_vector(std::initializer_list<value_type> elems)
+      : fragmented_vector(elems.begin(), elems.end()) {}
+
     fragmented_vector& operator=(fragmented_vector&& other) noexcept {
         if (this != &other) {
             this->_size = other._size;
@@ -107,20 +137,6 @@ public:
         return *this;
     }
     ~fragmented_vector() noexcept = default;
-
-    template<typename Iter>
-    requires std::input_iterator<Iter>
-    fragmented_vector(Iter begin, Iter end)
-      : fragmented_vector() {
-        if constexpr (std::random_access_iterator<Iter>) {
-            reserve(std::distance(begin, end));
-        }
-        // Improvement: Write a more efficient implementation for
-        // std::contiguous_iterator<Iter>
-        for (auto it = begin; it != end; ++it) {
-            push_back(*it);
-        }
-    }
 
     fragmented_vector copy() const noexcept { return *this; }
 
