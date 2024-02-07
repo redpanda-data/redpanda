@@ -23,6 +23,8 @@ inline const model::ns redpanda_ns("redpanda");
 inline const model::ntp controller_ntp(
   redpanda_ns, model::topic("controller"), model::partition_id(0));
 
+inline const topic_namespace
+  controller_nt(controller_ntp.ns, controller_ntp.tp.topic);
 /*
  * The kvstore is organized as an ntp with a partition per core.
  */
