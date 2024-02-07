@@ -107,6 +107,9 @@ public:
 
     /**
      * Submit a read I/O request.
+     *
+     * A page submitted for read must not be resubmitted for read or write until
+     * it has completed.
      */
     void submit_read(page&) noexcept;
 
