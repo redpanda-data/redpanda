@@ -454,27 +454,6 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
     }
 }
 
-/// Helper for generating topic manifest to upload
-static cloud_storage::manifest_topic_configuration convert_topic_configuration(
-  const cluster::topic_configuration& cfg,
-  cluster::replication_factor replication_factor) {
-    cloud_storage::manifest_topic_configuration result {
-      .tp_ns = cfg.tp_ns,
-      .partition_count = cfg.partition_count,
-      .replication_factor = replication_factor,
-      .properties = {
-        .compression = cfg.properties.compression,
-        .cleanup_policy_bitflags = cfg.properties.cleanup_policy_bitflags,
-        .compaction_strategy = cfg.properties.compaction_strategy,
-        .timestamp_type = cfg.properties.timestamp_type,
-        .segment_size = cfg.properties.segment_size,
-        .retention_bytes = cfg.properties.retention_bytes,
-        .retention_duration = cfg.properties.retention_duration,
-      },
-    };
-    return result;
-}
-
 ss::future<> ntp_archiver::upload_topic_manifest() {
     auto topic_cfg_opt = _parent.get_topic_config();
     if (!topic_cfg_opt) {
@@ -506,8 +485,9 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
           &_rtcnode);
         retry_chain_logger ctxlog(archival_log, fib);
         vlog(ctxlog.info, "Uploading topic manifest {}", _parent.ntp());
-        cloud_storage::topic_manifest tm(
-          convert_topic_configuration(topic_cfg, replication_factor), _rev);
+        auto cfg_copy = topic_cfg.get();
+        cfg_copy.replication_factor = replication_factor;
+        cloud_storage::topic_manifest tm(cfg_copy, _rev);
         auto key = tm.get_manifest_path();
         vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
         auto res = co_await _remote.upload_manifest(
