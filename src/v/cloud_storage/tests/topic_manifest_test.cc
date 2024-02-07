@@ -38,11 +38,8 @@ using namespace cloud_storage;
 
 // update manifest, serialize, compare jsons
 
-static const manifest_topic_configuration cfg{
-  .tp_ns = model::topic_namespace(
-    model::ns("cfg-test-namespace"), model::topic("cfg-test-topic")),
-  .partition_count = 32,
-  .replication_factor = 3};
+static const cluster::topic_configuration cfg{
+  model::ns("cfg-test-namespace"), model::topic("cfg-test-topic"), 32, 3};
 
 static constexpr std::string_view min_topic_manifest_json = R"json({
     "version": 1,
@@ -241,7 +238,7 @@ SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
 }
 
 SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
-    manifest_topic_configuration min_cfg{cfg};
+    auto min_cfg = cfg;
     min_cfg.properties.retention_bytes = tristate<size_t>(
       std::numeric_limits<size_t>::min());
     min_cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
@@ -271,7 +268,7 @@ SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
 }
 
 SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
-    manifest_topic_configuration max_cfg{cfg};
+    auto max_cfg = cfg;
     max_cfg.properties.retention_bytes = tristate<size_t>(
       std::numeric_limits<size_t>::max());
     max_cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
@@ -403,8 +400,8 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
       test_cfg.properties == reconstructed_props,
       fmt::format(
         "test_cfg: {} reconstructed_cfg: {}",
-        reflection::to_tuple(test_cfg.properties),
-        reflection::to_tuple(reconstructed_props)));
+        test_cfg.properties,
+        reconstructed_props));
 
     BOOST_CHECK(test_cfg == reconstructed.get_topic_config());
 }

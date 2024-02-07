@@ -86,8 +86,7 @@ remote_topic_configuration_source::set_remote_properties_in_config(
 
 /// If property is set in source apply it to target.
 static void apply_retention_defaults(
-  topic_properties& target,
-  const cloud_storage::manifest_topic_configuration::topic_properties& source) {
+  topic_properties& target, const topic_properties& source) {
     // If the retention properties are not set explicitly by the command we
     // should apply them from topic_manifest.
     if (!target.cleanup_policy_bitflags) {
