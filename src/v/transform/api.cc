@@ -740,4 +740,25 @@ service::list_committed_offsets(list_committed_offsets_options options) {
     co_return commits;
 }
 
+ss::future<std::error_code> service::garbage_collect_committed_offsets() {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
+    }
+    auto _ = _gate.hold();
+    auto result = co_await _rpc_client->local().list_committed_offsets();
+    if (result.has_error()) {
+        co_return cluster::make_error_code(result.error());
+    }
+    absl::btree_set<model::transform_id> ids;
+    auto all_transforms = _plugin_frontend->local().all_transforms();
+    for (const auto& [k, _] : result.value()) {
+        if (!all_transforms.contains(k.id)) {
+            ids.insert(k.id);
+        }
+    }
+    co_return co_await _rpc_client->local().delete_committed_offsets(
+      std::move(ids));
+}
+
 } // namespace transform

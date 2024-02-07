@@ -79,11 +79,26 @@ public:
 
     /**
      * List the committed offsets for each transform/partition.
+     *
+     * NOTE: This information is **not** guarenteed to be consistent and may
+     * provide an information for different offsets at different points in time.
      */
     ss::future<result<
       ss::chunked_fifo<model::transform_committed_offset>,
       cluster::errc>>
       list_committed_offsets(list_committed_offsets_options);
+
+    /**
+     * Delete all offsets from transforms that do not exist.
+     *
+     * NOTE: This should only be ran while new transforms are not deploying, as
+     * it is possible to delete transforms for newly deployed transforms as our
+     * control plane operations are eventually consistent, so the shard that is
+     * performing the garbage collection may have out of date information (and
+     * gathering all the offsets that exist can result in an inconsistent view
+     * of information anyways).
+     */
+    ss::future<std::error_code> garbage_collect_committed_offsets();
 
     /**
      * Create a reporter of the transform subsystem.
