@@ -1910,11 +1910,11 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 3
     if (request_metadata.prev_log_index < last_log_offset) {
-        if (unlikely(request_metadata.prev_log_index < _commit_index)) {
+        if (unlikely(request_metadata.prev_log_index < last_visible_index())) {
             reply.result = append_entries_reply::status::success;
             // clamp dirty offset to the current commit index not to allow
             // leader reasoning about follower log beyond that point
-            reply.last_dirty_log_index = _commit_index;
+            reply.last_dirty_log_index = last_visible_index();
             reply.last_flushed_log_index = _commit_index;
             vlog(
               _ctxlog.info,
@@ -1930,10 +1930,13 @@ consensus::do_append_entries(append_entries_request&& r) {
         vlog(
           _ctxlog.info,
           "Truncating log in term: {}, Request previous log index: {} is "
-          "earlier than log end offset: {}. Truncating to: {}",
+          "earlier than log end offset: {}, last visible index: {}, leader "
+          "last visible index: {}. Truncating to: {}",
           request_metadata.term,
           request_metadata.prev_log_index,
           lstats.dirty_offset,
+          last_visible_index(),
+          _last_leader_visible_offset,
           truncate_at);
         _probe->log_truncated();
 
