@@ -51,7 +51,7 @@ struct queue_tester {
       : queue(
         storage,
         std::move(path),
-        [this](io::page& page) { generator.handle_complete(page); })
+        [this](io::page& page) noexcept { generator.handle_complete(page); })
       , generator(
           file_size,
           num_io_ops,

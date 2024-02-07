@@ -45,7 +45,8 @@ public:
     /**
      * Callback invoked when the scheduler completes an operation.
      */
-    using completion_callback_type = seastar::noncopyable_function<void(page&)>;
+    using completion_callback_type
+      = seastar::noncopyable_function<void(page&) noexcept>;
 
     /**
      * Construct a new io_queue.
