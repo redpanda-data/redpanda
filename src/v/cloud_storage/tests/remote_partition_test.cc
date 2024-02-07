@@ -2003,3 +2003,119 @@ FIXTURE_TEST(test_stale_reader, cloud_storage_fixture) {
 
     BOOST_REQUIRE_EQUAL(headers_read.size(), 30);
 }
+
+// Returns true if a kafka::offset scan returns the expected number of records.
+bool timequery(
+  cloud_storage_fixture& fixture,
+  model::timestamp tm,
+  int expected_num_records) {
+    auto scan_res = scan_remote_partition(fixture, tm);
+    int num_data_records = 0;
+    size_t bytes_read_acc = 0;
+    for (const auto& hdr : scan_res.headers) {
+        test_log.debug("Consumed header: {}", hdr);
+        num_data_records += hdr.record_count;
+        bytes_read_acc += hdr.size_bytes;
+    }
+
+    // These values are computed using metric
+    test_log.debug(
+      "Read bytes: {}, read records: {}, num headers: {}, expected records: "
+      "{}, bytes read: {}, bytes read accumulated: {}, bytes skipped: {}, "
+      "bytes accepted: {}",
+      scan_res.bytes_read,
+      scan_res.records_read,
+      num_data_records,
+      expected_num_records,
+      scan_res.bytes_read,
+      bytes_read_acc,
+      scan_res.bytes_skip,
+      scan_res.bytes_accept);
+
+    auto ret = expected_num_records == num_data_records
+               && scan_res.records_read == expected_num_records;
+
+    if (expected_num_records == 0) {
+        if (scan_res.bytes_skip != 0) {
+            // Validate that we're not scanning anything if we're not expecting
+            // any data to be present
+            test_log.error(
+              "Expected 0 records, got {}, skipped {} bytes",
+              scan_res.records_read,
+              scan_res.bytes_skip);
+            return false;
+        }
+    }
+
+    if (!ret) {
+        test_log.error(
+          "Expected {} records, got {}: {}",
+          expected_num_records,
+          num_data_records,
+          scan_res.headers);
+    }
+    return ret;
+}
+
+FIXTURE_TEST(test_scan_by_timestamp, cloud_storage_fixture) {
+    // Build cloud partition with provided timestamps and query
+    // it using the timequery.
+    auto hole = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::ghost_batch,
+          .hole = true,
+          .timestamp = model::timestamp(t)};
+    };
+    auto data = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::raft_data,
+          .timestamp = model::timestamp(t)};
+    };
+    auto conf = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::raft_configuration,
+          .timestamp = model::timestamp(t)};
+    };
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {hole(1000), conf(1002), conf(1004), data(1006), data(1008), data(1010)},
+      {data(1012), conf(1014), conf(1016), data(1018), data(1020), data(1022)},
+      {conf(1024), data(1026), conf(1028), data(1030), data(1032), conf(1034)},
+    };
+
+    std::vector<model::timestamp> data_timestamps;
+    for (const auto& segm : batch_types) {
+        for (const auto& bt : segm) {
+            if (bt.type == model::record_batch_type::raft_data) {
+                data_timestamps.push_back(bt.timestamp.value());
+            }
+        }
+    }
+
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+
+    print_segments(segments);
+    auto num_data_batches = data_timestamps.size();
+
+    for (int i = 0; i < num_data_batches; i++) {
+        kafka::offset ko(i);
+        size_t num_offsets = num_data_batches - i;
+        test_log.debug(
+          "Data timestamp {}, num_offsets to consume: {}, first kafka offset: "
+          "{}",
+          data_timestamps.at(i),
+          num_offsets,
+          ko);
+        BOOST_REQUIRE(timequery(*this, data_timestamps.at(i), num_offsets));
+    }
+
+    test_log.debug("Timestamp overshoots the partition");
+    BOOST_REQUIRE(timequery(*this, model::timestamp(10000), 0));
+
+    test_log.debug("Timestamp undershoots the partition");
+    BOOST_REQUIRE(timequery(*this, model::timestamp(100), num_data_batches));
+}
