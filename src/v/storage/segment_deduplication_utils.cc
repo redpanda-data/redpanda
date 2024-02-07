@@ -186,7 +186,8 @@ ss::future<index_state> deduplicate_segment(
   segment_appender& appender,
   compacted_index_writer& cmp_idx_writer,
   probe& probe,
-  offset_delta_time should_offset_delta_times) {
+  offset_delta_time should_offset_delta_times,
+  ss::sharded<features::feature_table>&) {
     auto read_holder = co_await seg->read_lock();
     if (seg->is_closed()) {
         throw segment_closed_exception();
