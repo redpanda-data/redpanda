@@ -11,6 +11,7 @@
 #include "io/io_queue.h"
 
 #include "base/vassert.h"
+#include "base/vlog.h"
 #include "io/logger.h"
 #include "ssx/future-util.h"
 
@@ -28,12 +29,12 @@ io_queue::io_queue(
   , complete_(std::move(complete)) {}
 
 void io_queue::start() noexcept {
-    log.debug("Starting io queue for {}", path_);
+    vlog(log.debug, "Starting io queue for {}", path_);
     dispatcher_ = dispatch();
 }
 
 seastar::future<> io_queue::stop() noexcept {
-    log.debug("Stopping io queue for {}", path_);
+    vlog(log.debug, "Stopping io queue for {}", path_);
     auto dispatcher = std::exchange(
       dispatcher_, seastar::make_ready_future<>());
     stop_ = true;
@@ -45,7 +46,7 @@ seastar::future<> io_queue::stop() noexcept {
 const std::filesystem::path& io_queue::path() const noexcept { return path_; }
 
 seastar::future<> io_queue::open() noexcept {
-    log.debug("Opening {}", path_);
+    vlog(log.debug, "Opening {}", path_);
     assert(!opened());
     assert(running_.empty());
     file_ = co_await storage_->open(path_);
@@ -66,7 +67,7 @@ bool io_queue::opened() const noexcept { return file_ != nullptr; }
  * freed in the kernel to avoid reaching an open file limit.
  */
 seastar::future<> io_queue::close() noexcept {
-    log.debug("Closing {}", path_);
+    vlog(log.debug, "Closing {}", path_);
     assert(opened());
 
     // ensure all on-going ops have completed
@@ -77,8 +78,11 @@ seastar::future<> io_queue::close() noexcept {
     try {
         co_await file->close();
     } catch (...) {
-        log.warn(
-          "Unable to close file {}: {}", path_, std::current_exception());
+        vlog(
+          log.warn,
+          "Unable to close file {}: {}",
+          path_,
+          std::current_exception());
     }
 }
 
@@ -105,7 +109,7 @@ void io_queue::submit_write(page& page) noexcept {
      * as a signal to the I/O completion continuation to requeue the write.
      */
     if (!page.test_flag(page::flags::queued)) {
-        log.debug("Marking inflight I/O to be requeued");
+        vlog(log.debug, "Marking inflight I/O to be requeued");
         page.set_flag(page::flags::queued);
     }
 }
@@ -155,7 +159,12 @@ seastar::future<> io_queue::dispatch() noexcept {
 
 void io_queue::dispatch_read(
   page& page, seastar::semaphore_units<> units) noexcept {
-    log.debug("Reading {} at {}~{}", path_, page.offset(), page.data().size());
+    vlog(
+      log.debug,
+      "Reading {} at {}~{}",
+      path_,
+      page.offset(),
+      page.data().size());
 
     ssx::background = seastar::with_gate(
       gate_, [this, &page, units = std::move(units)]() mutable {
@@ -180,7 +189,12 @@ void io_queue::dispatch_read(
 
 void io_queue::dispatch_write(
   page& page, seastar::semaphore_units<> units) noexcept {
-    log.debug("Writing {} at {}~{}", path_, page.offset(), page.data().size());
+    vlog(
+      log.debug,
+      "Writing {} at {}~{}",
+      path_,
+      page.offset(),
+      page.data().size());
 
     ssx::background = seastar::with_gate(
       gate_, [this, &page, units = std::move(units)]() mutable {
