@@ -104,7 +104,8 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "600000",
        .visibility = visibility::tunable},
-      10min)
+      10min,
+      {.min = 0ms})
   , log_segment_ms_max(
       *this,
       "log_segment_ms_max",
@@ -113,7 +114,8 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "31536000000",
        .visibility = visibility::tunable},
-      24h * 365)
+      24h * 365,
+      {.min = 0ms})
   , rpc_server_listen_backlog(
       *this,
       "rpc_server_listen_backlog",
