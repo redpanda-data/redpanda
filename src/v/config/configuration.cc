@@ -141,7 +141,7 @@ configuration::configuration()
       "The maximum number of connections a broker will open to each of its "
       "peers",
       {.example = "8"},
-      8,
+      32,
       {.min = 8})
   , enable_coproc(*this, "enable_coproc")
   , coproc_max_inflight_bytes(*this, "coproc_max_inflight_bytes")
