@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/types.h"
 #include "container/fragmented_vector.h"
@@ -119,6 +120,14 @@ public:
       model::revision_id,
       model::term_id,
       std::optional<model::node_id>);
+    /**
+     * This method updates leadership metadata in a a way that is optimized to
+     * leverage the hierarchical structure of node health report.
+     *
+     * IMPORTANT: node_report must be kept alive during the execution of this
+     * method
+     */
+    ss::future<> update_with_node_report(const node_health_report& node_report);
 
     struct leader_info_t {
         model::topic_namespace tp_ns;
@@ -190,6 +199,14 @@ private:
         }
     }
 
+    void do_update_partition_leader(
+      bool is_controller,
+      topics_t::iterator,
+      model::partition_id,
+      model::revision_id,
+      model::term_id,
+      std::optional<model::node_id>);
+
     topics_t _topic_leaders;
 
     uint64_t _leaderless_partition_count{0};
@@ -213,6 +230,7 @@ private:
      * incremented while iterating over the list of leaders
      */
     version _version{0};
+    version _topic_map_version{0};
 };
 
 } // namespace cluster
