@@ -1266,3 +1266,8 @@ class Admin:
             CommittedWasmOffset(c["transform_name"], c["partition"],
                                 c["offset"]) for c in raw
         ]
+
+    def transforms_gc_committed_offsets(self,
+                                        node: Optional[ClusterNode] = None):
+        path = "transform/debug/committed_offsets/garbage_collect"
+        return self._request("POST", path, node=node)

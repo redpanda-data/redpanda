@@ -139,6 +139,19 @@ class BaseDataTransformsTest(RedpandaTest):
         )
         return response
 
+    def _gc_committed_offsets(self):
+        def do_gc():
+            self._admin.transforms_gc_committed_offsets()
+            return True
+
+        wait_until(
+            do_gc,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"unable to gc committed offsets",
+            retry_on_exc=True,
+        )
+
     def _modify_cluster_config(self, upsert):
         patch_result = self._admin.patch_cluster_config(upsert=upsert)
         wait_for_version_sync(self._admin, self.redpanda,
@@ -207,6 +220,7 @@ class DataTransformsTest(BaseDataTransformsTest):
         """
         Test that a Wasm binary can be deployed, reach steady state and then be deleted.
         """
+        # We need a fast commit time so that we don't have to wait long for commits before invoking GC
         self._modify_cluster_config({'data_transforms_commit_interval_ms': 1})
         self._deploy_wasm(name="identity-xform",
                           input_topic=self.topics[0],
@@ -227,17 +241,23 @@ class DataTransformsTest(BaseDataTransformsTest):
             retry_on_exc=True,
         )
         self._delete_wasm(name="identity-xform")
-        # TODO(rockwood): Cleanup offsets after deploys
-        # def all_offsets_removed():
-        #     committed = self._list_committed_offsets()
-        #     return len(committed) == 0
-        # wait_until(
-        #     all_offsets_removed,
-        #     timeout_sec=30,
-        #     backoff_sec=1,
-        #     err_msg=f"all offsets where not removed",
-        #     retry_on_exc=True,
-        # )
+
+        # Give **plenty** of time for any pending transform commits to flush.
+        time.sleep(1)
+        # Now cleanup old offsets, and they should all be gone.
+        self._gc_committed_offsets()
+
+        def all_offsets_removed():
+            committed = self._list_committed_offsets()
+            return len(committed) == 0
+
+        wait_until(
+            all_offsets_removed,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"all offsets where not removed",
+            retry_on_exc=True,
+        )
 
 
 class DataTransformsChainingTest(BaseDataTransformsTest):
