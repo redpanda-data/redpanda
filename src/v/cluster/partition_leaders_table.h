@@ -14,12 +14,14 @@
 #include "cluster/fwd.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/types.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "utils/expiring_promise.h"
 
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/btree_map.h>
 #include <absl/container/node_hash_map.h>
 
 #include <optional>
@@ -70,8 +72,13 @@ public:
         { f(tp_ns, pid, leader, term) } -> std::same_as<void>;
     }
     void for_each_leader(Func&& f) const {
-        for (auto& [k, v] : _leaders) {
-            f(k.tp_ns, k.pid, v.current_leader, v.update_term);
+        for (auto& [tp_ns, partition_leaders] : _topic_leaders) {
+            for (auto& [p_id, leader_info] : partition_leaders) {
+                f(tp_ns,
+                  p_id,
+                  leader_info.current_leader,
+                  leader_info.update_term);
+            }
         }
     }
 
@@ -99,7 +106,7 @@ public:
         model::revision_id partition_revision;
     };
 
-    using leaders_info_t = std::vector<leader_info_t>;
+    using leaders_info_t = chunked_vector<leader_info_t>;
 
     leaders_info_t get_leaders() const;
 
@@ -120,61 +127,6 @@ public:
       const model::ntp&, notification_id_type);
 
 private:
-    // optimized to reduce number of ntp copies
-    struct leader_key {
-        model::topic_namespace tp_ns;
-        model::partition_id pid;
-        template<typename H>
-        friend H AbslHashValue(H h, const leader_key& lkv) {
-            return H::combine(std::move(h), lkv.tp_ns, lkv.pid);
-        }
-    };
-    struct leader_key_view {
-        model::topic_namespace_view tp_ns;
-        model::partition_id pid;
-
-        template<typename H>
-        friend H AbslHashValue(H h, const leader_key_view& lkv) {
-            return H::combine(std::move(h), lkv.tp_ns, lkv.pid);
-        }
-    };
-    // make leader_key queryable with leader_key_view
-    struct leader_key_hash {
-        using is_transparent = void;
-
-        size_t operator()(leader_key_view v) const {
-            return absl::Hash<leader_key_view>{}(v);
-        }
-
-        size_t operator()(const leader_key& v) const {
-            return absl::Hash<leader_key>{}(v);
-        }
-    };
-
-    struct leader_key_eq {
-        using is_transparent = void;
-
-        bool operator()(leader_key_view lhs, leader_key_view rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
-        }
-
-        bool operator()(const leader_key& lhs, const leader_key& rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
-        }
-
-        bool operator()(const leader_key& lhs, leader_key_view rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
-        }
-
-        bool operator()(leader_key_view lhs, const leader_key& rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
-        }
-    };
-
     // in order to filter out reordered requests we store last update term
     struct leader_meta {
         // current leader id, this may be empty if a group is in the middle of
@@ -193,11 +145,17 @@ private:
         model::revision_id partition_revision;
     };
 
-    std::optional<leader_meta>
+    using partition_leaders = absl::btree_map<model::partition_id, leader_meta>;
+    using topics_t = absl::node_hash_map<
+      model::topic_namespace,
+      partition_leaders,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>;
+
+    std::optional<std::reference_wrapper<const leader_meta>>
       find_leader_meta(model::topic_namespace_view, model::partition_id) const;
 
-    absl::node_hash_map<leader_key, leader_meta, leader_key_hash, leader_key_eq>
-      _leaders;
+    topics_t _topic_leaders;
 
     // per-ntp notifications for leadership election. note that the
     // namespace is currently ignored pending an update to the metadata
