@@ -349,6 +349,20 @@ local_service::list_committed_offsets(list_commits_request req) {
       *shard, ntp);
 }
 
+ss::future<cluster::errc> local_service::delete_committed_offsets(
+  model::partition_id partition, absl::btree_set<model::transform_id> ids) {
+    model::ntp ntp(
+      model::kafka_internal_namespace,
+      model::transform_offsets_topic,
+      partition);
+    auto shard = _partition_manager->shard_owner(ntp);
+    if (!shard) {
+        co_return cluster::errc::not_leader;
+    }
+    co_return co_await _partition_manager->delete_committed_offsets_on_shard(
+      *shard, ntp, std::move(ids));
+}
+
 ss::future<produce_reply>
 network_service::produce(produce_request req, ::rpc::streaming_context&) {
     co_await ss::coroutine::switch_to(get_scheduling_group());
@@ -414,6 +428,16 @@ ss::future<list_commits_reply> network_service::list_committed_offsets(
     }
     co_return list_commits_reply(
       cluster::errc::success, std::move(results.value()));
+}
+
+ss::future<delete_commits_reply> network_service::delete_committed_offsets(
+  delete_commits_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    delete_commits_reply reply;
+    cluster::errc ec = co_await _service->local().delete_committed_offsets(
+      req.partition, std::move(req.ids));
+    reply.errc = ec;
+    co_return reply;
 }
 
 ss::future<generate_report_reply> network_service::generate_report(

@@ -456,4 +456,52 @@ struct list_commits_reply
     cluster::errc errc{cluster::errc::success};
     model::transform_offsets_map map;
 };
+
+/**
+ * A request to delete commits for a given set of transform IDs on a single
+ * partition.
+ *
+ * Transform IDs that are not found for this are noops.
+ */
+struct delete_commits_request
+  : serde::envelope<
+      delete_commits_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    delete_commits_request() = default;
+    delete_commits_request(
+      model::partition_id partition, absl::btree_set<model::transform_id> ids)
+      : partition(partition)
+      , ids(std::move(ids)) {}
+
+    auto serde_fields() { return std::tie(partition, ids); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const delete_commits_request&);
+
+    model::partition_id partition;
+    absl::btree_set<model::transform_id> ids;
+};
+
+/**
+ * The response to `delete_commits_request`, and the overall status of the
+ * operation.
+ */
+struct delete_commits_reply
+  : serde::envelope<
+      delete_commits_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    delete_commits_reply() = default;
+
+    auto serde_fields() { return std::tie(errc); }
+
+    friend std::ostream& operator<<(std::ostream&, const delete_commits_reply&);
+
+    cluster::errc errc{cluster::errc::success};
+};
 } // namespace transform::rpc
