@@ -171,13 +171,14 @@ void io_queue::dispatch_read(
           return file_
             ->dma_read(
               page.offset(), page.data().get_write(), page.data().size())
-            .then([this, &page, units = std::move(units)](auto) {
+            .then([this, &page, units = std::move(units)](auto) mutable {
                 /*
                  * unlike writes, reads are not requeued. the caller should
                  * handle read/write coherency.
                  */
                 running_.erase(request_list_type::s_iterator_to(page));
                 if (complete_) {
+                    units.return_all();
                     complete_(page);
                 }
             })
@@ -200,7 +201,7 @@ void io_queue::dispatch_write(
       gate_, [this, &page, units = std::move(units)]() mutable {
           return file_
             ->dma_write(page.offset(), page.data().get(), page.data().size())
-            .then([this, &page, units = std::move(units)](auto) {
+            .then([this, &page, units = std::move(units)](auto) mutable {
                 running_.erase(request_list_type::s_iterator_to(page));
                 /*
                  * the queued flag is cleared before dispatch_write is invoked,
@@ -213,6 +214,7 @@ void io_queue::dispatch_write(
                     cond_.signal();
                 }
                 if (complete_) {
+                    units.return_all();
                     complete_(page);
                 }
             })
