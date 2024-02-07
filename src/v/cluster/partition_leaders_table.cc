@@ -179,6 +179,17 @@ void partition_leaders_table::update_partition_leader(
             // Do nothing if update term is older
             return;
         }
+        /**
+         * Update leader less partition counter when leadership changed
+         *
+         * no leader -> leader - decrement leaderless counter
+         * leader -> no leader - increment leaderless counter
+         */
+        if (p_it->second.current_leader && !leader_id) {
+            ++_leaderless_partition_count;
+        } else if (!p_it->second.current_leader && leader_id) {
+            --_leaderless_partition_count;
+        }
 
         // if current leader has value, store it as a previous leader
         if (p_it->second.current_leader) {
@@ -189,7 +200,12 @@ void partition_leaders_table::update_partition_leader(
         if (revision_id_valid) {
             p_it->second.partition_revision = revision_id;
         }
+    } else {
+        if (!leader_id) {
+            ++_leaderless_partition_count;
+        }
     }
+
     vlog(
       clusterlog.trace,
       "updated partition: {} leader: {{term: {}, current leader: {}, previous "
@@ -267,6 +283,11 @@ void partition_leaders_table::remove_leader(
           ntp,
           p_it->second.partition_revision,
           revision);
+
+        if (!p_it->second.current_leader.has_value()) {
+            _leaderless_partition_count--;
+        }
+
         t_it->second.erase(p_it);
         if (t_it->second.empty()) {
             _topic_leaders.erase(t_it);
@@ -277,6 +298,7 @@ void partition_leaders_table::remove_leader(
 void partition_leaders_table::reset() {
     vlog(clusterlog.trace, "resetting leaders");
     _topic_leaders.clear();
+    _leaderless_partition_count = 0;
 }
 
 partition_leaders_table::leaders_info_t

@@ -110,6 +110,10 @@ public:
 
     leaders_info_t get_leaders() const;
 
+    uint64_t leaderless_partition_count() const {
+        return _leaderless_partition_count;
+    }
+
     using leader_change_cb_t = ss::noncopyable_function<void(
       model::ntp, model::term_id, std::optional<model::node_id>)>;
 
@@ -157,6 +161,7 @@ private:
 
     topics_t _topic_leaders;
 
+    uint64_t _leaderless_partition_count{0};
     // per-ntp notifications for leadership election. note that the
     // namespace is currently ignored pending an update to the metadata
     // cache that attaches a namespace to all topics partition references.
