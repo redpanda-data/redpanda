@@ -42,6 +42,11 @@ void admin_server::register_wasm_transform_routes() {
     register_route<superuser>(
       ss::httpd::transform_json::list_committed_offsets,
       [this](auto req) { return list_committed_offsets(std::move(req)); });
+    register_route<superuser>(
+      ss::httpd::transform_json::garbage_collect_committed_offsets,
+      [this](auto req) {
+          return garbage_collect_committed_offsets(std::move(req));
+      });
 }
 
 ss::future<ss::json::json_return_type>
@@ -242,4 +247,16 @@ admin_server::list_committed_offsets(std::unique_ptr<ss::http::request> req) {
           response.partition = committed.partition();
           return response;
       }));
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::garbage_collect_committed_offsets(
+  std::unique_ptr<ss::http::request> req) {
+    if (!_transform_service->local_is_initialized()) {
+        throw transforms_not_enabled();
+    }
+    auto ec = co_await _transform_service->local()
+                .garbage_collect_committed_offsets();
+    co_await throw_on_error(*req, ec, model::controller_ntp);
+    co_return ss::json::json_void();
 }

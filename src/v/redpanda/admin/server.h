@@ -610,6 +610,8 @@ private:
       delete_transform(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       list_committed_offsets(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      garbage_collect_committed_offsets(std::unique_ptr<ss::http::request>);
 
     ss::future<> throw_on_error(
       ss::http::request& req,
