@@ -94,42 +94,67 @@ void partition_leaders_table::update_partition_leader(
     update_partition_leader(ntp, model::revision_id{}, term, leader_id);
 }
 
-void partition_leaders_table::update_partition_leader(
-  const model::ntp& ntp,
+ss::future<> partition_leaders_table::update_with_node_report(
+  const node_health_report& node_report) {
+    for (const auto& topic : node_report.topics) {
+        /**
+         * Here we minimize the number of topic table and topic map lookups by
+         * doing it only once for each topic.
+         **/
+        version topic_map_version_snapshot = _topic_map_version;
+        auto [t_it, _] = _topic_leaders.try_emplace(topic.tp_ns);
+
+        const bool is_controller = topic.tp_ns == model::controller_nt;
+        bool present_in_table = _topic_table.local().contains(topic.tp_ns);
+        auto last_applied_revision
+          = _topic_table.local().last_applied_revision();
+        for (auto& p : topic.partitions) {
+            if (!p.leader_id.has_value()) {
+                continue;
+            }
+
+            const auto topic_removed = p.revision_id <= last_applied_revision
+                                       && !present_in_table;
+
+            if (topic_removed && !is_controller) {
+                vlog(
+                  clusterlog.trace,
+                  "can't update leadership of the removed topic {}",
+                  topic.tp_ns);
+                break;
+            }
+            do_update_partition_leader(
+              is_controller, t_it, p.id, p.revision_id, p.term, p.leader_id);
+            co_await ss::coroutine::maybe_yield();
+            if (topic_map_version_snapshot != _topic_map_version) {
+                auto result = _topic_leaders.try_emplace(topic.tp_ns);
+                t_it = result.first;
+                present_in_table = _topic_table.local().contains(topic.tp_ns);
+                last_applied_revision
+                  = _topic_table.local().last_applied_revision();
+                topic_map_version_snapshot = _topic_map_version;
+            }
+        }
+    }
+}
+
+void partition_leaders_table::do_update_partition_leader(
+  bool is_controller,
+  topics_t::iterator t_it,
+  model::partition_id p_id,
   model::revision_id revision_id,
   model::term_id term,
   std::optional<model::node_id> leader_id) {
-    const auto is_controller = ntp == model::controller_ntp;
-    /**
-     * Use revision to differentiate updates for the topic that was
-     * deleted from topics table from the one which are processed before the
-     * topic is known to node local topic table.
-     * Controller is a special case as it is not present in topic table.
-     *
-     */
-    const auto topic_removed
-      = revision_id <= _topic_table.local().last_applied_revision()
-        && !_topic_table.local().contains(model::topic_namespace_view(ntp));
-
-    if (topic_removed && !is_controller) {
-        vlog(
-          clusterlog.trace,
-          "can't update leadership of the removed topic {}",
-          ntp);
-        return;
-    }
-
-    auto [t_it, _] = _topic_leaders.emplace(
-      model::topic_namespace_view(ntp), partition_leaders{});
-
     auto [p_it, new_entry] = t_it->second.emplace(
-      ntp.tp.partition,
+      p_id,
       leader_meta{
         .current_leader = leader_id,
         .update_term = term,
         .partition_revision = revision_id});
 
-    if (likely(!new_entry)) {
+    const model::ntp ntp(t_it->first.ns, t_it->first.tp, p_id);
+
+    if (!new_entry) [[likely]] {
         /**
          * Controller is a special case as it revision never but it
          * configuration revision does. We always update controller
@@ -240,6 +265,41 @@ void partition_leaders_table::update_partition_leader(
     }
 }
 
+void partition_leaders_table::update_partition_leader(
+  const model::ntp& ntp,
+  model::revision_id revision_id,
+  model::term_id term,
+  std::optional<model::node_id> leader_id) {
+    const auto is_controller = ntp == model::controller_ntp;
+    /**
+     * Use revision to differentiate updates for the topic that was
+     * deleted from topics table from the one which are processed before the
+     * topic is known to node local topic table.
+     * Controller is a special case as it is not present in topic table.
+     *
+     */
+    const auto topic_removed
+      = revision_id <= _topic_table.local().last_applied_revision()
+        && !_topic_table.local().contains(model::topic_namespace_view(ntp));
+
+    if (topic_removed && !is_controller) {
+        vlog(
+          clusterlog.trace,
+          "can't update leadership of the removed topic {}",
+          ntp);
+        return;
+    }
+
+    auto [t_it, new_topic_entry] = _topic_leaders.try_emplace(
+      model::topic_namespace_view(ntp));
+    if (new_topic_entry) {
+        ++_topic_map_version;
+    }
+
+    do_update_partition_leader(
+      is_controller, t_it, ntp.tp.partition, revision_id, term, leader_id);
+}
+
 ss::future<model::node_id> partition_leaders_table::wait_for_leader(
   const model::ntp& ntp,
   ss::lowres_clock::time_point timeout,
@@ -295,6 +355,7 @@ void partition_leaders_table::remove_leader(
         t_it->second.erase(p_it);
         if (t_it->second.empty()) {
             _topic_leaders.erase(t_it);
+            ++_topic_map_version;
         }
         ++_version;
     }
@@ -305,6 +366,7 @@ void partition_leaders_table::reset() {
     _topic_leaders.clear();
     _leaderless_partition_count = 0;
     ++_version;
+    ++_topic_map_version;
 }
 
 partition_leaders_table::leaders_info_t
