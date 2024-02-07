@@ -36,13 +36,6 @@ void probe::setup_metrics(const model::transform_metadata& meta) {
         .aggregate({sm::shard_label}));
     metric_defs.emplace_back(
       sm::make_counter(
-        "write_bytes",
-        [this] { return _write_bytes; },
-        sm::description("The number of bytes output by the transform"),
-        labels)
-        .aggregate({sm::shard_label}));
-    metric_defs.emplace_back(
-      sm::make_counter(
         "failures",
         [this] { return _failures; },
         sm::description("The number of transform failures"),
@@ -51,10 +44,13 @@ void probe::setup_metrics(const model::transform_metadata& meta) {
 
     auto output_topic_label = sm::label("output_topic");
     _lag.reserve(meta.output_topics.size());
+    _write_bytes.reserve(meta.output_topics.size());
     for (size_t i = 0; i < meta.output_topics.size(); ++i) {
         _lag.push_back(0);
-        std::vector<sm::label_instance> lag_labels = labels;
-        lag_labels.push_back(output_topic_label(meta.output_topics[i].tp()));
+        _write_bytes.push_back(0);
+        std::vector<sm::label_instance> output_topic_labels = labels;
+        output_topic_labels.push_back(
+          output_topic_label(meta.output_topics[i].tp()));
         metric_defs.emplace_back(
           sm::make_gauge(
             "lag",
@@ -62,7 +58,14 @@ void probe::setup_metrics(const model::transform_metadata& meta) {
             sm::description(
               "The number of pending records on the input topic that have "
               "not yet been processed by the transform"),
-            lag_labels)
+            output_topic_labels)
+            .aggregate({sm::shard_label}));
+        metric_defs.emplace_back(
+          sm::make_counter(
+            "write_bytes",
+            [this, i] { return _write_bytes[i]; },
+            sm::description("The number of bytes output by the transform"),
+            output_topic_labels)
             .aggregate({sm::shard_label}));
     }
 
@@ -83,7 +86,10 @@ void probe::setup_metrics(const model::transform_metadata& meta) {
     _public_metrics.add_group(
       prometheus_sanitize::metrics_name("transform"), metric_defs);
 }
-void probe::increment_write_bytes(uint64_t bytes) { _write_bytes += bytes; }
+void probe::increment_write_bytes(
+  model::output_topic_index idx, uint64_t bytes) {
+    _write_bytes[idx()] += bytes;
+}
 void probe::increment_read_bytes(uint64_t bytes) { _read_bytes += bytes; }
 void probe::increment_failure() { ++_failures; }
 void probe::state_change(processor_state_change change) {

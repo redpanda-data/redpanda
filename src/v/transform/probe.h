@@ -30,14 +30,14 @@ public:
     void setup_metrics(const model::transform_metadata&);
 
     void increment_read_bytes(uint64_t bytes);
-    void increment_write_bytes(uint64_t bytes);
+    void increment_write_bytes(model::output_topic_index, uint64_t bytes);
     void increment_failure();
     void state_change(processor_state_change);
     void report_lag(model::output_topic_index, int64_t delta);
 
 private:
     uint64_t _read_bytes = 0;
-    uint64_t _write_bytes = 0;
+    std::vector<uint64_t> _write_bytes;
     uint64_t _failures = 0;
     std::vector<uint64_t> _lag;
     absl::flat_hash_map<model::transform_report::processor::state, uint64_t>

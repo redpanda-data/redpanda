@@ -355,11 +355,13 @@ ss::future<> processor::run_producer_loop(
               });
         }
         if (!records.empty()) {
-            ss::chunked_fifo<model::record_batch> batches;
             // TODO(rockwood): Limit batch sizes so we don't overshoot
             // max batch size limits.
-            batches.push_back(model::transformed_data::make_batch(
-              model::timestamp::now(), std::move(records)));
+            auto batch = model::transformed_data::make_batch(
+              model::timestamp::now(), std::move(records));
+            _probe->increment_write_bytes(index, batch.size_bytes());
+            ss::chunked_fifo<model::record_batch> batches;
+            batches.push_back(std::move(batch));
             co_await sink->write(std::move(batches));
         }
         if (latest_offset > last_committed) {
