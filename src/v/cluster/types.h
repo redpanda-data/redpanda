@@ -1451,9 +1451,6 @@ struct remote_topic_properties
     model::initial_revision_id remote_revision;
     int32_t remote_partition_count;
 
-    friend std::ostream&
-    operator<<(std::ostream&, const remote_topic_properties&);
-
     auto serde_fields() {
         return std::tie(remote_revision, remote_partition_count);
     }
