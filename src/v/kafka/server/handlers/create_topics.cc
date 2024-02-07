@@ -199,7 +199,7 @@ ss::future<response_ptr> create_topics_handler::handle(
     }
 
     if (!ctx.audit()) {
-        request.data.topics.erase(valid_range_end, request.data.topics.end());
+        request.data.topics.erase_to_end(valid_range_end);
         create_topics_response err_resp(
           error_code::broker_not_available,
           "Broker not available - audit system failure",

@@ -24,7 +24,8 @@
 class create_topic_fixture : public redpanda_thread_fixture {
 public:
     kafka::create_topics_request make_req(
-      std::vector<kafka::creatable_topic> topics, bool validate_only = false) {
+      chunked_vector<kafka::creatable_topic> topics,
+      bool validate_only = false) {
         return kafka::create_topics_request{.data{
           .topics = std::move(topics),
           .timeout_ms = 10s,
@@ -84,7 +85,10 @@ public:
       kafka::api_version version = kafka::api_version(2)) {
         auto client = make_kafka_client().get0();
         client.connect().get();
-        auto resp = client.dispatch(req, version).get0();
+        auto topics = req.data.topics
+                        .copy(); // save a copy because we will move out of req
+        bool validate_only = req.data.validate_only;
+        auto resp = client.dispatch(std::move(req), version).get0();
 
         BOOST_REQUIRE_MESSAGE(
           std::all_of(
@@ -95,8 +99,8 @@ public:
             }),
           fmt::format("expected no errors. received response: {}", resp));
 
-        for (auto& topic : req.data.topics) {
-            verify_metadata(client, req, topic);
+        for (auto& topic : topics) {
+            verify_metadata(client, validate_only, topic);
 
             auto it = std::find_if(
               resp.data.topics.begin(),
@@ -104,7 +108,7 @@ public:
               [name = topic.name](const auto& t) { return t.name == name; });
 
             BOOST_CHECK(it != resp.data.topics.end());
-            verify_response(topic, *it, version, req.data.validate_only);
+            verify_response(topic, *it, version, validate_only);
 
             // TODO: one we combine the cluster fixture with the redpanda
             // fixture and enable multiple RP instances to run at the same time
@@ -157,7 +161,7 @@ public:
 
     void verify_metadata(
       kafka::client::transport& client,
-      kafka::create_topics_request& create_req,
+      bool validate_only,
       kafka::creatable_topic& request_topic) {
         // query the server for this topic's metadata
         kafka::metadata_request metadata_req;
@@ -194,7 +198,7 @@ public:
             replication = request_topic.replication_factor;
         }
 
-        if (create_req.data.validate_only) {
+        if (validate_only) {
             BOOST_TEST(
               topic_metadata->error_code != kafka::error_code::none,
               fmt::format(
@@ -292,11 +296,10 @@ FIXTURE_TEST(read_replica_and_remote_write, create_topic_fixture) {
         {"redpanda.remote.readreplica", "panda-bucket"},
         {"redpanda.remote.write", "true"}});
 
-    auto req = make_req({topic});
-
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto resp = client.dispatch(req, kafka::api_version(2)).get0();
+    auto resp
+      = client.dispatch(make_req({topic}), kafka::api_version(2)).get0();
 
     BOOST_CHECK(
       resp.data.topics[0].error_code == kafka::error_code::invalid_config);

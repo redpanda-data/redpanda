@@ -46,10 +46,8 @@ public:
           .replication_factor = rf,
         };
 
-        std::vector<kafka::creatable_topic> topics;
-        topics.push_back(std::move(topic));
         auto req = kafka::create_topics_request{.data{
-          .topics = std::move(topics),
+          .topics = {topic},
           .timeout_ms = 10s,
           .validate_only = false,
         }};
