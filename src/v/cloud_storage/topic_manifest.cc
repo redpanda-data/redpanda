@@ -123,9 +123,12 @@ struct topic_manifest_handler
                 _properties.retention_bytes = tristate<size_t>{
                   disable_tristate};
             } else if (_key == "retention_duration") {
+                // even though a negative number is valid for milliseconds,
+                // interpret any negative value as a request for infinite
+                // retention, that translates to a disabled tristate (like for
+                // retention_bytes)
                 _properties.retention_duration
-                  = tristate<std::chrono::milliseconds>(
-                    std::chrono::milliseconds(i));
+                  = tristate<std::chrono::milliseconds>(disable_tristate);
             } else {
                 return false;
             }
