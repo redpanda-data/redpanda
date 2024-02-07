@@ -318,6 +318,17 @@ public:
 
     model::transform_offsets_map list() { return _offsets; }
 
+    void delete_all(const absl::btree_set<model::transform_id>& ids) {
+        auto it = _offsets.begin();
+        while (it != _offsets.end()) {
+            if (ids.contains(it->first.id)) {
+                it = _offsets.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
 private:
     int _num_partitions = 3;
     model::transform_offsets_map _offsets;
@@ -469,6 +480,22 @@ public:
             co_return cluster::errc::timeout;
         }
         co_return _offset_tracker->list();
+    }
+
+    ss::future<cluster::errc> delete_committed_offsets_on_shard(
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      absl::btree_set<model::transform_id> ids) override {
+        auto owner = shard_owner(ntp);
+        if (!owner || shard_id != *owner) {
+            co_return cluster::errc::not_leader;
+        }
+        if (_errors_to_inject > 0) {
+            --_errors_to_inject;
+            co_return cluster::errc::timeout;
+        }
+        _offset_tracker->delete_all(ids);
+        co_return cluster::errc::success;
     }
 
 private:
@@ -975,8 +1002,28 @@ TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
             key.id = model::transform_id(i);
             key.partition = model::partition_id(j);
             auto it = offsets.find(key);
-            ASSERT_FALSE(it == offsets.end());
+            ASSERT_NE(it, offsets.end());
             EXPECT_EQ(it->second.offset, kafka::offset(j));
+        }
+    }
+
+    auto deleted_id = model::transform_id{3};
+    auto ec = client()->delete_committed_offsets({deleted_id}).get();
+    EXPECT_EQ(ec, cluster::errc::success);
+    offsets = client()->list_committed_offsets().get().value();
+    EXPECT_EQ(offsets.size(), (num_transforms - 1) * num_src_partitions);
+    for (int i = 0; i < num_transforms; ++i) {
+        for (int32_t j = 0; j < num_src_partitions; ++j) {
+            model::transform_offsets_key key;
+            key.id = model::transform_id(i);
+            key.partition = model::partition_id(j);
+            auto it = offsets.find(key);
+            if (key.id != deleted_id) {
+                ASSERT_NE(it, offsets.end());
+                EXPECT_EQ(it->second.offset, kafka::offset(j));
+            } else {
+                EXPECT_EQ(it, offsets.end());
+            }
         }
     }
 }

@@ -938,4 +938,94 @@ client::do_remote_list_committed_offsets(
     }
     co_return reply.map;
 }
+
+ss::future<cluster::errc>
+client::delete_committed_offsets(absl::btree_set<model::transform_id> ids) {
+    if (ids.empty()) {
+        co_return cluster::errc::success;
+    }
+    auto cfg = _topic_metadata->find_topic_cfg(model::transform_offsets_nt);
+    if (!cfg) {
+        co_return cluster::errc::topic_not_exists;
+    }
+    co_return co_await ss::map_reduce(
+      boost::irange(0, cfg->partition_count),
+      [this, &ids](int32_t id) {
+          auto partition = model::partition_id(id);
+          return do_delete_committed_offsets(partition, ids);
+      },
+      cluster::errc::success,
+      [](cluster::errc agg, cluster::errc one) {
+          if (agg != cluster::errc::success) {
+              return agg;
+          }
+          return one;
+      });
+}
+
+ss::future<cluster::errc> client::do_delete_committed_offsets(
+  model::partition_id partition, absl::btree_set<model::transform_id> ids) {
+    return retry([this, partition, ids = std::move(ids)] {
+        return do_delete_committed_offsets_once(partition, ids);
+    });
+}
+
+ss::future<cluster::errc> client::do_delete_committed_offsets_once(
+  model::partition_id partition, absl::btree_set<model::transform_id> ids) {
+    auto leader = _leaders->get_leader_node(offsets_ntp(partition));
+    if (!leader) {
+        co_return cluster::errc::not_leader;
+    }
+    if (leader == _self) {
+        co_return co_await do_local_delete_committed_offsets(
+          partition, std::move(ids));
+    } else {
+        co_return co_await do_remote_delete_committed_offsets(
+          *leader, partition, std::move(ids), timeout);
+    }
+}
+
+ss::future<cluster::errc> client::do_local_delete_committed_offsets(
+  model::partition_id partition, absl::btree_set<model::transform_id> ids) {
+    return _local_service->local().delete_committed_offsets(
+      partition, std::move(ids));
+}
+
+ss::future<cluster::errc> client::do_remote_delete_committed_offsets(
+  model::node_id node,
+  model::partition_id partition,
+  absl::btree_set<model::transform_id> ids,
+  model::timeout_clock::duration timeout) {
+    vlog(
+      log.trace,
+      "delete_committed_offsets(node={}): {} {}",
+      node,
+      partition,
+      ids.size());
+    auto resp = co_await _connections->local()
+                  .with_node_client<impl::transform_rpc_client_protocol>(
+                    _self,
+                    ss::this_shard_id(),
+                    node,
+                    timeout,
+                    [partition, timeout, ids = std::move(ids)](
+                      impl::transform_rpc_client_protocol proto) mutable {
+                        return proto.delete_committed_offsets(
+                          delete_commits_request(partition, std::move(ids)),
+                          ::rpc::client_opts(
+                            model::timeout_clock::now() + timeout));
+                    })
+                  .then(&::rpc::get_ctx_data<delete_commits_reply>);
+    vlog(
+      log.trace,
+      "delete_committed_offsets(node={}): {} {}",
+      node,
+      resp,
+      ids.size());
+    if (resp.has_error()) {
+        co_return map_errc(resp.error());
+    }
+    co_return resp.value().errc;
+}
+
 } // namespace transform::rpc
