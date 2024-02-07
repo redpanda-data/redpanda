@@ -200,17 +200,20 @@ make_kv_data_batch(absl::btree_map<Key, Value> kvs) {
 }
 
 template<class Key, class Value>
-static simple_batch_builder make_kv_data_batch_remove_key(Key k) {
+static simple_batch_builder
+make_kv_data_batch_remove_all(absl::btree_set<Key> ks) {
     simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
-    iobuf key_buf;
-    serde::write(key_buf, kv_data_key<Key>{k});
-    iobuf value_buf;
-    serde::write(value_buf, kv_data_value<Value>{});
+    for (auto& k : ks) {
+        iobuf key_buf;
+        serde::write(key_buf, kv_data_key<Key>{k});
+        iobuf value_buf;
+        serde::write(value_buf, kv_data_value<Value>{});
 
-    builder.add_kv(
-      record_key{record_type::kv_data, std::move(key_buf)},
-      record_value_wrapper{std::move(value_buf)});
+        builder.add_kv(
+          record_key{record_type::kv_data, std::move(key_buf)},
+          record_value_wrapper{std::move(value_buf)});
+    }
     return builder;
 }
 

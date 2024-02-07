@@ -18,6 +18,7 @@
 
 #include <seastar/core/preempt.hh>
 #include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <type_traits>
 
@@ -268,7 +269,28 @@ public:
             co_return errc::success;
         }
         co_return co_await replicate_and_wait(
-          make_kv_data_batch_remove_key<Key, Value>(key));
+          make_kv_data_batch_remove_all<Key, Value>({key}));
+    }
+
+    ss::future<errc> remove_all(ss::noncopyable_function<bool(Key)> pred) {
+        auto holder = _gate.hold();
+        auto units = co_await _snapshot_lock.hold_write_lock();
+        absl::btree_set<Key> deleted;
+        auto it = _kvs.begin();
+        while (it != _kvs.end()) {
+            if (pred(it->first)) {
+                auto result = _kvs.extract_and_get_next(it);
+                deleted.insert(result.node.key());
+                it = result.next;
+            } else {
+                ++it;
+            }
+            // We don't need to worry about iterators being invalidated due to
+            // the write lock we hold.
+            co_await ss::yield();
+        }
+        co_return co_await replicate_and_wait(
+          make_kv_data_batch_remove_all<Key, Value>(std::move(deleted)));
     }
 
     ss::future<result<size_t, cluster::errc>>
