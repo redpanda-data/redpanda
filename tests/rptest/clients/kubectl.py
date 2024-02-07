@@ -9,6 +9,7 @@
 
 from logging import Logger
 import os
+import shutil
 import subprocess
 
 SUPPORTED_PROVIDERS = ['aws', 'gcp']
@@ -19,6 +20,7 @@ class KubectlTool:
     Wrapper around kubectl for operating on a redpanda cluster.
     """
 
+    TELEPORT_DATA_DIR = '/tmp/tbot-data'
     TELEPORT_DEST_DIR = '/tmp/machine-id'
     TELEPORT_IDENT_FILE = f'{TELEPORT_DEST_DIR}/identity'
 
@@ -257,9 +259,11 @@ class KubectlTool:
         _method = "iam"
         if self._provider == 'gcp':
             _method = "gcp"
+        self._redpanda.logger.info('cleaning teleport data dir')
+        shutil.rmtree(self.TELEPORT_DATA_DIR)
         self._redpanda.logger.info('starting tbot to generate identity')
         cmd = [
-            'tbot', 'start', '--data-dir=/tmp/tbot-data',
+            'tbot', 'start', f'--data-dir={self.TELEPORT_DATA_DIR}',
             f'--destination-dir={self.TELEPORT_DEST_DIR}',
             f'--auth-server={self._tp_proxy}', f'--join-method={_method}',
             f'--token={self._tp_token}', '--certificate-ttl=6h',
