@@ -27,19 +27,19 @@
 #include <vector>
 
 /**
- * A very very simple fragmented vector that provides random access like a
- * vector, but does not store its data in contiguous memory.
+ * A vector that provides random access like a vector, but does not store its
+ * data in contiguous memory.
  *
  * The iterator implementation works for a few things like std::lower_bound,
  * upper_bound, distance, etc... see fragmented_vector_test.
  *
- * By default, this container allocates full sized segments at a time as
- * specified as a template parameter. If fragment_size_bytes is equal to
- * std::dynamic_extent then we will switch out the allocation strategy to be the
- * standard vector capacity doubling for the first chunk, but then subsequent
- * chunks will be allocated at the full max allocation size we recommend.
+ * If fragment_size_bytes is equal to std::dynamic_extent (the default) then we
+ * will switch out the allocation strategy to be the standard vector capacity
+ * doubling for the first chunk, but then subsequent chunks will be allocated at
+ * the full max allocation size we recommend. If an explicit size is used then
+ * each fragment that is allocated will be that full explicit size.
  */
-template<typename T, size_t fragment_size_bytes = 8192>
+template<typename T, size_t fragment_size_bytes = std::dynamic_extent>
 class fragmented_vector {
 public:
     static constexpr bool is_chunked_vector = fragment_size_bytes
