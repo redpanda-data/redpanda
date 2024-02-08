@@ -87,7 +87,7 @@ class processor_shutdown_exception : public std::exception {
 
 // TODO(rockwood): This is an arbitrary value, we should instead be
 // limiting the size based on the amount of memory in the transform subsystem.
-constexpr size_t max_buffer_size = 64_KiB;
+constexpr size_t max_buffer_size = 128_KiB;
 
 } // namespace
 
@@ -128,6 +128,7 @@ processor::processor(
             .sink = std::move(sinks[i])});
         _last_reported_lag.push_back(0);
     }
+    _default_output = &_outputs.at(outputs.front().tp);
     // The processor needs to protect against multiple stops (or calling stop
     // before start), to do that we use the state in _as. Start out with an
     // abort so that we handle being stopped before we're started.
@@ -280,9 +281,11 @@ ss::future<> processor::run_transform_loop() {
           [this](
             std::optional<model::topic_view> topic,
             model::transformed_data data) {
-              auto output_topic = topic.value_or(
-                model::topic_view(_meta.output_topics.front().tp));
-              auto it = _outputs.find(output_topic);
+              if (!topic) {
+                  return _default_output->queue.push({std::move(data)}, &_as)
+                    .then([] { return wasm::write_success::yes; });
+              }
+              auto it = _outputs.find(topic.value());
               if (it == _outputs.end()) {
                   return ssx::now(wasm::write_success::no);
               }

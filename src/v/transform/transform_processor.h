@@ -120,6 +120,7 @@ private:
         std::unique_ptr<sink> sink;
     };
     absl::flat_hash_map<model::topic, output> _outputs;
+    output* _default_output = nullptr;
 
     ss::abort_source _as;
     ss::future<> _task;
