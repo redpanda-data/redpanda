@@ -29,7 +29,10 @@
 
 namespace transform {
 
+/** Request options for listing committed offsets. */
 struct list_committed_offsets_options {
+    // If true, show transforms that we don't have metadata for, these likely
+    // represent transforms that have been deleted.
     bool show_unknown = false;
 };
 
@@ -37,6 +40,10 @@ struct list_committed_offsets_options {
  * The transform service is responsible for intersecting the current state of
  * plugins and topic partitions and ensures that the corresponding wasm
  * transform is running for each leader partition (on the input topic).
+ *
+ * This service is mostly responsible for interfacing the rest of the system
+ * with the transform control plane (transform::manager), and forwarding the
+ * correct events from the rest of the system into the control plane.
  *
  * Instances on every shard.
  */
