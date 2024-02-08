@@ -304,17 +304,12 @@ ss::future<> processor::run_transform_loop() {
 ss::future<> processor::run_all_producers(
   absl::flat_hash_map<model::output_topic_index, kafka::offset>
     latest_committed) {
-    std::vector<ss::future<>> futures;
-    for (auto& [topic, output] : _outputs) {
-        futures.push_back(run_producer_loop(
-          output.index,
-          &output.queue,
-          output.sink.get(),
-          latest_committed[output.index]));
-    }
-    return ss::when_all_succeed(
-      std::make_move_iterator(futures.begin()),
-      std::make_move_iterator(futures.end()));
+    return ss::parallel_for_each(
+      _outputs, [this, committed = std::move(latest_committed)](auto& entry) {
+          output& out = entry.second;
+          return run_producer_loop(
+            out.index, &out.queue, out.sink.get(), committed.at(out.index));
+      });
 }
 
 ss::future<> processor::run_producer_loop(
