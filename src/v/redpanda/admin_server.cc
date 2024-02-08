@@ -3526,8 +3526,7 @@ admin_server::get_all_transactions_handler(
     }
 
     using tx_info = ss::httpd::transaction_json::transaction_summary;
-    std::vector<tx_info> ans;
-    ans.reserve(res.value().size());
+    fragmented_vector<tx_info> ans;
 
     for (auto& tx : res.value()) {
         if (tx.status == cluster::tm_transaction::tx_status::tombstone) {
@@ -3576,9 +3575,12 @@ admin_server::get_all_transactions_handler(
         }
 
         ans.push_back(std::move(new_tx));
+        co_await ss::coroutine::maybe_yield();
     }
 
-    co_return ss::json::json_return_type(ans);
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      lw_shared_container(std::move(ans)),
+      [](auto& tx_info) { return tx_info; }));
 }
 
 ss::future<ss::json::json_return_type>
