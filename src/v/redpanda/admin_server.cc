@@ -3330,9 +3330,8 @@ admin_server::get_topic_partitions_handler(
           fmt::format("Could not find topic: {}/{}", tp_ns.ns, tp_ns.tp));
     }
     using partition_t = ss::httpd::partition_json::partition;
-    std::vector<partition_t> partitions;
+    fragmented_vector<partition_t> partitions;
     const auto& assignments = tp_md->get().get_assignments();
-    partitions.reserve(assignments.size());
     // Normal topic
     for (const auto& p_as : assignments) {
         partition_t p;
@@ -3364,7 +3363,8 @@ admin_server::get_topic_partitions_handler(
             });
       });
 
-    co_return ss::json::json_return_type(partitions);
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      lw_shared_container(std::move(partitions)), [](auto& p) { return p; }));
 }
 
 ss::future<ss::json::json_return_type>
