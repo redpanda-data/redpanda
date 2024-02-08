@@ -66,6 +66,7 @@ from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorag
 from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
+from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 
 Partition = collections.namedtuple('Partition',
                                    ['topic', 'index', 'leader', 'replicas'])
@@ -289,6 +290,12 @@ def is_redpanda_cloud(context: TestContext):
     # global signal that it's a cloud run
     return bool(
         context.globals.get(RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG))
+
+
+def should_compile(
+        allow_list_element: str | AllowLogsOnPredicate | re.Pattern) -> bool:
+    return not isinstance(allow_list_element, re.Pattern) and not isinstance(
+        allow_list_element, AllowLogsOnPredicate)
 
 
 class ResourceSettings:
@@ -1323,7 +1330,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
             combined_allow_list = DEFAULT_LOG_ALLOW_LIST.copy()
             # Accept either compiled or string regexes
             for a in allow_list:
-                if not isinstance(a, re.Pattern):
+                if should_compile(a):
                     a = re.compile(a)
                 combined_allow_list.append(a)
             allow_list = combined_allow_list
@@ -2818,7 +2825,7 @@ class RedpandaService(RedpandaServiceBase):
         allow_list = []
         if log_allow_list:
             for a in log_allow_list:
-                if not isinstance(a, re.Pattern):
+                if should_compile(a):
                     a = re.compile(a)
                 allow_list.append(a)
 

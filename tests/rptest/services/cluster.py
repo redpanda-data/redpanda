@@ -8,15 +8,16 @@
 # by the Apache License, Version 2.0
 
 import functools
-from itertools import chain
 import time
 from typing import Protocol
-import psutil
 
-from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, RedpandaServiceCloud
-from ducktape.mark.resource import ClusterUseMetadata
+import psutil
 from ducktape.mark._mark import Mark
+from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.tests.test import TestContext
+
+from rptest.services.redpanda import RedpandaServiceBase, RedpandaServiceCloud
+from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 
 
 def cluster(log_allow_list=None,
@@ -95,6 +96,10 @@ def cluster(log_allow_list=None,
 
             t_initial = time.time()
             disk_stats_initial = psutil.disk_io_counters()
+            if log_allow_list is not None:
+                for entry in log_allow_list:
+                    if isinstance(entry, AllowLogsOnPredicate):
+                        entry.initialize(self)
             try:
                 r = f(self, *args, **kwargs)
             except:
