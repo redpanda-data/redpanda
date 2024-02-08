@@ -249,7 +249,7 @@ ss::future<> metadata_dissemination_service::do_request_metadata_update(
 
 ss::future<> metadata_dissemination_service::process_get_update_reply(
   result<get_leadership_reply> reply_result, request_retry_meta& meta) {
-    if (!reply_result) {
+    if (!reply_result || !reply_result.value().success) {
         vlog(
           clusterlog.debug,
           "Unable to initialize metadata using node {}",

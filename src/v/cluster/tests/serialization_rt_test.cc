@@ -807,7 +807,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       model::random_ntp(),
       tests::random_named_int<model::term_id>(),
       tests::random_named_int<model::node_id>());
-    roundtrip_test(cluster::get_leadership_reply(std::move(leaders)));
+    roundtrip_test(cluster::get_leadership_reply(
+      std::move(leaders), cluster::get_leadership_reply::is_success::yes));
 
     roundtrip_test(
       cluster::allocate_id_request(random_timeout_clock_duration()));
