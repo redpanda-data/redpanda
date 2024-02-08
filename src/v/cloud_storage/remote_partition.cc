@@ -116,7 +116,7 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
     auto ko = model::offset_cast(config.start_offset);
     // Two level lookup:
     // - find segment meta based on kafka offset
-    //   this allow us to avoid any abiguity in case if the segment
+    //   this allow us to avoid any ambiguity in case if the segment
     //   doesn't have any data. The 'segment_containing' method of the
     //   manifest takes this into account.
     // - find materialized segment or materialize the new one
@@ -130,22 +130,24 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
                 mit = manifest.segment_containing(maybe_meta->base_offset);
             }
         } else {
-            // In this case the lookup is perfomed by kafka offset.
+            // In this case the lookup is performed by kafka offset.
             // Normally, this would be the first lookup done by the
             // partition_record_batch_reader_impl. This lookup will
             // skip segments without data batches (the logic is implemented
             // inside the partition_manifest).
             mit = manifest.segment_containing(ko);
-        }
-        if (mit == manifest.end()) {
-            // Segment that matches exactly can't be found in the manifest. In
-            // this case we want to start scanning from the begining of the
-            // partition if the start of the manifest is contained by the scan
-            // range.
-            auto so = manifest.get_start_kafka_offset().value_or(
-              kafka::offset::min());
-            if (config.start_offset < so && config.max_offset > so) {
-                mit = manifest.begin();
+            if (mit == manifest.end()) {
+                // Segment that matches exactly can't be found in the manifest.
+                // In this case we want to start scanning from the beginning of
+                // the partition if the start of the manifest is contained by
+                // the scan range.
+                auto so = manifest.get_start_kafka_offset().value_or(
+                  kafka::offset::min());
+                if (
+                  model::offset_cast(config.start_offset) < so
+                  && model::offset_cast(config.max_offset) > so) {
+                    mit = manifest.begin();
+                }
             }
         }
     } else {
