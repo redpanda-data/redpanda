@@ -8,10 +8,12 @@ v_cc_library(
     page_set.cc
     clang-tidy-helper.cc
     logger.cc
+    io_queue.cc
   DEPS
     Seastar::seastar
     absl::btree
     absl::flat_hash_map
+    v::container
 )
 
 add_subdirectory(tests)

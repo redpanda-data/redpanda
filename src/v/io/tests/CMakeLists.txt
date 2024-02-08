@@ -11,6 +11,7 @@ rp_test(
     persistence_test.cc
     page_test.cc
     page_set_test.cc
+    io_queue_test.cc
   LIBRARIES
     v::gtest_main
     v::io

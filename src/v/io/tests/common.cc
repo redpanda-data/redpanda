@@ -12,8 +12,10 @@
 
 #include "base/units.h"
 
+#include <seastar/core/align.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/thread.hh>
 #include <seastar/util/later.hh>
 
 #include <random>
@@ -80,4 +82,107 @@ make_page(uint64_t offset, std::optional<uint64_t> seed) {
 void sleep_ms(unsigned min, unsigned max) {
     const auto ms = random_generators::get_int(min, max);
     seastar::sleep(std::chrono::milliseconds(ms)).get();
+}
+
+io_queue_workload_generator::io_queue_workload_generator(
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  size_t max_file_size,
+  size_t num_io_ops,
+  std::function<void(io::page&)> submit_read,
+  std::function<void(io::page&)> submit_write,
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  unsigned min_ms,
+  unsigned max_ms)
+  : max_file_size(max_file_size)
+  , num_io_ops(num_io_ops)
+  , submit_read(std::move(submit_read))
+  , submit_write(std::move(submit_write))
+  , min_ms(min_ms)
+  , max_ms(max_ms) {}
+
+seastar::future<> io_queue_workload_generator::run() {
+    std::ignore = seastar::with_gate(
+      gate, [this] { return generate_writes(); });
+    std::ignore = seastar::with_gate(gate, [this] { return generate_reads(); });
+    return gate.close();
+}
+
+void io_queue_workload_generator::handle_complete(io::page& page) {
+    if (page.test_flag(io::page::flags::write)) {
+        completed_writes.emplace(page.offset(), &page);
+        ++completed_writes_count;
+    } else if (page.test_flag(io::page::flags::read)) {
+        completed_reads.push_back(&page);
+    }
+}
+
+seastar::future<> io_queue_workload_generator::generate_writes() {
+    return seastar::async([this] {
+        while (completed_writes_count < num_io_ops) {
+            const auto offset = seastar::align_down<size_t>(
+              random_generators::get_int(max_file_size), 4096);
+            submitted_writes.push_back(make_page(offset, offset));
+            submit_write(*submitted_writes.back());
+            sleep_ms(min_ms, max_ms);
+        }
+    });
+}
+
+seastar::future<> io_queue_workload_generator::generate_reads() {
+    return seastar::async([=] {
+        while (completed_reads.size() < num_io_ops) {
+            if (auto* write = select_random_write(); write != nullptr) {
+                submitted_reads.push_back(make_page(write->offset()));
+                submit_read(*submitted_reads.back());
+            }
+            sleep_ms(min_ms, max_ms);
+        }
+    });
+}
+
+io::page* io_queue_workload_generator::select_random_write() const {
+    auto delta = random_generators::get_int(completed_writes.size());
+    auto it = completed_writes.begin();
+    std::advance(it, delta);
+    if (it != completed_writes.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+io_queue_fault_injector::io_queue_fault_injector(
+  io::persistence* storage,
+  io::io_queue* queue,
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  unsigned min_ms,
+  unsigned max_ms)
+  : storage(storage)
+  , queue(queue)
+  , min_ms(min_ms)
+  , max_ms(max_ms) {}
+
+void io_queue_fault_injector::start() {
+    injector = seastar::async([this] {
+        while (!stop_) {
+            auto op = random_generators::get_int(0, 1);
+            if (op == 0) {
+                storage->fail_next_open(
+                  std::runtime_error("injected open failure"));
+
+            } else if (op == 1) {
+                auto file = io::testing_details::io_queue_accessor::get_file(
+                  queue);
+                if (file != nullptr) {
+                    file->fail_next_close(
+                      std::runtime_error("injected close failure"));
+                }
+            }
+            sleep_ms(min_ms, max_ms);
+        }
+    });
+}
+
+seastar::future<> io_queue_fault_injector::stop() {
+    stop_ = true;
+    return std::move(injector);
 }
