@@ -465,6 +465,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                                self.msg_size) as _:
             # Test will assert if advertised throughput isn't met
             time.sleep(15)
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
 
     def _get_swarm_connections_count(self, nodes):
         _list = []
@@ -682,7 +684,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         assert _hwm >= reasonably_expected, \
             f"Expected >{reasonably_expected} messages, actual {_hwm}"
 
-        return
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
 
     COMBO_PRELOADED_LOG_ALLOW_LIST = [
         re.compile('storage - .* - Stopping parser, short read. .*')
@@ -724,6 +727,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             # Block traffic to/from one node.
             self.stage_block_node_traffic()
 
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
+
     NOS3_LOG_ALLOW_LIST = [
         re.compile("s3 - .* - Accessing .*, unexpected REST API error "
                    " detected, code: RequestTimeout"),
@@ -745,7 +751,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         time.sleep(wait_time)
         self.logger.info(
             f"Waiting for the cluster to return to a healthy state")
-        wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+        wait_until(self.redpanda.cluster_healthy(),
+                   timeout_sec=600,
+                   backoff_sec=1)
 
     def stage_stop_wait_start(self, forced_stop: bool, downtime: int):
         node = self.get_node()
@@ -764,7 +772,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.logger.info(
             f"Restarting node {node.name} for {restart_timeout} s")
         self.redpanda.start_node(node, timeout=600)
-        wait_until(self.redpanda.healthy,
+        wait_until(self.redpanda.cluster_healthy(),
                    timeout_sec=restart_timeout,
                    backoff_sec=1)
 
@@ -798,6 +806,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
             # S3 up -> down -> up
             self.stage_block_s3()
+
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
 
     def _cloud_storage_no_new_errors(self, redpanda, logger=None):
         num_errors = redpanda.metric_sum(
@@ -838,7 +849,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 time.sleep(60)
 
         # make sure nothing is crashed
-        wait_until(self.redpanda.healthy, timeout_sec=60, backoff_sec=1)
+        wait_until(self.redpanda.cluster_healthy(),
+                   timeout_sec=60,
+                   backoff_sec=1)
         self.logger.info(f"Waiting for S3 errors to cease")
         wait_until(lambda: self._cloud_storage_no_new_errors(
             self.redpanda, self.logger),
@@ -909,6 +922,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         finally:
             producer.stop()
             producer.wait(timeout_sec=600)
+
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
 
     def stage_decommission_and_add(self):
         def cluster_ready_replicas(cluster_name):
@@ -1052,7 +1068,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # skip new node creation so it does not conflict with add via kubectl
         #self.redpanda.clean_node(pod, preserve_logs=True, preserve_current_install=True)
         #self.redpanda.start_node(pod, auto_assign_node_id=False, omit_seeds_on_idx_one=False)
-        #wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+        #wait_until(self.redpanda.cluster_healthy(), timeout_sec=600, backoff_sec=1)
         #new_node_id = self.redpanda.node_id(pod, force_refresh=True)
 
     def _disable_agent_services(self):
@@ -1208,6 +1224,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             producer.stop()
             producer.wait(timeout_sec=600)
 
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
+
     def _stage_add_and_decommission(self):
         cluster_name = f'rp-{self.redpanda._cloud_cluster.cluster_id}'
         orig_replicas = self._get_cluster_replicas(cluster_name)
@@ -1282,6 +1301,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 consumer.stop()
                 consumer.wait(timeout_sec=600)
 
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
+
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume(self):
         # create default topics
@@ -1316,6 +1338,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
+
     @ignore
     @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_ts_resource_utilization(self):
@@ -1326,6 +1351,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         """
         self._create_topic_spec()
         self.stage_tiered_storage_consuming()
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
 
     def stage_lots_of_failed_consumers(self):
         # This stage sequentially starts 1,000 consumers. Then allows
@@ -1431,6 +1458,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             producer.stop()
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
+
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
 
     def stage_consume_miss_cache(self, producer: KgoVerifierProducer):
         # This stage produces enough data to each RP node to fill up their batch caches
@@ -1719,7 +1749,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         # wait until the cluster is health once more
         self.logger.info("waiting for RP cluster to be healthy")
-        wait_until(self.redpanda.healthy, timeout_sec=900, backoff_sec=1)
+        wait_until(self.redpanda.cluster_healthy(),
+                   timeout_sec=900,
+                   backoff_sec=1)
 
         # verify basic produce and consume operations still work.
 
@@ -1823,3 +1855,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             self.logger.info(f"Workload metrics: {_format_metrics(metrics)}")
             # Assert test results
             omb.check_succeed()
+
+        assert self.redpanda.cluster_healthy(
+        ), 'cluster unhealthy at end of test'
