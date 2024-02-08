@@ -27,6 +27,7 @@
 #include <boost/range/irange.hpp>
 
 #include <algorithm>
+#include <exception>
 #include <iterator>
 
 namespace cluster {
@@ -73,20 +74,30 @@ metadata_dissemination_handler::do_update_leadership(
     co_return update_leadership_reply{};
 }
 
-static ss::future<get_leadership_reply>
+namespace {
+ss::future<get_leadership_reply>
 make_get_leadership_reply(const partition_leaders_table& leaders) {
-    fragmented_vector<ntp_leader> ret;
-
-    co_await leaders.for_each_leader([&ret](
-                                       model::topic_namespace_view tp_ns,
-                                       model::partition_id pid,
-                                       std::optional<model::node_id> leader,
-                                       model::term_id term) mutable {
-        ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
-    });
-
-    co_return get_leadership_reply{std::move(ret)};
+    try {
+        fragmented_vector<ntp_leader> ret;
+        co_await leaders.for_each_leader([&ret](
+                                           model::topic_namespace_view tp_ns,
+                                           model::partition_id pid,
+                                           std::optional<model::node_id> leader,
+                                           model::term_id term) mutable {
+            ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
+        });
+        co_return get_leadership_reply{
+          std::move(ret), get_leadership_reply::is_success::yes};
+    } catch (...) {
+        vlog(
+          clusterlog.info,
+          "exception thrown while collecting leadership metadata - {}",
+          std::current_exception());
+        co_return get_leadership_reply{
+          {}, get_leadership_reply::is_success::no};
+    }
 }
+} // namespace
 
 ss::future<get_leadership_reply> metadata_dissemination_handler::get_leadership(
   get_leadership_request, rpc::streaming_context&) {

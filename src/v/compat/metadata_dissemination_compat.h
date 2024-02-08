@@ -81,10 +81,12 @@ struct compat_check<cluster::get_leadership_reply> {
     static void to_json(
       cluster::get_leadership_reply obj, json::Writer<json::StringBuffer>& wr) {
         json_write(leaders);
+        json_write(success);
     }
     static cluster::get_leadership_reply from_json(json::Value& rd) {
         cluster::get_leadership_reply obj;
         json_read(leaders);
+        json_read(success);
         return obj;
     }
     static std::vector<compat_binary>

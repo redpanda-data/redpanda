@@ -19,6 +19,7 @@
 #include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <fmt/ostream.h>
 
@@ -179,15 +180,19 @@ struct get_leadership_request
 struct get_leadership_reply
   : serde::envelope<
       get_leadership_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
+    using is_success = ss::bool_class<struct glr_tag>;
     fragmented_vector<ntp_leader> leaders;
+    is_success success = is_success::yes;
 
     get_leadership_reply() noexcept = default;
 
-    explicit get_leadership_reply(fragmented_vector<ntp_leader> leaders)
-      : leaders(std::move(leaders)) {}
+    explicit get_leadership_reply(
+      fragmented_vector<ntp_leader> leaders, is_success success)
+      : leaders(std::move(leaders))
+      , success(success) {}
 
     friend bool
     operator==(const get_leadership_reply&, const get_leadership_reply&)
@@ -195,17 +200,17 @@ struct get_leadership_reply
 
     friend std::ostream&
     operator<<(std::ostream& o, const get_leadership_reply& r) {
-        fmt::print(o, "leaders {}", r.leaders);
+        fmt::print(o, "leaders {}, success: {}", r.leaders, r.success);
         return o;
     }
 
-    auto serde_fields() { return std::tie(leaders); }
+    auto serde_fields() { return std::tie(leaders, success); }
 
     /*
      * Support for serde compat check
      */
     get_leadership_reply copy() const {
-        return get_leadership_reply{leaders.copy()};
+        return get_leadership_reply{leaders.copy(), success};
     }
 };
 
