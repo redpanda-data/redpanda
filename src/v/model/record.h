@@ -162,6 +162,37 @@ public:
       , _value(std::move(value))
       , _headers(std::move(hdrs)) {}
 
+    record(
+      record_attributes attributes,
+      int64_t timestamp_delta,
+      int32_t offset_delta,
+      iobuf key,
+      iobuf value,
+      std::vector<record_header> hdrs) noexcept
+      : _attributes(attributes)
+      , _timestamp_delta(timestamp_delta)
+      , _offset_delta(offset_delta)
+      , _key_size(static_cast<int32_t>(key.size_bytes()))
+      , _key(std::move(key))
+      , _val_size(static_cast<int32_t>(value.size_bytes()))
+      , _value(std::move(value))
+      , _headers(std::move(hdrs)) {
+        _size_bytes = static_cast<int32_t>(
+          sizeof(model::record_attributes::type)   //
+          + vint::vint_size(_timestamp_delta)      //
+          + vint::vint_size(_offset_delta)         //
+          + _key_size + vint::vint_size(_key_size) //
+          + _val_size + vint::vint_size(_val_size) //
+          + std::accumulate(
+            _headers.begin(),
+            _headers.end(),
+            size_t(0),
+            [](size_t acc, const record_header& h) {
+                return acc + h.memory_usage();
+            }) //
+        );
+    }
+
     // Size in bytes of everything except the size_bytes field.
     int32_t size_bytes() const { return _size_bytes; }
 
