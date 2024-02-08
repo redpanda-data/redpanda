@@ -1253,6 +1253,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.adjust_topic_segment_properties(
             segment_bytes=segment_size, retention_local_bytes=segment_size)
 
+        initial_cloud_storage_cache_op_put = self.redpanda.metric_sum(
+            "redpanda_cloud_storage_cache_op_put_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        self.logger.debug(f"{initial_cloud_storage_cache_op_put=}")
+
         with traffic_generator(self.test_context, self.redpanda,
                                self._advertised_max_ingress,
                                self._advertised_max_egress, self.topic,
@@ -1281,6 +1286,19 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 self.logger.info(f"Stopping thrashing consumers")
                 consumer.stop()
                 consumer.wait(timeout_sec=600)
+
+            final_cloud_storage_cache_op_put = self.redpanda.metric_sum(
+                "redpanda_cloud_storage_cache_op_put_total",
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+            self.logger.debug(f"{final_cloud_storage_cache_op_put=}")
+
+            # Make sure we did touch the cache at least once for each partition.
+            #
+            # The check is not ideal due to the cache metrics being per cluster
+            # rather than per topic or consumer.
+            assert (final_cloud_storage_cache_op_put -
+                    initial_cloud_storage_cache_op_put) > self.topics[
+                        0].partition_count, "Less cache misses than expected."
 
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume(self):
