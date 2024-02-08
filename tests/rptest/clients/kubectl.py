@@ -9,7 +9,6 @@
 
 from logging import Logger
 import os
-import shutil
 import subprocess
 
 SUPPORTED_PROVIDERS = ['aws', 'gcp']
@@ -268,7 +267,7 @@ class KubectlTool:
         if self._provider == 'gcp':
             _method = "gcp"
         self._redpanda.logger.info('cleaning teleport data dir')
-        shutil.rmtree(self.TELEPORT_DATA_DIR)
+        subprocess.check_output(['rm', '-f', '-r', self.TELEPORT_DATA_DIR])
         self._redpanda.logger.info('starting tbot to generate identity')
         cmd = [
             'tbot', 'start', f'--data-dir={self.TELEPORT_DATA_DIR}',
