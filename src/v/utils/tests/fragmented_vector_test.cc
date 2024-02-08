@@ -361,6 +361,42 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_pop_back_n) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(fragmented_vector_erase_to_end) {
+    using char_vec = fragmented_vector<char, 2>;
+
+    auto assert_valid = [](const char_vec& v) {
+        return test_details::fragmented_vector_accessor::check_consistency(v);
+    };
+
+    // small fragment size to stress multiple fragments
+    char_vec v;
+
+    assert_valid(v);
+
+    v.erase_to_end(v.begin());
+    assert_valid(v);
+    BOOST_CHECK_EQUAL(v.size(), 0);
+
+    v.erase_to_end(v.end());
+    assert_valid(v);
+    BOOST_CHECK_EQUAL(v.size(), 0);
+
+    v.push_back(0);
+    v.erase_to_end(v.end());
+    BOOST_CHECK_EQUAL(v, char_vec{0});
+    v.erase_to_end(v.begin());
+    BOOST_CHECK_EQUAL(v, char_vec{});
+
+    v.push_back(0);
+    v.push_back(1);
+    v.push_back(2);
+    v.push_back(3);
+    char_vec expected = char_vec{0, 1, 2, 3};
+    BOOST_CHECK_EQUAL(v, expected);
+    v.erase_to_end(v.begin() + 1);
+    BOOST_CHECK_EQUAL(v, char_vec{0});
+}
+
 BOOST_AUTO_TEST_CASE(fragmented_vector_constructor_from_iter_range) {
     std::vector<int> vals{1, 2, 3};
 

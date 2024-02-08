@@ -253,6 +253,17 @@ public:
 
         iter() = default;
 
+        /**
+         * Conversion operator allowing iterator to be converted to
+         * const_iterator, as required by the general iterator contract.
+         */
+        operator iter<true>() const { // NOLINT(hicpp-explicit-conversions)
+            iter<true> ret;
+            ret._vec = _vec;
+            ret._index = _index;
+            return ret;
+        }
+
         reference operator*() const { return _vec->operator[](_index); }
         pointer operator->() const { return &_vec->operator[](_index); }
 
@@ -323,6 +334,11 @@ public:
     const_iterator cend() const { return const_iterator(this, _size); }
 
     friend test_details::fragmented_vector_accessor;
+
+    /**
+     * @brief Erases all elements from begin to the end of the vector.
+     */
+    void erase_to_end(const_iterator begin) { pop_back_n(cend() - begin); }
 
     friend std::ostream&
     operator<<(std::ostream& os, const fragmented_vector& v) {
