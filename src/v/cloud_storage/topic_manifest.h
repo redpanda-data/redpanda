@@ -22,6 +22,14 @@ namespace cloud_storage {
 struct topic_manifest_handler;
 class topic_manifest final : public base_manifest {
 public:
+    constexpr static int32_t first_version = 1;
+    // this version introduces the serialization of
+    // cluster::topic_configuration, with all its field
+    constexpr static int32_t cluster_topic_configuration_version = 2;
+
+    constexpr static int32_t current_version
+      = cluster_topic_configuration_version;
+
     /// Create manifest for specific ntp
     explicit topic_manifest(
       const cluster::topic_configuration& cfg, model::initial_revision_id rev);
@@ -62,6 +70,10 @@ public:
         return _topic_config;
     }
 
+    /// return the version of the decoded manifest. useful to decide if to fill
+    /// a field that was not encoded in a previous version
+    int32_t get_manifest_version() const noexcept { return _manifest_version; }
+
     bool operator==(const topic_manifest& other) const {
         return std::tie(_topic_config, _rev)
                == std::tie(other._topic_config, other._rev);
@@ -74,5 +86,6 @@ private:
 
     std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;
+    int32_t _manifest_version{first_version};
 };
 } // namespace cloud_storage
