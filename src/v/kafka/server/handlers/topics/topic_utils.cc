@@ -14,8 +14,11 @@
 #include "cluster/metadata_cache.h"
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/do_with.hh>
+#include <seastar/core/loop.hh>
 
 namespace kafka {
 
@@ -31,12 +34,10 @@ void append_cluster_results(
       });
 }
 
-ss::future<std::vector<model::node_id>> wait_for_leaders(
+ss::future<> wait_for_leaders(
   cluster::metadata_cache& md_cache,
   std::vector<cluster::topic_result> results,
-  model::timeout_clock::time_point timeout) {
-    std::vector<ss::future<model::node_id>> futures;
-
+  model::timeout_clock::time_point deadline) {
     for (auto& r : results) {
         if (r.ec != cluster::errc::success) {
             continue;
@@ -47,14 +48,16 @@ ss::future<std::vector<model::node_id>> wait_for_leaders(
             // topic already deleted
             continue;
         }
-        // for each partition ask for leader
-        for (auto& pmd : md->get().get_assignments()) {
-            futures.push_back(md_cache.get_leader(
-              model::ntp(r.tp_ns.ns, r.tp_ns.tp, pmd.id), timeout));
-        }
+        co_await ss::max_concurrent_for_each(
+          md->get().get_assignments(),
+          64,
+          [&r, &md_cache, deadline](const auto& p_as) {
+              return md_cache
+                .get_leader(
+                  model::ntp(r.tp_ns.ns, r.tp_ns.tp, p_as.id), deadline)
+                .discard_result();
+          });
     }
-
-    return seastar::when_all_succeed(futures.begin(), futures.end());
 }
 
 ss::future<> wait_for_topics(
