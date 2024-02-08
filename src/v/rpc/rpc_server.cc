@@ -9,6 +9,7 @@
 
 #include "rpc/rpc_server.h"
 
+#include "config/configuration.h"
 #include "rpc/logger.h"
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
@@ -75,8 +76,10 @@ ss::future<> rpc_server::apply(ss::lw_shared_ptr<net::connection> conn) {
 
 ss::future<>
 rpc_server::send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
-    buf.set_min_compression_bytes(reply_min_compression_bytes);
-    buf.set_compression(rpc::compression_type::zstd);
+    if (config::shard_local_cfg().rpc_server_compress_replies()) {
+        buf.set_min_compression_bytes(reply_min_compression_bytes);
+        buf.set_compression(rpc::compression_type::zstd);
+    }
     buf.set_correlation_id(ctx->get_header().correlation_id);
 
     auto view = co_await std::move(buf).as_scattered();
