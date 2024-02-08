@@ -235,12 +235,17 @@ topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
 
 void topic_manifest::do_update(const topic_manifest_handler& handler) {
-    if (handler._version != topic_manifest_version) {
+    if (
+      !handler._version || handler._version > topic_manifest::current_version) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "topic manifest version {} is not supported",
-          handler._version));
+          handler._version,
+          topic_manifest::current_version));
     }
+
+    _manifest_version = handler._version.value();
+
     _rev = handler._revision_id.value();
 
     if (!handler._version) {
@@ -407,7 +412,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     json::Writer<json::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
-    w.Int(static_cast<int>(topic_manifest_version));
+    w.Int(static_cast<int>(topic_manifest::current_version));
     w.Key("namespace");
     w.String(_topic_config->tp_ns.ns());
     w.Key("topic");
