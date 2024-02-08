@@ -82,7 +82,7 @@ static constexpr std::string_view missing_partition_count = R"json({
 })json";
 
 static constexpr std::string_view wrong_version = R"json({
-    "version": 2,
+    "version": 99,
     "namespace": "full-test-namespace",
     "topic": "full-test-topic",
     "partition_count": 64,
@@ -235,6 +235,12 @@ SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
     BOOST_REQUIRE_EQUAL(
       topic_config.properties.retention_duration.value(),
       std::chrono::milliseconds(36000000000));
+
+    // ensure that for v1 topic_manifest, tristates that were not serialized
+    // keep their default value
+    BOOST_REQUIRE_EQUAL(
+      topic_config.properties.initial_retention_local_target_bytes,
+      cluster::topic_properties{}.initial_retention_local_target_bytes);
 }
 
 SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
@@ -297,7 +303,7 @@ SEASTAR_THREAD_TEST_CASE(wrong_version_throws) {
       std::runtime_error,
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
-                   "topic manifest version {2} is not supported")
+                   "topic manifest version {99} is not supported")
                  != std::string::npos;
       });
 }
