@@ -126,6 +126,15 @@ public:
      */
     virtual ss::future<ss::shared_ptr<factory>>
       make_factory(model::transform_metadata, iobuf) = 0;
+
+    /**
+     * Verify a WebAssembly module is valid and loosely adheres to our ABI
+     * format.
+     *
+     * Throws an exception when validation fails.
+     */
+    virtual ss::future<> validate(iobuf) = 0;
+
     virtual ~runtime() = default;
 };
 

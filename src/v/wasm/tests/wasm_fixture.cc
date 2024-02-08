@@ -181,6 +181,7 @@ void WasmTestFixture::load_wasm(const std::string& path) {
     for (auto& chunk : wasm_file) {
         buf.append(std::move(chunk));
     }
+    _runtime->validate(buf.share(0, buf.size_bytes())).get();
     _factory = _runtime->make_factory(_meta, std::move(buf)).get();
     if (_engine) {
         _engine->stop().get();

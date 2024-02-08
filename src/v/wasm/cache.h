@@ -65,6 +65,8 @@ public:
     ss::optimized_optional<ss::shared_ptr<factory>>
     get_cached_factory(const model::transform_metadata&);
 
+    ss::future<> validate(iobuf) override;
+
 private:
     friend class WasmCacheTest;
 

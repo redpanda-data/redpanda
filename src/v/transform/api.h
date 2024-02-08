@@ -26,6 +26,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <system_error>
+
 namespace transform {
 
 /**
@@ -59,13 +61,13 @@ public:
     /**
      * Deploy a transform to the cluster.
      */
-    ss::future<cluster::errc>
+    ss::future<std::error_code>
       deploy_transform(model::transform_metadata, iobuf);
 
     /**
      * Delete a transform from the cluster.
      */
-    ss::future<cluster::errc> delete_transform(model::transform_name);
+    ss::future<std::error_code> delete_transform(model::transform_name);
 
     /**
      * List all transforms from the entire cluster.
