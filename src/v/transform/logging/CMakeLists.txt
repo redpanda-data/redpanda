@@ -6,6 +6,7 @@ v_cc_library(
     io.h
     log_manager.h
     logger.h
+    probes.h
     rpc_client.h
   SRCS
     record_batcher.cc
@@ -13,6 +14,7 @@ v_cc_library(
     log_manager.cc
     logger.cc
     rpc_client.cc
+    probes.cc
   DEPS
     v::config
     v::cluster
