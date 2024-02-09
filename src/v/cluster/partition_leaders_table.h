@@ -20,6 +20,7 @@
 #include "utils/expiring_promise.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/util/later.hh>
 
@@ -209,17 +210,6 @@ private:
     topics_t _topic_leaders;
 
     uint64_t _leaderless_partition_count{0};
-    // per-ntp notifications for leadership election. note that the
-    // namespace is currently ignored pending an update to the metadata
-    // cache that attaches a namespace to all topics partition references.
-    int32_t _promise_id = 0;
-    using promises_t = absl::node_hash_map<
-      model::ntp,
-      absl::node_hash_map<
-        int32_t,
-        std::unique_ptr<expiring_promise<model::node_id>>>>;
-
-    promises_t _leader_promises;
 
     ss::sharded<topic_table>& _topic_table;
 
@@ -230,6 +220,8 @@ private:
      */
     version _version{0};
     version _topic_map_version{0};
+    ss::gate _gate;
+    ss::abort_source _as;
 };
 
 } // namespace cluster

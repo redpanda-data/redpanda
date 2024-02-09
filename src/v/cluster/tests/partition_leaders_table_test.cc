@@ -18,11 +18,13 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/timeout_clock.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
 #include "test_utils/test.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 
 #include <fmt/core.h>
@@ -68,6 +70,9 @@ struct test_fixture : public seastar_test {
         co_await topics.local().apply(std::move(cmd), model::offset{0});
     }
 
+    model::timeout_clock::time_point default_deadline() {
+        return model::timeout_clock::now() + 2s;
+    }
     raft::group_id _group_id{0};
     ss::sharded<topic_table> topics;
     partition_leaders_table leaders;
@@ -108,4 +113,51 @@ TEST_F_CORO(test_fixture, test_counting_leaderless_partitions) {
     }
 }
 
+TEST_F_CORO(test_fixture, test_waiting_for_leader) {
+    model::topic tp("test_topic");
+    co_await add_topic(tp, 3);
+    model::ntp p_0(
+      model::kafka_namespace,
+      model::topic_partition(tp, model::partition_id(0)));
+    model::ntp p_1(
+      model::kafka_namespace,
+      model::topic_partition(tp, model::partition_id(1)));
+    model::ntp p_2(
+      model::kafka_namespace,
+      model::topic_partition(tp, model::partition_id(2)));
+
+    auto f_1 = leaders.wait_for_leader(p_0, default_deadline(), std::nullopt);
+
+    /**
+     * Wait for the same partition leader to see if we can have multiple
+     * notifications
+     */
+    auto f_2 = leaders.wait_for_leader(p_0, default_deadline(), std::nullopt);
+
+    ss::abort_source as;
+    auto f_3 = leaders.wait_for_leader(p_1, default_deadline(), as);
+
+    // no leader information is available yet;
+    ASSERT_FALSE_CORO(f_1.available());
+    ASSERT_FALSE_CORO(f_2.available());
+    ASSERT_FALSE_CORO(f_3.available());
+
+    leaders.update_partition_leader(p_0, model::term_id(0), model::node_id(20));
+    // after leadership was set futures should be available
+    // ASSERT_TRUE_CORO(f_1.available());
+    // ASSERT_TRUE_CORO(f_2.available());
+    // as f_3 points to different partition it should still be unavailable
+    ASSERT_FALSE_CORO(f_3.available());
+
+    auto f_4 = leaders.wait_for_leader(p_0, default_deadline(), std::nullopt);
+    ASSERT_TRUE_CORO(f_4.available());
+
+    ASSERT_EQ_CORO(co_await std::move(f_1), model::node_id(20));
+    ASSERT_EQ_CORO(co_await std::move(f_2), model::node_id(20));
+    ASSERT_EQ_CORO(co_await std::move(f_4), model::node_id(20));
+    as.request_abort();
+
+    //  f3 should be aborted
+    ASSERT_THROW_CORO(co_await std::move(f_3), ss::abort_requested_exception);
+}
 } // namespace cluster
