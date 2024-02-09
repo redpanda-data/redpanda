@@ -1976,7 +1976,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         maybe_update_last_visible_index(last_visible);
         _last_leader_visible_offset = std::max(
           request_metadata.last_visible_index, _last_leader_visible_offset);
-
+        _confirmed_term = _term;
         if (_follower_recovery_state) {
             vlog(
               _ctxlog.debug,
@@ -2095,6 +2095,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           maybe_update_last_visible_index(last_visible);
           _last_leader_visible_offset = std::max(
             m.last_visible_index, _last_leader_visible_offset);
+          _confirmed_term = _term;
           return maybe_update_follower_commit_idx(model::offset(m.commit_index))
             .then([this, m, ofs, target] {
                 if (_follower_recovery_state) {
