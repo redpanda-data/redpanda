@@ -18,6 +18,7 @@
 #include "utils/expiring_promise.h"
 
 #include <seastar/core/future-util.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <absl/container/btree_map.h>
@@ -31,17 +32,8 @@ partition_leaders_table::partition_leaders_table(
   : _topic_table(topic_table) {}
 
 ss::future<> partition_leaders_table::stop() {
-    vlog(clusterlog.info, "Stopping Partition Leaders Table...");
-
-    while (!_leader_promises.empty()) {
-        auto it = _leader_promises.begin();
-        for (auto& promise : it->second) {
-            promise.second->set_exception(
-              std::make_exception_ptr(ss::timed_out_error()));
-        }
-        _leader_promises.erase(it);
-    }
-    return ss::now();
+    _as.request_abort();
+    return _gate.close();
 }
 
 std::optional<
@@ -152,8 +144,6 @@ void partition_leaders_table::do_update_partition_leader(
         .update_term = term,
         .partition_revision = revision_id});
 
-    const model::ntp ntp(t_it->first.ns, t_it->first.tp, p_id);
-
     if (!new_entry) [[likely]] {
         /**
          * Controller is a special case as it revision never but it
@@ -178,9 +168,11 @@ void partition_leaders_table::do_update_partition_leader(
               && revision_id < p_it->second.partition_revision) {
                 vlog(
                   clusterlog.trace,
-                  "skip update for partition {} with previous revision {} "
+                  "skip update for partition {}/{} with previous revision {} "
                   "current revision {}",
-                  ntp,
+                  t_it->first.ns,
+                  t_it->first.tp,
+                  p_id,
                   revision_id,
                   p_it->second.partition_revision);
                 return;
@@ -196,9 +188,12 @@ void partition_leaders_table::do_update_partition_leader(
         if (p_it->second.update_term > term) {
             vlog(
               clusterlog.trace,
-              "skip update for partition {} with previous term {} current term "
+              "skip update for partition {}/{} with previous term {} current "
+              "term "
               "{}",
-              ntp,
+              t_it->first.ns,
+              t_it->first.tp,
+              p_id,
               term,
               p_it->second.update_term);
             // Do nothing if update term is older
@@ -237,9 +232,11 @@ void partition_leaders_table::do_update_partition_leader(
 
     vlog(
       clusterlog.trace,
-      "updated partition: {} leader: {{term: {}, current leader: {}, previous "
-      "leader: {}, revision: {}}}",
-      ntp,
+      "updated partition: {}/{}/{} leader: {{term: {}, current leader: {}, "
+      "previous leader: {}, revision: {}}}",
+      t_it->first.ns,
+      t_it->first.tp,
+      p_id,
       p_it->second.update_term,
       p_it->second.current_leader,
       p_it->second.previous_leader,
@@ -251,17 +248,15 @@ void partition_leaders_table::do_update_partition_leader(
     // update stable leader term
     p_it->second.last_stable_leader_term = term;
 
-    if (auto it = _leader_promises.find(ntp); it != _leader_promises.end()) {
-        for (auto& promise : it->second) {
-            promise.second->set_value(*leader_id);
-        }
-    }
-
     // Ensure leadership has changed before notifying watchers
-    if (
-      !p_it->second.previous_leader
-      || leader_id.value() != p_it->second.previous_leader.value()) {
-        _watchers.notify(ntp, ntp, term, leader_id);
+    if (leader_id != p_it->second.previous_leader) {
+        _watchers.notify(
+          t_it->first.ns,
+          t_it->first.tp,
+          p_id,
+          model::ntp(t_it->first.ns, t_it->first.tp, p_id),
+          term,
+          leader_id);
     }
 }
 
@@ -307,24 +302,25 @@ ss::future<model::node_id> partition_leaders_table::wait_for_leader(
     if (auto leader = get_leader(ntp); leader.has_value()) {
         return ss::make_ready_future<model::node_id>(*leader);
     }
-    auto id = _promise_id++;
-    _leader_promises[ntp].emplace(
-      id, std::make_unique<expiring_promise<model::node_id>>());
-    auto& promise = _leader_promises[ntp][id];
-
-    return promise
-      ->get_future_with_timeout(
-        timeout,
-        [] { return std::make_exception_ptr(ss::timed_out_error()); },
-        as)
-      .then_wrapped([id, ntp, this](ss::future<model::node_id> leader) {
-          auto& ntp_promises = _leader_promises[ntp];
-          ntp_promises.erase(id);
-          if (ntp_promises.empty()) {
-              _leader_promises.erase(ntp);
+    auto holder = _gate.hold();
+    auto promise = ss::make_lw_shared<expiring_promise<model::node_id>>();
+    auto n_id = register_leadership_change_notification(
+      ntp,
+      [promise](
+        model::ntp, model::term_id, std::optional<model::node_id> leader_id) {
+          if (leader_id) {
+              promise->set_value(*leader_id);
           }
+      });
 
-          return leader;
+    auto f = promise->get_future_with_timeout(
+      timeout,
+      [] { return std::make_exception_ptr(ss::timed_out_error()); },
+      as.value_or(_as));
+
+    return f.finally(
+      [this, promise = std::move(promise), n_id, h = std::move(holder)] {
+          unregister_leadership_change_notification(n_id);
       });
 }
 
