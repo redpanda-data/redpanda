@@ -90,6 +90,17 @@ public:
         }
         return AssertionSuccess();
     }
+
+    /**
+     * Lets tests access private members for when they
+     * need to inspect internals.
+     */
+    template<typename T, size_t Size, typename MemberType>
+    const MemberType& access(
+      const fragmented_vector<T, Size>& v,
+      MemberType fragmented_vector<T, Size>::*member) {
+        return v.*member;
+    }
 };
 
 MATCHER(IsValid, "") {
@@ -390,6 +401,35 @@ TEST(Vector, PopBackN) {
     }
 }
 
+TEST(Vector, EraseToEnd) {
+    // small fragment size to stress multiple fragments
+    fragmented_vector<char, 2> v;
+
+    EXPECT_THAT(v, IsValid());
+
+    v.erase_to_end(v.begin());
+    EXPECT_THAT(v, IsValid());
+    EXPECT_EQ(v.size(), 0);
+
+    v.erase_to_end(v.end());
+    EXPECT_THAT(v, IsValid());
+    EXPECT_EQ(v.size(), 0);
+
+    v.push_back(0);
+    v.erase_to_end(v.end());
+    EXPECT_THAT(v, ElementsAre(0));
+    v.erase_to_end(v.begin());
+    EXPECT_THAT(v, ElementsAre());
+
+    v.push_back(0);
+    v.push_back(1);
+    v.push_back(2);
+    v.push_back(3);
+    EXPECT_THAT(v, ElementsAre(0, 1, 2, 3));
+    v.erase_to_end(v.begin() + 1);
+    EXPECT_THAT(v, ElementsAre(0));
+}
+
 TEST(Vector, FromIterRangeConstructor) {
     std::vector<int> vals{1, 2, 3};
 
@@ -397,6 +437,32 @@ TEST(Vector, FromIterRangeConstructor) {
 
     EXPECT_THAT(fv, IsValid());
     EXPECT_THAT(fv, ElementsAre(1, 2, 3));
+}
+
+TEST(Vector, FromInitializerListConstructor) {
+    {
+        fragmented_vector<int> fv({});
+
+        EXPECT_THAT(fv, IsValid());
+        EXPECT_THAT(fv, ElementsAre());
+    }
+
+    {
+        fragmented_vector<int> fv({1, 2, 3});
+
+        EXPECT_THAT(fv, IsValid());
+        EXPECT_THAT(fv, ElementsAre(1, 2, 3));
+    }
+
+    {
+        chunked_vector<int> fv({1, 2, 3});
+
+        EXPECT_THAT(fv, IsValid());
+        EXPECT_THAT(fv, ElementsAre(1, 2, 3));
+        // chunked_vector should have a "tight" capacity when constructed
+        // from a list
+        EXPECT_EQ(fv.capacity(), 3);
+    }
 }
 
 TEST(ChunkedVector, PushPop) {
@@ -420,12 +486,21 @@ TEST(ChunkedVector, PushPopN) {
         for (int i = 0; i < vec.elements_per_fragment(); ++i) {
             // Slight preference to make larger vectors because we could be
             // popping back multiple
-            bool push_back = vec.empty() || bool(random_generators::get_int(2));
-            if (push_back) {
+            switch (random_generators::get_int(4)) {
+            case 0:
+            case 1:
+            case 2:
                 vec.push_back(i);
-            } else {
+                break;
+            case 3:
                 vec.pop_back_n(random_generators::get_int(vec.size()));
+                break;
+            case 4:
+                vec.erase_to_end(
+                  vec.begin() + random_generators::get_int(vec.size()));
+                break;
             }
+
             EXPECT_TRUE(fragmented_vector_validator::validate(vec));
         }
     }
