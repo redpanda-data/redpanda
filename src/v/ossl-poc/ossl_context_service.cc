@@ -18,11 +18,13 @@
 namespace {
 using initialize_return = std::tuple<OSSL_PROVIDER_ptr, OSSL_PROVIDER_ptr>;
 
-initialize_return
-initialize_openssl(OSSL_LIB_CTX* libctx, const ss::sstring& module_path) {
+initialize_return initialize_openssl(
+  OSSL_LIB_CTX* libctx,
+  const ss::sstring& module_path,
+  const ss::sstring& conf_file) {
     // Grab the path to the config file and feed it to the library context
-    auto conf_file = ::getenv("OPENSSL_CONF");
-    if (!OSSL_LIB_CTX_load_config(libctx, conf_file)) {
+    // auto conf_file = ::getenv("OPENSSL_CONF");
+    if (!OSSL_LIB_CTX_load_config(libctx, conf_file.c_str())) {
         throw ossl_error(
           ss::sstring("Failed to load config file ") + conf_file);
     }
@@ -49,7 +51,9 @@ initialize_openssl(OSSL_LIB_CTX* libctx, const ss::sstring& module_path) {
     }
 
     // Make sure to initialize OpenSSL so it doesn't get re-initialized
-    if (!OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS, nullptr)) {
+    if (!OPENSSL_init_ssl(
+          OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_NO_LOAD_CONFIG,
+          nullptr)) {
         throw ossl_error("Failed to initialize OpenSSL");
     }
 
@@ -58,11 +62,15 @@ initialize_openssl(OSSL_LIB_CTX* libctx, const ss::sstring& module_path) {
 } // namespace
 
 ossl_context_service::ossl_context_service(
-  ssx::singleton_thread_worker& thread_worker, ss::sstring module_path)
+  ssx::singleton_thread_worker& thread_worker,
+  ss::sstring module_path,
+  ss::sstring conf_file_path)
   : _thread_worker(thread_worker)
-  , _module_path(std::move(module_path)) {}
+  , _module_path(std::move(module_path))
+  , _conf_file_path(std::move(conf_file_path)) {}
 
 ss::future<> ossl_context_service::start() {
+    _defctxnull = OSSL_PROVIDER_ptr{OSSL_PROVIDER_load(nullptr, "null")};
     // Creates a new context
     _cur_context = OSSL_LIB_CTX_new();
     lg.info("lib_ctx: {}", fmt::ptr(_cur_context));
@@ -75,7 +83,10 @@ ss::future<> ossl_context_service::start() {
     // Due to OpenSSL using File I/O and other nasties, run the initialization
     // within an alien thread, providng the created OpenSSL library context
     std::tie(_fips_provider, _base_provider) = co_await _thread_worker.submit(
-      [this] { return initialize_openssl(_cur_context, _module_path); });
+      [this] {
+          return initialize_openssl(
+            _cur_context, _module_path, _conf_file_path);
+      });
 
     lg.info("Successfully initialized");
 }

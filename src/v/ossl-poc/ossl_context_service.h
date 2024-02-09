@@ -31,7 +31,9 @@
 class ossl_context_service final {
 public:
     ossl_context_service(
-      ssx::singleton_thread_worker& thread_worker, ss::sstring module_path);
+      ssx::singleton_thread_worker& thread_worker,
+      ss::sstring module_path,
+      ss::sstring conf_file_path);
     ~ossl_context_service() = default;
 
     ossl_context_service(const ossl_context_service&) = delete;
@@ -53,6 +55,8 @@ private:
     // Holds the OpenSSL provider pointer for later clean up
     OSSL_PROVIDER_ptr _fips_provider{nullptr};
     OSSL_PROVIDER_ptr _base_provider{nullptr};
+    OSSL_PROVIDER_ptr _defctxnull{nullptr};
     ssx::singleton_thread_worker& _thread_worker;
     ss::sstring _module_path;
+    ss::sstring _conf_file_path;
 };

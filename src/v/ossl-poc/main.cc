@@ -40,7 +40,8 @@ int main(int argc, char* argv[]) {
           po::value<uint16_t>()->default_value(default_port),
           "Port to use")(
           "module-path", po::value<ss::sstring>(), "Path to the modules")(
-          "use-gnutls", po::bool_switch(&use_gnutls), "Use GnuTLS");
+          "use-gnutls", po::bool_switch(&use_gnutls), "Use GnuTLS")(
+          "conf-file", po::value<ss::sstring>(), "Path to configuration file");
     }
 
     ss::sharded<ossl_tls_service> ssl_service;
@@ -54,6 +55,7 @@ int main(int argc, char* argv[]) {
             auto module_path = opts["module-path"].as<ss::sstring>();
             auto key_path = opts["key"].as<ss::sstring>();
             auto cert_path = opts["cert"].as<ss::sstring>();
+            auto conf_file = opts["conf-file"].as<ss::sstring>();
             auto port = opts["port"].as<uint16_t>();
 
             stop_signal sg;
@@ -67,7 +69,8 @@ int main(int argc, char* argv[]) {
             thread_worker->start({.name = "worker"}).get();
 
             lg.info("Creating ossl context");
-            ossl_context.start(std::ref(*thread_worker), module_path).get();
+            ossl_context.start(std::ref(*thread_worker), module_path, conf_file)
+              .get();
             deferred.emplace_back(
               [&ossl_context] { ossl_context.stop().get(); });
             lg.info("Invoking start on ossl_context");

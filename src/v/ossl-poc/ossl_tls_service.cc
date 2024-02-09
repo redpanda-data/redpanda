@@ -49,8 +49,10 @@ ss::future<> ossl_tls_service::start() {
 
     // Do not verify the client's credentials
     SSL_CTX_set_verify(_ssl_ctx.get(), SSL_VERIFY_NONE, nullptr);
-    auto x509 = co_await load_x509_from_file(_cert_path);
-    auto pkey = co_await load_evp_pkey_from_file(_key_path);
+    auto x509 = co_await load_x509_from_file(
+      _cert_path, _ssl_ctx_service.local().get_ossl_context());
+    auto pkey = co_await load_evp_pkey_from_file(
+      _key_path, _ssl_ctx_service.local().get_ossl_context());
     // Load private key and certificate and verify that the private key and
     // public key match.  Can also provide a cert chain here
     if (!SSL_CTX_use_cert_and_key(
