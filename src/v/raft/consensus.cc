@@ -1912,6 +1912,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         maybe_update_last_visible_index(last_visible);
         _last_leader_visible_offset = std::max(
           request_metadata.last_visible_index, _last_leader_visible_offset);
+        _confirmed_term = _term;
         return f.then([this, reply, request_metadata] {
             return maybe_update_follower_commit_idx(
                      model::offset(request_metadata.commit_index))
@@ -2019,6 +2020,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           maybe_update_last_visible_index(last_visible);
           _last_leader_visible_offset = std::max(
             m.last_visible_index, _last_leader_visible_offset);
+          _confirmed_term = _term;
           return maybe_update_follower_commit_idx(model::offset(m.commit_index))
             .then([this, ofs, target] {
                 return make_append_entries_reply(target, ofs);
