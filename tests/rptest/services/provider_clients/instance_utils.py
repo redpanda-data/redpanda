@@ -52,6 +52,22 @@ instance_specs = {
         "vcpus": 32,
         "ram": 192
     },
+    "n2-highmem-4": {
+        "vcpus": 4,
+        "ram": 32
+    },
+    "n2-highmem-8": {
+        "vcpus": 8,
+        "ram": 64
+    },
+    "n2-highmem-16": {
+        "vcpus": 16,
+        "ram": 128
+    },
+    "n2-highmem-32": {
+        "vcpus": 32,
+        "ram": 256
+    }
 }
 
 
@@ -96,6 +112,10 @@ class ProviderInstanceUtils():
         instance_type = "default"
         if provider == 'AWS' and 'instance-type' in metadata:
             instance_type = metadata['instance-type']
+        elif provider == 'GCP' and 'machine-type' in metadata:
+            # Cut the type name from the variable
+            # Example content: 'projects/606234194099/machineTypes/n2-highmem-4'
+            instance_type = metadata['machine-type'].split('/')[-1]
         else:
             raise RuntimeError(f"Unsupported provider: '{provider}'")
         return instance_type
