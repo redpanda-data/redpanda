@@ -155,3 +155,16 @@ rp_test(
   ARGS "-- -c 1"
   LABELS cluster
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME partition_leaders_table_test
+  SOURCES
+    partition_leaders_table_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::cluster
+  ARGS "-- -c 1"
+  LABELS cluster
+)
