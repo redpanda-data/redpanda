@@ -15,4 +15,6 @@ namespace transform::logging {
 template<typename ClockType>
 class manager;
 class client;
+class logger_probe;
+class manager_probe;
 } // namespace transform::logging
