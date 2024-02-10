@@ -17,6 +17,7 @@
 #include "model/namespace.h"
 #include "random/simple_time_jitter.h"
 #include "strings/utf8.h"
+#include "transform/logging/errc.h"
 #include "transform/logging/io.h"
 #include "transform/logging/logger.h"
 
@@ -24,6 +25,8 @@
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/as_future.hh>
+
+#include <absl/strings/escaping.h>
 
 namespace transform::logging {
 namespace {
@@ -49,6 +52,7 @@ public:
       , _jitter(_interval_ms(), jitter_amt) {
         _interval_ms.watch([this]() {
             _jitter = simple_time_jitter<ClockType>{_interval_ms(), jitter_amt};
+            wakeup();
         });
     }
 
@@ -69,6 +73,7 @@ public:
     }
 
 private:
+    bool _inited{false};
     template<typename BuffersT>
     ss::future<> flush_loop(BuffersT* bufs) {
         while (!_as->abort_requested()) {
@@ -88,6 +93,10 @@ private:
             } catch (const ss::broken_condition_variable&) {
                 break;
             } catch (const ss::condition_variable_timed_out&) {
+            }
+            if (!_inited) {
+                _inited = co_await _client->initialize()
+                          == logging::errc::success;
             }
             co_await flush(bufs);
         }
@@ -110,13 +119,23 @@ private:
           local_bufs, MAX_CONCURRENCY, [this, &batches](auto& pr) {
               auto& [name, events] = pr;
               model::transform_name_view nv{name};
-              auto pid = _client->compute_output_partition(nv);
+              auto pid_res = _client->compute_output_partition(nv);
+              if (pid_res.has_error()) {
+                  vlog(
+                    tlg_log.warn,
+                    "Partition lookup failed for transform '{}': {}",
+                    name,
+                    std::error_code{pid_res.assume_error()}.message());
+                  return ss::now();
+              }
 
               return do_serialize_log_events(nv, std::move(events))
-                .then([pid, &batches](auto batch) -> ss::future<> {
-                    batches[pid].emplace_back(std::move(batch));
-                    return ss::now();
-                });
+                .then(
+                  [pid = pid_res.assume_value(),
+                   &batches](auto batch) -> ss::future<> {
+                      batches[pid].emplace_back(std::move(batch));
+                      return ss::now();
+                  });
           });
 
         co_await ss::max_concurrent_for_each(
@@ -152,10 +171,10 @@ private:
             co_await ss::maybe_yield();
         }
 
+        iobuf nb;
+        nb.append(name().data(), name().size());
         co_return io::json_batch{
-          model::transform_name{name().data(), name().size()},
-          std::move(ev_json),
-          std::move(*buffer_units)};
+          std::move(nb), std::move(ev_json), std::move(*buffer_units)};
     }
 
     ss::future<> do_flush(model::partition_id pid, io::json_batches events) {
@@ -163,7 +182,10 @@ private:
         // capacity have been adopted by `json_batch`es. These units will be
         // released (i.e. buffer capacity freed) only once those records have
         // been produced.
-        co_await _client->write(pid, std::move(events));
+        std::error_code ec = co_await _client->write(pid, std::move(events));
+        if (ec != errc::success) {
+            vlog(tlg_log.warn, "Flush failed: {}", ec.message());
+        }
     }
     ss::abort_source* _as = nullptr;
     transform::logging::client* _client = nullptr;
@@ -199,7 +221,7 @@ manager<ClockType>::~manager() = default;
 
 template<typename ClockType>
 ss::future<> manager<ClockType>::start() {
-    return _flusher->template start<>(&_log_buffers);
+    co_return co_await _flusher->template start<>(&_log_buffers);
 }
 
 template<typename ClockType>
@@ -230,7 +252,7 @@ void manager<ClockType>::enqueue_log(
             return std::nullopt;
         } else if (contains_control_character(sub_view)) {
             // escape control chars and truncate (again, if necessary)
-            auto res = replace_control_chars_in_string(sub_view);
+            auto res = absl::CHexEscape(sub_view);
             return res.substr(0, msg_len(res));
         }
         return ss::sstring{sub_view.data(), sub_view.size()};

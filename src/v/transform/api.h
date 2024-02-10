@@ -19,6 +19,7 @@
 #include "model/transform.h"
 #include "raft/fwd.h"
 #include "transform/fwd.h"
+#include "transform/logging/fwd.h"
 #include "wasm/fwd.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -53,6 +54,7 @@ public:
       ss::sharded<cluster::topic_table>* topic_table,
       ss::sharded<cluster::partition_manager>* partition_manager,
       ss::sharded<rpc::client>* rpc_client,
+      ss::sharded<cluster::metadata_cache>* metadata_cache,
       ss::scheduling_group sg);
     service(const service&) = delete;
     service(service&&) = delete;
@@ -120,11 +122,13 @@ private:
     ss::sharded<cluster::topic_table>* _topic_table;
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<rpc::client>* _rpc_client;
+    ss::sharded<cluster::metadata_cache>* _metadata_cache;
     std::unique_ptr<manager<ss::lowres_clock>> _manager;
     std::unique_ptr<commit_batcher<ss::lowres_clock>> _batcher;
     std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>
       _notification_cleanups;
     ss::scheduling_group _sg;
+    std::unique_ptr<logging::manager<ss::lowres_clock>> _log_manager;
 };
 
 } // namespace transform

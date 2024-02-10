@@ -15,6 +15,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -805,6 +806,36 @@ client::generate_remote_report(model::node_id node) {
         co_return map_errc(resp.error());
     }
     co_return std::move(resp).value().report;
+}
+
+ss::future<cluster::errc> client::create_transform_logs_topic() {
+    co_return co_await retry(
+      [this]() { return try_create_transform_logs_topic(); });
+}
+
+ss::future<cluster::errc> client::try_create_transform_logs_topic() {
+    cluster::topic_properties topic_props;
+    topic_props.retention_bytes = tristate<size_t>(2_GiB);
+    topic_props.retention_duration = tristate<std::chrono::milliseconds>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(24h));
+    topic_props.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion;
+    auto fut = co_await ss::coroutine::as_future<cluster::errc>(
+      _topic_creator->create_topic(
+        model::topic_namespace_view(model::transform_log_internal_nt),
+        config::shard_local_cfg().default_topic_partitions(),
+        std::move(topic_props)));
+    if (fut.failed()) {
+        throw std::runtime_error(fmt::format(
+          "Error creating transform logs topic: {}", fut.get_exception()));
+    }
+    auto ec = fut.get();
+    if (
+      ec != cluster::errc::success
+      && ec != cluster::errc::topic_already_exists) {
+        throw std::runtime_error("Failed to create transform logs topic");
+    }
+    co_return ec;
 }
 
 template<typename Func>

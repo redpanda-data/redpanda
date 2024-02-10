@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "transform/logging/log_manager.h"
 #include "wasm/api.h"
 
 #include <seastar/util/log.hh>
@@ -20,9 +21,10 @@ namespace transform {
 class logger final : public wasm::logger {
 public:
     logger() = delete;
-    explicit logger(model::transform_name name, ss::logger* log)
+    explicit logger(
+      model::transform_name name, logging::manager<ss::lowres_clock>* mgr)
       : _name(std::move(name))
-      , _log(log) {}
+      , _log_manager(mgr) {}
     ~logger() override = default;
     logger(const logger&) = delete;
     logger& operator=(const logger&) = delete;
@@ -30,11 +32,12 @@ public:
     logger& operator=(logger&&) = delete;
 
     void log(ss::log_level lvl, std::string_view message) noexcept override {
-        _log->log(lvl, "{} - {}", _name(), message);
+        _log_manager->enqueue_log(
+          lvl, model::transform_name_view{_name()}, message);
     }
 
 private:
     model::transform_name _name;
-    ss::logger* _log;
+    logging::manager<ss::lowres_clock>* _log_manager = nullptr;
 };
 } // namespace transform

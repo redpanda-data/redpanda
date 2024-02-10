@@ -1,9 +1,11 @@
+#include "base/outcome.h"
 #include "base/units.h"
 #include "config/mock_property.h"
 #include "model/namespace.h"
 #include "model/transform.h"
 #include "strings/utf8.h"
 #include "test_utils/async.h"
+#include "transform/logging/errc.h"
 #include "transform/logging/event.h"
 #include "transform/logging/io.h"
 #include "transform/logging/log_manager.h"
@@ -12,6 +14,7 @@
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/strings/escaping.h>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
@@ -38,7 +41,7 @@ class fake_client final : public transform::logging::client {
 public:
     fake_client() = default;
 
-    ss::future<>
+    ss::future<errc>
     write(model::partition_id pid, io::json_batches batches) override {
         while (!batches.empty()) {
             auto events = std::move(batches.front());
@@ -50,21 +53,30 @@ public:
               std::back_inserter(_logs));
         }
 
-        return ss::now();
+        co_return errc::success;
     }
 
-    model::partition_id
+    result<model::partition_id, errc>
     compute_output_partition(model::transform_name_view name) override {
+        if (_partition_ec.has_value()) {
+            return *_partition_ec;
+        }
         size_t h = std::hash<model::transform_name>{}(
           model::transform_name{name().data(), name().size()});
         return model::partition_id{static_cast<int>(h % 4)};
     }
 
+    ss::future<errc> initialize() override { co_return errc::success; }
+
     const ss::chunked_fifo<iobuf>& logs() const { return _logs; }
+
+    void set_partition_ec(std::optional<errc> ec) { _partition_ec = ec; }
 
 private:
     ss::chunked_fifo<iobuf> _logs;
     absl::flat_hash_map<model::partition_id, size_t> _pid_event_counts;
+
+    std::optional<errc> _partition_ec{};
 };
 
 } // namespace
@@ -84,6 +96,10 @@ public:
           _line_limit.bind(),
           _flush_ms.bind());
         start_manager();
+    }
+
+    void set_find_partition_ec(std::optional<errc> ec) {
+        _client->set_partition_ec(ec);
     }
 
     void TearDown() override {
@@ -283,7 +299,7 @@ TEST_F(TransformLogManagerTest, MessageTruncation) {
 
     // test that truncation occurs _after_ control char escaping
     ss::sstring in_msg(line_max, char{0x7f});
-    auto escaped = replace_control_chars_in_string(in_msg);
+    auto escaped = absl::CHexEscape(in_msg);
     EXPECT_GT(escaped.length(), line_max);
 
     enqueue_log(in_msg);
@@ -317,7 +333,7 @@ TEST_F(TransformLogManagerTest, IllegalMessages) {
     EXPECT_EQ(logs().size(), 1);
 
     auto msg = testing::get_message_body(logs().front().copy());
-    EXPECT_EQ(msg, replace_control_chars_in_string(control_char_msg.data()));
+    EXPECT_EQ(msg, absl::CHexEscape(control_char_msg.data()));
 }
 
 TEST_F(TransformLogManagerTest, ConfigTuning) {
@@ -355,6 +371,41 @@ TEST_F(TransformLogManagerTest, ConfigTuning) {
     // reflect the new line limit
     EXPECT_EQ(logs().size(), 2);
     EXPECT_EQ(last_log_msg().size(), lim2);
+}
+
+TEST_F(TransformLogManagerTest, ComputePartitionError) {
+    constexpr int N = 100;
+    set_find_partition_ec(errc::topic_not_found);
+    auto names = get_random_transform_names(4);
+
+    for (int i = 0; i < N; ++i) {
+        enqueue_log(
+          ss::log_level::info,
+          model::transform_name_view{names.at(i % names.size())()},
+          ss::sstring(i + 1, 'a'));
+    }
+
+    advance_clock();
+
+    // logs should all have been dropped prior to hitting the client
+    EXPECT_EQ(logs().size(), 0);
+
+    set_find_partition_ec(std::nullopt);
+
+    advance_clock();
+
+    EXPECT_EQ(logs().size(), 0);
+
+    for (int i = 0; i < N; ++i) {
+        enqueue_log(
+          ss::log_level::info,
+          model::transform_name_view{names.at(i % names.size())()},
+          ss::sstring(i + 1, 'a'));
+    }
+
+    advance_clock();
+
+    EXPECT_EQ(logs().size(), N);
 }
 
 } // namespace transform::logging
