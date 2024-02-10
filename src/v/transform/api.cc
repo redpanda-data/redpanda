@@ -459,14 +459,8 @@ ss::future<> service::start() {
       config::shard_local_cfg().data_transforms_logging_line_max_bytes.bind(),
       config::shard_local_cfg()
         .data_transforms_logging_flush_interval_ms.bind());
-    auto fut = co_await ss::coroutine::as_future(_log_manager->start());
-    if (fut.failed()) {
-        vlog(
-          tlog.error,
-          "Failed to start transform::logging::manager: {}",
-          fut.get_exception());
-    }
-    co_return co_await std::move(fut);
+
+    co_await _log_manager->start();
 }
 
 void service::register_notifications() {
