@@ -68,8 +68,19 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
         """
         metric = self.redpanda.metrics_sample("under_replicated_replicas",
                                               nodes)
-        metric = metric.label_filter(dict(namespace="kafka", topic=self.topic))
-        assert len(metric.samples) == len(nodes)
+
+        topic = self.topics[0].name
+        partition_count = self.topics[0].partition_count
+        metric = metric.label_filter(dict(namespace="kafka", topic=topic))
+
+        # Ensure we have samples reported for all partitions.
+        expected_partitions = set(range(partition_count))
+        reported_partitions = set(
+            [int(sample.labels['partition']) for sample in metric.samples])
+
+        if expected_partitions != reported_partitions:
+            return False
+
         return all(map(lambda s: s.value == 0, metric.samples))
 
     def get_segments_deleted(self, nodes):
