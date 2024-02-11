@@ -782,17 +782,21 @@ private:
     // consensus state
     model::offset _commit_index;
     model::term_id _term;
-    // It's common to use raft log as a foundation for state machines:
-    // when a node becomes a leader it replays the log, reconstructs
-    // the state and becomes ready to serve the requests. However it is
-    // not enough for a node to become a leader, it should successfully
-    // replicate a new record to be sure that older records stored in
-    // the local log were actually replicated and do not constitute an
-    // artifact of the previously crashed leader. Redpanda uses a confi-
-    // guration batch for the initial replication to gain certainty. When
-    // commit index moves past the configuration batch _confirmed_term
-    // gets updated. So when _term==_confirmed_term it's safe to use
-    // local log to reconstruct the state.
+
+    /**
+     * A confirmed term is used to determine if the state of a replica is up to
+     * date after the leader election. Only after the confirmed term is equal to
+     * the current term one can reason about the Raft group state.
+     *
+     * On the leader the confirmed term is updated after first successful
+     * replication of a batch subsequent to a leader election. After the
+     * replication succeed leader is guaranteed to have up to date committed and
+     * visible offsets.
+     *
+     * On the follower the confirmed term is updated only when an append entries
+     * request from the current leader may be accepted and follower may return
+     * success.
+     */
     model::term_id _confirmed_term;
     model::offset _flushed_offset{};
 
