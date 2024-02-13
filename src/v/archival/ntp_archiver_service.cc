@@ -1279,11 +1279,13 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
         // segment, so it is okay to ignore the index upload failure, we still
         // want to advance the offsets because the segment did get uploaded.
         std::ignore = co_await _remote.upload_object(
-          _conf->bucket_name,
-          cloud_storage_clients::object_key{index_path},
-          idx_res->index.to_iobuf(),
-          fib,
-          "segment-index");
+          {.bucket_name = _conf->bucket_name,
+           .key = cloud_storage_clients::object_key{index_path},
+           .payload = idx_res->index.to_iobuf(),
+           .parent_rtc = fib,
+           .upload_type = cloud_storage::upload_object_type::segment_index,
+           .success_cb = [](auto& probe) { probe.index_upload(); },
+           .failure_cb = [](auto& probe) { probe.failed_index_upload(); }});
 
         co_return ntp_archiver_upload_result(idx_res->stats);
     } else {

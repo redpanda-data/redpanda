@@ -1369,41 +1369,39 @@ ss::future<remote::list_result> remote::list_objects(
     co_return *result;
 }
 
-ss::future<upload_result> remote::upload_object(
-  const cloud_storage_clients::bucket_name& bucket,
-  const cloud_storage_clients::object_key& object_path,
-  iobuf payload,
-  retry_chain_node& parent,
-  const char* log_object_type) {
+ss::future<upload_result>
+remote::upload_object(upload_object_request upload_request) {
     auto guard = _gate.hold();
-    retry_chain_node fib(&parent);
+
+    retry_chain_node fib(&upload_request.parent_rtc);
     retry_chain_logger ctxlog(cst_log, fib);
     auto permit = fib.retry();
-    auto content_length = payload.size_bytes();
+
+    auto content_length = upload_request.payload.size_bytes();
+    auto path = cloud_storage_clients::object_key(upload_request.key());
+    auto upload_type = upload_request.upload_type;
+
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto lease = co_await _pool.local().acquire(fib.root_abort_source());
 
-        auto path = cloud_storage_clients::object_key(object_path());
         vlog(
           ctxlog.debug,
           "Uploading {} to path {}, length {}",
-          log_object_type,
-          object_path,
+          upload_type,
+          path,
           content_length);
 
-        auto to_upload = payload.copy();
+        auto to_upload = upload_request.payload.copy();
         auto res = co_await lease.client->put_object(
-          bucket,
+          upload_request.bucket_name,
           path,
           content_length,
           make_iobuf_input_stream(std::move(to_upload)),
           fib.get_timeout());
 
         if (res) {
-            if (log_object_type == std::string_view{"segment-index"}) {
-                _probe.index_upload();
-            }
+            upload_request.on_success(_probe);
             co_return upload_result::success;
         }
 
@@ -1413,11 +1411,12 @@ ss::future<upload_result> remote::upload_object(
             vlog(
               ctxlog.debug,
               "Uploading {} {} to {}, {} backoff required",
-              log_object_type,
+              upload_type,
               path,
-              bucket,
+              upload_request.bucket_name,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
+            upload_request.on_backoff(_probe);
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
@@ -1429,27 +1428,25 @@ ss::future<upload_result> remote::upload_object(
         }
     }
 
-    if (log_object_type == std::string_view{"segment-index"}) {
-        _probe.failed_index_upload();
-    }
+    upload_request.on_failure(_probe);
     if (!result) {
         vlog(
           ctxlog.warn,
           "Uploading {} {} to {}, backoff quota exceded, {} not "
           "uploaded",
-          log_object_type,
-          object_path,
-          bucket,
-          log_object_type);
+          upload_type,
+          path,
+          upload_request.bucket_name,
+          upload_type);
     } else {
         vlog(
           ctxlog.warn,
           "Uploading {} {} to {}, {}, {} not uploaded",
-          log_object_type,
-          object_path,
-          bucket,
+          upload_type,
+          path,
+          upload_request.bucket_name,
           *result,
-          log_object_type);
+          upload_type);
     }
     co_return upload_result::timedout;
 }

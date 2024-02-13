@@ -539,12 +539,13 @@ ss::future<cloud_storage::upload_result> purger::write_remote_lifecycle_marker(
     };
     auto marker_key = remote_marker.get_key();
 
-    co_return co_await _api.upload_object(
-      bucket,
-      marker_key,
-      serde::to_iobuf(std::move(remote_marker)),
-      marker_rtc,
-      "remote_lifecycle_marker");
+    co_return co_await _api.upload_object({
+      .bucket_name = bucket,
+      .key = marker_key,
+      .payload = serde::to_iobuf(std::move(remote_marker)),
+      .parent_rtc = marker_rtc,
+      .upload_type = cloud_storage::upload_object_type::remote_lifecycle_marker,
+    });
 }
 
 ss::future<> purger::stop() {

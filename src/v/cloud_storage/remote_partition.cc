@@ -1297,11 +1297,11 @@ ss::future<> finalize_background(remote& api, finalize_data data) {
           data.insync_offset);
 
         auto manifest_put_result = co_await api.upload_object(
-          data.bucket,
-          data.key,
-          std::move(data.serialized_manifest),
-          local_rtc,
-          "manifest");
+          {.bucket_name = data.bucket,
+           .key = data.key,
+           .payload = std::move(data.serialized_manifest),
+           .parent_rtc = local_rtc,
+           .upload_type = upload_object_type::manifest});
 
         if (manifest_put_result != upload_result::success) {
             vlog(
