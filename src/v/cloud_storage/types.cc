@@ -37,6 +37,15 @@ cloud_storage_clients::default_overrides get_default_overrides() {
 
     return overrides;
 }
+
+void run_callback(
+  std::optional<cloud_storage::upload_object_request::probe_callback_t>& cb,
+  cloud_storage::remote_probe& probe) {
+    if (cb.has_value()) {
+        cb.value()(probe);
+    }
+}
+
 } // namespace
 
 namespace cloud_storage {
@@ -496,6 +505,40 @@ configuration::get_bucket_config() {
     } else {
         return config::shard_local_cfg().cloud_storage_bucket;
     }
+}
+
+std::ostream& operator<<(std::ostream& os, upload_object_type upload) {
+    switch (upload) {
+    case upload_object_type::object:
+        os << "object";
+        break;
+    case upload_object_type::segment_index:
+        os << "segment-index";
+        break;
+    case upload_object_type::manifest:
+        os << "manifest";
+        break;
+    case upload_object_type::group_offsets_snapshot:
+        os << "group-offsets-snapshot";
+        break;
+    case upload_object_type::download_result_file:
+        os << "download-result-file";
+        break;
+    case upload_object_type::remote_lifecycle_marker:
+        os << "remote-lifecycle-marker";
+        break;
+    }
+    return os;
+}
+
+void upload_object_request::on_success(remote_probe& probe) {
+    run_callback(success_cb, probe);
+}
+void upload_object_request::on_failure(remote_probe& probe) {
+    run_callback(failure_cb, probe);
+}
+void upload_object_request::on_backoff(remote_probe& probe) {
+    run_callback(backoff_cb, probe);
 }
 
 } // namespace cloud_storage

@@ -18,6 +18,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "utils/named_type.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
@@ -418,6 +419,43 @@ struct anomalies
 };
 
 std::ostream& operator<<(std::ostream& o, const anomalies& a);
+
+enum class upload_object_type {
+    object,
+    segment_index,
+    manifest,
+    group_offsets_snapshot,
+    download_result_file,
+    remote_lifecycle_marker,
+};
+
+std::ostream& operator<<(std::ostream&, upload_object_type);
+
+class remote_probe;
+
+// Represents a request to upload an object as a payload, enables
+// aggregate initialization by the caller.
+struct upload_object_request {
+    using probe_callback_t = ss::noncopyable_function<void(remote_probe&)>;
+
+    cloud_storage_clients::bucket_name bucket_name;
+    cloud_storage_clients::object_key key;
+
+    // The payload of the object to upload
+    iobuf payload;
+    retry_chain_node& parent_rtc;
+
+    upload_object_type upload_type{upload_object_type::object};
+
+    // Optional callbacks for updating metrics via remote probe.
+    std::optional<probe_callback_t> success_cb{std::nullopt};
+    std::optional<probe_callback_t> failure_cb{std::nullopt};
+    std::optional<probe_callback_t> backoff_cb{std::nullopt};
+
+    void on_success(remote_probe&);
+    void on_failure(remote_probe&);
+    void on_backoff(remote_probe&);
+};
 
 } // namespace cloud_storage
 
