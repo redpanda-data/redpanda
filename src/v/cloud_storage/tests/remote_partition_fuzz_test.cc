@@ -37,12 +37,13 @@ scan_remote_partition_incrementally_with_reuploads(
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
     if (maybe_max_segments) {
         config::shard_local_cfg()
-          .cloud_storage_max_materialized_segments_per_shard(
+          .cloud_storage_max_materialized_segments_per_shard.set_value(
             maybe_max_segments);
     }
     if (maybe_max_readers) {
-        config::shard_local_cfg().cloud_storage_max_segment_readers_per_shard(
-          maybe_max_readers);
+        config::shard_local_cfg()
+          .cloud_storage_max_segment_readers_per_shard.set_value(
+            maybe_max_readers);
     }
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);

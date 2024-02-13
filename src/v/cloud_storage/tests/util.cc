@@ -588,12 +588,13 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
     if (maybe_max_segments) {
         config::shard_local_cfg()
-          .cloud_storage_max_materialized_segments_per_shard(
+          .cloud_storage_max_materialized_segments_per_shard.set_value(
             maybe_max_segments);
     }
     if (maybe_max_readers) {
-        config::shard_local_cfg().cloud_storage_max_segment_readers_per_shard(
-          maybe_max_readers);
+        config::shard_local_cfg()
+          .cloud_storage_max_segment_readers_per_shard.set_value(
+            maybe_max_readers);
     }
     auto manifest = hydrate_manifest(imposter.api.local(), bucket);
     partition_probe probe(manifest.get_ntp());
@@ -668,12 +669,13 @@ std::vector<model::record_batch_header> scan_remote_partition(
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
     if (maybe_max_segments) {
         config::shard_local_cfg()
-          .cloud_storage_max_materialized_segments_per_shard(
+          .cloud_storage_max_materialized_segments_per_shard.set_value(
             maybe_max_segments);
     }
     if (maybe_max_readers) {
-        config::shard_local_cfg().cloud_storage_max_segment_readers_per_shard(
-          maybe_max_readers);
+        config::shard_local_cfg()
+          .cloud_storage_max_segment_readers_per_shard.set_value(
+            maybe_max_readers);
     }
     storage::log_reader_config reader_config(
       base, max, ss::default_priority_class());

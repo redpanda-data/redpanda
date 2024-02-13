@@ -749,7 +749,7 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
       [] { config::shard_local_cfg().delete_retention_ms.reset(); });
 
     config::shard_local_cfg()
-      .cloud_storage_max_segments_pending_deletion_per_partition(2);
+      .cloud_storage_max_segments_pending_deletion_per_partition.set_value(2);
 
     auto [arch_conf, remote_conf] = get_configurations();
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
