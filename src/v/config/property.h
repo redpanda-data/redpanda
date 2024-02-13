@@ -187,11 +187,6 @@ public:
 
     void reset() override { _value = default_value(); }
 
-    property<T>& operator()(T v) {
-        _value = std::move(v);
-        return *this;
-    }
-
     base_property& operator=(const base_property& pr) override {
         _value = dynamic_cast<const property<T>&>(pr)._value;
         return *this;
