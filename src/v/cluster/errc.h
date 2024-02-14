@@ -131,7 +131,7 @@ struct errc_category final : public std::error_category {
         case errc::waiting_for_recovery:
             return "Waiting for partition to recover";
         case errc::waiting_for_reconfiguration_finish:
-            return "Waiting for partition recovery to be finished";
+            return "Waiting for partition reconfiguration to be finished";
         case errc::update_in_progress:
             return "Partition configuration update in progress";
         case errc::user_exists:
