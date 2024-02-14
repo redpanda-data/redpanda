@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Redpanda Data, Inc.
+ * Copyright 2024 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -8,34 +8,49 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "random/generators.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/vector.h"
 #include "serde/serde.h"
 #include "utils/fragmented_vector.h"
 
-#include <boost/test/tools/old/interface.hpp>
-#include <boost/test/unit_test.hpp>
+#include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <memory>
 #include <numeric>
+#include <span>
+#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
-using fv_int = fragmented_vector<int>;
+using testing::AssertionFailure;
+using testing::AssertionResult;
+using testing::AssertionSuccess;
+using vec = fragmented_vector<int>;
 
-static_assert(std::forward_iterator<fv_int::iterator>);
-static_assert(std::forward_iterator<fv_int::const_iterator>);
+static_assert(std::forward_iterator<vec::iterator>);
+static_assert(std::forward_iterator<vec::const_iterator>);
 
-namespace test_details {
-
-struct fragmented_vector_accessor {
+class fragmented_vector_validator {
+public:
     // perform an internal consistency check of the vector structure
     template<typename T, size_t S>
-    static void check_consistency(const fragmented_vector<T, S>& v) {
-        BOOST_REQUIRE(v._size <= v._capacity);
-        BOOST_REQUIRE(v.size() < std::numeric_limits<size_t>::max() / 2);
-        BOOST_REQUIRE(v._capacity < std::numeric_limits<size_t>::max() / 2);
-
+    static AssertionResult validate(const fragmented_vector<T, S>& v) {
+        if (v._size > v._capacity) {
+            return AssertionFailure() << "size greater than capacity";
+        }
+        if (v._size >= std::numeric_limits<size_t>::max() / 2) {
+            return AssertionFailure() << "size too big";
+        }
+        if (v._capacity >= std::numeric_limits<size_t>::max() / 2) {
+            return AssertionFailure() << "capacity too big";
+        }
         size_t calc_size = 0, calc_cap = 0;
 
         for (size_t i = 0; i < v._frags.size(); ++i) {
@@ -46,39 +61,65 @@ struct fragmented_vector_accessor {
 
             if (i + 1 < v._frags.size()) {
                 if (f.size() < v.elems_per_frag) {
-                    throw std::runtime_error(fmt::format(
-                      "fragment {} is undersized ({} < {})",
-                      i,
-                      f.size(),
-                      v.elems_per_frag));
+                    return AssertionFailure() << fmt::format(
+                             "fragment {} is undersized ({} < {})",
+                             i,
+                             f.size(),
+                             v.elems_per_frag);
                 }
+            }
+            if (f.capacity() > std::decay_t<decltype(v)>::max_frag_bytes) {
+                return AssertionFailure() << fmt::format(
+                         "fragment {} capacity over max_frag_bytes ({})",
+                         i,
+                         calc_cap);
             }
         }
 
         if (calc_size != v.size()) {
-            throw std::runtime_error(fmt::format(
-              "calculated size is wrong ({} != {})", calc_size, v.size()));
+            return AssertionFailure() << fmt::format(
+                     "calculated size is wrong ({} != {})",
+                     calc_size,
+                     v.size());
         }
-
         if (calc_cap != v._capacity) {
-            throw std::runtime_error(fmt::format(
-              "calculated capacity is wrong ({} != {})",
-              calc_size,
-              v._capacity));
+            return AssertionFailure() << fmt::format(
+                     "calculated capacity is wrong ({} != {})",
+                     calc_cap,
+                     v._capacity);
         }
+        return AssertionSuccess();
     }
 };
-} // namespace test_details
+
+MATCHER(IsValid, "") {
+    AssertionResult result = fragmented_vector_validator::validate(arg);
+    *result_listener << result.message();
+    return result;
+}
+
+namespace {
 
 /**
  * Proxy that applies a consistency check before deference
  */
-template<typename T, size_t S>
+template<typename T>
 struct checker {
-    using underlying = fragmented_vector<T, S>;
+    using underlying = fragmented_vector<T>;
+
+    static checker<T> make(std::vector<T> in) {
+        checker ret;
+        for (auto& e : in) {
+            ret->push_back(e);
+        }
+        return ret;
+    }
 
     underlying* operator->() {
-        test_details::fragmented_vector_accessor::check_consistency(u);
+        auto is_valid = fragmented_vector_validator::validate(u);
+        if (!is_valid) {
+            throw std::runtime_error(is_valid.message());
+        }
         return &u;
     }
 
@@ -94,124 +135,129 @@ struct checker {
     underlying u;
 };
 
-template<typename T>
-static void
-test_equal(std::vector<T>& truth, fragmented_vector<T, 1024>& other) {
-    BOOST_REQUIRE(!truth.empty());
-    BOOST_REQUIRE_EQUAL_COLLECTIONS(
-      truth.begin(), truth.end(), other.begin(), other.end());
-    BOOST_REQUIRE_EQUAL(truth.empty(), other.empty());
-    BOOST_REQUIRE_EQUAL(truth.size(), other.size());
-    BOOST_REQUIRE_EQUAL(truth.back(), other.back());
+using testing::ElementsAre;
+using testing::ElementsAreArray;
+using testing::Gt;
+using testing::IsEmpty;
+using testing::Lt;
+using testing::Ne;
+using testing::Not;
+
+template<typename T, size_t S>
+AssertionResult is_eq(fragmented_vector<T, S>& impl, std::vector<T>& shadow) {
+    if (!std::equal(impl.begin(), impl.end(), shadow.begin(), shadow.end())) {
+        return testing::AssertionFailure()
+               << "iterators not equal: " << testing::PrintToString(impl)
+               << " vs " << testing::PrintToString(shadow);
+    }
+    if (impl.empty() != shadow.empty()) {
+        return testing::AssertionFailure()
+               << "empty not equal: " << testing::PrintToString(impl) << " vs "
+               << testing::PrintToString(shadow);
+    }
+    if (impl.size() != shadow.size()) {
+        return testing::AssertionFailure()
+               << "size not equal: " << testing::PrintToString(impl) << " vs "
+               << testing::PrintToString(shadow);
+    }
+    return fragmented_vector_validator::validate(impl);
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_test) {
-    std::vector<int64_t> truth;
-    fragmented_vector<int64_t, 1024> other;
-
-    for (int64_t i = 0; i < 2500; i++) {
-        truth.push_back(i);
-        other.push_back(i);
-        test_equal(truth, other);
-
-        other = serde::from_iobuf<decltype(other)>(
-          serde::to_iobuf(std::move(other)));
-        test_equal(truth, other);
+template<size_t S>
+AssertionResult
+push(fragmented_vector<int, S>& impl, std::vector<int>& shadow, int count) {
+    for (int i = 0; i < count; ++i) {
+        shadow.push_back(i);
+        impl.push_back(i);
+        auto r = is_eq(impl, shadow);
+        if (!r) {
+            return r;
+        }
+        impl = serde::from_iobuf<std::decay_t<decltype(impl)>>(
+          serde::to_iobuf(std::move(impl)));
+        r = is_eq(impl, shadow);
+        if (!r) {
+            return r;
+        }
     }
+    return testing::AssertionSuccess();
+}
 
-    for (int64_t i = 0; i < 1234; i++) {
-        truth.pop_back();
-        other.pop_back();
-        test_equal(truth, other);
-
-        other = serde::from_iobuf<decltype(other)>(
-          serde::to_iobuf(std::move(other)));
-        test_equal(truth, other);
+template<size_t S>
+AssertionResult
+pop(fragmented_vector<int, S>& impl, std::vector<int>& shadow, int count) {
+    for (int i = 0; i < count; ++i) {
+        shadow.pop_back();
+        impl.pop_back();
+        auto r = is_eq(impl, shadow);
+        if (!r) {
+            return r;
+        }
+        impl = serde::from_iobuf<std::decay_t<decltype(impl)>>(
+          serde::to_iobuf(std::move(impl)));
+        r = is_eq(impl, shadow);
+        if (!r) {
+            return r;
+        }
     }
+    return testing::AssertionSuccess();
+}
 
-    for (int64_t i = 0; i < 123; i++) {
-        truth.push_back(i);
-        other.push_back(i);
-        test_equal(truth, other);
+TEST(Vector, PushPop) {
+    std::vector<int> shadow;
+    fragmented_vector<int> impl;
+    EXPECT_TRUE(impl.empty());
+    ASSERT_TRUE(push(impl, shadow, 2500));
+    EXPECT_TRUE(pop(impl, shadow, 1234));
+    ASSERT_TRUE(push(impl, shadow, 123));
+    EXPECT_TRUE(pop(impl, shadow, 1389));
+    EXPECT_THAT(impl, ElementsAreArray(shadow));
+    EXPECT_EQ(impl.empty(), shadow.empty());
+    EXPECT_EQ(impl.size(), shadow.size());
+}
 
-        other = serde::from_iobuf<decltype(other)>(
-          serde::to_iobuf(std::move(other)));
-        test_equal(truth, other);
-    }
+TEST(Vector, Iterator) {
+    std::vector<int> shadow;
+    fragmented_vector<int> impl;
 
-    for (int64_t i = 0; i < 1389; i++) {
-        test_equal(truth, other);
-        truth.pop_back();
-        other.pop_back();
-
-        other = serde::from_iobuf<decltype(other)>(
-          serde::to_iobuf(std::move(other)));
-    }
-
-    BOOST_REQUIRE_EQUAL(truth.size(), other.size());
-    BOOST_REQUIRE_EQUAL(truth.empty(), other.empty());
-
-    for (int i = 0; i < 2000; i++) {
-        truth.push_back(random_generators::get_int<int64_t>(1000, 3000));
-        other.push_back(truth.back());
-
-        other = serde::from_iobuf<decltype(other)>(
-          serde::to_iobuf(std::move(other)));
-        test_equal(truth, other);
-    }
-    BOOST_REQUIRE_EQUAL(truth.size(), 2000);
-    test_equal(truth, other);
-
-    BOOST_REQUIRE_EQUAL(
-      truth, std::vector<int64_t>(other.begin(), other.end()));
-
+    EXPECT_TRUE(push(impl, shadow, 2000));
     for (int i = 0; i < 6000; i++) {
         auto val = random_generators::get_int<int64_t>(0, 4000);
 
-        auto it = std::lower_bound(truth.begin(), truth.end(), val);
-        auto it2 = std::lower_bound(other.begin(), other.end(), val);
-        BOOST_REQUIRE_EQUAL(it == truth.end(), it2 == other.end());
-        BOOST_REQUIRE_EQUAL(
-          std::distance(truth.begin(), it), std::distance(other.begin(), it2));
-        BOOST_REQUIRE_EQUAL(
-          std::distance(it, truth.end()), std::distance(it2, other.end()));
+        auto it = std::lower_bound(shadow.begin(), shadow.end(), val);
+        auto it2 = std::lower_bound(impl.begin(), impl.end(), val);
+        EXPECT_EQ(it == shadow.end(), it2 == impl.end());
+        EXPECT_EQ(
+          std::distance(shadow.begin(), it), std::distance(impl.begin(), it2));
+        EXPECT_EQ(
+          std::distance(it, shadow.end()), std::distance(it2, impl.end()));
 
-        it = std::upper_bound(truth.begin(), truth.end(), val);
-        it2 = std::upper_bound(other.begin(), other.end(), val);
-        BOOST_REQUIRE_EQUAL(it == truth.end(), it2 == other.end());
-        BOOST_REQUIRE_EQUAL(
-          std::distance(truth.begin(), it), std::distance(other.begin(), it2));
-        BOOST_REQUIRE_EQUAL(
-          std::distance(it, truth.end()), std::distance(it2, other.end()));
+        it = std::upper_bound(shadow.begin(), shadow.end(), val);
+        it2 = std::upper_bound(impl.begin(), impl.end(), val);
+        EXPECT_EQ(it == shadow.end(), it2 == impl.end());
+        EXPECT_EQ(
+          std::distance(shadow.begin(), it), std::distance(impl.begin(), it2));
+        EXPECT_EQ(
+          std::distance(it, shadow.end()), std::distance(it2, impl.end()));
 
-        it = std::find(truth.begin(), truth.end(), val);
-        it2 = std::find(other.begin(), other.end(), val);
-        BOOST_REQUIRE_EQUAL(it == truth.end(), it2 == other.end());
-        BOOST_REQUIRE_EQUAL(
-          std::distance(truth.begin(), it), std::distance(other.begin(), it2));
-        BOOST_REQUIRE_EQUAL(
-          std::distance(it, truth.end()), std::distance(it2, other.end()));
+        it = std::find(shadow.begin(), shadow.end(), val);
+        it2 = std::find(impl.begin(), impl.end(), val);
+        EXPECT_EQ(it == shadow.end(), it2 == impl.end());
+        EXPECT_EQ(
+          std::distance(shadow.begin(), it), std::distance(impl.begin(), it2));
+        EXPECT_EQ(
+          std::distance(it, shadow.end()), std::distance(it2, impl.end()));
     }
 }
 
-template<typename T = int, size_t S = 8>
-static checker<T, S> make(std::vector<T> in) {
-    checker<T, S> ret;
-    for (auto& e : in) {
-        ret->push_back(e);
-    }
-    return ret;
-}
-
-BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_types) {
-    using vtype = fragmented_vector<int64_t, 8>;
+TEST(Vector, IteratorTypes) {
+    using vtype = fragmented_vector<int64_t>;
     using iter = vtype::iterator;
     using citer = vtype::const_iterator;
     auto v = vtype{};
 
     // const and non-const iterators should be different!
     static_assert(!std::is_same_v<iter, citer>);
-
     static_assert(std::is_same_v<decltype(v.begin()), iter>);
     static_assert(
       std::is_same_v<decltype(v.cbegin()), decltype(v)::const_iterator>);
@@ -225,146 +271,210 @@ struct foo {
     friend std::ostream& operator<<(std::ostream& os, foo const& f) {
         return os << f.a;
     }
-    friend auto operator<=>(foo const&, foo const&) = default;
+    bool operator==(const foo&) const = default;
 };
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_access) {
-    using vtype = fragmented_vector<foo, 8>;
+TEST(Vector, IteratorAccess) {
+    using vtype = fragmented_vector<foo>;
     auto vec = vtype{};
     vec.push_back(foo{2});
 
-    BOOST_CHECK_EQUAL(*vec.begin(), foo{2});
-    BOOST_CHECK_EQUAL((*vec.begin()).a, 2);
-    BOOST_CHECK_EQUAL(vec.begin()->a, 2);
+    EXPECT_EQ(*vec.begin(), foo{2});
+    EXPECT_EQ((*vec.begin()).a, 2);
+    EXPECT_EQ(vec.begin()->a, 2);
 }
 
-/**
- * Get a fragmented vector for elements of size E, with max_fragment_size F.
- */
-template<size_t ES, size_t F>
-using sized_frag = fragmented_vector<std::array<char, ES>, F>;
-
-BOOST_AUTO_TEST_CASE(fragmented_vector_fragment_sizing) {
-    BOOST_CHECK_EQUAL((sized_frag<7, 32>::elements_per_fragment()), 4);
-    BOOST_CHECK_EQUAL((sized_frag<8, 32>::elements_per_fragment()), 4);
-    BOOST_CHECK_EQUAL((sized_frag<9, 32>::elements_per_fragment()), 2);
-    BOOST_CHECK_EQUAL((sized_frag<31, 32>::elements_per_fragment()), 1);
-    BOOST_CHECK_EQUAL((sized_frag<32, 32>::elements_per_fragment()), 1);
-}
-
-BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_arithmetic) {
-    auto v = make<int64_t, 8>({0, 1, 2, 3});
+TEST(Vector, IteartorArithmetic) {
+    auto v = checker<int64_t>::make({0, 1, 2, 3});
 
     auto b = v->begin();
 
-    BOOST_CHECK_EQUAL(*(b + 0), 0);
-    BOOST_CHECK_EQUAL(*(b + 1), 1);
-    BOOST_CHECK_EQUAL(*(b + 2), 2);
-    BOOST_CHECK_EQUAL(*(b + 3), 3);
+    EXPECT_EQ(*(b + 0), 0);
+    EXPECT_EQ(*(b + 1), 1);
+    EXPECT_EQ(*(b + 2), 2);
+    EXPECT_EQ(*(b + 3), 3);
 
     auto e = v->end();
 
-    BOOST_CHECK((e - 0) == e);
+    EXPECT_EQ((e - 0), e);
 
-    BOOST_CHECK_EQUAL(*(e - 1), 3);
-    BOOST_CHECK_EQUAL(*(e - 2), 2);
-    BOOST_CHECK_EQUAL(*(e - 3), 1);
-    BOOST_CHECK_EQUAL(*(e - 4), 0);
+    EXPECT_EQ(*(e - 1), 3);
+    EXPECT_EQ(*(e - 2), 2);
+    EXPECT_EQ(*(e - 3), 1);
+    EXPECT_EQ(*(e - 4), 0);
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_comparison) {
-    auto v = make<int64_t, 8>({0, 1, 2, 3});
+TEST(Vector, IteratorCmp) {
+    auto v = checker<int64_t>::make({0, 1, 2, 3});
 
     auto b = v->begin();
 
-    BOOST_CHECK(b == b);
-    BOOST_CHECK(b <= b);
-    BOOST_CHECK(!(b < b));
-    BOOST_CHECK(!(b > b));
-    BOOST_CHECK(!(b != b));
+    EXPECT_EQ(b, b);
+    EXPECT_LE(b, b);
+    EXPECT_THAT(b, Not(Lt(b)));
+    EXPECT_THAT(b, Not(Gt(b)));
+    EXPECT_THAT(b, Not(Ne(b)));
 
     auto b1 = b + 1;
 
-    BOOST_CHECK(b <= b1);
-    BOOST_CHECK(b < b1);
-    BOOST_CHECK(b1 >= b);
-    BOOST_CHECK(b1 > b);
-    BOOST_CHECK(b1 >= b);
+    EXPECT_LE(b, b1);
+    EXPECT_LT(b, b1);
+    EXPECT_GE(b1, b);
+    EXPECT_GT(b1, b);
+    EXPECT_NE(b1, b);
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_empty_after_move) {
+TEST(Vector, EmptyAfterMove) {
     // Checks that post move, the source vector is empty().
     // This is inline with std::vector guarantees.
     fragmented_vector<int> v1;
     v1.push_back(1);
-    BOOST_CHECK(!v1.empty());
+    EXPECT_FALSE(v1.empty());
 
     auto v2 = std::move(v1);
     // NOLINTNEXTLINE(bugprone-use-after-move)
-    BOOST_CHECK(v1.empty());
-    BOOST_CHECK(v1.begin() == v1.end());
+    EXPECT_TRUE(v1.empty());
+    EXPECT_EQ(v1.begin(), v1.end());
 
     auto v3(std::move(v2));
     // NOLINTNEXTLINE(bugprone-use-after-move)
-    BOOST_CHECK(v2.empty());
-    BOOST_CHECK(v2.begin() == v2.end());
+    EXPECT_TRUE(v2.empty());
+    EXPECT_EQ(v2.begin(), v2.end());
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_sort) {
-    auto v = make<int64_t, 8>({3, 2, 1});
-    auto expected = make<int64_t, 8>({1, 2, 3});
+TEST(Vector, Sort) {
+    vec v;
+    v.push_back(3);
+    v.push_back(2);
+    v.push_back(1);
 
-    std::sort(v->begin(), v->end());
+    std::sort(v.begin(), v.end());
 
-    BOOST_CHECK_EQUAL(v, expected);
+    EXPECT_THAT(v, ElementsAre(1, 2, 3));
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_vector_clear) {
-    auto v = make<int, 8>({});
-
-    BOOST_CHECK_EQUAL(v->size(), 0);
-
-    v->push_back(0);
-    BOOST_CHECK_EQUAL(v->size(), 1);
-
+TEST(Vector, Clear) {
+    auto v = checker<int>::make({});
+    EXPECT_EQ(v->size(), 0);
+    v->push_back(3);
+    EXPECT_EQ(v->size(), 1);
+    v->push_back(2);
+    EXPECT_EQ(v->size(), 2);
     v->push_back(1);
-    BOOST_CHECK_EQUAL(v->size(), 2);
-
+    EXPECT_EQ(v->size(), 3);
     v->clear();
-    BOOST_CHECK_EQUAL(v->size(), 0);
-
-    v = make<int, 8>({5, 5, 5, 5});
-    BOOST_CHECK_EQUAL(v->size(), 4);
+    EXPECT_EQ(v.get(), vec{});
+    EXPECT_EQ(v->size(), 0);
+    EXPECT_THAT(v.get(), IsEmpty());
+    v = checker<int>::make({5, 5, 5, 5});
+    EXPECT_EQ(v->size(), 4);
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_pop_back_n) {
+TEST(Vector, PopBackN) {
     const int elements = 6;
     for (int i = 0; i <= elements; ++i) {
         std::vector<int> start_values(elements);
         std::iota(start_values.begin(), start_values.end(), 0);
-        auto vec = make(start_values);
+        auto vec = checker<int>::make(start_values);
 
         vec->pop_back_n(i);
 
         std::vector<int> expected_values(elements - i);
         std::iota(expected_values.begin(), expected_values.end(), 0);
-        BOOST_REQUIRE_EQUAL(vec->size(), expected_values.size());
-        BOOST_REQUIRE_EQUAL_COLLECTIONS(
-          vec->begin(),
-          vec->end(),
-          expected_values.begin(),
-          expected_values.end());
+        EXPECT_EQ(vec->size(), expected_values.size());
+        EXPECT_THAT(vec.get(), ElementsAreArray(expected_values));
 
         if (elements - i > 0) {
-            BOOST_REQUIRE_EQUAL(vec->back(), expected_values.back());
+            EXPECT_EQ(vec->back(), expected_values.back());
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_constructor_from_iter_range) {
+TEST(Vector, FromIterRangeConstructor) {
     std::vector<int> vals{1, 2, 3};
 
-    fragmented_vector<int, 8> fv(vals.begin(), vals.end());
+    fragmented_vector<int> fv(vals.begin(), vals.end());
 
-    test_details::fragmented_vector_accessor::check_consistency(fv);
+    EXPECT_THAT(fv, IsValid());
+    EXPECT_THAT(fv, ElementsAre(1, 2, 3));
 }
+
+TEST(ChunkedVector, PushPop) {
+    for (int i = 0; i < 100; ++i) {
+        chunked_vector<int32_t> vec;
+        for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+            bool push_back = vec.empty() || bool(random_generators::get_int(1));
+            if (push_back) {
+                vec.push_back(i);
+            } else {
+                vec.pop_back();
+            }
+            EXPECT_TRUE(fragmented_vector_validator::validate(vec));
+        }
+    }
+}
+
+TEST(ChunkedVector, PushPopN) {
+    for (int i = 0; i < 100; ++i) {
+        chunked_vector<int32_t> vec;
+        for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+            // Slight preference to make larger vectors because we could be
+            // popping back multiple
+            bool push_back = vec.empty() || bool(random_generators::get_int(2));
+            if (push_back) {
+                vec.push_back(i);
+            } else {
+                vec.pop_back_n(random_generators::get_int(vec.size()));
+            }
+            EXPECT_TRUE(fragmented_vector_validator::validate(vec));
+        }
+    }
+}
+
+TEST(ChunkedVector, FirstChunkCapacityDoubles) {
+    chunked_vector<int32_t> vec;
+    for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+        vec.push_back(i);
+        EXPECT_TRUE(fragmented_vector_validator::validate(vec));
+    }
+}
+
+TEST(ChunkedVector, ReserveAndPushBack) {
+    chunked_vector<int32_t> vec;
+    vec.reserve(vec.elements_per_fragment());
+    vec.push_back(-1);
+    int* initial_location = &vec.front();
+    for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+        vec.push_back(i);
+        EXPECT_EQ(initial_location, &vec.front());
+    }
+}
+
+TEST(ChunkedVector, Reserve) {
+    chunked_vector<int32_t> growing_vec;
+    for (int i = 0; i < chunked_vector<int32_t>::elements_per_fragment(); ++i) {
+        growing_vec.reserve(i);
+        EXPECT_EQ(growing_vec.capacity(), i);
+        EXPECT_TRUE(fragmented_vector_validator::validate(growing_vec));
+        // Also ensure "jumping" to that reserved size does the right thing.
+        chunked_vector<int32_t> new_vec;
+        new_vec.reserve(i);
+        EXPECT_EQ(new_vec.capacity(), i);
+        EXPECT_TRUE(fragmented_vector_validator::validate(new_vec));
+    }
+}
+
+TEST(ChunkedVector, ShrinkToFit) {
+    chunked_vector<int32_t> vec;
+    vec.reserve(32);
+    EXPECT_TRUE(fragmented_vector_validator::validate(vec));
+    for (int i = 0; i < 10; ++i) {
+        vec.push_back(1);
+        EXPECT_TRUE(fragmented_vector_validator::validate(vec));
+    }
+    vec.shrink_to_fit();
+    EXPECT_TRUE(fragmented_vector_validator::validate(vec));
+    EXPECT_EQ(vec.capacity(), 10);
+}
+
+} // namespace
