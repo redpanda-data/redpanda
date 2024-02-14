@@ -397,16 +397,8 @@ public:
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment
     /// upload function.
-    ///
-    /// \param bucket The bucket to upload to
-    /// \param object_path The path to upload to
-    /// \param payload The data to place in the bucket
-    ss::future<upload_result> upload_object(
-      const cloud_storage_clients::bucket_name& bucket,
-      const cloud_storage_clients::object_key& object_path,
-      iobuf payload,
-      retry_chain_node& parent,
-      const char* log_object_type = "object");
+    ss::future<upload_result>
+    upload_object(upload_object_request upload_request);
 
     ss::future<download_result> do_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,

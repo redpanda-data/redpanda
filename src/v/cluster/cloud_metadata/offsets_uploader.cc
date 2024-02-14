@@ -70,7 +70,12 @@ ss::future<offsets_upload_result> offsets_uploader::upload(
 
         try {
             auto upload_res = co_await _remote.local().upload_object(
-              _bucket, remote_key, std::move(buf), retry_node);
+              {.bucket_name = _bucket,
+               .key = remote_key,
+               .payload = std::move(buf),
+               .parent_rtc = retry_node,
+               .upload_type
+               = cloud_storage::upload_object_type::group_offsets_snapshot});
             if (upload_res == cloud_storage::upload_result::success) {
                 paths.paths.emplace_back(remote_key().c_str());
             }

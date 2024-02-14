@@ -603,7 +603,11 @@ FIXTURE_TEST(test_list_bucket, remote_fixture) {
                 cloud_storage_clients::object_key path{
                   fmt::format("{}/{}/{}", i, j, k)};
                 auto result = remote.local()
-                                .upload_object(bucket, path, iobuf{}, fib)
+                                .upload_object(
+                                  {.bucket_name = bucket,
+                                   .key = path,
+                                   .payload = iobuf{},
+                                   .parent_rtc = fib})
                                 .get();
                 BOOST_REQUIRE_EQUAL(
                   cloud_storage::upload_result::success, result);
@@ -649,8 +653,13 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
         for (const char second : {'a', 'b'}) {
             cloud_storage_clients::object_key path{
               fmt::format("{}/{}", first, second)};
-            auto result
-              = remote.local().upload_object(bucket, path, iobuf{}, fib).get();
+            auto result = remote.local()
+                            .upload_object(
+                              {.bucket_name = bucket,
+                               .key = path,
+                               .payload = iobuf{},
+                               .parent_rtc = fib})
+                            .get();
             BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
         }
     }
@@ -676,8 +685,13 @@ FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
     retry_chain_node fib(never_abort, 100ms, 20ms);
     cloud_storage_clients::bucket_name bucket{"test"};
     cloud_storage_clients::object_key path{"b"};
-    auto upl_result
-      = remote.local().upload_object(bucket, path, iobuf{}, fib).get();
+    auto upl_result = remote.local()
+                        .upload_object(
+                          {.bucket_name = bucket,
+                           .key = path,
+                           .payload = iobuf{},
+                           .parent_rtc = fib})
+                        .get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, upl_result);
 
     auto result = remote.local()
@@ -704,7 +718,10 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
     cloud_storage_clients::object_key path{"p"};
     auto result = remote.local()
                     .upload_object(
-                      bucket, path, make_iobuf_from_string("p"), fib)
+                      {.bucket_name = bucket,
+                       .key = path,
+                       .payload = make_iobuf_from_string("p"),
+                       .parent_rtc = fib})
                     .get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
 
@@ -845,19 +862,19 @@ FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
       cloud_storage::upload_result::success,
       remote.local()
         .upload_object(
-          bucket,
-          cloud_storage_clients::object_key{"p"},
-          make_iobuf_from_string("p"),
-          fib)
+          {.bucket_name = bucket,
+           .key = cloud_storage_clients::object_key{"p"},
+           .payload = make_iobuf_from_string("p"),
+           .parent_rtc = fib})
         .get());
     BOOST_REQUIRE_EQUAL(
       cloud_storage::upload_result::success,
       remote.local()
         .upload_object(
-          bucket,
-          cloud_storage_clients::object_key{"q"},
-          make_iobuf_from_string("q"),
-          fib)
+          {.bucket_name = bucket,
+           .key = cloud_storage_clients::object_key{"q"},
+           .payload = make_iobuf_from_string("q"),
+           .parent_rtc = fib})
         .get());
 
     std::vector<cloud_storage_clients::object_key> to_delete{
@@ -890,10 +907,10 @@ FIXTURE_TEST(
       cloud_storage::upload_result::success,
       remote.local()
         .upload_object(
-          bucket,
-          cloud_storage_clients::object_key{"p"},
-          make_iobuf_from_string("p"),
-          fib)
+          {.bucket_name = bucket,
+           .key = cloud_storage_clients::object_key{"p"},
+           .payload = make_iobuf_from_string("p"),
+           .parent_rtc = fib})
         .get());
 
     std::vector<cloud_storage_clients::object_key> to_delete{
