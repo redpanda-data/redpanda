@@ -257,8 +257,10 @@ protected:
 
     bool update_value(T&& new_value) {
         if (new_value != _value) {
-            notify_watchers(new_value);
+            // Update the main value first, in case one of the binding updates
+            // throws.
             _value = std::move(new_value);
+            notify_watchers(_value);
 
             return true;
         } else {
