@@ -463,6 +463,12 @@ struct upload_request {
     iobuf payload;
 };
 
+struct download_request {
+    transfer_details transfer_details;
+    download_type type;
+    iobuf& payload;
+};
+
 } // namespace cloud_storage
 
 namespace std {

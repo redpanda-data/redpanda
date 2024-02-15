@@ -1237,3 +1237,40 @@ FIXTURE_TEST(test_notification_retry_meta, remote_fixture) {
     auto [res, fmt] = fut.get();
     BOOST_CHECK(res == download_result::timedout);
 }
+
+FIXTURE_TEST(test_get_object, remote_fixture) {
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(never_abort, 1s, 20ms);
+
+    cloud_storage_clients::object_key path{"p"};
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      remote.local()
+        .upload_object({
+          .transfer_details
+          = {.bucket = bucket, .key = path, .parent_rtc = fib},
+          .payload = make_iobuf_from_string("p"),
+        })
+        .get());
+
+    iobuf buf;
+    auto dl_res = remote.local()
+                    .download_object(
+                      {.transfer_details
+                       = {.bucket = bucket, .key = path, .parent_rtc = fib},
+                       .payload = buf})
+                    .get();
+
+    const auto requests = get_requests();
+    BOOST_REQUIRE_EQUAL(requests.size(), 2);
+
+    const auto last_request = requests.back();
+    BOOST_REQUIRE_EQUAL(last_request.method, "GET");
+    BOOST_REQUIRE_EQUAL(last_request.url, "/p");
+
+    BOOST_REQUIRE(dl_res == download_result::success);
+    BOOST_REQUIRE_EQUAL(iobuf_to_bytes(buf), "p");
+}

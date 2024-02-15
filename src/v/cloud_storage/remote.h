@@ -345,6 +345,13 @@ public:
       offset_index& ix,
       retry_chain_node& parent);
 
+    /// \brief Download object small enough to fit in memory
+    /// \param download_request holds a reference to an iobuf in the `payload`
+    /// field which will hold the downloaded object if the download was
+    /// successful
+    ss::future<download_result>
+    download_object(download_request download_request);
+
     /// Checks if the segment exists in the bucket
     ss::future<download_result> segment_exists(
       const cloud_storage_clients::bucket_name& bucket,

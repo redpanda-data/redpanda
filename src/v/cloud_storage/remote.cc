@@ -879,6 +879,89 @@ ss::future<download_result> remote::download_index(
     co_return *result;
 }
 
+ss::future<download_result>
+remote::download_object(cloud_storage::download_request download_request) {
+    auto guard = _gate.hold();
+    auto& transfer_details = download_request.transfer_details;
+    retry_chain_node fib(&transfer_details.parent_rtc);
+    retry_chain_logger ctxlog(cst_log, fib);
+
+    const auto path = transfer_details.key;
+    const auto bucket = transfer_details.bucket;
+    const auto object_type = download_request.type;
+
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+
+    auto permit = fib.retry();
+    vlog(ctxlog.debug, "Downloading {} from {}", object_type, path);
+
+    std::optional<download_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
+        notify_external_subscribers(
+          api_activity_notification{
+            .type = api_activity_type::segment_download,
+            .is_retry = fib.retry_count() > 1},
+          transfer_details.parent_rtc);
+        auto resp = co_await lease.client->get_object(
+          bucket, path, fib.get_timeout());
+
+        if (resp) {
+            vlog(ctxlog.debug, "Receive OK response from {}", path);
+            auto buffer
+              = co_await cloud_storage_clients::util::drain_response_stream(
+                resp.value());
+            download_request.payload.append_fragments(std::move(buffer));
+            transfer_details.on_success(_probe);
+            co_return download_result::success;
+        }
+
+        lease.client->shutdown();
+
+        switch (resp.error()) {
+        case cloud_storage_clients::error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "Downloading {} from {}, {} backoff required",
+              object_type,
+              bucket,
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
+            transfer_details.on_backoff(_probe);
+            co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
+            permit = fib.retry();
+            break;
+        case cloud_storage_clients::error_outcome::fail:
+            result = download_result::failed;
+            break;
+        case cloud_storage_clients::error_outcome::key_not_found:
+            result = download_result::notfound;
+            break;
+        }
+    }
+    transfer_details.on_failure(_probe);
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "Downloading {} from {}, backoff quota exceded, {} at {} "
+          "not available",
+          object_type,
+          bucket,
+          object_type,
+          path);
+        result = download_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "Downloading {} from {}, {}, {} at {} not available",
+          object_type,
+          bucket,
+          *result,
+          object_type,
+          path);
+    }
+    co_return *result;
+}
+
 ss::future<download_result> remote::segment_exists(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_segment_path& segment_path,
