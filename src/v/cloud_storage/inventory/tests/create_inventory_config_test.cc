@@ -50,7 +50,8 @@ std::string iobuf_to_xml(iobuf buf) {
 
 ss::future<cst::upload_result>
 validate_request(cst::upload_object_request request) {
-    EXPECT_EQ(request.upload_type, cst::upload_object_type::object);
+    EXPECT_EQ(
+      request.upload_type, cst::upload_object_type::inventory_configuration);
     EXPECT_EQ(request.bucket_name(), bucket);
     EXPECT_EQ(request.key(), expected_key);
     EXPECT_EQ(iobuf_to_xml(std::move(request.payload)), expected_xml_payload);

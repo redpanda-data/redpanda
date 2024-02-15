@@ -92,7 +92,8 @@ aws_ops::create_inventory_configuration(
       {.bucket_name = _bucket,
        .key = cloud_storage_clients::object_key{key},
        .payload = to_xml(cfg),
-       .parent_rtc = parent_rtc});
+       .parent_rtc = parent_rtc,
+       .upload_type = upload_object_type::inventory_configuration});
 }
 
 } // namespace cloud_storage::inventory
