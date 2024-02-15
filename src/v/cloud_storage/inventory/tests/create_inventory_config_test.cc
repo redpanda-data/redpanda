@@ -39,7 +39,7 @@ public:
     MOCK_METHOD(
       ss::future<cst::upload_result>,
       upload_object,
-      (cst::upload_object_request),
+      (cst::upload_request),
       (override));
 };
 
@@ -48,12 +48,10 @@ std::string iobuf_to_xml(iobuf buf) {
     return p.read_string(p.bytes_left());
 }
 
-ss::future<cst::upload_result>
-validate_request(cst::upload_object_request request) {
-    EXPECT_EQ(
-      request.upload_type, cst::upload_object_type::inventory_configuration);
-    EXPECT_EQ(request.bucket_name(), bucket);
-    EXPECT_EQ(request.key(), expected_key);
+ss::future<cst::upload_result> validate_request(cst::upload_request request) {
+    EXPECT_EQ(request.type, cst::upload_type::inventory_configuration);
+    EXPECT_EQ(request.transfer_details.bucket(), bucket);
+    EXPECT_EQ(request.transfer_details.key(), expected_key);
     EXPECT_EQ(iobuf_to_xml(std::move(request.payload)), expected_xml_payload);
     return ss::make_ready_future<cst::upload_result>(
       cst::upload_result::success);

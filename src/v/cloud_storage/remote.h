@@ -121,7 +121,7 @@ struct api_activity_notification {
 // references/pointers to this interface instead of remote to enable testing.
 class cloud_storage_api {
 public:
-    virtual ss::future<upload_result> upload_object(upload_object_request) = 0;
+    virtual ss::future<upload_result> upload_object(upload_request) = 0;
     virtual ~cloud_storage_api() = default;
 };
 
@@ -409,7 +409,7 @@ public:
     /// strings, does not check for leadership before upload like the segment
     /// upload function.
     ss::future<upload_result>
-    upload_object(upload_object_request upload_request) override;
+    upload_object(upload_request upload_request) override;
 
     ss::future<download_result> do_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,

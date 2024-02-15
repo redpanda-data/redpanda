@@ -1369,17 +1369,17 @@ ss::future<remote::list_result> remote::list_objects(
     co_return *result;
 }
 
-ss::future<upload_result>
-remote::upload_object(upload_object_request upload_request) {
+ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     auto guard = _gate.hold();
 
-    retry_chain_node fib(&upload_request.parent_rtc);
+    auto& transfer_details = upload_request.transfer_details;
+    retry_chain_node fib(&transfer_details.parent_rtc);
     retry_chain_logger ctxlog(cst_log, fib);
     auto permit = fib.retry();
 
     auto content_length = upload_request.payload.size_bytes();
-    auto path = cloud_storage_clients::object_key(upload_request.key());
-    auto upload_type = upload_request.upload_type;
+    auto path = cloud_storage_clients::object_key(transfer_details.key());
+    auto upload_type = upload_request.type;
 
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
@@ -1394,14 +1394,14 @@ remote::upload_object(upload_object_request upload_request) {
 
         auto to_upload = upload_request.payload.copy();
         auto res = co_await lease.client->put_object(
-          upload_request.bucket_name,
+          transfer_details.bucket,
           path,
           content_length,
           make_iobuf_input_stream(std::move(to_upload)),
           fib.get_timeout());
 
         if (res) {
-            upload_request.on_success(_probe);
+            transfer_details.on_success(_probe);
             co_return upload_result::success;
         }
 
@@ -1413,10 +1413,10 @@ remote::upload_object(upload_object_request upload_request) {
               "Uploading {} {} to {}, {} backoff required",
               upload_type,
               path,
-              upload_request.bucket_name,
+              transfer_details.bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
-            upload_request.on_backoff(_probe);
+            transfer_details.on_backoff(_probe);
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
@@ -1428,7 +1428,7 @@ remote::upload_object(upload_object_request upload_request) {
         }
     }
 
-    upload_request.on_failure(_probe);
+    transfer_details.on_failure(_probe);
     if (!result) {
         vlog(
           ctxlog.warn,
@@ -1436,7 +1436,7 @@ remote::upload_object(upload_object_request upload_request) {
           "uploaded",
           upload_type,
           path,
-          upload_request.bucket_name,
+          transfer_details.bucket,
           upload_type);
     } else {
         vlog(
@@ -1444,7 +1444,7 @@ remote::upload_object(upload_object_request upload_request) {
           "Uploading {} {} to {}, {}, {} not uploaded",
           upload_type,
           path,
-          upload_request.bucket_name,
+          transfer_details.bucket,
           *result,
           upload_type);
     }

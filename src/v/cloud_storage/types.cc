@@ -39,7 +39,7 @@ cloud_storage_clients::default_overrides get_default_overrides() {
 }
 
 void run_callback(
-  std::optional<cloud_storage::upload_object_request::probe_callback_t>& cb,
+  std::optional<cloud_storage::probe_callback_t>& cb,
   cloud_storage::remote_probe& probe) {
     if (cb.has_value()) {
         cb.value()(probe);
@@ -507,32 +507,43 @@ configuration::get_bucket_config() {
     }
 }
 
-std::ostream& operator<<(std::ostream& os, upload_object_type upload) {
+std::ostream& operator<<(std::ostream& os, upload_type upload) {
     switch (upload) {
-    case upload_object_type::object:
+        using enum cloud_storage::upload_type;
+    case object:
         return os << "object";
-    case upload_object_type::segment_index:
+    case segment_index:
         return os << "segment-index";
-    case upload_object_type::manifest:
+    case manifest:
         return os << "manifest";
-    case upload_object_type::group_offsets_snapshot:
+    case group_offsets_snapshot:
         return os << "group-offsets-snapshot";
-    case upload_object_type::download_result_file:
+    case download_result_file:
         return os << "download-result-file";
-    case upload_object_type::remote_lifecycle_marker:
+    case remote_lifecycle_marker:
         return os << "remote-lifecycle-marker";
-    case upload_object_type::inventory_configuration:
+    case inventory_configuration:
         return os << "inventory-configuration";
     }
 }
 
-void upload_object_request::on_success(remote_probe& probe) {
+std::ostream& operator<<(std::ostream& os, download_type download) {
+    switch (download) {
+        using enum cloud_storage::download_type;
+    case object:
+        return os << "object";
+    case segment_index:
+        return os << "segment-index";
+    }
+}
+
+void transfer_details::on_success(remote_probe& probe) {
     run_callback(success_cb, probe);
 }
-void upload_object_request::on_failure(remote_probe& probe) {
+void transfer_details::on_failure(remote_probe& probe) {
     run_callback(failure_cb, probe);
 }
-void upload_object_request::on_backoff(remote_probe& probe) {
+void transfer_details::on_backoff(remote_probe& probe) {
     run_callback(backoff_cb, probe);
 }
 

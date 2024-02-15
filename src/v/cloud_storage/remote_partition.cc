@@ -1297,11 +1297,10 @@ ss::future<> finalize_background(remote& api, finalize_data data) {
           data.insync_offset);
 
         auto manifest_put_result = co_await api.upload_object(
-          {.bucket_name = data.bucket,
-           .key = data.key,
-           .payload = std::move(data.serialized_manifest),
-           .parent_rtc = local_rtc,
-           .upload_type = upload_object_type::manifest});
+          {.transfer_details
+           = {.bucket = data.bucket, .key = data.key, .parent_rtc = local_rtc},
+           .type = upload_type::manifest,
+           .payload = std::move(data.serialized_manifest)});
 
         if (manifest_put_result != upload_result::success) {
             vlog(
@@ -1316,7 +1315,8 @@ ss::future<> finalize_background(remote& api, finalize_data data) {
         // Remote and local state is in sync, no action required.
         vlog(
           cst_log.debug,
-          "[{}] Remote manifest is in sync with local state during finalize "
+          "[{}] Remote manifest is in sync with local state during "
+          "finalize "
           "(insync_offset={})",
           data.ntp,
           data.insync_offset);
@@ -1457,8 +1457,9 @@ cache_usage_target remote_partition::get_cache_usage_target() const {
     constexpr auto wanted_chunks = 20;
 
     // minimum and nice-to-have segments per partition are roughly the same
-    // (compared to chunks) as segments are much lager. for example, 2 segments
-    // at the default segment size is about the same as 20 default sized chunks.
+    // (compared to chunks) as segments are much lager. for example, 2
+    // segments at the default segment size is about the same as 20 default
+    // sized chunks.
     constexpr auto min_segments = 1;
     constexpr auto wanted_segments = 2;
 
@@ -1484,8 +1485,8 @@ cache_usage_target remote_partition::get_cache_usage_target() const {
         }
     }
 
-    // we may not have any materialized segments, but we can decode some info
-    // about them anyway from the manifest.
+    // we may not have any materialized segments, but we can decode some
+    // info about them anyway from the manifest.
     auto seg = _manifest_view->stm_manifest().last_segment();
     if (seg.has_value()) {
         const auto chunked

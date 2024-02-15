@@ -69,13 +69,12 @@ ss::future<offsets_upload_result> offsets_uploader::upload(
           uuid, meta_id, ntp.tp.partition, snap_idx++);
 
         try {
-            auto upload_res = co_await _remote.local().upload_object(
-              {.bucket_name = _bucket,
-               .key = remote_key,
-               .payload = std::move(buf),
-               .parent_rtc = retry_node,
-               .upload_type
-               = cloud_storage::upload_object_type::group_offsets_snapshot});
+            auto upload_res = co_await _remote.local().upload_object({
+              .transfer_details
+              = {.bucket = _bucket, .key = remote_key, .parent_rtc = retry_node},
+              .type = cloud_storage::upload_type::group_offsets_snapshot,
+              .payload = std::move(buf),
+            });
             if (upload_res == cloud_storage::upload_result::success) {
                 paths.paths.emplace_back(remote_key().c_str());
             }
