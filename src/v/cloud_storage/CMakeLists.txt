@@ -42,6 +42,8 @@ v_cc_library(
     async_manifest_view.cc
     materialized_manifest_cache.cc
     anomalies_detector.cc
+    inventory/aws_ops.cc
+    inventory/types.cc
   DEPS
     Seastar::seastar
     v::bytes
@@ -55,4 +57,6 @@ v_cc_library(
     v::raft
     # NOTE: do not add v::cloud as a dependency
 )
+
 add_subdirectory(tests)
+add_subdirectory(inventory/tests)
