@@ -37,4 +37,25 @@ std::ostream& operator<<(std::ostream&, report_generation_frequency);
 enum class report_format { csv };
 std::ostream& operator<<(std::ostream&, report_format);
 
+/// \brief This class is not directly used for runtime polymorphism, it exists
+/// as a convenience to define constraints for inv_ops_variant, to make sure
+/// that the classes set as variants of inv_ops_variant have the expected set of
+/// methods defined in base_ops.
+class base_ops {
+public:
+    virtual ss::future<cloud_storage::upload_result>
+    create_inventory_configuration(
+      cloud_storage::cloud_storage_api&,
+      retry_chain_node&,
+      report_generation_frequency,
+      report_format)
+      = 0;
+};
+
+template<typename T>
+concept vendor_ops_provider = std::is_base_of_v<base_ops, T>;
+
+template<vendor_ops_provider... Ts>
+using inv_ops_variant = std::variant<Ts...>;
+
 } // namespace cloud_storage::inventory

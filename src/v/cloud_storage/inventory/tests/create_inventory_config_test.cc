@@ -9,6 +9,7 @@
  */
 
 #include "cloud_storage/inventory/aws_ops.h"
+#include "cloud_storage/inventory/inv_ops.h"
 #include "cloud_storage/remote.h"
 
 #include <gmock/gmock.h>
@@ -81,4 +82,11 @@ TEST(CreateInvCfg, LowLevelApi) {
         prefix},
       frequency,
       format);
+}
+
+TEST(CreateInvCfg, HighLevelApi) {
+    test_create(cst::inventory::inv_ops{cst::inventory::aws_ops{
+      cloud_storage_clients::bucket_name{bucket},
+      cst::inventory::inventory_config_id{id},
+      prefix}});
 }

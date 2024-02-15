@@ -16,7 +16,7 @@
 namespace cloud_storage::inventory {
 
 /// \brief AWS specific inventory API calls
-class aws_ops {
+class aws_ops final : public base_ops {
 public:
     aws_ops(
       cloud_storage_clients::bucket_name bucket,
@@ -27,7 +27,7 @@ public:
       cloud_storage::cloud_storage_api&,
       retry_chain_node&,
       report_generation_frequency,
-      report_format);
+      report_format) override;
 
 private:
     cloud_storage_clients::bucket_name _bucket;

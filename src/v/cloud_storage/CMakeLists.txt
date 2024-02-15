@@ -42,6 +42,7 @@ v_cc_library(
     async_manifest_view.cc
     materialized_manifest_cache.cc
     anomalies_detector.cc
+    inventory/inv_ops.cc
     inventory/aws_ops.cc
     inventory/types.cc
   DEPS
