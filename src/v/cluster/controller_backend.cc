@@ -58,14 +58,9 @@
 namespace cluster {
 namespace {
 
-std::optional<ss::shard_id>
-find_shard_on_node(const replicas_t& replicas, model::node_id node) {
-    for (const auto& bs : replicas) {
-        if (bs.node_id == node) {
-            return bs.shard;
-        }
-    }
-    return std::nullopt;
+bool has_local_replicas(
+  model::node_id self, const std::vector<model::broker_shard>& replicas) {
+    return find_shard_on_node(replicas, self) == ss::this_shard_id();
 }
 
 model::broker

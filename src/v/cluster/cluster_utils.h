@@ -157,12 +157,6 @@ auto do_with_client_one_shot(
       });
 }
 
-/**
- * checks if current node/shard is part of the partition replica set replica set
- */
-bool has_local_replicas(
-  model::node_id, const std::vector<model::broker_shard>&);
-
 bool are_replica_sets_equal(
   const std::vector<model::broker_shard>&,
   const std::vector<model::broker_shard>&);
@@ -281,6 +275,16 @@ inline bool contains_node(
              replicas.end(),
              [id](const model::broker_shard& bs) { return bs.node_id == id; })
            != replicas.end();
+}
+
+inline std::optional<ss::shard_id>
+find_shard_on_node(const replicas_t& replicas, model::node_id node) {
+    for (const auto& bs : replicas) {
+        if (bs.node_id == node) {
+            return bs.shard;
+        }
+    }
+    return std::nullopt;
 }
 
 // check if replica is moving from node

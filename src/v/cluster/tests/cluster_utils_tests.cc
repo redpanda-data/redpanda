@@ -21,8 +21,8 @@
 #include <seastar/net/socket_defs.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-SEASTAR_THREAD_TEST_CASE(test_has_local_replicas) {
-    model::node_id id{2};
+SEASTAR_THREAD_TEST_CASE(test_find_shard_on_node) {
+    model::node_id id{1};
 
     std::vector<model::broker_shard> replicas_1{
       model::broker_shard{model::node_id(1), 2},
@@ -34,8 +34,8 @@ SEASTAR_THREAD_TEST_CASE(test_has_local_replicas) {
       model::broker_shard{model::node_id(2), 0}, // local replica
     };
 
-    BOOST_REQUIRE_EQUAL(cluster::has_local_replicas(id, replicas_1), false);
-    BOOST_REQUIRE_EQUAL(cluster::has_local_replicas(id, replicas_2), true);
+    BOOST_REQUIRE(cluster::find_shard_on_node(replicas_1, id) == 2);
+    BOOST_REQUIRE(cluster::find_shard_on_node(replicas_2, id) == std::nullopt);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_check_result_configuration) {

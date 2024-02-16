@@ -84,17 +84,6 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
         .available_memory_bytes = total_mem});
 }
 
-bool has_local_replicas(
-  model::node_id self, const std::vector<model::broker_shard>& replicas) {
-    return std::find_if(
-             std::cbegin(replicas),
-             std::cend(replicas),
-             [self](const model::broker_shard& bs) {
-                 return bs.node_id == self && bs.shard == ss::this_shard_id();
-             })
-           != replicas.cend();
-}
-
 bool are_replica_sets_equal(
   const std::vector<model::broker_shard>& lhs,
   const std::vector<model::broker_shard>& rhs) {
