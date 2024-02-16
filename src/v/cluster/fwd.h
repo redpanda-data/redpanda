@@ -75,6 +75,7 @@ struct state_machine_factory;
 class state_machine_registry;
 class tx_topic_manager;
 class shard_placement_table;
+class shard_balancer;
 
 namespace node {
 class local_monitor;
