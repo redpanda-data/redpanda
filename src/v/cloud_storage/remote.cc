@@ -808,75 +808,21 @@ ss::future<download_result> remote::download_index(
   const remote_segment_path& index_path,
   offset_index& ix,
   retry_chain_node& parent) {
-    auto guard = _gate.hold();
-    retry_chain_node fib(&parent);
-    retry_chain_logger ctxlog(cst_log, fib);
-    auto path = cloud_storage_clients::object_key(index_path());
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
-
-    auto permit = fib.retry();
-    vlog(ctxlog.debug, "Download index {}", path);
-
-    std::optional<download_result> result;
-    while (!_gate.is_closed() && permit.is_allowed && !result) {
-        notify_external_subscribers(
-          api_activity_notification{
-            .type = api_activity_type::segment_download,
-            .is_retry = fib.retry_count() > 1},
-          parent);
-        auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout());
-
-        if (resp) {
-            vlog(ctxlog.debug, "Receive OK response from {}", path);
-            auto index_buffer
-              = co_await cloud_storage_clients::util::drain_response_stream(
-                resp.value());
-            ix.from_iobuf(std::move(index_buffer));
-            _probe.index_download();
-            co_return download_result::success;
-        }
-
-        lease.client->shutdown();
-
-        switch (resp.error()) {
-        case cloud_storage_clients::error_outcome::retry:
-            vlog(
-              ctxlog.debug,
-              "Downloading index from {}, {} backoff required",
-              bucket,
-              std::chrono::duration_cast<std::chrono::milliseconds>(
-                permit.delay));
-            _probe.download_backoff();
-            co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
-            permit = fib.retry();
-            break;
-        case cloud_storage_clients::error_outcome::fail:
-            result = download_result::failed;
-            break;
-        case cloud_storage_clients::error_outcome::key_not_found:
-            result = download_result::notfound;
-            break;
-        }
+    iobuf buffer;
+    const auto dl_result = co_await download_object(
+      {.transfer_details = {
+         .bucket = bucket,
+         .key = cloud_storage_clients::object_key{index_path},
+         .parent_rtc = parent,
+         .success_cb = [](auto& probe) { probe.index_download(); },
+         .failure_cb = [](auto& probe) { probe.failed_index_download(); },
+         .backoff_cb = [](auto& probe) { probe.download_backoff(); }},
+       .type = download_type::segment_index,
+       .payload = buffer});
+    if (dl_result == download_result::success) {
+        ix.from_iobuf(std::move(buffer));
     }
-    _probe.failed_index_download();
-    if (!result) {
-        vlog(
-          ctxlog.warn,
-          "Downloading index from {}, backoff quota exceded, index at {} "
-          "not available",
-          bucket,
-          path);
-        result = download_result::timedout;
-    } else {
-        vlog(
-          ctxlog.warn,
-          "Downloading index from {}, {}, index at {} not available",
-          bucket,
-          *result,
-          path);
-    }
-    co_return *result;
+    co_return dl_result;
 }
 
 ss::future<download_result>
