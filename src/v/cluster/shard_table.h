@@ -77,43 +77,14 @@ public:
 
     void erase(
       const model::ntp& ntp, raft::group_id g, model::shard_revision_id rev) {
+        // Sometimes we erase with the same revision as stored (e.g. if a
+        // partition gets disabled). This is not a problem during a
+        // cross-shard transfer because even though corresponding erase() and
+        // update() will have the same shard_revision_id, update() will always
+        // come after erase(). Therefore only erases with it->second.revision >
+        // rev needs to be rejected.
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            // The check on exact revision match (= rev case) below is a special
-            // case. This only happens when bootstrapping cross core movements
-            // on multiple shards at the same time. Bootstrapping across shards
-            // is not coordinated and can result in parallel updates to the
-            // shard table.
-            //
-            // A general invariant of the shard table (excluding parallel
-            // bootstrapping) is that the command revision of the shutdown `rev`
-            // (which invokes erase from the shard table) is strictly greater
-            // than the command that added it the table, with highest version
-            // eventually prevailing.
-            //
-            // This is violated during parallel bootstrap with cross core
-            // movements where there can be interleaved updates.In this process
-            // if there is an exact revision match, it indicates that an other
-            // shard already updated the shard table and is starting up the
-            // partition and the calling shard should not remove it.
-            //
-            // Example: consider this sequence o commands [add(ntp),
-            // update(shard 0 -> shard 1)]
-            // shard 0 bootstraps with [add, update]
-            // shard 1 bootstraps with [update]
-
-            // shard 0 treats update as a shutdown on core 0 while shard 1
-            // treats it as a bootstrap on shard 1, however both of them use the
-            // same command revision of the update.
-            // This translates to the following shard table updates.
-            // shard 0: (erase ntp, update_rev)
-            // shard 1: (add ntp, update_rev)
-
-            // If shard 0 update ends up running after shard 1, we will end up
-            // with no shard table entries for this ntp resulting in an
-            // availability loss. The equality check guards against these racy
-            // update siutations.
-
-            if (it->second.revision >= rev) {
+            if (it->second.revision > rev) {
                 return;
             }
         }

@@ -50,6 +50,7 @@
 #include "cluster/raft0_utils.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/security_frontend.h"
+#include "cluster/shard_balancer.h"
 #include "cluster/shard_placement_table.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
@@ -400,6 +401,7 @@ ss::future<> controller::start(
       .then([this] {
           return _backend.start(
             std::ref(_tp_state),
+            std::ref(_shard_placement),
             std::ref(_shard_table),
             std::ref(_partition_manager),
             std::ref(_members_table),
@@ -420,6 +422,12 @@ ss::future<> controller::start(
                   .initial_retention_local_target_ms_default.bind();
             }),
             std::ref(_as));
+      })
+      .then([this] {
+          return _shard_balancer.start_single(
+            std::ref(_tp_state),
+            std::ref(_shard_placement),
+            std::ref(_backend));
       })
       .then(
         [this] { return _drain_manager.invoke_on_all(&drain_manager::start); })
@@ -501,6 +509,13 @@ ss::future<> controller::start(
             });
       })
       .then([this, &discovery] { return cluster_creation_hook(discovery); })
+      .then([this] {
+          // start shard_balancer before controller_backend so that it boostraps
+          // shard_placement_table and controller_backend can start with already
+          // initialized table.
+          return _shard_balancer.invoke_on(
+            shard_balancer::shard_id, &shard_balancer::start);
+      })
       .then(
         [this] { return _backend.invoke_on_all(&controller_backend::start); })
       .then([this] {
@@ -752,6 +767,7 @@ ss::future<> controller::stop() {
           .then([this] { return _members_backend.stop(); })
           .then([this] { return _config_manager.stop(); })
           .then([this] { return _api.stop(); })
+          .then([this] { return _shard_balancer.stop(); })
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _plugin_frontend.stop(); })
