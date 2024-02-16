@@ -68,12 +68,15 @@ class OpenMessagingBenchmarkWorkers(Service):
 
         node.account.mkdirs(OpenMessagingBenchmarkWorkers.PERSISTENT_ROOT)
 
-        start_cmd = f"cd /opt/openmessaging-benchmark; \
-                      HEAP_OPTS=\" \" \
-                      bin/benchmark-worker \
-                      --port {OpenMessagingBenchmarkWorkers.PORT} \
-                      --stats-port {OpenMessagingBenchmarkWorkers.STATS_PORT} \
-                      >> {OpenMessagingBenchmarkWorkers.STDOUT_STDERR_CAPTURE} 2>&1 & disown"
+        start_cmd = (
+            f"cd /opt/openmessaging-benchmark; "
+            f"HEAP_OPTS=\" \" "
+            f"KAFKA_OPTS=\" \" "
+            f"bin/benchmark-worker "
+            f"--port {OpenMessagingBenchmarkWorkers.PORT} "
+            f"--stats-port {OpenMessagingBenchmarkWorkers.STATS_PORT} "
+            f">> {OpenMessagingBenchmarkWorkers.STDOUT_STDERR_CAPTURE} 2>&1 & disown"
+        )
 
         with node.account.monitor_log(OpenMessagingBenchmarkWorkers.
                                       STDOUT_STDERR_CAPTURE) as monitor:
