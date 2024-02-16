@@ -35,6 +35,8 @@ class remote_segment_batch_reader;
 class remote_probe;
 class materialized_manifest_cache;
 
+class materialized_resources_accessor;
+
 /**
  * This class tracks:
  * - Instances of materialized_segment that are created by
@@ -53,6 +55,7 @@ class materialized_manifest_cache;
  */
 class materialized_resources {
     friend class throttled_dl_source;
+    friend class materialized_resources_accessor;
 
 public:
     materialized_resources();
