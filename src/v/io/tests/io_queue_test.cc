@@ -22,9 +22,9 @@ namespace io = experimental::io;
 
 /*
  * params
+ *  - disk or memory backend
  *  - max file size
  *  - num io operations
- *  - disk or memory backend
  */
 class IOQueueTest
   : public StorageTest
