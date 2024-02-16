@@ -109,6 +109,8 @@ enum class api_activity_type {
     manifest_download,
     controller_snapshot_upload,
     controller_snapshot_download,
+    object_upload,
+    object_download
 };
 
 struct api_activity_notification {

@@ -845,7 +845,7 @@ remote::download_object(cloud_storage::download_request download_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
           api_activity_notification{
-            .type = api_activity_type::segment_download,
+            .type = api_activity_type::object_download,
             .is_retry = fib.retry_count() > 1},
           transfer_details.parent_rtc);
         auto resp = co_await lease.client->get_object(
@@ -1420,6 +1420,12 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           upload_type,
           path,
           content_length);
+
+        notify_external_subscribers(
+          api_activity_notification{
+            .type = api_activity_type::object_upload,
+            .is_retry = fib.retry_count() > 1},
+          transfer_details.parent_rtc);
 
         auto to_upload = upload_request.payload.copy();
         auto res = co_await lease.client->put_object(

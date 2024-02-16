@@ -715,6 +715,7 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
+    auto subscription = remote.local().subscribe(allow_all);
     auto result = remote.local()
                     .upload_object(
                       {.transfer_details
@@ -726,6 +727,9 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
     auto request = get_requests()[0];
     BOOST_REQUIRE(request.method == "PUT");
     BOOST_REQUIRE(request.content == "p");
+
+    BOOST_REQUIRE(subscription.available());
+    BOOST_REQUIRE(subscription.get().type == api_activity_type::object_upload);
 }
 
 FIXTURE_TEST(test_delete_objects, remote_fixture) {
@@ -1246,6 +1250,7 @@ FIXTURE_TEST(test_get_object, remote_fixture) {
     retry_chain_node fib(never_abort, 1s, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
+
     BOOST_REQUIRE_EQUAL(
       cloud_storage::upload_result::success,
       remote.local()
@@ -1256,6 +1261,7 @@ FIXTURE_TEST(test_get_object, remote_fixture) {
         })
         .get());
 
+    auto subscription = remote.local().subscribe(allow_all);
     iobuf buf;
     auto dl_res = remote.local()
                     .download_object(
@@ -1273,4 +1279,7 @@ FIXTURE_TEST(test_get_object, remote_fixture) {
 
     BOOST_REQUIRE(dl_res == download_result::success);
     BOOST_REQUIRE_EQUAL(iobuf_to_bytes(buf), "p");
+    BOOST_REQUIRE(subscription.available());
+    BOOST_REQUIRE(
+      subscription.get().type == api_activity_type::object_download);
 }

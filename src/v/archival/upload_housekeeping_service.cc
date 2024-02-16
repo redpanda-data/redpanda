@@ -122,6 +122,7 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
         case cloud_storage::api_activity_type::manifest_upload:
         case cloud_storage::api_activity_type::segment_upload:
         case cloud_storage::api_activity_type::segment_delete:
+        case cloud_storage::api_activity_type::object_upload:
             weight = 1;
             if (event.is_retry) {
                 slow_down_weight = 1;
@@ -130,6 +131,7 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
         // Read path events
         case cloud_storage::api_activity_type::manifest_download:
         case cloud_storage::api_activity_type::segment_download:
+        case cloud_storage::api_activity_type::object_download:
             weight = 1;
             if (event.is_retry) {
                 slow_down_weight = 1;
