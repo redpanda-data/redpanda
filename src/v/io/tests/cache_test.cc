@@ -13,9 +13,7 @@
 
 #include <map>
 
-namespace io = experimental::io;
-
-namespace testing_details {
+namespace experimental::io::testing_details {
 class cache_hook_accessor {
 public:
     static std::optional<size_t>
@@ -30,7 +28,9 @@ public:
 
     static uint8_t get_hook_freq(io::cache_hook& hook) { return hook.freq_; }
 };
-} // namespace testing_details
+} // namespace experimental::io::testing_details
+
+namespace io = experimental::io;
 
 class CacheTest : public ::testing::Test {
 public:
@@ -78,18 +78,19 @@ public:
     }
 
     static std::optional<size_t> get_hook_insertion_time(const entry& entry) {
-        return testing_details::cache_hook_accessor::get_hook_insertion_time(
-          entry.hook);
+        return io::testing_details::cache_hook_accessor::
+          get_hook_insertion_time(entry.hook);
     }
 
     static void
     set_hook_insertion_time(entry& entry, std::optional<size_t> time) {
-        testing_details::cache_hook_accessor::set_hook_insertion_time(
+        io::testing_details::cache_hook_accessor::set_hook_insertion_time(
           entry.hook, time);
     }
 
     static uint8_t get_hook_freq(entry& entry) {
-        return testing_details::cache_hook_accessor::get_hook_freq(entry.hook);
+        return io::testing_details::cache_hook_accessor::get_hook_freq(
+          entry.hook);
     }
 
     template<typename... Entries>
