@@ -229,6 +229,8 @@ public:
     std::optional<in_progress_operation>
     get_current_op(const model::ntp&) const;
 
+    void notify_reconciliation(const model::ntp&, model::shard_revision_id);
+
 private:
     struct ntp_reconciliation_state;
     struct partition_claim;

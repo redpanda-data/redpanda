@@ -269,18 +269,25 @@ operator<<(std::ostream& o, partition_claim_state s) {
 struct controller_backend::ntp_reconciliation_state {
     std::optional<model::revision_id> changed_at;
     std::optional<model::revision_id> properties_changed_at;
+    std::optional<model::shard_revision_id> shard_changed_at;
     bool removed = false;
 
     ssx::event wakeup_event{"c/cb/rfwe"};
     ss::lowres_clock::time_point last_retried_at = ss::lowres_clock::now();
     std::optional<in_progress_operation> cur_operation;
 
-    bool is_reconciled() const { return !changed_at.has_value(); }
+    bool is_reconciled() const {
+        return !changed_at.has_value() && !shard_changed_at.has_value();
+    }
 
-    void mark_reconciled(model::revision_id rev) {
+    void mark_reconciled(
+      model::revision_id rev, model::shard_revision_id shard_rev) {
         mark_properties_reconciled(rev);
         if (changed_at && *changed_at <= rev) {
             changed_at = std::nullopt;
+        }
+        if (shard_changed_at && *shard_changed_at <= shard_rev) {
+            shard_changed_at = std::nullopt;
         }
         cur_operation = std::nullopt;
     }
@@ -307,10 +314,11 @@ struct controller_backend::ntp_reconciliation_state {
     operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
         fmt::print(
           o,
-          "{{changed_at: {}, properties_changed_at: {}, removed: {}, "
-          "cur_operation: {}}}",
+          "{{changed_at: {}, properties_changed_at: {}, shard_changed_at: {}, "
+          "removed: {}, cur_operation: {}}}",
           rs.changed_at,
           rs.properties_changed_at,
+          rs.shard_changed_at,
           rs.removed,
           rs.cur_operation);
         return o;
@@ -774,6 +782,30 @@ ss::future<> controller_backend::bootstrap_partition_claims() {
     }
 }
 
+void controller_backend::notify_reconciliation(
+  const model::ntp& ntp, model::shard_revision_id shard_rev) {
+    vlog(
+      clusterlog.trace,
+      "[{}] notify reconciliation fiber, shard rev: {}",
+      ntp,
+      shard_rev);
+
+    auto [rs_it, inserted] = _states.try_emplace(ntp);
+    if (inserted) {
+        rs_it->second = ss::make_lw_shared<ntp_reconciliation_state>();
+    }
+    auto& rs = *rs_it->second;
+    if (rs.shard_changed_at) {
+        rs.shard_changed_at = std::max(*rs.shard_changed_at, shard_rev);
+    } else {
+        rs.shard_changed_at = shard_rev;
+    }
+    rs.wakeup_event.set();
+    if (inserted) {
+        ssx::background = reconcile_ntp_fiber(ntp, rs_it->second);
+    }
+}
+
 ss::future<result<ss::stop_iteration>>
 controller_backend::force_replica_set_update(
   ss::lw_shared_ptr<partition> partition,
@@ -915,22 +947,28 @@ ss::future<> controller_backend::try_reconcile_ntp(
 
     if (should_skip(ntp)) {
         vlog(clusterlog.debug, "[{}] skipping reconcilation", ntp);
-        rs.mark_reconciled(_topics.local().last_applied_revision());
+        rs.mark_reconciled(
+          rs.changed_at.value_or(model::revision_id{}),
+          rs.shard_changed_at.value_or(model::shard_revision_id{}));
         co_return;
     }
 
     while (!rs.is_reconciled() && !_as.local().abort_requested()) {
-        model::revision_id changed_at = *rs.changed_at;
+        model::revision_id changed_at = rs.changed_at.value_or(
+          model::revision_id{});
+        model::shard_revision_id shard_changed_at
+          = rs.shard_changed_at.value_or(model::shard_revision_id{});
         cluster::errc last_error = errc::success;
         try {
             auto res = co_await reconcile_ntp_step(ntp, rs);
             if (res.has_value() && res.value() == ss::stop_iteration::yes) {
-                rs.mark_reconciled(changed_at);
+                rs.mark_reconciled(changed_at, shard_changed_at);
                 vlog(
                   clusterlog.debug,
-                  "[{}] reconciled at revision {}",
+                  "[{}] reconciled at revision {}, shard table revision {}",
                   ntp,
-                  changed_at);
+                  changed_at,
+                  shard_changed_at);
                 break;
             } else if (res.has_error() && res.error()) {
                 if (res.error().category() == error_category()) {
