@@ -50,11 +50,14 @@ ss::future<bool> should_keep(
     // If the map hasn't indexed the given key, we should keep the
     // key.
     if (!latest_offset_indexed.has_value()) {
+        vlog(gclog.info, "AWONG {}: {}", o, true);
         co_return true;
     }
     // We should only keep the record if its offset is equal or higher than
     // that indexed.
-    co_return o >= latest_offset_indexed.value();
+    auto ret = o >= latest_offset_indexed.value();
+    vlog(gclog.info, "AWONG {}: {}", o, ret);
+    co_return ret;
 }
 } // anonymous namespace
 
@@ -193,6 +196,7 @@ ss::future<index_state> deduplicate_segment(
     }
     auto rdr = internal::create_segment_full_reader(
       seg, cfg, probe, std::move(read_holder));
+    auto orig_max_offset = seg->offsets().committed_offset;
     auto copy_reducer = internal::copy_data_segment_reducer(
       [&map](const model::record_batch& b, const model::record& r) {
           return should_keep(map, b, r);
@@ -200,11 +204,16 @@ ss::future<index_state> deduplicate_segment(
       &appender,
       seg->path().is_internal_topic(),
       should_offset_delta_times,
-      seg->offsets().committed_offset,
+      orig_max_offset,
       &cmp_idx_writer);
 
     auto new_idx = co_await rdr.consume(
       std::move(copy_reducer), model::no_timeout);
+    vassert(
+      new_idx.max_offset == orig_max_offset,
+      "new offsets: {}, original: {}",
+      new_idx,
+      seg->offsets());
     new_idx.broker_timestamp = seg->index().broker_timestamp();
     co_return new_idx;
 }

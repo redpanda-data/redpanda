@@ -186,6 +186,11 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
         _probe.add_bytes_read(cache_read.memory_usage);
         _probe.add_cached_bytes_read(cache_read.memory_usage);
         _probe.add_cached_batches_read(cache_read.batches.size());
+        vlog(
+          gclog.info,
+          "AWONG read from cache {} to {}",
+          cache_read.batches.begin()->base_offset(),
+          cache_read.batches.back().last_offset());
         co_return result<records_t>(std::move(cache_read.batches));
     }
 
@@ -196,6 +201,11 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
      * on disk reads which is bound by the stable offset.
      */
     if (_config.start_offset > _seg.offsets().stable_offset) {
+        vlog(
+          gclog.info,
+          "AWONG read end {} > {}",
+          _config.start_offset,
+          _seg.offsets().stable_offset);
         co_return result<records_t>(records_t{});
     }
 
@@ -280,11 +290,13 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
         // must keep this function because, the segment might not be done
         // but offsets might have exceeded the read
         set_end_of_stream();
+        vlog(gclog.info, "AWONG reading done");
         return _iterator.close().then(
           [] { return ss::make_ready_future<storage_t>(); });
     }
     if (_last_base == _config.start_offset) {
         set_end_of_stream();
+        vlog(gclog.info, "AWONG {} == {}", _last_base, _config.start_offset);
         return _iterator.close().then(
           [] { return ss::make_ready_future<storage_t>(); });
     }
@@ -297,6 +309,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
       _config.start_offset > _config.max_offset
       || _config.bytes_consumed > _config.max_bytes || _config.over_budget) {
         set_end_of_stream();
+        vlog(gclog.info, "AWONG budget");
         return ss::make_ready_future<storage_t>();
     }
     _last_base = _config.start_offset;

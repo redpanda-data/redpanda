@@ -341,6 +341,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
 ss::future<ss::stop_iteration>
 copy_data_segment_reducer::operator()(model::record_batch b) {
     const auto comp = b.header().attrs.compression();
+    vlog(
+      gclog.info, "AWONG reading {} to {}", b.base_offset(), b.last_offset());
     if (!b.compressed()) {
         co_return co_await filter_and_append(comp, std::move(b));
     }
