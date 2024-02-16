@@ -1,0 +1,15 @@
+[Unit]
+Description=Redpanda Data Directory
+Before={{ .Before }}
+After={{ .After }}
+Wants={{ .Wants }}
+DefaultDependencies=no
+
+[Mount]
+What={{ .DiskUUID }}
+Where={{ .MountPath }}
+Type=xfs
+Options={{ .MountOptions }}
+
+[Install]
+WantedBy=local-fs.target

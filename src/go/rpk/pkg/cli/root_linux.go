@@ -11,6 +11,7 @@ package cli
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/iotune"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/raid0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/tune"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
@@ -24,6 +25,7 @@ func addPlatformDependentCmds(fs afero.Fs, p *config.Params, cmd *cobra.Command)
 	cmd.AddCommand(
 		redpanda.NewCommand(fs, p, rp.NewLauncher()),
 		iotune.NewCommand(fs, p),
+		raid0.NewCommand(fs, p),
 	)
 
 	// deprecated
