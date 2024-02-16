@@ -262,6 +262,42 @@ public:
     using delta_cb_t = ss::noncopyable_function<void(delta_range_t)>;
     using lw_cb_t = ss::noncopyable_function<void()>;
 
+    /// A helper struct that has various replica-related metadata all in one
+    /// place, so that the API user doesn't have to query several maps manually.
+    ///
+    /// Note that it contains references to current topic_table state and
+    /// therefore cannot be used across scheduling points.
+    struct partition_replicas_view {
+        const replicas_t& orig_replicas() const {
+            return update ? update->get_previous_replicas()
+                          : assignment.replicas;
+        }
+
+        const replicas_t& resulting_replicas() const {
+            return assignment.replicas;
+        }
+
+        const replicas_revision_map& revisions() const {
+            return partition_meta.replicas_revisions;
+        }
+
+        model::revision_id last_update_finished_revision() const {
+            return partition_meta.last_update_finished_revision;
+        }
+
+        model::revision_id last_cmd_revision() const {
+            return update ? update->get_last_cmd_revision()
+                          : last_update_finished_revision();
+        }
+
+        friend std::ostream&
+        operator<<(std::ostream&, const partition_replicas_view&);
+
+        const partition_meta& partition_meta;
+        const partition_assignment& assignment;
+        const in_progress_update* update = nullptr;
+    };
+
     explicit topic_table()
       : _probe(*this){};
 
@@ -396,6 +432,18 @@ public:
 
     /// Returns metadata of all topics.
     const underlying_t& all_topics_metadata() const;
+
+    /// Get corresponding partition_replicas_view for an ntp (if present).
+    std::optional<partition_replicas_view>
+    get_replicas_view(const model::ntp& ntp) const;
+
+    /// Get corresponding partition_replicas_view for an ntp, assumes that the
+    /// partition exists. Useful for iterating over partitions of a single
+    /// topic (as it avoids repeatedly querying topic-wise maps).
+    partition_replicas_view get_replicas_view(
+      const model::ntp& ntp,
+      const topic_metadata_item& md_item,
+      const partition_assignment& assignment) const;
 
     // use this pair of methods to check if the topics map has changed (so that
     // it is not safe to continue iterating over it).

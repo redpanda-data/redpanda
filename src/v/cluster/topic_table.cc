@@ -1505,6 +1505,40 @@ const topic_table::underlying_t& topic_table::all_topics_metadata() const {
     return _topics;
 }
 
+std::optional<topic_table::partition_replicas_view>
+topic_table::get_replicas_view(const model::ntp& ntp) const {
+    auto topic_it = _topics.find(model::topic_namespace_view{ntp});
+    if (topic_it == _topics.end()) {
+        return std::nullopt;
+    }
+    auto as_it = topic_it->second.get_assignments().find(ntp.tp.partition);
+    if (as_it == topic_it->second.get_assignments().end()) {
+        return std::nullopt;
+    }
+    return get_replicas_view(ntp, topic_it->second, *as_it);
+}
+
+topic_table::partition_replicas_view topic_table::get_replicas_view(
+  const model::ntp& ntp,
+  const topic_table::topic_metadata_item& md_item,
+  const partition_assignment& assignment) const {
+    auto p_it = md_item.partitions.find(assignment.id);
+    vassert(
+      p_it != md_item.partitions.end(), "[{}] expected partition meta", ntp);
+
+    const in_progress_update* update = nullptr;
+    auto update_it = _updates_in_progress.find(ntp);
+    if (update_it != _updates_in_progress.end()) {
+        update = &update_it->second;
+    }
+
+    return partition_replicas_view{
+      .partition_meta = p_it->second,
+      .assignment = assignment,
+      .update = update,
+    };
+}
+
 void topic_table::check_topics_map_stable(model::revision_id start_rev) const {
     if (_topics_map_revision != start_rev) {
         throw concurrent_modification_error(start_rev, _topics_map_revision);
@@ -1781,6 +1815,20 @@ operator<<(std::ostream& o, const topic_table::in_progress_update& u) {
       u._previous_replicas,
       u._target_replicas,
       u._policy);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const topic_table::partition_replicas_view& ri) {
+    fmt::print(
+      o,
+      "{{orig_replicas: {}, last_update_finished_revision: {}",
+      ri.orig_replicas(),
+      ri.last_update_finished_revision());
+    if (ri.update) {
+        fmt::print(o, ", update: {}", *ri.update);
+    }
+    fmt::print(o, "}}");
     return o;
 }
 
