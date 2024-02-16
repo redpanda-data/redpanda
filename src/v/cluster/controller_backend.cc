@@ -1878,7 +1878,7 @@ ss::future<> controller_backend::add_to_shard_table(
   model::ntp ntp,
   raft::group_id raft_group,
   uint32_t shard,
-  model::revision_id revision) {
+  model::shard_revision_id revision) {
     // update shard_table: broadcast
     vlog(
       clusterlog.trace,
@@ -1894,7 +1894,9 @@ ss::future<> controller_backend::add_to_shard_table(
 }
 
 ss::future<> controller_backend::remove_from_shard_table(
-  model::ntp ntp, raft::group_id raft_group, model::revision_id revision) {
+  model::ntp ntp,
+  raft::group_id raft_group,
+  model::shard_revision_id revision) {
     // update shard_table: broadcast
 
     return _shard_table.invoke_on_all(
@@ -1953,7 +1955,10 @@ ss::future<std::error_code> controller_backend::do_create_partition(
             _ntp_claims.erase(ntp);
 
             co_await add_to_shard_table(
-              ntp, group_id, ss::this_shard_id(), command_revision);
+              ntp,
+              group_id,
+              ss::this_shard_id(),
+              model::shard_revision_id{command_revision});
 
         } catch (...) {
             vlog(
@@ -2004,7 +2009,8 @@ ss::future<> controller_backend::shutdown_partition(
 
     try {
         // remove from shard table
-        co_await remove_from_shard_table(ntp, gr, cmd_revision);
+        co_await remove_from_shard_table(
+          ntp, gr, model::shard_revision_id{cmd_revision});
         // shutdown partition
         co_await _partition_manager.local().shutdown(ntp);
 
@@ -2061,10 +2067,8 @@ ss::future<> controller_backend::delete_partition(
 
     auto group_id = part->group();
 
-    co_await _shard_table.invoke_on_all(
-      [ntp, group_id, rev](shard_table& st) mutable {
-          st.erase(ntp, group_id, rev);
-      });
+    co_await remove_from_shard_table(
+      ntp, group_id, model::shard_revision_id{rev});
 
     co_await _partition_manager.local().remove(ntp, mode);
 

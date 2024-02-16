@@ -27,7 +27,7 @@ namespace cluster {
 class shard_table final {
     struct shard_revision {
         ss::shard_id shard;
-        model::revision_id revision;
+        model::shard_revision_id revision;
     };
 
 public:
@@ -53,7 +53,7 @@ public:
       const model::ntp& ntp,
       raft::group_id g,
       ss::shard_id shard,
-      model::revision_id rev) {
+      model::shard_revision_id rev) {
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
             if (it->second.revision > rev) {
                 return;
@@ -75,8 +75,8 @@ public:
         _group_idx.insert_or_assign(g, shard_revision{shard, rev});
     }
 
-    void
-    erase(const model::ntp& ntp, raft::group_id g, model::revision_id rev) {
+    void erase(
+      const model::ntp& ntp, raft::group_id g, model::shard_revision_id rev) {
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
             // The check on exact revision match (= rev case) below is a special
             // case. This only happens when bootstrapping cross core movements

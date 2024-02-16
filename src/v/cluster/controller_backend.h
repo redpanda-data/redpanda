@@ -297,9 +297,9 @@ private:
       std::vector<model::broker>);
 
     ss::future<> add_to_shard_table(
-      model::ntp, raft::group_id, ss::shard_id, model::revision_id);
-    ss::future<>
-      remove_from_shard_table(model::ntp, raft::group_id, model::revision_id);
+      model::ntp, raft::group_id, ss::shard_id, model::shard_revision_id);
+    ss::future<> remove_from_shard_table(
+      model::ntp, raft::group_id, model::shard_revision_id);
 
     ss::future<> shutdown_partition(
       ss::lw_shared_ptr<partition>, model::revision_id cmd_revision);
