@@ -203,6 +203,7 @@ v_cc_library(
     cloud_metadata/uploader.cc
     migrations/tx_manager_migrator.cc
     tx_topic_manager.cc
+    shard_placement_table.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc

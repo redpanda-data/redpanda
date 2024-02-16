@@ -50,6 +50,7 @@
 #include "cluster/raft0_utils.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/security_frontend.h"
+#include "cluster/shard_placement_table.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
@@ -178,6 +179,7 @@ ss::future<> controller::wire_up() {
             std::ref(_partition_allocator),
             std::ref(_node_status_table));
       })
+      .then([this] { return _shard_placement.start(); })
       .then([this] { _probe.start(); });
 }
 
@@ -769,6 +771,7 @@ ss::future<> controller::stop() {
           .then([this] { return _plugin_backend.stop(); })
           .then([this] { return _plugin_table.stop(); })
           .then([this] { return _drain_manager.stop(); })
+          .then([this] { return _shard_placement.stop(); })
           .then([this] { return _partition_balancer_state.stop(); })
           .then([this] { return _partition_allocator.stop(); })
           .then([this] { return _partition_leaders.stop(); })

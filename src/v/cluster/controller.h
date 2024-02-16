@@ -245,17 +245,18 @@ private:
     ss::sharded<partition_balancer_state>
       _partition_balancer_state; // single instance
     ss::sharded<partition_leaders_table>
-      _partition_leaders;                            // instance per core
-    ss::sharded<drain_manager> _drain_manager;       // instance per core
-    ss::sharded<members_manager> _members_manager;   // single instance
-    ss::sharded<topics_frontend> _tp_frontend;       // instance per core
-    ss::sharded<controller_backend> _backend;        // instance per core
-    ss::sharded<controller_stm> _stm;                // single instance
-    ss::sharded<controller_api> _api;                // instance per core
-    ss::sharded<members_frontend> _members_frontend; // instance per core
-    ss::sharded<members_backend> _members_backend;   // single instance
-    ss::sharded<config_frontend> _config_frontend;   // instance per core
-    ss::sharded<config_manager> _config_manager;     // single instance
+      _partition_leaders;                                // instance per core
+    ss::sharded<shard_placement_table> _shard_placement; // istance per core
+    ss::sharded<drain_manager> _drain_manager;           // instance per core
+    ss::sharded<members_manager> _members_manager;       // single instance
+    ss::sharded<topics_frontend> _tp_frontend;           // instance per core
+    ss::sharded<controller_backend> _backend;            // instance per core
+    ss::sharded<controller_stm> _stm;                    // single instance
+    ss::sharded<controller_api> _api;                    // instance per core
+    ss::sharded<members_frontend> _members_frontend;     // instance per core
+    ss::sharded<members_backend> _members_backend;       // single instance
+    ss::sharded<config_frontend> _config_frontend;       // instance per core
+    ss::sharded<config_manager> _config_manager;         // single instance
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<shard_table>& _shard_table;
