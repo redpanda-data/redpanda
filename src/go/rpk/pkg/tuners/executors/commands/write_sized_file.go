@@ -78,7 +78,7 @@ func (c *writeSizedFileCommand) RenderScript(w *bufio.Writer) error {
 	// See 'man truncate'.
 	fmt.Fprintf(
 		w,
-		"truncate -s %d %s",
+		"truncate -s %d %s\n",
 		c.sizeBytes,
 		c.path,
 	)
