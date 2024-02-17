@@ -118,13 +118,13 @@ private:
 class copy_data_segment_reducer : public compaction_reducer {
 public:
     using filter_t = ss::noncopyable_function<ss::future<bool>(
-      const model::record_batch&, const model::record&)>;
+      const model::record_batch&, const model::record&, bool)>;
     copy_data_segment_reducer(
       filter_t f,
       segment_appender* a,
       bool internal_topic,
       offset_delta_time apply_offset,
-      model::offset segment_last_offset = model::offset{},
+      model::offset segment_last_offset,
       compacted_index_writer* cidx = nullptr)
       : _should_keep_fn(std::move(f))
       , _segment_last_offset(segment_last_offset)
@@ -141,7 +141,10 @@ private:
       filter_and_append(model::compression, model::record_batch);
 
     ss::future<> maybe_keep_offset(
-      const model::record_batch&, const model::record&, std::vector<int32_t>&);
+      const model::record_batch&,
+      const model::record&,
+      bool,
+      std::vector<int32_t>&);
 
     ss::future<std::optional<model::record_batch>> filter(model::record_batch);
 

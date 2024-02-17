@@ -195,7 +195,19 @@ ss::future<index_state> deduplicate_segment(
     auto rdr = internal::create_segment_full_reader(
       seg, cfg, probe, std::move(read_holder));
     auto copy_reducer = internal::copy_data_segment_reducer(
-      [&map](const model::record_batch& b, const model::record& r) {
+      [&map, segment_last_offset = seg->offsets().committed_offset](
+        const model::record_batch& b,
+        const model::record& r,
+        bool is_last_record_in_batch) {
+          auto is_last_batch = b.last_offset() == segment_last_offset;
+          if (is_last_batch && is_last_record_in_batch) {
+              vlog(
+                stlog.trace,
+                "retaining last record: {} of segment from batch: {}",
+                r,
+                b.header());
+              return ss::make_ready_future<bool>(true);
+          }
           return should_keep(map, b, r);
       },
       &appender,

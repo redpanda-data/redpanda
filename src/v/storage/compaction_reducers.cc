@@ -121,8 +121,9 @@ compacted_offset_list_reducer::operator()(compacted_index::entry&& e) {
 ss::future<> copy_data_segment_reducer::maybe_keep_offset(
   const model::record_batch& batch,
   const model::record& r,
+  bool is_last_record_in_batch,
   std::vector<int32_t>& offset_deltas) {
-    if (co_await _should_keep_fn(batch, r)) {
+    if (co_await _should_keep_fn(batch, r, is_last_record_in_batch)) {
         offset_deltas.push_back(r.offset_delta());
         co_return;
     }
@@ -139,22 +140,13 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     // 1. compute which records to keep
     std::vector<int32_t> offset_deltas;
     offset_deltas.reserve(batch.record_count());
-    int last_batch_records_seen = 0;
+
+    int32_t records_seen = 0;
     co_await batch.for_each_record_async(
-      [this, &batch, &offset_deltas, &last_batch_records_seen](
-        const model::record& r) {
-          if (
-            batch.last_offset() == _segment_last_offset
-            && batch.record_count() == ++last_batch_records_seen) {
-              vlog(
-                stlog.trace,
-                "retaining last record: {} of segment from batch: {}",
-                r,
-                batch.header());
-              offset_deltas.push_back(r.offset_delta());
-              return ss::make_ready_future<>();
-          }
-          return maybe_keep_offset(batch, r, offset_deltas);
+      [this, &batch, &offset_deltas, &records_seen](const model::record& r) {
+          records_seen++;
+          return maybe_keep_offset(
+            batch, r, batch.record_count() == records_seen, offset_deltas);
       });
 
     // 2. no record to keep

@@ -411,7 +411,9 @@ ss::future<storage::index_state> do_copy_segment_data(
       tmpname);
 
     auto should_keep = [compacted_list = std::move(compacted_offsets)](
-                         const model::record_batch& b, const model::record& r) {
+                         const model::record_batch& b,
+                         const model::record& r,
+                         bool) {
         const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
         return ss::make_ready_future<bool>(compacted_list.contains(o));
     };
@@ -420,7 +422,8 @@ ss::future<storage::index_state> do_copy_segment_data(
       std::move(should_keep),
       appender.get(),
       seg->path().is_internal_topic(),
-      apply_offset);
+      apply_offset,
+      seg->offsets().committed_offset);
 
     // create the segment, get the in-memory index for the new segment
     auto new_index = co_await create_segment_full_reader(
