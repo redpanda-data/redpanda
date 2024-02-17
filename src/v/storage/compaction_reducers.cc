@@ -129,6 +129,18 @@ ss::future<> copy_data_segment_reducer::maybe_keep_offset(
     }
 }
 
+model::record_batch copy_data_segment_reducer::make_placeholder_batch(
+  model::record_batch_header& hdr) {
+    model::record_batch_header new_hdr;
+    new_hdr.type = model::record_batch_type::compaction_placeholder;
+    new_hdr.base_offset = hdr.base_offset;
+    new_hdr.last_offset_delta = hdr.last_offset_delta;
+    auto no_records = iobuf{};
+    reset_size_checksum_metadata(new_hdr, no_records);
+    return model::record_batch(
+      new_hdr, std::move(no_records), model::record_batch::tag_ctor_ng{});
+}
+
 ss::future<std::optional<model::record_batch>>
 copy_data_segment_reducer::filter(model::record_batch batch) {
     // do not compact raft configuration and archival metadata as they shift
@@ -148,6 +160,21 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
           return maybe_keep_offset(
             batch, r, batch.record_count() == records_seen, offset_deltas);
       });
+
+    if (batch.last_offset() == _segment_last_offset && offset_deltas.empty()) {
+        // last batch in the segment has been compacted away.
+        // This is most likely caused by aborted data batches getting compacted
+        // away during self compaction of the segment if they are the last batch
+        // in the segment. We install a placeholder batch of same size to retain
+        // contiguousness of the offset space.
+        auto placeholder = make_placeholder_batch(batch.header());
+        vlog(
+          stlog.debug,
+          "installing a placeholder {} for compacted batch: {}",
+          placeholder,
+          batch);
+        co_return placeholder;
+    }
 
     // 2. no record to keep
     if (offset_deltas.empty()) {

@@ -148,6 +148,9 @@ private:
 
     ss::future<std::optional<model::record_batch>> filter(model::record_batch);
 
+    // Creates a placeholder batch with same offset range as the input header.
+    model::record_batch make_placeholder_batch(model::record_batch_header&);
+
     filter_t _should_keep_fn;
 
     // Offset to keep in case the index is empty as of getting to this offset.
