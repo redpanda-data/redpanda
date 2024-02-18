@@ -116,6 +116,7 @@ std::ostream& operator<<(std::ostream&, acl_permission);
 enum class principal_type : int8_t {
     user = 0,
     ephemeral_user = 1,
+    role = 2,
 };
 
 std::ostream& operator<<(std::ostream&, resource_type);
@@ -233,6 +234,11 @@ private:
 
 inline const acl_host acl_wildcard_host = acl_host::wildcard_host();
 
+// TODO(oren): acl_entry has a principal and the rest of the access data.
+// Probably it's the case that role-associated  ACLs are stored and managed
+// _exactly_ like user acls. The question becomes (perhaps) exactly how to
+// manage the role itself (incl members), the authorization flow, and precisely
+// how role metadata is wired back up to the Admin API
 /*
  * An ACL entry specifies if a principal (connected from a specific host) is
  * permitted to execute an operation on. When associated with a resource, it
