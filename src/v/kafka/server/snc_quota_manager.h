@@ -14,6 +14,7 @@
 #include "config/property.h"
 #include "config/throughput_control_group.h"
 #include "metrics/metrics.h"
+#include "ssx/sharded_ptr.h"
 #include "utils/bottomless_token_bucket.h"
 #include "utils/mutex.h"
 
@@ -102,10 +103,10 @@ public:
       ss::internal::capped_release::no,
       clock>;
     using buckets_t = kafka::ingress_egress_state<
-      std::unique_ptr<kafka::snc_quota_manager::bucket_t>>;
+      ssx::sharded_ptr<kafka::snc_quota_manager::bucket_t>>;
     static buckets_t make_node_buckets();
 
-    explicit snc_quota_manager(const buckets_t& node_quota);
+    explicit snc_quota_manager(buckets_t& node_quota);
     snc_quota_manager(const snc_quota_manager&) = delete;
     snc_quota_manager& operator=(const snc_quota_manager&) = delete;
     snc_quota_manager(snc_quota_manager&&) = delete;
@@ -235,7 +236,7 @@ private:
     ingress_egress_state<std::optional<quota_t>> _node_quota_default;
     ingress_egress_state<quota_t> _shard_quota_minimum;
     ingress_egress_state<bottomless_token_bucket> _shard_quota;
-    ingress_egress_state<bucket_t*> _node_quota;
+    buckets_t& _node_quota;
 
     // service
     snc_quotas_probe _probe;

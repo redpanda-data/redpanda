@@ -12,6 +12,8 @@
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/future-util.h"
+#include "ssx/sharded_ptr.h"
 #include "tristate.h"
 
 #include <seastar/core/metrics.hh>
@@ -132,29 +134,25 @@ quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
     }
 }
 
-auto make_node_bucket(auto const& cfg) {
-    int64_t rate = cfg().value_or(0);
-    // TODO: The limit cannot be changed at runtime, which poses a problem
-    // if the rate is created as 0 and is then increased
-    int64_t limit = rate;
-    // TODO: A threshold of 1 too small, but allows profiling the atomic ops
-    int64_t threshold = config::shard_local_cfg()
-                          .kafka_throughput_replenish_threshold()
-                          .value_or(1);
-    return std::make_unique<kafka::snc_quota_manager::bucket_t>(
-      rate, limit, threshold);
+auto update_node_bucket(
+  ssx::sharded_ptr<kafka::snc_quota_manager::bucket_t>& b, auto const& cfg) {
+    if (!cfg().has_value()) {
+        return b.reset();
+    }
+    uint64_t rate = *cfg();
+    if (b && b->rate() == rate) {
+        return ss::make_ready_future();
+    }
+    uint64_t limit = rate;
+    uint64_t threshold = config::shard_local_cfg()
+                           .kafka_throughput_replenish_threshold()
+                           .value_or(1);
+    return b.reset(rate, limit, threshold);
 };
 
 } // namespace
 
-snc_quota_manager::buckets_t snc_quota_manager::make_node_buckets() {
-    auto const& cfg = config::shard_local_cfg();
-    return {
-      .in = make_node_bucket(cfg.kafka_throughput_limit_node_in_bps),
-      .eg = make_node_bucket(cfg.kafka_throughput_limit_node_out_bps)};
-}
-
-snc_quota_manager::snc_quota_manager(const buckets_t& node_quota)
+snc_quota_manager::snc_quota_manager(buckets_t& node_quota)
   : _max_kafka_throttle_delay(
     config::shard_local_cfg().max_kafka_throttle_delay_ms.bind())
   , _kafka_throughput_limit_node_bps{
@@ -177,21 +175,25 @@ snc_quota_manager::snc_quota_manager(const buckets_t& node_quota)
            _kafka_quota_balancer_window()},
       .eg {node_to_shard_quota(_node_quota_default.eg),
            _kafka_quota_balancer_window()}}
-  , _node_quota{.in = node_quota.in.get(), .eg = node_quota.eg.get()}
+  , _node_quota{node_quota}
   , _probe(*this)
 {
     update_shard_quota_minimum();
     _kafka_throughput_limit_node_bps.in.watch([this] {
         if (ss::this_shard_id() == quota_balancer_shard) {
-            _node_quota.in->update_rate(
-              _kafka_throughput_limit_node_bps.in().value_or(0));
+            ssx::spawn_with_gate(_balancer_gate, [this] {
+                return update_node_bucket(
+                  _node_quota.in, _kafka_throughput_limit_node_bps.in);
+            });
         }
         update_node_quota_default();
     });
     _kafka_throughput_limit_node_bps.eg.watch([this] {
         if (ss::this_shard_id() == quota_balancer_shard) {
-            _node_quota.eg->update_rate(
-              _kafka_throughput_limit_node_bps.eg().value_or(0));
+            ssx::spawn_with_gate(_balancer_gate, [this] {
+                return update_node_bucket(
+                  _node_quota.eg, _kafka_throughput_limit_node_bps.eg);
+            });
         }
         update_node_quota_default();
     });
@@ -236,16 +238,23 @@ ss::future<> snc_quota_manager::start() {
     if (ss::this_shard_id() == quota_balancer_shard) {
         _balancer_timer.arm(
           ss::lowres_clock::now() + get_quota_balancer_node_period());
+        co_await update_node_bucket(
+          _node_quota.in, _kafka_throughput_limit_node_bps.in);
+        co_await update_node_bucket(
+          _node_quota.eg, _kafka_throughput_limit_node_bps.eg);
     }
-    return ss::make_ready_future<>();
 }
 
 ss::future<> snc_quota_manager::stop() {
     if (ss::this_shard_id() == quota_balancer_shard) {
         _balancer_timer.cancel();
-        return _balancer_gate.close();
-    } else {
-        return ss::make_ready_future<>();
+        co_await _balancer_gate.close();
+        if (_node_quota.in) {
+            co_await _node_quota.in.stop();
+        }
+        if (_node_quota.eg) {
+            co_await _node_quota.eg.stop();
+        }
     }
 }
 
@@ -267,10 +276,12 @@ delay_t eval_delay(const bottomless_token_bucket& tb) noexcept {
 }
 
 /// Evaluate throttling delay required based on the state of a token bucket
-delay_t eval_node_delay(snc_quota_manager::bucket_t& tb) noexcept {
-    if (tb.rate() == 0) {
+delay_t eval_node_delay(
+  const ssx::sharded_ptr<snc_quota_manager::bucket_t>& tbp) noexcept {
+    if (!tbp) {
         return delay_t::zero();
     }
+    auto& tb = *tbp;
     return std::chrono::duration_cast<delay_t>(
       tb.duration_for(tb.deficiency(tb.grab(0))));
 }
@@ -353,8 +364,7 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
         res.request = std::min(
           _max_kafka_throttle_delay(),
           std::max(
-            eval_node_delay(*_node_quota.in),
-            eval_node_delay(*_node_quota.eg)));
+            eval_node_delay(_node_quota.in), eval_node_delay(_node_quota.eg)));
     } else {
         res.request = std::min(
           _max_kafka_throttle_delay(),
@@ -373,8 +383,10 @@ void snc_quota_manager::record_request_receive(
         return;
     }
     if (config::shard_local_cfg().kafka_quota_balancer_v2) {
-        _node_quota.in->replenish(now);
-        _node_quota.in->grab(request_size);
+        if (_node_quota.in) {
+            _node_quota.in->replenish(now);
+            _node_quota.in->grab(request_size);
+        }
     } else {
         _shard_quota.in.use(request_size, now);
     }
@@ -396,8 +408,10 @@ void snc_quota_manager::record_response(
         return;
     }
     if (config::shard_local_cfg().kafka_quota_balancer_v2) {
-        _node_quota.eg->replenish(now);
-        _node_quota.eg->grab(request_size);
+        if (_node_quota.eg) {
+            _node_quota.eg->replenish(now);
+            _node_quota.eg->grab(request_size);
+        }
     } else {
         _shard_quota.eg.use(request_size, now);
     }
