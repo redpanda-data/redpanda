@@ -19,6 +19,10 @@
 
 namespace experimental::io {
 
+namespace testing_details {
+class scheduler_queue_accessor;
+}; // namespace testing_details
+
 class persistence;
 
 /**
@@ -55,6 +59,7 @@ public:
 
     private:
         friend class scheduler;
+        friend class testing_details::scheduler_queue_accessor;
 
         io_queue io_queue_;
 
