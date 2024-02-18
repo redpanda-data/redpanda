@@ -116,6 +116,7 @@ std::ostream& operator<<(std::ostream&, acl_permission);
 enum class principal_type : int8_t {
     user = 0,
     ephemeral_user = 1,
+    role = 2,
 };
 
 std::ostream& operator<<(std::ostream&, resource_type);
