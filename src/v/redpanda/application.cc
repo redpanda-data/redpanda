@@ -1596,7 +1596,6 @@ void application::wire_up_redpanda_services(
     syschecks::systemd_message("Adding kafka quota managers").get();
     construct_service(quota_mgr).get();
 
-    snc_node_quota = kafka::snc_quota_manager::make_node_buckets();
     construct_service(snc_quota_mgr, std::ref(snc_node_quota)).get();
 
     syschecks::systemd_message("Creating auditing subsystem").get();
