@@ -427,6 +427,7 @@ enum class upload_object_type {
     group_offsets_snapshot,
     download_result_file,
     remote_lifecycle_marker,
+    inventory_configuration,
 };
 
 std::ostream& operator<<(std::ostream&, upload_object_type);

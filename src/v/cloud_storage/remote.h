@@ -116,6 +116,15 @@ struct api_activity_notification {
     bool is_retry;
 };
 
+// Enables creating mocks from remote. A mock class should be extended from this
+// interface in tests, and methods in real code should accept
+// references/pointers to this interface instead of remote to enable testing.
+class cloud_storage_api {
+public:
+    virtual ss::future<upload_result> upload_object(upload_object_request) = 0;
+    virtual ~cloud_storage_api() = default;
+};
+
 /// \brief Represents remote endpoint
 ///
 /// The `remote` is responsible for remote data
@@ -123,7 +132,9 @@ struct api_activity_notification {
 /// download data. Also, it's responsible for maintaining
 /// correct naming in S3. The remote takes into account
 /// things like reconnects, backpressure and backoff.
-class remote : public ss::peering_sharded_service<remote> {
+class remote
+  : public ss::peering_sharded_service<remote>
+  , public cloud_storage_api {
 public:
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
@@ -162,7 +173,7 @@ public:
       const cloud_storage_clients::client_configuration& conf,
       model::cloud_credentials_source cloud_credentials_source);
 
-    ~remote();
+    ~remote() override;
 
     /// \brief Initialize 'remote'
     ///
@@ -398,7 +409,7 @@ public:
     /// strings, does not check for leadership before upload like the segment
     /// upload function.
     ss::future<upload_result>
-    upload_object(upload_object_request upload_request);
+    upload_object(upload_object_request upload_request) override;
 
     ss::future<download_result> do_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,

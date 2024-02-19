@@ -510,25 +510,20 @@ configuration::get_bucket_config() {
 std::ostream& operator<<(std::ostream& os, upload_object_type upload) {
     switch (upload) {
     case upload_object_type::object:
-        os << "object";
-        break;
+        return os << "object";
     case upload_object_type::segment_index:
-        os << "segment-index";
-        break;
+        return os << "segment-index";
     case upload_object_type::manifest:
-        os << "manifest";
-        break;
+        return os << "manifest";
     case upload_object_type::group_offsets_snapshot:
-        os << "group-offsets-snapshot";
-        break;
+        return os << "group-offsets-snapshot";
     case upload_object_type::download_result_file:
-        os << "download-result-file";
-        break;
+        return os << "download-result-file";
     case upload_object_type::remote_lifecycle_marker:
-        os << "remote-lifecycle-marker";
-        break;
+        return os << "remote-lifecycle-marker";
+    case upload_object_type::inventory_configuration:
+        return os << "inventory-configuration";
     }
-    return os;
 }
 
 void upload_object_request::on_success(remote_probe& probe) {
