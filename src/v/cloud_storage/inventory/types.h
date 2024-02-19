@@ -62,4 +62,12 @@ concept vendor_ops_provider = std::is_base_of_v<base_ops, T>;
 template<vendor_ops_provider... Ts>
 using inv_ops_variant = std::variant<Ts...>;
 
+enum class inventory_creation_result {
+    success,
+    failed,
+    already_exists,
+};
+
+std::ostream& operator<<(std::ostream&, inventory_creation_result);
+
 } // namespace cloud_storage::inventory

@@ -119,3 +119,105 @@ TEST(InvCfgExists, HighLevelApi) {
 
     ASSERT_TRUE(ops.inventory_configuration_exists(remote, parent).get());
 }
+
+TEST(CreateInvCfg, IfExistsDoesNotCreate) {
+    MockRemote remote;
+    EXPECT_CALL(remote, download_object(t::_))
+      .Times(1)
+      .WillOnce(t::Invoke(validate_inventory_exists_request));
+
+    ss::abort_source as;
+    retry_chain_node parent{as};
+
+    cst::inventory::inv_ops ops{cst::inventory::aws_ops{
+      cloud_storage_clients::bucket_name{bucket},
+      cst::inventory::inventory_config_id{id},
+      prefix}};
+
+    ASSERT_EQ(
+      ops.maybe_create_inventory_configuration(remote, parent).get(),
+      cst::inventory::inventory_creation_result::already_exists);
+}
+
+TEST(CreateInvCfg, IfDoesNotExistCreates) {
+    MockRemote remote;
+    EXPECT_CALL(remote, download_object(t::_))
+      .Times(1)
+      .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
+        cst::download_result::notfound)));
+
+    EXPECT_CALL(remote, upload_object(t::_))
+      .Times(1)
+      .WillOnce(t::Invoke(validate_create_request));
+
+    ss::abort_source as;
+    retry_chain_node parent{as};
+
+    cst::inventory::inv_ops ops{cst::inventory::aws_ops{
+      cloud_storage_clients::bucket_name{bucket},
+      cst::inventory::inventory_config_id{id},
+      prefix}};
+
+    ASSERT_EQ(
+      ops.maybe_create_inventory_configuration(remote, parent).get(),
+      cst::inventory::inventory_creation_result::success);
+}
+
+TEST(CreateInvCfg, CreationRace) {
+    // Simulate a creation race:
+    // First, the config does not exist
+    // Then, we try to create and it fails
+    // Finally, the config exists
+    // The outcome should be `already_exists` and not `failed`
+    MockRemote remote;
+    EXPECT_CALL(remote, download_object(t::_))
+      .Times(2)
+      .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
+        cst::download_result::notfound)))
+      .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
+        cst::download_result::success)));
+
+    EXPECT_CALL(remote, upload_object(t::_))
+      .Times(1)
+      .WillOnce(t::Return(
+        ss::make_ready_future<cst::upload_result>(cst::upload_result::failed)));
+
+    ss::abort_source as;
+    retry_chain_node parent{as};
+
+    cst::inventory::inv_ops ops{cst::inventory::aws_ops{
+      cloud_storage_clients::bucket_name{bucket},
+      cst::inventory::inventory_config_id{id},
+      prefix}};
+
+    ASSERT_EQ(
+      ops.maybe_create_inventory_configuration(remote, parent).get(),
+      cst::inventory::inventory_creation_result::already_exists);
+}
+
+TEST(CreateInvCfg, FailedToCreate) {
+    MockRemote remote;
+    EXPECT_CALL(remote, download_object(t::_))
+      .Times(2)
+      .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
+        cst::download_result::notfound)))
+      .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
+        cst::download_result::notfound)));
+
+    EXPECT_CALL(remote, upload_object(t::_))
+      .Times(1)
+      .WillOnce(t::Return(
+        ss::make_ready_future<cst::upload_result>(cst::upload_result::failed)));
+
+    ss::abort_source as;
+    retry_chain_node parent{as};
+
+    cst::inventory::inv_ops ops{cst::inventory::aws_ops{
+      cloud_storage_clients::bucket_name{bucket},
+      cst::inventory::inventory_config_id{id},
+      prefix}};
+
+    ASSERT_EQ(
+      ops.maybe_create_inventory_configuration(remote, parent).get(),
+      cst::inventory::inventory_creation_result::failed);
+}
