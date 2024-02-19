@@ -13,6 +13,7 @@
 
 #include "base/vassert.h"
 #include "base/vlog.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "storage/logger.h"
 
@@ -348,7 +349,7 @@ struct persisted_batches_map
       serde::version<0>,
       serde::compat_version<0>> {
     int64_t start_delta = 0;
-    std::vector<persisted_batch> batches;
+    chunked_vector<persisted_batch> batches;
 };
 
 } // namespace
@@ -359,7 +360,7 @@ iobuf offset_translator_state::serialize_map() const {
       "ntp {}: offsets map shouldn't be empty",
       _ntp);
 
-    std::vector<persisted_batch> batches;
+    chunked_vector<persisted_batch> batches;
     batches.reserve(_last_offset2batch.size());
     for (const auto& [o, b] : _last_offset2batch) {
         int32_t length = int32_t(o - b.base_offset) + 1;
