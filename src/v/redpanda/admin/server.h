@@ -464,12 +464,14 @@ private:
       put_license_handler(std::unique_ptr<ss::http::request>);
 
     /// Broker routes
+
     ss::future<ss::json::json_return_type>
       get_broker_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       decomission_broker_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       get_decommission_progress_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type> get_broker_uuids_handler();
 
     ss::future<ss::json::json_return_type>
       recomission_broker_handler(std::unique_ptr<ss::http::request>);
@@ -600,6 +602,10 @@ private:
       restart_service_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       sampled_memory_profile_handler(std::unique_ptr<ss::http::request>);
+
+    ss::future<ss::json::json_return_type> get_node_uuid_handler();
+    ss::future<ss::json::json_return_type>
+      override_node_uuid_handler(std::unique_ptr<ss::http::request>);
 
     // Transform routes
     ss::future<ss::json::json_return_type>

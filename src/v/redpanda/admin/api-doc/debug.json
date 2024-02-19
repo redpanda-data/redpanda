@@ -124,12 +124,11 @@
                         },
                         "503": {
                             "description": "Test failed to start",
-                            "schema":{
+                            "schema": {
                                 "type": "json"
                             }
                         }
                     }
-
                 }
             ]
         },
@@ -159,7 +158,6 @@
                     ],
                     "parameters": []
                 }
-
             ]
         },
         {
@@ -325,10 +323,10 @@
                     ],
                     "parameters": [
                         {
-                        "name": "service",
-                        "in": "query",
-                        "required": true,
-                        "type": "string"
+                            "name": "service",
+                            "in": "query",
+                            "required": true,
+                            "type": "string"
                         }
                     ],
                     "responses": {
@@ -395,10 +393,10 @@
                     ],
                     "parameters": [
                         {
-                        "name": "value",
-                        "in": "query",
-                        "required": true,
-                        "type": "boolean"
+                            "name": "value",
+                            "in": "query",
+                            "required": true,
+                            "type": "boolean"
                         }
                     ]
                 }
@@ -453,91 +451,91 @@
             ]
         },
         {
-          "path": "/v1/debug/unsafe_reset_metadata/{topic}/{partition}",
-          "operations": [
-            {
-              "method": "POST",
-              "summary": "Resets the manifest, updating all replicas with the given manifest. This is very unsafe, so be sure the provided manifest actually has valid contents. Formatting aside, very little validation will be done on the requested manifest.",
-              "operationId": "unsafe_reset_metadata",
-              "nickname": "unsafe_reset_metadata",
-              "parameters": [
+            "path": "/v1/debug/unsafe_reset_metadata/{topic}/{partition}",
+            "operations": [
                 {
-                  "name": "topic",
-                  "in": "path",
-                  "required": true,
-                  "type": "string"
-                },
-                {
-                  "name": "partition",
-                  "in": "path",
-                  "required": true,
-                  "type": "integer"
-                },
-                {
-                  "name": "body",
-                  "required": true,
-                  "paramType": "body"
+                    "method": "POST",
+                    "summary": "Resets the manifest, updating all replicas with the given manifest. This is very unsafe, so be sure the provided manifest actually has valid contents. Formatting aside, very little validation will be done on the requested manifest.",
+                    "operationId": "unsafe_reset_metadata",
+                    "nickname": "unsafe_reset_metadata",
+                    "parameters": [
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "body",
+                            "required": true,
+                            "paramType": "body"
+                        }
+                    ],
+                    "responseMessages": [
+                        {
+                            "code": 200,
+                            "message": "Partition metadata is reset"
+                        }
+                    ]
                 }
-              ],
-              "responseMessages": [
-                {
-                  "code": 200,
-                  "message": "Partition metadata is reset"
-                }
-              ]
-            }
-          ]
+            ]
         },
         {
-          "path": "/v1/debug/storage/disk_stat/{type}",
-          "operations": [
-            {
-              "method": "GET",
-              "summary": "Return disk space statistics.",
-              "operationId": "get_disk_stat",
-              "nickname": "get_disk_stat",
-              "type": "disk_stat",
-              "produces": [
-                "application/json"
-              ],
-              "parameters": [
+            "path": "/v1/debug/storage/disk_stat/{type}",
+            "operations": [
                 {
-                  "name": "type",
-                  "in": "path",
-                  "required": true,
-                  "type": "string"
-                }
-              ],
-              "responseMessages": [
+                    "method": "GET",
+                    "summary": "Return disk space statistics.",
+                    "operationId": "get_disk_stat",
+                    "nickname": "get_disk_stat",
+                    "type": "disk_stat",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "type",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ],
+                    "responseMessages": [
+                        {
+                            "code": 200
+                        }
+                    ]
+                },
                 {
-                  "code": 200
+                    "method": "PUT",
+                    "summary": "Override disk space statistics.",
+                    "operationId": "put_disk_stat",
+                    "nickname": "put_disk_stat",
+                    "type": "disk_stat_overrides",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "type",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ],
+                    "responseMessages": [
+                        {
+                            "code": 200
+                        }
+                    ]
                 }
-              ]
-            },
-            {
-              "method": "PUT",
-              "summary": "Override disk space statistics.",
-              "operationId": "put_disk_stat",
-              "nickname": "put_disk_stat",
-              "type": "disk_stat_overrides",
-              "produces": [
-                "application/json"
-              ],
-              "parameters": [
-                {
-                  "name": "type",
-                  "in": "path",
-                  "required": true,
-                  "type": "string"
-                }
-              ],
-              "responseMessages": [
-                {
-                  "code": 200
-                }
-              ]
-            }
-          ]
+            ]
         },
         {
             "path": "/v1/debug/storage/offset_translator/{namespace}/{topic}/{partition}",
@@ -547,7 +545,7 @@
                     "summary": "Return list of all local offsets translated",
                     "nickname": "get_local_offsets_translated",
                     "produces": [
-                       "application/json"
+                        "application/json"
                     ],
                     "type": "array",
                     "parameters": [
@@ -608,6 +606,34 @@
                             "required": false,
                             "allowMultiple": false,
                             "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/broker_uuid",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Return current broker id and UUID",
+                    "nickname": "get_broker_uuid",
+                    "produces": [
+                        "application/json"
+                    ]
+                },
+                {
+                    "method": "PUT",
+                    "summary": "Overrides stored broker UUID and ID values",
+                    "nickname": "override_broker_uuid",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "required": true,
+                            "paramType": "broker_id_override"
                         }
                     ]
                 }
@@ -903,7 +929,7 @@
             }
         },
         "stm_state": {
-            "id" : "stm_state",
+            "id": "stm_state",
             "description": "Stm related state for a given replica.",
             "properties": {
                 "name": {
@@ -947,11 +973,11 @@
                     "description": "Current raft term"
                 },
                 "offset_translator_state": {
-                    "type" : "string",
+                    "type": "string",
                     "description": "State of the offset translator"
                 },
                 "group_configuration": {
-                    "type" : "string",
+                    "type": "string",
                     "description": "Local raft replica configuration"
                 },
                 "confirmed_term": {
@@ -1006,10 +1032,10 @@
                     "type": "boolean",
                     "description": "True of voted a leader"
                 },
-                "followers" : {
+                "followers": {
                     "type": "array",
                     "items": {
-                        "type" : "raft_follower_state"
+                        "type": "raft_follower_state"
                     },
                     "description": "Follower metadata for this leader."
                 },
@@ -1091,7 +1117,7 @@
                     "description": "Next cloud offset"
                 },
                 "raft_state": {
-                    "type" : "raft_replica_state",
+                    "type": "raft_replica_state",
                     "description": "Underlying raft replica state of the partition instance"
                 }
             }
@@ -1194,6 +1220,38 @@
                 "kafka_offset": {
                     "type": "long",
                     "description": "kafka offset"
+                }
+            }
+        },
+        "broker_uuid": {
+            "id": "broker_uuid",
+            "description": "Broker UUID and assigned id",
+            "properties": {
+                "node_uuid": {
+                    "type": "string",
+                    "description": "Current node UUID"
+                },
+                "node_id": {
+                    "type": "int",
+                    "description": "Assigned node id (may be empty)"
+                }
+            }
+        },
+        "broker_id_override": {
+            "id": "broker_id_override",
+            "description": "An override for broker id and UUID",
+            "properties": {
+                "current_node_uuid": {
+                    "type": "string",
+                    "description": "Current node UUID, used to validate if request is addressed to the correct node"
+                },
+                "new_node_id": {
+                    "type": "int",
+                    "description": "New node id for current node"
+                },
+                "new_node_uuid": {
+                    "type": "string",
+                    "description": "Node unique identifier. UUID is generated when Redpanda starts with empty data folder"
                 }
             }
         }
