@@ -729,7 +729,21 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
 
         auto& property = cfg.get(r);
         result.restart |= property.needs_restart();
-        property.reset();
+        try {
+            property.reset();
+        } catch (...) {
+            // Most probably one of the watch callbacks is buggy and failed to
+            // handle the update. Don't stop the controller STM, but log with
+            // error severity so that at least we can catch these bugs in tests.
+            if (!silent) {
+                vlog(
+                  clusterlog.error,
+                  "Unexpected error resetting property {}: {}",
+                  r,
+                  std::current_exception());
+            }
+            continue;
+        }
     }
 
     return result;
@@ -904,7 +918,8 @@ config_manager::apply_delta(cluster_config_delta_cmd&& cmd_in) {
     const cluster_config_delta_cmd_data& data = cmd.value;
     vlog(
       clusterlog.trace,
-      "apply_delta: {} upserts, {} removes",
+      "apply_delta version {}: {} upserts, {} removes",
+      delta_version,
       data.upsert.size(),
       data.remove.size());
 
