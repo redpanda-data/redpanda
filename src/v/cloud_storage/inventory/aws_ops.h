@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/inventory/types.h"
+#include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 
 namespace cloud_storage::inventory {
@@ -29,9 +30,13 @@ public:
       report_generation_frequency,
       report_format) override;
 
+    ss::future<bool> inventory_configuration_exists(
+      cloud_storage::cloud_storage_api&, retry_chain_node&) override;
+
 private:
     cloud_storage_clients::bucket_name _bucket;
     inventory_config_id _inventory_config_id;
+    cloud_storage_clients::object_key _inventory_key;
     ss::sstring _prefix;
 };
 

@@ -38,4 +38,10 @@ inv_ops::create_inventory_configuration(
     });
 }
 
+ss::future<bool> inv_ops::inventory_configuration_exists(
+  cloud_storage_api& remote, retry_chain_node& parent) {
+    return ss::visit(_inv_ops, [&remote, &parent](auto& ops) {
+        return ops.inventory_configuration_exists(remote, parent);
+    });
+}
 } // namespace cloud_storage::inventory

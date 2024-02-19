@@ -50,6 +50,10 @@ public:
       report_generation_frequency,
       report_format)
       = 0;
+
+    virtual ss::future<bool> inventory_configuration_exists(
+      cloud_storage::cloud_storage_api& remote, retry_chain_node& parent_rtc)
+      = 0;
 };
 
 template<typename T>

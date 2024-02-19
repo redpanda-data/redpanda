@@ -72,6 +72,8 @@ aws_ops::aws_ops(
   ss::sstring inventory_prefix)
   : _bucket(std::move(bucket))
   , _inventory_config_id(std::move(inventory_config_id))
+  , _inventory_key(cloud_storage_clients::object_key{
+      fmt::format("?inventory&id={}", _inventory_config_id())})
   , _prefix(std::move(inventory_prefix)) {}
 
 ss::future<cloud_storage::upload_result>
@@ -87,12 +89,26 @@ aws_ops::create_inventory_configuration(
       .prefix = _prefix,
       .frequency = frequency};
 
-    const auto key = fmt::format("?inventory&id={}", _inventory_config_id());
     co_return co_await remote.upload_object(
       {.transfer_details
-       = {.bucket = _bucket, .key = cloud_storage_clients::object_key{key}, .parent_rtc = parent_rtc},
+       = {.bucket = _bucket, .key = _inventory_key, .parent_rtc = parent_rtc},
        .type = upload_type::inventory_configuration,
        .payload = to_xml(cfg)});
+}
+
+ss::future<bool> aws_ops::inventory_configuration_exists(
+  cloud_storage::cloud_storage_api& remote, retry_chain_node& parent_rtc) {
+    // This buffer is thrown away after the GET call returns, we might introduce
+    // some sort of struct (or reuse the aws_report_configuration used for
+    // serialization), but for AWS we generally do not need the actual report
+    // config, the HTTP status for the GET call is sufficient to tell us if the
+    // config exists.
+    iobuf buf;
+    auto dl_res = co_await remote.download_object(
+      {.transfer_details
+       = {.bucket = _bucket, .key = _inventory_key, .parent_rtc = parent_rtc},
+       .payload = buf});
+    co_return dl_res == download_result::success;
 }
 
 } // namespace cloud_storage::inventory

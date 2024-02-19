@@ -21,8 +21,11 @@ class inv_ops {
 public:
     explicit inv_ops(ops_t ops);
 
-    ss::future<cloud_storage::upload_result> create_inventory_configuration(
-      cloud_storage_api& remote, retry_chain_node&);
+    ss::future<cloud_storage::upload_result>
+    create_inventory_configuration(cloud_storage_api&, retry_chain_node&);
+
+    ss::future<bool>
+    inventory_configuration_exists(cloud_storage_api&, retry_chain_node&);
 
 private:
     ops_t _inv_ops;
