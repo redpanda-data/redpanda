@@ -58,6 +58,7 @@ set(gsrcs
 rp_test(
   UNIT_TEST
   GTEST
+  TIMEOUT 500
   BINARY_NAME gtest_raft
   SOURCES ${gsrcs}
   LIBRARIES  v::raft v::storage_test_utils v::model_test_utils v::features v::gtest_main
