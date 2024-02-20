@@ -221,7 +221,7 @@ class MetricsEndpoint(Enum):
 
 
 class CloudStorageType(IntEnum):
-    # Use AWS S3 on dedicated nodes, or minio in docker
+    # Use (AWS, GCP) S3 compatible API on dedicated nodes, or minio in docker
     S3 = 1
     # Use Azure ABS on dedicated nodes, or azurite in docker
     ABS = 2
