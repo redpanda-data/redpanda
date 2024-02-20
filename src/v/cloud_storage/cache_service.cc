@@ -825,6 +825,9 @@ ss::future<> cache::save_access_time_tracker() {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     auto tmp_path = _cache_dir / access_time_tracker_file_name_tmp;
 
+    // Protect the file from concurrent writes.
+    auto lock_guard = co_await ss::get_units(_access_tracker_writer_sm, 1);
+
     ss::file_open_options open_opts;
     co_await ss::with_file(
       ss::open_file_dma(
@@ -837,6 +840,8 @@ ss::future<> cache::save_access_time_tracker() {
 
     auto final_path = _cache_dir / access_time_tracker_file_name;
     co_await ss::rename_file(tmp_path.string(), final_path.string());
+
+    lock_guard.return_all();
 }
 
 ss::future<> cache::maybe_save_access_time_tracker() {
