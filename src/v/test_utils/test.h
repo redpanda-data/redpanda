@@ -142,6 +142,8 @@ private:
  */
 #define GTEST_FATAL_FAILURE_CORO_(message)                                     \
     co_return GTEST_MESSAGE_(message, ::testing::TestPartResult::kFatalFailure)
+#define GTEST_SKIP_CORO_(message)                                              \
+    co_return GTEST_MESSAGE_(message, ::testing::TestPartResult::kSkip)
 #define ASSERT_PRED_FORMAT2_CORO(pred_format, v1, v2)                          \
     GTEST_PRED_FORMAT2_(pred_format, v1, v2, GTEST_FATAL_FAILURE_CORO_)
 #define GTEST_ASSERT_EQ_CORO(val1, val2)                                       \
@@ -173,4 +175,7 @@ private:
 #define ASSERT_LT_CORO(val1, val2) GTEST_ASSERT_LT_CORO(val1, val2)
 #define ASSERT_LE_CORO(val1, val2) GTEST_ASSERT_LE_CORO(val1, val2)
 #define ASSERT_NE_CORO(val1, val2) GTEST_ASSERT_NE_CORO(val1, val2)
+
+#define GTEST_SKIP_CORO() GTEST_SKIP_CORO_("")
+
 // NOLINTEND(cppcoreguidelines-macro-usage,bugprone-macro-parentheses)
