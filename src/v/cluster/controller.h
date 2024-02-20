@@ -95,6 +95,8 @@ public:
 
     ss::sharded<security::authorizer>& get_authorizer() { return _authorizer; }
 
+    ss::sharded<security::role_store>& get_role_store() { return _roles; }
+
     ss::sharded<security::oidc::service>& get_oidc_service() {
         return _oidc_service;
     }
@@ -265,6 +267,7 @@ private:
     ss::sharded<node::local_monitor>& _local_monitor; // single instance
     topic_updates_dispatcher _tp_updates_dispatcher;
     ss::sharded<security::credential_store> _credentials;
+    ss::sharded<security::role_store> _roles;
     ss::sharded<security::ephemeral_credential_store> _ephemeral_credentials;
     security_manager _security_manager;
     ss::sharded<security_frontend> _security_frontend;
