@@ -319,6 +319,8 @@ private:
     cache_probe probe;
     access_time_tracker _access_time_tracker;
     ss::timer<ss::lowres_clock> _tracker_timer;
+    ssx::semaphore _access_tracker_writer_sm{
+      1, "cloud/cache/access_tracker_writer"};
 
     /// Remember when we last finished clean_up_cache, in order to
     /// avoid wastefully running it again soon after.
