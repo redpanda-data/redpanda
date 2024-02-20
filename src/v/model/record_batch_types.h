@@ -48,7 +48,8 @@ enum class record_batch_type : int8_t {
     cluster_recovery_cmd = 28,       // cluster recovery command
     compaction_placeholder
     = 29, // place holder for last batch in a segment that was aborted
-    MAX = compaction_placeholder,
+    role_management_cmd = 30, // role management command
+    MAX = role_management_cmd,
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
