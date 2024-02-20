@@ -244,6 +244,7 @@ struct s3_imposter_fixture::content_handler {
               .url = request._url, .body = request.content};
             return "";
         } else if (request._method == "DELETE") {
+            vlog(fixt_log.trace, "Received DELETE request to {}", request._url);
             // TODO (abhijat) - enable conditionally failing requests
             // instead of this hardcoding
             if (request._url == "/failme") {
@@ -282,12 +283,37 @@ struct s3_imposter_fixture::content_handler {
         } else if (
           request._method == "POST"
           && request.query_parameters.contains("delete")) {
-            // Delete objects
+            vlog(fixt_log.trace, "Received DELETE request to {}", request._url);
             if (
               expect_iter != expectations.end()
               && expect_iter->second.body.has_value()) {
                 return expect_iter->second.body.value();
             }
+            // Special handling for the batched Delete objects requests.
+            auto keys_to_delete = keys_from_delete_objects_request(ri);
+            vlog(
+              fixt_log.trace,
+              "Parsed batched DELETE request with {} keys",
+              keys_to_delete.size());
+            for (const auto& key : keys_to_delete) {
+                const ss::sstring to_delete = fmt::format(
+                  "/{}", key().string());
+                auto expect_iter = expectations.find(to_delete);
+                if (
+                  expect_iter == expectations.end()
+                  || !expect_iter->second.body.has_value()) {
+                    // Missing objects are assumed to be not an error (e.g.
+                    // caused by a delete retry).
+                    vlog(
+                      fixt_log.debug,
+                      "Requested DELETE request of {}, not found",
+                      to_delete);
+                    continue;
+                }
+                expect_iter->second.body = std::nullopt;
+                vlog(fixt_log.trace, "Batched DELETE request of {}", to_delete);
+            }
+
             return R"xml(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>)xml";
         }
         RPTEST_FAIL("Unexpected request");
