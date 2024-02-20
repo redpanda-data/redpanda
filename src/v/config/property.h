@@ -185,15 +185,14 @@ public:
         return validate(v);
     }
 
-    void reset() override { _value = default_value(); }
-
-    property<T>& operator()(T v) {
-        _value = std::move(v);
-        return *this;
+    void reset() override {
+        auto v = default_value();
+        update_value(std::move(v));
     }
 
     base_property& operator=(const base_property& pr) override {
-        _value = dynamic_cast<const property<T>&>(pr)._value;
+        auto v = dynamic_cast<const property<T>&>(pr)._value;
+        update_value(std::move(v));
         return *this;
     }
 
@@ -270,8 +269,10 @@ protected:
 
     bool update_value(T&& new_value) {
         if (new_value != _value) {
-            notify_watchers(new_value);
+            // Update the main value first, in case one of the binding updates
+            // throws.
             _value = std::move(new_value);
+            notify_watchers(_value);
 
             return true;
         } else {
