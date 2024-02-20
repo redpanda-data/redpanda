@@ -31,6 +31,7 @@
 #include "rpc/errc.h"
 #include "rpc/types.h"
 #include "security/authorizer.h"
+#include "security/role.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 
@@ -115,6 +116,61 @@ ss::future<std::error_code> security_frontend::update_user(
   model::timeout_clock::time_point tout) {
     update_user_cmd cmd(std::move(username), std::move(credential));
     return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::create_role(
+  security::role_name name,
+  security::role role,
+  model::timeout_clock::time_point tout) {
+    if (!_features.local().is_active(
+          features::feature::role_based_access_control)) {
+        vlog(clusterlog.warn, "RBAC feature is not yet active");
+        co_return cluster::errc::feature_disabled;
+    }
+    upsert_role_cmd_data data{.name = std::move(name), .role = std::move(role)};
+    create_role_cmd cmd(0 /*unused*/, std::move(data));
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::delete_role(
+  security::role_name name, model::timeout_clock::time_point tout) {
+    if (!_features.local().is_active(
+          features::feature::role_based_access_control)) {
+        vlog(clusterlog.warn, "RBAC feature is not yet active");
+        co_return cluster::errc::feature_disabled;
+    }
+    delete_role_cmd_data data{.name = std::move(name)};
+    delete_role_cmd cmd(0 /* unused */, std::move(data));
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::update_role(
+  security::role_name name,
+  security::role role,
+  model::timeout_clock::time_point tout) {
+    if (!_features.local().is_active(
+          features::feature::role_based_access_control)) {
+        vlog(clusterlog.warn, "RBAC feature is not yet active");
+        co_return cluster::errc::feature_disabled;
+    }
+    upsert_role_cmd_data data{.name = std::move(name), .role = std::move(role)};
+    update_role_cmd cmd(0 /*unused*/, std::move(data));
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::rename_role(
+  security::role_name from_name,
+  security::role_name to_name,
+  model::timeout_clock::time_point tout) {
+    if (!_features.local().is_active(
+          features::feature::role_based_access_control)) {
+        vlog(clusterlog.warn, "RBAC feature is not yet active");
+        co_return cluster::errc::feature_disabled;
+    }
+    rename_role_cmd_data data{
+      .from_name = std::move(from_name), .to_name = std::move(to_name)};
+    rename_role_cmd cmd(0 /*unused*/, std::move(data));
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), tout);
 }
 
 ss::future<std::vector<errc>> security_frontend::create_acls(
