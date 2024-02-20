@@ -961,10 +961,72 @@ struct field_mappings_for_t<cluster::topic_properties> {
     };
 };
 
+struct topic_manifest_json_info {
+    std::optional<int32_t> _version{};
+    std::optional<model::ns> _namespace{};
+    std::optional<model::topic> _topic{};
+    std::optional<int32_t> _partition_count{};
+    std::optional<int16_t> _replication_factor{};
+    std::optional<model::initial_revision_id> _revision_id{};
+};
+
+using tmj = topic_manifest_json_info;
+template<>
+struct field_mappings_for_t<topic_manifest_json_info> {
+    constexpr static auto value = root_type_mapping{
+      static_cast<topic_manifest_json_info const*>(nullptr),
+      type_mapping{
+        "version",
+        &tmj::_version,
+        [](int32_t v) { return int64_t(v); },
+        [](int64_t jv) {
+            if (!std::in_range<int32_t>(jv)) {
+                throw std::invalid_argument{"conversion"};
+            }
+            return int32_t(jv);
+        }},
+      type_mapping{
+        "namespace",
+        &tmj::_namespace,
+        [](model::ns const& ns) { return std::string{ns()}; },
+        [](std::string_view jns) { return model::ns{ss::sstring{jns}}; }},
+      type_mapping{
+        "topic",
+        &tmj::_topic,
+        [](model::topic const& tp) { return std::string{tp()}; },
+        [](std::string_view jtp) { return model::topic{ss::sstring{jtp}}; }},
+      type_mapping{
+        "partition_count",
+        &tmj::_partition_count,
+        [](int32_t pc) { return int64_t(pc); },
+        [](int64_t jpc) {
+            if (!std::in_range<int32_t>(jpc)) {
+                throw std::invalid_argument{"conversion"};
+            }
+            return int32_t(jpc);
+        }},
+      type_mapping{
+        "replication_factor",
+        &tmj::_replication_factor,
+        [](int16_t rf) { return int64_t(rf); },
+        [](int64_t jrf) {
+            if (!std::in_range<int16_t>(jrf)) {
+                throw std::invalid_argument{"conversion"};
+            }
+            return int16_t(jrf);
+        }},
+      type_mapping{
+        "revision_id",
+        &tmj::_revision_id,
+        [](model::initial_revision_id ri) { return ri(); },
+        [](int64_t jri) { return model::initial_revision_id{jri}; }},
+    };
+};
+
 } // namespace
 namespace cloud_storage {
 
-class topic_properties_handler
+class topic_manifest_handler
   : public json::BaseReaderHandler<json::UTF8<>, topic_manifest_handler> {
     enum class state {
         expect_root_start,
@@ -980,11 +1042,12 @@ class topic_properties_handler
             // error condition
             return false;
         }
-        if(state_== state::expect_value){
-          // normal key: value pair
-          auto res = context_stack_.back()->try_read(json_key_, val);
-          state_ = state::expect_key;
-          return res;
+        if (state_ == state::expect_value) {
+            // normal key: value pair
+            auto res = legacy_context_->try_read(json_key_, val)
+                       || context_stack_.back()->try_read(json_key_, val);
+            state_ = state::expect_key;
+            return res;
         }
         if (state_ == state::expect_array_value) {
             return context_stack_.back()->try_read(json_key_, val);
@@ -999,6 +1062,9 @@ public:
         // for keys
         switch (state_) {
         case state::expect_root_start:
+            legacy_context_
+              = field_mappings_for_v<topic_manifest_json_info>.start(
+                v1_manifest_json_info_);
             context_stack_.push_back(
               field_mappings_for_v<cluster::topic_properties>.start(
                 properties_));
@@ -1036,8 +1102,12 @@ public:
         // pop the context stack, new key:value pairs will be directed to the
         // new context
         context_stack_.pop_back();
-        state_ = context_stack_.empty() ? state::expect_root_start
-                                        : state::expect_key;
+        if (context_stack_.empty()) {
+            legacy_context_.reset();
+            state_ = state::expect_root_start;
+        } else {
+            state_ = state::expect_key;
+        }
         return true;
     }
 
@@ -1079,9 +1149,10 @@ public:
     bool Default() { return false; }
 
     /// deserialization will write here
+    topic_manifest_json_info v1_manifest_json_info_{};
     cluster::topic_properties properties_{};
 
-    topic_properties_handler() noexcept {
+    topic_manifest_handler() noexcept {
         properties_.retention_duration = tristate<std::chrono::milliseconds>{
           disable_tristate};
         properties_.retention_bytes = tristate<size_t>{disable_tristate};
@@ -1090,213 +1161,15 @@ public:
 private:
     /// current key
     key_string json_key_{};
+
+    std::unique_ptr<const object_mapping_context> legacy_context_{};
     /// stack of object_mapping_context, needed to keep track of the correct
     /// sub-object this could have static dimension with the correct
     /// datastructure (just allocate the max depth, every nested object_mapping
     /// is +1)
     std::vector<std::unique_ptr<const object_mapping_context>> context_stack_{};
+
     state state_{state::expect_root_start};
-};
-
-struct topic_manifest_handler
-  : public json::BaseReaderHandler<json::UTF8<>, topic_manifest_handler> {
-    using key_string = ss::basic_sstring<char, uint32_t, 31>;
-    bool StartObject() {
-        switch (_state) {
-        case state::expect_manifest_start:
-            _state = state::expect_key;
-            return true;
-        case state::expect_key:
-        case state::expect_value:
-            return false;
-        }
-    }
-
-    bool StartArray(){
-      if(_state!=state::expect_value){
-        // illegal sequence of actions
-        return false;
-      }
-      _state=state::expect_array_value;
-      return _properties_handler.StartArray();
-    }
-
-    bool EndArray(json::SizeType={}){
-      if(_state!=state::expect_array_value){
-        // illegal sequence of actions
-        return false;
-      }
-      _state=state::expect_key;
-      return _properties_handler.EndArray();
-    }
-    bool Key(const char* str, json::SizeType length, bool /*copy*/) {
-        switch (_state) {
-        case state::expect_key:
-            _key = key_string(str, length);
-            _state = state::expect_value;
-            return true;
-        case state::expect_array_value:
-        case state::expect_manifest_start:
-        case state::expect_value:
-            return false;
-        }
-    }
-
-    bool String(const char* str, json::SizeType length, bool /*copy*/) {
-        std::string_view sv(str, length);
-        switch (_state) {
-        case state::expect_value:
-            if (_key == "namespace") {
-                _namespace = model::ns(ss::sstring(sv));
-            } else if (_key == "topic") {
-                _topic = model::topic(ss::sstring(sv));
-            } else if (_key == "compression") {
-                compression_sv = ss::sstring(sv);
-            } else if (_key == "cleanup_policy_bitflags") {
-                cleanup_policy_bitflags_sv = ss::sstring(sv);
-            } else if (_key == "compaction_strategy") {
-                compaction_strategy_sv = ss::sstring(sv);
-            } else if (_key == "timestamp_type") {
-                timestamp_type_sv = ss::sstring(sv);
-            } else {
-                return false;
-            }
-            _state = state::expect_key;
-            return true;
-        case state::expect_manifest_start:
-        case state::expect_key:
-            return false;
-        }
-    }
-
-    bool Int(int i) { return Int64(i); }
-
-    bool Int64(int64_t i) {
-        if (i >= 0) {
-            // Should only be called when negative, but doesn't hurt to just
-            // defer to the unsigned variant.
-            return Uint64(i);
-        }
-        switch (_state) {
-        case state::expect_value:
-            if (_key == "version") {
-                _version = i;
-            } else if (_key == "partition_count") {
-                _partition_count = i;
-            } else if (_key == "replication_factor") {
-                _replication_factor = i;
-            } else if (_key == "revision_id") {
-                _revision_id = model::initial_revision_id{i};
-            } else if (_key == "segment_size") {
-                // NOTE: segment size and retention bytes are unsigned, but
-                // older versions of Redpanda could serialize them as negative.
-                // Just leave them empty.
-                _properties.segment_size = std::nullopt;
-            } else if (_key == "retention_bytes") {
-                _properties.retention_bytes = tristate<size_t>{
-                  disable_tristate};
-            } else if (_key == "retention_duration") {
-                // even though a negative number is valid for milliseconds,
-                // interpret any negative value as a request for infinite
-                // retention, that translates to a disabled tristate (like for
-                // retention_bytes)
-                _properties.retention_duration
-                  = tristate<std::chrono::milliseconds>(disable_tristate);
-            } else {
-                return false;
-            }
-            _state = state::expect_key;
-            return true;
-        case state::expect_manifest_start:
-        case state::expect_key:
-            return false;
-        }
-    }
-
-    bool Uint(unsigned u) { return Uint64(u); }
-
-    bool Uint64(uint64_t u) {
-        switch (_state) {
-        case state::expect_value:
-            if (_key == "version") {
-                _version = u;
-            } else if (_key == "partition_count") {
-                _partition_count = u;
-            } else if (_key == "replication_factor") {
-                _replication_factor = u;
-            } else if (_key == "revision_id") {
-                _revision_id = model::initial_revision_id(u);
-            } else if (_key == "segment_size") {
-                _properties.segment_size = u;
-            } else if (_key == "retention_bytes") {
-                _properties.retention_bytes = tristate<size_t>(u);
-            } else if (_key == "retention_duration") {
-                _properties.retention_duration
-                  = tristate<std::chrono::milliseconds>(
-                    std::chrono::milliseconds(u));
-            } else {
-                return false;
-            }
-            _state = state::expect_key;
-            return true;
-        case state::expect_manifest_start:
-        case state::expect_key:
-            return false;
-        }
-    }
-
-    bool EndObject(json::SizeType /*size*/) {
-        return _state == state::expect_key;
-    }
-
-    bool Null() {
-        if (_state == state::expect_value) {
-            if (_key == "retention_bytes") {
-                _properties.retention_bytes = tristate<size_t>{std::nullopt};
-            } else if (_key == "retention_duration") {
-                _properties.retention_duration
-                  = tristate<std::chrono::milliseconds>{std::nullopt};
-            }
-
-            _state = state::expect_key;
-            return true;
-        }
-        return false;
-    }
-
-    bool Default() { return false; }
-
-    enum class state {
-        expect_manifest_start,
-        expect_key,
-        expect_value,
-        expect_array_value,
-    } _state{state::expect_manifest_start};
-
-    key_string _key;
-
-    // required fields
-    std::optional<int32_t> _version;
-    std::optional<model::ns> _namespace{};
-    std::optional<model::topic> _topic;
-    std::optional<int32_t> _partition_count;
-    std::optional<int16_t> _replication_factor;
-    std::optional<model::initial_revision_id> _revision_id{};
-
-    // optional fields
-    cluster::topic_properties _properties{};
-    std::optional<ss::sstring> compaction_strategy_sv;
-    std::optional<ss::sstring> timestamp_type_sv;
-    std::optional<ss::sstring> compression_sv;
-    std::optional<ss::sstring> cleanup_policy_bitflags_sv;
-
-    topic_manifest_handler() noexcept {
-        // tristate decoding requires that the default starting value is
-        // `disabled_tristate`
-        _properties.retention_bytes = tristate<size_t>(disable_tristate),
-        _properties.retention_duration = tristate<std::chrono::milliseconds>(
-          disable_tristate);
-    };
 };
 
 topic_manifest::topic_manifest(
@@ -1308,108 +1181,74 @@ topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
 
 void topic_manifest::do_update(const topic_manifest_handler& handler) {
+    auto& v1_handler = handler.v1_manifest_json_info_;
     if (
-      !handler._version || handler._version > topic_manifest::current_version) {
+      !v1_handler._version
+      || v1_handler._version > topic_manifest::current_version) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "topic manifest version {} is not supported",
-          handler._version,
+          v1_handler._version,
           topic_manifest::current_version));
     }
 
-    _manifest_version = handler._version.value();
+    _manifest_version = v1_handler._version.value();
 
-    _rev = handler._revision_id.value();
+    _rev = v1_handler._revision_id.value();
 
-    if (!handler._version) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format, "Missing _version value in parsed topic manifest"));
-    }
-    if (!handler._namespace) {
+    if (!v1_handler._namespace) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format, "Missing _namespace value in parsed topic manifest"));
     }
-    if (!handler._topic) {
+    if (!v1_handler._topic) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format, "Missing _topic value in parsed topic manifest"));
     }
-    if (!handler._partition_count) {
+    if (!v1_handler._partition_count) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "Missing _partition_count value in parsed topic manifest"));
     }
-    if (!handler._replication_factor) {
+    if (!v1_handler._replication_factor) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "Missing _replication_factor value in parsed topic manifest"));
     }
-    if (!handler._revision_id) {
+    if (!v1_handler._revision_id) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format, "Missing _revision_id value in parsed topic manifest"));
     }
 
     _topic_config = cluster::topic_configuration{
-      model::ns(handler._namespace.value()),
-      model::topic(handler._topic.value()),
-      handler._partition_count.value(),
-      handler._replication_factor.value()};
-    _topic_config->properties = handler._properties;
-
-    if (handler.compaction_strategy_sv) {
-        try {
-            _topic_config->properties.compaction_strategy
-              = boost::lexical_cast<model::compaction_strategy>(
-                handler.compaction_strategy_sv.value());
-        } catch (const std::runtime_error& e) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest {}: Invalid compaction_strategy: "
-              "{}",
-              get_manifest_path(),
-              handler.compaction_strategy_sv.value()));
-        }
-    }
-    if (handler.timestamp_type_sv) {
-        try {
-            _topic_config->properties.timestamp_type
-              = boost::lexical_cast<model::timestamp_type>(
-                handler.timestamp_type_sv.value());
-        } catch (const std::runtime_error& e) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest {}: Invalid timestamp_type "
-              "value: {}",
-              get_manifest_path(),
-              handler.timestamp_type_sv.value()));
-        }
-    }
-    if (handler.compression_sv) {
-        try {
-            _topic_config->properties.compression
-              = boost::lexical_cast<model::compression>(
-                handler.compression_sv.value());
-        } catch (const std::runtime_error& e) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest {}: Invalid compression value: "
-              "{}",
-              get_manifest_path(),
-              handler.compression_sv.value()));
-        }
-    }
-    if (handler.cleanup_policy_bitflags_sv) {
-        try {
-            _topic_config->properties.cleanup_policy_bitflags
-              = boost::lexical_cast<model::cleanup_policy_bitflags>(
-                handler.cleanup_policy_bitflags_sv.value());
-        } catch (const std::runtime_error& e) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest {}: Invalid "
-              "cleanup_policy_bitflags value: {}",
-              get_manifest_path(),
-              handler.cleanup_policy_bitflags_sv.value()));
-        }
+      model::ns(v1_handler._namespace.value()),
+      model::topic(v1_handler._topic.value()),
+      v1_handler._partition_count.value(),
+      v1_handler._replication_factor.value()};
+    if (
+      _manifest_version < topic_manifest::cluster_topic_configuration_version) {
+        // if the manifest is old, just copy the properties that where
+        // serialized with it, to ensure that the rest gets a default value and
+        // not an artifact of tristate deserialization
+        auto& props = _topic_config->properties;
+        auto& handler_props = handler.properties_;
+        std::tie(
+          props.compression,
+          props.cleanup_policy_bitflags,
+          props.compaction_strategy,
+          props.timestamp_type,
+          props.segment_size,
+          props.retention_bytes,
+          props.retention_duration)
+          = std::tie(
+            handler_props.compression,
+            handler_props.cleanup_policy_bitflags,
+            handler_props.compaction_strategy,
+            handler_props.timestamp_type,
+            handler_props.segment_size,
+            handler_props.retention_bytes,
+            handler_props.retention_duration);
+    } else {
+        _topic_config->properties = handler.properties_;
     }
 }
 
@@ -1423,29 +1262,47 @@ ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     json::IStreamWrapper wrapper(stream);
     json::Reader reader;
     topic_manifest_handler handler;
-    if (reader.Parse(wrapper, handler)) {
-        vlog(cst_log.debug, "Parsed successfully!");
-        topic_manifest::do_update(handler);
-    } else {
-        rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
-        size_t o = reader.GetErrorOffset();
 
-        if (_topic_config) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest {}: {} at offset {}",
-              get_manifest_path(),
-              rapidjson::GetParseError_En(e),
-              o));
-        } else {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest: {} at offset {}",
-              rapidjson::GetParseError_En(e),
-              o));
+    try {
+        // successful parse will update _topic_config and return here
+        if (reader.Parse(wrapper, handler)) {
+            vlog(cst_log.debug, "Parsed successfully!");
+            topic_manifest::do_update(handler);
+            co_return;
         }
+    } catch (from_json_error const& e) {
+        // this exception is thrown from a field_mapper while trying to convert
+        // a value
+        throw std::runtime_error{fmt_with_ctx(
+          fmt::format,
+          "Failed to parse topic manifest {}: Invalid {}: {}",
+          get_topic_manifest_path(
+            handler.v1_manifest_json_info_._namespace.value_or(
+              model::ns{"[no namespace]"}),
+            handler.v1_manifest_json_info_._topic.value_or(
+              model::topic{"[no topic]"})),
+          e.key,
+          e.invalid_value)};
     }
-    co_return;
+
+    // parse was not successful for some syntactic error in the json
+    rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
+    size_t o = reader.GetErrorOffset();
+
+    if (_topic_config) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Failed to parse topic manifest {}: {} at offset {}",
+          get_manifest_path(),
+          rapidjson::GetParseError_En(e),
+          o));
+    } else {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Failed to parse topic manifest: {} at offset {}",
+          rapidjson::GetParseError_En(e),
+          o));
+    }
 }
 
 ss::future<serialized_data_stream> topic_manifest::serialize() const {
@@ -1467,81 +1324,25 @@ ss::future<serialized_data_stream> topic_manifest::serialize() const {
 
 void topic_manifest::serialize(std::ostream& out) const {
     json::OStreamWrapper wrapper(out);
-    json::Writer<json::OStreamWrapper> w(wrapper);
+    writer_t w(wrapper);
     w.StartObject();
-    w.Key("version");
-    w.Int(static_cast<int>(topic_manifest::current_version));
-    w.Key("namespace");
-    w.String(_topic_config->tp_ns.ns());
-    w.Key("topic");
-    w.String(_topic_config->tp_ns.tp());
-    w.Key("partition_count");
-    w.Int(_topic_config->partition_count);
-    w.Key("replication_factor");
-    w.Int(_topic_config->replication_factor);
-    w.Key("revision_id");
-    w.Int(_rev());
 
-    // optional values are encoded in the following manner:
-    // - key set to null - optional is nullopt
-    // - key is not null - optional has value
-    w.Key("compression");
-    if (_topic_config->properties.compression.has_value()) {
-        w.String(boost::lexical_cast<std::string>(
-          *_topic_config->properties.compression));
-    } else {
-        w.Null();
-    }
-    w.Key("cleanup_policy_bitflags");
-    if (_topic_config->properties.cleanup_policy_bitflags.has_value()) {
-        w.String(boost::lexical_cast<std::string>(
-          *_topic_config->properties.cleanup_policy_bitflags));
-    } else {
-        w.Null();
-    }
-    w.Key("compaction_strategy");
-    if (_topic_config->properties.compaction_strategy.has_value()) {
-        w.String(boost::lexical_cast<std::string>(
-          *_topic_config->properties.compaction_strategy));
-    } else {
-        w.Null();
-    }
-    w.Key("timestamp_type");
-    if (_topic_config->properties.timestamp_type.has_value()) {
-        w.String(boost::lexical_cast<std::string>(
-          *_topic_config->properties.timestamp_type));
-    } else {
-        w.Null();
-    }
-    w.Key("segment_size");
-    if (_topic_config->properties.segment_size.has_value()) {
-        w.Uint64(*_topic_config->properties.segment_size);
-    } else {
-        w.Null();
-    }
-    // NOTE: manifest_object_name is intentionaly ommitted
+    // serialize v1 data
+    field_mappings_for_v<topic_manifest_json_info>.write_fields(
+      {
+        ._version = topic_manifest::current_version,
+        ._namespace = _topic_config->tp_ns.ns,
+        ._topic = _topic_config->tp_ns.tp,
+        ._partition_count = _topic_config->partition_count,
+        ._replication_factor = _topic_config->replication_factor,
+        ._revision_id = _rev,
+      },
+      w);
 
-    // tristate values are encoded in the following manner:
-    // - key not present - tristate is disabled
-    // - key set to null - tristate is enabled but not set
-    // - key is not null - tristate is enabled and set
-    if (!_topic_config->properties.retention_bytes.is_disabled()) {
-        w.Key("retention_bytes");
-        if (_topic_config->properties.retention_bytes.has_optional_value()) {
-            w.Uint64(_topic_config->properties.retention_bytes.value());
-        } else {
-            w.Null();
-        }
-    }
-    if (!_topic_config->properties.retention_duration.is_disabled()) {
-        w.Key("retention_duration");
-        if (_topic_config->properties.retention_duration.has_optional_value()) {
-            w.Int64(
-              _topic_config->properties.retention_duration.value().count());
-        } else {
-            w.Null();
-        }
-    }
+    // serialize each field of cluster::topic_properties using the mapping
+    field_mappings_for_v<cluster::topic_properties>.write_fields(
+      _topic_config->properties, w);
+
     w.EndObject();
 }
 

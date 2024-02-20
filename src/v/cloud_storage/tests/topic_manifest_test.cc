@@ -18,6 +18,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "test_utils/randoms.h"
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -410,4 +411,139 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
         reconstructed_props));
 
     BOOST_CHECK(test_cfg == reconstructed.get_topic_config());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_v2_new_properties) {
+    BOOST_CHECK_MESSAGE(
+      topic_manifest_tester::is_mapping_updated(),
+      "cluster::topic_properties or cluster::remote_topic_properties have some "
+      "fields that are not serialized by topic_manifest. add them in "
+      "topic_manifest.cc::field_mappings_for_t<cluster::topic_properties>");
+    // test random values for new properties mapped in v2
+    auto test_cfg = cfg;
+    // v1 properties:
+    test_cfg.properties.compression = tests::random_optional([] {
+        return random_generators::random_choice(
+          {model::compression::gzip,
+           model::compression::lz4,
+           model::compression::none,
+           model::compression::producer,
+           model::compression::snappy,
+           model::compression::zstd});
+    });
+    test_cfg.properties.cleanup_policy_bitflags = tests::random_optional([] {
+        return random_generators::random_choice(
+          {model::cleanup_policy_bitflags::none,
+           model::cleanup_policy_bitflags::compaction,
+           model::cleanup_policy_bitflags::deletion,
+           model::cleanup_policy_bitflags::compaction
+             | model::cleanup_policy_bitflags::deletion});
+    });
+    test_cfg.properties.compaction_strategy = tests::random_optional([] {
+        return random_generators::random_choice(
+          {model::compaction_strategy::header,
+           model::compaction_strategy::offset,
+           model::compaction_strategy::timestamp});
+    });
+    test_cfg.properties.timestamp_type = tests::random_optional([] {
+        return random_generators::random_choice(
+          {model::timestamp_type::append_time,
+           model::timestamp_type::create_time});
+    });
+    test_cfg.properties.segment_size = tests::random_optional(
+      [] { return random_generators::get_int<size_t>(); });
+    test_cfg.properties.retention_bytes = tests::random_tristate(
+      [] { return random_generators::get_int<size_t>(); });
+    test_cfg.properties.retention_duration = tests::random_tristate(
+      tests::random_duration_ms);
+
+    // v2 new properties:
+    test_cfg.properties.recovery = tests::random_optional(tests::random_bool);
+    test_cfg.properties.shadow_indexing = tests::random_optional([] {
+        return random_generators::random_choice(
+          {model::shadow_indexing_mode::archival,
+           model::shadow_indexing_mode::fetch,
+           model::shadow_indexing_mode::full});
+    });
+    test_cfg.properties.read_replica = tests::random_optional(
+      tests::random_bool);
+    test_cfg.properties.read_replica_bucket = tests::random_optional(
+      [] { return tests::random_named_string<ss::sstring>(); });
+    test_cfg.properties.remote_topic_properties = tests::random_optional([] {
+        return cluster::remote_topic_properties{
+          tests::random_named_int<model::initial_revision_id>(),
+          random_generators::get_int<int32_t>()};
+    });
+    test_cfg.properties.batch_max_bytes = tests::random_optional(
+      [] { return random_generators::get_int<uint32_t>(); });
+    test_cfg.properties.retention_local_target_bytes = tests::random_tristate(
+      [] { return random_generators::get_int<size_t>(); });
+    test_cfg.properties.retention_local_target_ms = tests::random_tristate(
+      tests::random_duration_ms);
+    test_cfg.properties.remote_delete = tests::random_bool();
+    test_cfg.properties.segment_ms = tests::random_tristate(
+      tests::random_duration_ms);
+    test_cfg.properties.record_key_schema_id_validation
+      = tests::random_optional(tests::random_bool);
+    test_cfg.properties.record_key_schema_id_validation_compat
+      = tests::random_optional(tests::random_bool);
+    test_cfg.properties.record_key_subject_name_strategy = tests::
+      random_optional([] {
+          return random_generators::random_choice(
+            {pandaproxy::schema_registry::subject_name_strategy::
+               topic_record_name,
+             pandaproxy::schema_registry::subject_name_strategy::topic_name,
+             pandaproxy::schema_registry::subject_name_strategy::record_name});
+      });
+    test_cfg.properties.record_key_subject_name_strategy_compat
+      = pandaproxy::schema_registry::subject_name_strategy::topic_name;
+    tests::random_optional([] {
+        return random_generators::random_choice(
+          {pandaproxy::schema_registry::subject_name_strategy::
+             topic_record_name,
+           pandaproxy::schema_registry::subject_name_strategy::topic_name,
+           pandaproxy::schema_registry::subject_name_strategy::record_name});
+    });
+    test_cfg.properties.record_value_schema_id_validation
+      = tests::random_optional(tests::random_bool);
+    test_cfg.properties.record_value_schema_id_validation_compat
+      = tests::random_optional(tests::random_bool);
+    test_cfg.properties.record_value_subject_name_strategy = tests::
+      random_optional([] {
+          return random_generators::random_choice(
+            {pandaproxy::schema_registry::subject_name_strategy::
+               topic_record_name,
+             pandaproxy::schema_registry::subject_name_strategy::topic_name,
+             pandaproxy::schema_registry::subject_name_strategy::record_name});
+      });
+    test_cfg.properties.record_value_subject_name_strategy_compat
+      = pandaproxy::schema_registry::subject_name_strategy::topic_name;
+    tests::random_optional([] {
+        return random_generators::random_choice(
+          {pandaproxy::schema_registry::subject_name_strategy::
+             topic_record_name,
+           pandaproxy::schema_registry::subject_name_strategy::topic_name,
+           pandaproxy::schema_registry::subject_name_strategy::record_name});
+    });
+    test_cfg.properties.initial_retention_local_target_bytes
+      = tests::random_tristate(
+        [] { return random_generators::get_int<size_t>(); });
+    test_cfg.properties.initial_retention_local_target_ms
+      = tests::random_tristate(tests::random_duration_ms);
+
+    auto manifest = topic_manifest{test_cfg, model::initial_revision_id{}};
+    auto serialized = manifest.serialize().get().stream;
+    auto buf = iobuf{};
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(serialized, os).get();
+
+    auto ibp = iobuf_parser{buf.copy()};
+    auto manifest_json = ibp.read_string(ibp.bytes_left());
+    BOOST_TEST_INFO(manifest_json);
+
+    auto reconstructed = topic_manifest{};
+    reconstructed.update(make_iobuf_input_stream(std::move(buf))).get();
+    BOOST_REQUIRE_EQUAL(
+      reconstructed.get_topic_config().value(),
+      manifest.get_topic_config().value());
 }

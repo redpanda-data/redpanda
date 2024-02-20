@@ -19,7 +19,7 @@
 
 namespace cloud_storage {
 
-struct topic_manifest_handler;
+class topic_manifest_handler;
 class topic_manifest final : public base_manifest {
 public:
     constexpr static int32_t first_version = 1;
