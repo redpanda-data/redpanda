@@ -7,6 +7,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from google.cloud import storage as gcs
 
 from concurrent.futures import ThreadPoolExecutor
 import datetime
@@ -515,13 +516,14 @@ class S3Client:
             self.logger.error(f'Error listing buckets: {ex}')
             raise
 
-    @retry_on_slowdown()
     def create_expiration_policy(self, bucket: str, days: int):
         if self._is_gcs:
-            raise Exception(
-                "create_expiration_lifecycle is not implemented for GCS backend"
-            )
+            self._gcp_create_expiration_policy(bucket, days)
+        else:
+            self._aws_create_expiration_policy(bucket, days)
 
+    @retry_on_slowdown()
+    def _aws_create_expiration_policy(self, bucket: str, days: int):
         try:
             self._cli.put_bucket_lifecycle_configuration(
                 Bucket=bucket,
@@ -545,6 +547,12 @@ class S3Client:
             self.logger.error(
                 f"Failed to set lifecycle configuration for {bucket}: {err}")
             raise err
+
+    def _gcp_create_expiration_policy(self, bucket: str, days: int):
+        gcs_client = gcs.Client()
+        bucket = gcs_client.get_bucket(bucket)
+        bucket.add_lifecycle_delete_rule(age=days)
+        bucket.patch()
 
     def _add_header(self, model, params, request_signer, **kwargs):
         params['headers'].update(self._before_call_headers)
