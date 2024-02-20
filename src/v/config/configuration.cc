@@ -2782,7 +2782,7 @@ configuration::configuration()
       "kafka_quota_balancer_v2",
       "Use the new, improved, super-awesome quota balancer",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      false)
+      true)
   , kafka_throughput_replenish_threshold(
       *this,
       "kafka_throughput_replenish_threshold",
