@@ -79,6 +79,8 @@ enum class errc : int16_t {
     invalid_partition_operation,
     concurrent_modification_error,
     transform_count_limit_exceeded,
+    role_exists,
+    role_does_not_exist,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -229,6 +231,10 @@ struct errc_category final : public std::error_category {
             return "Concurrent modification error";
         case errc::transform_count_limit_exceeded:
             return "Too many transforms deployed";
+        case errc::role_exists:
+            return "Role already exists";
+        case errc::role_does_not_exist:
+            return "Role does not exist";
         }
         return "cluster::errc::unknown";
     }
