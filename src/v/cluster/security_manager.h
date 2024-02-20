@@ -23,14 +23,19 @@ class security_manager final {
 public:
     explicit security_manager(
       ss::sharded<security::credential_store>&,
-      ss::sharded<security::authorizer>&);
+      ss::sharded<security::authorizer>&,
+      ss::sharded<security::role_store>&);
 
     static constexpr auto commands = make_commands_list<
       create_user_cmd,
       delete_user_cmd,
       update_user_cmd,
       create_acls_cmd,
-      delete_acls_cmd>();
+      delete_acls_cmd,
+      create_role_cmd,
+      delete_role_cmd,
+      update_role_cmd,
+      rename_role_cmd>();
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
@@ -38,7 +43,9 @@ public:
         return batch.header().type
                  == model::record_batch_type::user_management_cmd
                || batch.header().type
-                    == model::record_batch_type::acl_management_cmd;
+                    == model::record_batch_type::acl_management_cmd
+               || batch.header().type
+                    == model::record_batch_type::role_management_cmd;
     }
 
     ss::future<> fill_snapshot(controller_snapshot&) const;
@@ -51,6 +58,7 @@ private:
 
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
+    ss::sharded<security::role_store>& _roles;
 };
 
 } // namespace cluster

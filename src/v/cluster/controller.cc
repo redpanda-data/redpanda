@@ -66,6 +66,7 @@
 #include "security/credential_store.h"
 #include "security/ephemeral_credential_store.h"
 #include "security/oidc_service.h"
+#include "security/role_store.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/future.hh>
@@ -102,7 +103,7 @@ controller::controller(
       _tp_state,
       _partition_leaders,
       _partition_balancer_state)
-  , _security_manager(_credentials, _authorizer)
+  , _security_manager(_credentials, _authorizer, _roles)
   , _raft_manager(raft_manager)
   , _feature_table(feature_table)
   , _cloud_storage_api(cloud_storage_api)
@@ -141,6 +142,7 @@ ss::future<> controller::wire_up() {
       })
       .then([this] { return _credentials.start(); })
       .then([this] { return _ephemeral_credentials.start(); })
+      .then([this] { return _roles.start(); })
       .then([this] {
           return _authorizer.start(
             []() { return config::shard_local_cfg().superusers.bind(); });
