@@ -17,9 +17,12 @@
 #include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/health_monitor_frontend.h"
 #include "config/configuration.h"
+#include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
+#include "storage/ntp_config.h"
+#include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
 
 #include <seastar/core/io_priority_class.hh>
@@ -468,6 +471,89 @@ FIXTURE_TEST(test_consume_during_spillover, cloud_storage_manual_e2e_test) {
         BOOST_CHECK(check.get());
     }
     cleanup.cancel();
+}
+
+// Regression test for #15042, where a timequery could land below the archive
+// start offset and throw due to a NotFound error, ultimately resulting in a
+// consumer hang.
+FIXTURE_TEST(test_timequery_after_archival_gc, cloud_storage_manual_e2e_test) {
+    const auto records_per_seg = 5;
+    const auto num_segs = 40;
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto total_records = gen.num_segments(num_segs)
+                           .batches_per_segment(records_per_seg)
+                           .batch_time_delta_ms(10)
+                           .produce()
+                           .get();
+    BOOST_REQUIRE_GE(total_records, 200);
+
+    // Run local housekeeping with aggressive GC and wait for eviction to
+    // ensure subsequent queries hit tiered storage.
+    ss::abort_source as;
+    storage::housekeeping_config housekeeping_conf(
+      model::timestamp::min(),
+      1, // max_bytes_in_log
+      log->stm_manager()->max_collectible_offset(),
+      ss::default_priority_class(),
+      as);
+    partition->log()->housekeeping(housekeeping_conf).get();
+    RPTEST_REQUIRE_EVENTUALLY(
+      10s, [log = partition->log()] { return log->segments().size() == 1; });
+    BOOST_REQUIRE_GT(partition->raft_start_offset(), model::offset{0});
+
+    // Remove exactly one segment, so a portion of a manifest can be removed
+    // when we housekeeping on the spillover region.
+    auto start_before_spill = archiver->manifest().get_start_offset();
+    cloud_storage::segment_meta first_seg
+      = *archiver->manifest().first_addressable_segment();
+    auto size_without_first_seg = archiver->manifest().cloud_log_size()
+                                  - first_seg.size_bytes;
+    BOOST_REQUIRE_GT(size_without_first_seg, 0);
+
+    // Spillover.
+    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    archiver->apply_spillover().get();
+    BOOST_REQUIRE_NE(
+      start_before_spill, archiver->manifest().get_start_offset());
+
+    // Set up retention such that exactly one segment is removed, from the
+    // beginning of the archival region.
+    test_local_cfg.get("retention_bytes")
+      .set_value(std::make_optional<size_t>(size_without_first_seg));
+    archiver->housekeeping().get();
+    BOOST_REQUIRE_EQUAL(
+      archiver->manifest().cloud_log_size(), size_without_first_seg);
+    auto new_start_offset = model::next_offset(first_seg.committed_offset);
+    BOOST_REQUIRE_EQUAL(
+      archiver->manifest().get_archive_clean_offset(), new_start_offset);
+    BOOST_REQUIRE_EQUAL(
+      archiver->manifest().get_archive_start_offset(), new_start_offset);
+
+    // Sanity check: we should still have the removed segment in our spillover
+    // manifest, even if it's been removed.
+    BOOST_REQUIRE_EQUAL(
+      archiver->manifest().get_spillover_map().begin()->base_offset,
+      first_seg.base_offset);
+
+    // To be sure we actually query S3, force removal of any cached files.
+    app.shadow_index_cache.local()
+      .trim_manually(
+        std::make_optional<uint64_t>(0), std::make_optional<size_t>(0))
+      .get();
+
+    tests::kafka_list_offsets_transport lister(make_kafka_client().get());
+    lister.start().get();
+
+    // Timequery to somewhere within the segment that was deleted. This should
+    // succeed, and return the next offset after the new start.
+    auto first_seg_base_ts = model::timestamp(first_seg.base_timestamp() + 1);
+    auto offset = lister
+                    .list_offset_for_partition(
+                      topic_name, model::partition_id(0), first_seg_base_ts)
+                    .get();
+    BOOST_REQUIRE_EQUAL(
+      model::offset_cast(offset),
+      kafka::next_offset(first_seg.last_kafka_offset()));
 }
 
 FIXTURE_TEST(
