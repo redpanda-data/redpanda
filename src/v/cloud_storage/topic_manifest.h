@@ -82,6 +82,9 @@ public:
     };
 
 private:
+    friend struct topic_manifest_tester;
+    /// check that all the fields of cluster::topic_properties have a mapping
+    bool is_mapping_updated() const noexcept;
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
     void do_update(const topic_manifest_handler& handler);

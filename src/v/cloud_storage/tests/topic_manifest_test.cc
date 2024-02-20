@@ -413,6 +413,11 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
     BOOST_CHECK(test_cfg == reconstructed.get_topic_config());
 }
 
+struct cloud_storage::topic_manifest_tester {
+    static auto is_mapping_updated() {
+        return topic_manifest{}.is_mapping_updated();
+    }
+};
 SEASTAR_THREAD_TEST_CASE(test_v2_new_properties) {
     BOOST_CHECK_MESSAGE(
       topic_manifest_tester::is_mapping_updated(),

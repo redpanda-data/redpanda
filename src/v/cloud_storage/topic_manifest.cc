@@ -678,6 +678,8 @@ public:
         }
     }
 
+    constexpr auto size() const { return std::tuple_size_v<decltype(fields_)>; }
+
 private:
     std::tuple<Fn...> fields_;
 };
@@ -1361,5 +1363,16 @@ remote_manifest_path topic_manifest::get_manifest_path() const {
     vassert(_topic_config, "Topic config is not set");
     return get_topic_manifest_path(
       _topic_config->tp_ns.ns, _topic_config->tp_ns.tp);
+}
+
+bool topic_manifest::is_mapping_updated() const noexcept {
+    return field_mappings_for_v<cluster::topic_properties>.size()
+             == std::tuple_size_v<
+               decltype(std::declval<cluster::topic_properties>()
+                          .serde_fields())>
+           && field_mappings_for_v<cluster::remote_topic_properties>.size()
+                == std::tuple_size_v<
+                  decltype(std::declval<cluster::remote_topic_properties>()
+                             .serde_fields())>;
 }
 } // namespace cloud_storage
