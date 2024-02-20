@@ -292,6 +292,7 @@ std::istream& operator>>(std::istream& i, cleanup_policy_bitflags& cp) {
     ss::sstring s;
     i >> s;
     cp = string_switch<cleanup_policy_bitflags>(s)
+           .match("none", cleanup_policy_bitflags::none)
            .match("delete", cleanup_policy_bitflags::deletion)
            .match("compact", cleanup_policy_bitflags::compaction)
            .match_all(
@@ -433,6 +434,19 @@ std::ostream& operator<<(std::ostream& o, const shadow_indexing_mode& si) {
     return o;
 }
 
+std::istream& operator>>(std::istream& i, shadow_indexing_mode& si) {
+    ss::sstring s;
+    i >> s;
+    si = string_switch<shadow_indexing_mode>(s)
+           .match("disabled", shadow_indexing_mode::disabled)
+           .match("archival", shadow_indexing_mode::archival)
+           .match("fetch", shadow_indexing_mode::fetch)
+           .match("full", shadow_indexing_mode::full)
+           .match("drop_archival", shadow_indexing_mode::drop_archival)
+           .match("drop_fetch", shadow_indexing_mode::drop_fetch)
+           .match("drop_full", shadow_indexing_mode::drop_full);
+    return i;
+}
 std::ostream& operator<<(std::ostream& o, leader_balancer_mode lbt) {
     o << leader_balancer_mode_to_string(lbt);
     return o;
