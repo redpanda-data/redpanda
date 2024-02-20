@@ -161,6 +161,14 @@ public:
         update_value(std::any_cast<T>(std::move(v)));
     }
 
+    template<typename U>
+    requires std::constructible_from<T, U>
+    void set_value(U&& v) {
+        // needs to go through virtual inheritance chain, since this class is
+        // not final
+        set_value(std::make_any<T>(std::forward<U>(v)));
+    }
+
     bool set_value(YAML::Node n) override {
         return update_value(std::move(n.as<T>()));
     }
@@ -177,15 +185,14 @@ public:
         return validate(v);
     }
 
-    void reset() override { _value = default_value(); }
-
-    property<T>& operator()(T v) {
-        _value = std::move(v);
-        return *this;
+    void reset() override {
+        auto v = default_value();
+        update_value(std::move(v));
     }
 
     base_property& operator=(const base_property& pr) override {
-        _value = dynamic_cast<const property<T>&>(pr)._value;
+        auto v = dynamic_cast<const property<T>&>(pr)._value;
+        update_value(std::move(v));
         return *this;
     }
 
@@ -262,8 +269,10 @@ protected:
 
     bool update_value(T&& new_value) {
         if (new_value != _value) {
-            notify_watchers(new_value);
+            // Update the main value first, in case one of the binding updates
+            // throws.
             _value = std::move(new_value);
+            notify_watchers(_value);
 
             return true;
         } else {
@@ -864,9 +873,14 @@ class retention_duration_property final
   : public property<std::optional<std::chrono::milliseconds>> {
 public:
     using property::property;
+    using property::set_value;
+
     void set_value(std::any v) final {
-        update_value(std::any_cast<std::chrono::milliseconds>(std::move(v)));
+        update_value(
+          std::any_cast<std::optional<std::chrono::milliseconds>>(std::move(v))
+            .value_or(-1ms));
     }
+
     bool set_value(YAML::Node n) final {
         return update_value(n.as<std::chrono::milliseconds>());
     }

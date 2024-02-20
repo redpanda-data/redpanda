@@ -60,14 +60,28 @@ conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
     });
 
     _cfg.max_connections_per_ip.watch([this]() {
-        if (
-          !_cfg.max_connections_per_ip()
-          && _cfg.max_connections_overrides().empty()) {
+        if (!_cfg.max_connections_per_ip()) {
             if (ss::this_shard_id() == 0) {
                 vlog(
-                  rpc::rpclog.info, "Connection count per-IP limit disabled");
+                  rpc::rpclog.info,
+                  "Default connection count per-IP limit disabled");
             }
-            ip_home.clear();
+
+            if (_cfg.max_connections_overrides().empty()) {
+                ip_home.clear();
+            } else {
+                // Remove everything except the overrides.
+                std::vector<inet_address_key> to_delete;
+                for (const auto& i : ip_home) {
+                    if (!overrides.contains(i.first)) {
+                        to_delete.push_back(i.first);
+                    }
+                }
+                for (const auto& k : to_delete) {
+                    ip_home.erase(k);
+                }
+            }
+
             ip_remote.clear();
         } else {
             auto new_limit = _cfg.max_connections_per_ip().value();

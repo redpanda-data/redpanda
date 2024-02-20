@@ -446,6 +446,13 @@ SEASTAR_THREAD_TEST_CASE(property_bind) {
     BOOST_TEST(bind2() == "newvalue4");
     BOOST_TEST(bind3() == "newvalue4");
     BOOST_TEST(watch_count == 6);
+
+    // Check that the bindings are updated when the property is reset to its
+    // default value.
+    cfg2.required_string.reset();
+    BOOST_TEST(bind2() == "");
+    BOOST_TEST(bind3() == "");
+    BOOST_TEST(watch_count == 8);
 }
 
 SEASTAR_THREAD_TEST_CASE(property_conversion_bind) {

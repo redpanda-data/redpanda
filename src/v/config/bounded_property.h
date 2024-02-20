@@ -215,9 +215,12 @@ public:
       , _bounds(bounds)
       , _example(generate_example()) {}
 
+    using property<T>::set_value;
+
     void set_value(std::any v) override {
         property<T>::update_value(std::any_cast<T>(std::move(v)));
     }
+
     bool set_value(YAML::Node n) override {
         auto val = std::move(n.as<T>());
         return clamp_and_update(val);
