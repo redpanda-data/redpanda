@@ -23,10 +23,12 @@ struct topic_manifest_handler;
 class topic_manifest final : public base_manifest {
 public:
     constexpr static int32_t first_version = 1;
-    // this version introduces the serialization of
+    // This version introduces the serialization of
     // cluster::topic_configuration, with all its field
     constexpr static int32_t cluster_topic_configuration_version = 2;
 
+    // Version used to identify the current serialization format and the maximum
+    // version which can be deserialized from
     constexpr static int32_t current_version
       = cluster_topic_configuration_version;
 
