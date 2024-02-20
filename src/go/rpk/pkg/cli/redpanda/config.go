@@ -101,9 +101,11 @@ You may also use <key>=<value> notation for setting configuration properties:
 
 func bootstrap(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		ips  []string
-		self string
-		id   int
+		advKafkaStr string
+		advRPCStr   string
+		id          int
+		ips         []string
+		self        string
 	)
 	c := &cobra.Command{
 		Use:   "bootstrap [--self <ip>] [--ips <ip1,ip2,...>]",
@@ -118,6 +120,11 @@ edits.
 
 The --ips flag specifies seed servers (ips, ip:ports, or hostnames) that this
 broker will use to form a cluster.
+
+The flags --advertised-kafka and --advertised-rpc specify the advertised
+addresses that this broker will use to advertise the corresponding listeners. 
+If not set, it will default to the private IP address or the one specified with
+the --self flag.
 
 By default, redpanda expects your machine to have one private IP address, and
 redpanda will listen on it. If your machine has multiple private IP addresses,
@@ -138,6 +145,11 @@ you must use the --self flag to specify which ip redpanda should listen on.
 			if id >= 0 {
 				y.Redpanda.ID = &id
 			}
+			advertisedKafka, err := parseAdvertisedKafka(advKafkaStr, selfIP)
+			out.MaybeDie(err, "unable to parse --advertised-kafka %v: %v", advKafkaStr, err)
+
+			advertisedRPC, err := parseAdvertisedRPC(advRPCStr, selfIP)
+			out.MaybeDie(err, "unable to parse --advertised-rpc %v: %v", advRPCStr, err)
 
 			// Defaults returns one RPC, one KafkaAPI, and one
 			// AdminAPI. We only override values in a configuration
@@ -163,6 +175,15 @@ you must use the --self flag to specify which ip redpanda should listen on.
 			if a := &y.Redpanda.RPCServer.Address; *a == config.DefaultListenAddress {
 				*a = selfIP
 			}
+			if a := y.Redpanda.AdvertisedRPCAPI; a != nil {
+				// Redpanda default configuration use localhost as the default
+				// advertised address.
+				if a.Address == config.LoopbackIP && a.Port == config.DefaultRPCPort {
+					y.Redpanda.AdvertisedRPCAPI = advertisedRPC
+				}
+			} else {
+				y.Redpanda.AdvertisedRPCAPI = advertisedRPC
+			}
 			if a := &y.Redpanda.KafkaAPI; len(*a) == 1 {
 				if first := &((*a)[0].Address); *first == config.DefaultListenAddress {
 					*first = selfIP
@@ -172,6 +193,13 @@ you must use the --self flag to specify which ip redpanda should listen on.
 					Address: selfIP,
 					Port:    config.DefaultKafkaPort,
 				}}
+			}
+			if a := &y.Redpanda.AdvertisedKafkaAPI; len(*a) == 1 {
+				if first := &((*a)[0]); first.Address == config.LoopbackIP && first.Port == config.DefaultKafkaPort {
+					*first = advertisedKafka
+				}
+			} else if len(*a) == 0 {
+				*a = []config.NamedSocketAddress{advertisedKafka}
 			}
 			if a := &y.Redpanda.AdminAPI; len(*a) == 1 {
 				if first := &((*a)[0]).Address; *first == config.DefaultListenAddress {
@@ -190,7 +218,9 @@ you must use the --self flag to specify which ip redpanda should listen on.
 		},
 	}
 	c.Flags().StringSliceVar(&ips, "ips", nil, "Comma-separated list of the seed node addresses or hostnames; at least three are recommended")
-	c.Flags().StringVar(&self, "self", "", "Optional IP address for redpanda to listen on; if empty, defaults to a private address")
+	c.Flags().StringVar(&self, "self", "", "Optional IP address for Redpanda to listen on; if empty, defaults to a private address")
+	c.Flags().StringVar(&advKafkaStr, "advertised-kafka", "", "Optional address:port for Redpanda to advertise the kafka listener; if empty, defaults to '--self'")
+	c.Flags().StringVar(&advRPCStr, "advertised-rpc", "", "Optional address:port for Redpanda to advertise the rpc listener; if empty, defaults to '--self'")
 	c.Flags().IntVar(&id, "id", -1, "This node's ID. If unset, redpanda will assign one automatically")
 	c.Flags().MarkHidden("id")
 	return c
@@ -251,4 +281,34 @@ func getSelfIP() (net.IP, error) {
 	default:
 		return nil, errors.New("multiple private v4 IPs found, please select one with --self")
 	}
+}
+
+func parseAdvertisedKafka(adv string, defHost string) (config.NamedSocketAddress, error) {
+	host, port := defHost, config.DefaultKafkaPort
+	if adv != "" {
+		_, hostport, err := vnet.ParseHostMaybeScheme(adv)
+		if err != nil {
+			return config.NamedSocketAddress{}, err
+		}
+		host, port = vnet.SplitHostPortDefault(hostport, config.DefaultKafkaPort)
+	}
+	return config.NamedSocketAddress{
+		Address: host,
+		Port:    port,
+	}, nil
+}
+
+func parseAdvertisedRPC(adv string, defHost string) (*config.SocketAddress, error) {
+	host, port := defHost, config.DefaultRPCPort
+	if adv != "" {
+		_, hostport, err := vnet.ParseHostMaybeScheme(adv)
+		if err != nil {
+			return nil, err
+		}
+		host, port = vnet.SplitHostPortDefault(hostport, config.DefaultRPCPort)
+	}
+	return &config.SocketAddress{
+		Address: host,
+		Port:    port,
+	}, nil
 }
