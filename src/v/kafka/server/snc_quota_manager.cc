@@ -19,6 +19,7 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include <chrono>
 #include <iterator>
 #include <memory>
 #include <numeric>
@@ -94,9 +95,20 @@ void snc_quotas_probe::setup_metrics() {
     }
     metric_defs.emplace_back(sm::make_counter(
       "traffic_intake",
-      _traffic_in,
+      _traffic.in,
       sm::description("Amount of Kafka traffic received from the clients "
                       "that is taken into processing, in bytes")));
+
+    metric_defs.emplace_back(sm::make_counter(
+      "traffic_egress",
+      _traffic.eg,
+      sm::description("Amount of Kafka traffic published to the clients "
+                      "that was taken into processing, in bytes")));
+
+    metric_defs.emplace_back(sm::make_histogram(
+      "throttle_time",
+      [this] { return get_throttle_time(); },
+      sm::description("Throttle time histogram (in seconds)")));
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("kafka:quotas"),
@@ -308,6 +320,9 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
       std::max(eval_delay(_shard_quota.in), eval_delay(_shard_quota.eg)));
     ctx._throttled_until = now + res.request;
 
+    _probe.record_throttle_time(
+      std::chrono::duration_cast<std::chrono::microseconds>(res.request));
+
     return res;
 }
 
@@ -337,6 +352,7 @@ void snc_quota_manager::record_response(
         return;
     }
     _shard_quota.eg.use(request_size, now);
+    _probe.rec_traffic_eg(request_size);
 }
 
 ss::lowres_clock::duration
