@@ -1829,6 +1829,47 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         return sample_values
 
+    def metrics_sample(
+        self,
+        sample_pattern: str,
+        pods=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> Optional[MetricSamples]:
+        """
+        Query metrics for a single sample using fuzzy name matching. This
+        interface matches the sample pattern against sample names, and requires
+        that exactly one (family, sample) match the query. All values for the
+        sample across the requested set of pods are returned in a flat array.
+
+        None will be returned if less than one (family, sample) matches.
+        An exception will be raised if more than one (family, sample) matches.
+
+        Example:
+
+           The query:
+
+              redpanda.metrics_sample("under_replicated")
+
+           will return an array containing MetricSample instances for each pod and
+           core/shard in the cluster. Each entry will correspond to a value from:
+
+              family = vectorized_cluster_partition_under_replicated_replicas
+              sample = vectorized_cluster_partition_under_replicated_replicas
+        """
+        if pods is None:
+            pods = self.pods
+
+        sample_values = []
+        for pod in pods:
+            metrics = self.metrics(pod.name, metrics_endpoint)
+            sample_values += self._extract_samples(metrics, sample_pattern,
+                                                   pod)
+
+        if not sample_values:
+            return None
+        else:
+            return MetricSamples(sample_values)
+
     def metric_sum(
             self,
             metric_name,
