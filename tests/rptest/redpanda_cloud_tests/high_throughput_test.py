@@ -1166,6 +1166,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             lambda: cluster_ready_replicas(cluster_name) == replicas,
             timeout_sec=600,
             backoff_sec=1,
+            retry_on_exc=True,
             err_msg=
             f'number of ready replicas for {cluster_name} did not arrive at {replicas}'
         )
