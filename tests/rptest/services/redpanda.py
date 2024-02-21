@@ -1808,6 +1808,27 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 pod_name).decode()
         return text_string_to_metric_families(text)
 
+    def _extract_samples(self, metrics, sample_pattern: str,
+                         pod) -> list[MetricSamples]:
+        found_sample = None
+        sample_values = []
+
+        for family in metrics:
+            for sample in family.samples:
+                if sample_pattern not in sample.name:
+                    continue
+                if not found_sample:
+                    found_sample = (family.name, sample.name)
+                if found_sample != (family.name, sample.name):
+                    raise Exception(
+                        f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
+                    )
+                sample_values.append(
+                    MetricSample(family.name, sample.name, pod, sample.value,
+                                 sample.labels))
+
+        return sample_values
+
     def metric_sum(
             self,
             metric_name,
