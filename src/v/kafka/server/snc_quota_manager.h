@@ -213,6 +213,7 @@ private:
     void adjust_quota(const ingress_egress_state<quota_t>& delta) noexcept;
 
 private:
+    void update_balance_config();
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
     ingress_egress_state<config::binding<std::optional<quota_t>>>

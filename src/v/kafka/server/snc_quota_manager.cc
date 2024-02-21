@@ -176,20 +176,8 @@ snc_quota_manager::snc_quota_manager()
         _shard_quota.in.set_width(v);
         _shard_quota.eg.set_width(v);
     });
-    _kafka_quota_balancer_node_period.watch([this] {
-        if (_balancer_gate.is_closed()) {
-            return;
-        }
-        if (_balancer_timer.cancel()) {
-            // cancel() returns true only on the balancer shard
-            // because the timer is never armed on the others
-            arm_balancer_timer();
-        }
-        // if the balancer is disabled, this is where the quotas are reset to
-        // default. This needs to be called on every shard because the effective
-        // balance is updated directly in this case.
-        update_node_quota_default();
-    });
+    _kafka_quota_balancer_node_period.watch(
+      [this]() { update_balance_config(); });
     _kafka_quota_balancer_min_shard_throughput_ratio.watch(
       [this] { update_shard_quota_minimum(); });
     _kafka_quota_balancer_min_shard_throughput_bps.watch(
@@ -850,6 +838,21 @@ void snc_quota_manager::adjust_quota(
     f(_shard_quota.in, delta.in, "in");
     f(_shard_quota.eg, delta.eg, "eg");
     vlog(klog.trace, "qm - Adjust quota: {} -> {}", delta, _shard_quota);
+}
+
+void snc_quota_manager::update_balance_config() {
+    if (_balancer_gate.is_closed()) {
+        return;
+    }
+    if (_balancer_timer.cancel()) {
+        // cancel() returns true only on the balancer shard
+        // because the timer is never armed on the others
+        arm_balancer_timer();
+    }
+    // if the balancer is disabled, this is where the quotas are reset to
+    // default. This needs to be called on every shard because the effective
+    // balance is updated directly in this case.
+    update_node_quota_default();
 }
 
 } // namespace kafka
