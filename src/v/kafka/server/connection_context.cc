@@ -16,12 +16,14 @@
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "bytes/scattered_message.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/sasl_probe.h"
 #include "kafka/server/handlers/fetch.h"
 #include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/handlers/produce.h"
+#include "kafka/server/logger.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/request_context.h"
@@ -36,15 +38,49 @@
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/sstring.hh>
+#include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/with_timeout.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <chrono>
+#include <cstdint>
+#include <exception>
 #include <memory>
 
 using namespace std::chrono_literals;
 
 namespace kafka {
+
+namespace {
+static constexpr std::string_view
+  multi_proxy_initial_client_id("__redpanda_mpx");
+/**
+ * Exception thrown when virtual connection id provided in header client_id
+ * field is not valid
+ */
+class invalid_virtual_connection_id : public std::exception {
+public:
+    explicit invalid_virtual_connection_id(ss::sstring msg)
+      : _msg(std::move(msg)) {}
+
+private:
+    ss::sstring _msg;
+};
+
+bytes parse_virtual_connection_id(const kafka::request_header& header) {
+    if (header.client_id_buffer.empty()) {
+        throw invalid_virtual_connection_id(
+          "virtual connection client id can not be empty");
+    }
+
+    // TODO: should we use vcluster_id here ?
+    return bytes{
+      reinterpret_cast<const uint8_t*>(header.client_id_buffer.begin()),
+      header.client_id_buffer.size()};
+}
+
+} // namespace
 
 connection_context::connection_context(
   std::optional<
@@ -60,6 +96,7 @@ connection_context::connection_context(
   : _hook(hook)
   , _server(s)
   , conn(conn)
+  , _protocol_state()
   , _as()
   , _sasl(std::move(sasl))
   // tests may build a context without a live connection
@@ -105,6 +142,7 @@ ss::future<> connection_context::stop() {
     }
     co_await _wait_input_shutdown.get_future();
     co_await _as.request_abort_ex(ssx::connection_aborted_exception{});
+    co_await _gate.close();
     co_await _as.stop();
 
     if (conn) {
@@ -298,6 +336,20 @@ ss::future<> connection_context::process_one_request() {
         co_return;
     }
     _server.handler_probe(h->key).add_bytes_received(sz.value());
+    /**
+     * An entry point for the MPX serverless extensions. If the first request
+     * for a given connection has a special client_id then MPX extensions are
+     * enabled for this physical connection.
+     */
+    if (_server.enable_mpx_extensions()) {
+        if (unlikely(
+              is_first_request()
+              && h->client_id == multi_proxy_initial_client_id)) {
+            vlog(
+              klog.debug, "enabling virtualized connections on {}", conn->addr);
+            _is_virtualized_connection = true;
+        }
+    }
 
     try {
         co_return co_await dispatch_method_once(
@@ -322,6 +374,15 @@ ss::future<> connection_context::process_one_request() {
           klog.error,
           "Request from {} failed on memory exhaustion (std::bad_alloc)",
           conn->addr);
+    } catch (const invalid_virtual_connection_id& e) {
+        // shutdown connection if it doesn't adhere to virtual connections
+        // protocol
+        vlog(
+          klog.warn,
+          "Request from {} contains invalid virtual connection id - {}",
+          conn->addr,
+          e.what());
+        conn->shutdown_input();
     } catch (const ss::sleep_aborted&) {
         // shutdown started while force-throttling
     }
@@ -571,6 +632,51 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     auto self = shared_from_this();
     auto rctx = request_context(
       self, std::move(hdr), std::move(buf), sres->backpressure_delay);
+
+    /**
+     * Not virtualized connection, simply forward to protocol state for request
+     * processing.
+     */
+    if (!_is_virtualized_connection) {
+        co_return co_await _protocol_state.process_request(
+          shared_from_this(), std::move(rctx), sres);
+    }
+
+    auto v_connection_id = parse_virtual_connection_id(rctx.header());
+    auto it = _virtual_states.lazy_emplace(
+      v_connection_id, [v_connection_id](const auto& ctr) mutable {
+          return ctr(
+            std::move(v_connection_id),
+            ss::make_lw_shared<virtual_connection_state>());
+      });
+
+    co_await it->second->process_request(
+      shared_from_this(), std::move(rctx), sres);
+}
+
+ss::future<> connection_context::virtual_connection_state::process_request(
+  ss::lw_shared_ptr<connection_context> connection_ctx,
+  request_context rctx,
+  ss::lw_shared_ptr<session_resources> sres) {
+    auto u = co_await _lock.get_units();
+    ssx::spawn_with_gate(
+      connection_ctx->_gate,
+      [this,
+       rctx = std::move(rctx),
+       sres,
+       u = std::move(u),
+       connection_ctx]() mutable {
+          _last_request_timestamp = ss::lowres_clock::now();
+          return _state
+            .process_request(std::move(connection_ctx), std::move(rctx), sres)
+            .finally([u = std::move(u)] {});
+      });
+}
+
+ss::future<> connection_context::client_protocol_state::process_request(
+  ss::lw_shared_ptr<connection_context> connection_ctx,
+  request_context rctx,
+  ss::lw_shared_ptr<session_resources> sres) {
     /*
      * we process requests in order since all subsequent requests
      * are dependent on authentication having completed.
@@ -590,12 +696,11 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
      * creating server-side errors that will appear as a corrupted
      * stream at best and at worst some odd behavior.
      */
-
     const auto correlation = rctx.header().correlation;
     const sequence_id seq = _seq_idx;
     _seq_idx = _seq_idx + sequence_id(1);
     auto res = kafka::process_request(
-      std::move(rctx), _server.smp_group(), *sres);
+      std::move(rctx), connection_ctx->server().smp_group(), *sres);
 
     /*
      * first stage processed in a foreground.
@@ -619,7 +724,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               "Discarding second stage failure {}",
               std::current_exception());
         }
-        self->conn->shutdown_input();
+        connection_ctx->conn->shutdown_input();
         sres->tracker->mark_errored();
         co_return;
     }
@@ -628,19 +733,20 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
      * second stage processed in background.
      */
     ssx::spawn_with_gate(
-      _server.conn_gate(),
+      connection_ctx->_server.conn_gate(),
       [this,
-       self,
        f = std::move(res.response),
        sres,
        seq,
-       correlation]() mutable {
-          return handle_response(self, std::move(f), sres, seq, correlation);
+       correlation,
+       cctx = connection_ctx]() mutable {
+          return handle_response(
+            std::move(cctx), std::move(f), sres, seq, correlation);
       });
 }
 
-ss::future<> connection_context::handle_response(
-  ss::lw_shared_ptr<connection_context> self,
+ss::future<> connection_context::client_protocol_state::handle_response(
+  ss::lw_shared_ptr<connection_context> connection_ctx,
   ss::future<response_ptr> f,
   ss::lw_shared_ptr<session_resources> sres,
   sequence_id seq,
@@ -651,7 +757,7 @@ ss::future<> connection_context::handle_response(
         r->set_correlation(correlation);
         response_and_resources randr{std::move(r), sres};
         _responses.insert({seq, std::move(randr)});
-        co_return co_await maybe_process_responses();
+        co_return co_await maybe_process_responses(connection_ctx);
     } catch (...) {
         e = std::current_exception();
     }
@@ -669,14 +775,14 @@ ss::future<> connection_context::handle_response(
         vlog(
           klog.info,
           "Disconnected {} ({})",
-          self->conn->addr,
+          connection_ctx->conn->addr,
           disconnected.value());
     } else {
         vlog(klog.warn, "Error processing request: {}", e);
     }
 
     sres->tracker->mark_errored();
-    self->conn->shutdown_input();
+    connection_ctx->conn->shutdown_input();
 }
 
 /**
@@ -692,8 +798,10 @@ ss::future<> connection_context::handle_response(
  *
  * @return ss::future<>
  */
-ss::future<> connection_context::maybe_process_responses() {
-    return ss::repeat([this]() mutable {
+ss::future<> connection_context::client_protocol_state::maybe_process_responses(
+  ss::lw_shared_ptr<connection_context> connection_ctx) {
+    return ss::repeat([this,
+                       connection_ctx = std::move(connection_ctx)]() mutable {
         auto it = _responses.find(_next_response);
         if (it == _responses.end()) {
             return ss::make_ready_future<ss::stop_iteration>(
@@ -714,7 +822,7 @@ ss::future<> connection_context::maybe_process_responses() {
         auto msg = response_as_scattered(std::move(resp_and_res.response));
         if (
           resp_and_res.resources->request_data.request_key == fetch_api::key) {
-            _server.quota_mgr().record_fetch_tp(
+            connection_ctx->_server.quota_mgr().record_fetch_tp(
               resp_and_res.resources->request_data.client_id, msg.size());
         }
         // Respose sizes only take effect on throttling at the next request
@@ -726,16 +834,18 @@ ss::future<> connection_context::maybe_process_responses() {
         // into the negative while under pressure.
         auto response_size = msg.size();
         auto request_key = resp_and_res.resources->request_data.request_key;
-        if (_kafka_throughput_controlled_api_keys().at(request_key)) {
+        if (connection_ctx->_kafka_throughput_controlled_api_keys().at(
+              request_key)) {
             // see the comment in dispatch_method_once()
-            if (likely(_snc_quota_context)) {
-                _server.snc_quota_mgr().record_response(
-                  *_snc_quota_context, response_size);
+            if (likely(connection_ctx->_snc_quota_context)) {
+                connection_ctx->_server.snc_quota_mgr().record_response(
+                  *connection_ctx->_snc_quota_context, response_size);
             }
         }
-        _server.handler_probe(request_key).add_bytes_sent(response_size);
+        connection_ctx->_server.handler_probe(request_key)
+          .add_bytes_sent(response_size);
         try {
-            return conn->write(std::move(msg))
+            return connection_ctx->conn->write(std::move(msg))
               .then([] {
                   return ss::make_ready_future<ss::stop_iteration>(
                     ss::stop_iteration::no);
