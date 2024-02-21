@@ -15,6 +15,7 @@
 #include "metrics/metrics.h"
 #include "seastarx.h"
 #include "utils/bottomless_token_bucket.h"
+#include "utils/log_hist.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
@@ -48,17 +49,30 @@ public:
     ~snc_quotas_probe() noexcept = default;
 
     void rec_balancer_step() noexcept { ++_balancer_runs; }
-    void rec_traffic_in(const size_t bytes) noexcept { _traffic_in += bytes; }
+    void rec_traffic_in(const size_t bytes) noexcept { _traffic.in += bytes; }
+    void rec_traffic_eg(const size_t bytes) noexcept { _traffic.eg += bytes; }
 
     void setup_metrics();
 
     uint64_t get_balancer_runs() const noexcept { return _balancer_runs; }
 
+    auto get_traffic_in() const { return _traffic.in; }
+    auto get_traffic_eg() const { return _traffic.eg; }
+
+    auto record_throttle_time(std::chrono::microseconds t) {
+        return _throttle_time_us.record(t.count());
+    }
+
+    auto get_throttle_time() const {
+        return _throttle_time_us.public_histogram_logform();
+    }
+
 private:
     class snc_quota_manager& _qm;
     metrics::internal_metric_groups _metrics;
     uint64_t _balancer_runs = 0;
-    size_t _traffic_in = 0;
+    ingress_egress_state<size_t> _traffic = {};
+    log_hist_public _throttle_time_us;
 };
 
 class snc_quota_context {
@@ -224,7 +238,7 @@ private:
     ingress_egress_state<bottomless_token_bucket> _shard_quota;
 
     // service
-    snc_quotas_probe _probe;
+    mutable snc_quotas_probe _probe;
 };
 
 // Names exposed in this namespace are for unit test integration only
