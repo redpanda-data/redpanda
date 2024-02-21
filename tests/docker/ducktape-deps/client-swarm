@@ -6,7 +6,7 @@ pushd /tmp
 git clone https://github.com/redpanda-data/client-swarm.git
 
 pushd client-swarm
-git reset --hard d20bbf6aa9451fd1d725146c05799b675ab20084
+git reset --hard 21e5d183d56b2a773724ad9741f9fedd0e3a2a53
 cargo build --release
 cp target/release/client-swarm /usr/local/bin
 popd
