@@ -1797,10 +1797,15 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def metrics(
             self,
-            node,
+            pod_name: str = None,
             metrics_endpoint: MetricsEndpoint = MetricsEndpoint.PUBLIC_METRICS
     ):
-        text = self._cloud_cluster.get_public_metrics()
+        if metrics_endpoint == MetricsEndpoint.PUBLIC_METRICS:
+            text = self._cloud_cluster.get_public_metrics()
+        else:
+            text = self.__kubectl.exec(
+                'curl -f -s -S http://localhost:9644/metrics',
+                pod_name).decode()
         return text_string_to_metric_families(text)
 
     def metric_sum(
