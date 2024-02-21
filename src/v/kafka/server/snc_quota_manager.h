@@ -14,6 +14,7 @@
 #include "config/property.h"
 #include "config/throughput_control_group.h"
 #include "metrics/metrics.h"
+#include "ssx/sharded_ptr.h"
 #include "utils/bottomless_token_bucket.h"
 #include "utils/log_hist.h"
 #include "utils/mutex.h"
@@ -23,6 +24,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/util/shared_token_bucket.hh>
 
 #include <chrono>
 #include <optional>
@@ -105,8 +107,15 @@ class snc_quota_manager
 public:
     using clock = ss::lowres_clock;
     using quota_t = bottomless_token_bucket::quota_t;
+    using bucket_t = ss::internal::shared_token_bucket<
+      uint64_t,
+      std::ratio<1>,
+      ss::internal::capped_release::no,
+      clock>;
+    using buckets_t = kafka::ingress_egress_state<
+      ssx::sharded_ptr<kafka::snc_quota_manager::bucket_t>>;
 
-    snc_quota_manager();
+    explicit snc_quota_manager(buckets_t& node_quota);
     snc_quota_manager(const snc_quota_manager&) = delete;
     snc_quota_manager& operator=(const snc_quota_manager&) = delete;
     snc_quota_manager(snc_quota_manager&&) = delete;
@@ -216,6 +225,7 @@ private:
     void update_balance_config();
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
+    config::binding<bool> _use_throttling_v2;
     ingress_egress_state<config::binding<std::optional<quota_t>>>
       _kafka_throughput_limit_node_bps;
     config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
@@ -237,6 +247,7 @@ private:
     ingress_egress_state<std::optional<quota_t>> _node_quota_default;
     ingress_egress_state<quota_t> _shard_quota_minimum;
     ingress_egress_state<bottomless_token_bucket> _shard_quota;
+    buckets_t& _node_quota;
 
     // service
     mutable snc_quotas_probe _probe;

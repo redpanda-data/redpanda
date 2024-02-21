@@ -30,6 +30,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
+#include "kafka/server/snc_quota_manager.h"
 #include "metrics/aggregate_metrics_watcher.h"
 #include "metrics/metrics.h"
 #include "net/conn_quota.h"
@@ -152,6 +153,7 @@ public:
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<kafka::quota_manager> quota_mgr;
+    kafka::snc_quota_manager::buckets_t snc_node_quota;
     ss::sharded<kafka::snc_quota_manager> snc_quota_mgr;
     ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
     ss::sharded<kafka::usage_manager> usage_manager;
