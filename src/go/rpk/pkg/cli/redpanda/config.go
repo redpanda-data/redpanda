@@ -292,6 +292,9 @@ func parseAdvertisedKafka(adv string, defHost string) (config.NamedSocketAddress
 		}
 		host, port = vnet.SplitHostPortDefault(hostport, config.DefaultKafkaPort)
 	}
+	if host == "0.0.0.0" {
+		return config.NamedSocketAddress{}, errors.New("unexpected kafka advertised address '0.0.0.0' this will cause the broker to fail during startup validation")
+	}
 	return config.NamedSocketAddress{
 		Address: host,
 		Port:    port,
@@ -306,6 +309,9 @@ func parseAdvertisedRPC(adv string, defHost string) (*config.SocketAddress, erro
 			return nil, err
 		}
 		host, port = vnet.SplitHostPortDefault(hostport, config.DefaultRPCPort)
+	}
+	if host == "0.0.0.0" {
+		return nil, errors.New("unexpected rpc advertised address '0.0.0.0' this will cause the broker to fail during startup validation")
 	}
 	return &config.SocketAddress{
 		Address: host,
