@@ -180,6 +180,10 @@ public:
         return _schema_registry;
     }
 
+    static bool enable_mpx_extensions() {
+        return config::shard_local_cfg().enable_mpx_extensions();
+    }
+
     /**
      * \param api_names list of Kafka API names
      * \return std::vector<bool> always sized to index the entire Kafka API key
