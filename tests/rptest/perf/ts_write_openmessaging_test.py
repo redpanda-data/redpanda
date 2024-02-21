@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
@@ -35,17 +36,22 @@ class TSWriteOpenmessagingTest(RedpandaTest):
                              extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=6)
-    @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
-                 workload_idx="RELEASE_CERT_SMOKE_LOAD_625k")
-    def test_perf(self, driver_idx, workload_idx):
+    @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT")
+    def test_perf(self, driver_idx):
         """
         This adds TS writes to the OMB perf regression tests
         """
 
         assert self.redpanda.dedicated_nodes
 
-        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda,
-                                           driver_idx, workload_idx)
+        validator = OMBSampleConfigurations.RELEASE_SMOKE_TEST_VALIDATOR | {
+            OMBSampleConfigurations.E2E_LATENCY_75PCT:
+            [OMBSampleConfigurations.lte(6)],
+        }
+
+        benchmark = OpenMessagingBenchmark(
+            self._ctx, self.redpanda, driver_idx,
+            (OMBSampleConfigurations.RELEASE_CERT_SMOKE_LOAD_625k, validator))
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time(
         ) + TSWriteOpenmessagingTest.BENCHMARK_WAIT_TIME_MIN
