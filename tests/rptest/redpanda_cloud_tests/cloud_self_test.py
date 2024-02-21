@@ -39,3 +39,11 @@ class SelfRedpandaCloudTest(RedpandaCloudTest):
         assert r is None, r
         assert self.redpanda.cluster_healthy()
         self.redpanda.assert_cluster_is_reusable()
+
+    @cluster(num_nodes=1)
+    def test_metrics_sample(self):
+        """Test metrics_sample() can retrieve internal metrics.
+        """
+        vectorized_application_uptime = self.redpanda.metrics_sample(
+            sample_pattern='vectorized_application_uptime')
+        assert vectorized_application_uptime is not None, 'expected some metrics'
