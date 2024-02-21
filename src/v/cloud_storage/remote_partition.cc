@@ -169,6 +169,17 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
             ++mit;
         }
     }
+    const auto partition_start_offset
+      = _manifest_view->stm_manifest().full_log_start_offset();
+    while (mit != manifest.end()
+           && mit->committed_offset < partition_start_offset) {
+        // Make sure to skip segments that have been removed via archival GC,
+        // which wouldn't be reflected in a spillover manifest's segment list.
+        //
+        // NOTE: offset-based queries can easily reject an out-of-range request
+        // before getting here, but that isn't the case for timequeries.
+        ++mit;
+    }
     if (mit == manifest.end()) {
         // No such segment
         return borrow_result_t{};

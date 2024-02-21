@@ -252,6 +252,10 @@ public:
     /// manifest, start kafka offset override and start offset of the archive.
     std::optional<kafka::offset> full_log_start_kafka_offset() const;
 
+    /// Return start offset that takes into account the STM manifest's start
+    /// and the archive start offsets.
+    std::optional<model::offset> full_log_start_offset() const;
+
     /// Get starting offset of the current manifest (doesn't take into account
     /// spillover manifests)
     std::optional<model::offset> get_start_offset() const;
