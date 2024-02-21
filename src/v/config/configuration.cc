@@ -2777,6 +2777,21 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt,
       {.min = 1})
+  , kafka_throughput_throttling_v2(
+      *this,
+      "kafka_throughput_throttling_v2",
+      "Use throughput throttling based on a shared token bucket instead of "
+      "balancing quota between shards",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
+  , kafka_throughput_replenish_threshold(
+      *this,
+      "kafka_throughput_replenish_threshold",
+      "Threshold for refilling the token bucket. Will be clamped between 1 and "
+      "kafka_throughput_limit_node_*_bps.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1})
   , kafka_quota_balancer_window(
       *this,
       "kafka_quota_balancer_window_ms",
