@@ -456,6 +456,9 @@ struct configuration final : public config_store {
     bounded_property<std::optional<int64_t>> kafka_throughput_limit_node_in_bps;
     bounded_property<std::optional<int64_t>>
       kafka_throughput_limit_node_out_bps;
+    property<bool> kafka_throughput_throttling_v2;
+    bounded_property<std::optional<int64_t>>
+      kafka_throughput_replenish_threshold;
     bounded_property<std::chrono::milliseconds> kafka_quota_balancer_window;
     bounded_property<std::chrono::milliseconds>
       kafka_quota_balancer_node_period;

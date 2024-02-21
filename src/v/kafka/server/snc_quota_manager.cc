@@ -12,6 +12,8 @@
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/future-util.h"
+#include "ssx/sharded_ptr.h"
 #include "tristate.h"
 
 #include <seastar/core/metrics.hh>
@@ -142,11 +144,29 @@ quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
     }
 }
 
+auto update_node_bucket(
+  ssx::sharded_ptr<kafka::snc_quota_manager::bucket_t>& b,
+  config::binding<std::optional<int64_t>> const& cfg) {
+    if (!cfg().has_value()) {
+        return b.reset();
+    }
+    uint64_t rate = *cfg();
+    if (b && b->rate() == rate) {
+        return ss::make_ready_future();
+    }
+    uint64_t limit = rate;
+    uint64_t threshold = config::shard_local_cfg()
+                           .kafka_throughput_replenish_threshold()
+                           .value_or(1);
+    return b.reset(rate, limit, threshold, false);
+};
+
 } // namespace
 
-snc_quota_manager::snc_quota_manager()
+snc_quota_manager::snc_quota_manager(buckets_t& node_quota)
   : _max_kafka_throttle_delay(
     config::shard_local_cfg().max_kafka_throttle_delay_ms.bind())
+  , _use_throttling_v2(config::shard_local_cfg().kafka_throughput_throttling_v2)
   , _kafka_throughput_limit_node_bps{
       config::shard_local_cfg().kafka_throughput_limit_node_in_bps.bind(),
       config::shard_local_cfg().kafka_throughput_limit_node_out_bps.bind()}
@@ -167,13 +187,29 @@ snc_quota_manager::snc_quota_manager()
            _kafka_quota_balancer_window()},
       .eg {node_to_shard_quota(_node_quota_default.eg),
            _kafka_quota_balancer_window()}}
+  , _node_quota{node_quota}
   , _probe(*this)
 {
     update_shard_quota_minimum();
-    _kafka_throughput_limit_node_bps.in.watch(
-      [this] { update_node_quota_default(); });
-    _kafka_throughput_limit_node_bps.eg.watch(
-      [this] { update_node_quota_default(); });
+    _use_throttling_v2.watch([this]() { update_balance_config(); });
+    _kafka_throughput_limit_node_bps.in.watch([this] {
+        update_node_quota_default();
+        if (ss::this_shard_id() == quota_balancer_shard) {
+            ssx::spawn_with_gate(_balancer_gate, [this] {
+                return update_node_bucket(
+                  _node_quota.in, _kafka_throughput_limit_node_bps.in);
+            });
+        }
+    });
+    _kafka_throughput_limit_node_bps.eg.watch([this] {
+        update_node_quota_default();
+        if (ss::this_shard_id() == quota_balancer_shard) {
+            ssx::spawn_with_gate(_balancer_gate, [this] {
+                return update_node_bucket(
+                  _node_quota.eg, _kafka_throughput_limit_node_bps.eg);
+            });
+        }
+    });
     _kafka_quota_balancer_window.watch([this] {
         const auto v = _kafka_quota_balancer_window();
         vlog(klog.debug, "qm - Set shard TP token bucket window: {}", v);
@@ -203,16 +239,23 @@ ss::future<> snc_quota_manager::start() {
     if (ss::this_shard_id() == quota_balancer_shard) {
         _balancer_timer.arm(
           ss::lowres_clock::now() + get_quota_balancer_node_period());
+        co_await update_node_bucket(
+          _node_quota.in, _kafka_throughput_limit_node_bps.in);
+        co_await update_node_bucket(
+          _node_quota.eg, _kafka_throughput_limit_node_bps.eg);
     }
-    return ss::make_ready_future<>();
 }
 
 ss::future<> snc_quota_manager::stop() {
     if (ss::this_shard_id() == quota_balancer_shard) {
         _balancer_timer.cancel();
-        return _balancer_gate.close();
-    } else {
-        return ss::make_ready_future<>();
+        co_await _balancer_gate.close();
+        if (_node_quota.in) {
+            co_await _node_quota.in.stop();
+        }
+        if (_node_quota.eg) {
+            co_await _node_quota.eg.stop();
+        }
     }
 }
 
@@ -231,6 +274,17 @@ delay_t eval_delay(const bottomless_token_bucket& tb) noexcept {
     // but that one has to be 1)
     static_assert(delay_t::period::num == 1);
     return delay_t(muldiv(-tb.tokens(), delay_t::period::den, tb.quota()));
+}
+
+/// Evaluate throttling delay required based on the state of a token bucket
+delay_t eval_node_delay(
+  const ssx::sharded_ptr<snc_quota_manager::bucket_t>& tbp) noexcept {
+    if (!tbp) {
+        return delay_t::zero();
+    }
+    auto& tb = *tbp;
+    return std::chrono::duration_cast<delay_t>(
+      tb.duration_for(tb.deficiency(tb.grab(0))));
 }
 
 } // namespace
@@ -307,9 +361,16 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
 
     // throttling delay the connection should be requested to throttle
     // this time
-    res.request = std::min(
-      _max_kafka_throttle_delay(),
-      std::max(eval_delay(_shard_quota.in), eval_delay(_shard_quota.eg)));
+    if (_use_throttling_v2()) {
+        res.request = std::min(
+          _max_kafka_throttle_delay(),
+          std::max(
+            eval_node_delay(_node_quota.in), eval_node_delay(_node_quota.eg)));
+    } else {
+        res.request = std::min(
+          _max_kafka_throttle_delay(),
+          std::max(eval_delay(_shard_quota.in), eval_delay(_shard_quota.eg)));
+    }
     ctx._throttled_until = now + res.request;
 
     _probe.record_throttle_time(
@@ -325,7 +386,14 @@ void snc_quota_manager::record_request_receive(
     if (ctx._exempt) {
         return;
     }
-    _shard_quota.in.use(request_size, now);
+    if (_use_throttling_v2()) {
+        if (_node_quota.in) {
+            _node_quota.in->replenish(now);
+            _node_quota.in->grab(request_size);
+        }
+    } else {
+        _shard_quota.in.use(request_size, now);
+    }
 }
 
 void snc_quota_manager::record_request_intake(
@@ -343,7 +411,14 @@ void snc_quota_manager::record_response(
     if (ctx._exempt) {
         return;
     }
-    _shard_quota.eg.use(request_size, now);
+    if (_use_throttling_v2()) {
+        if (_node_quota.eg) {
+            _node_quota.eg->replenish(now);
+            _node_quota.eg->grab(request_size);
+        }
+    } else {
+        _shard_quota.eg.use(request_size, now);
+    }
     _probe.rec_traffic_eg(request_size);
 }
 
@@ -846,6 +921,10 @@ void snc_quota_manager::adjust_quota(
 
 void snc_quota_manager::update_balance_config() {
     if (_balancer_gate.is_closed()) {
+        return;
+    }
+    if (_use_throttling_v2()) {
+        _balancer_timer.cancel();
         return;
     }
     if (_balancer_timer.cancel()) {
