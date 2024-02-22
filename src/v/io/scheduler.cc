@@ -18,7 +18,7 @@
 namespace experimental::io {
 
 scheduler::scheduler(size_t num_files) noexcept
-  : open_file_limit_(num_files) {}
+  : open_file_limit_(num_files, "io::open_file_limit") {}
 
 void scheduler::add_queue(queue* queue) noexcept {
     queues_.push_back(*queue);

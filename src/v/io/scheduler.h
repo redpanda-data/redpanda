@@ -12,6 +12,7 @@
 
 #include "container/intrusive_list_helpers.h"
 #include "io/io_queue.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/future.hh>
 
@@ -76,7 +77,8 @@ public:
          */
         seastar::future<> monitor_{seastar::make_ready_future<>()};
         seastar::semaphore sem_{0};
-        seastar::semaphore_units<> units_;
+        // holds units from scheduler::open_file_limit
+        ssx::semaphore_units units_;
         bool stop_{false};
     };
 
@@ -118,7 +120,7 @@ private:
     seastar::future<> monitor(queue*) noexcept;
 
     size_t waiters_{0};
-    seastar::semaphore open_file_limit_;
+    ssx::semaphore open_file_limit_;
     intrusive_list<queue, &queue::cache_hook_> lru_;
 };
 
