@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "ssx/async_algorithm.h"
 #include "utils/expiring_promise.h"
 
 #include <seastar/core/future-util.hh>
@@ -88,6 +89,7 @@ void partition_leaders_table::update_partition_leader(
 
 ss::future<> partition_leaders_table::update_with_node_report(
   const node_health_report& node_report) {
+    ssx::async_counter counter;
     for (const auto& topic : node_report.topics) {
         /**
          * Here we minimize the number of topic table and topic map lookups by
@@ -100,33 +102,41 @@ ss::future<> partition_leaders_table::update_with_node_report(
         bool present_in_table = _topic_table.local().contains(topic.tp_ns);
         auto last_applied_revision
           = _topic_table.local().last_applied_revision();
-        for (auto& p : topic.partitions) {
-            if (!p.leader_id.has_value()) {
-                continue;
-            }
+        co_await ssx::async_for_each_counter(
+          counter,
+          topic.partitions.begin(),
+          topic.partitions.end(),
+          [&](const partition_status& p) {
+              if (!p.leader_id.has_value()) {
+                  return;
+              }
 
-            const auto topic_removed = p.revision_id <= last_applied_revision
-                                       && !present_in_table;
+              const auto topic_removed = p.revision_id <= last_applied_revision
+                                         && !present_in_table;
 
-            if (topic_removed && !is_controller) {
-                vlog(
-                  clusterlog.trace,
-                  "can't update leadership of the removed topic {}",
-                  topic.tp_ns);
-                break;
-            }
-            do_update_partition_leader(
-              is_controller, t_it, p.id, p.revision_id, p.term, p.leader_id);
-            co_await ss::coroutine::maybe_yield();
-            if (topic_map_version_snapshot != _topic_map_version) {
-                auto result = _topic_leaders.try_emplace(topic.tp_ns);
-                t_it = result.first;
-                present_in_table = _topic_table.local().contains(topic.tp_ns);
-                last_applied_revision
-                  = _topic_table.local().last_applied_revision();
-                topic_map_version_snapshot = _topic_map_version;
-            }
-        }
+              if (topic_removed && !is_controller) {
+                  vlog(
+                    clusterlog.trace,
+                    "can't update leadership of the removed topic {}",
+                    topic.tp_ns);
+                  return;
+              }
+              /**
+               * Check before accessing topic iterator as we might yield during
+               * previous iteration.
+               */
+              if (topic_map_version_snapshot != _topic_map_version) {
+                  auto result = _topic_leaders.try_emplace(topic.tp_ns);
+                  t_it = result.first;
+                  present_in_table = _topic_table.local().contains(topic.tp_ns);
+                  last_applied_revision
+                    = _topic_table.local().last_applied_revision();
+                  topic_map_version_snapshot = _topic_map_version;
+              }
+
+              do_update_partition_leader(
+                is_controller, t_it, p.id, p.revision_id, p.term, p.leader_id);
+          });
     }
 }
 
