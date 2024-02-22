@@ -186,15 +186,37 @@ ss::future<index_state> deduplicate_segment(
   segment_appender& appender,
   compacted_index_writer& cmp_idx_writer,
   probe& probe,
-  offset_delta_time should_offset_delta_times) {
+  offset_delta_time should_offset_delta_times,
+  ss::sharded<features::feature_table>& feature_table) {
     auto read_holder = co_await seg->read_lock();
     if (seg->is_closed()) {
         throw segment_closed_exception();
     }
     auto rdr = internal::create_segment_full_reader(
       seg, cfg, probe, std::move(read_holder));
+    auto compaction_placeholder_enabled = feature_table.local().is_active(
+      features::feature::compaction_placeholder_batch);
     auto copy_reducer = internal::copy_data_segment_reducer(
-      [&map](const model::record_batch& b, const model::record& r) {
+      [&map,
+       segment_last_offset = seg->offsets().committed_offset,
+       compaction_placeholder_enabled](
+        const model::record_batch& b,
+        const model::record& r,
+        bool is_last_record_in_batch) {
+          auto is_last_batch = b.last_offset() == segment_last_offset;
+          // once compaction placeholder feature is enabled, we are not
+          // worried about empty batches as the reducer then installs a
+          // placeholder batch if all the records are compacted away.
+          if (
+            !compaction_placeholder_enabled
+            && (is_last_batch && is_last_record_in_batch)) {
+              vlog(
+                stlog.trace,
+                "retaining last record: {} of segment from batch: {}",
+                r,
+                b.header());
+              return ss::make_ready_future<bool>(true);
+          }
           return should_keep(map, b, r);
       },
       &appender,

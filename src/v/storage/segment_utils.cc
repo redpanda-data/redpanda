@@ -49,6 +49,7 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/when_all.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 
 #include <absl/container/btree_map.h>
@@ -373,7 +374,8 @@ ss::future<storage::index_state> do_copy_segment_data(
   storage::probe& pb,
   ss::rwlock::holder rw_lock_holder,
   storage_resources& resources,
-  offset_delta_time apply_offset) {
+  offset_delta_time apply_offset,
+  ss::sharded<features::feature_table>& feature_table) {
     // preserve broker_timestamp from the segment's index
     auto old_broker_timestamp = seg->index().broker_timestamp();
 
@@ -409,16 +411,24 @@ ss::future<storage::index_state> do_copy_segment_data(
       tmpname);
 
     auto should_keep = [compacted_list = std::move(compacted_offsets)](
-                         const model::record_batch& b, const model::record& r) {
+                         const model::record_batch& b,
+                         const model::record& r,
+                         bool) {
         const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
         return ss::make_ready_future<bool>(compacted_list.contains(o));
     };
 
+    model::offset segment_last_offset{};
+    if (likely(feature_table.local().is_active(
+          features::feature::compaction_placeholder_batch))) {
+        segment_last_offset = seg->offsets().committed_offset;
+    }
     auto copy_reducer = copy_data_segment_reducer(
       std::move(should_keep),
       appender.get(),
       seg->path().is_internal_topic(),
-      apply_offset);
+      apply_offset,
+      segment_last_offset);
 
     // create the segment, get the in-memory index for the new segment
     auto new_index = co_await create_segment_full_reader(
@@ -499,7 +509,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
   storage::readers_cache& readers_cache,
   storage_resources& resources,
   offset_delta_time apply_offset,
-  ss::rwlock::holder read_holder) {
+  ss::rwlock::holder read_holder,
+  ss::sharded<features::feature_table>& feature_table) {
     vlog(gclog.trace, "self compacting segment {}", s->reader().path());
     auto segment_generation = s->get_generation_id();
 
@@ -516,7 +527,13 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     auto staging_to_clean = scoped_file_tracker{
       cfg.files_to_cleanup, {staging_file}};
     auto idx = co_await do_copy_segment_data(
-      s, cfg, pb, std::move(read_holder), resources, apply_offset);
+      s,
+      cfg,
+      pb,
+      std::move(read_holder),
+      resources,
+      apply_offset,
+      feature_table);
 
     auto rdr_holder = co_await readers_cache.evict_segment_readers(s);
 
@@ -552,51 +569,31 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
 ss::future<> build_compaction_index(
   model::record_batch_reader rdr,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
-  fragmented_vector<model::tx_range>&& aborted_txs,
+  fragmented_vector<model::tx_range> aborted_txs,
   segment_full_path p,
   compaction_config cfg,
   storage_resources& resources) {
-    return make_compacted_index_writer(
-             p, cfg.iopc, resources, cfg.sanitizer_config)
-      .then([r = std::move(rdr), stm_manager, txs = std::move(aborted_txs)](
-              compacted_index_writer w) mutable {
-          return ss::do_with(
-            std::move(w),
-            [stm_manager, r = std::move(r), txs = std::move(txs)](
-              auto& writer) mutable {
-                return std::move(r)
-                  .consume(
-                    tx_reducer(stm_manager, std::move(txs), &writer),
-                    model::no_timeout)
-                  .then_wrapped(
-                    [&writer](ss::future<tx_reducer::stats> fut) mutable {
-                        if (fut.failed()) {
-                            vlog(
-                              gclog.error,
-                              "Error rebuilding index: {}, {}",
-                              writer.filename(),
-                              fut.get_exception());
-                        } else {
-                            vlog(
-                              gclog.info,
-                              "tx reducer path: {} stats {}",
-                              writer.filename(),
-                              fut.get0());
-                        }
-                    })
-                  .finally([&writer]() {
-                      // writer needs to be closed in all cases,
-                      // else can trigger a potential assert.
-                      return writer.close().handle_exception(
-                        [](std::exception_ptr e) {
-                            vlog(
-                              gclog.warn,
-                              "error closing compacted index:{}",
-                              e);
-                        });
-                  });
-            });
-      });
+    auto w = co_await make_compacted_index_writer(
+      p, cfg.iopc, resources, cfg.sanitizer_config);
+    auto reducer = tx_reducer(stm_manager, std::move(aborted_txs), &w);
+    auto index_builder = co_await ss::coroutine::as_future<tx_reducer::stats>(
+      std::move(rdr)
+        .consume(std::move(reducer), model::no_timeout)
+        .finally([&w] { return w.close(); }));
+    if (index_builder.failed()) {
+        auto exception = index_builder.get_exception();
+        vlog(
+          gclog.error,
+          "Error rebuilding index: {}, {}",
+          w.filename(),
+          exception);
+        std::rethrow_exception(exception);
+    }
+    vlog(
+      gclog.info,
+      "tx reducer path: {} stats {}",
+      w.filename(),
+      index_builder.get0());
 }
 
 bool compacted_index_needs_rebuild(compacted_index::recovery_state state) {
@@ -645,7 +642,7 @@ ss::future<compaction_result> self_compact_segment(
   storage::probe& pb,
   storage::readers_cache& readers_cache,
   storage_resources& resources,
-  offset_delta_time apply_offset) {
+  ss::sharded<features::feature_table>& feature_table) {
     if (s->has_appender()) {
         throw std::runtime_error(fmt::format(
           "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
@@ -702,6 +699,7 @@ ss::future<compaction_result> self_compact_segment(
       "Unexpected state {}",
       int(state));
     auto sz_before = s->size_bytes();
+    auto apply_offset = should_apply_delta_time_offset(feature_table);
     auto sz_after = co_await do_self_compact_segment(
       s,
       cfg,
@@ -709,7 +707,8 @@ ss::future<compaction_result> self_compact_segment(
       readers_cache,
       resources,
       apply_offset,
-      std::move(read_holder));
+      std::move(read_holder),
+      feature_table);
     // compaction wasn't executed, return
     if (!sz_after) {
         co_return compaction_result(sz_before);

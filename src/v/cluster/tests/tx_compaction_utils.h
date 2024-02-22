@@ -134,18 +134,17 @@ public:
         auto reader = co_await log->make_reader(cfg);
         auto batches = co_await copy_to_mem(reader);
 
-        // 1. There are no aborted keys (tracked in _aborted_xxx)
-        // 2. There are no tx control markers
-        // 3. Only tx control data batches allowed is fence type.
+        // Ensure there are no aborted keys (tracked in _aborted_xxx)
         int fence_batch_count = 0;
         for (auto& batch : batches) {
             auto type = batch.header().type;
             RPTEST_REQUIRE_NE_CORO(type, model::record_batch_type::tx_prepare);
             if (batch.header().attrs.is_transactional()) {
+                if (batch.header().attrs.is_control()) {
+                    continue;
+                }
                 model::producer_identity pid{
                   batch.header().producer_id, batch.header().producer_epoch};
-                // no control (commit/abort) batches.
-                RPTEST_REQUIRE_CORO(!batch.header().attrs.is_control());
                 RPTEST_REQUIRE_EQ_CORO(
                   type, model::record_batch_type::raft_data);
                 RPTEST_REQUIRE_CORO(_committed_pids.contains(pid));

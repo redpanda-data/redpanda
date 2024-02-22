@@ -118,13 +118,13 @@ private:
 class copy_data_segment_reducer : public compaction_reducer {
 public:
     using filter_t = ss::noncopyable_function<ss::future<bool>(
-      const model::record_batch&, const model::record&)>;
+      const model::record_batch&, const model::record&, bool)>;
     copy_data_segment_reducer(
       filter_t f,
       segment_appender* a,
       bool internal_topic,
       offset_delta_time apply_offset,
-      model::offset segment_last_offset = model::offset{},
+      model::offset segment_last_offset,
       compacted_index_writer* cidx = nullptr)
       : _should_keep_fn(std::move(f))
       , _segment_last_offset(segment_last_offset)
@@ -141,9 +141,15 @@ private:
       filter_and_append(model::compression, model::record_batch);
 
     ss::future<> maybe_keep_offset(
-      const model::record_batch&, const model::record&, std::vector<int32_t>&);
+      const model::record_batch&,
+      const model::record&,
+      bool,
+      std::vector<int32_t>&);
 
     ss::future<std::optional<model::record_batch>> filter(model::record_batch);
+
+    // Creates a placeholder batch with same offset range as the input header.
+    model::record_batch make_placeholder_batch(model::record_batch_header&);
 
     filter_t _should_keep_fn;
 
@@ -177,12 +183,9 @@ private:
 };
 
 /**
- * Filters out the following record batches from compaction.
- * - Aborted transaction raft data bathes
- * - Transactional control metadata batches (commit/abort etc)
- *
- * Resulting compacted segment includes only committed transaction's
- * data without the transactional markers.
+ * Filters out the aborted transaction data batches from the segment.
+ * Retains the control batches (commit/abort) thus preserving the
+ * transaction boundaries.
  *
  * Note: fence batches are retained to preserve the epochs from pids.
  * The state machine uses this information to preserve the monotonicity
@@ -248,6 +251,8 @@ private:
     bool handle_tx_data_batch(const model::record_batch&);
     bool handle_non_tx_control_batch(const model::record_batch&);
     void consume_aborted_txs(model::offset);
+    model::record_batch
+    make_placeholder_batch(model::offset base, model::offset end);
 
     index_rebuilder_reducer _delegate;
     // A min heap of aborted transactions based on begin offset.

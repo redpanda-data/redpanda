@@ -46,7 +46,9 @@ enum class record_batch_type : int8_t {
     plugin_update = 26,              // Wasm plugin update
     tx_registry = 27,                // tx_registry_batch_type
     cluster_recovery_cmd = 28,       // cluster recovery command
-    MAX = cluster_recovery_cmd
+    compaction_placeholder
+    = 29, // place holder for last batch in a segment that was aborted
+    MAX = compaction_placeholder,
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);

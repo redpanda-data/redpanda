@@ -39,7 +39,7 @@ ss::future<compaction_result> self_compact_segment(
   storage::probe&,
   storage::readers_cache&,
   storage::storage_resources&,
-  offset_delta_time apply_offset);
+  ss::sharded<features::feature_table>& feature_table);
 
 /// \brief, rebuilds a given segment's compacted index. This method acquires
 /// locks on the segment.
@@ -212,6 +212,13 @@ struct clean_segment_value
 };
 
 inline bool is_compactible(const model::record_batch_header& h) {
+    if (
+      h.attrs.is_control()
+      || h.type == model::record_batch_type::compaction_placeholder) {
+        // Keep control batches to ensure we maintain transaction boundaries.
+        // They should be rare.
+        return false;
+    }
     static const auto filtered_types = model::offset_translator_batch_types();
     auto n = std::count(filtered_types.begin(), filtered_types.end(), h.type);
     return n == 0;

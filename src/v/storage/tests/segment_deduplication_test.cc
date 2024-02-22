@@ -27,6 +27,7 @@ using namespace storage;
 
 namespace {
 ss::abort_source never_abort;
+ss::sharded<features::feature_table> feature_table;
 } // anonymous namespace
 
 // Builds a segment layout:
@@ -165,6 +166,13 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
       model::offset{30}, ss::default_priority_class(), never_abort);
     probe pb;
 
+    feature_table.start().get();
+    feature_table
+      .invoke_on_all(
+        [](features::feature_table& f) { f.testing_activate_all(); })
+      .get();
+    auto defer = ss::defer([] { feature_table.stop().get(); });
+
     // Self-compact each segment so we're left with compaction indices. This is
     // a requirement to build the offset map.
     for (auto& seg : segs) {
@@ -175,7 +183,7 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
           pb,
           disk_log.readers(),
           disk_log.resources(),
-          offset_delta_time::yes)
+          feature_table)
           .get();
     }
 

@@ -26,6 +26,7 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
     public String brokers;
     public String topic;
     public int partitions;
+    public float abort_probability;
   }
 
   static class Partition {
@@ -177,7 +178,8 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
       boolean shouldAbort = false;
 
       if (!shouldRetry) {
-        shouldAbort = random.nextInt(3) == 0;
+        shouldAbort
+            = random.nextInt(100) < Math.round(args.abort_probability * 100);
       }
 
       var txOpId = id;

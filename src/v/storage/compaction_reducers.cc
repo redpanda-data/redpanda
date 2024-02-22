@@ -121,11 +121,24 @@ compacted_offset_list_reducer::operator()(compacted_index::entry&& e) {
 ss::future<> copy_data_segment_reducer::maybe_keep_offset(
   const model::record_batch& batch,
   const model::record& r,
+  bool is_last_record_in_batch,
   std::vector<int32_t>& offset_deltas) {
-    if (co_await _should_keep_fn(batch, r)) {
+    if (co_await _should_keep_fn(batch, r, is_last_record_in_batch)) {
         offset_deltas.push_back(r.offset_delta());
         co_return;
     }
+}
+
+model::record_batch copy_data_segment_reducer::make_placeholder_batch(
+  model::record_batch_header& hdr) {
+    model::record_batch_header new_hdr;
+    new_hdr.type = model::record_batch_type::compaction_placeholder;
+    new_hdr.base_offset = hdr.base_offset;
+    new_hdr.last_offset_delta = hdr.last_offset_delta;
+    auto no_records = iobuf{};
+    reset_size_checksum_metadata(new_hdr, no_records);
+    return model::record_batch(
+      new_hdr, std::move(no_records), model::record_batch::tag_ctor_ng{});
 }
 
 ss::future<std::optional<model::record_batch>>
@@ -136,57 +149,32 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
         co_return std::move(batch);
     }
 
-    // 0. Reset the transactional bit, we need not carry it forward.
-    // All the data batches retained until this point are committed.
-    // From this point on, these batches are treated like non transaction
-    // batches by subsequent compactions.
-    //
-    // We also do this so client does not apply aborted transactions for
-    // this batch. Broker passes a list of aborted transaction ranges to
-    // the client in the fetch response and the client collates that list
-    // with the list of fetched data batches. If any of the data batches
-    // with matching PIDs fall in the aborted transaction ranges, they are
-    // filtered out. Since compaction effectively removes all aborted data
-    // batches, there is no use of sending aborted ranges for compacted
-    // segments. Marking the batch as non transactional lets the fetch logic
-    // know the boundary between compacted and non compacted segments.
-
-    // An ideal way to do this is by invalidating aborted transaction metadata
-    // after compaction but currently we have no atomic way of doing it.
-    // Aborted transaction metadata lifecyle is completely decoupled from
-    // segment lifecycle and once that is fixed, we can undo unsetting the
-    // transactional bit.
-    auto& hdr = batch.header();
-    bool hdr_changed = false;
-    if (hdr.attrs.is_transactional()) {
-        hdr.attrs.unset_transactional_type();
-        // We do not recompute crc here as the batch records may
-        // be filtered in step 4 in which case we need to recompute
-        // it anyway. It is expensive to loop through the batch and
-        // is wasteful to do it twice.
-        hdr_changed = true;
-    }
-
     // 1. compute which records to keep
     std::vector<int32_t> offset_deltas;
     offset_deltas.reserve(batch.record_count());
-    int last_batch_records_seen = 0;
+
+    int32_t records_seen = 0;
     co_await batch.for_each_record_async(
-      [this, &batch, &offset_deltas, &last_batch_records_seen](
-        const model::record& r) {
-          if (
-            batch.last_offset() == _segment_last_offset
-            && batch.record_count() == ++last_batch_records_seen) {
-              vlog(
-                stlog.trace,
-                "retaining last record: {} of segment from batch: {}",
-                r,
-                batch.header());
-              offset_deltas.push_back(r.offset_delta());
-              return ss::make_ready_future<>();
-          }
-          return maybe_keep_offset(batch, r, offset_deltas);
+      [this, &batch, &offset_deltas, &records_seen](const model::record& r) {
+          records_seen++;
+          return maybe_keep_offset(
+            batch, r, batch.record_count() == records_seen, offset_deltas);
       });
+
+    if (batch.last_offset() == _segment_last_offset && offset_deltas.empty()) {
+        // last batch in the segment has been compacted away.
+        // This is most likely caused by aborted data batches getting compacted
+        // away during self compaction of the segment if they are the last batch
+        // in the segment. We install a placeholder batch of same size to retain
+        // contiguousness of the offset space.
+        auto placeholder = make_placeholder_batch(batch.header());
+        vlog(
+          stlog.debug,
+          "installing a placeholder {} for compacted batch: {}",
+          placeholder,
+          batch);
+        co_return placeholder;
+    }
 
     // 2. no record to keep
     if (offset_deltas.empty()) {
@@ -195,10 +183,6 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
 
     // 3. keep all records
     if (offset_deltas.size() == static_cast<size_t>(batch.record_count())) {
-        if (hdr_changed) {
-            hdr.crc = model::crc_record_batch(batch);
-            hdr.header_crc = model::internal_header_only_crc(hdr);
-        }
         co_return std::move(batch);
     }
 
@@ -271,6 +255,7 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     // Additionally, the MaxTimestamp of an empty batch always retains the
     // previous value prior to becoming empty.
     //
+    auto& hdr = batch.header();
     const auto first_time = model::timestamp(
       hdr.first_timestamp() + first_timestamp_delta.value());
     auto last_time = hdr.max_timestamp;
@@ -459,19 +444,6 @@ ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
         if (is_control) {
             // tx_commit / tx_abort / unknown
 
-            // Control batches are not discarded but are compacted in the same
-            // manner as other data batches. This approach prevents the
-            // elimination of the last batch within a segment when it happens to
-            // be a control batch. If the final batch in a segment is discarded,
-            // and there are no subsequent data batches, it could lead to
-            // clients being unable to advance their consumable offset until the
-            // Last Stable Offset (LSO) is reached, creating the perception of a
-            // stuck consumer unable to make progress.
-
-            // However, this situation is not problematic when the last batch is
-            // an aborted data batch. This is because we can guarantee the
-            // presence of user consumable batches following it, specifically
-            // the abort control batch, ensuring continuous consumer progress.
             handle_tx_control_batch(b);
         } else if (is_data) {
             // User produced data batches in tx scope..

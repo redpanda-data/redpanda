@@ -451,7 +451,7 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
           *_probe,
           *_readers_cache,
           _manager.resources(),
-          storage::internal::should_apply_delta_time_offset(_feature_table));
+          _feature_table);
 
         vlog(
           gclog.debug,
@@ -549,7 +549,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           *_probe,
           *_readers_cache,
           _manager.resources(),
-          storage::internal::should_apply_delta_time_offset(_feature_table));
+          _feature_table);
 
         vlog(
           gclog.debug,
@@ -692,8 +692,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
               *appender,
               compacted_idx_writer,
               *_probe,
-              storage::internal::should_apply_delta_time_offset(
-                _feature_table));
+              storage::internal::should_apply_delta_time_offset(_feature_table),
+              _feature_table);
 
         } catch (...) {
             eptr = std::current_exception();
@@ -910,7 +910,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
       *_probe,
       *_readers_cache,
       _manager.resources(),
-      storage::internal::should_apply_delta_time_offset(_feature_table));
+      _feature_table);
     _probe->delete_segment(*replacement.get());
     vlog(gclog.debug, "Final compacted segment {}", replacement);
 
