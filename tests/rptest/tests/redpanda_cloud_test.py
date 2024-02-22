@@ -38,8 +38,10 @@ class RedpandaCloudTest(RedpandaTestBase):
 
     def setup(self):
         super().setup()
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy before start of test'
+        wait_until(lambda: self.redpanda.cluster_healthy(),
+                   timeout_sec=20,
+                   backoff_sec=5,
+                   err_msg='cluster unhealthy before start of test')
 
     def client(self):
         return self._client
