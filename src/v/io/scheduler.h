@@ -84,9 +84,9 @@ public:
      * Construct a new scheduler.
      *
      * The scheduler will limit the number of concurrent open queues to a
-     * maximum of \p nofiles.
+     * maximum of \p num_files.
      */
-    explicit scheduler(size_t nofiles) noexcept;
+    explicit scheduler(size_t num_files) noexcept;
 
     /**
      * Add a queue to the scheduler.
@@ -118,7 +118,7 @@ private:
     seastar::future<> monitor(queue*) noexcept;
 
     size_t waiters_{0};
-    seastar::semaphore nofiles_;
+    seastar::semaphore open_file_limit_;
     intrusive_list<queue, &queue::cache_hook_> lru_;
 };
 

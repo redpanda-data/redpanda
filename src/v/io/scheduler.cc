@@ -17,8 +17,8 @@
 
 namespace experimental::io {
 
-scheduler::scheduler(size_t nofiles) noexcept
-  : nofiles_(nofiles) {}
+scheduler::scheduler(size_t num_files) noexcept
+  : open_file_limit_(num_files) {}
 
 void scheduler::add_queue(queue* queue) noexcept {
     queues_.push_back(*queue);
@@ -125,7 +125,7 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
          * open the queue. if we can't get nofiles units then we'll try to
          * evict another queue and wait for units to become available.
          */
-        auto units = seastar::try_get_units(nofiles_, 1);
+        auto units = seastar::try_get_units(open_file_limit_, 1);
         if (!units.has_value()) {
             if (lru_.empty()) {
                 /*
@@ -142,7 +142,7 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
                 lru_.pop_front();
                 queue.sem_.signal();
             }
-            units = co_await seastar::get_units(nofiles_, 1);
+            units = co_await seastar::get_units(open_file_limit_, 1);
         }
 
         try {
