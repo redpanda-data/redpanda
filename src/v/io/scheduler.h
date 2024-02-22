@@ -122,6 +122,7 @@ private:
 
     size_t waiters_{0};
     ssx::semaphore open_file_limit_;
+    // LRU-ordered list of currently opened queues
     intrusive_list<queue, &queue::lru_hook_> lru_;
 };
 
