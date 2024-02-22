@@ -111,6 +111,9 @@ public:
       partition_recovery_manager;
     ss::sharded<cloud_storage_clients::client_pool> cloud_storage_clients;
     ss::sharded<cloud_storage::remote> cloud_storage_api;
+    ss::sharded<archival::upload_housekeeping_service>
+      archival_upload_housekeeping;
+    ss::sharded<archival::archiver_manager> archiver_manager;
     ss::sharded<cluster::topic_recovery_status_frontend>
       topic_recovery_status_frontend;
     ss::sharded<cloud_storage::topic_recovery_service> topic_recovery_service;
@@ -301,8 +304,6 @@ private:
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
     ss::sharded<archival::upload_controller> _archival_upload_controller;
-    ss::sharded<archival::upload_housekeeping_service>
-      _archival_upload_housekeeping;
     std::unique_ptr<monitor_unsafe_log_flag> _monitor_unsafe_log_flag;
     ss::sharded<archival::purger> _archival_purger;
 
