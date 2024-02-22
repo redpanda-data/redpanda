@@ -79,7 +79,7 @@ public:
         // used to signal work for the queue monitor
         ssx::semaphore monitor_work_{0, "io::scheduler::queue::monitor_work"};
         // holds units from scheduler::open_file_limit
-        ssx::semaphore_units units_;
+        ssx::semaphore_units open_file_limit_units_;
         bool stop_{false};
     };
 

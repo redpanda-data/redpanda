@@ -99,7 +99,7 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
                     queue->cache_hook_.unlink();
                 }
                 co_await queue->io_queue_.close();
-                queue->units_.return_all();
+                queue->open_file_limit_units_.return_all();
             }
             co_return;
         }
@@ -117,7 +117,7 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
         if (queue->io_queue_.opened()) {
             if (!queue->cache_hook_.is_linked()) {
                 co_await queue->io_queue_.close();
-                queue->units_.return_all();
+                queue->open_file_limit_units_.return_all();
             }
             continue;
         }
@@ -148,7 +148,7 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
 
         try {
             co_await queue->io_queue_.open();
-            queue->units_ = std::move(units.value());
+            queue->open_file_limit_units_ = std::move(units.value());
             lru_.push_back(*queue);
 
         } catch (...) {
