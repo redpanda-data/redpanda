@@ -69,9 +69,9 @@ class CPUProfilerAdminAPITest(RedpandaTest):
             profile = self.admin.get_cpu_profile(wait_ms=30 * 1_000)
 
             assert len(profile) > 0, "At least one shard should exist"
-            assert len(
-                profile[0]["samples"]
-            ) > 0, "At least one cpu profile should've been collected."
+            assert any(
+                len(p["samples"]) > 0 for p in
+                profile), "At least one cpu profile should've been collected."
 
     @cluster(num_nodes=3)
     def test_get_cpu_profile_with_override_limits(self):
