@@ -1,0 +1,19 @@
+version: v1
+managed:
+  enabled: true
+  go_package_prefix:
+    default: github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go
+    except:
+      - buf.build/googleapis/googleapis
+      - buf.build/grpc-ecosystem/grpc-gateway
+      - buf.build/bufbuild/protovalidate
+      - buf.build/envoyproxy/protoc-gen-validate
+plugins:
+  - name: go
+    out: proto/gen/go
+    opt: paths=source_relative
+  - name: go-grpc
+    out: proto/gen/go
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=false
