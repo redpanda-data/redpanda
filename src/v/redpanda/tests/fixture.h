@@ -817,6 +817,13 @@ public:
         return make_request_context(request, header);
     }
 
+    iobuf rand_iobuf(size_t data_size) const {
+        iobuf b;
+        auto data = random_generators::gen_alphanum_string(data_size);
+        b.append(data.data(), data.size());
+        return b;
+    }
+
     application app;
     uint16_t proxy_port;
     uint16_t schema_reg_port;

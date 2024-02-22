@@ -16,4 +16,40 @@ namespace kafka {
 
 using produce_handler = two_phase_handler<produce_api, 0, 7>;
 
+struct partition_produce_stages {
+    ss::future<> dispatched;
+    ss::future<produce_response::partition> produced;
+};
+
+struct produce_ctx {
+    request_context rctx;
+    produce_request request;
+    produce_response response;
+    ss::smp_service_group ssg;
+
+    produce_ctx(
+      request_context&& rctx,
+      produce_request&& request,
+      produce_response&& response,
+      ss::smp_service_group ssg)
+      : rctx(std::move(rctx))
+      , request(std::move(request))
+      , response(std::move(response))
+      , ssg(ssg) {}
+};
+
+/*
+ * Unit Tests Exposure
+ */
+namespace testing {
+
+/**
+ * Exposed for testing/benchmarking only.
+ */
+kafka::partition_produce_stages produce_single_partition(
+  produce_ctx& octx,
+  produce_request::topic& topic,
+  produce_request::partition& part);
+
+} // namespace testing
 } // namespace kafka
