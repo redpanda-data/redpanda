@@ -386,13 +386,19 @@ public:
             return tmp;
         }
 
-        iter operator+(difference_type offset) {
+        iter operator+(difference_type offset) const {
             check_generation();
             return iter{*this} += offset;
         }
-        iter operator-(difference_type offset) {
+
+        iter operator-(difference_type offset) const {
             check_generation();
             return iter{*this} -= offset;
+        }
+
+        reference operator[](difference_type offset) const {
+            check_generation();
+            return *(*this + offset);
         }
 
         bool operator==(const iter& o) const {
@@ -406,6 +412,10 @@ public:
 
         friend ssize_t operator-(const iter& a, const iter& b) {
             return a._index - b._index;
+        }
+
+        friend iter operator+(const difference_type& offset, const iter& i) {
+            return i + offset;
         }
 
     private:
