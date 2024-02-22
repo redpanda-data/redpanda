@@ -197,12 +197,11 @@ void upload_index(
     auto ixbuf = ix.to_iobuf();
     auto upload_res
       = f.api.local()
-          .upload_object(
-            {.bucket_name = bucket,
-             .key
-             = cloud_storage_clients::object_key{path().native() + ".index"},
-             .payload = std::move(ixbuf),
-             .parent_rtc = fib})
+          .upload_object({
+            .transfer_details
+            = {.bucket = bucket, .key = cloud_storage_clients::object_key{path().native() + ".index"}, .parent_rtc = fib},
+            .payload = std::move(ixbuf),
+          })
           .get();
     BOOST_REQUIRE(upload_res == upload_result::success);
 }

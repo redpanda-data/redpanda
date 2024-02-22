@@ -602,13 +602,13 @@ FIXTURE_TEST(test_list_bucket, remote_fixture) {
             for (int k = 0; k < third; k++) {
                 cloud_storage_clients::object_key path{
                   fmt::format("{}/{}/{}", i, j, k)};
-                auto result = remote.local()
-                                .upload_object(
-                                  {.bucket_name = bucket,
-                                   .key = path,
-                                   .payload = iobuf{},
-                                   .parent_rtc = fib})
-                                .get();
+                auto result
+                  = remote.local()
+                      .upload_object(
+                        {.transfer_details
+                         = {.bucket = bucket, .key = path, .parent_rtc = fib},
+                         .payload = iobuf{}})
+                      .get();
                 BOOST_REQUIRE_EQUAL(
                   cloud_storage::upload_result::success, result);
             }
@@ -653,13 +653,13 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
         for (const char second : {'a', 'b'}) {
             cloud_storage_clients::object_key path{
               fmt::format("{}/{}", first, second)};
-            auto result = remote.local()
-                            .upload_object(
-                              {.bucket_name = bucket,
-                               .key = path,
-                               .payload = iobuf{},
-                               .parent_rtc = fib})
-                            .get();
+            auto result
+              = remote.local()
+                  .upload_object(
+                    {.transfer_details
+                     = {.bucket = bucket, .key = path, .parent_rtc = fib},
+                     .payload = iobuf{}})
+                  .get();
             BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
         }
     }
@@ -687,10 +687,9 @@ FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
     cloud_storage_clients::object_key path{"b"};
     auto upl_result = remote.local()
                         .upload_object(
-                          {.bucket_name = bucket,
-                           .key = path,
-                           .payload = iobuf{},
-                           .parent_rtc = fib})
+                          {.transfer_details
+                           = {.bucket = bucket, .key = path, .parent_rtc = fib},
+                           .payload = iobuf{}})
                         .get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, upl_result);
 
@@ -716,18 +715,21 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
+    auto subscription = remote.local().subscribe(allow_all);
     auto result = remote.local()
                     .upload_object(
-                      {.bucket_name = bucket,
-                       .key = path,
-                       .payload = make_iobuf_from_string("p"),
-                       .parent_rtc = fib})
+                      {.transfer_details
+                       = {.bucket = bucket, .key = path, .parent_rtc = fib},
+                       .payload = make_iobuf_from_string("p")})
                     .get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
 
     auto request = get_requests()[0];
     BOOST_REQUIRE(request.method == "PUT");
     BOOST_REQUIRE(request.content == "p");
+
+    BOOST_REQUIRE(subscription.available());
+    BOOST_REQUIRE(subscription.get().type == api_activity_type::object_upload);
 }
 
 FIXTURE_TEST(test_delete_objects, remote_fixture) {
@@ -862,19 +864,17 @@ FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
       cloud_storage::upload_result::success,
       remote.local()
         .upload_object(
-          {.bucket_name = bucket,
-           .key = cloud_storage_clients::object_key{"p"},
-           .payload = make_iobuf_from_string("p"),
-           .parent_rtc = fib})
+          {.transfer_details
+           = {.bucket = bucket, .key = cloud_storage_clients::object_key{"p"}, .parent_rtc = fib},
+           .payload = make_iobuf_from_string("p")})
         .get());
     BOOST_REQUIRE_EQUAL(
       cloud_storage::upload_result::success,
       remote.local()
         .upload_object(
-          {.bucket_name = bucket,
-           .key = cloud_storage_clients::object_key{"q"},
-           .payload = make_iobuf_from_string("q"),
-           .parent_rtc = fib})
+          {.transfer_details
+           = {.bucket = bucket, .key = cloud_storage_clients::object_key{"q"}, .parent_rtc = fib},
+           .payload = make_iobuf_from_string("q")})
         .get());
 
     std::vector<cloud_storage_clients::object_key> to_delete{
@@ -907,10 +907,9 @@ FIXTURE_TEST(
       cloud_storage::upload_result::success,
       remote.local()
         .upload_object(
-          {.bucket_name = bucket,
-           .key = cloud_storage_clients::object_key{"p"},
-           .payload = make_iobuf_from_string("p"),
-           .parent_rtc = fib})
+          {.transfer_details
+           = {.bucket = bucket, .key = cloud_storage_clients::object_key{"p"}, .parent_rtc = fib},
+           .payload = make_iobuf_from_string("p")})
         .get());
 
     std::vector<cloud_storage_clients::object_key> to_delete{
@@ -1241,4 +1240,46 @@ FIXTURE_TEST(test_notification_retry_meta, remote_fixture) {
 
     auto [res, fmt] = fut.get();
     BOOST_CHECK(res == download_result::timedout);
+}
+
+FIXTURE_TEST(test_get_object, remote_fixture) {
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(never_abort, 1s, 20ms);
+
+    cloud_storage_clients::object_key path{"p"};
+
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      remote.local()
+        .upload_object({
+          .transfer_details
+          = {.bucket = bucket, .key = path, .parent_rtc = fib},
+          .payload = make_iobuf_from_string("p"),
+        })
+        .get());
+
+    auto subscription = remote.local().subscribe(allow_all);
+    iobuf buf;
+    auto dl_res = remote.local()
+                    .download_object(
+                      {.transfer_details
+                       = {.bucket = bucket, .key = path, .parent_rtc = fib},
+                       .payload = buf})
+                    .get();
+
+    const auto requests = get_requests();
+    BOOST_REQUIRE_EQUAL(requests.size(), 2);
+
+    const auto last_request = requests.back();
+    BOOST_REQUIRE_EQUAL(last_request.method, "GET");
+    BOOST_REQUIRE_EQUAL(last_request.url, "/p");
+
+    BOOST_REQUIRE(dl_res == download_result::success);
+    BOOST_REQUIRE_EQUAL(iobuf_to_bytes(buf), "p");
+    BOOST_REQUIRE(subscription.available());
+    BOOST_REQUIRE(
+      subscription.get().type == api_activity_type::object_download);
 }

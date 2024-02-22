@@ -109,6 +109,8 @@ enum class api_activity_type {
     manifest_download,
     controller_snapshot_upload,
     controller_snapshot_download,
+    object_upload,
+    object_download
 };
 
 struct api_activity_notification {
@@ -121,7 +123,7 @@ struct api_activity_notification {
 // references/pointers to this interface instead of remote to enable testing.
 class cloud_storage_api {
 public:
-    virtual ss::future<upload_result> upload_object(upload_object_request) = 0;
+    virtual ss::future<upload_result> upload_object(upload_request) = 0;
     virtual ~cloud_storage_api() = default;
 };
 
@@ -345,6 +347,13 @@ public:
       offset_index& ix,
       retry_chain_node& parent);
 
+    /// \brief Download object small enough to fit in memory
+    /// \param download_request holds a reference to an iobuf in the `payload`
+    /// field which will hold the downloaded object if the download was
+    /// successful
+    ss::future<download_result>
+    download_object(download_request download_request);
+
     /// Checks if the segment exists in the bucket
     ss::future<download_result> segment_exists(
       const cloud_storage_clients::bucket_name& bucket,
@@ -409,7 +418,7 @@ public:
     /// strings, does not check for leadership before upload like the segment
     /// upload function.
     ss::future<upload_result>
-    upload_object(upload_object_request upload_request) override;
+    upload_object(upload_request upload_request) override;
 
     ss::future<download_result> do_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,

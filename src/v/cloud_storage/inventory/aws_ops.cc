@@ -89,11 +89,10 @@ aws_ops::create_inventory_configuration(
 
     const auto key = fmt::format("?inventory&id={}", _inventory_config_id());
     co_return co_await remote.upload_object(
-      {.bucket_name = _bucket,
-       .key = cloud_storage_clients::object_key{key},
-       .payload = to_xml(cfg),
-       .parent_rtc = parent_rtc,
-       .upload_type = upload_object_type::inventory_configuration});
+      {.transfer_details
+       = {.bucket = _bucket, .key = cloud_storage_clients::object_key{key}, .parent_rtc = parent_rtc},
+       .type = upload_type::inventory_configuration,
+       .payload = to_xml(cfg)});
 }
 
 } // namespace cloud_storage::inventory

@@ -808,32 +808,56 @@ ss::future<download_result> remote::download_index(
   const remote_segment_path& index_path,
   offset_index& ix,
   retry_chain_node& parent) {
+    iobuf buffer;
+    const auto dl_result = co_await download_object(
+      {.transfer_details = {
+         .bucket = bucket,
+         .key = cloud_storage_clients::object_key{index_path},
+         .parent_rtc = parent,
+         .success_cb = [](auto& probe) { probe.index_download(); },
+         .failure_cb = [](auto& probe) { probe.failed_index_download(); },
+         .backoff_cb = [](auto& probe) { probe.download_backoff(); }},
+       .type = download_type::segment_index,
+       .payload = buffer});
+    if (dl_result == download_result::success) {
+        ix.from_iobuf(std::move(buffer));
+    }
+    co_return dl_result;
+}
+
+ss::future<download_result>
+remote::download_object(cloud_storage::download_request download_request) {
     auto guard = _gate.hold();
-    retry_chain_node fib(&parent);
+    auto& transfer_details = download_request.transfer_details;
+    retry_chain_node fib(&transfer_details.parent_rtc);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto path = cloud_storage_clients::object_key(index_path());
+
+    const auto path = transfer_details.key;
+    const auto bucket = transfer_details.bucket;
+    const auto object_type = download_request.type;
+
     auto lease = co_await _pool.local().acquire(fib.root_abort_source());
 
     auto permit = fib.retry();
-    vlog(ctxlog.debug, "Download index {}", path);
+    vlog(ctxlog.debug, "Downloading {} from {}", object_type, path);
 
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
           api_activity_notification{
-            .type = api_activity_type::segment_download,
+            .type = api_activity_type::object_download,
             .is_retry = fib.retry_count() > 1},
-          parent);
+          transfer_details.parent_rtc);
         auto resp = co_await lease.client->get_object(
           bucket, path, fib.get_timeout());
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
-            auto index_buffer
+            auto buffer
               = co_await cloud_storage_clients::util::drain_response_stream(
                 resp.value());
-            ix.from_iobuf(std::move(index_buffer));
-            _probe.index_download();
+            download_request.payload.append_fragments(std::move(buffer));
+            transfer_details.on_success(_probe);
             co_return download_result::success;
         }
 
@@ -843,11 +867,12 @@ ss::future<download_result> remote::download_index(
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
-              "Downloading index from {}, {} backoff required",
+              "Downloading {} from {}, {} backoff required",
+              object_type,
               bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
-            _probe.download_backoff();
+            transfer_details.on_backoff(_probe);
             co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
@@ -859,21 +884,25 @@ ss::future<download_result> remote::download_index(
             break;
         }
     }
-    _probe.failed_index_download();
+    transfer_details.on_failure(_probe);
     if (!result) {
         vlog(
           ctxlog.warn,
-          "Downloading index from {}, backoff quota exceded, index at {} "
+          "Downloading {} from {}, backoff quota exceded, {} at {} "
           "not available",
+          object_type,
           bucket,
+          object_type,
           path);
         result = download_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
-          "Downloading index from {}, {}, index at {} not available",
+          "Downloading {} from {}, {}, {} at {} not available",
+          object_type,
           bucket,
           *result,
+          object_type,
           path);
     }
     co_return *result;
@@ -1369,17 +1398,17 @@ ss::future<remote::list_result> remote::list_objects(
     co_return *result;
 }
 
-ss::future<upload_result>
-remote::upload_object(upload_object_request upload_request) {
+ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     auto guard = _gate.hold();
 
-    retry_chain_node fib(&upload_request.parent_rtc);
+    auto& transfer_details = upload_request.transfer_details;
+    retry_chain_node fib(&transfer_details.parent_rtc);
     retry_chain_logger ctxlog(cst_log, fib);
     auto permit = fib.retry();
 
     auto content_length = upload_request.payload.size_bytes();
-    auto path = cloud_storage_clients::object_key(upload_request.key());
-    auto upload_type = upload_request.upload_type;
+    auto path = cloud_storage_clients::object_key(transfer_details.key());
+    auto upload_type = upload_request.type;
 
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
@@ -1392,16 +1421,22 @@ remote::upload_object(upload_object_request upload_request) {
           path,
           content_length);
 
+        notify_external_subscribers(
+          api_activity_notification{
+            .type = api_activity_type::object_upload,
+            .is_retry = fib.retry_count() > 1},
+          transfer_details.parent_rtc);
+
         auto to_upload = upload_request.payload.copy();
         auto res = co_await lease.client->put_object(
-          upload_request.bucket_name,
+          transfer_details.bucket,
           path,
           content_length,
           make_iobuf_input_stream(std::move(to_upload)),
           fib.get_timeout());
 
         if (res) {
-            upload_request.on_success(_probe);
+            transfer_details.on_success(_probe);
             co_return upload_result::success;
         }
 
@@ -1413,10 +1448,10 @@ remote::upload_object(upload_object_request upload_request) {
               "Uploading {} {} to {}, {} backoff required",
               upload_type,
               path,
-              upload_request.bucket_name,
+              transfer_details.bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
-            upload_request.on_backoff(_probe);
+            transfer_details.on_backoff(_probe);
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
@@ -1428,7 +1463,7 @@ remote::upload_object(upload_object_request upload_request) {
         }
     }
 
-    upload_request.on_failure(_probe);
+    transfer_details.on_failure(_probe);
     if (!result) {
         vlog(
           ctxlog.warn,
@@ -1436,7 +1471,7 @@ remote::upload_object(upload_object_request upload_request) {
           "uploaded",
           upload_type,
           path,
-          upload_request.bucket_name,
+          transfer_details.bucket,
           upload_type);
     } else {
         vlog(
@@ -1444,7 +1479,7 @@ remote::upload_object(upload_object_request upload_request) {
           "Uploading {} {} to {}, {}, {} not uploaded",
           upload_type,
           path,
-          upload_request.bucket_name,
+          transfer_details.bucket,
           *result,
           upload_type);
     }
