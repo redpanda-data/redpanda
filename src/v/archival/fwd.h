@@ -18,5 +18,6 @@ struct configuration;
 class upload_housekeeping_service;
 class purger;
 class scrubber;
+class archiver_manager;
 
 } // namespace archival
