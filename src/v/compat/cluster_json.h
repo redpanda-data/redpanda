@@ -425,7 +425,7 @@ inline void
 read_value(json::Value const& rd, cluster::node_health_report& obj) {
     model::node_id id;
     cluster::node::local_state local_state;
-    ss::chunked_fifo<cluster::topic_status> topics;
+    chunked_vector<cluster::topic_status> topics;
     std::optional<cluster::drain_manager::drain_status> drain_status;
 
     read_member(rd, "id", id);

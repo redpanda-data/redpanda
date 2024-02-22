@@ -13,6 +13,7 @@
 #include "bytes/random.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/producer_state.h"
+#include "container/fragmented_vector.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "random/generators.h"
@@ -32,6 +33,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace tests {
@@ -89,6 +91,19 @@ template<
 inline auto random_frag_vector(Fn&& gen, size_t size = 20, Args&&... args)
   -> fragmented_vector<T> {
     fragmented_vector<T> v;
+    while (size-- > 0) {
+        v.push_back(gen(std::forward<Args>(args)...));
+    }
+    return v;
+}
+
+template<
+  typename Fn,
+  typename... Args,
+  typename T = std::invoke_result_t<Fn, Args...>>
+inline auto random_chunked_vector(Fn&& gen, size_t size = 20, Args&&... args)
+  -> chunked_vector<T> {
+    chunked_vector<T> v;
     while (size-- > 0) {
         v.push_back(gen(std::forward<Args>(args)...));
     }

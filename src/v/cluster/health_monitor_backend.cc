@@ -183,18 +183,17 @@ void health_monitor_backend::refresh_nodes_status() {
     }
 }
 
-ss::chunked_fifo<topic_status> filter_topic_status(
-  const ss::chunked_fifo<topic_status>& topics,
-  const partitions_filter& filter) {
+chunked_vector<topic_status> filter_topic_status(
+  const chunked_vector<topic_status>& topics, const partitions_filter& filter) {
     // empty filter matches all
     if (filter.namespaces.empty()) {
-        ss::chunked_fifo<topic_status> copy;
+        chunked_vector<topic_status> copy;
         copy.reserve(topics.size());
         std::copy(topics.cbegin(), topics.cend(), std::back_inserter(copy));
         return copy;
     }
 
-    ss::chunked_fifo<topic_status> filtered;
+    chunked_vector<topic_status> filtered;
 
     for (auto& tl : topics) {
         topic_status filtered_topic_status(tl.tp_ns, {});
@@ -749,7 +748,7 @@ reports_acc_t reduce_reports_map(
     return acc;
 }
 } // namespace
-ss::future<ss::chunked_fifo<topic_status>>
+ss::future<chunked_vector<topic_status>>
 health_monitor_backend::collect_topic_status(partitions_filter filters) {
     auto reports_map = co_await _partition_manager.map_reduce0(
       [&filters](partition_manager& pm) {
@@ -758,7 +757,7 @@ health_monitor_backend::collect_topic_status(partitions_filter filters) {
       reports_acc_t{},
       &reduce_reports_map);
 
-    ss::chunked_fifo<topic_status> topics;
+    chunked_vector<topic_status> topics;
     topics.reserve(reports_map.size());
     for (auto& [tp_ns, partitions] : reports_map) {
         topics.emplace_back(tp_ns, std::move(partitions));

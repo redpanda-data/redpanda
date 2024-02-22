@@ -132,7 +132,7 @@ private:
     std::optional<node_health_report>
     build_node_report(model::node_id, const node_report_filter&);
 
-    ss::future<ss::chunked_fifo<topic_status>>
+    ss::future<chunked_vector<topic_status>>
       collect_topic_status(partitions_filter);
 
     void refresh_nodes_status();
