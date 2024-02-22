@@ -1199,6 +1199,11 @@ partition::do_unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
     co_await replicate_unsafe_reset(std::move(new_manifest));
 }
 
+ss::shared_ptr<cloud_storage::async_manifest_view>
+partition::get_cloud_storage_manifest_view() {
+    return _cloud_storage_manifest_view;
+}
+
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }

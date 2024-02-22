@@ -487,6 +487,13 @@ public:
     // Returns a failed future if unsuccessful.
     ss::future<> unsafe_reset_remote_partition_manifest_from_cloud(bool force);
 
+    // Expose async_manifest_view
+    //
+    // The instance is used by the read path and also by the write path to
+    // perform housekeeping.
+    ss::shared_ptr<cloud_storage::async_manifest_view>
+    get_cloud_storage_manifest_view();
+
 private:
     ss::future<>
     replicate_unsafe_reset(cloud_storage::partition_manifest manifest);
