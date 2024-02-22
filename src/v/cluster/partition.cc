@@ -675,6 +675,7 @@ bool partition::should_construct_archiver() {
     // manifest updates, etc.
     const auto& ntp_config = _raft->log()->config();
     return config::shard_local_cfg().cloud_storage_enabled()
+           && config::shard_local_cfg().cloud_storage_disable_archiver_manager()
            && _cloud_storage_api.local_is_initialized()
            && _raft->ntp().ns == model::kafka_namespace
            && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled());
