@@ -1,8 +1,8 @@
 # Redirect control for internal Redpanda builds
-if(VECTORIZED_CMAKE_DIR)
+if(REDPANDA_CMAKE_DIR)
   cmake_minimum_required(VERSION 3.22)
   list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-  include(${VECTORIZED_CMAKE_DIR}/main.cmake)
+  include(${REDPANDA_CMAKE_DIR}/main.cmake)
   return()
 endif()
 
