@@ -356,6 +356,16 @@ partition_manifest::full_log_start_kafka_offset() const {
     return get_start_kafka_offset();
 }
 
+std::optional<model::offset> partition_manifest::full_log_start_offset() const {
+    if (_archive_start_offset != model::offset{}) {
+        return _archive_start_offset;
+    }
+    if (_start_offset == model::offset{}) {
+        return std::nullopt;
+    }
+    return _start_offset;
+}
+
 std::optional<kafka::offset>
 partition_manifest::get_start_kafka_offset() const {
     if (_start_offset == model::offset{}) {
