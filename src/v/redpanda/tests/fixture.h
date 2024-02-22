@@ -100,7 +100,8 @@ public:
       const empty_seed_starts_cluster empty_seed_starts_cluster_val
       = empty_seed_starts_cluster::yes,
       std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt,
-      bool enable_data_transforms = false)
+      bool enable_data_transforms = false,
+      bool enable_legacy_upload_mode = true)
       : app(ssx::sformat("redpanda-{}", node_id()))
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
@@ -119,7 +120,8 @@ public:
           use_node_id,
           empty_seed_starts_cluster_val,
           kafka_admin_topic_api_rate,
-          enable_data_transforms);
+          enable_data_transforms,
+          enable_legacy_upload_mode);
         app.initialize(
           proxy_config(proxy_port),
           proxy_client_config(kafka_port),
@@ -320,7 +322,8 @@ public:
       const empty_seed_starts_cluster empty_seed_starts_cluster_val
       = empty_seed_starts_cluster::yes,
       std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt,
-      bool data_transforms_enabled = false) {
+      bool data_transforms_enabled = false,
+      bool legacy_upload_mode_enabled = true) {
         auto base_path = std::filesystem::path(data_dir);
         ss::smp::invoke_on_all([node_id,
                                 kafka_port,
@@ -333,7 +336,8 @@ public:
                                 use_node_id,
                                 empty_seed_starts_cluster_val,
                                 kafka_admin_topic_api_rate,
-                                data_transforms_enabled]() mutable {
+                                data_transforms_enabled,
+                                legacy_upload_mode_enabled]() mutable {
             auto& config = config::shard_local_cfg();
 
             config.get("enable_pid_file").set_value(false);
@@ -412,6 +416,8 @@ public:
             }
             config.get("data_transforms_enabled")
               .set_value(data_transforms_enabled);
+            config.get("cloud_storage_disable_archiver_manager")
+              .set_value(legacy_upload_mode_enabled);
         }).get0();
     }
 
