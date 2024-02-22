@@ -58,6 +58,16 @@ public:
     ss::future<> start(state_machine_registry&);
     ss::future<> stop();
 
+    /// This method exposes reset mutex for the external subsystem
+    ///
+    /// The method is supposed to be used by the archiver_service.
+    /// Archiver service needs a mechanism to postpone partition shutdown
+    /// until the 'ntp_archiver' is stopping. Without this the 'ntp_archiver'
+    /// may access stopped/disposed partition.
+    std::optional<ssx::semaphore_units> get_archiver_reset_units() {
+        return ss::try_get_units(_archiver_reset_mutex, 1);
+    };
+
     bool should_construct_archiver();
     /// Part of constructor that we may sometimes need to do again
     /// after a configuration change.
