@@ -195,6 +195,7 @@ v_cc_library(
     ../archival/adjacent_segment_merger.cc
     ../archival/purger.cc
     ../archival/scrubber.cc
+    ../archival/archiver_manager.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc
