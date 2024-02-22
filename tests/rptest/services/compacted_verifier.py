@@ -114,7 +114,7 @@ class CompactedVerifier(Service):
 
     ### Service overrides
 
-    def start_node(self, node, timeout_sec=10):
+    def start_node(self, node, timeout_sec=20):
         node.account.ssh(
             f"bash /opt/remote/control/start.sh rw \"java -cp /opt/verifiers/verifiers.jar io.vectorized.compaction.App\""
         )
