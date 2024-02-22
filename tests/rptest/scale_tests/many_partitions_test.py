@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import math
 import time
 import concurrent.futures
 from collections import Counter
@@ -73,6 +74,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             *args,
             num_brokers=9,
             node_prealloc_count=3,
+            disable_cloud_storage_diagnostics=True,
             extra_rp_conf={
                 # Disable leader balancer initially, to enable us to check for
                 # stable leadership during initial elections and post-restart
@@ -103,10 +105,6 @@ class ManyPartitionsTest(PreallocNodesTest):
                 'kafka_connection_rate_limit': 10000,
                 'kafka_connections_max': 50000,
 
-                # Enable segment size jitter as this is a stress test and does not
-                # rely on exact segment counts.
-                'log_segment_size_jitter_percent': 5,
-
                 # In testing tiered storage, we care about creating as many
                 # cloud segments as possible. To that end, bounding the segment
                 # size isn't productive.
@@ -117,6 +115,12 @@ class ManyPartitionsTest(PreallocNodesTest):
                 # to pad out tiered storage metadata, we don't want them to
                 # get merged together.
                 'cloud_storage_enable_segment_merging': False,
+
+                # We don't scrub tiered storage in this test because it is slow
+                # (on purpose) and takes unreasonable amount of time for a CI
+                # job. We should figure out how to make it faster for this
+                # use-case.
+                'cloud_storage_enable_scrubbing': False,
             },
             # Configure logging the same way a user would when they have
             # very many partitions: set logs with per-partition messages
@@ -174,11 +178,12 @@ class ManyPartitionsTest(PreallocNodesTest):
                 continue
 
             assert len(partitions) == p_per_topic
-            for p in partitions:
-                if p.leader == node_id:
-                    self.logger.info(
-                        f"partition {tn}/{p.id} still on node {node_id}")
-                    any_incomplete = True
+            remaining = sum(1 for p in partitions if p.leader == node_id)
+            if remaining > 0:
+                self.logger.info(
+                    f"{tn} still has {remaining} partition(s) on node {node_id}"
+                )
+                any_incomplete = True
 
         return not any_incomplete
 
@@ -229,7 +234,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         balanced = error < threshold
         self.logger.info(
-            f"leadership balanced={balanced} (stddev: {stddev}, error {error})"
+            f"leadership balanced={balanced} (stddev: {stddev:.2f}; want error {error:.2f} < {threshold})"
         )
         return balanced
 
@@ -281,7 +286,8 @@ class ManyPartitionsTest(PreallocNodesTest):
             return list(
                 executor.map(
                     lambda n: tuple(
-                        [n, sum(1 for _ in self.redpanda.lsof_node(n))]),
+                        [n.name,
+                         sum(1 for _ in self.redpanda.lsof_node(n))]),
                     self.redpanda.nodes))
 
     def _concurrent_restart(self):
@@ -323,7 +329,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Wait for leaderships to stabilize on the surviving nodes
         wait_until(
             lambda: self._node_leadership_evacuated(topic_names, n_partitions,
-                                                    node_id), 30, 1)
+                                                    node_id), 30, 5)
 
         self.redpanda.start_node(node, timeout=self.EXPECT_START_TIME)
 
@@ -334,6 +340,9 @@ class ManyPartitionsTest(PreallocNodesTest):
         expect_leader_transfer_time = 2 * (
             n_partitions / len(self.redpanda.nodes)) / transfers_per_sec + (
                 self.LEADER_BALANCER_PERIOD_MS / 1000) * 2
+        self.logger.info(
+            f"Waiting {expect_leader_transfer_time}s for leadership balance after restart"
+        )
 
         # Wait for leaderships to achieve balance.  This is bounded by:
         #  - Time for leader_balancer to issue+await all the transfers
@@ -394,13 +403,17 @@ class ManyPartitionsTest(PreallocNodesTest):
         number of segments.
         """
 
-        warmup_segment_size = 32 * 1024
-        warmup_message_size = 32 * 1024
+        warmup_segment_size = scale.segment_size
+        # Because segments are rolled after a write we need to size messages
+        # such that actual segment size is as close as possible to the desired
+        # size. In default configuration we run with `log_segment_size_jitter_percent=5`
+        # adjust the messages size to always be larger than that.
+        warmup_message_size = math.ceil(scale.segment_size * 0.06)
         target_cloud_segments = 24 * 7 * scale.partition_limit
 
-        # Be somewhat lenient in generating the desired number of segments.
-        warmup_total_size = int(1.5 * target_cloud_segments *
-                                warmup_segment_size)
+        # Enough data to generate the desired number of segments plus few more
+        # per partition that will be kept open (and not uploaded).
+        warmup_total_size = (1.1 * target_cloud_segments) * warmup_segment_size
 
         # Uploads of tiny segments usually progress at a few thousand
         # per second.  This is dominated by the S3 PUT latency combined
@@ -422,7 +435,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             self.logger.info(
                 f"Tiered storage warmup: waiting {expect_runtime}s for {target_cloud_segments} to be created"
             )
-            msg_count = int(warmup_total_size / warmup_message_size)
+            msg_count = math.ceil(warmup_total_size / warmup_message_size)
             producer = None
             try:
                 producer = KgoVerifierProducer(
@@ -510,6 +523,9 @@ class ManyPartitionsTest(PreallocNodesTest):
         expect_transmit_time = max(expect_transmit_time, 30)
 
         for tn in topic_names:
+            self.logger.info(
+                f"Writing {write_bytes_per_topic} bytes to {tn} with a deadline of {expect_transmit_time}s"
+            )
             t1 = time.time()
             producer = KgoVerifierProducer(
                 self.test_context,
@@ -587,7 +603,17 @@ class ManyPartitionsTest(PreallocNodesTest):
             nodes=[self.preallocated_nodes[2]])
         seq_consumer.start(clean=False)
 
-        seq_consumer.wait()
+        expect_transmit_time = max(
+            60,
+            int(1.5 * max_msgs * stress_msg_size /
+                scale.expect_single_bandwidth))
+        if scale.tiered_storage_enabled:
+            # Add extra 10 minutes in case S3 decides to scale during the test.
+            # It was observed for the bucket to go down between 5 and 10
+            # minutes during these events.
+            expect_transmit_time += 600
+
+        seq_consumer.wait(timeout_sec=expect_transmit_time)
         assert seq_consumer.consumer_status.validator.invalid_reads == 0
         if not scale.tiered_storage_enabled:
             assert seq_consumer.consumer_status.validator.valid_reads >= fast_producer.produce_status.acked + msg_count_per_topic, \
@@ -708,9 +734,6 @@ class ManyPartitionsTest(PreallocNodesTest):
             mib_per_partition=mib_per_partition,
             topic_partitions_per_shard=topic_partitions_per_shard)
 
-    # TODO: re-enable once infra has stabilized
-    # https://github.com/redpanda-data/redpanda/issues/9569
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     # FIXME: run with compaction
     @parametrize(compacted=False,
@@ -797,13 +820,18 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         # Enable large node-wide throughput limits to verify they work at scale
         # To avoid affecting the result of the test with the limit, set them
-        # somewhat above expect_bandwidth value per node
-        self.redpanda.add_extra_rp_conf({
-            'kafka_throughput_limit_node_in_bps':
-            int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3),
-            'kafka_throughput_limit_node_out_bps':
-            int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3)
-        })
+        # somewhat above expect_bandwidth value per node.
+        #
+        # We skip setting them on tiered storage where `expect_bandwidth` is
+        # calculated for the worst case scenario and we don't want to limit the
+        # best case one.
+        if not scale.tiered_storage_enabled:
+            self.redpanda.add_extra_rp_conf({
+                'kafka_throughput_limit_node_in_bps':
+                int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3),
+                'kafka_throughput_limit_node_out_bps':
+                int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3)
+            })
 
         self.redpanda.add_extra_rp_conf({
             'topic_partitions_per_shard':
@@ -884,7 +912,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         with repeater_traffic(context=self._ctx,
                               redpanda=self.redpanda,
                               nodes=self.preallocated_nodes,
-                              topics=[topic_names[0]],
+                              topics=topic_names,
                               msg_size=repeater_msg_size,
                               rate_limit_bps=rate_limit_bps,
                               workers=self._repeater_worker_count(scale),
@@ -958,6 +986,6 @@ class ManyPartitionsTest(PreallocNodesTest):
                 expect_mbps = scale.expect_bandwidth / (1024 * 1024.0)
                 actual_mbps = (bytes_sent / (t2 - t1)) / (1024 * 1024.0)
                 self.logger.error(
-                    f"Expected throughput {expect_mbps:.2f}, got throughput {actual_mbps:.2f}MB/s"
+                    f"Expected throughput {expect_mbps:.2f}MiB/s, got throughput {actual_mbps:.2f}MiB/s"
                 )
                 raise

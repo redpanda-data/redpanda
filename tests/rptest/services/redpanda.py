@@ -221,7 +221,7 @@ class MetricsEndpoint(Enum):
 
 
 class CloudStorageType(IntEnum):
-    # Use AWS S3 on dedicated nodes, or minio in docker
+    # Use (AWS, GCP) S3 compatible API on dedicated nodes, or minio in docker
     S3 = 1
     # Use Azure ABS on dedicated nodes, or azurite in docker
     ABS = 2
@@ -439,6 +439,7 @@ class SISettings:
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
                  bypass_bucket_creation: bool = False,
+                 use_bucket_cleanup_policy: bool = False,
                  cloud_storage_housekeeping_interval_ms: Optional[int] = None,
                  cloud_storage_spillover_manifest_max_segments: Optional[
                      int] = None,
@@ -446,7 +447,8 @@ class SISettings:
                  retention_local_strict=True,
                  cloud_storage_max_throughput_per_shard: Optional[int] = None,
                  cloud_storage_signature_version: str = "s3v4",
-                 before_call_headers: Optional[dict[str, Any]] = None):
+                 before_call_headers: Optional[dict[str, Any]] = None,
+                 skip_end_of_test_scrubbing: bool = False):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
@@ -494,12 +496,19 @@ class SISettings:
         self.cloud_storage_readreplica_manifest_sync_timeout_ms = cloud_storage_readreplica_manifest_sync_timeout_ms
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
+        self.use_bucket_cleanup_policy = use_bucket_cleanup_policy
         self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
         self.cloud_storage_spillover_manifest_max_segments = cloud_storage_spillover_manifest_max_segments
         self.retention_local_strict = retention_local_strict
         self.cloud_storage_max_throughput_per_shard = cloud_storage_max_throughput_per_shard
         self.cloud_storage_signature_version = cloud_storage_signature_version
         self.before_call_headers = before_call_headers
+
+        # Allow disabling end of test scrubbing.
+        # It takes a long time with lots of segments i.e. as created in scale
+        # tests. Should figure out how to re-enable it, or consider using
+        # redpanda's built-in scrubbing capabilities.
+        self.skip_end_of_test_scrubbing = skip_end_of_test_scrubbing
 
         if fast_uploads:
             self.cloud_storage_segment_max_upload_interval_sec = 10
@@ -2699,8 +2708,24 @@ class RedpandaService(RedpandaServiceBase):
             self.cloud_storage_client.create_bucket(
                 self._si_settings.cloud_storage_bucket)
 
+        # If the test has requested to use a bucket cleanup policy then we
+        # attempt to create one which will remove everything from the bucket
+        # after one day.
+        # This is a time optimization to avoid waiting hours cleaning up tiny
+        # objects created by scale tests.
+        if self._si_settings.use_bucket_cleanup_policy:
+            self.cloud_storage_client.create_expiration_policy(
+                bucket=self._si_settings.cloud_storage_bucket, days=1)
+
     def delete_bucket_from_si(self):
         assert self._si_settings, "start_si() called but SI not configured"
+
+        if self._si_settings.use_bucket_cleanup_policy:
+            self.logger.info(
+                f"Skipping deletion of bucket/container: {self._si_settings.cloud_storage_bucket}."
+                "Using a cleanup policy instead. Please delete it manually")
+            return
+
         self.logger.debug(
             f"Deleting bucket/container: {self._si_settings.cloud_storage_bucket}"
         )

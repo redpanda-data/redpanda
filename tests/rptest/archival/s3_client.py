@@ -7,6 +7,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from google.cloud import storage as gcs
 
 from concurrent.futures import ThreadPoolExecutor
 import datetime
@@ -224,7 +225,7 @@ class S3Client:
                     try:
                         # GCS does not support bulk delete operation through S3 complaint clients
                         # https://cloud.google.com/storage/docs/migrating#methods-comparison
-                        if self._endpoint is not None and 'storage.googleapis.com' in self._endpoint:
+                        if self._is_gcs:
                             for k in key_list:
                                 local.client.delete_object(Bucket=name, Key=k)
                         else:
@@ -260,6 +261,13 @@ class S3Client:
             for (dc, fk) in results:
                 all_deleted_count += dc
                 all_failed_keys.extend(fk)
+
+        # In parallel mode we delete using hash prefixes at it doesn't cover
+        # cluster manifest.
+        if len(prefixes) > 1:
+            dc, fk = empty_bucket_prefix("")
+            all_deleted_count += dc
+            all_failed_keys.extend(fk)
 
         self.logger.debug(
             f"empty_bucket: deleted {all_deleted_count} keys (all prefixes)")
@@ -508,5 +516,52 @@ class S3Client:
             self.logger.error(f'Error listing buckets: {ex}')
             raise
 
+    def create_expiration_policy(self, bucket: str, days: int):
+        if self._is_gcs:
+            self._gcp_create_expiration_policy(bucket, days)
+        else:
+            self._aws_create_expiration_policy(bucket, days)
+
+    @retry_on_slowdown()
+    def _aws_create_expiration_policy(self, bucket: str, days: int):
+        try:
+            self._cli.put_bucket_lifecycle_configuration(
+                Bucket=bucket,
+                LifecycleConfiguration={
+                    "Rules": [{
+                        "Expiration": {
+                            "Days": days
+                        },
+                        "Filter": {},
+                        "ID": f"{bucket}-ducktape-one-day-expiration",
+                        "Status": "Enabled"
+                    }]
+                })
+        except ClientError as err:
+            if err.response['Error']['Code'] == 'SlowDown':
+                self.logger.debug(
+                    f"Got SlowDown code when creating bucket lifecycle configuration for {bucket}"
+                )
+                raise SlowDown()
+
+            self.logger.error(
+                f"Failed to set lifecycle configuration for {bucket}: {err}")
+            raise err
+
+    def _gcp_create_expiration_policy(self, bucket: str, days: int):
+        gcs_client = gcs.Client()
+        bucket = gcs_client.get_bucket(bucket)
+        bucket.add_lifecycle_delete_rule(age=days)
+        bucket.patch()
+
     def _add_header(self, model, params, request_signer, **kwargs):
         params['headers'].update(self._before_call_headers)
+
+    @property
+    def _is_gcs(self):
+        """
+        For most interactions we use GCS via the S3 compatible API. However,
+        for some management operations we need to apply custom logic.
+        https://cloud.google.com/storage/docs/migrating#methods-comparison
+        """
+        return self._endpoint is not None and 'storage.googleapis.com' in self._endpoint
