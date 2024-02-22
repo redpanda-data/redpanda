@@ -115,10 +115,11 @@ private:
      * maximum open file handling. see implementation of `monitor` for more
      * detailed description.
      */
+    seastar::future<> monitor(queue*) noexcept;
+
     size_t waiters_{0};
     seastar::semaphore nofiles_;
     intrusive_list<queue, &queue::cache_hook_> lru_;
-    seastar::future<> monitor(queue*) noexcept;
 };
 
 } // namespace experimental::io
