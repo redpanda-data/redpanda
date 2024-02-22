@@ -92,6 +92,23 @@ class FlinkScaleTests(RedpandaTest):
             "Flink reports fails for " \
             f"transaction workload:\n{desc}"
 
+    def _assert_actual_rate(self, rate_single_node, topics_total_events,
+                            total_commit_requests):
+        # Account for network losses
+        target_transaction_rate = rate_single_node * 0.8
+        self.logger.info(
+            f"Calculated target transaction rate: {target_transaction_rate} per 1 ms"
+        )
+        # Actual rate is simple total msg divided by transactions
+        actual_transaction_rate = topics_total_events / total_commit_requests
+        self.logger.info(
+            f"Actual transaction rate: {actual_transaction_rate} per 1 ms")
+        assert target_transaction_rate < actual_transaction_rate, \
+            "Flink failed to generate at least 1 transaction " \
+            f"per half of the task managers ({rate_single_node}) " \
+            "per checkpoint (1 ms): " \
+            f"{target_transaction_rate} < {actual_transaction_rate}"
+
     def _get_total_events_for_topic(self, topic):
         total_events = 0
         for partition in self.rpk.describe_topic(topic):
@@ -176,29 +193,32 @@ class FlinkScaleTests(RedpandaTest):
             Test uses same workload with different modes to produce
             and consume/process given number of transactions
         """
-        # Validate test according to
-        # - How many transactions can be generated per one job
-        # - How mane transactions for the node
-
         # Create service
-        self.flink = FlinkService(self.test_context)
+        flink = FlinkService(self.test_context)
 
-        # Prepare topics
-        total_workloads = self.flink.num_taskmanagers
-        # 4 mil events total
-        target_total_events = 4 * 1024 * 1024
-        # Create topics
+        if not self.redpanda.dedicated_nodes:
+            # Single workload
+            total_workloads = 1
+            # 1 mil events total for docker
+            target_total_events = 1 * 1024 * 1024
+            # Create topics
+        else:
+            # Prepare topics
+            total_workloads = flink.num_taskmanagers
+            # 4 mil events total for EC2 nodes
+            target_total_events = 4 * 1024 * 1024
+            # Create topics
+
+        # Start Flink
+        flink.start()
 
         if unique_topics:
-            self._create_topic_swarm([self.flink], total_workloads, 1)
+            self._create_topic_swarm([flink], total_workloads, 1)
         else:
-            hostname = self.flink.hostname
+            hostname = flink.hostname
             spec = TopicSpec(name=f"flink-{hostname}-0-0", partition_count=8)
             self.kafkacli.create_topic(spec)
             self.topic_specs.append(spec)
-
-        # Start Flink
-        self.flink.start()
 
         # Load python workload to target node
         # Hardcoded file
@@ -232,14 +252,14 @@ class FlinkScaleTests(RedpandaTest):
                     'transaction_id_prefix'] = f"flink-scale-tid-{idx}"
             self.logger.debug("Submitting job with config: \n"
                               f"{json.dumps(_workload_config, indent=2)}")
-            all_jobs += self._run_workloads(self.flink, workloads,
-                                            _workload_config, self.logger)
+            all_jobs += self._run_workloads(flink, workloads, _workload_config,
+                                            self.logger)
 
         # Assert failed jobs
-        self._assert_failed_jobs(self.flink, self.logger, all_jobs)
+        self._assert_failed_jobs(flink, self.logger, all_jobs)
 
         # Wait to finish
-        self.flink.wait(timeout_sec=1800)
+        flink.wait(timeout_sec=1800)
 
         all_topic_events = []
         for spec in self.topic_specs:
@@ -278,20 +298,11 @@ class FlinkScaleTests(RedpandaTest):
         # we can reasonably expect at least half of the taskmanagers
         # generate 1 transaction per 1 ms interval.
         # Also, we account for 20% losses on the network
-        rate_single_node = self.flink.num_taskmanagers // 2
-        target_transaction_rate = rate_single_node * 0.8
-        self.logger.info(
-            f"Calculated target transaction rate: {target_transaction_rate} per 1 ms"
-        )
-        # Actual rate is simple total msg divided by transactions
-        actual_transaction_rate = topics_total_events / total_commit_requests
-        self.logger.info(
-            f"Actual transaction rate: {actual_transaction_rate} per 1 ms")
-        assert target_transaction_rate < actual_transaction_rate, \
-            "Flink failed to generate at least 1 transaction " \
-            f"per half of the task managers ({rate_single_node}) " \
-            "per checkpoint (1 ms): " \
-            f"{target_transaction_rate} < {actual_transaction_rate}"
+
+        # Calculate rate for single node and assert actual transfer rate
+        rate_single_node = flink.num_taskmanagers // 2
+        self._assert_actual_rate(rate_single_node, topics_total_events,
+                                 total_commit_requests)
 
         return
 
@@ -315,28 +326,47 @@ class FlinkScaleTests(RedpandaTest):
         for flink in flinks:
             flink.start()
 
-        # Prepare topics
-        # Total number of workloads would be 2 x 5 = 10
-        workloads_per_node = 4
-        # For 5 nodes, total topics is 50 * 4 * 5 = 1000
-        # for 2xlarge 80 is a maximum
-        # 100 results in
-        # org.apache.flink.streaming.runtime.tasks.mailbox.TaskMailbox$MailboxClosedException: Mailbox is in state CLOSED, but is required to be in state OPEN for put operations.
-        topics_per_workload = 25
-        # 1 mil events total for single node, per topic
-        # Total number of events will be
-        # (1M / workloads) * topics_per_workload = 250k * 50 = 10M
-        target_total_events = 1 * 1024 * 1024
+        # Goal of the test is to confirm that RP can withstand bombardment by
+        # very small sized transactions. Docker nodes are less powerfull
+        # on the networking side, so they have 2x size of transactions
+
+        # EC2 have more power so the number of events is less,
+        # but the timing is tighter since they are coming in from 4 nodes
+        if not self.redpanda.dedicated_nodes:
+            # Prepare topics for docker env
+            # Total number of subtasks would be 1 x 25 x 5 = 125
+            workloads_per_node = 1
+            topics_per_workload = 25
+            # 500k events total for single node, per topic
+            # Total number of events will be
+            # (500k / workloads) * topics_per_workload = (500k / 1) * 25 = 12,800,000 (per node)
+            # Grand total is 5 x 12,800,000 = 64,000,000 events/messages
+            target_total_events = 500 * 1024
+        else:
+            # Prepare topics for EC2
+            # Total number of subtasks would be 4 x 25 x 5 = 500
+            workloads_per_node = 4
+            # for 2xlarge, 80 topics per workload is a maximum per flink taskmanager
+            # value of 100 results in
+            # "org.apache.flink.streaming.runtime.tasks.mailbox.TaskMailbox$MailboxClosedException: Mailbox is in state CLOSED, but is required to be in state OPEN for put operations."
+            # We set 25 as a reasonaly expected from default xlarge node
+            topics_per_workload = 25
+            # 1 mil events total for single node per topic per workload.
+            # Total number of events will be
+            # (1,048,576 / 4 workloads) * topics_per_workload = 6,553,600 events per node
+            # Total number of events will be
+            # Grand total is 5 x 6,553,600 = 32,768,000 events/messages
+
+            # For manual run this value can be set to 4x (or more)
+            # if tougher flink nodes is used (2xlarge, 6xlarge)
+            target_total_events = 1 * 1024 * 1024
 
         # Create topics
         self._create_topic_swarm(flinks, workloads_per_node,
                                  topics_per_workload)
 
         # Load python workload to target node
-        # Hardcoded file
         # TODO: Add workload config management
-        # Currently, each INSERT operator will generate 1 subjob
-        # So this config will generate 256 / 64 jobs
         _workload_config = {
             "log_level": "DEBUG",
             "brokers": self.redpanda.brokers(),
@@ -443,19 +473,6 @@ class FlinkScaleTests(RedpandaTest):
         # 1 transaction per each node per per 1 ms interval.
         # Also, we account for 20% losses on the network
         rate_per_node = 1
-        target_transaction_rate = rate_per_node * total_nodes * 0.8
-        self.logger.info(
-            f"Calculated target transaction rate: {target_transaction_rate} per 1 ms"
-        )
-        # Actual rate is simple total msg divided by transactions
-        actual_transaction_rate = topics_total_events / total_commit_requests
-        self.logger.info(
-            f"Actual transaction rate: {actual_transaction_rate} per 1 ms")
-        assert target_transaction_rate < actual_transaction_rate, \
-            "Flink failed to generate at least 1 transaction " \
-            f"per half of the task managers ({rate_per_node}) " \
-            f"at each of the nodes ({total_nodes})" \
-            "per checkpoint (1 ms): " \
-            f"{target_transaction_rate} < {actual_transaction_rate}"
-
+        self._assert_actual_rate(rate_per_node * total_nodes,
+                                 topics_total_events, total_commit_requests)
         return
