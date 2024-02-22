@@ -157,6 +157,7 @@ class CompactedVerifier(Service):
         ip = self._node.account.hostname
         r = requests.get(f"http://{ip}:8080/ping")
         if r.status_code != 200:
+            self.logger.debug(f"Ping {ip} failed: {r}: {r.status_code}")
             raise Exception(f"unexpected status code: {r.status_code}")
 
     def remote_start_producer(self,
