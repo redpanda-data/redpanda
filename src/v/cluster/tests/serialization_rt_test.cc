@@ -736,7 +736,7 @@ cluster::cluster_health_report random_cluster_health_report() {
     }
     std::vector<cluster::node_health_report> node_reports;
     for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-        ss::chunked_fifo<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
@@ -1603,7 +1603,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        ss::chunked_fifo<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
@@ -1621,7 +1621,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        ss::chunked_fifo<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
