@@ -565,6 +565,8 @@ class SISettings:
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
         elif cloud_storage_credentials_source == 'config_file' and cloud_storage_access_key and cloud_storage_secret_key:
+            # `config_file`` source allows developers to run ducktape tests from
+            # non-AWS hardware but targeting a real S3 backend.
             logger.info("Running on AWS S3, setting credentials")
             self.cloud_storage_access_key = cloud_storage_access_key
             self.cloud_storage_secret_key = cloud_storage_secret_key
