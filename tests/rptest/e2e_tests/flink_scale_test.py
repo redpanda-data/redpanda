@@ -22,6 +22,8 @@ from rptest.services.flink import FlinkService
 from rptest.services.redpanda import MetricsEndpoint, MetricSamples
 from rptest.tests.redpanda_test import RedpandaTest
 
+from rptest.utils.mode_checks import skip_debug_mode
+
 
 class FlinkScaleTests(RedpandaTest):
     def __init__(self, test_context, *args, **kwargs):
@@ -185,6 +187,7 @@ class FlinkScaleTests(RedpandaTest):
         self.logger.debug("Done creating topics ({:>5,.2f}s, {:>5,.2f} "
                           "topics per sec)".format(elapsed, tps))
 
+    @skip_debug_mode
     @cluster(num_nodes=4)
     @parametrize(unique_topics=True)
     @parametrize(unique_topics=False)
@@ -306,6 +309,7 @@ class FlinkScaleTests(RedpandaTest):
 
         return
 
+    @skip_debug_mode
     @cluster(num_nodes=8)
     def test_transactions_scale_swarm(self):
         """

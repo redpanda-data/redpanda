@@ -174,6 +174,7 @@ class FlinkService(Service):
     STATE_RUNNING = 'RUNNING'
     STATE_CANCELING = 'CANCELING'
     STATE_DEPLOYING = 'DEPLOYING'
+    STATE_RESTARTING = 'RESTARTING'
 
     STATE_CREATED = 'CREATED'
     STATE_SCHEDULED = 'SCHEDULED'
@@ -194,11 +195,11 @@ class FlinkService(Service):
         # Map statuses
         self.job_active_statuses = [
             self.STATE_INIT, self.STATE_RECONCILING, self.STATE_RUNNING,
-            self.STATE_CANCELING, self.STATE_DEPLOYING
+            self.STATE_CANCELING, self.STATE_DEPLOYING, self.STATE_RESTARTING,
+            self.STATE_CREATED, self.STATE_SCHEDULED
         ]
         self.job_inactive_statuses = [
-            self.STATE_CREATED, self.STATE_SCHEDULED, self.STATE_FAILED,
-            self.STATE_FINISHED, self.STATE_CANCELED
+            self.STATE_FAILED, self.STATE_FINISHED, self.STATE_CANCELED
         ]
 
         # Provider instance/node util class
