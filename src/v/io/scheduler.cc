@@ -104,6 +104,11 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
             co_return;
         }
 
+        /*
+         * semaphore is used instead of a condition variable because we don't
+         * want to miss a wake-up. the normal way to handle this would be to add
+         * a predicate, but the condition isn't a simple boolean flag or two.
+         */
         co_await queue->monitor_work_.wait(
           std::max<size_t>(queue->monitor_work_.current(), 1));
 
