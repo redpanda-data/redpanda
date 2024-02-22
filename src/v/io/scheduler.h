@@ -69,7 +69,7 @@ public:
          * a queue to close in order to enforce the maximum open queue limit.
          */
         intrusive_list_hook sched_hook_;
-        intrusive_list_hook cache_hook_;
+        intrusive_list_hook lru_hook_;
 
         /*
          * a queue monitor controls the open/close lifecycle of the I/O queue.
@@ -122,7 +122,7 @@ private:
 
     size_t waiters_{0};
     ssx::semaphore open_file_limit_;
-    intrusive_list<queue, &queue::cache_hook_> lru_;
+    intrusive_list<queue, &queue::lru_hook_> lru_;
 };
 
 } // namespace experimental::io

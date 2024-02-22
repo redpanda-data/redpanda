@@ -40,8 +40,8 @@ void scheduler::submit_read(queue* queue, page* page) noexcept {
     queue->io_queue_.submit_read(*page);
     if (!queue->io_queue_.opened()) {
         queue->monitor_work_.signal();
-    } else if (queue->cache_hook_.is_linked()) {
-        queue->cache_hook_.unlink();
+    } else if (queue->lru_hook_.is_linked()) {
+        queue->lru_hook_.unlink();
         lru_.push_back(*queue);
     }
 }
@@ -50,8 +50,8 @@ void scheduler::submit_write(queue* queue, page* page) noexcept {
     queue->io_queue_.submit_write(*page);
     if (!queue->io_queue_.opened()) {
         queue->monitor_work_.signal();
-    } else if (queue->cache_hook_.is_linked()) {
-        queue->cache_hook_.unlink();
+    } else if (queue->lru_hook_.is_linked()) {
+        queue->lru_hook_.unlink();
         lru_.push_back(*queue);
     }
 }
@@ -95,8 +95,8 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
          */
         if (queue->stop_) {
             if (queue->io_queue_.opened()) {
-                if (queue->cache_hook_.is_linked()) {
-                    queue->cache_hook_.unlink();
+                if (queue->lru_hook_.is_linked()) {
+                    queue->lru_hook_.unlink();
                 }
                 co_await queue->io_queue_.close();
                 queue->open_file_limit_units_.return_all();
@@ -120,7 +120,7 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
          * released.
          */
         if (queue->io_queue_.opened()) {
-            if (!queue->cache_hook_.is_linked()) {
+            if (!queue->lru_hook_.is_linked()) {
                 co_await queue->io_queue_.close();
                 queue->open_file_limit_units_.return_all();
             }
