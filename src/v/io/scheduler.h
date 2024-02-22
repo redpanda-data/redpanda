@@ -76,7 +76,8 @@ public:
          * see scheduler::monitor implementation for more details.
          */
         seastar::future<> monitor_{seastar::make_ready_future<>()};
-        seastar::semaphore sem_{0};
+        // used to signal work for the queue monitor
+        ssx::semaphore monitor_work_{0, "io::scheduler::queue::monitor_work"};
         // holds units from scheduler::open_file_limit
         ssx::semaphore_units units_;
         bool stop_{false};

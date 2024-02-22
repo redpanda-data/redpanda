@@ -29,7 +29,7 @@ void scheduler::add_queue(queue* queue) noexcept {
 seastar::future<> scheduler::remove_queue(queue* queue) noexcept {
     queue->sched_hook_.unlink();
     queue->stop_ = true;
-    queue->sem_.signal();
+    queue->monitor_work_.signal();
     auto monitor = std::exchange(
       queue->monitor_, seastar::make_ready_future<>());
     co_await std::move(monitor);
@@ -39,7 +39,7 @@ seastar::future<> scheduler::remove_queue(queue* queue) noexcept {
 void scheduler::submit_read(queue* queue, page* page) noexcept {
     queue->io_queue_.submit_read(*page);
     if (!queue->io_queue_.opened()) {
-        queue->sem_.signal();
+        queue->monitor_work_.signal();
     } else if (queue->cache_hook_.is_linked()) {
         queue->cache_hook_.unlink();
         lru_.push_back(*queue);
@@ -49,7 +49,7 @@ void scheduler::submit_read(queue* queue, page* page) noexcept {
 void scheduler::submit_write(queue* queue, page* page) noexcept {
     queue->io_queue_.submit_write(*page);
     if (!queue->io_queue_.opened()) {
-        queue->sem_.signal();
+        queue->monitor_work_.signal();
     } else if (queue->cache_hook_.is_linked()) {
         queue->cache_hook_.unlink();
         lru_.push_back(*queue);
@@ -86,7 +86,7 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
             waiters_--;
             auto& queue = lru_.front();
             lru_.pop_front();
-            queue.sem_.signal();
+            queue.monitor_work_.signal();
         }
 
         /*
@@ -104,7 +104,8 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
             co_return;
         }
 
-        co_await queue->sem_.wait(std::max<size_t>(queue->sem_.current(), 1));
+        co_await queue->monitor_work_.wait(
+          std::max<size_t>(queue->monitor_work_.current(), 1));
 
         /*
          * in the common case the queue is already open so there is nothing else
@@ -140,7 +141,7 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
                  */
                 auto& queue = lru_.front();
                 lru_.pop_front();
-                queue.sem_.signal();
+                queue.monitor_work_.signal();
             }
             units = co_await seastar::get_units(open_file_limit_, 1);
         }
