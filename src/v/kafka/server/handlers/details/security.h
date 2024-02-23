@@ -31,16 +31,17 @@ struct acl_conversion_error : std::exception {
 
 inline security::acl_principal to_acl_principal(const ss::sstring& principal) {
     std::string_view view(principal);
+    // TODO(oren): tremendous jank to account for franz-go convenience function
+    auto rol = view.starts_with("User:Role:");
     // TODO(oren): might want to handle this elsewhere
-    auto usr = view.starts_with("User:");
-    auto rol = !usr && view.starts_with("Role:");
+    auto usr = !rol && view.starts_with("User:");
 
     if (unlikely(!usr && !rol)) {
         throw acl_conversion_error(
           fmt::format("Invalid principal name: {{{}}}", principal));
     }
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    auto user = principal.substr(5);
+    auto user = principal.substr(usr ? 5 : 10);
     if (unlikely(user.empty())) {
         throw acl_conversion_error(
           fmt::format("Principal name cannot be empty"));
