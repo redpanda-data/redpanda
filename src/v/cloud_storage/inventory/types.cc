@@ -25,4 +25,16 @@ std::ostream& operator<<(std::ostream& os, report_format rf) {
     }
 }
 
+std::ostream& operator<<(std::ostream& os, inventory_creation_result icr) {
+    switch (icr) {
+        using enum cloud_storage::inventory::inventory_creation_result;
+    case success:
+        return os << "success";
+    case failed:
+        return os << "failed";
+    case already_exists:
+        return os << "already-exists";
+    }
+}
+
 } // namespace cloud_storage::inventory

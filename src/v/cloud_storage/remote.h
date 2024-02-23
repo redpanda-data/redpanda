@@ -124,6 +124,7 @@ struct api_activity_notification {
 class cloud_storage_api {
 public:
     virtual ss::future<upload_result> upload_object(upload_request) = 0;
+    virtual ss::future<download_result> download_object(download_request) = 0;
     virtual ~cloud_storage_api() = default;
 };
 
@@ -352,7 +353,7 @@ public:
     /// field which will hold the downloaded object if the download was
     /// successful
     ss::future<download_result>
-    download_object(download_request download_request);
+    download_object(download_request download_request) override;
 
     /// Checks if the segment exists in the bucket
     ss::future<download_result> segment_exists(
