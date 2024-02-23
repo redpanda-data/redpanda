@@ -12,6 +12,7 @@ v_cc_library(
     scheduler.cc
     page_cache.cc
     pager.cc
+    paging_data_source.cc
   DEPS
     Seastar::seastar
     absl::btree
