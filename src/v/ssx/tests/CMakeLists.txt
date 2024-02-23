@@ -19,6 +19,7 @@ rp_test(
   GTEST
   BINARY_NAME ssx_gunit
   SOURCES
+    async_algorithm_test.cc
     work_queue_test.cc
   LIBRARIES v::gtest_main v::ssx
   LABELS ssx
