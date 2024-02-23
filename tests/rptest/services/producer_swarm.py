@@ -32,6 +32,7 @@ class ProducerSwarm(Service):
                  min_record_size: Optional[int] = None,
                  max_record_size: Optional[int] = None,
                  keys: Optional[int] = None,
+                 unique_topics: Optional[bool] = False,
                  messages_per_second_per_producer: Optional[int] = None):
         super(ProducerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
@@ -47,6 +48,7 @@ class ProducerSwarm(Service):
         self._min_record_size = min_record_size
         self._max_record_size = max_record_size
         self._keys = keys
+        self._unique_topics = unique_topics
 
         if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
             security_config = redpanda.security_config()
@@ -88,6 +90,9 @@ class ProducerSwarm(Service):
 
         if self._keys is not None:
             cmd += f" --keys={self._keys}"
+
+        if self._unique_topics:
+            cmd += " --unique-topics"
 
         if self._messages_per_second_per_producer is not None:
             cmd += f" --messages-per-second {self._messages_per_second_per_producer}"
