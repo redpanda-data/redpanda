@@ -11,6 +11,7 @@ v_cc_library(
     io_queue.cc
     scheduler.cc
     page_cache.cc
+    pager.cc
   DEPS
     Seastar::seastar
     absl::btree
