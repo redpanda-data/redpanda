@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <iosfwd>
+#include <span>
 
 // cannot be a `std::byte` because that's not sizeof(char)
 constexpr size_t bytes_inline_size = 31;
@@ -32,6 +33,8 @@ using bytes = ss::basic_sstring<
 
 using bytes_view = std::basic_string_view<uint8_t>;
 using bytes_opt = std::optional<bytes>;
+template<std::size_t Extent = std::dynamic_extent>
+using bytes_span = std::span<bytes::value_type, Extent>;
 
 struct bytes_type_hash {
     using is_transparent = std::true_type;
