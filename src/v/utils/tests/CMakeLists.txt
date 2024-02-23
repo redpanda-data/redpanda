@@ -53,6 +53,17 @@ rp_test(
   LABELS utils
 )
 
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME gtest_utils
+  SOURCES     
+    xid_test.cc
+  LIBRARIES v::utils absl::flat_hash_map v::random v::gtest_main
+  LABELS utils
+)
+
 rp_test(
   BENCHMARK_TEST
   BINARY_NAME seastar_histogram

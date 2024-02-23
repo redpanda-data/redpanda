@@ -34,6 +34,7 @@
 #include "storage/ntp_config.h"
 #include "tristate.h"
 #include "utils/to_string.h"
+#include "utils/xid.h"
 #include "v8_engine/data_policy.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -1466,6 +1467,10 @@ struct remote_topic_properties
     operator<<(std::ostream&, const remote_topic_properties&);
 };
 
+/**
+ * Type representing MPX virtual cluster. MPX uses XID to identify clusters.
+ */
+using vcluster_id = named_type<xid, struct v_cluster_id_tag>;
 /**
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults

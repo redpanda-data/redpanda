@@ -80,6 +80,16 @@ BOOST_AUTO_TEST_CASE(named_type_rvalue_overload) {
     BOOST_REQUIRE_EQUAL(str, r);
 }
 
+BOOST_AUTO_TEST_CASE(named_type_stream_operators) {
+    using int_alias = named_type<uint64_t, struct int_t_alias_test_module>;
+    int_alias value{123};
+    std::stringstream stream;
+    fmt::print(stream, "{}", value);
+    int_alias from_str_value;
+    stream >> from_str_value;
+    BOOST_REQUIRE_EQUAL(from_str_value, value);
+}
+
 static_assert(
   !std::equality_comparable_with<
     named_type<int, struct tag_0>,
