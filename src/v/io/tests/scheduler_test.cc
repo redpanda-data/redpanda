@@ -57,7 +57,20 @@ public:
         scheduler_ = std::make_unique<io::scheduler>(open_files());
     }
 
+    void TearDown() override {
+        for (auto& file : cleanup_files_) {
+            try {
+                seastar::remove_file(file.string()).get();
+            } catch (...) {
+            }
+        }
+    }
+
     io::scheduler* scheduler() { return scheduler_.get(); }
+
+    void add_cleanup_file(std::filesystem::path file) {
+        cleanup_files_.push_back(std::move(file));
+    }
 
 private:
     [[nodiscard]] bool disk_persistence() const override {
@@ -65,6 +78,7 @@ private:
     }
 
     std::unique_ptr<io::scheduler> scheduler_;
+    std::vector<std::filesystem::path> cleanup_files_;
 };
 
 /*
@@ -125,6 +139,7 @@ TEST_P(SchedulerTest, WriteRead) {
     std::vector<std::filesystem::path> paths;
     for (auto i : boost::irange(num_queues())) {
         paths.emplace_back(fmt::format("foo.{}", i));
+        add_cleanup_file(paths.back());
     }
 
     // test driver for each queue
@@ -158,13 +173,6 @@ TEST_P(SchedulerTest, WriteRead) {
             EXPECT_TRUE(gen.writes().contains(read->offset()));
             auto* write = gen.writes().at(read->offset());
             EXPECT_EQ(read->data(), write->data());
-        }
-    }
-
-    for (auto& driver : drivers) {
-        try {
-            seastar::remove_file(driver->queue.path().string()).get();
-        } catch (...) {
         }
     }
 }
