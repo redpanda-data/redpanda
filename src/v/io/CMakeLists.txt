@@ -9,6 +9,7 @@ v_cc_library(
     clang-tidy-helper.cc
     logger.cc
     io_queue.cc
+    scheduler.cc
   DEPS
     Seastar::seastar
     absl::btree

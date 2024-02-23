@@ -18,10 +18,6 @@
 #include <algorithm>
 #include <optional>
 
-namespace testing_details {
-class cache_hook_accessor;
-}; // namespace testing_details
-
 /**
  * \defgroup cache Cache
  *
@@ -180,6 +176,10 @@ class cache_hook_accessor;
  */
 
 namespace experimental::io {
+
+namespace testing_details {
+class cache_hook_accessor;
+}; // namespace testing_details
 
 /**
  * Specifies that a callable type can be used as a cache eviction function.
