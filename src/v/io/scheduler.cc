@@ -81,6 +81,10 @@ seastar::future<> scheduler::monitor(queue* queue) noexcept {
          * because an io queue needs to wake up to be closed there is a delay
          * before the eviction is visible. this delay is why we track waiters_
          * separately rather than using the nofiles_ semaphore state.
+         *
+         * another way to look at this is that waiters_ is used to handle the
+         * case that we adjust the open_file_limit at runtime. currently it is a
+         * static value but will later be adjustable.
          */
         while (waiters_ > 0 && !lru_.empty()) {
             waiters_--;
