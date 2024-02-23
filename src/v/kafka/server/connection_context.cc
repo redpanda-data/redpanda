@@ -153,7 +153,11 @@ security::auth_result connection_context::authorized_user(
   const T& name,
   authz_quiet quiet) {
     auto authorized = _server.authorizer().authorized(
-      name, operation, principal, security::acl_host(_client_addr));
+      name,
+      operation,
+      principal,
+      security::acl_host(_client_addr),
+      &_server.roles());
 
     if (!authorized) {
         if (_sasl) {

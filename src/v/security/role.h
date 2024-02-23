@@ -50,6 +50,10 @@ public:
 
     auto serde_fields() { return std::tie(_type, _name); }
 
+    static role_member from_principal(const security::acl_principal& p) {
+        return {role_member_type::user, p.name()};
+    }
+
 private:
     role_member_type _type{};
     ss::sstring _name;
@@ -74,6 +78,11 @@ public:
     bool operator==(const role&) const = default;
 
     auto serde_fields() { return std::tie(_members); }
+
+    static security::acl_principal
+    to_principal(const security::role_name& name) {
+        return {security::principal_type::role, name()};
+    }
 
 private:
     container_type _members;
