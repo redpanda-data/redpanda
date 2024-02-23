@@ -219,8 +219,15 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
         const auto rand_offset = co_await with_leader(
           30s, [](raft_node_instance& leader_node) {
               auto committed_offset = leader_node.raft()->committed_offset();
+              auto start_offset = leader_node.raft()->start_offset();
+              /**
+               * Take snapshot at offset ranging from start_offset to the middle
+               * of the log
+               */
+
               return leader_node.random_batch_base_offset(
-                committed_offset - model::offset(50));
+                start_offset
+                + model::offset((committed_offset - start_offset) / 2));
           });
 
         const auto last_included_offset = model::prev_offset(rand_offset);
@@ -233,15 +240,14 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
     }
     std::optional<model::offset> learner_start_offset;
     if (use_learner_start_offset) {
-        model::offset offset(random_generators::get_int<int64_t>(
-          start_offset, leader_node.raft()->dirty_offset()));
-
         learner_start_offset = co_await with_leader(
           30s, [](raft_node_instance& leader_node) {
               return leader_node.random_batch_base_offset(
-                leader_node.raft()->committed_offset());
+                leader_node.raft()->dirty_offset() - model::offset(1));
           });
-        start_offset = *learner_start_offset;
+        if (learner_start_offset != model::offset{}) {
+            start_offset = *learner_start_offset;
+        }
     }
 
     auto current_nodes = all_vnodes();

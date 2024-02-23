@@ -539,13 +539,19 @@ ss::future<model::offset>
 raft_node_instance::random_batch_base_offset(model::offset max) {
     model::offset read_start(
       random_generators::get_int<int64_t>(_raft->start_offset(), max));
+
     model::offset last = model::next_offset(read_start);
+
     ss::circular_buffer<model::record_batch> batches;
-    while (batches.empty()) {
+    while (batches.empty() && last <= _raft->dirty_offset()) {
+        vlog(
+          test_log.info, "Reading batches in range: [{},{}]", read_start, last);
         batches = co_await read_batches_in_range(read_start, last);
         last++;
     }
-
+    if (batches.empty()) {
+        co_return model::offset{};
+    }
     co_return batches.front().base_offset();
 }
 
