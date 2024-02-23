@@ -28,7 +28,7 @@ from rptest.services.admin import Admin
 from rptest.services.redpanda import SecurityConfig, SaslCredentials, SecurityConfig
 from rptest.tests.sasl_reauth_test import get_sasl_metrics, REAUTH_METRIC, EXPIRATION_METRIC
 from rptest.util import expect_http_error
-from rptest.utils.utf8 import CONTROL_CHARS, CONTROL_CHARS_MAP
+from rptest.utils.utf8 import CONTROL_CHARS, CONTROL_CHARS_MAP, generate_string_with_control_character
 
 
 class BaseScramTest(RedpandaTest):
@@ -454,22 +454,13 @@ class InvalidNewUserStrings(BaseScramTest):
                              security=security,
                              extra_node_conf={'developer_mode': True})
 
-    @staticmethod
-    def generate_string_with_control_character(length: int):
-        rv = ''.join(
-            random.choices(string.ascii_letters + CONTROL_CHARS, k=length))
-        while not any(char in rv for char in CONTROL_CHARS):
-            rv = ''.join(
-                random.choices(string.ascii_letters + CONTROL_CHARS, k=length))
-        return rv
-
     @cluster(num_nodes=3)
     def test_invalid_user_name(self):
         """
         Validates that usernames that contain control characters and usernames which
         do not match the SCRAM regex are properly rejected
         """
-        username = self.generate_string_with_control_character(15)
+        username = generate_string_with_control_character(15)
 
         self.create_user(
             username=username,
@@ -493,7 +484,7 @@ class InvalidNewUserStrings(BaseScramTest):
         """
         Validates that algorithms that contain control characters are properly rejected
         """
-        algorithm = self.generate_string_with_control_character(10)
+        algorithm = generate_string_with_control_character(10)
 
         self.create_user(
             username="test",
@@ -508,7 +499,7 @@ class InvalidNewUserStrings(BaseScramTest):
         """
         Validates that passwords that contain control characters are properly rejected
         """
-        password = self.generate_string_with_control_character(15)
+        password = generate_string_with_control_character(15)
         self.create_user(
             username="test",
             algorithm="SCRAM-SHA-256",

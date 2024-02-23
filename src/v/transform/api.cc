@@ -30,6 +30,8 @@
 #include "transform/commit_batcher.h"
 #include "transform/io.h"
 #include "transform/logger.h"
+#include "transform/logging/log_manager.h"
+#include "transform/logging/rpc_client.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
 #include "transform/transform_logger.h"
@@ -411,6 +413,7 @@ service::service(
   ss::sharded<cluster::topic_table>* topic_table,
   ss::sharded<cluster::partition_manager>* partition_manager,
   ss::sharded<rpc::client>* rpc_client,
+  ss::sharded<cluster::metadata_cache>* metadata_cache,
   ss::scheduling_group sg)
   : _runtime(runtime)
   , _self(self)
@@ -420,6 +423,7 @@ service::service(
   , _topic_table(topic_table)
   , _partition_manager(partition_manager)
   , _rpc_client(rpc_client)
+  , _metadata_cache(metadata_cache)
   , _sg(sg) {}
 
 service::~service() = default;
@@ -445,6 +449,17 @@ ss::future<> service::start() {
     co_await _batcher->start();
     co_await _manager->start();
     register_notifications();
+
+    _log_manager = std::make_unique<logging::manager<ss::lowres_clock>>(
+      _self,
+      std::make_unique<logging::rpc_client>(
+        &_rpc_client->local(), &_metadata_cache->local()),
+      config::shard_local_cfg().data_transforms_logging_buffer_capacity_bytes(),
+      config::shard_local_cfg().data_transforms_logging_line_max_bytes.bind(),
+      config::shard_local_cfg()
+        .data_transforms_logging_flush_interval_ms.bind());
+
+    co_await _log_manager->start();
 }
 
 void service::register_notifications() {
@@ -525,6 +540,12 @@ ss::future<> service::stop() {
     }
     if (_batcher) {
         co_await _batcher->stop();
+    }
+    if (_log_manager) {
+        co_await _log_manager->stop();
+        // destroy the existing manager to clear out any residual state or
+        // unflushed log data
+        _log_manager.reset();
     }
 }
 
@@ -641,7 +662,8 @@ ss::future<> service::cleanup_wasm_binary(uuid_t key) {
 
 ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>
 service::create_engine(model::transform_metadata meta) {
-    auto logger = std::make_unique<transform::logger>(meta.name, &tlog);
+    auto logger = std::make_unique<transform::logger>(
+      meta.name, _log_manager.get());
     auto factory = co_await get_factory(std::move(meta));
     if (!factory) {
         co_return ss::shared_ptr<wasm::engine>(nullptr);

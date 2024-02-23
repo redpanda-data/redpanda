@@ -10,6 +10,10 @@ tinygo build -target wasi -opt=z \
   -panic print -scheduler none \
   -o "/opt/transforms/tinygo/identity.wasm" ./identity
 
+tinygo build -target wasi -opt=z \
+  -panic print -scheduler none \
+  -o "/opt/transforms/tinygo/identity_logging.wasm" ./identity_logging
+
 # The following are some invalid wasm binarys for Redpanda, they either are invalid
 # as they are invalid bytes, or don't adhere to our ABI contract somehow
 #

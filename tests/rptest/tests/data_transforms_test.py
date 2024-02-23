@@ -10,6 +10,7 @@
 import typing
 import time
 import random
+import json
 
 from requests.exceptions import RequestException
 
@@ -22,6 +23,9 @@ from rptest.services.admin import Admin
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+from rptest.tests.cluster_config_test import wait_for_version_sync
+from rptest.utils.utf8 import CONTROL_CHARS_VALS, generate_string_with_control_character
+from rptest.util import expect_exception
 
 
 class WasmException(Exception):
@@ -44,13 +48,19 @@ class BaseDataTransformsTest(RedpandaTest):
               self).__init__(*args, extra_rp_conf=extra_rp_conf, **kwargs)
         self._rpk = RpkTool(self.redpanda)
 
-    def _deploy_wasm(self, name: str, input_topic: TopicSpec,
-                     output_topic: TopicSpec):
+    def _deploy_wasm(self,
+                     name: str,
+                     input_topic: TopicSpec,
+                     output_topic: TopicSpec,
+                     file="tinygo/identity.wasm"):
         """
         Deploy a wasm transform and wait for all processors to be running.
         """
         def do_deploy():
-            self._rpk.deploy_wasm(name, input_topic.name, output_topic.name)
+            self._rpk.deploy_wasm(name,
+                                  input_topic.name,
+                                  output_topic.name,
+                                  file=file)
             return True
 
         wait_until(
@@ -382,3 +392,234 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
                                                      timeout_sec=60)
         self.logger.info(f"{consumer_status}")
         assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+
+
+class DataTransformsLoggingTest(BaseDataTransformsTest):
+    """
+    Tests for data transforms logging
+    """
+
+    topics = [TopicSpec(partition_count=9), TopicSpec(partition_count=9)]
+
+    logs_topic = TopicSpec(name='_redpanda.transform_logs', partition_count=4)
+
+    # TODO(oren): be nice to actually use the OTel protobufs here
+    class LogRecord:
+        class Attribute:
+            def __init__(self, attr: dict):
+                self.key = attr['key']
+                assert len(attr['value']) == 1
+                self.value_type = list(attr['value'].keys())[0]
+                self.value = attr['value'][self.value_type]
+
+            # don't really care about the value, just the correct key and value _type_
+            def __eq__(self, other):
+                return (self.key == other.key
+                        and self.value_type == other.value_type
+                        and type(self.value) == type(other.value))
+
+        EXPECTED_ATTRS = [
+            Attribute({
+                'key': 'transform_name',
+                'value': {
+                    'stringValue': 'any'  # don't care for validation
+                }
+            }),
+            Attribute({
+                'key': 'node',
+                'value': {
+                    'intValue': 23  # don't care for validation
+                }
+            })
+        ]
+
+        BODY_FIELD = 'body'
+        TS_FIELD = 'timeUnixNano'
+        SEVERITY_FIELD = 'severityNumber'
+        ATTRS_FIELD = 'attributes'
+
+        def __init__(self, raw: str):
+            self._record = json.loads(raw)
+            self._record['value'] = json.loads(self._record['value'])
+
+            # Redpanda bits
+            self.offset = self._record['offset']
+            self.key = self._record['key']
+
+            # OTel bits
+            self._rep = self._record['value']
+            self.body = self._rep.get(self.BODY_FIELD, None)
+            self.timestamp_ns = self._rep.get(self.TS_FIELD, None)
+            self.severity = self._rep.get(self.SEVERITY_FIELD, None)
+            self.attributes = [
+                self.Attribute(attr)
+                for attr in self._rep.get(self.ATTRS_FIELD, [])
+            ]
+
+        def __str__(self):
+            return json.dumps(self._record, indent=1)
+
+        def validate(
+                self,
+                offset: typing.Optional[int] = None
+        ) -> typing.Optional[list[str]]:
+            errors = []
+            if offset is not None and offset != self.offset:
+                errors.append(f"Expected offset {offset} got {self.offset}")
+            if self.body is None:
+                errors.append(f"Missing {self.BODY_FIELD}")
+            if self.timestamp_ns is None:
+                errors.append(f"Missing {self.TS_FIELD}")
+            if self.severity is None:
+                errors.append(f"Missing {self.SEVERITY_FIELD}")
+            if self.ATTRS_FIELD not in self._rep:
+                errors.append(f"Missing {self.ATTRS_FIELD}")
+
+            if len(self.attributes) != 2:
+                errors.append(
+                    f"Expected 2 attributes, got {len(self.attributes)}")
+
+            for attr in self.EXPECTED_ATTRS:
+                if attr not in self.attributes:
+                    errors.append(f"Missing attribute '{attr.key}'")
+
+            if len(errors) > 0:
+                return errors
+
+            return None
+
+    def setup_identity_xform(self):
+        it, ot = self.topics
+        self._deploy_wasm(name="identity-logging-xform",
+                          input_topic=self.topics[0],
+                          output_topic=self.topics[1],
+                          file="tinygo/identity_logging.wasm")
+        return self.topics
+
+    def consume_one_log_record(self, offset=0, timeout=10) -> LogRecord:
+        return self.LogRecord(
+            self._rpk.consume(self.logs_topic.name,
+                              n=1,
+                              offset=offset,
+                              timeout=timeout))
+
+    @cluster(num_nodes=4)
+    def test_logs_volume(self):
+        input_topic, output_topic = self.setup_identity_xform()
+        producer_status = self._produce_input_topic(topic=input_topic,
+                                                    transactional=False)
+        consumer_status = self._consume_output_topic(topic=output_topic,
+                                                     status=producer_status)
+        seqnos = consumer_status.latest_seqnos
+
+        # NOTE(oren): all logs for a given transform should go to the same
+        # partition assuming the partition count of the logs topic doesn't change.
+        # Therefore the sum of the highest sequence numbers for each output partition
+        # is a fine proxy for expected high water mark on the transform logs topic
+        log_hwm = sum([seqnos[p] for p in seqnos])
+
+        self.logger.debug(
+            f"Expect to find log offsets up to the total # of records {log_hwm}"
+        )
+        test_offsets = [0, log_hwm // 2, log_hwm]
+        for i in test_offsets:
+            log = self.consume_one_log_record(offset=i)
+            validation_errs = log.validate(offset=i)
+            assert (
+                validation_errs is None
+            ), f"Validation failed, errors: {json.dumps(validation_errs, indent=1)}"
+
+    @cluster(num_nodes=3)
+    def test_logs_otel(self):
+        """
+        Verify that log events conform to a subset OTel logging spec as laid out in our RFC
+        """
+        input_topic, output_topic = self.setup_identity_xform()
+
+        self._rpk.produce(input_topic.name, 'foo', 'bar')
+        log = self.consume_one_log_record()
+        validation_errors = log.validate()
+        assert (
+            validation_errors is None
+        ), f"Log record validation failed, errors: {json.dumps(validation_errors, indent=1)}"
+
+    @cluster(num_nodes=3)
+    def test_logs_cc_escaping(self):
+        input_topic, output_topic = self.setup_identity_xform()
+
+        val = generate_string_with_control_character(12)
+        buf = bytearray()
+        buf.extend(map(ord, val))
+        assert any([b in CONTROL_CHARS_VALS
+                    for b in buf]), f"Expected control char(s) in {buf}"
+
+        self._rpk.produce(input_topic.name, 'foo', val)
+
+        log = self.consume_one_log_record()
+        buf = bytearray()
+        buf.extend(map(ord, log.body))
+        assert all([b not in CONTROL_CHARS_VALS for b in buf
+                    ]), f"Found control char(s) in log output: {buf}"
+
+    @cluster(num_nodes=3)
+    def test_log_topic_integrity(self):
+        self.setup_identity_xform()
+
+        self.logger.debug(
+            f"{self.logs_topic.name}: delete topic should fail (empty response table)"
+        )
+        with expect_exception(RpkException,
+                              lambda e: "expected one row; found 0" in str(e)):
+            self._rpk.delete_topic(self.logs_topic.name)
+
+        self.logger.debug(
+            f"{self.logs_topic.name}: produce should fail (authZ error)")
+        with expect_exception(
+                RpkException,
+                lambda e: "Topic authorization failed" in str(e)):
+            self._rpk.produce(self.logs_topic.name, "hardy", "har har")
+
+    @cluster(num_nodes=3)
+    def test_tunable_configs(self):
+        it, ot = self.setup_identity_xform()
+
+        self.logger.debug(
+            "See that we can consume a log message w/in 5s with the default interval"
+        )
+        self._rpk.produce(it.name, 'foo', 'bar')
+        self.consume_one_log_record(offset=0, timeout=5)
+
+        self.logger.debug(
+            "Consume operations should time out if the flush interval is very long"
+        )
+
+        # 1h
+        self.redpanda.set_cluster_config(
+            {'data_transforms_logging_flush_interval_ms': 1000 * 60 * 60})
+
+        self._rpk.produce(it.name, 'foo', 'bar')
+        with expect_exception(RpkException, lambda e: "timed out" in str(e)):
+            self.consume_one_log_record(offset=1, timeout=5)
+
+        self.logger.debug(
+            "Log messages should be truncated to the configured max line")
+
+        max_line = 10
+        self.redpanda.set_cluster_config({
+            'data_transforms_logging_flush_interval_ms':
+            500,
+            'data_transforms_logging_line_max_bytes':
+            max_line
+        })
+
+        self._rpk.produce(it.name, 'a' * max_line, 'b' * max_line)
+
+        # ignore the record at offset{0} b/c it was already in the buffers
+        # by the time we updated the max line length.
+        log = self.consume_one_log_record(offset=2)
+
+        assert len(
+            log.body
+        ) == max_line, f"Expected {max_line}B, got {len(log.body)}B ({log.body})"
+
+    # TODO(oren): some tests based on metrics would probably be good

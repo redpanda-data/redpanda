@@ -11,7 +11,9 @@
 
 #include "cluster/errc.h"
 #include "model/record.h"
+#include "outcome.h"
 #include "ssx/semaphore.h"
+#include "transform/logging/errc.h"
 #include "transform/logging/event.h"
 
 #pragma once
@@ -20,15 +22,12 @@ namespace transform::logging {
 
 namespace io {
 struct json_batch {
-    json_batch(
-      model::transform_name n,
-      ss::chunked_fifo<iobuf> e,
-      ssx::semaphore_units units)
+    json_batch(iobuf n, ss::chunked_fifo<iobuf> e, ssx::semaphore_units units)
       : name(std::move(n))
       , events(std::move(e))
       , _units(std::move(units)) {}
 
-    model::transform_name name;
+    iobuf name;
     ss::chunked_fifo<iobuf> events;
 
 private:
@@ -56,16 +55,17 @@ public:
     client& operator=(client&&) = delete;
     virtual ~client() = default;
 
+    virtual ss::future<errc> initialize() = 0;
+
     /*
      * Collect io::json_batches into model::record_batch(es) and publish
      *
      * Implementations should aim to batch outgoing records maximally and
      * respect cluster-wide batch size limits.
      */
-    virtual ss::future<> write(model::partition_id, io::json_batches) = 0;
+    virtual ss::future<errc> write(model::partition_id, io::json_batches) = 0;
 
-    virtual model::partition_id
-    compute_output_partition(model::transform_name_view name)
-      = 0;
+    virtual result<model::partition_id, errc>
+    compute_output_partition(model::transform_name_view name) = 0;
 };
 } // namespace transform::logging
