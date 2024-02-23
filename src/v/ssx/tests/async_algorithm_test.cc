@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
+#include <unordered_map>
 
 namespace ssx {
 
@@ -36,8 +37,12 @@ async_push_back(auto& container, ssize_t n, const auto& val) {
     }
 }
 
-const auto add_one = [](int& x) { x++; };
-[[maybe_unused]] const auto add_one_slow = [](int& x) {
+struct add_one {
+    void operator()(int& x) const { x++; };
+    void operator()(std::pair<const int, int>& x) const { x.second++; };
+};
+
+const auto add_one_slow = [](int& x) {
     static volatile int sink = 0;
     for (int i = 0; i < 100; i++) {
         sink = sink + 1;
@@ -98,36 +103,72 @@ struct task_counter {
 
 } // namespace
 
-TEST(AsyncAlgo, async_for_each_same_result) {
-    // basic checks
-    check_same_result(std::vector<int>{}, add_one);
-    check_same_result(std::vector<int>{1, 2, 3, 4}, add_one);
+std::vector<int> make_container(size_t elems, std::vector<int>) {
+    std::vector<int> ret;
+    for (int i = 0; i < elems; i++) {
+        ret.push_back(i);
+    }
+    return ret;
 }
 
-TEST(AsyncAlgo, yield_count) {
+std::unordered_map<int, int>
+make_container(size_t elems, std::unordered_map<int, int>) {
+    std::unordered_map<int, int> ret;
+    for (int i = 0; i < elems; i++) {
+        ret[i] = i;
+    }
+    return ret;
+}
+
+template<typename T>
+struct AsyncAlgo : public testing::Test {
+    using container = T;
+
+    static T make(size_t size) { return make_container(size, T{}); }
+};
+
+// using container_types = ::testing::Types<std::vector<int>>;
+using container_types
+  = ::testing::Types<std::vector<int>, std::unordered_map<int, int>>;
+TYPED_TEST_SUITE(AsyncAlgo, container_types);
+
+TYPED_TEST(AsyncAlgo, make_container) {
+    auto c = this->make(2);
+    ASSERT_EQ(2, c.size());
+    ASSERT_EQ(c[0], 0);
+    ASSERT_EQ(c[1], 1);
+}
+
+TYPED_TEST(AsyncAlgo, async_for_each_same_result) {
+    // basic checks
+    check_same_result(this->make(0), add_one{});
+    check_same_result(this->make(4), add_one{});
+}
+
+TYPED_TEST(AsyncAlgo, yield_count) {
     // helper to check that async_for_each results in the same final state
     // as std::for_each
 
-    std::vector<int> v{1, 2, 3, 4, 5};
+    auto v = this->make(5);
 
     task_counter c;
-    ssx::async_for_each<test_traits<1>>(v.begin(), v.end(), add_one).get();
+    ssx::async_for_each<test_traits<1>>(v.begin(), v.end(), add_one{}).get();
     EXPECT_EQ(5, c.yield_delta());
 
     c = {};
-    ssx::async_for_each<test_traits<2>>(v.begin(), v.end(), add_one).get();
+    ssx::async_for_each<test_traits<2>>(v.begin(), v.end(), add_one{}).get();
     // floor(5/2), as we don't yield on partial intervals
     EXPECT_EQ(2, c.yield_delta());
 }
 
-TEST(AsyncAlgo, yield_count_counter) {
+TYPED_TEST(AsyncAlgo, yield_count_counter) {
     async_counter a_counter;
 
-    std::vector<int> v{1, 2};
+    auto v = this->make(2);
 
     task_counter t_counter;
-    ssx::async_for_each_counter<test_traits<3>>(
-      a_counter, v.begin(), v.end(), add_one)
+    ssx::async_for_each_counter<test_traits<4>>(
+      a_counter, v.begin(), v.end(), add_one{})
       .get();
     EXPECT_EQ(0, t_counter.yield_delta());
     EXPECT_EQ(3, a_counter.count);
@@ -135,38 +176,37 @@ TEST(AsyncAlgo, yield_count_counter) {
     // now we should get a yield since we carry over the 2 ops
     // from above
     t_counter = {};
-    ssx::async_for_each_counter<test_traits<3>>(
-      a_counter, v.begin(), v.end(), add_one)
+    ssx::async_for_each_counter<test_traits<4>>(
+      a_counter, v.begin(), v.end(), add_one{})
       .get();
     EXPECT_EQ(1, t_counter.yield_delta());
 
-    v = {1, 2, 3};
+    v = this->make(3);
     t_counter = {};
     a_counter = {};
     ssx::async_for_each_counter<test_traits<2>>(
-      a_counter, v.begin(), v.end(), add_one)
+      a_counter, v.begin(), v.end(), add_one{})
       .get();
-    // 3 elems - 2 interval, overflow by 1 + FIXED_COST = 2
-    EXPECT_EQ(2, a_counter.count);
+    EXPECT_EQ(1, a_counter.count);
     EXPECT_EQ(1, t_counter.yield_delta());
 
     t_counter = {};
     ssx::async_for_each_counter<test_traits<2>>(
-      a_counter, v.begin(), v.end(), add_one)
+      a_counter, v.begin(), v.end(), add_one{})
       .get();
-    EXPECT_EQ(2, a_counter.count);
+    EXPECT_EQ(0, a_counter.count);
     EXPECT_EQ(2, t_counter.yield_delta());
 }
 
-TEST(AsyncAlgo, yield_count_counter_empty) {
+TYPED_TEST(AsyncAlgo, yield_count_counter_empty) {
     async_counter a_counter;
     task_counter t_counter;
 
-    std::vector<int> empty;
+    TypeParam empty;
 
     auto call = [&] {
         ssx::async_for_each_counter<test_traits<2>>(
-          a_counter, empty.begin(), empty.end(), add_one)
+          a_counter, empty.begin(), empty.end(), add_one{})
           .get();
     };
 
@@ -175,8 +215,8 @@ TEST(AsyncAlgo, yield_count_counter_empty) {
     EXPECT_EQ(0, t_counter.yield_delta());
 
     call();
-    EXPECT_EQ(2, a_counter.count);
-    EXPECT_EQ(0, t_counter.yield_delta());
+    EXPECT_EQ(0, a_counter.count);
+    EXPECT_EQ(1, t_counter.yield_delta());
 
     call();
     EXPECT_EQ(1, a_counter.count);
@@ -209,20 +249,28 @@ TEST(AsyncAlgo, async_for_each_large_container) {
     EXPECT_GT(tasks.task_delta(), 2); // in practice it's > 100
 }
 
-TEST(AsyncAlgo, async_for_each_move_correctness) {
-    std::deque<int> v;
-    async_push_back(v, 10, 0).get();
+int value(int i) { return i; }
+int value(std::pair<const int, int> p) { return p.second; }
 
-    auto func = [canary = move_canary{}](const int& i) {
-        if (i != -1) {
+TYPED_TEST(AsyncAlgo, async_for_each_move_correctness) {
+    auto v = this->make(10);
+
+    auto func = [canary = move_canary{}](const auto& i) {
+        if (value(i) != -1) {
             EXPECT_FALSE(canary.is_moved_from());
         }
         return canary.is_moved_from();
     };
 
-    ASSERT_FALSE(func(0));
+    ASSERT_FALSE(func(-1));
 
     async_for_each<test_traits<2>>(v.begin(), v.end(), func).get();
+
+    // test that the canary is working
+    auto other_func = std::move(func);
+    // NOLINTNEXTLINE(bugprone-use-after-move)
+    ASSERT_TRUE(func(-1));
+    ASSERT_FALSE(other_func(-1));
 }
 
 } // namespace ssx
