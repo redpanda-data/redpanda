@@ -18,6 +18,7 @@
 #include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "ssx/async_algorithm.h"
 #include "utils/expiring_promise.h"
 #include "utils/named_type.h"
 
@@ -30,6 +31,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 namespace cluster {
 
@@ -97,15 +99,24 @@ public:
     }
     ss::future<> for_each_leader(Func&& f) const {
         auto version_snapshot = _version;
+        ssx::async_counter counter;
         for (auto& [tp_ns, partition_leaders] : _topic_leaders) {
-            for (auto& [p_id, leader_info] : partition_leaders) {
-                f(tp_ns,
-                  p_id,
-                  leader_info.current_leader,
-                  leader_info.update_term);
-                co_await ss::coroutine::maybe_yield();
-                throw_if_modified(version_snapshot);
-            }
+            co_await ssx::async_for_each_counter(
+              counter,
+              partition_leaders.begin(),
+              partition_leaders.end(),
+              [this, &tp_ns, version_snapshot, f = std::forward<Func>(f)](
+                const partition_leaders::value_type& p) mutable {
+                  /**
+                   * Modification validation must happen before accessing the
+                   * element as previous iteration might have yield
+                   */
+                  throw_if_modified(version_snapshot);
+                  f(tp_ns,
+                    p.first,
+                    p.second.current_leader,
+                    p.second.update_term);
+              });
         }
     }
 
