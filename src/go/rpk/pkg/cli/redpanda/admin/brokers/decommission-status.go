@@ -61,10 +61,6 @@ ALLOCATION FAILURES
 ==================
 kafka/foo/2
 kafka/test/0
-
-Note that the command reports allocation failed partitions only when
-'partition_autobalancing_mode' is set to 'continuous'. See the current value
-using 'rpk cluster config get partition_autobalancing_mode'.
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
