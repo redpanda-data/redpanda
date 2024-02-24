@@ -32,6 +32,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifi
 from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
+from rptest.services.producer_swarm import ProducerSwarm
 from rptest.utils.scale_parameters import ScaleParameters
 from rptest.util import inject_remote_script
 
@@ -1009,6 +1010,8 @@ class ManyPartitionsTest(PreallocNodesTest):
     def _write_and_random_read_many_topics(self, num_topics, topic_names):
         """
             Test checks that each of the many topics can be written to.
+            This produce/consume implementation will check actual data
+            of the messages to ensure that all of the messages are delivered
 
             Pick X number of topics, write 1000 messages in each
             Pick random one among them, consume all messages
@@ -1137,8 +1140,36 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Return list of topics that was not used
         return new_topic_names, errors
 
-    @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_topic_swarm(self):
+    def _create_many_topics(self,
+                            brokers,
+                            node,
+                            topic_name_prefix,
+                            topic_count,
+                            batch_size,
+                            num_partitions,
+                            num_replicas,
+                            use_kafka_batching,
+                            topic_name_length=200,
+                            skip_name_randomization=False):
+        """Function uses batched topic creation approach.
+        Its either single topic per request using ThreadPool in batches or
+        the whole batch in single kafka request.
+
+        Args:
+            topic_count (int): Number of topics to create
+            batch_size (int): Batch size for one create operation
+            topic_name_length (int): Total topic length for randomization
+            num_partitions (int): Number of partitions per topic
+            num_replicas (int): Number of replicas per topic
+            use_kafka_batching (bool): on True sends whole batch as a single
+            request.
+
+        Raises:
+            RuntimeError: Underlying creation script generated error
+
+        Returns:
+            list: topic names and timing data
+        """
         def log_timings_with_percentiles(timings):
             # Extract data
             created_count = timings.get('count_created', -1)
@@ -1159,39 +1190,19 @@ class ManyPartitionsTest(PreallocNodesTest):
             # Log them
             self.logger.debug(tp_str)
 
-        # Max number of partitions for i3en.xlarge
-        # default settings is 1000 partitions per shard/cpu
-        # (9 nodes × 4 vcpus/shards × 1000) / 3 replicas
-        # 12000
-
-        # Parameters
-        topic_count = 11950
-        batch_size = 2048
-        topic_name_length = 200
-        num_partitions = 1
-        num_replicas = 3
-        use_kafka_batching = True
-
-        # Start kafka
-        self.redpanda.start()
-
-        # Brokers list suitable for script arguments
-        brokers = ",".join(self.redpanda.brokers_list())
-
-        # With current settings, there should be single available node
-        node = self.cluster.alloc(ClusterSpec.simple_linux(1))[0]
-
         # Prepare command
         remote_script_path = inject_remote_script(node, "topic_operations.py")
         cmd = f"python3 {remote_script_path} "
         cmd += f"--brokers '{brokers}' "
         cmd += f"--batch-size '{batch_size}' "
         cmd += "create "
+        cmd += f"--topic-prefix '{topic_name_prefix}' "
         cmd += f"--topic-count {topic_count} "
         cmd += "--kafka-batching " if use_kafka_batching else ""
         cmd += f"--topic-name-length {topic_name_length} "
         cmd += f"--partitions {num_partitions} "
-        cmd += f"--replicas {num_replicas}"
+        cmd += f"--replicas {num_replicas} "
+        cmd += "--skip-randomize-names" if skip_name_randomization else ""
         hostname = node.account.hostname
         self.logger.info(f"Starting topic creation script on '{hostname}")
         self.logger.debug(f"...cmd: {cmd}")
@@ -1220,6 +1231,55 @@ class ManyPartitionsTest(PreallocNodesTest):
         self.logger.info(f"Created {current_count} topics")
         assert len(topic_details) == topic_count, \
             f"Topic count not reached: {current_count}/{topic_count}"
+
+        return topic_details
+
+    @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_topic_swarm(self):
+        """Test creates 11950 topics, validates partitions and replicas,
+        produces 100 messages to each topic using batches, consumes
+        messages from random topic in each batch and validates message content
+
+        Returns:
+            None
+        """
+
+        # Max number of partitions for i3en.xlarge
+        # default settings is 1000 partitions per shard/cpu
+        # (9 nodes × 4 vcpus/shards × 1000) / 3 replicas
+        # 12000
+
+        # Parameters
+        topic_count = 11950
+        batch_size = 2048
+        topic_name_length = 200
+        num_partitions = 1
+        num_replicas = 3
+        use_kafka_batching = True
+        topic_name_prefix = \
+            f"topic-swarm-create-p{num_partitions}-r{num_replicas}"
+
+        # Start kafka
+        self.redpanda.start()
+
+        # Brokers list suitable for script arguments
+        brokers = ",".join(self.redpanda.brokers_list())
+
+        # With current settings, there should be single available node
+        node = self.cluster.alloc(ClusterSpec.simple_linux(1))[0]
+
+        # Call function to create the topics
+        topic_details = self._create_many_topics(
+            brokers,
+            node,
+            topic_name_prefix,
+            topic_count,
+            batch_size,
+            num_partitions,
+            num_replicas,
+            use_kafka_batching,
+            topic_name_length=topic_name_length,
+            skip_name_randomization=False)
 
         # Validate topics
         topics = self.rpk.list_topics(detailed=True)
@@ -1300,5 +1360,167 @@ class ManyPartitionsTest(PreallocNodesTest):
         assert total_errors < 1, \
             f"{total_errors} errors detected while sending messages"
         self.logger.info("Produce/Consume stage complete")
+
+        return
+
+    @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_many_topics_throughput(self):
+        """Test creates 11950 topics, and uses client-swarm to
+        generate 1000 messages with 5 msg/sec rate to each topic
+        and validates high watermark values
+
+        Returns:
+            None
+        """
+
+        # Max number of partitions for i3en.xlarge
+        # default settings is 1000 partitions per shard/cpu
+        # (9 nodes × 4 vcpus/shards × 1000) / 3 replicas
+        # 12000
+
+        # Start kafka
+        self.redpanda.start()
+        # Brokers list suitable for script arguments
+        brokers = ",".join(self.redpanda.brokers_list())
+
+        # Common params for swarming
+        num_partitions = 1
+        num_replicas = 3
+        batch_size = 1024
+        use_kafka_batching = True
+
+        # Calculate topic counts
+        # This test by default designed for 12 nodes, 9 node cluster, 4 cpus each node
+        # I.e. 12k topics max
+        num_cpus = self.redpanda.get_node_cpu_count()
+        # 1000 partitions per shard
+        max_supported_topics = num_cpus * 1000 * len(self.redpanda.nodes) // 3
+        # Account for system level topics
+        max_supported_topics -= 50
+        # swarm node can generate traffic for 4.5k topics max due to network limitations
+        max_node_topic_count = 4500
+        nodes_available = self.test_context.cluster.available().size()
+        node_topic_count = max_supported_topics // nodes_available
+
+        # swarm node can generate traffic for 4.5k topics max due to network limitations
+        max_node_topic_count = 4500
+        nodes_available = self.test_context.cluster.available().size()
+        node_topic_count = max_supported_topics // nodes_available
+
+        if node_topic_count > max_node_topic_count:
+            self.logger.warning(
+                f"Cluster supports up to {max_supported_topics}"
+                " topics, nodes available for swarm "
+                f"{nodes_available}, topics per swarm node would be "
+                f"{node_topic_count}, which is more than one "
+                f"node can handle ({max_node_topic_count})")
+            node_topic_count = max_node_topic_count
+            self.logger.warning("Setting swarm topic count to MAX of "
+                                f"{max_node_topic_count} per swarm node "
+                                f"({nodes_available} swarm nodes * "
+                                f"{max_node_topic_count} = "
+                                f"{node_topic_count * nodes_available})")
+        else:
+            self.logger.warning("Using swarm topic count of "
+                                f"{node_topic_count} per swarm node "
+                                f"({nodes_available} swarm nodes * "
+                                f"{node_topic_count} = "
+                                f"{node_topic_count * nodes_available})")
+
+        # Messages params
+        # default msg size is 16KB
+        messages = 1000
+        # 16k * 10 = ~150KB/s
+        # Rate beyond 40 is unreachable in most cases
+        # Example: 60 msg/sec on 10k topics
+        # [2024-02-26T23:26:50Z INFO  client_swarm] Producer rates: [min=390095, max=682666, avg=506402] bytes/s
+        # => 506402 / 16384 = ~30
+        messages_per_second_per_producer = 10
+
+        # Grab node to run creation script on it.
+        node = self.cluster.alloc(ClusterSpec.simple_linux(1))[0]
+        topic_prefixes = []
+        # Create topics
+        for idx in range(nodes_available):
+            topic_name_prefix = f"topic-swarm{idx}"
+            # Call function to create the topics
+            topic_details = self._create_many_topics(
+                brokers,
+                node,
+                topic_name_prefix,
+                node_topic_count,
+                batch_size,
+                num_partitions,
+                num_replicas,
+                use_kafka_batching,
+                skip_name_randomization=True)
+
+            self.logger.info(f"Created {len(topic_details)} topics with "
+                             f"prefix of '{topic_name_prefix}'")
+
+            topic_prefixes.append(topic_name_prefix)
+        # Free node that used to create topics
+        self.cluster.free_single(node)
+
+        # Prepare client swarm client
+        swarm_nodes = []
+        for topic_prefix in topic_prefixes:
+            swarm_node = ProducerSwarm(self.test_context,
+                                       self.redpanda,
+                                       topic_prefix,
+                                       node_topic_count,
+                                       messages,
+                                       unique_topics=True,
+                                       messages_per_second_per_producer=
+                                       messages_per_second_per_producer)
+            swarm_nodes.append(swarm_node)
+
+        # Run topic swarm
+        for swarm_client in swarm_nodes:
+            self.logger.info(f"Starting swarm client on node {swarm_client}")
+            swarm_client.start()
+
+        # Wait for all messages to be produced
+        # Logic is that we sleep for normal running time
+        # And then running checks when swarm nodes running last messages delivery
+        running_time_sec = messages // messages_per_second_per_producer
+        self.logger.info(f"Sleeping for {running_time_sec} sec (running time)")
+        # Just pause for running time to eliminate unnesesary requests
+        # and not put noise into already overloaded network traffic
+        time.sleep(running_time_sec)
+        # Run checks if swarm nodes finished
+        self.logger.info("Make sure that swarm nodes finished")
+        for s in swarm_nodes:
+            # account for up to one-third delays
+            s.wait(running_time_sec * 2)
+
+        self.logger.info("Calculating high watermarks for all topics")
+
+        # Topic hwm getter
+        def _get_hwm(topic):
+            _hwm = 0
+            for partition in self.rpk.describe_topic(topic):
+                # Add currect high watermark for topic
+                _hwm += partition.high_watermark
+            return _hwm
+
+        # Validate high watermark
+        target_messages_per_node = messages * node_topic_count
+        hwms = []
+        for topic_prefix in topic_prefixes:
+            # messages per node
+            _topic_names = [
+                f"{topic_prefix}-{idx}" for idx in range(node_topic_count)
+            ]
+            # Use Thread pool to speed things up
+            with concurrent.futures.ThreadPoolExecutor(max_workers=32) as exec:
+                swarmnode_hwms = sum(exec.map(_get_hwm, _topic_names))
+            # save watermark for node
+            hwms.append(swarmnode_hwms)
+
+        assert all([hwm >= target_messages_per_node for hwm in hwms]), \
+            f"Message counts per swarm node mismatch: " \
+            f"target={target_messages_per_node}, " \
+            f"swarm_nodes='''{', '.join([str(num) for num in hwms])}'''"
 
         return
