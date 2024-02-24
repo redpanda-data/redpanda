@@ -1166,7 +1166,6 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
         req_ptr->set_value<ret_t>(errc::replication_error);
         co_return errc::replication_error;
     }
-    units.return_all();
     enqueued->set_value();
     auto replicated = co_await ss::coroutine::as_future(
       std::move(stages.replicate_finished));
@@ -1182,6 +1181,7 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
         req_ptr->set_value<ret_t>(result.error());
         co_return result.error();
     }
+    units.return_all();
     // translate to kafka offset.
     auto kafka_offset = from_log_offset(result.value().last_offset);
     auto final_result = kafka_result{.last_offset = kafka_offset};
