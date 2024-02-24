@@ -324,4 +324,36 @@ bool verify_signature(
   digest_type type, const key& key, bytes_view msg, bytes_view sig);
 bool verify_signature(
   digest_type type, const key& key, std::string_view msg, std::string_view sig);
+
+///////////////////////////////////////////////////////////////////////////////
+/// DRBG operation
+///////////////////////////////////////////////////////////////////////////////
+
+using use_private_rng = ss::bool_class<struct use_private_rng_tag>;
+
+/**
+ * Used to generate some random data and stick it into a provided buffer
+ *
+ * @param buf The buffer to place random data into
+ * @param private_rng Whether or not to use the 'private' DRBG
+ * @note For private vs public, please see:
+ * https://www.openssl.org/docs/man3.0/man3/RAND_priv_bytes.html
+ * @return bytes_span<> The buffer
+ * @throws crypto::exception On internal error
+ */
+bytes_span<> generate_random(
+  bytes_span<> buf, use_private_rng private_rng = use_private_rng::no);
+
+/**
+ * Generates the requested number of random bytes
+ *
+ * @param len The amount of data to generate
+ * @param private_rng Whether or not to use the 'private' DRBG
+ * @note For private vs public, please see:
+ * https://www.openssl.org/docs/man3.0/man3/RAND_priv_bytes.html
+ * @return bytes The buffer of random data
+ * @throws crypto::exception On internal error
+ */
+bytes generate_random(
+  size_t len, use_private_rng private_rng = use_private_rng::no);
 } // namespace crypto
