@@ -106,12 +106,12 @@ auto key = crypto::key::load_rsa_public_key(modulus, public_exponent);
 
 ## Signature Verification
 
- Performing signature verification can be done either one-shot or multi part.
+Performing signature verification can be done either one-shot or multi part.
 
- One-shot:
+One-shot:
 
- ```c++
- #include "crypto/crypto.h"
+```c++
+#include "crypto/crypto.h"
 
 auto key = {...};
 bytes msg {...};
@@ -123,12 +123,12 @@ auto sig_verified = crypto::verify_signature(
   msg,
   sig
 );
- ```
+```
 
- For multi-part:
+For multi-part:
 
- ```c++
-  #include "crypto/crypto.h"
+```c++
+#include "crypto/crypto.h"
 
 auto key = {...};
 bytes msg {...};
@@ -137,4 +137,14 @@ bytes sig {...};
 crypto::verify_ctx ctx(crypto::digest_type::SHA256, key);
 ctx.update(msg);
 bool verified = std::move(ctx).final(sig);
- ```
+```
+
+## RNG Generation
+
+To get cryptographically secure random data, please use
+`crypto::generate_random`.  There are two functions you can use.  One will
+place random data into the provided buffer and another will return an allocated
+buffer with random data.  Both functions also have a flag to indicate if the caller
+wants to use the 'private' DRBG.  For more information on this please refer to
+OpenSSL's [documentation](https://www.openssl.org/docs/man3.0/man3/RAND_priv_bytes.html)
+on this.

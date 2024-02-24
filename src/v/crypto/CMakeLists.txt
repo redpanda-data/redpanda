@@ -7,6 +7,7 @@ v_cc_library(
       digest.cc
       hmac.cc
       key.cc
+      random.cc
       signature.cc
       ssl_utils.cc
     DEPS
