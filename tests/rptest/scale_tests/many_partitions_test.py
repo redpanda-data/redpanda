@@ -587,12 +587,22 @@ class ManyPartitionsTest(PreallocNodesTest):
         self.logger.info(
             "Write+randread stress test complete, verifying sequentially")
 
+        max_msgs = None
+        expect_transmit_time = 600  # empirically derived
+
         # When tiered storage is enabled, don't consume the entire topic, as
         # that could entail millions of segments from the cloud. At least
         # ensure we read enough to download a few segments per partition.
-        max_msgs = None
         if scale.tiered_storage_enabled:
             max_msgs = 50 * scale.partition_limit
+            expect_transmit_time = max(
+                60,
+                int(1.5 * max_msgs * stress_msg_size /
+                    scale.expect_single_bandwidth))
+            # Add extra 10 minutes in case S3 decides to scale during the test.
+            # It was observed for the bucket to go down between 5 and 10
+            # minutes during these events.
+            expect_transmit_time += 600
 
         seq_consumer = KgoVerifierSeqConsumer(
             self.test_context,
@@ -602,16 +612,6 @@ class ManyPartitionsTest(PreallocNodesTest):
             max_msgs=max_msgs,
             nodes=[self.preallocated_nodes[2]])
         seq_consumer.start(clean=False)
-
-        expect_transmit_time = max(
-            60,
-            int(1.5 * max_msgs * stress_msg_size /
-                scale.expect_single_bandwidth))
-        if scale.tiered_storage_enabled:
-            # Add extra 10 minutes in case S3 decides to scale during the test.
-            # It was observed for the bucket to go down between 5 and 10
-            # minutes during these events.
-            expect_transmit_time += 600
 
         seq_consumer.wait(timeout_sec=expect_transmit_time)
         assert seq_consumer.consumer_status.validator.invalid_reads == 0
