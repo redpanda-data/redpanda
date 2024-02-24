@@ -17,6 +17,7 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <gtest/gtest.h>
@@ -172,3 +173,9 @@ private:
 
     std::unique_ptr<io::persistence> storage_;
 };
+
+/**
+ * Test that two input streams yield the same data.
+ */
+testing::AssertionResult
+EqualInputStreams(seastar::input_stream<char>&, seastar::input_stream<char>&);

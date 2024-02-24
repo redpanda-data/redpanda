@@ -8,7 +8,9 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "base/units.h"
 #include "common.h"
+#include "utils/memory_data_source.h"
 
 #include <gtest/gtest.h>
 
@@ -72,4 +74,58 @@ TEST(Common, MakePage) {
     EXPECT_EQ(reinterpret_cast<uintptr_t>(p2->data().get()) % 4096, 0);
     EXPECT_EQ(reinterpret_cast<uintptr_t>(p3->data().get()) % 4096, 0);
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+}
+
+TEST(Common, EqualInputStreams) {
+    auto make = [](seastar::sstring s) {
+        return seastar::input_stream<char>(seastar::data_source(
+          std::make_unique<memory_data_source>(std::move(s).release())));
+    };
+
+    auto make_buf = [](seastar::temporary_buffer<char> s) {
+        return seastar::input_stream<char>(seastar::data_source(
+          std::make_unique<memory_data_source>(std::move(s))));
+    };
+
+    {
+        auto a = make("");
+        auto b = make("");
+        EXPECT_TRUE(EqualInputStreams(a, b));
+    }
+
+    {
+        auto a = make("x");
+        auto b = make("");
+        EXPECT_FALSE(EqualInputStreams(a, b));
+    }
+
+    {
+        auto a = make("");
+        auto b = make("x");
+        EXPECT_FALSE(EqualInputStreams(a, b));
+    }
+
+    {
+        auto a = make("x");
+        auto b = make("x");
+        EXPECT_TRUE(EqualInputStreams(a, b));
+    }
+
+    {
+        auto a = make_buf(make_random_data(256_KiB, std::nullopt, 1).get());
+        auto b = make_buf(make_random_data(256_KiB, std::nullopt, 1).get());
+        EXPECT_TRUE(EqualInputStreams(a, b));
+    }
+
+    {
+        auto a = make_buf(make_random_data(256_KiB, std::nullopt, 1).get());
+        auto b = make_buf(make_random_data(256_KiB, std::nullopt, 2).get());
+        EXPECT_FALSE(EqualInputStreams(a, b));
+    }
+
+    {
+        auto a = make_buf(make_random_data(256_KiB - 1, std::nullopt, 1).get());
+        auto b = make_buf(make_random_data(256_KiB, std::nullopt, 1).get());
+        EXPECT_FALSE(EqualInputStreams(a, b));
+    }
 }
