@@ -13,10 +13,13 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "model/record.h"
 #include "raft/tests/raft_fixture.h"
+#include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
 #include "utils/available_promise.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_future.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
@@ -261,7 +264,6 @@ TEST_F_CORO(
           if (node.get_vnode() != plagued_node) {
               throw std::runtime_error{"Leadership moved"};
           }
-
           return get_leader_stm().sync(10ms);
       });
     ASSERT_FALSE_CORO(sync_result_before_replication);
@@ -272,7 +274,6 @@ TEST_F_CORO(
           if (node.get_vnode() != plagued_node) {
               throw std::runtime_error{"Leadership moved"};
           }
-
           return get_leader_stm().sync(10ms);
       });
     ASSERT_FALSE_CORO(second_sync_result_before_replication);
@@ -286,7 +287,6 @@ TEST_F_CORO(
           if (node.get_vnode() != plagued_node) {
               throw std::runtime_error{"Leadership moved"};
           }
-
           return get_leader_stm().sync(10s);
       });
 
@@ -303,4 +303,91 @@ TEST_F_CORO(
 
     ASSERT_EQ_CORO(committed_offset, model::offset{2});
     ASSERT_EQ_CORO(term, model::term_id{1});
+}
+
+TEST_F_CORO(
+  archival_metadata_stm_gtest_fixture, test_archival_stm_error_propagation) {
+    ss::abort_source never_abort;
+
+    auto s_cfg = scoped_config{};
+    s_cfg.get("cloud_storage_disable_metadata_consistency_checks")
+      .set_value(false);
+    co_await start();
+
+    std::vector<cloud_storage::segment_meta> good_segment;
+    good_segment.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    co_await wait_for_leader(10s);
+    auto timeout = 30s;
+    auto deadline = ss::lowres_clock::now() + timeout;
+
+    ASSERT_EQ_CORO(
+      get_leader_stm().get_dirty(),
+      cluster::archival_metadata_stm::state_dirty::dirty);
+
+    auto is_synced = co_await get_leader_stm().sync(timeout);
+
+    ASSERT_TRUE_CORO(is_synced);
+
+    auto repl_err = co_await get_leader_stm()
+                      .batch_start(deadline, never_abort)
+                      .add_segments(
+                        std::move(good_segment),
+                        cluster::segment_validated::yes)
+                      .replicate();
+
+    ASSERT_EQ_CORO(repl_err, cluster::errc::success);
+
+    ASSERT_EQ_CORO(get_leader_stm().manifest().size(), 1);
+    ASSERT_EQ_CORO(
+      get_leader_stm().manifest().begin()->base_offset, model::offset(0));
+    ASSERT_EQ_CORO(
+      get_leader_stm().manifest().begin()->committed_offset, model::offset(99));
+
+    ASSERT_EQ_CORO(
+      get_leader_stm().get_dirty(),
+      cluster::archival_metadata_stm::state_dirty::dirty);
+
+    repl_err = co_await get_leader_stm()
+                 .batch_start(deadline, never_abort)
+                 .mark_clean(get_leader_stm().manifest().get_insync_offset())
+                 .replicate();
+    ASSERT_EQ_CORO(repl_err, cluster::errc::success);
+
+    ASSERT_EQ_CORO(
+      get_leader_stm().get_dirty(),
+      cluster::archival_metadata_stm::state_dirty::clean);
+
+    // Attempt to replicate incorrect record batch
+    std::vector<cloud_storage::segment_meta> poisoned_segment;
+    poisoned_segment.push_back(segment_meta{
+      .base_offset = model::offset(101),
+      .committed_offset = model::offset(999),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    repl_err = co_await get_leader_stm()
+                 .batch_start(deadline, never_abort)
+                 .add_segments(
+                   std::move(poisoned_segment), cluster::segment_validated::yes)
+                 .replicate();
+    ASSERT_EQ_CORO(repl_err, cluster::errc::inconsistent_stm_update);
+
+    // Check that it still works with consistent updates
+    good_segment.push_back(segment_meta{
+      .base_offset = model::offset(100),
+      .committed_offset = model::offset(999),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    repl_err = co_await get_leader_stm()
+                 .batch_start(deadline, never_abort)
+                 .add_segments(
+                   std::move(good_segment), cluster::segment_validated::yes)
+                 .replicate();
+    ASSERT_EQ_CORO(repl_err, cluster::errc::success);
 }

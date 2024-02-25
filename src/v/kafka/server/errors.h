@@ -99,6 +99,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::transform_count_limit_exceeded:
     case cluster::errc::role_exists:
     case cluster::errc::role_does_not_exist:
+    case cluster::errc::inconsistent_stm_update:
         break;
     }
     return error_code::unknown_server_error;
