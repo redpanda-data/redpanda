@@ -1007,6 +1007,11 @@ partition::replicate_unsafe_reset(cloud_storage::partition_manifest manifest) {
     auto replication_deadline = ss::lowres_clock::now() + sync_timeout;
     std::vector<cluster::command_batch_builder> builders;
 
+    // TODO: move this logic to the ntp_archiver
+    // currently, the 'batch_start' method will work even if there is an
+    // active input queue instance. The batch replicated here may interrupt
+    // some operation in the archiver but the correctness will not be
+    // compromised.
     auto reset_builder = _archival_meta_stm->batch_start(
       replication_deadline, _as);
     reset_builder.replace_manifest(manifest.to_iobuf());

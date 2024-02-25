@@ -45,9 +45,14 @@ ss::logger logger{"archival_metadata_stm_test"};
 
 static ss::abort_source never_abort;
 
+namespace cluster::details {
+class command_batch_builder_accessor {};
+} // namespace cluster::details
+
 struct archival_metadata_stm_base_fixture
   : simple_raft_fixture
-  , http_imposter_fixture {
+  , http_imposter_fixture
+  , cluster::details::command_batch_builder_accessor {
     using simple_raft_fixture::start_raft;
     using simple_raft_fixture::wait_for_becoming_leader;
     using simple_raft_fixture::wait_for_confirmed_leader;
