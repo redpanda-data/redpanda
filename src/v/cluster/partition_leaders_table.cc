@@ -198,9 +198,8 @@ void partition_leaders_table::do_update_partition_leader(
         if (p_it->second.update_term > term) {
             vlog(
               clusterlog.trace,
-              "skip update for partition {}/{} with previous term {} current "
-              "term "
-              "{}",
+              "skip update for partition {}/{}/{} with previous term {} "
+              "current term {}",
               t_it->first.ns,
               t_it->first.tp,
               p_id,
