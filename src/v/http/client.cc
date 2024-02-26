@@ -72,6 +72,8 @@ client::client(
   ss::shared_ptr<client_probe> probe,
   ss::lowres_clock::duration max_idle_time)
   : net::base_transport(cfg)
+  , _host_with_port(
+      fmt::format("{}:{}", cfg.server_addr.host(), cfg.server_addr.port()))
   , _connect_gate()
   , _as(as)
   , _probe(std::move(probe))
@@ -92,6 +94,11 @@ ss::future<client::request_response_t> client::make_request(
     // Set request HTTP-version to 1.1
     constexpr unsigned http_version = 11;
     header.version(http_version);
+
+    // The default host is derived from the transport configuration
+    if (header.find(boost::beast::http::field::host) == header.end()) {
+        header.insert(boost::beast::http::field::host, _host_with_port);
+    }
 
     auto verb = header.method();
     auto target = header.target();
