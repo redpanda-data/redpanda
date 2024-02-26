@@ -494,6 +494,7 @@ FIXTURE_TEST(
         pm.add(name, s);
     }
     pm.advance_insync_offset(model::offset{4});
+    pm.advance_applied_offset(model::offset{4});
     archival_stm
       ->add_segments(
         m,
