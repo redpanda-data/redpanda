@@ -601,15 +601,7 @@ ss::future<client::response_stream_ref> client::request(
 
 ss::future<client::response_stream_ref> client::request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
-    return make_request(std::move(header), timeout)
-      .then([](request_response_t reqresp) mutable {
-          auto [request, response] = std::move(reqresp);
-          return request->send_some(iobuf())
-            .then([request = request]() { return request->send_eof(); })
-            .then([response = response] {
-                return ss::make_ready_future<response_stream_ref>(response);
-            });
-      });
+    return request(std::move(header), iobuf(), timeout);
 }
 
 ss::output_stream<char> client::request_stream::as_output_stream() {
