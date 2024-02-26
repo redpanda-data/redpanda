@@ -469,7 +469,6 @@ ss::future<> metrics_reporter::do_report_metrics() {
     }
     auto out = serialize_metrics_snapshot(snapshot.value());
     auto header = make_header(out);
-    auto body = make_iobuf_input_stream(std::move(out));
     try {
         // prepare http client
         auto client = co_await make_http_client();
@@ -484,7 +483,7 @@ ss::future<> metrics_reporter::do_report_metrics() {
             co_return;
         }
         auto resp_stream = co_await client.request(
-          std::move(header), body, timeout);
+          std::move(header), std::move(out), timeout);
         co_await resp_stream->prefetch_headers();
         co_await resp_stream->shutdown();
         _last_success = ss::lowres_clock::now();
@@ -494,7 +493,6 @@ ss::future<> metrics_reporter::do_report_metrics() {
           "exception thrown while reporting metrics - {}",
           std::current_exception());
     }
-    co_await body.close();
 }
 
 } // namespace cluster
