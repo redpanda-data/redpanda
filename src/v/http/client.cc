@@ -41,6 +41,13 @@
 
 namespace http {
 
+std::string_view content_type_string(content_type type) {
+    switch (type) {
+    case content_type::json:
+        return "application/json";
+    }
+}
+
 const std::unordered_set<std::variant<boost::beast::http::field, std::string>>
 redacted_fields() {
     return {

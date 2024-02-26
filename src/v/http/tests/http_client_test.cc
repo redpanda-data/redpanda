@@ -872,3 +872,8 @@ SEASTAR_THREAD_TEST_CASE(test_header_redacted) {
       s.find("capetown") == std::string::npos
       && s.find("x-amz-security-token") != std::string::npos);
 }
+
+SEASTAR_THREAD_TEST_CASE(content_type_string) {
+    BOOST_REQUIRE_EQUAL(
+      http::content_type_string(http::content_type::json), "application/json");
+}

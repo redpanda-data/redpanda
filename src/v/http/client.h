@@ -56,6 +56,15 @@ enum class reconnect_result_t {
     timed_out,
 };
 
+enum class content_type {
+    json,
+};
+
+/**
+ * Return the HTTP content-type string for the given type.
+ */
+std::string_view content_type_string(content_type type);
+
 /// Http client
 class client : protected net::base_transport {
 public:
