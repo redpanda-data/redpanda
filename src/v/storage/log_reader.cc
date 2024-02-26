@@ -12,6 +12,7 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "bytes/iobuf.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "storage/logger.h"
 #include "storage/parser_errc.h"
@@ -21,6 +22,58 @@
 #include <seastar/core/coroutine.hh>
 
 #include <fmt/ostream.h>
+
+namespace {
+model::record_batch make_ghost_batch(
+  model::offset start_offset, model::offset end_offset, model::term_id term) {
+    auto delta = end_offset - start_offset;
+    auto now = model::timestamp::now();
+    model::record_batch_header header = {
+      .size_bytes = model::packed_record_batch_header_size,
+      .base_offset = start_offset,
+      .type = model::record_batch_type::ghost_batch,
+      .crc = 0, // crc computed later
+      .attrs = model::record_batch_attributes{} |= model::compression::none,
+      .last_offset_delta = static_cast<int32_t>(delta),
+      .first_timestamp = now,
+      .max_timestamp = now,
+      .producer_id = -1,
+      .producer_epoch = -1,
+      .base_sequence = -1,
+      .record_count = static_cast<int32_t>(delta() + 1),
+      .ctx = model::record_batch_header::context(term, ss::this_shard_id())};
+
+    model::record_batch batch(
+      std::move(header), model::record_batch::compressed_records{});
+
+    batch.header().crc = model::crc_record_batch(batch);
+    batch.header().header_crc = model::internal_header_only_crc(batch.header());
+    return batch;
+}
+
+/**
+ * makes multiple ghost batches required to fill the gap in a way that max batch
+ * size (max of int32_t) is not exceeded
+ */
+std::vector<model::record_batch> make_ghost_batches(
+  model::offset start_offset, model::offset end_offset, model::term_id term) {
+    std::vector<model::record_batch> batches;
+    while (start_offset <= end_offset) {
+        static constexpr model::offset max_batch_size{
+          std::numeric_limits<int32_t>::max()};
+        // limit max batch size
+        const model::offset delta = std::min<model::offset>(
+          max_batch_size, end_offset - start_offset);
+
+        batches.push_back(
+          make_ghost_batch(start_offset, delta + start_offset, term));
+        start_offset = next_offset(batches.back().last_offset());
+    }
+
+    return batches;
+}
+
+} // anonymous namespace
 
 namespace storage {
 using records_t = ss::circular_buffer<model::record_batch>;
@@ -229,6 +282,10 @@ log_reader::log_reader(
   : _lease(std::move(l))
   , _iterator(_lease->range.begin())
   , _config(config)
+  , _expected_next(
+      _config.fill_gaps
+        ? std::make_optional<model::offset>(_config.start_offset)
+        : std::nullopt)
   , _probe(probe) {
     if (config.abort_source) {
         auto op_sub = config.abort_source.value().get().subscribe(
@@ -349,8 +406,32 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
                */
               return do_load_slice(timeout);
           }
+          // Update the probe without the ghost batches.
           _probe.add_batches_read(recs.value().size());
-          return ss::make_ready_future<storage_t>(std::move(recs.value()));
+
+          auto& batches = recs.value();
+          if (_config.fill_gaps && _expected_next.has_value()) {
+              records_t batches_filled;
+              batches_filled.reserve(batches.size());
+              for (auto& b : batches) {
+                  if (b.base_offset() > _expected_next) {
+                      auto gb = make_ghost_batches(
+                        _expected_next.value(),
+                        model::prev_offset(b.base_offset()),
+                        b.term());
+                      std::move(
+                        gb.begin(),
+                        gb.end(),
+                        std::back_inserter(batches_filled));
+                  }
+                  _expected_next = model::next_offset(b.last_offset());
+                  batches_filled.emplace_back(std::move(b));
+              }
+              return ss::make_ready_future<storage_t>(
+                std::move(batches_filled));
+          }
+          _expected_next = model::next_offset(batches.back().last_offset());
+          return ss::make_ready_future<storage_t>(std::move(batches));
       })
       .handle_exception([this](std::exception_ptr e) {
           set_end_of_stream();

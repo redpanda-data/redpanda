@@ -167,6 +167,9 @@ public:
     void reset_config(log_reader_config cfg) {
         _config = cfg;
         _iterator.next_seg = _iterator.current_reader_seg;
+        _expected_next = _config.fill_gaps ? std::make_optional<model::offset>(
+                           _config.start_offset)
+                                           : std::nullopt;
     };
 
     /**
@@ -230,8 +233,16 @@ private:
 
     std::unique_ptr<lock_manager::lease> _lease;
     iterator_pair _iterator;
+
+    // NOTE: this is not a const config, and is updated to reflect its
+    // progression.
     log_reader_config _config;
+
+    // The base offset of the previous batch processed.
     model::offset _last_base;
+
+    // The expected next offset to be processed, used to detect and fill gaps.
+    std::optional<model::offset> _expected_next;
     probe& _probe;
     ss::abort_source::subscription _as_sub;
 };
