@@ -224,6 +224,20 @@ public:
       iobuf body,
       ss::lowres_clock::duration timeout = default_connect_timeout);
 
+    /**
+     * Dispach a POST request to the provided path.
+     *
+     * @param path request target path
+     * @param body body the request
+     * @param type content type (e.g. json)
+     * @return the response stream
+     */
+    seastar::future<response_stream_ref> post(
+      std::string_view path,
+      iobuf body,
+      content_type type,
+      ss::lowres_clock::duration timeout = default_connect_timeout);
+
 private:
     template<class BufferSeq>
     static ss::future<> forward(client* client, BufferSeq&& seq);

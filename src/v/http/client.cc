@@ -658,4 +658,21 @@ seastar::future<client::response_stream_ref> client::request(
     co_return response;
 }
 
+seastar::future<client::response_stream_ref> client::post(
+  std::string_view path,
+  iobuf body,
+  content_type type,
+  seastar::lowres_clock::duration timeout) {
+    request_header header;
+    header.method(boost::beast::http::verb::post);
+    header.target(std::string(path));
+    header.insert(
+      boost::beast::http::field::content_length,
+      fmt::format("{}", body.size_bytes()));
+    header.insert(
+      boost::beast::http::field::content_type,
+      std::string(content_type_string(type)));
+    return request(std::move(header), std::move(body), timeout);
+}
+
 } // namespace http

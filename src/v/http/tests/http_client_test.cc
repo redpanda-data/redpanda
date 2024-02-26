@@ -969,3 +969,32 @@ SEASTAR_THREAD_TEST_CASE(custom_host_request_header) {
 
     server->stop().get();
 }
+
+SEASTAR_THREAD_TEST_CASE(post_method) {
+    auto config = transport_configuration();
+    auto [server, client] = started_client_and_server(config);
+
+    auto response = client
+                      ->post(
+                        "/echo",
+                        bytes_to_iobuf(bytes(httpd_server_reply)),
+                        http::content_type::json)
+                      .get();
+
+    iobuf body;
+    while (!response->is_done()) {
+        body.append(response->recv_some().get());
+    }
+
+    BOOST_REQUIRE_EQUAL(
+      response->get_headers().result(), boost::beast::http::status::ok);
+
+    iobuf_parser parser(std::move(body));
+    std::string actual = parser.read_string(parser.bytes_left());
+    std::string expected
+      = "\"" + std::string(httpd_server_reply)
+        + "\""; // sestar will return json string containing the
+    BOOST_REQUIRE_EQUAL(expected, actual);
+
+    server->stop().get();
+}
