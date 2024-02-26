@@ -95,19 +95,8 @@ void controller_probe::setup_metrics() {
           [this] {
               const auto& leaders_table
                 = _controller.get_partition_leaders().local();
-              auto unavailable_partitions_count = 0;
 
-              leaders_table.for_each_leader([&unavailable_partitions_count](
-                                              const auto& /*tp_ns*/,
-                                              auto /*pid*/,
-                                              auto leader,
-                                              auto /*term*/) {
-                  if (!leader.has_value()) {
-                      ++unavailable_partitions_count;
-                  }
-              });
-
-              return unavailable_partitions_count;
+              return leaders_table.leaderless_partition_count();
           },
           sm::description(
             "Number of partitions that lack quorum among replicants"))

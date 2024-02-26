@@ -15,6 +15,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/partition_leaders_table.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -26,6 +27,7 @@
 #include <boost/range/irange.hpp>
 
 #include <algorithm>
+#include <exception>
 #include <iterator>
 
 namespace cluster {
@@ -47,12 +49,12 @@ metadata_dissemination_handler::update_leadership_v2(
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::do_update_leadership(
-  ss::chunked_fifo<ntp_leader_revision> leaders) {
+  fragmented_vector<ntp_leader_revision> leaders) {
     vlog(clusterlog.trace, "Received a metadata update");
     co_await ss::parallel_for_each(
       boost::irange<ss::shard_id>(0, ss::smp::count),
       [this, leaders = std::move(leaders)](ss::shard_id shard) {
-          ss::chunked_fifo<ntp_leader_revision> local_leaders;
+          fragmented_vector<ntp_leader_revision> local_leaders;
           local_leaders.reserve(leaders.size());
           std::copy(
             leaders.begin(), leaders.end(), std::back_inserter(local_leaders));
@@ -72,26 +74,35 @@ metadata_dissemination_handler::do_update_leadership(
     co_return update_leadership_reply{};
 }
 
-static get_leadership_reply
+namespace {
+ss::future<get_leadership_reply>
 make_get_leadership_reply(const partition_leaders_table& leaders) {
-    fragmented_vector<ntp_leader> ret;
-
-    leaders.for_each_leader([&ret](
-                              model::topic_namespace_view tp_ns,
-                              model::partition_id pid,
-                              std::optional<model::node_id> leader,
-                              model::term_id term) mutable {
-        ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
-    });
-
-    return get_leadership_reply{std::move(ret)};
+    try {
+        fragmented_vector<ntp_leader> ret;
+        co_await leaders.for_each_leader([&ret](
+                                           model::topic_namespace_view tp_ns,
+                                           model::partition_id pid,
+                                           std::optional<model::node_id> leader,
+                                           model::term_id term) mutable {
+            ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
+        });
+        co_return get_leadership_reply{
+          std::move(ret), get_leadership_reply::is_success::yes};
+    } catch (...) {
+        vlog(
+          clusterlog.info,
+          "exception thrown while collecting leadership metadata - {}",
+          std::current_exception());
+        co_return get_leadership_reply{
+          {}, get_leadership_reply::is_success::no};
+    }
 }
+} // namespace
 
 ss::future<get_leadership_reply> metadata_dissemination_handler::get_leadership(
   get_leadership_request, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this]() mutable {
-        return ss::make_ready_future<get_leadership_reply>(
-          make_get_leadership_reply(_leaders.local()));
+        return make_get_leadership_reply(_leaders.local());
     });
 }
 

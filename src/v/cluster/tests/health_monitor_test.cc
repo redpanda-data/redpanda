@@ -170,7 +170,7 @@ cluster::topic_configuration topic_cfg(
 bool contains_exactly_ntp_leaders(
   ss::logger& logger,
   const std::unordered_set<model::ntp>& expected,
-  const ss::chunked_fifo<cluster::topic_status>& topics) {
+  const chunked_vector<cluster::topic_status>& topics) {
     auto left = expected;
     for (const auto& t_l : topics) {
         for (const auto& p_l : t_l.partitions) {

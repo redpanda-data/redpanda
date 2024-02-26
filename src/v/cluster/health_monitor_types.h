@@ -97,11 +97,8 @@ struct partition_status
     friend bool operator==(const partition_status&, const partition_status&)
       = default;
 };
-/**
- * We keep the chunk size in partition status small to make sure that we do not
- * waste to much of memory for topics with small number of partitions.
- */
-using partition_statuses_t = ss::chunked_fifo<partition_status, 8>;
+
+using partition_statuses_t = chunked_vector<partition_status>;
 
 struct topic_status
   : serde::envelope<topic_status, serde::version<0>, serde::compat_version<0>> {
@@ -139,7 +136,7 @@ struct node_health_report
     node_health_report(
       model::node_id,
       node::local_state,
-      ss::chunked_fifo<topic_status>,
+      chunked_vector<topic_status>,
       bool include_drain_status,
       std::optional<drain_manager::drain_status>);
 
@@ -152,7 +149,7 @@ struct node_health_report
 
     model::node_id id;
     node::local_state local_state;
-    ss::chunked_fifo<topic_status> topics;
+    chunked_vector<topic_status> topics;
 
     /*
      * nodes running old versions of redpanda will assert that they can decode
