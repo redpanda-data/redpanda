@@ -48,4 +48,13 @@ void apply_validator(
 bool get_boolean_query_param(
   const ss::http::request& req, std::string_view name);
 
+/**
+ * Helper for decoding path parameters.
+ *
+ * It is a slightly modified version of ss::http::internal::url_decode
+ * which only differs in that it correctly does not replace +
+ * with ' ' in the input. It only replaces percent encoded values.
+ */
+bool path_decode(const std::string_view in, ss::sstring& out);
+
 } // namespace admin
