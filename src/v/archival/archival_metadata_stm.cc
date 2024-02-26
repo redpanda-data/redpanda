@@ -192,9 +192,13 @@ struct archival_metadata_stm::update_highest_producer_id_cmd {
     using value = model::producer_id;
 };
 
+// Serde format description
+// v5
+//  - add apply_offset field
+//
 struct archival_metadata_stm::snapshot
   : public serde::
-      envelope<snapshot, serde::version<4>, serde::compat_version<0>> {
+      envelope<snapshot, serde::version<5>, serde::compat_version<0>> {
     /// List of segments
     fragmented_vector<segment> segments;
     /// List of replaced segments
@@ -237,6 +241,8 @@ struct archival_metadata_stm::snapshot
     cloud_storage::anomalies detected_anomalies;
     // Highest producer ID used by this partition.
     model::producer_id highest_producer_id;
+    // Offset of the last applied command
+    model::offset applied_offset;
 
     auto serde_fields() {
         return std::tie(
@@ -255,7 +261,8 @@ struct archival_metadata_stm::snapshot
           last_partition_scrub,
           last_scrubbed_offset,
           detected_anomalies,
-          highest_producer_id);
+          highest_producer_id,
+          applied_offset);
     }
 };
 
@@ -582,6 +589,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .start_kafka_offset = m.get_start_kafka_offset_override(),
       .spillover_manifests = std::move(spillover),
       .highest_producer_id = m.highest_producer_id(),
+      .applied_offset = m.get_applied_offset(),
     });
 
     auto snapshot = raft::stm_snapshot::create(
@@ -936,6 +944,7 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
         b.for_each_record(
           [this, base_offset = b.base_offset()](model::record&& r) {
               _last_dirty_at = base_offset + model::offset{r.offset_delta()};
+              _manifest->advance_applied_offset(_last_dirty_at);
               auto key = serde::from_iobuf<uint8_t>(r.release_key());
               auto val = serde::from_iobuf<prefix_truncate_record>(
                 r.release_value());
@@ -952,6 +961,9 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
             b.for_each_record([this, base_offset = b.base_offset()](
                                 model::record&& r) {
                 auto key = serde::from_iobuf<cmd_key>(r.release_key());
+
+                _manifest->advance_applied_offset(
+                  base_offset + model::offset{r.offset_delta()});
 
                 if (key != mark_clean_cmd::key) {
                     // All keys other than mark clean make the manifest dirty
@@ -1141,7 +1153,8 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
       snap.last_partition_scrub,
       snap.last_scrubbed_offset,
       snap.detected_anomalies,
-      snap.highest_producer_id);
+      snap.highest_producer_id,
+      snap.applied_offset);
 
     vlog(
       _logger.info,

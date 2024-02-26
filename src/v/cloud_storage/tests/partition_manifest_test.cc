@@ -2656,3 +2656,47 @@ SEASTAR_THREAD_TEST_CASE(test_last_partition_scrub_json_serde) {
 
     BOOST_REQUIRE(manifest == manifest_after_round_trip);
 }
+
+SEASTAR_THREAD_TEST_CASE(
+  test_manifest_serialization_roundtrip_with_applied_offset) {
+    std::map<ss::sstring, partition_manifest::segment_meta> expected_segments
+      = {
+        {"0-1-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 1024,
+           .base_offset = model::offset(0),
+           .committed_offset = model::offset(99),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(1),
+         }},
+        {"100-2-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 2048,
+           .base_offset = model::offset(100),
+           .committed_offset = model::offset(199),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(2),
+         }},
+      };
+
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    for (const auto& segment : expected_segments) {
+        m.add(segment_name(segment.first), segment.second);
+    }
+    m.advance_applied_offset(model::offset{100});
+    BOOST_REQUIRE(m.get_applied_offset() == model::offset{100});
+
+    auto [is, size] = m.serialize().get();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    partition_manifest restored;
+    restored.update(std::move(rstr)).get();
+
+    BOOST_REQUIRE(restored == m);
+    BOOST_REQUIRE(m.get_applied_offset() == model::offset{100});
+}

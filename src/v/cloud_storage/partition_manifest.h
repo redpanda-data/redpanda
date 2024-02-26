@@ -157,7 +157,8 @@ public:
       model::timestamp last_partition_scrub,
       std::optional<model::offset> last_scrubbed_offset,
       anomalies detected_anomalies,
-      model::producer_id highest_producer_id)
+      model::producer_id highest_producer_id,
+      model::offset last_applied_offset)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
@@ -174,7 +175,8 @@ public:
       , _last_partition_scrub(last_partition_scrub)
       , _last_scrubbed_offset(last_scrubbed_offset)
       , _detected_anomalies(std::move(detected_anomalies))
-      , _highest_producer_id(highest_producer_id) {
+      , _highest_producer_id(highest_producer_id)
+      , _applied_offset(last_applied_offset) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
             vassert(
@@ -517,6 +519,16 @@ public:
 
     kafka::offset get_start_kafka_offset_override() const;
 
+    /// Get offset of the last applied STM command
+    model::offset get_applied_offset() const noexcept {
+        return _applied_offset;
+    }
+
+    /// Advance last applied STM command offset
+    void advance_applied_offset(model::offset o) noexcept {
+        _applied_offset = std::max(_applied_offset, o);
+    }
+
     auto serde_fields() {
         // this list excludes _mem_tracker, which is not serialized
         return std::tie(
@@ -537,7 +549,8 @@ public:
           _spillover_manifests,
           _last_partition_scrub,
           _last_scrubbed_offset,
-          _highest_producer_id);
+          _highest_producer_id,
+          _applied_offset);
     }
     auto serde_fields() const {
         // this list excludes _mem_tracker, which is not serialized
@@ -559,7 +572,8 @@ public:
           _spillover_manifests,
           _last_partition_scrub,
           _last_scrubbed_offset,
-          _highest_producer_id);
+          _highest_producer_id,
+          _applied_offset);
     }
 
     /// Compare two manifests for equality. Don't compare the mem_tracker.
@@ -678,6 +692,12 @@ private:
     // all partitions during cluster recovery time to determine a new starting
     // id_allocator ID that is higher than any used so far.
     model::producer_id _highest_producer_id;
+
+    // Offset of the last applied archival command.
+    // Similar to insync_offset but includes only archival commands. The
+    // insync offset is incremented after processing every batch (even if it's
+    // skipped by the STM).
+    model::offset _applied_offset;
 };
 
 } // namespace cloud_storage
