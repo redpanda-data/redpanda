@@ -14,7 +14,6 @@
 #include "cluster/fwd.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/types.h"
-#include "utils/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "utils/expiring_promise.h"
