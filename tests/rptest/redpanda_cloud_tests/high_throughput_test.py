@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from dataclasses import dataclass
 import random
 import itertools
 import math
@@ -215,8 +216,18 @@ def omb_runner(context: TestContext, redpanda: RedpandaServiceCloud,
         bench.stop()
 
 
+@dataclass
+class ProduceWorkload:
+    msg_count: int
+    rate: int
+    timeout_seconds: int
+
+
+DEFAULT_MESSAGE_SIZE = 4 * KiB
+
+
 class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
-    msg_size = 4 * KiB
+    msg_size = DEFAULT_MESSAGE_SIZE
     # Min segment size across all tiers
     min_segment_size = 16 * MiB
     unavailable_timeout = 60
@@ -314,6 +325,23 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         ]
         if self.redpanda._cloud_cluster.config.provider == PROVIDER_AWS:
             self._agent_services.append('redpanda-agent-init.service')
+
+    def _make_workload(self,
+                       target_seconds: int,
+                       message_size: int = DEFAULT_MESSAGE_SIZE):
+        """Make a time-based workload, i.e., a workload that will run for about the expected time."""
+
+        # The basic assumption is that we run at full ingress speed for the workload
+        target_count = math.ceil(
+            float(target_seconds) * self._advertised_max_ingress /
+            message_size)
+
+        # Timeout is 4x the nominal amount of time this would take, plus a buffer of 5 seconds
+        # for startup time.
+        timeout = target_seconds * 4 + 5
+
+        return ProduceWorkload(target_count, self._advertised_max_ingress,
+                               timeout)
 
     def _add_resource_tracking(self, type: str, resource: Any):
         self.resources.append({"type": type, "spec": resource})
@@ -859,12 +887,16 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                    backoff_sec=20)
 
     def _wait_for_traffic(self, producer, acked, timeout=1800):
+        assert timeout > 0, f'non-positive timeout: {timeout}'
         try:
-            self.logger.debug(
-                f"Waiting until {acked} messages produced in {timeout}")
+            start_time = time.time()
+            self.logger.info(
+                f"Waiting for {acked} messages to produced in {timeout}s")
             wait_until(lambda: producer.produce_status.acked > acked,
                        timeout_sec=timeout,
                        backoff_sec=5.0)
+            self.logger.info(
+                f"{acked} messages produced in {time.time() - start_time}s")
         except TimeoutException as e:
             _throughput = producer.produce_status.acked * self.msg_size // timeout
             raise RuntimeError(
@@ -903,6 +935,10 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
 
+        initial_workload = self._make_workload(10)
+        self.logger.info(
+            f'Starting workload, initial spec: {initial_workload}')
+
         producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
@@ -915,8 +951,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         try:
             producer.start()
             self._wait_for_traffic(producer,
-                                   self.msg_count,
-                                   timeout=self.msg_timeout)
+                                   initial_workload.msg_count,
+                                   timeout=initial_workload.timeout_seconds)
             self.stage_decommission_and_add()
 
         finally:
