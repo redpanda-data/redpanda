@@ -70,9 +70,7 @@ inline consumed_response do_request(
   serialization_format content,
   serialization_format accept) {
     auto hdr = make_header(method, target, body, content, accept);
-    auto [req, res] = client.make_request(std::move(hdr)).get();
-    req->send_some(std::move(body)).get();
-    req->send_eof().get();
+    auto res = client.request(std::move(hdr), std::move(body)).get();
     auto bdy = consume_body(*res);
     vassert(res->is_header_done(), "Header isn't done");
     return {res->get_headers(), std::move(bdy)};

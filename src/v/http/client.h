@@ -193,12 +193,6 @@ public:
     using request_response_t
       = std::tuple<request_stream_ref, response_stream_ref>;
 
-    // Make http_request, if the transport is not yet connected it will connect
-    // first otherwise the future will resolve immediately.
-    ss::future<request_response_t> make_request(
-      request_header&& header,
-      ss::lowres_clock::duration timeout = default_connect_timeout);
-
     /// Utility function that executes request with the body and returns
     /// stream. Returned future becomes ready when the body is sent.
     /// Using the stream returned by the future client can pull response.
@@ -228,6 +222,11 @@ public:
 private:
     template<class BufferSeq>
     static ss::future<> forward(client* client, BufferSeq&& seq);
+
+    // Make http_request, if the transport is not yet connected it will connect
+    // first otherwise the future will resolve immediately.
+    ss::future<request_response_t>
+    make_request(request_header&& header, ss::lowres_clock::duration timeout);
 
     /// Receive bytes from the remote endpoint
     ss::future<ss::temporary_buffer<char>> receive();
