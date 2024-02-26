@@ -12,6 +12,10 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "redpanda/admin/api-doc/transaction.json.hh"
 #include "redpanda/admin/server.h"
+#include "redpanda/admin/util.h"
+
+#include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/json/json_elements.hh>
 
 void admin_server::register_transaction_routes() {
     register_route<user>(
@@ -75,7 +79,7 @@ admin_server::get_all_transactions_handler(
     }
 
     using tx_info = ss::httpd::transaction_json::transaction_summary;
-    std::vector<tx_info> ans;
+    fragmented_vector<tx_info> ans;
     ans.reserve(res.value().size());
 
     for (auto& tx : res.value()) {
@@ -125,9 +129,12 @@ admin_server::get_all_transactions_handler(
         }
 
         ans.push_back(std::move(new_tx));
+        co_await ss::coroutine::maybe_yield();
     }
 
-    co_return ss::json::json_return_type(ans);
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      admin::lw_shared_container(std::move(ans)),
+      [](auto& tx_info) { return tx_info; }));
 }
 
 ss::future<ss::json::json_return_type>
