@@ -639,4 +639,13 @@ client::request_header redacted_header(client::request_header original) {
     return h;
 }
 
+seastar::future<client::response_stream_ref> client::request(
+  request_header header, iobuf body, seastar::lowres_clock::duration timeout) {
+    auto [request, response] = co_await make_request(
+      std::move(header), timeout);
+    co_await request->send_some(std::move(body));
+    co_await request->send_eof();
+    co_return response;
+}
+
 } // namespace http

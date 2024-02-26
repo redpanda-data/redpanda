@@ -215,6 +215,16 @@ public:
       request_header&& header,
       ss::lowres_clock::duration timeout = default_connect_timeout);
 
+    /**
+     * Dispatch a request with the provided headers and body.
+     *
+     * Returns the response stream.
+     */
+    seastar::future<response_stream_ref> request(
+      request_header header,
+      iobuf body,
+      ss::lowres_clock::duration timeout = default_connect_timeout);
+
 private:
     template<class BufferSeq>
     static ss::future<> forward(client* client, BufferSeq&& seq);
