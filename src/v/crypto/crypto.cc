@@ -24,4 +24,20 @@ std::ostream& operator<<(std::ostream& os, digest_type type) {
 
     return os;
 }
+
+std::ostream& operator<<(std::ostream& os, key_type type) {
+    switch (type) {
+    case key_type::RSA:
+        return os << "RSA";
+    }
+}
+
+std::ostream& operator<<(std::ostream& os, format_type type) {
+    switch (type) {
+    case format_type::PEM:
+        return os << "PEM";
+    case format_type::DER:
+        return os << "DER";
+    }
+}
 } // namespace crypto

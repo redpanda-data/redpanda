@@ -5,6 +5,7 @@ rp_test(
     SOURCES
       digest_tests.cc
       hmac_tests.cc
+      key_tests.cc
     LIBRARIES
       v::crypto
       v::gtest_main

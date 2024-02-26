@@ -18,6 +18,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <openssl/evp.h>
+#include <openssl/param_build.h>
 
 #include <memory>
 #include <stdexcept>
@@ -43,9 +44,15 @@ struct deleter {
 template<typename T, void (*fn)(T*)>
 using handle = std::unique_ptr<T, deleter<T, fn>>;
 
+using BIO_ptr = handle<BIO, BIO_free_all>;
+using BN_ptr = handle<BIGNUM, BN_free>;
 using EVP_MAC_ptr = handle<EVP_MAC, EVP_MAC_free>;
 using EVP_MAC_CTX_ptr = handle<EVP_MAC_CTX, EVP_MAC_CTX_free>;
 using EVP_MD_CTX_ptr = handle<EVP_MD_CTX, EVP_MD_CTX_free>;
+using EVP_PKEY_ptr = handle<EVP_PKEY, EVP_PKEY_free>;
+using EVP_PKEY_CTX_ptr = handle<EVP_PKEY_CTX, EVP_PKEY_CTX_free>;
+using OSSL_PARAM_ptr = handle<OSSL_PARAM, OSSL_PARAM_free>;
+using OSSL_PARAM_BLD_ptr = handle<OSSL_PARAM_BLD, OSSL_PARAM_BLD_free>;
 
 /// Exception class used to extract the error from OpenSSL
 class ossl_error final : public exception {

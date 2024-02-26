@@ -208,4 +208,52 @@ private:
  */
 bytes hmac(digest_type type, bytes_view key, bytes_view msg);
 bytes hmac(digest_type type, std::string_view key, std::string_view msg);
+
+///////////////////////////////////////////////////////////////////////////////
+/// Asymmetric key operations
+///////////////////////////////////////////////////////////////////////////////
+/**
+ * Structure that holds the key implementation
+ */
+struct key {
+public:
+    /**
+     * Attempts to load a key from a buffer
+     *
+     * @param key The key buffer
+     * @param fmt The format of the buffer
+     * @param is_private_key Whether or not the key is a private key
+     * @return key The loaded key
+     * @throws crypto::exception If unable to load the key contained in @p key
+     * or if @p key contains an unsupported key
+     */
+    static key
+    load_key(bytes_view key, format_type fmt, is_private_key_t is_private_key);
+    static key load_key(
+      std::string_view key, format_type fmt, is_private_key_t is_private_key);
+    /**
+     * Loads an RSA public key from its parts
+     *
+     * @param n The modulus
+     * @param e The public exponent
+     * @return key The loaded key
+     * @throws crypto::exception If there is an error loading the key
+     */
+    static key load_rsa_public_key(bytes_view n, bytes_view e);
+    static key load_rsa_public_key(std::string_view n, std::string_view e);
+    ~key() noexcept;
+    key(const key&) = delete;
+    key& operator=(const key&) = delete;
+    key(key&&) noexcept;
+    key& operator=(key&&) noexcept;
+
+    key_type get_type() const;
+    is_private_key_t is_private_key() const;
+
+private:
+    class impl;
+    std::unique_ptr<impl> _impl;
+
+    explicit key(std::unique_ptr<impl>&& impl);
+};
 } // namespace crypto

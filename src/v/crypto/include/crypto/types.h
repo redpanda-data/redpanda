@@ -11,9 +11,21 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+
+#include <seastar/util/bool_class.hh>
+
 #include <iosfwd>
 
 namespace crypto {
 enum class digest_type { MD5, SHA256, SHA512 };
 std::ostream& operator<<(std::ostream&, digest_type);
+
+enum class key_type { RSA };
+std::ostream& operator<<(std::ostream&, key_type);
+
+enum class format_type { PEM, DER };
+std::ostream& operator<<(std::ostream&, format_type);
+
+using is_private_key_t = ss::bool_class<struct is_private_key_tag>;
 } // namespace crypto
