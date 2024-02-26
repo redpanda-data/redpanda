@@ -162,23 +162,6 @@ void metrics_reporter::report_metrics() {
     });
 }
 
-http::client::request_header
-metrics_reporter::make_header(const iobuf& buffer) {
-    http::client::request_header header;
-    header.method(boost::beast::http::verb::post);
-    header.target(std::string(_address.path));
-    header.insert(
-      boost::beast::http::field::content_length,
-      fmt::format("{}", buffer.size_bytes()));
-    header.insert(
-      boost::beast::http::field::host,
-      fmt::format("{}:{}", _address.host, _address.port));
-
-    header.insert(boost::beast::http::field::content_type, "application/json");
-
-    return header;
-}
-
 ss::future<result<metrics_reporter::metrics_snapshot>>
 metrics_reporter::build_metrics_snapshot() {
     metrics_snapshot snapshot;
@@ -468,7 +451,6 @@ ss::future<> metrics_reporter::do_report_metrics() {
         co_return;
     }
     auto out = serialize_metrics_snapshot(snapshot.value());
-    auto header = make_header(out);
     try {
         // prepare http client
         auto client = co_await make_http_client();
@@ -482,8 +464,8 @@ ss::future<> metrics_reporter::do_report_metrics() {
               "unable to send metrics report, connection timeout");
             co_return;
         }
-        auto resp_stream = co_await client.request(
-          std::move(header), std::move(out), timeout);
+        auto resp_stream = co_await client.post(
+          _address.path, std::move(out), http::content_type::json, timeout);
         co_await resp_stream->prefetch_headers();
         co_await resp_stream->shutdown();
         _last_success = ss::lowres_clock::now();

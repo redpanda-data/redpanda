@@ -98,7 +98,6 @@ public:
 
 private:
     void report_metrics();
-    http::client::request_header make_header(const iobuf&);
     ss::future<> do_report_metrics();
     ss::future<result<metrics_snapshot>> build_metrics_snapshot();
 
