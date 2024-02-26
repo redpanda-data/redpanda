@@ -82,6 +82,10 @@ void client::check() const {
 
 ss::future<client::request_response_t> client::make_request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
+    // Set request HTTP-version to 1.1
+    constexpr unsigned http_version = 11;
+    header.version(http_version);
+
     auto verb = header.method();
     auto target = header.target();
     ss::sstring target_str(target.data(), target.size());

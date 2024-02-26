@@ -58,10 +58,6 @@ enum class reconnect_result_t {
 
 /// Http client
 class client : protected net::base_transport {
-    enum {
-        protocol_version = 11,
-    };
-
 public:
     using request_header = boost::beast::http::request_header<>;
     using response_header = boost::beast::http::response_header<>;
