@@ -10,6 +10,7 @@
 import os
 from typing import Sequence
 
+from ducktape.utils.util import wait_until
 from ducktape.tests.test import Test, TestContext
 from rptest.services.redpanda import CloudTierName, SISettings, make_redpanda_cloud_service, make_redpanda_service, CloudStorageType
 from rptest.clients.kafka_cli_tools import KafkaCliTools
