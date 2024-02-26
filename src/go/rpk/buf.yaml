@@ -1,0 +1,9 @@
+version: v1
+deps:
+  - buf.build/redpandadata/cloud
+breaking:
+  use:
+    - FILE
+lint:
+  use:
+    - DEFAULT

@@ -55,6 +55,8 @@ type DevOverrides struct {
 	// CloudToken bypasses the oauth.LoadFlow, allowing you to pass a cloud
 	// token instead of logging in.
 	CloudToken string `env:"RPK_CLOUD_TOKEN"`
+	// PublicAPIURL is used by `rpk cloud` to override the public API URL.
+	PublicAPIURL string `env:"RPK_PUBLIC_API_URL"`
 }
 
 // Config encapsulates a redpanda.yaml and/or an rpk.yaml. This is the
