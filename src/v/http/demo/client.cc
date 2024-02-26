@@ -109,10 +109,8 @@ http::client::request_header make_header(const test_conf& cfg) {
 ss::future<> send_post_request(
   http::client& cli, http::client::request_header&& header, iobuf&& body) {
     vlog(test_log.info, "send POST request");
-    auto [req, resp] = cli.make_request(std::move(header)).get0();
+    auto resp = cli.request(std::move(header), std::move(body)).get0();
     // send request
-    req->send_some(std::move(body)).get();
-    req->send_eof().get();
     while (!resp->is_done()) {
         iobuf buf = resp->recv_some().get0();
         for (auto& fragm : buf) {

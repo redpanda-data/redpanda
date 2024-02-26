@@ -58,10 +58,6 @@ enum class reconnect_result_t {
 
 /// Http client
 class client : protected net::base_transport {
-    enum {
-        protocol_version = 11,
-    };
-
 public:
     using request_header = boost::beast::http::request_header<>;
     using response_header = boost::beast::http::response_header<>;
@@ -193,12 +189,6 @@ public:
     using request_response_t
       = std::tuple<request_stream_ref, response_stream_ref>;
 
-    // Make http_request, if the transport is not yet connected it will connect
-    // first otherwise the future will resolve immediately.
-    ss::future<request_response_t> make_request(
-      request_header&& header,
-      ss::lowres_clock::duration timeout = default_connect_timeout);
-
     /// Utility function that executes request with the body and returns
     /// stream. Returned future becomes ready when the body is sent.
     /// Using the stream returned by the future client can pull response.
@@ -215,9 +205,24 @@ public:
       request_header&& header,
       ss::lowres_clock::duration timeout = default_connect_timeout);
 
+    /**
+     * Dispatch a request with the provided headers and body.
+     *
+     * Returns the response stream.
+     */
+    seastar::future<response_stream_ref> request(
+      request_header header,
+      iobuf body,
+      ss::lowres_clock::duration timeout = default_connect_timeout);
+
 private:
     template<class BufferSeq>
     static ss::future<> forward(client* client, BufferSeq&& seq);
+
+    // Make http_request, if the transport is not yet connected it will connect
+    // first otherwise the future will resolve immediately.
+    ss::future<request_response_t>
+    make_request(request_header&& header, ss::lowres_clock::duration timeout);
 
     /// Receive bytes from the remote endpoint
     ss::future<ss::temporary_buffer<char>> receive();

@@ -136,17 +136,15 @@ void test_http_request(
   http::client::request_header&& header,
   std::optional<ss::sstring> request_data,
   const Func& check_reply) {
-    auto [server, client] = started_client_and_server(conf);
-    auto [req_stream, resp_stream]
-      = client->make_request(std::move(header)).get0();
-
-    // Send request
     iobuf body;
     if (request_data) {
         body.append(request_data->data(), request_data->size());
     }
-    req_stream->send_some(std::move(body)).get();
-    req_stream->send_eof().get();
+
+    // Send request
+    auto [server, client] = started_client_and_server(conf);
+    auto resp_stream
+      = client->request(std::move(header), std::move(body)).get0();
 
     // Receive response
     iobuf response_body;
@@ -515,19 +513,19 @@ void test_impostor_request(
   bool prefetch_header,
   const OKFunc& check_reply,
   const ErrFunc check_error = &std::rethrow_exception) {
+    iobuf body;
+    body.append(request_data.data(), request_data.size());
+
     auto [server, client] = started_client_and_impostor(
       conf, request_data, std::move(response_data));
-    auto [req_stream, resp_stream]
-      = client->make_request(std::move(header)).get0();
 
+    http::client::response_stream_ref resp_stream;
     bool failure_occured = false;
-    iobuf body;
     iobuf response_body;
     try {
         // Send request
-        body.append(request_data.data(), request_data.size());
-        req_stream->send_some(std::move(body)).get();
-        req_stream->send_eof().get();
+        resp_stream
+          = client->request(std::move(header), std::move(body)).get0();
 
         // Receive response
         if (prefetch_header) {
@@ -544,7 +542,7 @@ void test_impostor_request(
     }
 
     // Check response
-    if (!failure_occured) {
+    if (!failure_occured && resp_stream) {
         check_reply(resp_stream->get_headers(), std::move(response_body));
     }
 

@@ -82,6 +82,10 @@ void client::check() const {
 
 ss::future<client::request_response_t> client::make_request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
+    // Set request HTTP-version to 1.1
+    constexpr unsigned http_version = 11;
+    header.version(http_version);
+
     auto verb = header.method();
     auto target = header.target();
     ss::sstring target_str(target.data(), target.size());
@@ -601,15 +605,7 @@ ss::future<client::response_stream_ref> client::request(
 
 ss::future<client::response_stream_ref> client::request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
-    return make_request(std::move(header), timeout)
-      .then([](request_response_t reqresp) mutable {
-          auto [request, response] = std::move(reqresp);
-          return request->send_some(iobuf())
-            .then([request = request]() { return request->send_eof(); })
-            .then([response = response] {
-                return ss::make_ready_future<response_stream_ref>(response);
-            });
-      });
+    return request(std::move(header), iobuf(), timeout);
 }
 
 ss::output_stream<char> client::request_stream::as_output_stream() {
@@ -637,6 +633,15 @@ client::request_header redacted_header(client::request_header original) {
     }
 
     return h;
+}
+
+seastar::future<client::response_stream_ref> client::request(
+  request_header header, iobuf body, seastar::lowres_clock::duration timeout) {
+    auto [request, response] = co_await make_request(
+      std::move(header), timeout);
+    co_await request->send_some(std::move(body));
+    co_await request->send_eof();
+    co_return response;
 }
 
 } // namespace http
