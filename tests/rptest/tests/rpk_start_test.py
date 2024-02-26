@@ -128,7 +128,9 @@ class RpkRedpandaStartTest(RedpandaTest):
             node.account.ssh(f"{rpk} redpanda config bootstrap {seeds_arg} && " \
                     f"{rpk} redpanda config set redpanda.empty_seed_starts_cluster false && " \
                     f"{rpk} redpanda config set redpanda.rpc_server " \
-                    f"'{{\"address\":\"{node.account.hostname}\",\"port\":33145}}'")
+                    f"'{{\"address\":\"{node.account.hostname}\",\"port\":33145}}' &&" \
+                    f"{rpk} redpanda config set redpanda.advertised_rpc_api " \
+                    f"'{{\"address\":\"{node.account.hostname}\",\"port\":33145}}'" )
 
         self.redpanda.for_nodes(self.redpanda.nodes, config_bootstrap_with_rpk)
 
