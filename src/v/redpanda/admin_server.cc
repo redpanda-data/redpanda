@@ -77,6 +77,7 @@
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
 #include "redpanda/admin/api-doc/usage.json.h"
+#include "redpanda/admin/util.h"
 #include "rpc/errc.h"
 #include "security/acl.h"
 #include "security/credential_store.h"
@@ -1024,7 +1025,7 @@ void admin_server::register_config_routes() {
       ss::httpd::config_json::set_log_level,
       [this](std::unique_ptr<ss::httpd::request> req) {
           ss::sstring name;
-          if (!ss::httpd::connection::url_decode(req->param["name"], name)) {
+          if (!admin::path_decode(req->param["name"], name)) {
               throw ss::httpd::bad_param_exception(fmt::format(
                 "Invalid parameter 'name' got {{{}}}", req->param["name"]));
           }
@@ -1793,7 +1794,7 @@ admin_server::delete_user_handler(std::unique_ptr<ss::httpd::request> req) {
     }
 
     ss::sstring user_v;
-    if (!ss::httpd::connection::url_decode(req->param["user"], user_v)) {
+    if (!admin::path_decode(req->param["user"], user_v)) {
         throw ss::httpd::bad_param_exception{fmt::format(
           "Invalid parameter 'user' got {{{}}}", req->param["user"])};
     }
@@ -1825,7 +1826,7 @@ admin_server::update_user_handler(std::unique_ptr<ss::httpd::request> req) {
     }
 
     ss::sstring user_v;
-    if (!ss::httpd::connection::url_decode(req->param["user"], user_v)) {
+    if (!admin::path_decode(req->param["user"], user_v)) {
         throw ss::httpd::bad_param_exception{fmt::format(
           "Invalid parameter 'user' got {{{}}}", req->param["user"])};
     }
