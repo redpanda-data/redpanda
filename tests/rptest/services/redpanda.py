@@ -1546,6 +1546,12 @@ class KubeServiceMixin:
         return avail_kb * 1024
 
 
+class CorruptedClusterError(Exception):
+    """Throw to indicate a cluster is an unhealthy or otherwise unsuitable state to
+    continue the remainder of the tests."""
+    pass
+
+
 class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
     """
     Service class for running tests against Redpanda Cloud.
@@ -1867,6 +1873,20 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         for topic in deletable:
             rpk.delete_topic(topic)
 
+    def assert_cluster_is_reusable(self) -> None:
+        """Tries to assess wether the cluster is reusable for subsequent tests. This means that the
+        cluster is healthy and has its original shape and configuration (currently we don't check
+        the configuration aspect).
+
+        Throws an CorruptedClusterError if the cluster is not re-usable, otherwise does nothing."""
+
+        uh_reason = self.cluster_unhealthy_reason()
+        if uh_reason is not None:
+            raise CorruptedClusterError(uh_reason)
+
+        uh_reason = self._cloud_cluster._ensure_cluster_health()
+        if uh_reason is not None:
+            raise CorruptedClusterError(uh_reason)
 
     def cluster_unhealthy_reason(self) -> str | None:
         """Check if cluster is healthy, using rpk cluster health. Note that this will return
