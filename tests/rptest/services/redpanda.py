@@ -773,8 +773,8 @@ class SecurityConfig:
     # sasl is required
     def sasl_enabled(self):
         return (self.kafka_enable_authorization is None and self.enable_sasl
-                and self.endpoint_authn_method is None
-                ) or self.endpoint_authn_method == "sasl"
+                and self.endpoint_authn_method
+                is None) or self.endpoint_authn_method == "sasl"
 
     # principal is extracted from mtls distinguished name
     def mtls_identity_enabled(self):
@@ -1180,8 +1180,10 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         the health of a node after a restart.
         """
         counts: dict[int, int
-                     | None] = {self.idx(node): None
-                                for node in self.nodes}
+                     | None] = {
+                         self.idx(node): None
+                         for node in self.nodes
+                     }
         for node in self.nodes:
             try:
                 metrics = self.metrics(node)
