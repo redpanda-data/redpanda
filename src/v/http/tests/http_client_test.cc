@@ -14,6 +14,7 @@
 #include "http/chunk_encoding.h"
 #include "http/client.h"
 #include "http/logger.h"
+#include "json/document.h"
 #include "net/dns.h"
 #include "net/transport.h"
 
@@ -93,6 +94,24 @@ void set_routes(ss::httpd::routes& r) {
         return ss::sstring();
     });
     r.add(operation_type::PUT, url("/empty"), empty_handler);
+
+    auto get_headers_handler = new function_handler(
+      [](ss::httpd::const_req req, ss::http::reply& reply) {
+          json::StringBuffer str_buf;
+          json::Writer<json::StringBuffer> writer(str_buf);
+          writer.StartObject();
+          for (const auto& e : req._headers) {
+              writer.Key(e.first);
+              writer.String(e.second);
+          }
+          writer.EndObject();
+          reply.set_status(
+            ss::http::reply::status_type::ok, str_buf.GetString());
+          return "";
+      },
+      "json");
+
+    r.add(operation_type::GET, url("/headers"), get_headers_handler);
 }
 
 /// Http server and client
@@ -871,4 +890,111 @@ SEASTAR_THREAD_TEST_CASE(test_header_redacted) {
     BOOST_REQUIRE(
       s.find("capetown") == std::string::npos
       && s.find("x-amz-security-token") != std::string::npos);
+}
+
+SEASTAR_THREAD_TEST_CASE(content_type_string) {
+    BOOST_REQUIRE_EQUAL(
+      http::content_type_string(http::content_type::json), "application/json");
+}
+
+/*
+ * Test that the `Host` header is automatically set on a request.
+ */
+SEASTAR_THREAD_TEST_CASE(default_host_request_header) {
+    auto config = transport_configuration();
+    auto [server, client] = started_client_and_server(config);
+
+    // don't set host header, it should be set automatically
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target("/headers");
+
+    BOOST_REQUIRE(header.find(boost::beast::http::field::host) == header.end());
+    auto response = client->request(std::move(header)).get();
+    iobuf body;
+    while (!response->is_done()) {
+        body.append(response->recv_some().get());
+    }
+
+    BOOST_REQUIRE_EQUAL(
+      response->get_headers().result(), boost::beast::http::status::ok);
+
+    iobuf_const_parser parser(body);
+    const auto body_str = parser.read_string(parser.bytes_left());
+
+    rapidjson::Document doc;
+    doc.Parse(body_str);
+    BOOST_REQUIRE(!doc.HasParseError());
+    BOOST_REQUIRE(doc.IsObject());
+    BOOST_REQUIRE_EQUAL(
+      doc["Host"].GetString(),
+      fmt::format("{}:{}", httpd_host_name, httpd_port_number));
+
+    server->stop().get();
+}
+
+/*
+ * Test that the `Host` header on a request may be customized.
+ */
+SEASTAR_THREAD_TEST_CASE(custom_host_request_header) {
+    auto config = transport_configuration();
+    auto [server, client] = started_client_and_server(config);
+
+    // don't set host header, it should be set automatically
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target("/headers");
+    header.insert(boost::beast::http::field::host, "asdf:333");
+
+    BOOST_REQUIRE(header.find(boost::beast::http::field::host) != header.end());
+    auto response = client->request(std::move(header)).get();
+    iobuf body;
+    while (!response->is_done()) {
+        body.append(response->recv_some().get());
+    }
+
+    BOOST_REQUIRE_EQUAL(
+      response->get_headers().result(), boost::beast::http::status::ok);
+
+    iobuf_const_parser parser(body);
+    const auto body_str = parser.read_string(parser.bytes_left());
+
+    rapidjson::Document doc;
+    doc.Parse(body_str);
+    BOOST_REQUIRE(!doc.HasParseError());
+    BOOST_REQUIRE(doc.IsObject());
+    BOOST_REQUIRE_EQUAL(doc["Host"].GetString(), "asdf:333");
+    BOOST_REQUIRE_NE(
+      fmt::format("{}:{}", httpd_host_name, httpd_port_number), "asdf:333");
+
+    server->stop().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(post_method) {
+    auto config = transport_configuration();
+    auto [server, client] = started_client_and_server(config);
+
+    auto response = client
+                      ->post(
+                        "/echo",
+                        bytes_to_iobuf(bytes(httpd_server_reply)),
+                        http::content_type::json)
+                      .get();
+
+    iobuf body;
+    while (!response->is_done()) {
+        body.append(response->recv_some().get());
+    }
+
+    BOOST_REQUIRE_EQUAL(
+      response->get_headers().result(), boost::beast::http::status::ok);
+
+    iobuf_parser parser(std::move(body));
+    std::string actual = parser.read_string(parser.bytes_left());
+    std::string expected
+      = "\"" + std::string(httpd_server_reply)
+        + "\""; // sestar will return json string containing the
+    BOOST_REQUIRE_EQUAL(expected, actual);
+
+    server->stop().get();
 }

@@ -56,6 +56,15 @@ enum class reconnect_result_t {
     timed_out,
 };
 
+enum class content_type {
+    json,
+};
+
+/**
+ * Return the HTTP content-type string for the given type.
+ */
+std::string_view content_type_string(content_type type);
+
 /// Http client
 class client : protected net::base_transport {
 public:
@@ -215,6 +224,20 @@ public:
       iobuf body,
       ss::lowres_clock::duration timeout = default_connect_timeout);
 
+    /**
+     * Dispach a POST request to the provided path.
+     *
+     * @param path request target path
+     * @param body body the request
+     * @param type content type (e.g. json)
+     * @return the response stream
+     */
+    seastar::future<response_stream_ref> post(
+      std::string_view path,
+      iobuf body,
+      content_type type,
+      ss::lowres_clock::duration timeout = default_connect_timeout);
+
 private:
     template<class BufferSeq>
     static ss::future<> forward(client* client, BufferSeq&& seq);
@@ -232,6 +255,7 @@ private:
     /// Throw exception if _as is aborted
     void check() const;
 
+    std::string _host_with_port;
     ss::gate _connect_gate;
     const ss::abort_source* _as;
     ss::shared_ptr<http::client_probe> _probe;
