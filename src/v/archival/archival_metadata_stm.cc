@@ -441,6 +441,17 @@ command_batch_builder::read_write_fence(model::offset offset) {
     return *this;
 }
 
+command_batch_builder& command_batch_builder::update_highest_producer_id(
+  model::producer_id highest_pid) {
+    if (highest_pid != model::producer_id{}) {
+        iobuf key_buf = serde::to_iobuf(
+          archival_metadata_stm::update_highest_producer_id_cmd::key);
+        iobuf val_buf = serde::to_iobuf(highest_pid());
+        _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    }
+    return *this;
+}
+
 ss::future<std::error_code> command_batch_builder::replicate() {
     _as.check();
     return _stm.get()._lock.with([this]() {
