@@ -1468,10 +1468,6 @@ struct remote_topic_properties
 };
 
 /**
- * Type representing MPX virtual cluster. MPX uses XID to identify clusters.
- */
-using vcluster_id = named_type<xid, struct v_cluster_id_tag>;
-/**
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults
  */
@@ -1510,7 +1506,8 @@ struct topic_properties
       std::optional<pandaproxy::schema_registry::subject_name_strategy>
         record_value_subject_name_strategy_compat,
       tristate<size_t> initial_retention_local_target_bytes,
-      tristate<std::chrono::milliseconds> initial_retention_local_target_ms)
+      tristate<std::chrono::milliseconds> initial_retention_local_target_ms,
+      std::optional<vcluster_id> mpx_virtual_cluster_id)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1584,6 +1581,7 @@ struct topic_properties
     tristate<size_t> initial_retention_local_target_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> initial_retention_local_target_ms{
       std::nullopt};
+    std::optional<vcluster_id> mpx_virtual_cluster_id;
 
     bool is_compacted() const;
     bool has_overrides() const;
