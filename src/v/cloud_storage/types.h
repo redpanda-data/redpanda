@@ -138,6 +138,7 @@ struct manifest_topic_configuration {
         std::optional<size_t> segment_size;
         tristate<size_t> retention_bytes{std::nullopt};
         tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
+        std::optional<model::vcluster_id> virtual_cluster_id;
         bool operator==(const topic_properties& other) const = default;
     };
     topic_properties properties;

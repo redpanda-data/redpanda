@@ -83,6 +83,8 @@ struct topic_manifest_handler
                 compaction_strategy_sv = ss::sstring(sv);
             } else if (_key == "timestamp_type") {
                 timestamp_type_sv = ss::sstring(sv);
+            } else if (_key == "virtual_cluster_id") {
+                virtual_cluster_id_sv = ss::sstring(sv);
             } else {
                 return false;
             }
@@ -213,6 +215,7 @@ struct topic_manifest_handler
     std::optional<ss::sstring> timestamp_type_sv;
     std::optional<ss::sstring> compression_sv;
     std::optional<ss::sstring> cleanup_policy_bitflags_sv;
+    std::optional<ss::sstring> virtual_cluster_id_sv;
 };
 
 topic_manifest::topic_manifest(
@@ -320,6 +323,21 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               "cleanup_policy_bitflags value: {}",
               get_manifest_path(),
               handler.cleanup_policy_bitflags_sv.value()));
+        }
+    }
+
+    if (handler.virtual_cluster_id_sv) {
+        try {
+            _topic_config->properties.virtual_cluster_id
+              = boost::lexical_cast<model::vcluster_id>(
+                handler.virtual_cluster_id_sv.value());
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to parse topic manifest {}: Invalid "
+              "virtual_cluster_id_sv value: {}",
+              get_manifest_path(),
+              handler.virtual_cluster_id_sv.value()));
         }
     }
 }
@@ -452,6 +470,12 @@ void topic_manifest::serialize(std::ostream& out) const {
         } else {
             w.Null();
         }
+    }
+
+    if (_topic_config->properties.virtual_cluster_id) {
+        w.Key("virtual_cluster_id");
+        w.String(fmt::format(
+          "{}", _topic_config->properties.virtual_cluster_id.value()));
     }
     w.EndObject();
 }

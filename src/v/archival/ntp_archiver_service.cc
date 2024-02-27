@@ -470,6 +470,7 @@ static cloud_storage::manifest_topic_configuration convert_topic_configuration(
         .segment_size = cfg.properties.segment_size,
         .retention_bytes = cfg.properties.retention_bytes,
         .retention_duration = cfg.properties.retention_duration,
+        .virtual_cluster_id = cfg.properties.mpx_virtual_cluster_id,
       },
     };
     return result;
