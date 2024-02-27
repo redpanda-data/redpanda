@@ -101,7 +101,7 @@ public:
     }
 
     friend std::ostream& operator<<(std::ostream& o, const base_named_type& t) {
-        fmt::print(o, "{{{}}}", t._value);
+        fmt::print(o, "{}", t._value);
         return o;
     };
 
@@ -176,7 +176,7 @@ public:
     constexpr operator type() && { return std::move(_value); }
 
     friend std::ostream& operator<<(std::ostream& o, const base_named_type& t) {
-        fmt::print(o, "{{{}}}", t._value);
+        fmt::print(o, "{}", t._value);
         return o;
     };
 

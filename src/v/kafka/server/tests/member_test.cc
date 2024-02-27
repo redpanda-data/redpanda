@@ -160,7 +160,7 @@ SEASTAR_THREAD_TEST_CASE(vote_for_protocols) {
 SEASTAR_THREAD_TEST_CASE(output_stream) {
     auto m = get_member();
     auto s = fmt::format("{}", m);
-    BOOST_TEST(s.find("id={m}") != std::string::npos);
+    BOOST_TEST(s.find("id=m") != std::string::npos);
 }
 
 SEASTAR_THREAD_TEST_CASE(member_serde) {

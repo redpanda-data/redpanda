@@ -313,8 +313,8 @@ SEASTAR_THREAD_TEST_CASE(wrong_compaction_strategy_throws) {
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
                    "Failed to parse topic manifest "
-                   "{\"30000000/meta/full-test-namespace/full-test-topic/"
-                   "topic_manifest.json\"}: Invalid compaction_strategy: "
+                   "\"30000000/meta/full-test-namespace/full-test-topic/"
+                   "topic_manifest.json\": Invalid compaction_strategy: "
                    "wrong_value")
                  != std::string::npos;
       });
