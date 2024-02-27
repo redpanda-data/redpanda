@@ -34,6 +34,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/util/log.hh>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -408,7 +409,18 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
 
     auto mode = config::shard_local_cfg().leader_balancer_mode();
     std::unique_ptr<leader_balancer_strategy> strategy;
-
+    if (clusterlog.is_enabled(ss::log_level::trace)) {
+        for (const auto& [shard, groups] : index) {
+            for (const auto& [group, replicas] : groups) {
+                vlog(
+                  clusterlog.trace,
+                  "broke_shard: {}, leader of {} with replicas: {}",
+                  shard,
+                  group,
+                  replicas);
+            }
+        }
+    }
     switch (mode) {
     case model::leader_balancer_mode::random_hill_climbing:
         vlog(clusterlog.debug, "using random_hill_climbing");
@@ -679,6 +691,15 @@ leader_balancer::index_type leader_balancer::build_index() {
                     r_it != replicas.end()) {
                     *r_it = assignment.from;
                 }
+                vlog(
+                  clusterlog.trace,
+                  "{}/{}/{} group: {}, leader: {}, core: {} - inflight",
+                  topic.first.ns,
+                  topic.first.tp,
+                  partition.id,
+                  partition.group,
+                  assignment.to.node_id,
+                  assignment.to);
 
                 index[assignment.to][partition.group] = std::move(replicas);
                 continue;
@@ -714,7 +735,15 @@ leader_balancer::index_type leader_balancer::build_index() {
                       partition.replicas);
                 }
             }
-
+            vlog(
+              clusterlog.trace,
+              "{}/{}/{} group: {}, leader: {}, core: {}",
+              topic.first.ns,
+              topic.first.tp,
+              partition.id,
+              partition.group,
+              leader_node,
+              leader_core);
             /*
              * if no leader node or core was found then we still want to
              * represent the resource in the index to avoid an artificial
