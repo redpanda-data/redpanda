@@ -754,23 +754,41 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             p.flush()
             producers.append(p)
 
+        evicted_count = max_producers - max_concurrent_producer_ids
+
         # Wait until eviction kicks in.
         def wait_for_eviction():
+            samples = [
+                "idempotency_pid_cache_size",
+                "producer_state_manager_evicted_producers"
+            ]
             brokers = self.redpanda.started_nodes()
-            metrics = self.redpanda.metrics_sample(
-                "idempotency_pid_cache_size", brokers)
+            metrics = self.redpanda.metrics_samples(samples, brokers)
             producers_per_node = defaultdict(int)
-            for m in metrics.samples:
-                id = self.redpanda.node_id(m.node)
-                producers_per_node[id] += int(m.value)
+            evicted_per_node = defaultdict(int)
+            for pattern, metric in metrics.items():
+                for m in metric.samples:
+                    id = self.redpanda.node_id(m.node)
+                    if pattern == "idempotency_pid_cache_size":
+                        producers_per_node[id] += int(m.value)
+                    elif pattern == "producer_state_manager_evicted_producers":
+                        evicted_per_node[id] += int(m.value)
 
             self.redpanda.logger.debug(
                 f"active producers: {producers_per_node}")
+            self.redpanda.logger.debug(
+                f"evicted producers: {evicted_per_node}")
 
-            return len(producers_per_node) == len(brokers) and all([
+            remaining_match = all([
                 num == max_concurrent_producer_ids
                 for num in producers_per_node.values()
             ])
+
+            evicted_match = all(
+                [val == evicted_count for val in evicted_per_node.values()])
+
+            return len(producers_per_node) == len(
+                brokers) and remaining_match and evicted_match
 
         wait_until(wait_for_eviction,
                    timeout_sec=30,

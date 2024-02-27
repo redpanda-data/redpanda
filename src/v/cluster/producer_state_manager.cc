@@ -47,10 +47,14 @@ void producer_state_manager::setup_metrics() {
     _metrics.add_group(
       prometheus_sanitize::metrics_name("cluster:producer_state_manager"),
       {sm::make_gauge(
-        "producer_manager_total_active_producers",
-        [this] { return _num_producers; },
-        sm::description(
-          "Total number of active idempotent and transactional producers."))});
+         "producer_manager_total_active_producers",
+         [this] { return _num_producers; },
+         sm::description(
+           "Total number of active idempotent and transactional producers.")),
+       sm::make_counter(
+         "evicted_producers",
+         [this] { return _eviction_counter; },
+         sm::description("Number of evicted producers so far."))});
 }
 
 void producer_state_manager::register_producer(producer_state& state) {
@@ -109,6 +113,7 @@ void producer_state_manager::do_evict_excess_producers() {
         // producers are in the list. This makes the whole logic lock free.
         ssx::spawn_with_gate(_gate, [&state] { return state.evict(); });
         --_num_producers;
+        ++_eviction_counter;
     }
 }
 
