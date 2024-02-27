@@ -54,6 +54,14 @@ ss::sstring gen_alphanum_max_distinct(size_t max_cardinality);
 void fill_buffer_randomchars(char* start, size_t amount);
 
 template<typename T>
+std::vector<T> randomized_range(T min, T max) {
+    std::vector<T> r(max - min);
+    std::iota(r.begin(), r.end(), min);
+    std::shuffle(r.begin(), r.end(), internal::gen);
+    return r;
+}
+
+template<typename T>
 T get_int() {
     std::uniform_int_distribution<T> dist;
     return dist(internal::gen);
