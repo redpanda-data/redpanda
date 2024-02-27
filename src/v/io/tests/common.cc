@@ -186,3 +186,36 @@ seastar::future<> io_queue_fault_injector::stop() {
     stop_ = true;
     return std::move(injector);
 }
+
+testing::AssertionResult EqualInputStreams(
+  seastar::input_stream<char>& input1, seastar::input_stream<char>& input2) {
+    auto data1 = input1.read().get();
+    auto data2 = input2.read().get();
+    while (true) {
+        auto len = std::min(data1.size(), data2.size());
+        if (data1.share(0, len) != data2.share(0, len)) {
+            return ::testing::AssertionFailure() << fmt::format(
+                     "Input 1/2 chunk sizes {} vs {}. data {} vs {}",
+                     data1.size(),
+                     data2.size(),
+                     std::string_view(data1.get(), len),
+                     std::string_view(data2.get(), len));
+        }
+        data1.trim_front(len);
+        data2.trim_front(len);
+        if (data1.empty()) {
+            data1 = input1.read().get();
+        }
+        if (data2.empty()) {
+            data2 = input2.read().get();
+        }
+        if (data1.empty() || data2.empty()) {
+            break;
+        }
+    }
+    if (data1 != data2) {
+        return ::testing::AssertionFailure() << fmt::format(
+                 "Input 1/2 chunk size {} vs {}", data1.size(), data2.size());
+    }
+    return ::testing::AssertionSuccess();
+}
