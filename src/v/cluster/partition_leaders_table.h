@@ -117,6 +117,7 @@ public:
                     p.second.current_leader,
                     p.second.update_term);
               });
+            throw_if_modified(version_snapshot);
         }
     }
 
