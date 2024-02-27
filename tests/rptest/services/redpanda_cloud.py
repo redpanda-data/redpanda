@@ -18,11 +18,10 @@ from rptest.services.provider_clients.ec2_client import RTBS_LABEL
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
 from urllib.parse import urlparse
 
+from rptest.services.redpanda_types import SaslCredentials
+
 ns_name_prefix = "rp-ducktape-ns-"
 ns_name_date_fmt = "%Y-%m-%d-%H%M%S-"
-
-SaslCredentials = collections.namedtuple("SaslCredentials",
-                                         ["username", "password", "algorithm"])
 
 CLOUD_TYPE_FMC = 'FMC'
 CLOUD_TYPE_BYOC = 'BYOC'
