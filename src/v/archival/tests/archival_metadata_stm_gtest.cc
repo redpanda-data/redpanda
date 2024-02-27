@@ -391,3 +391,83 @@ TEST_F_CORO(
                  .replicate();
     ASSERT_EQ_CORO(repl_err, cluster::errc::success);
 }
+
+TEST_F_CORO(
+  archival_metadata_stm_gtest_fixture, test_archival_stm_read_write_fence) {
+    ss::abort_source never_abort;
+    auto timeout = 30s;
+    auto deadline = ss::lowres_clock::now() + timeout;
+
+    auto s_cfg = scoped_config{};
+    s_cfg.get("cloud_storage_disable_metadata_consistency_checks")
+      .set_value(false);
+    co_await start();
+
+    std::vector<cloud_storage::segment_meta> good_segment;
+    good_segment.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    co_await wait_for_leader(10s);
+
+    ASSERT_EQ_CORO(
+      get_leader_stm().get_dirty(),
+      cluster::archival_metadata_stm::state_dirty::dirty);
+
+    auto is_synced = co_await get_leader_stm().sync(timeout);
+
+    ASSERT_TRUE_CORO(is_synced);
+
+    auto applied_offset = get_leader_stm().manifest().get_applied_offset();
+
+    auto repl_err = co_await get_leader_stm()
+                      .batch_start(deadline, never_abort)
+                      .read_write_fence(applied_offset)
+                      .add_segments(
+                        std::move(good_segment),
+                        cluster::segment_validated::yes)
+                      .replicate();
+    ASSERT_EQ_CORO(repl_err, cluster::errc::success);
+
+    ASSERT_EQ_CORO(get_leader_stm().manifest().size(), 1);
+    ASSERT_EQ_CORO(
+      get_leader_stm().manifest().begin()->base_offset, model::offset(0));
+    ASSERT_EQ_CORO(
+      get_leader_stm().manifest().begin()->committed_offset, model::offset(99));
+
+    // It's guaranteed that the batch is already applied to the STM
+    applied_offset = get_leader_stm().manifest().get_applied_offset();
+    ASSERT_TRUE_CORO(applied_offset > model::offset(0));
+
+    good_segment.push_back(segment_meta{
+      .base_offset = model::offset(100),
+      .committed_offset = model::offset(199),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    repl_err = co_await get_leader_stm()
+                 .batch_start(deadline, never_abort)
+                 .read_write_fence(applied_offset)
+                 .add_segments(
+                   std::move(good_segment), cluster::segment_validated::yes)
+                 .replicate();
+    ASSERT_EQ_CORO(repl_err, cluster::errc::success);
+
+    // Emulate concurrency violation
+    applied_offset = model::offset{0};
+    good_segment.push_back(segment_meta{
+      .base_offset = model::offset(200),
+      .committed_offset = model::offset(299),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    repl_err = co_await get_leader_stm()
+                 .batch_start(deadline, never_abort)
+                 .read_write_fence(applied_offset)
+                 .add_segments(
+                   std::move(good_segment), cluster::segment_validated::yes)
+                 .replicate();
+    ASSERT_EQ_CORO(repl_err, cluster::errc::concurrent_modification_error);
+}

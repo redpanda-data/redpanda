@@ -94,6 +94,13 @@ public:
       cloud_storage::scrub_status status,
       cloud_storage::anomalies detected);
     command_batch_builder& reset_scrubbing_metadata();
+    /// Add read-write fence
+    ///
+    /// The fence prevents all subsequent commands in the batch from being
+    /// applied to the in-memory state of the STM if the 'applied_offset' is
+    /// greater than the 'offset'. This mechanism is supposed to be used as a
+    /// concurrency-control mechanism.
+    command_batch_builder& read_write_fence(model::offset offset);
 
     /// Replicate the configuration batch
     ss::future<std::error_code> replicate();
@@ -302,6 +309,7 @@ private:
     struct process_anomalies_cmd;
     struct reset_scrubbing_metadata;
     struct update_highest_producer_id_cmd;
+    struct read_write_fence_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -330,6 +338,9 @@ private:
     void apply_process_anomalies(iobuf);
     void apply_reset_scrubbing_metadata();
     void apply_update_highest_producer_id(model::producer_id pid);
+    // apply fence command and return true if the 'apply' call should
+    // be interrupted
+    bool apply_read_write_fence(const read_write_fence_cmd&) noexcept;
 
     // Notify current waiter in the 'do_replicate'
     void maybe_notify_waiter(cluster::errc) noexcept;
