@@ -102,6 +102,10 @@ public:
     /// concurrency-control mechanism.
     command_batch_builder& read_write_fence(model::offset offset);
 
+    /// Add update_highest_producer_id_cmd command
+    command_batch_builder&
+    update_highest_producer_id(model::producer_id highest_pid);
+
     /// Replicate the configuration batch
     ss::future<std::error_code> replicate();
 
