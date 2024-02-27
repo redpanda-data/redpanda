@@ -24,6 +24,7 @@ from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.archival.s3_client import S3Client
+from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.clients.rpk import RpkTool
@@ -252,6 +253,7 @@ class BaseCase:
             ("segment.bytes", "segment_size"),
             ("retention.bytes", "retention_bytes"),
             ("retention.ms", "retention_duration"),
+            ("redpanda.virtual.cluster.id", "virtual_cluster_id"),
         ]
         for cname, mname in mapping:
             val = manifest.get(mname)
@@ -884,6 +886,53 @@ class TimeBasedRetention(BaseCase):
             self._produce_and_verify(topic)
 
 
+class VirtualClusterIdPropertyCase(BaseCase):
+    def __init__(self, redpanda, s3_client, kafka_tools, rpk_client, s3_bucket,
+                 logger, rpk_producer_maker):
+
+        super(VirtualClusterIdPropertyCase,
+              self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                             s3_bucket, logger, rpk_producer_maker)
+
+    def create_initial_topics(self):
+        self._redpanda.set_cluster_config({"enable_mpx_extensions": True})
+        self.topics = [
+            TopicSpec(name='panda-topic',
+                      partition_count=1,
+                      replication_factor=3,
+                      virtual_cluster_id="00000000000000000000")
+        ]
+        self.expected_recovered_topics = self.topics
+        for topic in self.topics:
+            self._rpk.create_topic(topic.name,
+                                   topic.partition_count,
+                                   topic.replication_factor,
+                                   config={
+                                       'redpanda.remote.write':
+                                       'true',
+                                       'redpanda.remote.read':
+                                       'true',
+                                       'redpanda.virtual.cluster.id':
+                                       topic.virtual_cluster_id
+                                   })
+
+    def restore_redpanda(self, baseline, controller_checksums):
+        self._redpanda.set_cluster_config({"enable_mpx_extensions": True})
+        return super().restore_redpanda(baseline, controller_checksums)
+
+    def validate_node(self, host, baseline, restored):
+        pass
+
+    def validate_cluster(self, baseline, restored):
+
+        topic_cfg = self._rpk.describe_topic_configs("panda-topic")
+        self.logger.info(f"cfg: {topic_cfg}")
+
+    @property
+    def verify_s3_content_after_produce(self):
+        return False
+
+
 class AdminApiBasedRestore(FastCheck):
     def __init__(self, redpanda, s3_client, kafka_tools, rpk_client: RpkTool,
                  s3_bucket, logger, rpk_producer_maker, topics, admin: Admin):
@@ -1508,4 +1557,15 @@ class TopicRecoveryTest(RedpandaTest):
                                          self.s3_bucket, self.logger,
                                          self.rpk_producer_maker, topics,
                                          Admin(self.redpanda))
+        self.do_run(test_case)
+
+    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_vcluster_id(self, cloud_storage_type):
+
+        test_case = VirtualClusterIdPropertyCase(self.redpanda,
+                                                 self.cloud_storage_client,
+                                                 self.kafka_tools, self.rpk,
+                                                 self.s3_bucket, self.logger,
+                                                 self.rpk_producer_maker)
         self.do_run(test_case)
