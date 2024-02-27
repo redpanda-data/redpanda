@@ -38,3 +38,4 @@ class SelfRedpandaCloudTest(RedpandaCloudTest):
         r = self.redpanda.cluster_unhealthy_reason()
         assert r is None, r
         assert self.redpanda.cluster_healthy()
+        self.redpanda.assert_cluster_is_reusable()
