@@ -773,8 +773,8 @@ class SecurityConfig:
     # sasl is required
     def sasl_enabled(self):
         return (self.kafka_enable_authorization is None and self.enable_sasl
-                and self.endpoint_authn_method
-                is None) or self.endpoint_authn_method == "sasl"
+                and self.endpoint_authn_method is None
+                ) or self.endpoint_authn_method == "sasl"
 
     # principal is extracted from mtls distinguished name
     def mtls_identity_enabled(self):
@@ -1179,10 +1179,9 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         later be replaced by a proper / official start-up probe type check on
         the health of a node after a restart.
         """
-        counts: dict[int, int | None] = {
-            self.idx(node): None
-            for node in self.nodes
-        }
+        counts: dict[int, int
+                     | None] = {self.idx(node): None
+                                for node in self.nodes}
         for node in self.nodes:
             try:
                 metrics = self.metrics(node)
@@ -1877,8 +1876,12 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         for topic in deletable:
             rpk.delete_topic(topic)
 
-    def cluster_healthy(self) -> bool:
-        """Check if cluster is healthy."""
+
+    def cluster_unhealthy_reason(self) -> str | None:
+        """Check if cluster is healthy, using rpk cluster health. Note that this will return
+        true if all currently configured brokers are up and healthy, including in the case brokers
+        have been added or removed from the cluster, even though the cluster is not in its original
+        form in that case."""
 
         # kubectl exec rp-clo88krkqkrfamptsst0-0 -n=redpanda -c=redpanda -- rpk cluster health
         ret = self.kubectl.exec('rpk cluster health')
@@ -1896,14 +1899,20 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         lines = ret.decode().splitlines()
         self.logger.debug(f'rpk cluster health lines: {lines}')
+        unhealthy_reasons = 'no line found'
         for line in lines:
             part = line.partition(':')
-            if part[0].strip() == 'Healthy':
+            heading = part[0].strip()
+            if heading == 'Healthy':
                 if part[2].strip() == 'true':
-                    return True
-                break
+                    return None
+            elif heading == 'Unhealthy reasons':
+                unhealthy_reasons = part[2].strip()
 
-        return False
+        return unhealthy_reasons
+
+    def cluster_healthy(self) -> bool:
+        return self.cluster_unhealthy_reason is not None
 
 
 class RedpandaService(RedpandaServiceBase):
