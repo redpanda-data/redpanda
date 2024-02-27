@@ -156,7 +156,8 @@ private:
     ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperLE, val1, val2)
 #define GTEST_ASSERT_NE_CORO(val1, val2)                                       \
     ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperNE, val1, val2)
-
+#define GTEST_TEST_THROW_CORO(statement, expected_exception)                   \
+    GTEST_TEST_THROW_(statement, expected_exception, GTEST_FATAL_FAILURE_CORO_)
 /*
  * Coroutine safe assertions
  */
@@ -173,4 +174,10 @@ private:
 #define ASSERT_LT_CORO(val1, val2) GTEST_ASSERT_LT_CORO(val1, val2)
 #define ASSERT_LE_CORO(val1, val2) GTEST_ASSERT_LE_CORO(val1, val2)
 #define ASSERT_NE_CORO(val1, val2) GTEST_ASSERT_NE_CORO(val1, val2)
+
+#define ASSERT_THROW_CORO(statement, expected_exception)                       \
+    GTEST_TEST_THROW_CORO(statement, expected_exception)
+
+#define GTEST_SKIP_CORO() GTEST_SKIP_CORO_("")
+
 // NOLINTEND(cppcoreguidelines-macro-usage,bugprone-macro-parentheses)

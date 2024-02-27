@@ -14,7 +14,9 @@
 #include "compat/generator.h"
 #include "model/metadata.h"
 #include "model/tests/randoms.h"
+#include "random/generators.h"
 #include "test_utils/randoms.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 
@@ -23,7 +25,7 @@ namespace compat {
 template<>
 struct instance_generator<cluster::update_leadership_request_v2> {
     static cluster::update_leadership_request_v2 random() {
-        ss::chunked_fifo<cluster::ntp_leader_revision> values;
+        fragmented_vector<cluster::ntp_leader_revision> values;
         values.emplace_back(
           model::random_ntp(),
           tests::random_named_int<model::term_id>(),
@@ -50,7 +52,11 @@ struct instance_generator<cluster::get_leadership_reply> {
           model::random_ntp(),
           tests::random_named_int<model::term_id>(),
           tests::random_named_int<model::node_id>());
-        return cluster::get_leadership_reply(std::move(leaders));
+        return cluster::get_leadership_reply(
+          std::move(leaders),
+          random_generators::random_choice(
+            {cluster::get_leadership_reply::is_success::yes,
+             cluster::get_leadership_reply::is_success::no}));
     }
 
     static std::vector<cluster::get_leadership_reply> limits() { return {}; }

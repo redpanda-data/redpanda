@@ -12,17 +12,25 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "ssx/async_algorithm.h"
 #include "utils/expiring_promise.h"
+#include "utils/named_type.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/util/later.hh>
 
+#include <absl/container/btree_map.h>
 #include <absl/container/node_hash_map.h>
 
+#include <cstdint>
 #include <optional>
+#include <utility>
 
 namespace cluster {
 
@@ -32,7 +40,26 @@ namespace cluster {
 /// partition leaders. Partition leaders are updated through notification
 /// received by cluster::metadata_dissemination_service.
 class partition_leaders_table {
+private:
+    using version = named_type<uint64_t, struct plt_version_tag>;
+
 public:
+    class concurrent_modification_error final : public std::exception {
+    public:
+        concurrent_modification_error(
+          version initial_version, version current_version)
+          : _msg(ssx::sformat(
+            "Partition leaders table was modified during operation. "
+            "(initial_version: {}, current_version: {}) ",
+            initial_version,
+            current_version)) {}
+
+        const char* what() const noexcept final { return _msg.c_str(); }
+
+    private:
+        ss::sstring _msg;
+    };
+
     explicit partition_leaders_table(ss::sharded<topic_table>&);
 
     ss::future<> stop();
@@ -69,9 +96,27 @@ public:
       model::term_id term) {
         { f(tp_ns, pid, leader, term) } -> std::same_as<void>;
     }
-    void for_each_leader(Func&& f) const {
-        for (auto& [k, v] : _leaders) {
-            f(k.tp_ns, k.pid, v.current_leader, v.update_term);
+    ss::future<> for_each_leader(Func&& f) const {
+        auto version_snapshot = _version;
+        ssx::async_counter counter;
+        for (auto& [tp_ns, partition_leaders] : _topic_leaders) {
+            co_await ssx::async_for_each_counter(
+              counter,
+              partition_leaders.begin(),
+              partition_leaders.end(),
+              [this, &tp_ns, version_snapshot, f = std::forward<Func>(f)](
+                const partition_leaders::value_type& p) mutable {
+                  /**
+                   * Modification validation must happen before accessing the
+                   * element as previous iteration might have yield
+                   */
+                  throw_if_modified(version_snapshot);
+                  f(tp_ns,
+                    p.first,
+                    p.second.current_leader,
+                    p.second.update_term);
+              });
+            throw_if_modified(version_snapshot);
         }
     }
 
@@ -87,6 +132,14 @@ public:
       model::revision_id,
       model::term_id,
       std::optional<model::node_id>);
+    /**
+     * This method updates leadership metadata in a a way that is optimized to
+     * leverage the hierarchical structure of node health report.
+     *
+     * IMPORTANT: node_report must be kept alive during the execution of this
+     * method
+     */
+    ss::future<> update_with_node_report(const node_health_report& node_report);
 
     struct leader_info_t {
         model::topic_namespace tp_ns;
@@ -99,9 +152,13 @@ public:
         model::revision_id partition_revision;
     };
 
-    using leaders_info_t = std::vector<leader_info_t>;
+    using leaders_info_t = chunked_vector<leader_info_t>;
 
     leaders_info_t get_leaders() const;
+
+    uint64_t leaderless_partition_count() const {
+        return _leaderless_partition_count;
+    }
 
     using leader_change_cb_t = ss::noncopyable_function<void(
       model::ntp, model::term_id, std::optional<model::node_id>)>;
@@ -120,61 +177,6 @@ public:
       const model::ntp&, notification_id_type);
 
 private:
-    // optimized to reduce number of ntp copies
-    struct leader_key {
-        model::topic_namespace tp_ns;
-        model::partition_id pid;
-        template<typename H>
-        friend H AbslHashValue(H h, const leader_key& lkv) {
-            return H::combine(std::move(h), lkv.tp_ns, lkv.pid);
-        }
-    };
-    struct leader_key_view {
-        model::topic_namespace_view tp_ns;
-        model::partition_id pid;
-
-        template<typename H>
-        friend H AbslHashValue(H h, const leader_key_view& lkv) {
-            return H::combine(std::move(h), lkv.tp_ns, lkv.pid);
-        }
-    };
-    // make leader_key queryable with leader_key_view
-    struct leader_key_hash {
-        using is_transparent = void;
-
-        size_t operator()(leader_key_view v) const {
-            return absl::Hash<leader_key_view>{}(v);
-        }
-
-        size_t operator()(const leader_key& v) const {
-            return absl::Hash<leader_key>{}(v);
-        }
-    };
-
-    struct leader_key_eq {
-        using is_transparent = void;
-
-        bool operator()(leader_key_view lhs, leader_key_view rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
-        }
-
-        bool operator()(const leader_key& lhs, const leader_key& rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
-        }
-
-        bool operator()(const leader_key& lhs, leader_key_view rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
-        }
-
-        bool operator()(leader_key_view lhs, const leader_key& rhs) const {
-            return lhs.tp_ns.ns == rhs.tp_ns.ns && lhs.tp_ns.tp == rhs.tp_ns.tp
-                   && lhs.pid == rhs.pid;
-        }
-    };
-
     // in order to filter out reordered requests we store last update term
     struct leader_meta {
         // current leader id, this may be empty if a group is in the middle of
@@ -193,27 +195,45 @@ private:
         model::revision_id partition_revision;
     };
 
-    std::optional<leader_meta>
+    using partition_leaders = absl::btree_map<model::partition_id, leader_meta>;
+    using topics_t = absl::node_hash_map<
+      model::topic_namespace,
+      partition_leaders,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>;
+
+    std::optional<std::reference_wrapper<const leader_meta>>
       find_leader_meta(model::topic_namespace_view, model::partition_id) const;
 
-    absl::node_hash_map<leader_key, leader_meta, leader_key_hash, leader_key_eq>
-      _leaders;
+    void throw_if_modified(version current_version) const {
+        if (unlikely(current_version != _version)) {
+            throw concurrent_modification_error(current_version, _version);
+        }
+    }
 
-    // per-ntp notifications for leadership election. note that the
-    // namespace is currently ignored pending an update to the metadata
-    // cache that attaches a namespace to all topics partition references.
-    int32_t _promise_id = 0;
-    using promises_t = absl::node_hash_map<
-      model::ntp,
-      absl::node_hash_map<
-        int32_t,
-        std::unique_ptr<expiring_promise<model::node_id>>>>;
+    void do_update_partition_leader(
+      bool is_controller,
+      topics_t::iterator,
+      model::partition_id,
+      model::revision_id,
+      model::term_id,
+      std::optional<model::node_id>);
 
-    promises_t _leader_promises;
+    topics_t _topic_leaders;
+
+    uint64_t _leaderless_partition_count{0};
 
     ss::sharded<topic_table>& _topic_table;
 
     ntp_callbacks<leader_change_cb_t> _watchers;
+    /**
+     * Store version to check for concurrent updates, when version was
+     * incremented while iterating over the list of leaders
+     */
+    version _version{0};
+    version _topic_map_version{0};
+    ss::gate _gate;
+    ss::abort_source _as;
 };
 
 } // namespace cluster

@@ -68,7 +68,7 @@ std::ostream& operator<<(std::ostream& o, const node_state& s) {
 node_health_report::node_health_report(
   model::node_id id,
   node::local_state local_state,
-  ss::chunked_fifo<topic_status> topics,
+  chunked_vector<topic_status> topics,
   bool include_drain_status,
   std::optional<drain_manager::drain_status> drain_status)
   : id(id)
@@ -96,7 +96,7 @@ node_health_report::operator=(const node_health_report& other) {
     local_state = other.local_state;
     include_drain_status = other.include_drain_status;
     drain_status = other.drain_status;
-    ss::chunked_fifo<topic_status> t;
+    chunked_vector<topic_status> t;
     t.reserve(other.topics.size());
     std::copy(
       other.topics.cbegin(), other.topics.cend(), std::back_inserter(t));

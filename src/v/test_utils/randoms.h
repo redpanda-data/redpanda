@@ -17,6 +17,7 @@
 #include "random/generators.h"
 #include "security/acl.h"
 #include "security/scram_credential.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/net/inet_address.hh>
@@ -31,6 +32,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace tests {
@@ -88,6 +90,19 @@ template<
 inline auto random_frag_vector(Fn&& gen, size_t size = 20, Args&&... args)
   -> fragmented_vector<T> {
     fragmented_vector<T> v;
+    while (size-- > 0) {
+        v.push_back(gen(std::forward<Args>(args)...));
+    }
+    return v;
+}
+
+template<
+  typename Fn,
+  typename... Args,
+  typename T = std::invoke_result_t<Fn, Args...>>
+inline auto random_chunked_vector(Fn&& gen, size_t size = 20, Args&&... args)
+  -> chunked_vector<T> {
+    chunked_vector<T> v;
     while (size-- > 0) {
         v.push_back(gen(std::forward<Args>(args)...));
     }

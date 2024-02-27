@@ -24,6 +24,7 @@
 #include "random/generators.h"
 #include "test_utils/fixture.h"
 #include "units.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
 
@@ -351,7 +352,7 @@ struct partition_balancer_planner_fixture {
       const std::set<size_t>& nearly_full_nodes = {},
       uint64_t partition_size = default_partition_size) {
         cluster::cluster_health_report health_report;
-        ss::chunked_fifo<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (const auto& topic : workers.table.local().topics_map()) {
             cluster::topic_status ts;
             ts.tp_ns = topic.second.get_configuration().tp_ns;

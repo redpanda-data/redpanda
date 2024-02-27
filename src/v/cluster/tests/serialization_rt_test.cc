@@ -31,6 +31,7 @@
 #include "test_utils/rpc.h"
 #include "tristate.h"
 #include "units.h"
+#include "utils/fragmented_vector.h"
 #include "v8_engine/data_policy.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -735,7 +736,7 @@ cluster::cluster_health_report random_cluster_health_report() {
     }
     std::vector<cluster::node_health_report> node_reports;
     for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-        ss::chunked_fifo<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
@@ -789,7 +790,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       tests::random_named_int<model::term_id>(),
       tests::random_named_int<model::node_id>(),
       tests::random_named_int<model::revision_id>()));
-    ss::chunked_fifo<cluster::ntp_leader_revision> l_revs;
+    fragmented_vector<cluster::ntp_leader_revision> l_revs;
     l_revs.emplace_back(
       model::random_ntp(),
       tests::random_named_int<model::term_id>(),
@@ -806,7 +807,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       model::random_ntp(),
       tests::random_named_int<model::term_id>(),
       tests::random_named_int<model::node_id>());
-    roundtrip_test(cluster::get_leadership_reply(std::move(leaders)));
+    roundtrip_test(cluster::get_leadership_reply(
+      std::move(leaders), cluster::get_leadership_reply::is_success::yes));
 
     roundtrip_test(
       cluster::allocate_id_request(random_timeout_clock_duration()));
@@ -1601,7 +1603,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        ss::chunked_fifo<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
@@ -1619,7 +1621,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        ss::chunked_fifo<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
