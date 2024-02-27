@@ -56,7 +56,7 @@ from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
-from rptest.services import tls
+from rptest.services import redpanda_types, tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.redpanda_cloud import CloudCluster, CloudTierName, get_config_profile_name
@@ -74,8 +74,8 @@ Partition = collections.namedtuple('Partition',
 MetricSample = collections.namedtuple(
     'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
 
-SaslCredentials = collections.namedtuple("SaslCredentials",
-                                         ["username", "password", "algorithm"])
+SaslCredentials = redpanda_types.SaslCredentials
+
 # Map of path -> (checksum, size)
 FileToChecksumSize = dict[str, Tuple[str, int]]
 
