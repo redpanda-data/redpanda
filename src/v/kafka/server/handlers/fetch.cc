@@ -50,6 +50,7 @@
 #include <fmt/ostream.h>
 
 #include <chrono>
+#include <exception>
 #include <ranges>
 #include <string_view>
 
@@ -975,12 +976,16 @@ public:
     ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
         start_worker_aborts(plan);
 
-        co_await log_exceptions(do_execute_plan(octx, std::move(plan)));
+        co_await handle_exceptions(do_execute_plan(octx, std::move(plan)));
 
         // Send abort signal to workers and wait for all workers to end before
         // returning.
         co_await abort_workers().finally(
           [this] { return _workers_gate.close(); });
+
+        if (_thrown_exception) {
+            std::rethrow_exception(_thrown_exception);
+        }
     }
 
 private:
@@ -993,7 +998,7 @@ private:
             auto shard = (start_shard_idx + i) % ss::smp::count;
 
             ssx::spawn_with_gate(_workers_gate, [&]() mutable {
-                return log_exceptions(start_shard_fetch_worker(
+                return handle_exceptions(start_shard_fetch_worker(
                   octx, std::move(plan.fetches_per_shard[shard]), 0));
             });
         }
@@ -1001,7 +1006,7 @@ private:
         for (;;) {
             co_await progress_conditions(octx);
 
-            if (octx.should_stop_fetch()) {
+            if (octx.should_stop_fetch() || _thrown_exception) {
                 co_return;
             }
 
@@ -1013,7 +1018,7 @@ private:
                 ssx::spawn_with_gate(
                   _workers_gate, [this, &octx, sf = std::move(sf)]() mutable {
                       auto shard = sf.shard;
-                      return log_exceptions(start_shard_fetch_worker(
+                      return handle_exceptions(start_shard_fetch_worker(
                         octx,
                         std::move(sf),
                         // Require that a worker returns more data than before.
@@ -1151,24 +1156,25 @@ private:
         return fut.handle_exception([](const std::exception_ptr&) {});
     }
 
-    static ss::future<> log_exceptions(ss::future<> f) {
+    ss::future<> handle_exceptions(ss::future<> f) {
         try {
             co_await std::move(f);
         } catch (const seastar::timed_out_error& e) {
+            // This exception can occur when the max allowable time for a fetch
+            // has passed.
             vlog(klog.info, "timed out error: {}", e);
         } catch (const std::system_error& e) {
             if (net::is_reconnect_error(e)) {
+                // This exception commonly occurs when clients disconnect.
                 vlog(klog.info, "reconnect error: {}", e);
             } else {
-                vlog(klog.error, "unknown system error: {}", e);
+                _thrown_exception = std::current_exception();
             }
         } catch (const seastar::named_semaphore_aborted& e) {
+            // This exception commonly occurs when the handler is aborted.
             vlog(klog.info, "semaphore aborted error: {}", e);
         } catch (...) {
-            vlog(
-              klog.error,
-              "unknown exception thrown: {}",
-              std::current_exception());
+            _thrown_exception = std::current_exception();
         }
     }
 
@@ -1177,6 +1183,10 @@ private:
     ss::condition_variable _has_completed_shard_fetches;
     std::vector<shard_fetch> _completed_shard_fetches;
     std::vector<size_t> _last_result_size;
+    // If any child task throws an exception this holds on to the exception
+    // until all child tasks have been stopped and its safe to rethrow the
+    // exception.
+    std::exception_ptr _thrown_exception;
 };
 
 size_t op_context::fetch_partition_count() const {
