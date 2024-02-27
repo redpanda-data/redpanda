@@ -1561,7 +1561,6 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                  context: TestContext,
                  *,
                  config_profile_name: str,
-                 superuser: Optional[SaslCredentials] = None,
                  skip_if_no_redpanda_log: Optional[bool] = False,
                  min_brokers: int = 3,
                  **kwargs):
@@ -1584,8 +1583,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         self.config_profile_name = config_profile_name
         self._min_brokers = min_brokers
-        self._superuser = superuser or RedpandaServiceBase.SUPERUSER_CREDENTIALS
-        self._skip_create_superuser = bool(superuser)
+        self._superuser = RedpandaServiceBase.SUPERUSER_CREDENTIALS
 
         self._trim_logs = False
 
@@ -1631,21 +1629,14 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         return self._cloud_cluster.cluster_id
 
     def security_config(self):
-        return self._security_config
+        return dict(security_protocol='SASL_SSL',
+                    sasl_mechanism=self._superuser.algorithm,
+                    sasl_plain_username=self._superuser.username,
+                    sasl_plain_password=self._superuser.password,
+                    enable_tls=True)
 
     def start(self, **kwargs):
-        superuser = None
-        if not self._skip_create_superuser:
-            superuser = self._superuser
-
-        # set this for use in RedpandaTest
-        self._security_config = dict(security_protocol='SASL_SSL',
-                                     sasl_mechanism=superuser.algorithm,
-                                     sasl_plain_username=superuser.username,
-                                     sasl_plain_password=superuser.password,
-                                     enable_tls=True)
-
-        cluster_id = self._cloud_cluster.create(superuser=superuser)
+        cluster_id = self._cloud_cluster.create(superuser=self._superuser)
         remote_uri = f'redpanda@{cluster_id}-agent'
         self.__kubectl = KubectlTool(
             self,

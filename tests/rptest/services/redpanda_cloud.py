@@ -714,7 +714,7 @@ class CloudCluster():
 
         return
 
-    def _ensure_cluster_health(self, superuser) -> str | None:
+    def _ensure_cluster_health(self) -> str | None:
         """
             Check if current cluster is healthy
               - check connectivity
@@ -724,10 +724,10 @@ class CloudCluster():
             Returns a string describing the problem if a check fails or
             None otherwise.
         """
-        def _get(cluster, path, user):
+        def _get(cluster, path):
             # Prepare credentials
-            _u = user.username
-            _p = user.password
+            _u = self._superuser.username
+            _p = self._superuser.password
             b64 = base64.b64encode(bytes(f'{_u}:{_p}', 'utf-8'))
             token = b64.decode('utf-8')
             headers = {'Authorization': f'Basic {token}'}
@@ -766,7 +766,7 @@ class CloudCluster():
         # Check that cluster is operational
         # Check brokers count
         self._logger.info("Checking cluster brokers")
-        _brokers = _get(cluster, "/brokers", superuser)
+        _brokers = _get(cluster, "/brokers")
         if len(_brokers['brokers']) < 3:
             return warn_and_return("Less than 3 brokers operational")
         else:
@@ -775,7 +775,7 @@ class CloudCluster():
 
         # Check topic count
         self._logger.info("Checking cluster topics")
-        _topics = _get(cluster, "/topics", superuser)
+        _topics = _get(cluster, "/topics")
         _critical = [
             "_schemas", "__redpanda.connectors_logs",
             "_internal_connectors_status", "_internal_connectors_configs",
@@ -833,12 +833,15 @@ class CloudCluster():
             # if there is still no id, just copy what globals.json had
             return self.config.id
 
-    def create(self, superuser: Optional[SaslCredentials] = None) -> str:
+    def create(self, superuser: SaslCredentials) -> str:
         """Create a cloud cluster and a new namespace; block until cluster is finished creating.
 
         :param config_profile_name: config profile name, default 'tier-1-aws'
         :return: clusterId, e.g. 'cimuhgmdcaa1uc1jtabc'
         """
+
+        self._superuser = superuser
+
         # Select cluster id for the test run
         # From this point, only self.current.cluster_id should be used
         self.current.cluster_id = self._select_cluster_id()
@@ -859,8 +862,7 @@ class CloudCluster():
                 self.current.consoleUrl = self._get_cluster_console_url()
                 self.update_cluster_acls(superuser)
                 # Do the health check
-                unhealthy_reason: str | None = self._ensure_cluster_health(
-                    superuser)
+                unhealthy_reason: str | None = self._ensure_cluster_health()
             except Exception as e:
                 if fail_on_unhealthy:
                     raise
