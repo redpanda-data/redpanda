@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
 from typing import Any
 from ducktape.tests.test import TestContext
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
@@ -38,3 +39,4 @@ class SelfRedpandaCloudTest(RedpandaCloudTest):
         r = self.redpanda.cluster_unhealthy_reason()
         assert r is None, r
         assert self.redpanda.cluster_healthy()
+        self.redpanda.assert_cluster_is_reusable()
