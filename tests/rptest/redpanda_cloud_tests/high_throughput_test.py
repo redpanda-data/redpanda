@@ -493,8 +493,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                                self.msg_size) as _:
             # Test will assert if advertised throughput isn't met
             time.sleep(15)
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     def _get_swarm_connections_count(self, nodes):
         _list = []
@@ -712,8 +711,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         assert _hwm >= reasonably_expected, \
             f"Expected >{reasonably_expected} messages, actual {_hwm}"
 
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     COMBO_PRELOADED_LOG_ALLOW_LIST = [
         re.compile('storage - .* - Stopping parser, short read. .*')
@@ -755,8 +753,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             # Block traffic to/from one node.
             self.stage_block_node_traffic()
 
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     NOS3_LOG_ALLOW_LIST = [
         re.compile("s3 - .* - Accessing .*, unexpected REST API error "
@@ -835,8 +832,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             # S3 up -> down -> up
             self.stage_block_s3()
 
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     def _cloud_storage_no_new_errors(self, redpanda, logger=None):
         num_errors = redpanda.metric_sum(
@@ -959,8 +955,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             producer.stop()
             producer.wait(timeout_sec=600)
 
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     def stage_decommission_and_add(self):
         def cluster_ready_replicas(cluster_name):
@@ -1261,8 +1256,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             producer.stop()
             producer.wait(timeout_sec=600)
 
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     def _stage_add_and_decommission(self):
         cluster_name = f'rp-{self.redpanda._cloud_cluster.cluster_id}'
@@ -1338,8 +1332,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 consumer.stop()
                 consumer.wait(timeout_sec=600)
 
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume(self):
@@ -1375,8 +1368,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     @ignore
     @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -1388,8 +1380,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         """
         self._create_topic_spec()
         self.stage_tiered_storage_consuming()
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     def stage_lots_of_failed_consumers(self):
         # This stage sequentially starts 1,000 consumers. Then allows
@@ -1496,8 +1487,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
 
     def stage_consume_miss_cache(self, producer: KgoVerifierProducer):
         # This stage produces enough data to each RP node to fill up their batch caches
@@ -1893,5 +1883,4 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             # Assert test results
             omb.check_succeed()
 
-        assert self.redpanda.cluster_healthy(
-        ), 'cluster unhealthy at end of test'
+        self.redpanda.assert_cluster_is_reusable()
