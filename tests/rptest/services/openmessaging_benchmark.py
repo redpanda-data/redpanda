@@ -197,7 +197,7 @@ class OpenMessagingBenchmark(Service):
         if node:
             self.nodes = [node]
 
-        self._metrics = []
+        self._metrics: dict[str, Any] = {}
         self._ctx = ctx
         self.topology = topology
         self.redpanda = redpanda
