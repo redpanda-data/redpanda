@@ -193,6 +193,16 @@ struct archival_metadata_stm::update_highest_producer_id_cmd {
     using value = model::producer_id;
 };
 
+struct archival_metadata_stm::read_write_fence_cmd
+  : public serde::envelope<
+      read_write_fence_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr cmd_key key{14};
+
+    model::offset last_applied_offset;
+};
+
 // Serde format description
 // v5
 //  - add apply_offset field
@@ -415,6 +425,17 @@ command_batch_builder& command_batch_builder::cleanup_archive(
       archival_metadata_stm::truncate_archive_commit_cmd::key);
     auto record_val = archival_metadata_stm::truncate_archive_commit_cmd::value{
       .start_offset = start_rp_offset, .bytes_removed = bytes_removed};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    return *this;
+}
+
+command_batch_builder&
+command_batch_builder::read_write_fence(model::offset offset) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::read_write_fence_cmd::key);
+    auto record_val = archival_metadata_stm::read_write_fence_cmd{
+      .last_applied_offset = offset};
     iobuf val_buf = serde::to_iobuf(record_val);
     _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
     return *this;
@@ -963,8 +984,10 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
                                 model::record&& r) {
                 auto key = serde::from_iobuf<cmd_key>(r.release_key());
 
-                _manifest->advance_applied_offset(
-                  base_offset + model::offset{r.offset_delta()});
+                if (key != read_write_fence_cmd::key) {
+                    _manifest->advance_applied_offset(
+                      base_offset + model::offset{r.offset_delta()});
+                }
 
                 if (key != mark_clean_cmd::key) {
                     // All keys other than mark clean make the manifest dirty
@@ -1031,12 +1054,23 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
                       serde::from_iobuf<update_highest_producer_id_cmd::value>(
                         r.release_value()));
                     break;
+                case read_write_fence_cmd::key:
+                    if (apply_read_write_fence(
+                          serde::from_iobuf<read_write_fence_cmd>(
+                            r.release_value()))) {
+                        // This means that there is a concurrency violation. The
+                        // fence was created before some other command was
+                        // applied. We can't apply the commands from this batch.
+                        return ss::stop_iteration::yes;
+                    }
+                    break;
                 default:
                     throw std::runtime_error(fmt_with_ctx(
                       fmt::format,
                       "Unknown archival metadata STM command {}",
                       static_cast<int>(key)));
                 };
+                return ss::stop_iteration::no;
             });
         } catch (...) {
             vlog(
@@ -1381,6 +1415,21 @@ void archival_metadata_stm::apply_update_start_kafka_offset(kafka::offset so) {
 void archival_metadata_stm::apply_reset_metadata() {
     vlog(_logger.info, "Resetting manifest");
     _manifest->unsafe_reset();
+}
+
+bool archival_metadata_stm::apply_read_write_fence(
+  const archival_metadata_stm::read_write_fence_cmd& cmd) noexcept {
+    if (_manifest->get_applied_offset() != cmd.last_applied_offset) {
+        vlog(
+          _logger.warn,
+          "Concurrent modification error detected, current applied offset: {}, "
+          "read-write fence: {}",
+          _manifest->get_applied_offset(),
+          cmd.last_applied_offset);
+        maybe_notify_waiter(errc::concurrent_modification_error);
+        return true;
+    }
+    return false;
 }
 
 void archival_metadata_stm::apply_update_highest_producer_id(
