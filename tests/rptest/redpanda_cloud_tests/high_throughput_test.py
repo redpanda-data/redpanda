@@ -249,15 +249,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.logger.info(f"Loaded install pack '{install_pack['version']}': "
                          f"Redpanda v{install_pack['redpanda_version']}, "
                          f"created at '{install_pack['created_at']}'")
-        if self.config_profile_name not in install_pack['config_profiles']:
-            # throw user friendly error
-            _profiles = ", ".join(
-                [f"'{k}'" for k in install_pack['config_profiles']])
-            raise RuntimeError(
-                f"'{self.config_profile_name}' not found among config profiles: {_profiles}"
-            )
-        config_profile = install_pack['config_profiles'][
-            self.config_profile_name]
+
+        config_profile = self.redpanda.config_profile
         cluster_config = config_profile['cluster_config']
 
         self._num_brokers = config_profile['nodes_count']

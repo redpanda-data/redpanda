@@ -1678,8 +1678,13 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     @cached_property
     def config_profile(self) -> dict[str, Any]:
-        return self.get_install_pack()['config_profiles'][
-            self.config_profile_name]
+        profiles: dict[str, Any] = self.get_install_pack()['config_profiles']
+        if self.config_profile_name not in profiles:
+            # throw user friendly error
+            raise RuntimeError(
+                f"'{self.config_profile_name}' not found among config profiles: {profiles.keys()}"
+            )
+        return profiles[self.config_profile_name]
 
     def restart_pod(self, pod_name: str, timeout: int = 180):
         """Restart a pod by name
