@@ -1268,6 +1268,8 @@ ss::future<upload_result> remote::delete_objects_sequentially(
                              results.push_back(result);
                          });
                    })
+            .handle_exception_type(
+              [](const ss::abort_requested_exception& /* ignore */) {})
             .handle_exception_type([ctxlog](const std::exception& ex) {
                 vlog(ctxlog.error, "Failed to delete keys: {}", ex.what());
             })
