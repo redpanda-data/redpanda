@@ -434,7 +434,7 @@ class MissingPartition(BaseCase):
     def __init__(self, redpanda, s3_client, kafka_tools, rpk_client, s3_bucket,
                  logger, rpk_producer_maker):
         self._part1_offset = 0
-        self._part1_num_segments = 0
+        self._part1_offset_delta_end = 0
         super(MissingPartition,
               self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
                              s3_bucket, logger, rpk_producer_maker)
@@ -467,7 +467,8 @@ class MissingPartition(BaseCase):
         manifest_0 = manifests[ntp_0]
         manifest_1 = manifests[ntp_1]
         self._part1_offset = manifest_1['last_offset']
-        self._part1_num_segments = len(manifest_1['segments'])
+        self._part1_offset_delta_end = \
+          max([seg_meta['delta_offset_end'] for _, seg_meta in manifest_1['segments'].items()])
 
         manifest_0_path = view.gen_manifest_path(
             ntp_0.to_ntpr(manifest_0['revision']))
@@ -496,18 +497,12 @@ class MissingPartition(BaseCase):
                 # the manifest
                 assert partition.high_watermark == 0
             elif partition.id == 1:
-                # Explanation: high watermark is a kafka offset equal to the last offset in the log + 1.
-                # last_offset in the manifest is the last uploaded redpanda offset. Difference between
-                # kafka and redpanda offsets is equal to the number of non-data records. There will be
-                # min 1 non-data records (a configuration record) and max (1 + num_segments) records
-                # (archival metadata records for each segment). Unfortunately the number of archival metadata
-                # records is non-deterministic as they can end up in the last open segment which is not
-                # uploaded. After bringing everything together we have the following bounds:
-                min_expected_hwm = self._part1_offset - self._part1_num_segments
-                max_expected_hwm = self._part1_offset
-                assert min_expected_hwm <= partition.high_watermark <= max_expected_hwm, \
+                # NOTE: high watermark is the next Kafka offset, hence the +1.
+                expected_hwm = self._part1_offset + 1 - self._part1_offset_delta_end
+                assert expected_hwm == partition.high_watermark, \
                     f"Unexpected high watermark {partition.high_watermark} " \
-                    f"(min expected: {min_expected_hwm}, max expected: {max_expected_hwm})"
+                    f"(last rp offset: {self._part1_offset}, delta_offset_end: "\
+                    f"{self._part1_offset_delta_end})"
             else:
                 assert False, "Unexpected partition id"
 
