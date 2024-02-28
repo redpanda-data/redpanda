@@ -275,12 +275,12 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         args = ["--list"]
         return self._run("kafka-acls.sh", args)
 
-    def create_cluster_acls(self, username, op):
+    def create_cluster_acls(self, username, op, ptype: str = "User"):
         """
         Add allow+describe+cluster ACL
         """
         args = ["--add"]
-        args += ["--allow-principal", f"User:{username}"]
+        args += ["--allow-principal", f"{ptype}:{username}"]
         args += ["--operation", op, "--cluster"]
         return self._run("kafka-acls.sh", args)
 
