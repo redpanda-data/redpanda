@@ -10,8 +10,9 @@
 from rptest.services.failure_injector import make_failure_injector, FailureSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.admin_api_auth_test import create_user_and_wait
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.redpanda import SecurityConfig
+from rptest.services.redpanda import SecurityConfig, SaslCredentials
 from rptest.util import expect_exception
 from ducktape.utils.util import wait_until
 
@@ -228,3 +229,41 @@ class RpkACLTest(RedpandaTest):
                    timeout_sec=10,
                    backoff_sec=1,
                    err_msg="fUser {username} has not been deleted in time")
+
+    @cluster(num_nodes=1)
+    def test_role_acl(self):
+        """
+        This test ensures that we can create ACLs bound to a "RedpandaRole:" principal
+        and that this won't interfere with "User:" permissions, even with a
+        matching principal name.
+        """
+
+        TOPIC_NAME = 'some-topic'
+        ROLE_NAME = self.username
+        superclient = self._superclient()
+
+        superclient.sasl_create_user(self.username, self.password,
+                                     self.mechanism)
+        superclient.create_topic(TOPIC_NAME)
+
+        with expect_exception(RpkException,
+                              lambda e: 'AUTHORIZATION_FAILED' in str(e)):
+            self._rpk.produce(TOPIC_NAME, 'foo', 'bar')
+
+        self.logger.debug("Now add topic access rights for user 'alice'")
+
+        superclient.sasl_allow_principal(f"RedpandaRole:{ROLE_NAME}", ['all'],
+                                         'topic', TOPIC_NAME)
+
+        acls = list(
+            filter(lambda l: l != '' and 'PRINCIPAL' not in l,
+                   superclient.acl_list().split('\n')))
+
+        assert len(acls) == 1, f"Too many ACLs: {acls}"
+        assert acls[-1].find(f"RedpandaRole:{ROLE_NAME}"
+                             ) == 0, f"Expected RedpandaRole ACL: {acls[-1]}"
+
+        # The user is still not authorized
+        with expect_exception(RpkException,
+                              lambda e: 'AUTHORIZATION_FAILED' in str(e)):
+            self._rpk.produce(TOPIC_NAME, 'foo', 'bar')
