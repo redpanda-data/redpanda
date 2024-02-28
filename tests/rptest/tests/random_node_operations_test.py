@@ -230,7 +230,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 readers=self.consumer_count,
                 nodes=self.nodes,
                 debug_logs=with_logs,
-                trace_logs=with_logs)
+                trace_logs=with_logs,
+                acks=self.acks)
 
             self.consumer.start(clean=False)
 
