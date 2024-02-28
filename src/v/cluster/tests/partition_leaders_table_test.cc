@@ -15,6 +15,7 @@
 #include "cluster/producer_state.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "gmock/gmock.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -27,6 +28,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <fmt/core.h>
 #include <gtest/gtest.h>
 
@@ -159,5 +161,74 @@ TEST_F_CORO(test_fixture, test_waiting_for_leader) {
 
     //  f3 should be aborted
     ASSERT_THROW_CORO(co_await std::move(f_3), ss::abort_requested_exception);
+}
+using namespace testing;
+
+TEST_F_CORO(test_fixture, test_leadership_notification) {
+    model::topic tp("test_topic");
+    co_await add_topic(tp, 3);
+
+    model::ntp p_0(
+      model::kafka_namespace,
+      model::topic_partition(tp, model::partition_id(0)));
+    model::ntp p_1(
+      model::kafka_namespace,
+      model::topic_partition(tp, model::partition_id(1)));
+    model::ntp p_2(
+      model::kafka_namespace,
+      model::topic_partition(tp, model::partition_id(2)));
+
+    absl::flat_hash_map<model::ntp, int> notifies{{p_0, 0}, {p_1, 0}, {p_2, 0}};
+
+    leaders.register_leadership_change_notification(
+      [&](
+        const model::ntp& ntp,
+        model::term_id term,
+        std::optional<model::node_id> leader_id) { notifies[ntp] += 1; });
+
+    // notification should not be triggered when leader_id is set to nullopt
+    leaders.update_partition_leader(p_0, model::term_id{1}, std::nullopt);
+
+    EXPECT_THAT(notifies, Each(Pair(An<model::ntp>(), Eq(0))));
+
+    // notification should be triggered as we have new leader
+    leaders.update_partition_leader(
+      p_0, model::revision_id{10}, model::term_id{1}, model::node_id(10));
+    EXPECT_EQ(notifies[p_0], 1);
+    EXPECT_EQ(notifies[p_1], 0);
+    EXPECT_EQ(notifies[p_2], 0);
+    // notifications for each partition should be independent
+    leaders.update_partition_leader(
+      p_1, model::revision_id{10}, model::term_id{1}, model::node_id(10));
+    EXPECT_EQ(notifies[p_0], 1);
+    EXPECT_EQ(notifies[p_1], 1);
+    EXPECT_EQ(notifies[p_2], 0);
+
+    // notifications should not be triggered if update was ignored due to
+    // out of date revision revision change
+    leaders.update_partition_leader(
+      p_1, model::revision_id{8}, model::term_id{2}, model::node_id(2));
+    EXPECT_EQ(notifies[p_0], 1);
+    EXPECT_EQ(notifies[p_1], 1);
+    EXPECT_EQ(notifies[p_2], 0);
+
+    // notifications should be triggered when leadership changes 10 -> 5
+    leaders.update_partition_leader(
+      p_0, model::revision_id{10}, model::term_id{2}, model::node_id(5));
+    EXPECT_EQ(notifies[p_0], 2);
+
+    // notifications should be triggered when leader does not change but
+    // term does
+    leaders.update_partition_leader(
+      p_0, model::revision_id{10}, model::term_id{3}, model::node_id(5));
+    EXPECT_EQ(notifies[p_0], 3);
+
+    // notifications should be triggered when leader and term does not change
+    // but revision does
+    leaders.update_partition_leader(
+      p_0, model::revision_id{11}, model::term_id{3}, model::node_id(5));
+    EXPECT_EQ(notifies[p_0], 4);
+    EXPECT_EQ(notifies[p_1], 1);
+    EXPECT_EQ(notifies[p_2], 0);
 }
 } // namespace cluster
