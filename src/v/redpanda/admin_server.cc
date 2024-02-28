@@ -3330,9 +3330,8 @@ admin_server::get_topic_partitions_handler(
           fmt::format("Could not find topic: {}/{}", tp_ns.ns, tp_ns.tp));
     }
     using partition_t = ss::httpd::partition_json::partition;
-    std::vector<partition_t> partitions;
+    fragmented_vector<partition_t> partitions;
     const auto& assignments = tp_md->get().get_assignments();
-    partitions.reserve(assignments.size());
     // Normal topic
     for (const auto& p_as : assignments) {
         partition_t p;
@@ -3364,7 +3363,8 @@ admin_server::get_topic_partitions_handler(
             });
       });
 
-    co_return ss::json::json_return_type(partitions);
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      lw_shared_container(std::move(partitions)), [](auto& p) { return p; }));
 }
 
 ss::future<ss::json::json_return_type>
@@ -3526,8 +3526,7 @@ admin_server::get_all_transactions_handler(
     }
 
     using tx_info = ss::httpd::transaction_json::transaction_summary;
-    std::vector<tx_info> ans;
-    ans.reserve(res.value().size());
+    fragmented_vector<tx_info> ans;
 
     for (auto& tx : res.value()) {
         if (tx.status == cluster::tm_transaction::tx_status::tombstone) {
@@ -3576,9 +3575,12 @@ admin_server::get_all_transactions_handler(
         }
 
         ans.push_back(std::move(new_tx));
+        co_await ss::coroutine::maybe_yield();
     }
 
-    co_return ss::json::json_return_type(ans);
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      lw_shared_container(std::move(ans)),
+      [](auto& tx_info) { return tx_info; }));
 }
 
 ss::future<ss::json::json_return_type>
@@ -4208,29 +4210,29 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::http::request>) {
           vlog(logger.info, "Request to get leaders info");
           using result_t = ss::httpd::debug_json::leader_info;
-          std::vector<result_t> ans;
-
+          // TODO(rockwood): get_leaders can lead to a reactor stall, fix to use
+          // an async version
           auto leaders_info = _metadata_cache.local().get_leaders();
-          ans.reserve(leaders_info.size());
-          for (const auto& leader_info : leaders_info) {
-              result_t info;
-              info.ns = leader_info.tp_ns.ns;
-              info.topic = leader_info.tp_ns.tp;
-              info.partition_id = leader_info.pid;
-              info.leader = leader_info.current_leader.has_value()
-                              ? leader_info.current_leader.value()
-                              : -1;
-              info.previous_leader = leader_info.previous_leader.has_value()
-                                       ? leader_info.previous_leader.value()
-                                       : -1;
-              info.last_stable_leader_term
-                = leader_info.last_stable_leader_term;
-              info.update_term = leader_info.update_term;
-              info.partition_revision = leader_info.partition_revision;
-              ans.push_back(std::move(info));
-          }
-
-          return ss::make_ready_future<ss::json::json_return_type>(ans);
+          return ss::make_ready_future<ss::json::json_return_type>(
+            ss::json::stream_range_as_array(
+              lw_shared_container(std::move(leaders_info)),
+              [](const auto& leader_info) {
+                  result_t info;
+                  info.ns = leader_info.tp_ns.ns;
+                  info.topic = leader_info.tp_ns.tp;
+                  info.partition_id = leader_info.pid;
+                  info.leader = leader_info.current_leader.has_value()
+                                  ? leader_info.current_leader.value()
+                                  : -1;
+                  info.previous_leader = leader_info.previous_leader.has_value()
+                                           ? leader_info.previous_leader.value()
+                                           : -1;
+                  info.last_stable_leader_term
+                    = leader_info.last_stable_leader_term;
+                  info.update_term = leader_info.update_term;
+                  info.partition_revision = leader_info.partition_revision;
+                  return info;
+              }));
       });
 
     register_route<user>(
