@@ -886,11 +886,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                        backoff_sec=5.0)
             self.logger.info(
                 f"{acked} messages produced in {time.time() - start_time}s")
-        except TimeoutException as e:
-            _throughput = producer.produce_status.acked * self.msg_size // timeout
+        except TimeoutException:
+            _throughput = producer.produce_status.acked * self.msg_size / timeout / 1e6
             raise RuntimeError(
-                f"Low throughput while preparing for the test: {_throughput}: {e}"
-            )
+                f"Low throughput while preparing for the test: {_throughput} MB/s"
+            ) from None
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_and_add(self):
