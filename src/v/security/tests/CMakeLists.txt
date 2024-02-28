@@ -11,6 +11,7 @@ rp_test(
     jwt_test.cc
     url_test.cc
     oidc_principal_mapping_test.cc
+    role_store_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka_protocol v::storage v::security
   LABELS kafka
