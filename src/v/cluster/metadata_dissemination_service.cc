@@ -117,37 +117,6 @@ ss::future<> metadata_dissemination_service::start() {
         return ss::make_ready_future<>();
     }
     _dispatch_timer.arm(_dissemination_interval);
-    // poll either seed servers or configuration
-    const auto& all_brokers = _members_table.local().nodes();
-    // use hash set to deduplicate ids
-    absl::flat_hash_set<net::unresolved_address> all_broker_addresses;
-    all_broker_addresses.reserve(all_brokers.size() + _seed_servers.size());
-    // collect ids
-    for (auto& [_, b] : all_brokers) {
-        all_broker_addresses.emplace(b.broker.rpc_address());
-    }
-    for (auto& id : _seed_servers) {
-        all_broker_addresses.emplace(id);
-    }
-
-    // We do not want to send requst to self
-    all_broker_addresses.erase(_self.rpc_address());
-
-    // Do nothing, single node cluster
-    if (all_broker_addresses.empty()) {
-        return ss::make_ready_future<>();
-    }
-    std::vector<net::unresolved_address> addresses;
-    addresses.reserve(all_broker_addresses.size());
-    addresses.insert(
-      addresses.begin(),
-      all_broker_addresses.begin(),
-      all_broker_addresses.end());
-
-    ssx::spawn_with_gate(
-      _bg, [this, addresses = std::move(addresses)]() mutable {
-          return update_metadata_with_retries(std::move(addresses));
-      });
 
     return ss::make_ready_future<>();
 }
