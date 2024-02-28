@@ -181,10 +181,9 @@ TEST_F_CORO(test_fixture, test_leadership_notification) {
     absl::flat_hash_map<model::ntp, int> notifies{{p_0, 0}, {p_1, 0}, {p_2, 0}};
 
     leaders.register_leadership_change_notification(
-      [&](
-        const model::ntp& ntp,
-        model::term_id term,
-        std::optional<model::node_id> leader_id) { notifies[ntp] += 1; });
+      [&](const model::ntp& ntp, model::term_id, model::node_id) {
+          notifies[ntp] += 1;
+      });
 
     // notification should not be triggered when leader_id is set to nullopt
     leaders.update_partition_leader(p_0, model::term_id{1}, std::nullopt);
