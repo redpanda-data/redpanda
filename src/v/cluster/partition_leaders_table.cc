@@ -192,6 +192,7 @@ void partition_leaders_table::do_update_partition_leader(
               revision_id_valid
               && revision_id > p_it->second.partition_revision) {
                 p_it->second.update_term = model::term_id{};
+                p_it->second.last_stable_leader_term = model::term_id{};
             }
         }
 
@@ -255,17 +256,17 @@ void partition_leaders_table::do_update_partition_leader(
         return;
     }
     // update stable leader term
+    const auto needs_notification = term > p_it->second.last_stable_leader_term;
     p_it->second.last_stable_leader_term = term;
 
-    // Ensure leadership has changed before notifying watchers
-    if (leader_id != p_it->second.previous_leader) {
+    if (needs_notification) {
         _watchers.notify(
           t_it->first.ns,
           t_it->first.tp,
           p_id,
           model::ntp(t_it->first.ns, t_it->first.tp, p_id),
           term,
-          leader_id);
+          *leader_id);
     }
 }
 
@@ -314,12 +315,8 @@ ss::future<model::node_id> partition_leaders_table::wait_for_leader(
     auto holder = _gate.hold();
     auto promise = ss::make_lw_shared<expiring_promise<model::node_id>>();
     auto n_id = register_leadership_change_notification(
-      ntp,
-      [promise](
-        model::ntp, model::term_id, std::optional<model::node_id> leader_id) {
-          if (leader_id) {
-              promise->set_value(*leader_id);
-          }
+      ntp, [promise](model::ntp, model::term_id, model::node_id leader_id) {
+          promise->set_value(leader_id);
       });
 
     auto f = promise->get_future_with_timeout(
