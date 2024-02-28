@@ -131,15 +131,6 @@ private:
     void cleanup_finished_updates();
     ss::future<> dispatch_disseminate_leadership();
     ss::future<> dispatch_one_update(model::node_id, update_retry_meta&);
-    ss::future<result<get_leadership_reply>>
-      dispatch_get_metadata_update(net::unresolved_address);
-    ss::future<> do_request_metadata_update(request_retry_meta&);
-    ss::future<>
-    process_get_update_reply(result<get_leadership_reply>, request_retry_meta&);
-
-    ss::future<>
-      update_metadata_with_retries(std::vector<net::unresolved_address>);
-
     ss::future<> update_leaders_with_health_report(cluster_health_report);
 
     ss::sharded<raft::group_manager>& _raft_manager;
@@ -154,7 +145,6 @@ private:
     std::chrono::milliseconds _dissemination_interval;
     config::tls_config _rpc_tls_config;
     ss::chunked_fifo<ntp_leader_revision> _requests;
-    std::vector<net::unresolved_address> _seed_servers;
     broker_updates_t _pending_updates;
     mutex _lock;
     ss::timer<> _dispatch_timer;

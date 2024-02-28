@@ -72,10 +72,6 @@ metadata_dissemination_service::metadata_dissemination_service(
         ssx::spawn_with_gate(
           _bg, [this] { return dispatch_disseminate_leadership(); });
     });
-
-    for (auto& seed : config::node().seed_servers()) {
-        _seed_servers.push_back(seed.addr);
-    }
 }
 
 void metadata_dissemination_service::disseminate_leadership(
@@ -165,99 +161,6 @@ ss::future<> metadata_dissemination_service::apply_leadership_notification(
                 });
           }
           return f;
-      });
-}
-
-static inline ss::future<>
-wait_for_next_retry(std::chrono::seconds sleep_for, ss::abort_source& as) {
-    return ss::sleep_abortable(sleep_for, as)
-      .handle_exception_type([](const ss::sleep_aborted&) {
-          vlog(clusterlog.debug, "Getting metadata cancelled");
-      });
-}
-
-ss::future<> metadata_dissemination_service::update_metadata_with_retries(
-  std::vector<net::unresolved_address> addresses) {
-    return ss::do_with(
-      request_retry_meta{.addresses = std::move(addresses)},
-      [this](request_retry_meta& meta) {
-          meta.next = std::cbegin(meta.addresses);
-          return ss::do_until(
-            [this, &meta] { return meta.success || _bg.is_closed(); },
-            [this, &meta]() mutable {
-                return do_request_metadata_update(meta);
-            });
-      });
-}
-
-ss::future<> metadata_dissemination_service::do_request_metadata_update(
-  request_retry_meta& meta) {
-    return dispatch_get_metadata_update(*meta.next)
-      .then([this, &meta](result<get_leadership_reply> r) {
-          return process_get_update_reply(std::move(r), meta);
-      })
-      .handle_exception([](const std::exception_ptr& e) {
-          vlog(clusterlog.debug, "Metadata update error: {}", e);
-      })
-      .then([&meta, this] {
-          // Success case
-          if (meta.success) {
-              return ss::make_ready_future<>();
-          }
-          // Dispatch next retry
-          ++meta.next;
-          if (meta.next != meta.addresses.end()) {
-              return ss::make_ready_future<>();
-          }
-          // start from the beggining, after backoff elapsed
-          meta.next = std::cbegin(meta.addresses);
-          return wait_for_next_retry(
-            std::chrono::seconds(meta.backoff_policy.next_backoff()), _as);
-      });
-}
-
-ss::future<> metadata_dissemination_service::process_get_update_reply(
-  result<get_leadership_reply> reply_result, request_retry_meta& meta) {
-    if (!reply_result || !reply_result.value().success) {
-        vlog(
-          clusterlog.debug,
-          "Unable to initialize metadata using node {}",
-          *meta.next);
-        return ss::make_ready_future<>();
-    }
-    // Update all NTP leaders
-    vlog(clusterlog.trace, "updating leadership from get_metadata");
-
-    return ss::do_with(
-             std::move(reply_result.value().leaders),
-             [this](auto& reply) {
-                 return _leaders.invoke_on_all(
-                   [&reply](partition_leaders_table& leaders) {
-                       for (const auto& l : reply) {
-                           leaders.update_partition_leader(
-                             l.ntp, l.term, l.leader_id);
-                       }
-                   });
-             })
-      .then([&meta] { meta.success = true; });
-}
-
-ss::future<result<get_leadership_reply>>
-metadata_dissemination_service::dispatch_get_metadata_update(
-  net::unresolved_address address) {
-    vlog(clusterlog.debug, "Requesting metadata update from node {}", address);
-    return do_with_client_one_shot<metadata_dissemination_rpc_client_protocol>(
-      address,
-      _rpc_tls_config,
-      _dissemination_interval,
-      rpc::transport_version::v2,
-      [this](metadata_dissemination_rpc_client_protocol c) {
-          return c
-            .get_leadership(
-              get_leadership_request{},
-              rpc::client_opts(
-                rpc::clock_type::now() + _dissemination_interval))
-            .then(&rpc::get_ctx_data<get_leadership_reply>);
       });
 }
 
