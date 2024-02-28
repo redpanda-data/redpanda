@@ -20,6 +20,9 @@
 #include "redpanda/admin/api-doc/partition.json.hh"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
+#include "utils/fragmented_vector.h"
+
+#include <seastar/json/json_elements.hh>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -855,7 +858,7 @@ admin_server::get_topic_partitions_handler(
           fmt::format("Could not find topic: {}/{}", tp_ns.ns, tp_ns.tp));
     }
     using partition_t = ss::httpd::partition_json::partition;
-    std::vector<partition_t> partitions;
+    fragmented_vector<partition_t> partitions;
     const auto& assignments = tp_md->get().get_assignments();
     partitions.reserve(assignments.size());
 
@@ -894,7 +897,9 @@ admin_server::get_topic_partitions_handler(
             });
       });
 
-    co_return ss::json::json_return_type(partitions);
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      admin::lw_shared_container(std::move(partitions)),
+      [](auto& p) { return p; }));
 }
 
 ss::future<ss::json::json_return_type>
