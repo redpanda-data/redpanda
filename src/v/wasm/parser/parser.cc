@@ -123,7 +123,7 @@ std::ostream& operator<<(std::ostream& os, const module_declarations& m_decls) {
 }
 
 namespace {
-constexpr size_t max_vector_bytes = 128_KiB;
+constexpr size_t max_vector_bytes = 1_MiB;
 constexpr size_t max_functions
   = max_vector_bytes
     / std::max(sizeof(function_signature), sizeof(declaration::function));
@@ -537,13 +537,13 @@ private:
     // NOTE these vectors are all explicitly bounded as to prevent large
     // allocations.
 
-    std::vector<function_signature> _func_signatures;
-    std::vector<module_import> _imports;
-    std::vector<declaration::function> _functions;
-    std::vector<declaration::table> _tables;
-    std::vector<declaration::memory> _memories;
-    std::vector<declaration::global> _globals;
-    std::vector<module_export> _exports;
+    chunked_vector<function_signature> _func_signatures;
+    chunked_vector<module_import> _imports;
+    chunked_vector<declaration::function> _functions;
+    chunked_vector<declaration::table> _tables;
+    chunked_vector<declaration::memory> _memories;
+    chunked_vector<declaration::global> _globals;
+    chunked_vector<module_export> _exports;
 
     iobuf_parser_base* _parser;
 };

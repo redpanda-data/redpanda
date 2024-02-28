@@ -5,6 +5,7 @@ v_cc_library(
   DEPS
     v::bytes
     v::strings
+    v::container
     Seastar::seastar
 )
 

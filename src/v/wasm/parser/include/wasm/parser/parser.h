@@ -11,6 +11,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
+#include "container/fragmented_vector.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -152,8 +153,8 @@ struct module_export {
  * The declarations of a WebAssembly module.
  */
 struct module_declarations {
-    std::vector<module_export> exports;
-    std::vector<module_import> imports;
+    chunked_vector<module_export> exports;
+    chunked_vector<module_import> imports;
 
     bool operator==(const module_declarations&) const = default;
     friend std::ostream& operator<<(std::ostream&, const module_declarations&);
