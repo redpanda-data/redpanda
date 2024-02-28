@@ -341,6 +341,14 @@ struct log_reader_config {
     // readers cache.
     bool skip_readers_cache{false};
 
+    // If set to true, when a gap is detected in the offset space, installs a
+    // `ghost_batch` to fill the gap with the same term as the next batch.
+    //
+    // The assumption here is that the gap was created by compaction, and that
+    // the corresponding ghost batches exactly fill the space, while preserving
+    // terms boundaries.
+    bool fill_gaps{false};
+
     log_reader_config(
       model::offset start_offset,
       model::offset max_offset,

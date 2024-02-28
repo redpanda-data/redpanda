@@ -256,15 +256,17 @@ recovery_stm::read_range_for_recovery(
         // need to add batches to the cache for read-once workloads.
         cfg.skip_batch_cache = true;
     }
+    cfg.fill_gaps = true;
 
     vlog(_ctxlog.trace, "Reading batches, starting from: {}", start_offset);
     auto reader = co_await _ptr->_log->make_reader(cfg);
     try {
-        auto batches = co_await model::consume_reader_to_fragmented_memory(
-          std::move(reader),
-          _ptr->_disk_timeout() + model::timeout_clock::now());
+        auto gap_filled_batches
+          = co_await model::consume_reader_to_fragmented_memory(
+            std::move(reader),
+            _ptr->_disk_timeout() + model::timeout_clock::now());
 
-        if (batches.empty()) {
+        if (gap_filled_batches.empty()) {
             vlog(_ctxlog.trace, "Read no batches for recovery, stopping");
             _stop_requested = true;
             co_return std::nullopt;
@@ -272,11 +274,9 @@ recovery_stm::read_range_for_recovery(
         vlog(
           _ctxlog.trace,
           "Read batches in range [{},{}] for recovery",
-          batches.front().base_offset(),
-          batches.back().last_offset());
+          gap_filled_batches.front().base_offset(),
+          gap_filled_batches.back().last_offset());
 
-        auto gap_filled_batches = details::make_ghost_batches_in_gaps(
-          start_offset, std::move(batches));
         _base_batch_offset = gap_filled_batches.front().base_offset();
         _last_batch_offset = gap_filled_batches.back().last_offset();
 

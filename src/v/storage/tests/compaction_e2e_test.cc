@@ -10,8 +10,11 @@
 #include "base/vlog.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/namespace.h"
+#include "model/record_batch_types.h"
+#include "random/generators.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/tests/manual_mixin.h"
+#include "storage/types.h"
 #include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
@@ -362,4 +365,154 @@ TEST_F(CompactionFixtureTest, TestCompactWithNonDataBatches) {
     auto after_second_compaction_count
       = disk_log.get_probe().get_segments_compacted();
     ASSERT_EQ(after_second_compaction_count, after_compaction_count);
+}
+
+struct filled_read_result {
+    size_t num_ghost_batches{0};
+};
+
+// Param: whether to consume to the end of the log, or have readers stop at a
+// random offset.
+class CompactionFilledReaderTest
+  : public CompactionFixtureTest
+  , public ::testing::WithParamInterface<bool> {};
+
+// Test that validates gaps created by compactions can be filled in by a log
+// reader to form a contiguous offset space.
+TEST_P(CompactionFilledReaderTest, ReadFilledGaps) {
+    auto consume_to_end = GetParam();
+    ss::abort_source never_abort;
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+    auto raft = partition->raft();
+    int cardinality = 10;
+    generate_data(
+      /*num_segments=*/4, cardinality, /*batches_per_segment=*/10)
+      .get();
+
+    // Reads starting at `start_offset`, validating that each batch has an
+    // offset one higher than the previous.
+    auto log_end_offset = disk_log.offsets().committed_offset;
+    ASSERT_GE(log_end_offset(), 40);
+    auto validate_filled_read_from = [&](model::offset start_offset) {
+        model::offset end_offset = consume_to_end
+                                     ? model::offset::max()
+                                     : model::offset{random_generators::get_int(
+                                       start_offset(), log_end_offset())};
+
+        storage::log_reader_config reader_cfg{
+          start_offset,
+          end_offset,
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt};
+        reader_cfg.fill_gaps = true;
+        auto reader = disk_log.make_reader(reader_cfg).get();
+        auto batches = model::consume_reader_to_memory(
+                         std::move(reader), model::no_timeout)
+                         .get();
+        filled_read_result res;
+        model::offset expected_next{start_offset};
+        for (const auto& b : batches) {
+            EXPECT_EQ(expected_next, b.base_offset());
+            expected_next = model::next_offset(b.last_offset());
+            if (b.header().type == model::record_batch_type::ghost_batch) {
+                ++res.num_ghost_batches;
+            }
+        }
+        return res;
+    };
+    // NOTE: randomized to encourage different  orderings of caching.
+    for (auto i :
+         random_generators::randomized_range(long(0), log_end_offset())) {
+        const auto res = validate_filled_read_from(model::offset{i});
+        ASSERT_EQ(res.num_ghost_batches, 0);
+    }
+
+    // Compaction should leave behind gaps, but those gaps should be filled
+    // when reading.
+    storage::compaction_config cfg(
+      disk_log.segments().back()->offsets().base_offset,
+      ss::default_priority_class(),
+      never_abort,
+      std::nullopt,
+      10);
+    disk_log.sliding_window_compact(cfg).get();
+    for (auto i :
+         random_generators::randomized_range(long(0), log_end_offset())) {
+        const auto res = validate_filled_read_from(model::offset{i});
+        // The last batches won't have anything removed, since they will be the
+        // latest values for their respective keys.
+        if (i >= log_end_offset - cardinality) {
+            ASSERT_EQ(res.num_ghost_batches, 0);
+        } else if (consume_to_end) {
+            ASSERT_GT(res.num_ghost_batches, 0);
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  ValidatorConsumesToEnd, CompactionFilledReaderTest, ::testing::Bool());
+
+TEST_F(CompactionFixtureTest, TestReadFilledGapsWithTerms) {
+    ss::abort_source never_abort;
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+    auto raft = partition->raft();
+    auto orig_term = raft->term();
+    int cardinality = 10;
+
+    // Write some in different terms.
+    while (raft->term()() < orig_term() + 5) {
+        generate_data(
+          /*num_segments=*/2, cardinality, /*batches_per_segment=*/10)
+          .get();
+        raft->step_down("test").get();
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&] { return raft->is_leader(); });
+    }
+    storage::log_reader_config reader_cfg{
+      model::offset(0),
+      model::offset::max(),
+      ss::default_priority_class(),
+      std::nullopt,
+      std::nullopt};
+    reader_cfg.fill_gaps = true;
+
+    // Collect the original term of each batch.
+    auto orig_reader = disk_log.make_reader(reader_cfg).get();
+    auto orig_batches = model::consume_reader_to_memory(
+                          std::move(orig_reader), model::no_timeout)
+                          .get();
+    absl::btree_map<model::offset, model::term_id> terms_per_offset;
+    for (const auto& b : orig_batches) {
+        for (auto o = b.base_offset(); o <= b.last_offset(); o++) {
+            terms_per_offset[o] = b.term();
+        }
+    }
+
+    storage::compaction_config cfg(
+      disk_log.segments().back()->offsets().base_offset,
+      ss::default_priority_class(),
+      never_abort,
+      std::nullopt,
+      10);
+    disk_log.sliding_window_compact(cfg).get();
+
+    // After compaction, the terms should not have changed, even for gaps that
+    // were filled in.
+    auto compacted_reader = disk_log.make_reader(reader_cfg).get();
+    auto compacted_batches = model::consume_reader_to_memory(
+                               std::move(compacted_reader), model::no_timeout)
+                               .get();
+    model::offset expected_next{0};
+    size_t num_ghost_batches{0};
+    for (const auto& b : compacted_batches) {
+        for (auto o = b.base_offset(); o <= b.last_offset(); o++) {
+            ASSERT_EQ(terms_per_offset[o], b.term());
+        }
+        EXPECT_EQ(expected_next, b.base_offset());
+        expected_next = model::next_offset(b.last_offset());
+        if (b.header().type == model::record_batch_type::ghost_batch) {
+            ++num_ghost_batches;
+        }
+    }
+    ASSERT_GT(num_ghost_batches, 0);
 }
