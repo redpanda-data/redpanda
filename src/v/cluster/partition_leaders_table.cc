@@ -192,6 +192,7 @@ void partition_leaders_table::do_update_partition_leader(
               revision_id_valid
               && revision_id > p_it->second.partition_revision) {
                 p_it->second.update_term = model::term_id{};
+                p_it->second.last_stable_leader_term = model::term_id{};
             }
         }
 
@@ -255,10 +256,10 @@ void partition_leaders_table::do_update_partition_leader(
         return;
     }
     // update stable leader term
+    const auto needs_notification = term > p_it->second.last_stable_leader_term;
     p_it->second.last_stable_leader_term = term;
 
-    // Ensure leadership has changed before notifying watchers
-    if (leader_id != p_it->second.previous_leader) {
+    if (needs_notification) {
         _watchers.notify(
           t_it->first.ns,
           t_it->first.tp,
