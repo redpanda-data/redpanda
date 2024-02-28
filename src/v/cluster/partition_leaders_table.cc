@@ -79,14 +79,6 @@ std::optional<leader_term> partition_leaders_table::get_leader_term(
                 : std::nullopt;
 }
 
-void partition_leaders_table::update_partition_leader(
-  const model::ntp& ntp,
-  model::term_id term,
-  std::optional<model::node_id> leader_id) {
-    // we set revision_id to invalid, this way we will skip revision check
-    update_partition_leader(ntp, model::revision_id{}, term, leader_id);
-}
-
 ss::future<> partition_leaders_table::update_with_node_report(
   const node_health_report& node_report) {
     ssx::async_counter counter;
@@ -167,15 +159,10 @@ void partition_leaders_table::do_update_partition_leader(
 
         // Currently we have to check if revision id is valid since not all
         // the code paths devlivers revision information
-        //
-        // TODO: always check revision after we will add revision to
-        // metadata dissemination requests
-        const bool revision_id_valid = revision_id >= model::revision_id{0};
+
         if (!is_controller) {
             // skip update for partition with previous revision
-            if (
-              revision_id_valid
-              && revision_id < p_it->second.partition_revision) {
+            if (revision_id < p_it->second.partition_revision) {
                 vlog(
                   clusterlog.trace,
                   "skip update for partition {}/{} with previous revision {} "
@@ -188,9 +175,7 @@ void partition_leaders_table::do_update_partition_leader(
                 return;
             }
             // reset the term for new ntp revision
-            if (
-              revision_id_valid
-              && revision_id > p_it->second.partition_revision) {
+            if (revision_id > p_it->second.partition_revision) {
                 p_it->second.update_term = model::term_id{};
             }
         }
@@ -226,9 +211,7 @@ void partition_leaders_table::do_update_partition_leader(
         }
         p_it->second.current_leader = leader_id;
         p_it->second.update_term = term;
-        if (revision_id_valid) {
-            p_it->second.partition_revision = revision_id;
-        }
+        p_it->second.partition_revision = revision_id;
     } else {
         if (!leader_id) {
             ++_leaderless_partition_count;

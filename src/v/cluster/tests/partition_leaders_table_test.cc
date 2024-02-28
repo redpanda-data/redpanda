@@ -101,9 +101,10 @@ TEST_F_CORO(test_fixture, test_counting_leaderless_partitions) {
 
         if (tests::random_bool()) {
             leaders.update_partition_leader(
-              ntp, model::term_id(i), tests::random_optional([] {
-                  return model::node_id(0);
-              }));
+              ntp,
+              model::revision_id{0},
+              model::term_id(i),
+              tests::random_optional([] { return model::node_id(0); }));
         } else {
             leaders.remove_leader(ntp, model::revision_id{0});
         }
@@ -142,7 +143,8 @@ TEST_F_CORO(test_fixture, test_waiting_for_leader) {
     ASSERT_FALSE_CORO(f_2.available());
     ASSERT_FALSE_CORO(f_3.available());
 
-    leaders.update_partition_leader(p_0, model::term_id(0), model::node_id(20));
+    leaders.update_partition_leader(
+      p_0, model::revision_id{0}, model::term_id(0), model::node_id(20));
     // after leadership was set futures should be available
     // ASSERT_TRUE_CORO(f_1.available());
     // ASSERT_TRUE_CORO(f_2.available());

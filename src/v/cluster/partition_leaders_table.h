@@ -126,9 +126,6 @@ public:
     void reset();
 
     void update_partition_leader(
-      const model::ntp&, model::term_id, std::optional<model::node_id>);
-
-    void update_partition_leader(
       const model::ntp&,
       model::revision_id,
       model::term_id,
