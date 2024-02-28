@@ -50,7 +50,7 @@ from ducktape.tests.test import TestContext
 
 from rptest.clients.helm import HelmTool
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.kubectl import KubectlTool
+from rptest.clients.kubectl import KubectlTool, is_redpanda_pod
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
@@ -1655,20 +1655,28 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             tp_proxy=self._cloud_cluster.config.teleport_auth_server,
             tp_token=self._cloud_cluster.config.teleport_bot_token)
 
-        # Get pods and form node list
-        self.pods = []
-        _r = self.kubectl.cmd('get pods -n redpanda -o json')
-        _pods = json.loads(_r.decode())
-        for p in _pods['items']:
-            if not p['metadata']['name'].startswith(
-                    f"rp-{self._cloud_cluster.config.id}"):
-                continue
-            else:
-                _node = CloudBroker(p, self.kubectl, self.logger)
-                self.pods.append(_node)
+        self.pods = [
+            CloudBroker(p, self.kubectl, self.logger)
+            for p in self.get_redpanda_pods()
+        ]
 
         node_count = self.config_profile['nodes_count']
         assert self._min_brokers <= node_count, f'Not enough brokers: test needs {self._min_brokers} but cluster has {node_count}'
+
+    def get_redpanda_pods(self):
+        """Get the current list of redpanda pods as k8s API objects."""
+        pods = json.loads(
+            self.kubectl.cmd('get pods -n redpanda -o json').decode())
+
+        return [
+            p for p in pods['items'] if is_redpanda_pod(p, self.cluster_id)
+        ]
+
+    @property
+    def cluster_id(self):
+        cid = self._cloud_cluster.cluster_id
+        assert cid, cid
+        return cid
 
     def get_node_by_id(self, id):
         for p in self.pods:
@@ -1894,6 +1902,16 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         uh_reason = self._cloud_cluster._ensure_cluster_health()
         if uh_reason is not None:
             raise CorruptedClusterError(uh_reason)
+
+        expected_nodes = int(self.config_profile['nodes_count'])
+        redpanda_pods = len(self.get_redpanda_pods())
+        assert expected_nodes == redpanda_pods, f'Expected {expected_nodes} per tier definition but there were only {redpanda_pods} pods'
+
+        brokers = self._cloud_cluster.get_brokers()
+        broker_count = len(brokers)
+        assert expected_nodes == broker_count, (
+            f'Expected {expected_nodes} per tier definition but there '
+            f'were only {broker_count} brokers: {brokers}')
 
     def cluster_unhealthy_reason(self) -> str | None:
         """Check if cluster is healthy, using rpk cluster health. Note that this will return

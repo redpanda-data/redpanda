@@ -1,5 +1,6 @@
 import base64
 import collections
+from functools import cache
 import json
 import os
 import requests
@@ -505,7 +506,7 @@ class CloudCluster():
             },
         }
 
-    def _get_cluster(self, _id):
+    def _get_cluster(self, _id) -> dict[str, Any]:
         """
         Calls CloudV2 API to get cluster info
         """
@@ -714,6 +715,27 @@ class CloudCluster():
 
         return
 
+    @cache
+    def panda_proxy_url(self):
+        cluster = self._get_cluster(self.current.cluster_id)
+        return cluster['status']['listeners']['pandaProxy']['panda-proxy'][
+            'urls'][0]
+
+    def _query_panda_proxy(self, path):
+        # Prepare credentials
+        _u = self._superuser.username
+        _p = self._superuser.password
+        b64 = base64.b64encode(bytes(f'{_u}:{_p}', 'utf-8'))
+        token = b64.decode('utf-8')
+        headers = {'Authorization': f'Basic {token}'}
+        return self.cloudv2._http_get(path,
+                                      base_url=self.panda_proxy_url(),
+                                      override_headers=headers)
+
+    def get_brokers(self):
+        """Get the list of brokers from the pandaproxy API."""
+        return self._query_panda_proxy("/brokers")['brokers']
+
     def _ensure_cluster_health(self) -> str | None:
         """
             Check if current cluster is healthy
@@ -724,25 +746,11 @@ class CloudCluster():
             Returns a string describing the problem if a check fails or
             None otherwise.
         """
-        def _get(cluster, path):
-            # Prepare credentials
-            _u = self._superuser.username
-            _p = self._superuser.password
-            b64 = base64.b64encode(bytes(f'{_u}:{_p}', 'utf-8'))
-            token = b64.decode('utf-8')
-            headers = {'Authorization': f'Basic {token}'}
-            proxy_url = cluster['status']['listeners']['pandaProxy'][
-                'panda-proxy']['urls'][0]
-            return self.cloudv2._http_get(path,
-                                          base_url=proxy_url,
-                                          override_headers=headers)
-
         def warn_and_return(msg: str):
             self._logger.warning(msg)
             return msg
 
         # Get cluster details
-        cluster = {}
         try:
             self._logger.info("Getting cluster specs")
             cluster = self._get_cluster(self.current.cluster_id)
@@ -766,16 +774,15 @@ class CloudCluster():
         # Check that cluster is operational
         # Check brokers count
         self._logger.info("Checking cluster brokers")
-        _brokers = _get(cluster, "/brokers")
-        if len(_brokers['brokers']) < 3:
+        brokers = self.get_brokers()
+        if len(brokers) < 3:
             return warn_and_return("Less than 3 brokers operational")
         else:
-            self._logger.info(
-                f"Console reports '{len(_brokers['brokers'])}' brokers")
+            self._logger.info(f"Console reports '{len(brokers)}' brokers")
 
         # Check topic count
         self._logger.info("Checking cluster topics")
-        _topics = _get(cluster, "/topics")
+        _topics = self._query_panda_proxy("/topics")
         _critical = [
             "_schemas", "__redpanda.connectors_logs",
             "_internal_connectors_status", "_internal_connectors_configs",
