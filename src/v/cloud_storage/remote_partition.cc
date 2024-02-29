@@ -231,15 +231,15 @@ public:
             _partition_reader_as = config.abort_source;
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
                 vlog(_ctxlog.debug, "abort requested via config.abort_source");
-                if (_reader) {
-                    _partition->evict_segment_reader(std::move(_reader));
+                if (_seg_reader) {
+                    _partition->evict_segment_reader(std::move(_seg_reader));
                 }
             });
             if (sub) {
                 _as_sub = std::move(*sub);
             } else {
                 vlog(_ctxlog.debug, "abort_source is triggered in c-tor");
-                _reader = {};
+                _seg_reader = {};
             }
         }
 
@@ -259,7 +259,7 @@ public:
         auto ntp = _partition->get_ntp();
         vlog(_ctxlog.trace, "Destructing reader {}", ntp);
         _partition->_ts_probe.reader_destroyed();
-        if (_reader) {
+        if (_seg_reader) {
             // We must not destroy this reader: it is not safe to do so
             // without calling stop() on it.  The remote_partition is
             // responsible for cleaning up readers, including calling
@@ -298,7 +298,7 @@ public:
     operator=(const partition_record_batch_reader_impl& o)
       = delete;
 
-    bool is_end_of_stream() const override { return _reader == nullptr; }
+    bool is_end_of_stream() const override { return _seg_reader == nullptr; }
 
     void throw_on_external_abort() {
         _partition->_as.check();
@@ -319,11 +319,11 @@ public:
                   "empty");
                 co_return storage_t{};
             }
-            if (_reader->config().over_budget) {
+            if (_seg_reader->config().over_budget) {
                 vlog(
                   _ctxlog.debug,
                   "We're over-budget, stopping, config: {}",
-                  _reader->config());
+                  _seg_reader->config());
                 // We need to stop in such way that will keep the
                 // reader in the reusable state, so we could reuse
                 // it on next iteration
@@ -339,7 +339,7 @@ public:
                 }
 
                 throw_on_external_abort();
-                auto reader_delta = _reader->current_delta();
+                auto reader_delta = _seg_reader->current_delta();
                 if (
                   !_ot_state->empty()
                   && _ot_state->last_delta() > reader_delta) {
@@ -371,7 +371,7 @@ public:
                       "of the current reader: {}, delta offset of the offset "
                       "translator: {}, first offset produced by this reader: "
                       "{}",
-                      _reader->config(),
+                      _seg_reader->config(),
                       reader_delta,
                       _ot_state->last_delta(),
                       _first_produced_offset);
@@ -386,10 +386,10 @@ public:
                   _ctxlog.debug,
                   "Invoking 'read_some' on current log reader with config: "
                   "{}",
-                  _reader->config());
+                  _seg_reader->config());
 
                 try {
-                    auto result = co_await _reader->read_some(
+                    auto result = co_await _seg_reader->read_some(
                       deadline, *_ot_state);
                     throw_on_external_abort();
 
@@ -419,7 +419,7 @@ public:
                       _ctxlog.warn,
                       "stuck reader: current rp offset: {}, max rp offset: {}",
                       ex.rp_offset,
-                      _reader->max_rp_offset());
+                      _seg_reader->max_rp_offset());
 
                     // If the reader is stuck because of a mismatch between
                     // segment data and manifest entry, set reader to EOF and
@@ -434,7 +434,7 @@ public:
                     if (
                       model::next_offset(ex.rp_offset)
                         >= _next_segment_base_offset
-                      && !_reader->is_eof()) {
+                      && !_seg_reader->is_eof()) {
                         vlog(
                           _ctxlog.info,
                           "mismatch between current segment end and manifest "
@@ -443,10 +443,10 @@ public:
                           "set EOF on reader and try to "
                           "reset",
                           ex.rp_offset,
-                          _reader->max_rp_offset(),
+                          _seg_reader->max_rp_offset(),
                           _next_segment_base_offset,
-                          _reader->is_eof());
-                        _reader->set_eof();
+                          _seg_reader->is_eof());
+                        _seg_reader->set_eof();
                         continue;
                     }
                     throw;
@@ -472,7 +472,7 @@ public:
         // we've thrown an exception. Regardless of which error, the reader may
         // have been left in an indeterminate state. Re-set the pointer to it
         // to ensure that it will not be reused.
-        if (_reader) {
+        if (_seg_reader) {
             co_await set_end_of_stream();
         }
         if (unknown_exception_ptr) {
@@ -482,7 +482,7 @@ public:
         vlog(
           _ctxlog.debug,
           "EOS reached, reader available: {}, is end of stream: {}",
-          static_cast<bool>(_reader),
+          static_cast<bool>(_seg_reader),
           is_end_of_stream());
         co_return storage_t{};
     }
@@ -494,8 +494,8 @@ public:
 private:
     /// Return or evict currently referenced reader
     void dispose_current_reader() {
-        if (_reader) {
-            _partition->return_segment_reader(std::move(_reader));
+        if (_seg_reader) {
+            _partition->return_segment_reader(std::move(_seg_reader));
         }
     }
 
@@ -615,7 +615,7 @@ private:
           std::move(segment_unit),
           std::move(segment_reader_unit));
         if (reader) {
-            _reader = std::move(reader);
+            _seg_reader = std::move(reader);
             _next_segment_base_offset = next_offset;
             return;
         }
@@ -625,7 +625,7 @@ private:
           "segment not "
           "found, config: {}",
           config);
-        _reader = {};
+        _seg_reader = {};
         _next_segment_base_offset = {};
     }
 
@@ -663,17 +663,19 @@ private:
     /// attached.
     ss::future<bool> maybe_reset_reader() {
         vlog(_ctxlog.debug, "maybe_reset_reader called");
-        if (!_reader) {
+        if (!_seg_reader) {
             co_return false;
         }
-        if (_reader->config().start_offset > _reader->config().max_offset) {
+        if (
+          _seg_reader->config().start_offset
+          > _seg_reader->config().max_offset) {
             vlog(
               _ctxlog.debug,
               "maybe_reset_stream called - stream already consumed, start "
               "{}, "
               "max {}",
-              _reader->config().start_offset,
-              _reader->config().max_offset);
+              _seg_reader->config().start_offset,
+              _seg_reader->config().max_offset);
             // Entire range is consumed, detach from remote_partition and
             // close the reader.
             co_await set_end_of_stream();
@@ -683,16 +685,16 @@ private:
           _ctxlog.debug,
           "maybe_reset_reader, config start_offset: {}, reader max_offset: "
           "{}",
-          _reader->config().start_offset,
-          _reader->max_rp_offset());
+          _seg_reader->config().start_offset,
+          _seg_reader->max_rp_offset());
 
         // The next offset should be below the next segment base offset if the
         // reader has not finished. If the next offset to be read from has
         // reached the next segment but the reader is not finished, then the
         // state is inconsistent.
-        if (_reader->is_eof()) {
-            auto prev_max_offset = _reader->max_rp_offset();
-            auto config = _reader->config();
+        if (_seg_reader->is_eof()) {
+            auto prev_max_offset = _seg_reader->max_rp_offset();
+            auto config = _seg_reader->config();
             vlog(
               _ctxlog.debug,
               "maybe_reset_stream condition triggered after offset: {}, "
@@ -700,12 +702,12 @@ private:
               "reader's max log offset: {}, is EOF: {}, next base_offset "
               "estimate: {}",
               prev_max_offset,
-              _reader->current_rp_offset(),
+              _seg_reader->current_rp_offset(),
               config.start_offset,
-              _reader->max_rp_offset(),
-              _reader->is_eof(),
+              _seg_reader->max_rp_offset(),
+              _seg_reader->is_eof(),
               _next_segment_base_offset);
-            _partition->evict_segment_reader(std::move(_reader));
+            _partition->evict_segment_reader(std::move(_seg_reader));
             vlog(
               _ctxlog.debug,
               "initializing new segment reader {}, next offset {}, manifest "
@@ -784,32 +786,32 @@ private:
                     std::move(segment_reader_unit),
                     _next_segment_base_offset);
                 _next_segment_base_offset = new_next_offset;
-                _reader = std::move(new_reader);
+                _seg_reader = std::move(new_reader);
             }
-            if (maybe_manifest.has_value() && _reader != nullptr) {
+            if (maybe_manifest.has_value() && _seg_reader != nullptr) {
                 vassert(
-                  prev_max_offset != _reader->max_rp_offset(),
+                  prev_max_offset != _seg_reader->max_rp_offset(),
                   "Progress stall detected, ntp: {}, max offset of prev "
                   "reader: {}, max offset of the new reader {}",
                   _partition->get_ntp(),
                   prev_max_offset,
-                  _reader->max_rp_offset());
+                  _seg_reader->max_rp_offset());
             }
         }
         vlog(
           _ctxlog.debug,
           "maybe_reset_reader completed, reader is present: {}, is end of "
           "stream: {}",
-          static_cast<bool>(_reader),
+          static_cast<bool>(_seg_reader),
           is_end_of_stream());
-        co_return static_cast<bool>(_reader);
+        co_return static_cast<bool>(_seg_reader);
     }
 
     /// Transition reader to the completed state. Stop tracking state in
     /// the 'remote_partition'
     ss::future<> set_end_of_stream() {
-        co_await _reader->stop();
-        _reader = {};
+        co_await _seg_reader->stop();
+        _seg_reader = {};
     }
 
     retry_chain_node _rtc;
@@ -838,7 +840,7 @@ private:
 
     ss::lw_shared_ptr<storage::offset_translator_state> _ot_state;
     /// Reader state that was borrowed from the materialized_segment_state
-    std::unique_ptr<remote_segment_batch_reader> _reader;
+    std::unique_ptr<remote_segment_batch_reader> _seg_reader;
     /// Cancellation subscription
     ss::abort_source::subscription _as_sub;
     /// Reference to the abort source of the partition reader
