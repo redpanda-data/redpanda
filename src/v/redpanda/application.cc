@@ -65,6 +65,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "cluster/tx_topic_manager.h"
 #include "cluster/types.h"
 #include "compression/async_stream_zstd.h"
 #include "compression/stream_zstd.h"
@@ -1817,6 +1818,19 @@ void application::wire_up_redpanda_services(
       .get();
 
     syschecks::systemd_message("Creating tx coordinator frontend").get();
+    construct_single_service_sharded(
+      tx_topic_manager,
+      std::ref(*controller),
+      std::ref(feature_table),
+      config::shard_local_cfg().transaction_coordinator_partitions.bind(),
+      config::shard_local_cfg().transaction_coordinator_log_segment_size.bind(),
+      config::shard_local_cfg()
+        .transaction_coordinator_delete_retention_ms.bind())
+      .get();
+    tx_topic_manager
+      .invoke_on(
+        cluster::tx_topic_manager::shard, &cluster::tx_topic_manager::start)
+      .get();
     // usually it'a an anti-pattern to let the same object be accessed
     // from different cores without precautionary measures like foreign
     // ptr. we treat exceptions on the case by case basis validating the
@@ -1837,6 +1851,7 @@ void application::wire_up_redpanda_services(
       std::ref(rm_partition_frontend),
       std::ref(feature_table),
       std::ref(tm_stm_cache_manager),
+      std::ref(tx_topic_manager),
       ss::sharded_parameter([] {
           return config::shard_local_cfg()
             .max_transactions_per_coordinator.bind();
