@@ -116,11 +116,9 @@ private:
 
     void on_enable_changed();
 
-    void check_if_controller_leader(
-      model::ntp, model::term_id, std::optional<model::node_id>);
+    void check_if_controller_leader(model::ntp, model::term_id, model::node_id);
 
-    void on_leadership_change(
-      model::ntp, model::term_id, std::optional<model::node_id>);
+    void on_leadership_change(model::ntp, model::term_id, model::node_id);
 
     void on_maintenance_change(model::node_id, model::maintenance_state);
 

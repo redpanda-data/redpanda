@@ -80,7 +80,7 @@ leader_balancer::leader_balancer(
 }
 
 void leader_balancer::check_if_controller_leader(
-  model::ntp, model::term_id, std::optional<model::node_id>) {
+  model::ntp, model::term_id, model::node_id) {
     // Don't bother doing anything if it's not enabled
     if (!_enabled()) {
         return;
@@ -109,7 +109,7 @@ void leader_balancer::check_if_controller_leader(
 }
 
 void leader_balancer::on_leadership_change(
-  model::ntp ntp, model::term_id, std::optional<model::node_id>) {
+  model::ntp ntp, model::term_id, model::node_id) {
     if (!_enabled()) {
         return;
     }
