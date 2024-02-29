@@ -7,7 +7,6 @@ rp_test(
     types_conversion_tests.cc
     topic_utils_test.cc
     handler_interface_test.cc
-    quota_managers_test.cc
     validator_tests.cc
     fetch_unit_test.cc
     config_utils_test.cc
