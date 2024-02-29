@@ -158,19 +158,41 @@ private:
       consistency_level consistency_lvl,
       std::optional<std::chrono::milliseconds> timeout);
 
+    /**
+     * Request that a background flush occurs in the future. You would call this
+     * after e.g., after adding new items to _item_cache.
+     */
+    void request_flush();
+
+    /**
+     * Coroutine with the body of the flush loop.
+     */
+    ss::future<> flush_entries_loop();
+
     consensus* _ptr;
     ssx::semaphore _max_batch_size_sem;
     size_t _max_batch_size;
     std::vector<item_ptr> _item_cache;
     mutex _lock;
     ss::gate _bg;
+
+    enum class flush_state {
+        INVALID = 0,
+        // no flusher loop is active, so if you are trying to flush you must
+        // start a new one
+        FLUSHER_INACTIVE,
+        // flush loop is active, so a flusher can simply push items into the
+        // item cache
+        FLUSHER_ACTIVE,
+    };
+
     // If true, a background flush must be pending. Used to coalesce
     // background flush requests, since one flush dequeues all items
     // in the item cache. Without this, a high rate of replication may
     // cause the _item_cache to grow without bound since the rate of
     // flush task execution can be lower than the rate at which new
     // items are added to the cache.
-    bool _flush_pending = false;
+    flush_state _flush_state{flush_state::FLUSHER_INACTIVE};
 };
 
 } // namespace raft

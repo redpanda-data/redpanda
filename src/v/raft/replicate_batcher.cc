@@ -18,6 +18,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/util/defer.hh>
 
 #include <optional>
 
@@ -62,34 +63,8 @@ replicate_batcher::cache_and_wait_for_result(
         // stage future
         enqueued.set_value();
 
-        /**
-         * Dispatching flush in a background.
-         *
-         * The batcher mutex may be grabbed without the timeout as each item
-         * has its own timeout timer. The shutdown related exceptions may be
-         * ignored here as all pending item promises will be completed in
-         * replicate batcher stop method
-         *
-         */
-        if (!_flush_pending) {
-            _flush_pending = true;
-            ssx::background = ssx::spawn_with_gate_then(_bg, [this]() {
-                return _lock.get_units()
-                  .then([this](auto units) {
-                      return flush(std::move(units), false);
-                  })
-                  .handle_exception([this](const std::exception_ptr& e) {
-                      // an exception here is quite unlikely, since the flush()
-                      // method generally catches all its exceptions and
-                      // propagates them to the promises associated with the
-                      // items being flushed
-                      vlog(
-                        _ptr->_ctxlog.error,
-                        "Error in background flush: {}",
-                        e);
-                  });
-            });
-        }
+        request_flush();
+
     } catch (...) {
         // exception in caching phase
         enqueued.set_to_current_exception();
@@ -97,6 +72,62 @@ replicate_batcher::cache_and_wait_for_result(
     }
 
     co_return co_await item->get_future();
+}
+
+ss::future<> replicate_batcher::flush_entries_loop() {
+    auto set_inactive = ss::defer(
+      [this] { _flush_state = flush_state::FLUSHER_INACTIVE; });
+
+    // For every replicate batcher option, there will be zero or one instances
+    // of this loop active, and it ensures that we have only one flush in
+    // progress at a time: new entries to flush may arrive while the flush is in
+    // progress, and they will be flushed when the current flush completes. This
+    // is more efficient than the behavior where flushes are sent eagerly as
+    // soon as they arrive since this will tend to pipeline many small flushes
+    // which could simply have been sent as one larger flush.
+    while (!_item_cache.empty()) {
+        vassert(
+          _flush_state == flush_state::FLUSHER_ACTIVE,
+          "invalid flush state: {}",
+          static_cast<int>(_flush_state));
+
+        co_await flush(co_await _lock.get_units(), false);
+    }
+};
+
+void replicate_batcher::request_flush() {
+    /**
+     * Dispatching flush in the background.
+     *
+     * The batcher mutex may be grabbed without the timeout as each item
+     * has its own timeout timer. The shutdown related exceptions may be
+     * ignored here as all pending item promises will be completed in
+     * replicate batcher stop method.
+     *
+     */
+    if (_flush_state == flush_state::FLUSHER_ACTIVE) {
+        // flusher is already active, so we are guaranteed the item will be
+        // flushed eventually
+        return;
+    }
+
+    vassert(
+      _flush_state == flush_state::FLUSHER_INACTIVE,
+      "invalid flush state: {}",
+      static_cast<int>(_flush_state));
+
+    _flush_state = flush_state::FLUSHER_ACTIVE;
+
+    ssx::background = ssx::spawn_with_gate_then(_bg, [this]() {
+        return flush_entries_loop().handle_exception(
+          [this](const std::exception_ptr& e) {
+              // an exception here is quite unlikely, since the
+              // flush() method generally catches all its
+              // exceptions and propagates them to the promises
+              // associated with the items being flushed
+              vlog(_ptr->_ctxlog.error, "Error in background flush: {}", e);
+          });
+    });
 }
 
 ss::future<> replicate_batcher::stop() {
@@ -189,11 +220,11 @@ replicate_batcher::do_cache_with_backpressure(
 ss::future<> replicate_batcher::flush(
   ssx::semaphore_units batcher_units, bool const transfer_flush) {
     auto item_cache = std::exchange(_item_cache, {});
-    // this function should not throw, nor return exceptional futures,
-    // since it is usually invoked in the background and there is
-    // nowhere suitable to
+    // This function should not throw, nor return exceptional futures,
+    // since it is usually invoked in the background and so there is
+    // nowhere suitable to propagate the exception to, we are only
+    // able to log it.
     try {
-        _flush_pending = false;
         if (item_cache.empty()) {
             co_return;
         }
