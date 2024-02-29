@@ -210,17 +210,6 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest_no_seastar(
-    name = "bottomless_token_bucket_test",
-    timeout = "short",
-    srcs = [
-        "bottomless_token_bucket_test.cc",
-    ],
-    deps = [
-        "//src/v/utils:bottomless_token_bucket",
-    ],
-)
-
-redpanda_cc_btest_no_seastar(
     name = "move_canary_test",
     timeout = "short",
     srcs = [
