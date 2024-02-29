@@ -1,0 +1,510 @@
+// Copyright 2024 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "js_vm.h"
+
+#include "quickjs.h"
+
+#include <sys/types.h>
+
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <print>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace qjs {
+
+namespace {
+
+struct named_native_function {
+    std::unique_ptr<std::string> name;
+    native_function func;
+};
+
+struct context_state {
+    std::vector<named_native_function> named_functions;
+    // For each module, the functions that are defined for it.
+    std::unordered_map<JSModuleDef*, std::vector<JSCFunctionListEntry>>
+      module_functions;
+};
+} // namespace
+
+value::value() noexcept
+  : _ctx(nullptr)
+  , _underlying(JS_UNINITIALIZED) {}
+
+value::value(JSContext* ctx, JSValue underlying) noexcept
+  : _ctx(ctx)
+  , _underlying(underlying) {}
+
+value::value(value&& other) noexcept
+  : _ctx(std::exchange(other._ctx, nullptr))
+  , _underlying(std::exchange(other._underlying, JS_UNINITIALIZED)) {}
+
+value& value::operator=(value&& other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+    JS_FreeValue(_ctx, _underlying);
+    _ctx = std::exchange(other._ctx, nullptr);
+    _underlying = std::exchange(other._underlying, JS_UNINITIALIZED);
+    return *this;
+}
+
+value::value(const value& other) noexcept
+  : _ctx(other._ctx)
+  , _underlying(other.raw_dup()) {}
+
+value& value::operator=(const value& other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+    JS_FreeValue(_ctx, _underlying);
+    _ctx = other._ctx;
+    _underlying = other.raw_dup();
+    return *this;
+}
+
+value::~value() noexcept {
+    // There is a bug with clang tidy where thinks that it's possible for _ctx
+    // to be uninitialized when destructed inside of std::expected
+
+    // NOLINTNEXTLINE
+    JS_FreeValue(_ctx, _underlying);
+}
+
+value value::undefined(JSContext* ctx) { return {ctx, JS_UNDEFINED}; }
+value value::object(JSContext* ctx) { return {ctx, JS_NewObject(ctx)}; }
+value value::array(JSContext* ctx) { return {ctx, JS_NewArray(ctx)}; }
+value value::null(JSContext* ctx) { return {ctx, JS_NULL}; }
+value value::integer(JSContext* ctx, int32_t num) {
+    return {ctx, JS_NewInt32(ctx, num)};
+}
+value value::number(JSContext* ctx, double num) {
+    return {ctx, JS_NewFloat64(ctx, num)};
+}
+value value::boolean(JSContext* ctx, bool val) {
+    return {ctx, JS_NewBool(ctx, static_cast<int>(val))};
+}
+std::expected<value, exception>
+value::string(JSContext* ctx, std::string_view str) {
+    value val = {ctx, JS_NewStringLen(ctx, str.data(), str.size())};
+    if (val.is_exception()) {
+        return std::unexpected(exception::current(ctx));
+    }
+    return val;
+}
+value value::error(JSContext* ctx, std::string_view msg) {
+    value err = {ctx, JS_NewError(ctx)};
+    auto result = value::string(ctx, msg);
+    if (result) {
+        std::ignore = err.set_property("message", result.value());
+    } else {
+        std::ignore = result;
+    }
+    return err;
+}
+std::expected<value, exception>
+value::parse_json(JSContext* ctx, const std::string& str) {
+    value val = {ctx, JS_ParseJSON(ctx, str.c_str(), str.size(), "")};
+    if (val.is_exception()) {
+        return std::unexpected(exception::current(ctx));
+    }
+    return val;
+}
+value value::array_buffer(JSContext* ctx, std::span<uint8_t> data) {
+    void* opaque = nullptr;
+    // NOLINTNEXTLINE(*easily-swappable-parameters)
+    JSFreeArrayBufferDataFunc* func = [](JSRuntime*, void* opaque, void* ptr) {
+        // Nothing to do
+    };
+    return {
+      ctx,
+      JS_NewArrayBuffer(
+        ctx, data.data(), data.size(), func, opaque, /*is_shared=*/0)};
+}
+
+value value::uint8_array(JSContext* ctx, std::span<uint8_t> data) {
+    void* opaque = nullptr;
+    // NOLINTNEXTLINE(*easily-swappable-parameters)
+    JSFreeArrayBufferDataFunc* func = [](JSRuntime*, void* opaque, void* ptr) {
+        // Nothing to do
+    };
+    return {
+      ctx,
+      JS_NewUint8Array(
+        ctx, data.data(), data.size(), func, opaque, /*is_shared=*/0)};
+}
+
+void value::detach_buffer() { JS_DetachArrayBuffer(_ctx, _underlying); }
+std::expected<std::monostate, exception> value::detach_uint8_array() {
+    auto val = value(
+      _ctx,
+      JS_GetTypedArrayBuffer(_ctx, _underlying, nullptr, nullptr, nullptr));
+    if (val.is_exception()) {
+        return std::unexpected(exception::current(_ctx));
+    }
+    val.detach_buffer();
+    return {};
+}
+
+std::span<uint8_t> value::array_buffer_data() const {
+    size_t size = 0;
+    uint8_t* ptr = JS_GetArrayBuffer(_ctx, &size, _underlying);
+    return {ptr, size};
+}
+
+std::span<uint8_t> value::uint8_array_data() const {
+    size_t size = 0;
+    uint8_t* ptr = JS_GetUint8Array(_ctx, &size, _underlying);
+    return {ptr, size};
+}
+
+cstring value::string_data() const {
+    size_t size = 0;
+    const char* ptr = JS_ToCStringLen(_ctx, &size, _underlying);
+    return {_ctx, ptr, size};
+}
+
+value value::global(JSContext* ctx) { return {ctx, JS_GetGlobalObject(ctx)}; }
+
+value value::current_exception(JSContext* ctx) {
+    return {ctx, JS_GetException(ctx)};
+}
+bool value::is_number() const { return JS_IsNumber(_underlying) != 0; }
+bool value::is_exception() const { return JS_IsException(_underlying) != 0; }
+bool value::is_function() const {
+    return JS_IsFunction(_ctx, _underlying) != 0;
+}
+bool value::is_string() const { return JS_IsString(_underlying) != 0; }
+bool value::is_array_buffer() const {
+    return JS_IsArrayBuffer(_underlying) != 0;
+}
+bool value::is_uint8_array() const { return JS_IsUint8Array(_underlying) != 0; }
+bool value::is_object() const { return JS_IsObject(_underlying) != 0; }
+bool value::is_null() const { return JS_IsNull(_underlying) != 0; }
+bool value::is_undefined() const { return JS_IsUndefined(_underlying) != 0; }
+JSValue value::raw() const { return _underlying; }
+JSValue value::raw_dup() const { return JS_DupValue(_ctx, _underlying); }
+
+double value::as_number() const {
+    if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(_underlying))) {
+        return JS_VALUE_GET_FLOAT64(_underlying);
+    }
+    return JS_VALUE_GET_INT(_underlying);
+}
+
+std::expected<value, exception> value::call(std::span<value> values) {
+    assert(is_function());
+    std::vector<JSValue> raw;
+    raw.reserve(values.size());
+    std::ranges::transform(
+      values, std::back_inserter(raw), [](const value& val) {
+          return val._underlying;
+      });
+    const value global_this = global(_ctx);
+    auto result = value(
+      _ctx,
+      JS_Call(
+        _ctx,
+        _underlying,
+        global_this._underlying,
+        static_cast<int>(raw.size()),
+        raw.data()));
+    if (result.is_exception()) {
+        return std::unexpected(exception::current(_ctx));
+    }
+    return result;
+}
+
+value value::get_property(std::string_view key) const {
+    const JSAtom atom = JS_NewAtomLen(_ctx, key.data(), key.size());
+    const JSValue val = JS_GetProperty(_ctx, _underlying, atom);
+    JS_FreeAtom(_ctx, atom);
+    return {_ctx, val};
+}
+
+std::expected<std::monostate, exception>
+value::set_property(std::string_view key, const value& val) {
+    const JSAtom atom = JS_NewAtomLen(_ctx, key.data(), key.size());
+    const int result = JS_SetProperty(_ctx, _underlying, atom, val.raw_dup());
+    JS_FreeAtom(_ctx, atom);
+    if (result < 0) {
+        return std::unexpected(exception::current(_ctx));
+    }
+    return {};
+}
+
+std::string value::debug_string() const {
+    size_t size = 0;
+    const char* str = JS_ToCStringLen(_ctx, &size, _underlying);
+    if (str != nullptr) {
+        auto result = std::string(str, size);
+        JS_FreeCString(_ctx, str);
+        return result;
+    }
+    return "[exception]";
+}
+
+exception exception::current(JSContext* ctx) {
+    return {value::current_exception(ctx)};
+}
+
+exception exception::make(JSContext* ctx, std::string_view message) {
+    return {value::error(ctx, message)};
+}
+
+compiled_bytecode::compiled_bytecode(
+  JSContext* ctx, uint8_t* data, size_t size) noexcept
+  : _ctx(ctx)
+  , _data(data)
+  , _size(size) {}
+
+compiled_bytecode::compiled_bytecode(compiled_bytecode&& other) noexcept
+  : _ctx(other._ctx)
+  , _data(std::exchange(other._data, nullptr))
+  , _size(std::exchange(other._size, 0)) {}
+
+compiled_bytecode&
+compiled_bytecode::operator=(compiled_bytecode&& other) noexcept {
+    if (&other == this) {
+        return *this;
+    }
+    _ctx = std::exchange(other._ctx, nullptr);
+    _size = std::exchange(other._size, 0);
+    _data = std::exchange(other._data, nullptr);
+    return *this;
+}
+
+compiled_bytecode::~compiled_bytecode() noexcept {
+    if (_ctx != nullptr && _data != nullptr) {
+        js_free(_ctx, _data);
+    }
+}
+
+compiled_bytecode::view compiled_bytecode::raw() const {
+    return {_data, _size};
+}
+
+compiled_bytecode::view::iterator compiled_bytecode::begin() const {
+    return raw().begin();
+}
+
+compiled_bytecode::view::iterator compiled_bytecode::end() const {
+    return raw().end();
+}
+
+runtime::runtime()
+  : _rt(JS_NewRuntime())
+  , _ctx(JS_NewContext(_rt.get())) {
+    // NOLINTNEXTLINE(*-owning-memory)
+    JS_SetRuntimeOpaque(_rt.get(), new state());
+    // NOLINTNEXTLINE(*-owning-memory)
+    JS_SetContextOpaque(_ctx.get(), new context_state());
+}
+
+runtime::~runtime() {
+    // Delete the context first incase it references any memory in
+    // `context_state`.
+    auto* ctx_state = static_cast<context_state*>(
+      JS_GetContextOpaque(_ctx.get()));
+    _ctx = nullptr;
+    auto* rt_state = static_cast<state*>(JS_GetRuntimeOpaque(_rt.get()));
+    // NOLINTNEXTLINE(*-owning-memory)
+    delete ctx_state;
+    _rt = nullptr;
+    // NOLINTNEXTLINE(*-owning-memory)
+    delete rt_state;
+}
+
+std::expected<compiled_bytecode, exception>
+runtime::compile(const std::string& module_src) {
+    // NOLINTBEGIN(*signed-bitwise*)
+    constexpr int eval_flags = JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY;
+    // NOLINTEND(*signed-bitwise*)
+    auto result = value(
+      _ctx.get(),
+      JS_Eval(
+        _ctx.get(),
+        module_src.c_str(),
+        module_src.size(),
+        "file.mjs",
+        eval_flags));
+    if (result.is_exception()) {
+        return std::unexpected(exception::current(_ctx.get()));
+    }
+    // NOLINTNEXTLINE(*signed-bitwise*)
+    constexpr int write_flags = JS_WRITE_OBJ_BYTECODE;
+    size_t output_size = 0;
+    uint8_t* output = JS_WriteObject(
+      _ctx.get(), &output_size, result.raw(), write_flags);
+    return {compiled_bytecode(_ctx.get(), output, output_size)};
+}
+
+std::expected<std::monostate, exception>
+runtime::load(compiled_bytecode::view bytecode) {
+    auto* ctx = _ctx.get();
+    // NOLINTNEXTLINE(*signed-bitwise*)
+    constexpr int read_flags = JS_READ_OBJ_BYTECODE;
+    auto read = value(
+      ctx, JS_ReadObject(ctx, bytecode.data(), bytecode.size(), read_flags));
+    if (read.is_exception()) {
+        return std::unexpected(exception::current(ctx));
+    }
+    if (JS_VALUE_GET_TAG(read.raw()) == JS_TAG_MODULE) {
+        if (JS_ResolveModule(ctx, read.raw()) < 0) {
+            return std::unexpected(
+              exception(value::error(ctx, "unable to resolve module")));
+        }
+        JSModuleDef* mod_def = static_cast<JSModuleDef*>(
+          JS_VALUE_GET_PTR(read.raw()));
+        const JSAtom name = JS_GetModuleName(ctx, mod_def);
+        const char* module_name_raw = JS_AtomToCString(ctx, name);
+        JS_FreeAtom(ctx, name);
+        if (module_name_raw == nullptr) {
+            return std::unexpected(exception::current(ctx));
+        }
+        std::string module_name = module_name_raw;
+        JS_FreeCString(ctx, module_name_raw);
+        if (!module_name.contains(":")) {
+            module_name.insert(0, "file://");
+        }
+        value meta_obj = {ctx, JS_GetImportMeta(ctx, mod_def)};
+        auto module_string_result = value::string(ctx, module_name);
+        if (!module_string_result) {
+            return std::unexpected(std::move(module_string_result.error()));
+        }
+        auto result = meta_obj.set_property(
+          "url", std::move(module_string_result).value());
+        if (!result) {
+            return std::unexpected(std::move(result.error()));
+        }
+        result = meta_obj.set_property("main", value::boolean(ctx, true));
+        if (!result) {
+            return std::unexpected(std::move(result.error()));
+        }
+    }
+    const JSValue js_module = read.raw_dup();
+    // We need to free `read` before calling eval, as if eval fails it always
+    // completely frees the input.
+    read = value::null(ctx);
+    auto result = value(ctx, JS_EvalFunction(ctx, js_module));
+    if (result.is_exception()) {
+        return std::unexpected(exception::current(ctx));
+    }
+    return {};
+}
+
+std::expected<std::monostate, exception>
+runtime::add_module(module_builder builder) {
+    return builder.build(_ctx.get());
+}
+
+module_builder::module_builder(std::string name)
+  : _name(std::move(name)) {}
+
+module_builder&
+module_builder::add_function(std::string name, native_function func) {
+    _exports.emplace(std::move(name), std::move(func));
+    return *this;
+}
+
+std::expected<std::monostate, exception> module_builder::build(JSContext* ctx) {
+    auto* ctx_state = static_cast<context_state*>(JS_GetContextOpaque(ctx));
+    std::vector<JSCFunctionListEntry> entries;
+    entries.reserve(_exports.size());
+    for (auto& [name, func] : _exports) {
+        auto my_magic = static_cast<int16_t>(ctx_state->named_functions.size());
+        named_native_function& function
+          = ctx_state->named_functions.emplace_back(
+            std::make_unique<std::string>(name), std::move(func));
+
+        // NOLINTNEXTLINE(*signed-bitwise*)
+        constexpr int prop_flags = JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE;
+        entries.push_back(JSCFunctionListEntry{
+          .name = function.name->c_str(),
+          .prop_flags = prop_flags,
+          .def_type = JS_DEF_CFUNC,
+          .magic = my_magic,
+          .u = {
+            .func = {
+              .length = 0,
+              .cproto = JS_CFUNC_generic_magic,
+              .cfunc = {
+                .generic_magic = [](
+                                   JSContext* ctx,
+                                   JSValue this_val,
+                                   int argc,
+                                   JSValue* argv,
+                                   int magic) -> JSValue {
+                    auto* ctx_state = static_cast<context_state*>(
+                      JS_GetContextOpaque(ctx));
+                    const native_function& func
+                      = ctx_state->named_functions[magic].func;
+                    std::vector<value> args;
+                    args.reserve(argc);
+                    for (const JSValue arg : std::span(argv, argc)) {
+                        args.emplace_back(ctx, JS_DupValue(ctx, arg));
+                    }
+                    auto result = func(
+                      ctx, value(ctx, JS_DupValue(ctx, this_val)), args);
+                    if (result.has_value()) {
+                        return result.value().raw_dup();
+                    }
+                    return JS_Throw(ctx, result.error().val.raw_dup());
+                }}}}});
+    }
+
+    JSModuleDef* mod = JS_NewCModule(
+      ctx, _name.c_str() /*copied*/, [](JSContext* ctx, JSModuleDef* mod) {
+          auto* ctx_state = static_cast<context_state*>(
+            JS_GetContextOpaque(ctx));
+          auto& func_exports = ctx_state->module_functions.at(mod);
+          return JS_SetModuleExportList(
+            ctx,
+            mod,
+            func_exports.data(),
+            static_cast<int>(func_exports.size()));
+      });
+    if (mod == nullptr) {
+        return std::unexpected(exception(value::error(
+          ctx, std::format("unable to register native module {}", _name))));
+    }
+    JS_AddModuleExportList(
+      ctx, mod, entries.data(), static_cast<int>(entries.size()));
+    ctx_state->module_functions.emplace(mod, std::move(entries));
+    return {};
+}
+
+cstring::cstring(JSContext* context, const char* ptr, size_t size)
+  : context(context)
+  , ptr(ptr)
+  , size(size) {}
+cstring::~cstring() {
+    if (ptr != nullptr) {
+        // NOLINTNEXTLINE
+        js_free(context, const_cast<char*>(ptr));
+    }
+}
+cstring::cstring(cstring&& other)
+  : context(other.context)
+  , ptr(std::exchange(other.ptr, nullptr))
+  , size(other.size) {}
+
+std::string_view cstring::view() const { return {ptr, size}; }
+
+} // namespace qjs
