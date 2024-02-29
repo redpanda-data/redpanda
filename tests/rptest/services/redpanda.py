@@ -925,6 +925,29 @@ class RedpandaServiceABC(ABC):
         assert isinstance(
             v, t), f'{name} had wrong type, expected {t} but was {type(v)}'
 
+    def _extract_samples(self, metrics, sample_pattern: str,
+                         node) -> list[MetricSamples]:
+        '''Extract metrics samples given a sample pattern. Embed the node in which it came from.
+        '''
+        found_sample = None
+        sample_values = []
+
+        for family in metrics:
+            for sample in family.samples:
+                if sample_pattern not in sample.name:
+                    continue
+                if not found_sample:
+                    found_sample = (family.name, sample.name)
+                if found_sample != (family.name, sample.name):
+                    raise Exception(
+                        f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
+                    )
+                sample_values.append(
+                    MetricSample(family.name, sample.name, node, sample.value,
+                                 sample.labels))
+
+        return sample_values
+
 
 class RedpandaServiceBase(RedpandaServiceABC, Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -1807,27 +1830,6 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 'curl -f -s -S http://localhost:9644/metrics',
                 pod_name).decode()
         return text_string_to_metric_families(text)
-
-    def _extract_samples(self, metrics, sample_pattern: str,
-                         pod) -> list[MetricSamples]:
-        found_sample = None
-        sample_values = []
-
-        for family in metrics:
-            for sample in family.samples:
-                if sample_pattern not in sample.name:
-                    continue
-                if not found_sample:
-                    found_sample = (family.name, sample.name)
-                if found_sample != (family.name, sample.name):
-                    raise Exception(
-                        f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
-                    )
-                sample_values.append(
-                    MetricSample(family.name, sample.name, pod, sample.value,
-                                 sample.labels))
-
-        return sample_values
 
     def metrics_sample(
         self,
@@ -3946,24 +3948,9 @@ class RedpandaService(RedpandaServiceBase):
 
     def _extract_samples(self, metrics, sample_pattern: str,
                          node: ClusterNode) -> list[MetricSamples]:
-        found_sample = None
-        sample_values = []
+        '''Override superclass method by ensuring node is type ClusterNode.'''
 
-        for family in metrics:
-            for sample in family.samples:
-                if sample_pattern not in sample.name:
-                    continue
-                if not found_sample:
-                    found_sample = (family.name, sample.name)
-                if found_sample != (family.name, sample.name):
-                    raise Exception(
-                        f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
-                    )
-                sample_values.append(
-                    MetricSample(family.name, sample.name, node, sample.value,
-                                 sample.labels))
-
-        return sample_values
+        return super()._extract_samples(metrics, sample_pattern, node)
 
     def metrics_sample(
         self,
