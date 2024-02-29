@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "metrics/metrics.h"
 
+#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_set.h>
 
 namespace cluster {
@@ -49,7 +50,7 @@ private:
 
     const topic_table& _topic_table;
     model::node_id _node_id;
-    absl::flat_hash_map<model::topic_namespace, ss::metrics::metric_groups>
+    absl::btree_map<model::topic_namespace, ss::metrics::metric_groups>
       _topics_metrics;
     metrics::internal_metric_groups _internal_metrics;
     metrics::public_metric_groups _public_metrics;
