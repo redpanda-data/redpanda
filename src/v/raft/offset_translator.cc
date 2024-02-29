@@ -12,7 +12,6 @@
 #include "raft/offset_translator.h"
 
 #include "base/vlog.h"
-#include "raft/consensus_utils.h"
 #include "raft/logger.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
