@@ -1148,13 +1148,6 @@ public:
         return k - _parent._cur_delta;
     }
 
-    /// Translate kafka offset to redpanda offset
-    ///
-    /// \note this can only be applied to current record batch
-    model::offset kafka_to_rp(kafka::offset k) const noexcept {
-        return k + _parent._cur_delta;
-    }
-
     /// Point config.start_offset to the next record batch
     ///
     /// \param header is a record batch header with redpanda offset
