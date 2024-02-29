@@ -16,9 +16,7 @@
 #include "kafka/server/atomic_token_bucket.h"
 #include "metrics/metrics.h"
 #include "ssx/sharded_ptr.h"
-#include "utils/bottomless_token_bucket.h"
 #include "utils/log_hist.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -44,21 +42,17 @@ struct ingress_egress_state {
 
 class snc_quotas_probe {
 public:
-    snc_quotas_probe(class snc_quota_manager& qm)
-      : _qm(qm) {}
+    snc_quotas_probe() = default;
     snc_quotas_probe(const snc_quotas_probe&) = delete;
     snc_quotas_probe& operator=(const snc_quotas_probe&) = delete;
     snc_quotas_probe(snc_quotas_probe&&) = delete;
     snc_quotas_probe& operator=(snc_quotas_probe&&) = delete;
     ~snc_quotas_probe() noexcept = default;
 
-    void rec_balancer_step() noexcept { ++_balancer_runs; }
     void rec_traffic_in(const size_t bytes) noexcept { _traffic.in += bytes; }
     void rec_traffic_eg(const size_t bytes) noexcept { _traffic.eg += bytes; }
 
     void setup_metrics();
-
-    uint64_t get_balancer_runs() const noexcept { return _balancer_runs; }
 
     auto get_traffic_in() const { return _traffic.in; }
     auto get_traffic_eg() const { return _traffic.eg; }
@@ -72,9 +66,7 @@ public:
     }
 
 private:
-    class snc_quota_manager& _qm;
     metrics::internal_metric_groups _metrics;
-    uint64_t _balancer_runs = 0;
     ingress_egress_state<size_t> _traffic = {};
     log_hist_public _throttle_time_us;
 };
@@ -102,7 +94,6 @@ class snc_quota_manager
   : public ss::peering_sharded_service<snc_quota_manager> {
 public:
     using clock = ss::lowres_clock;
-    using quota_t = bottomless_token_bucket::quota_t;
     using bucket_t = atomic_token_bucket;
     using buckets_t = kafka::ingress_egress_state<
       ssx::sharded_ptr<kafka::snc_quota_manager::bucket_t>>;
@@ -160,100 +151,22 @@ public:
         return _probe;
     };
 
-    /// Return current effective quota values
-    ingress_egress_state<quota_t> get_quota() const noexcept;
-
-private:
-    // Returns value based on upstream values, not the _node_quota_default
-    ingress_egress_state<std::optional<quota_t>>
-    calc_node_quota_default() const;
-
-    // Uses the func above to update _node_quota_default and dependencies
-    void update_node_quota_default();
-
-    ss::lowres_clock::duration get_quota_balancer_node_period() const;
-    void update_shard_quota_minimum();
-
-    /// Arm quota balancer timer at the distance of balancer period
-    /// from the beginning of the last regular balancer run.
-    /// \pre Current shard is the balancer shard
-    void arm_balancer_timer();
-
-    /// A step of regular quota balancer that reassigns parts of quota
-    /// based on shards backpressure. Spawned by the balancer timer
-    /// periodically. Runs on the balancer shard only
-    ss::future<> quota_balancer_step();
-
-    /// A step of balancer that applies any updates from configuration changes.
-    /// Spawned by configration bindings watching changes of the properties.
-    /// Runs on the balancer shard only.
-    ss::future<> quota_balancer_update(
-      ingress_egress_state<std::optional<quota_t>> old_node_quota_default,
-      ingress_egress_state<std::optional<quota_t>> new_node_quota_default);
-
-    /// Update time position of the buckets of the shard so that
-    /// get_deficiency() and get_surplus() will return actual data
-    void refill_buckets(const clock::time_point now) noexcept;
-
-    /// If the current quota is sufficient for the shard, returns 0,
-    /// otherwise returns a positive value
-    ingress_egress_state<quota_t> get_deficiency() const noexcept;
-
-    /// If the current quota is more than sufficient for the shard,
-    /// returns how much it is more than sufficient as a positive value,
-    /// otherwise returns 0.
-    ingress_egress_state<quota_t> get_surplus() const noexcept;
-
-    /// If the argument has a value, set the current shard quota to the value
-    void maybe_set_quota(
-      const ingress_egress_state<std::optional<quota_t>>&) noexcept;
-
-    /// Increase or decrease the current shard quota by the argument
-    void adjust_quota(const ingress_egress_state<quota_t>& delta) noexcept;
-
 private:
     void update_balance_config();
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
-    config::binding<bool> _use_throttling_v2;
-    ingress_egress_state<config::binding<std::optional<quota_t>>>
+    ingress_egress_state<config::binding<std::optional<int64_t>>>
       _kafka_throughput_limit_node_bps;
-    config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
-    config::binding<std::chrono::milliseconds>
-      _kafka_quota_balancer_node_period;
-    config::binding<double> _kafka_quota_balancer_min_shard_throughput_ratio;
-    config::binding<quota_t> _kafka_quota_balancer_min_shard_throughput_bps;
     config::binding<std::vector<config::throughput_control_group>>
       _kafka_throughput_control;
 
     // operational, only used in the balancer shard
-    ss::timer<ss::lowres_clock> _balancer_timer;
-    ss::lowres_clock::time_point _balancer_timer_last_ran;
     ss::gate _balancer_gate;
-    mutex _balancer_mx{"snc_quota_manager::balancer"};
-    ingress_egress_state<quota_t> _node_deficit{0, 0};
 
-    // operational, used on each shard
-    ingress_egress_state<std::optional<quota_t>> _node_quota_default;
-    ingress_egress_state<quota_t> _shard_quota_minimum;
-    ingress_egress_state<bottomless_token_bucket> _shard_quota;
     buckets_t& _node_quota;
 
     // service
     mutable snc_quotas_probe _probe;
 };
-
-// Names exposed in this namespace are for unit test integration only
-namespace detail {
-snc_quota_manager::quota_t cap_to_ceiling(
-  snc_quota_manager::quota_t& value, snc_quota_manager::quota_t limit);
-void dispense_negative_deltas(
-  std::vector<snc_quota_manager::quota_t>& schedule,
-  snc_quota_manager::quota_t delta,
-  std::vector<snc_quota_manager::quota_t> quotas);
-void dispense_equally(
-  std::vector<snc_quota_manager::quota_t>& target,
-  snc_quota_manager::quota_t value);
-} // namespace detail
 
 } // namespace kafka

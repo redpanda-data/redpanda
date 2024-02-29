@@ -639,14 +639,13 @@ struct configuration final : public config_store {
     bounded_property<std::optional<int64_t>> kafka_throughput_limit_node_in_bps;
     bounded_property<std::optional<int64_t>>
       kafka_throughput_limit_node_out_bps;
-    property<bool> kafka_throughput_throttling_v2;
+    deprecated_property kafka_throughput_throttling_v2;
     bounded_property<std::optional<int64_t>>
       kafka_throughput_replenish_threshold;
-    bounded_property<std::chrono::milliseconds> kafka_quota_balancer_window;
-    bounded_property<std::chrono::milliseconds>
-      kafka_quota_balancer_node_period;
-    property<double> kafka_quota_balancer_min_shard_throughput_ratio;
-    bounded_property<int64_t> kafka_quota_balancer_min_shard_throughput_bps;
+    deprecated_property kafka_quota_balancer_window;
+    deprecated_property kafka_quota_balancer_node_period;
+    deprecated_property kafka_quota_balancer_min_shard_throughput_ratio;
+    deprecated_property kafka_quota_balancer_min_shard_throughput_bps;
     property<std::vector<ss::sstring>> kafka_throughput_controlled_api_keys;
     property<std::vector<throughput_control_group>> kafka_throughput_control;
 

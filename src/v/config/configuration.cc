@@ -3383,19 +3383,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt,
       {.min = 1})
-  , kafka_throughput_throttling_v2(
-      *this,
-      "kafka_throughput_throttling_v2",
-      "Enables an updated algorithm for enforcing node throughput limits based "
-      "on a shared token bucket, introduced with Redpanda v23.3.8. Set this "
-      "property to `false` if you need to use the quota balancing algorithm "
-      "from Redpanda v23.3.7 and older.  This property defaults to `true` for "
-      "all new or upgraded Redpanda clusters. Disabling this property is not "
-      "recommended. It causes your Redpanda cluster to use an outdated "
-      "throughput throttling mechanism. Only set this to `false` when advised "
-      "to do so by Redpanda support.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      true)
+  , kafka_throughput_throttling_v2(*this, "kafka_throughput_throttling_v2")
   , kafka_throughput_replenish_threshold(
       *this,
       "kafka_throughput_replenish_threshold",
@@ -3410,62 +3398,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt,
       {.min = 1})
-  , kafka_quota_balancer_window(
-      *this,
-      "kafka_quota_balancer_window_ms",
-      "Time window used to average current throughput measurement for quota "
-      "balancer, in milliseconds.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      5000ms,
-      {.min = 1ms,
-       .max = std::chrono::milliseconds(std::numeric_limits<int32_t>::max())})
+  , kafka_quota_balancer_window(*this, "kafka_quota_balancer_window_ms")
   , kafka_quota_balancer_node_period(
-      *this,
-      "kafka_quota_balancer_node_period_ms",
-      "Intra-node throughput quota balancer invocation period, in "
-      "milliseconds. When set to 0, the balancer is disabled and makes all the "
-      "throughput quotas immutable.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      0ms,
-      {.min = 0ms})
+      *this, "kafka_quota_balancer_node_period_ms")
   , kafka_quota_balancer_min_shard_throughput_ratio(
-      *this,
-      "kafka_quota_balancer_min_shard_throughput_ratio",
-      "The minimum value of the throughput quota a shard can get in the "
-      "process of quota balancing, expressed as a ratio of default shard "
-      "quota. While the value applies equally to ingress and egress traffic, "
-      "the default shard quota can be different for ingress and egress and "
-      "therefore result in different minimum throughput bytes-per-second (bps) "
-      "values. Both `kafka_quota_balancer_min_shard_throughput_ratio` and "
-      "`kafka_quota_balancer_min_shard_throughput_bps` can be specified at the "
-      "same time. In this case, the balancer will not decrease the effective "
-      "shard quota below the largest bps value of each of these two "
-      "properties. If set to `0.0`, the minimum is disabled. If set to `1.0`, "
-      "the balancer won't be able to rebalance quota without violating this "
-      "ratio, preventing the balancer from adjusting shards' quotas.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      0.01,
-      &validate_0_to_1_ratio)
+      *this, "kafka_quota_balancer_min_shard_throughput_ratio")
   , kafka_quota_balancer_min_shard_throughput_bps(
-      *this,
-      "kafka_quota_balancer_min_shard_throughput_bps",
-      "The minimum value of the throughput quota a shard can get in the "
-      "process of quota balancing, expressed in bytes per second. The value "
-      "applies equally to ingress and egress traffic. "
-      "`kafka_quota_balancer_min_shard_throughput_bps` doesn't override the "
-      "limit settings, `kafka_throughput_limit_node_in_bps` and "
-      "`kafka_throughput_limit_node_out_bps`. Consequently, the value of "
-      "`kafka_throughput_limit_node_in_bps` or "
-      "`kafka_throughput_limit_node_out_bps` can result in lesser throughput "
-      "than kafka_quota_balancer_min_shard_throughput_bps. Both "
-      "`kafka_quota_balancer_min_shard_throughput_ratio` and "
-      "`kafka_quota_balancer_min_shard_throughput_bps` can be specified at the "
-      "same time. In this case, the balancer will not decrease the effective "
-      "shard quota below the largest bytes-per-second (bps) value of each of "
-      "these two properties. If set to `0`, no minimum is enforced.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      256,
-      {.min = 0})
+      *this, "kafka_quota_balancer_min_shard_throughput_bps")
   , kafka_throughput_controlled_api_keys(
       *this,
       "kafka_throughput_controlled_api_keys",
