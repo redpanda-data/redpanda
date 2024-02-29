@@ -71,6 +71,7 @@ class node_isolation_watcher;
 struct controller_snapshot;
 struct controller_join_snapshot;
 class tx_manager_migrator;
+class tx_topic_manager;
 
 namespace node {
 class local_monitor;

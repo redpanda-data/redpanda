@@ -27,6 +27,7 @@
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_gateway_service.h"
 #include "cluster/tx_helpers.h"
+#include "cluster/tx_topic_manager.h"
 #include "config/configuration.h"
 #include "errc.h"
 #include "model/fundamental.h"
@@ -46,10 +47,6 @@
 namespace cluster {
 using namespace std::chrono_literals;
 
-namespace {
-// use liberate timeout when waiting for tx manager topic creation
-static constexpr auto topic_wait_timeout = 20s;
-} // namespace
 template<typename Func>
 static auto with(
   ss::shared_ptr<tm_stm> stm,
@@ -300,6 +297,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
+  ss::sharded<cluster::tx_topic_manager>& tx_topic_manager,
   config::binding<uint64_t> max_transactions_per_coordinator)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
@@ -313,6 +311,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _rm_partition_frontend(rm_partition_frontend)
   , _feature_table(feature_table)
   , _tm_stm_cache_manager(tm_stm_cache_manager)
+  , _tx_topic_manager(tx_topic_manager)
   , _metadata_dissemination_retries(
       config::shard_local_cfg().metadata_dissemination_retries.value())
   , _metadata_dissemination_retry_delay_ms(
@@ -365,7 +364,11 @@ tx_gateway_frontend::find_coordinator(kafka::transactional_id tid) {
           tid,
           model::tx_manager_nt);
 
-        auto ec = co_await create_and_wait_for_coordinator_topic();
+        auto ec = co_await _tx_topic_manager.invoke_on(
+          cluster::tx_topic_manager::shard, [](tx_topic_manager& mgr) {
+              return mgr.create_and_wait_for_coordinator_topic();
+          });
+
         if (ec != errc::success) {
             co_return find_coordinator_reply(
               std::nullopt, std::nullopt, errc::topic_not_exists);
@@ -395,98 +398,6 @@ tx_gateway_frontend::find_coordinator(kafka::transactional_id tid) {
       ntp,
       leader);
     co_return find_coordinator_reply{leader, std::move(ntp), errc::success};
-}
-
-ss::future<bool> tx_gateway_frontend::try_create_coordinator_topic() {
-    // TODO: make configuration options class parameters
-    int32_t partition_count
-      = _feature_table.local().is_active(
-          features::feature::transaction_partitioning)
-          ? config::shard_local_cfg().transaction_coordinator_partitions()
-          : 1;
-
-    cluster::topic_configuration topic{
-      model::kafka_internal_namespace,
-      model::tx_manager_topic,
-      partition_count,
-      _controller->internal_topic_replication()};
-
-    topic.properties.segment_size
-      = config::shard_local_cfg().transaction_coordinator_log_segment_size;
-    topic.properties.retention_duration = tristate<std::chrono::milliseconds>(
-      config::shard_local_cfg().transaction_coordinator_delete_retention_ms());
-    topic.properties.cleanup_policy_bitflags
-      = config::shard_local_cfg().transaction_coordinator_cleanup_policy();
-
-    return _controller->get_topics_frontend()
-      .local()
-      .autocreate_topics(
-        {std::move(topic)},
-        config::shard_local_cfg().create_topic_timeout_ms() * partition_count)
-      .then([](std::vector<cluster::topic_result> res) {
-          vassert(
-            res.size() == 1,
-            "Expected one result related with tx manager topic creation, "
-            "received answer with {} results",
-            res.size());
-          if (res[0].ec == cluster::errc::topic_already_exists) {
-              return true;
-          }
-          if (res[0].ec != cluster::errc::success) {
-              vlog(
-                clusterlog.warn,
-                "can not create {} topic - error: {}",
-                model::tx_manager_nt,
-                cluster::make_error_code(res[0].ec).message());
-              return false;
-          }
-          return true;
-      })
-      .handle_exception([](std::exception_ptr e) {
-          vlog(
-            txlog.warn,
-            "can not create {} topic - error: {}",
-            model::tx_manager_nt,
-            e);
-          return false;
-      });
-}
-
-ss::future<errc> tx_gateway_frontend::create_and_wait_for_coordinator_topic() {
-    if (!co_await try_create_coordinator_topic()) {
-        vlog(
-          txlog.warn,
-          "Error creating transaction manager topic {}",
-          model::tx_manager_nt);
-        co_return errc::topic_not_exists;
-    }
-
-    try {
-        auto ec = co_await _controller->get_api().local().wait_for_topic(
-          model::tx_manager_nt,
-          topic_wait_timeout + model::timeout_clock::now());
-        if (ec) {
-            vlog(
-              txlog.warn,
-              "Error waiting for transaction manager topic {} to be created - "
-              "{}",
-              model::tx_manager_nt,
-              ec);
-            // topic is creating, reply with not_coordinator error fot
-            // the client to retry
-            co_return tx_errc::partition_not_exists;
-        }
-    } catch (const ss::timed_out_error& e) {
-        vlog(
-          txlog.warn,
-          "Timeout waiting for transaction manager topic {} to be created - "
-          "{}",
-          model::tx_manager_nt,
-          e);
-        co_return errc::timeout;
-    }
-
-    co_return errc::success;
 }
 
 std::optional<model::ntp>
@@ -3408,7 +3319,10 @@ tx_gateway_frontend::get_all_transactions() {
     auto ntp_meta = _metadata_cache.local().get_topic_metadata(
       model::tx_manager_nt);
     if (!ntp_meta) {
-        auto ec = co_await create_and_wait_for_coordinator_topic();
+        auto ec = co_await _tx_topic_manager.invoke_on(
+          cluster::tx_topic_manager::shard, [](tx_topic_manager& mgr) {
+              return mgr.create_and_wait_for_coordinator_topic();
+          });
         if (ec != errc::success) {
             co_return tx_errc::partition_not_exists;
         }
