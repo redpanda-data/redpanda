@@ -9,6 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include <fmt/ostream.h>
+
 #include <cstdint>
 #include <limits>
 #include <ostream>
@@ -99,7 +101,8 @@ public:
     }
 
     friend std::ostream& operator<<(std::ostream& o, const base_named_type& t) {
-        return o << "{" << t() << "}";
+        fmt::print(o, "{}", t._value);
+        return o;
     };
 
     friend std::istream& operator>>(std::istream& i, base_named_type& t) {
@@ -173,7 +176,8 @@ public:
     constexpr operator type() && { return std::move(_value); }
 
     friend std::ostream& operator<<(std::ostream& o, const base_named_type& t) {
-        return o << "{" << t() << "}";
+        fmt::print(o, "{}", t._value);
+        return o;
     };
 
     friend std::istream& operator>>(std::istream& i, base_named_type& t) {

@@ -481,7 +481,7 @@ SEASTAR_THREAD_TEST_CASE(generate_member_id) {
 SEASTAR_THREAD_TEST_CASE(group_output) {
     auto g = get();
     auto s = fmt::format("{}", g);
-    BOOST_TEST(s.find("id={g}") != std::string::npos);
+    BOOST_TEST(s.find("id=g") != std::string::npos);
 }
 
 SEASTAR_THREAD_TEST_CASE(group_state_output) {

@@ -52,7 +52,7 @@ SEASTAR_THREAD_TEST_CASE(test_basic_serialization) {
     cluster_metadata_manifest manifest;
     manifest.update(make_manifest_stream(simple_manifest_json)).get();
     BOOST_CHECK_EQUAL(100, manifest.upload_time_since_epoch.count());
-    auto uuid_str = "{01234567-89ab-cdef-0123-456789abcdef}";
+    auto uuid_str = "01234567-89ab-cdef-0123-456789abcdef";
     BOOST_CHECK_EQUAL(fmt::to_string(manifest.cluster_uuid), uuid_str);
     BOOST_CHECK_EQUAL(7, manifest.metadata_id());
     BOOST_CHECK_EQUAL(42, manifest.controller_snapshot_offset());
