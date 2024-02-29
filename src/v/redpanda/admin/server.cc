@@ -1290,7 +1290,7 @@ void admin_server::register_config_routes() {
       [this](std::unique_ptr<ss::http::request> req) {
           ss::httpd::config_json::get_log_level_response rsp{};
           ss::sstring name;
-          if (!ss::http::internal::url_decode(req->param["name"], name)) {
+          if (!admin::path_decode(req->param["name"], name)) {
               throw ss::httpd::bad_param_exception(fmt::format(
                 "Invalid parameter 'name' got {{{}}}", req->param["name"]));
           }
@@ -1329,7 +1329,7 @@ void admin_server::register_config_routes() {
           using namespace std::chrono_literals;
           ss::httpd::config_json::set_log_level_response rsp{};
           ss::sstring name;
-          if (!ss::http::internal::url_decode(req->param["name"], name)) {
+          if (!admin::path_decode(req->param["name"], name)) {
               throw ss::httpd::bad_param_exception(fmt::format(
                 "Invalid parameter 'name' got {{{}}}", req->param["name"]));
           }
