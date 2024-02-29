@@ -1,3 +1,5 @@
+#define BOOST_TEST_MODULE utils
+
 #include "base/seastarx.h"
 #include "base/vassert.h"
 #include "base/vlog.h"

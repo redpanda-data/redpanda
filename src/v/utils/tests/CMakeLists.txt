@@ -55,7 +55,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME utils_unit
   SOURCES
-    bottomless_token_bucket_test.cc
     filtered_lower_bound_test.cc
     human_test.cc
     move_canary_test.cc
