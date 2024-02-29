@@ -50,13 +50,13 @@ from ducktape.tests.test import TestContext
 
 from rptest.clients.helm import HelmTool
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.kubectl import KubectlTool
+from rptest.clients.kubectl import KubectlTool, is_redpanda_pod
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
-from rptest.services import tls
+from rptest.services import redpanda_types, tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.redpanda_cloud import CloudCluster, CloudTierName, get_config_profile_name
@@ -74,8 +74,8 @@ Partition = collections.namedtuple('Partition',
 MetricSample = collections.namedtuple(
     'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
 
-SaslCredentials = collections.namedtuple("SaslCredentials",
-                                         ["username", "password", "algorithm"])
+SaslCredentials = redpanda_types.SaslCredentials
+
 # Map of path -> (checksum, size)
 FileToChecksumSize = dict[str, Tuple[str, int]]
 
@@ -1179,10 +1179,11 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         later be replaced by a proper / official start-up probe type check on
         the health of a node after a restart.
         """
-        counts: dict[int, int | None] = {
-            self.idx(node): None
-            for node in self.nodes
-        }
+        counts: dict[int, int
+                     | None] = {
+                         self.idx(node): None
+                         for node in self.nodes
+                     }
         for node in self.nodes:
             try:
                 metrics = self.metrics(node)
@@ -1547,6 +1548,12 @@ class KubeServiceMixin:
         return avail_kb * 1024
 
 
+class CorruptedClusterError(Exception):
+    """Throw to indicate a cluster is an unhealthy or otherwise unsuitable state to
+    continue the remainder of the tests."""
+    pass
+
+
 class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
     """
     Service class for running tests against Redpanda Cloud.
@@ -1562,7 +1569,6 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                  context: TestContext,
                  *,
                  config_profile_name: str,
-                 superuser: Optional[SaslCredentials] = None,
                  skip_if_no_redpanda_log: Optional[bool] = False,
                  min_brokers: int = 3,
                  **kwargs):
@@ -1585,8 +1591,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         self.config_profile_name = config_profile_name
         self._min_brokers = min_brokers
-        self._superuser = superuser or RedpandaServiceBase.SUPERUSER_CREDENTIALS
-        self._skip_create_superuser = bool(superuser)
+        self._superuser = RedpandaServiceBase.SUPERUSER_CREDENTIALS
 
         self._trim_logs = False
 
@@ -1632,21 +1637,14 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         return self._cloud_cluster.cluster_id
 
     def security_config(self):
-        return self._security_config
+        return dict(security_protocol='SASL_SSL',
+                    sasl_mechanism=self._superuser.algorithm,
+                    sasl_plain_username=self._superuser.username,
+                    sasl_plain_password=self._superuser.password,
+                    enable_tls=True)
 
     def start(self, **kwargs):
-        superuser = None
-        if not self._skip_create_superuser:
-            superuser = self._superuser
-
-        # set this for use in RedpandaTest
-        self._security_config = dict(security_protocol='SASL_SSL',
-                                     sasl_mechanism=superuser.algorithm,
-                                     sasl_plain_username=superuser.username,
-                                     sasl_plain_password=superuser.password,
-                                     enable_tls=True)
-
-        cluster_id = self._cloud_cluster.create(superuser=superuser)
+        cluster_id = self._cloud_cluster.create(superuser=self._superuser)
         remote_uri = f'redpanda@{cluster_id}-agent'
         self.__kubectl = KubectlTool(
             self,
@@ -1657,20 +1655,28 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             tp_proxy=self._cloud_cluster.config.teleport_auth_server,
             tp_token=self._cloud_cluster.config.teleport_bot_token)
 
-        # Get pods and form node list
-        self.pods = []
-        _r = self.kubectl.cmd('get pods -n redpanda -o json')
-        _pods = json.loads(_r.decode())
-        for p in _pods['items']:
-            if not p['metadata']['name'].startswith(
-                    f"rp-{self._cloud_cluster.config.id}"):
-                continue
-            else:
-                _node = CloudBroker(p, self.kubectl, self.logger)
-                self.pods.append(_node)
+        self.pods = [
+            CloudBroker(p, self.kubectl, self.logger)
+            for p in self.get_redpanda_pods()
+        ]
 
         node_count = self.config_profile['nodes_count']
         assert self._min_brokers <= node_count, f'Not enough brokers: test needs {self._min_brokers} but cluster has {node_count}'
+
+    def get_redpanda_pods(self):
+        """Get the current list of redpanda pods as k8s API objects."""
+        pods = json.loads(
+            self.kubectl.cmd('get pods -n redpanda -o json').decode())
+
+        return [
+            p for p in pods['items'] if is_redpanda_pod(p, self.cluster_id)
+        ]
+
+    @property
+    def cluster_id(self):
+        cid = self._cloud_cluster.cluster_id
+        assert cid, cid
+        return cid
 
     def get_node_by_id(self, id):
         for p in self.pods:
@@ -1680,8 +1686,13 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     @cached_property
     def config_profile(self) -> dict[str, Any]:
-        return self.get_install_pack()['config_profiles'][
-            self.config_profile_name]
+        profiles: dict[str, Any] = self.get_install_pack()['config_profiles']
+        if self.config_profile_name not in profiles:
+            # throw user friendly error
+            raise RuntimeError(
+                f"'{self.config_profile_name}' not found among config profiles: {profiles.keys()}"
+            )
+        return profiles[self.config_profile_name]
 
     def restart_pod(self, pod_name: str, timeout: int = 180):
         """Restart a pod by name
@@ -1877,8 +1888,36 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         for topic in deletable:
             rpk.delete_topic(topic)
 
-    def cluster_healthy(self) -> bool:
-        """Check if cluster is healthy."""
+    def assert_cluster_is_reusable(self) -> None:
+        """Tries to assess wether the cluster is reusable for subsequent tests. This means that the
+        cluster is healthy and has its original shape and configuration (currently we don't check
+        the configuration aspect).
+
+        Throws an CorruptedClusterError if the cluster is not re-usable, otherwise does nothing."""
+
+        uh_reason = self.cluster_unhealthy_reason()
+        if uh_reason is not None:
+            raise CorruptedClusterError(uh_reason)
+
+        uh_reason = self._cloud_cluster._ensure_cluster_health()
+        if uh_reason is not None:
+            raise CorruptedClusterError(uh_reason)
+
+        expected_nodes = int(self.config_profile['nodes_count'])
+        redpanda_pods = len(self.get_redpanda_pods())
+        assert expected_nodes == redpanda_pods, f'Expected {expected_nodes} per tier definition but there were only {redpanda_pods} pods'
+
+        brokers = self._cloud_cluster.get_brokers()
+        broker_count = len(brokers)
+        assert expected_nodes == broker_count, (
+            f'Expected {expected_nodes} per tier definition but there '
+            f'were only {broker_count} brokers: {brokers}')
+
+    def cluster_unhealthy_reason(self) -> str | None:
+        """Check if cluster is healthy, using rpk cluster health. Note that this will return
+        true if all currently configured brokers are up and healthy, including in the case brokers
+        have been added or removed from the cluster, even though the cluster is not in its original
+        form in that case."""
 
         # kubectl exec rp-clo88krkqkrfamptsst0-0 -n=redpanda -c=redpanda -- rpk cluster health
         ret = self.kubectl.exec('rpk cluster health')
@@ -1896,14 +1935,20 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         lines = ret.decode().splitlines()
         self.logger.debug(f'rpk cluster health lines: {lines}')
+        unhealthy_reasons = 'no line found'
         for line in lines:
             part = line.partition(':')
-            if part[0].strip() == 'Healthy':
+            heading = part[0].strip()
+            if heading == 'Healthy':
                 if part[2].strip() == 'true':
-                    return True
-                break
+                    return None
+            elif heading == 'Unhealthy reasons':
+                unhealthy_reasons = part[2].strip()
 
-        return False
+        return unhealthy_reasons
+
+    def cluster_healthy(self) -> bool:
+        return self.cluster_unhealthy_reason is not None
 
 
 class RedpandaService(RedpandaServiceBase):

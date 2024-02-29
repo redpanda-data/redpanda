@@ -10,8 +10,14 @@
 from logging import Logger
 import os
 import subprocess
+from typing import Any
 
 SUPPORTED_PROVIDERS = ['aws', 'gcp']
+
+
+def is_redpanda_pod(pod_obj: dict[str, Any], cluster_id: str) -> bool:
+    """Returns true if the pod API object name matches the Redpanda pattern."""
+    return pod_obj['metadata']['name'].startswith(f'rp-{cluster_id}')
 
 
 class KubectlTool:
@@ -158,7 +164,7 @@ class KubectlTool:
                 f'--------- stderr -----------\n{e.stderr.decode()}')
             raise
 
-    def cmd(self, kcmd: list[str]):
+    def cmd(self, kcmd: list[str] | str):
         """Execute a kubectl command on the agent node.
         """
         # prepare

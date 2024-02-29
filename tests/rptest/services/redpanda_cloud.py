@@ -1,5 +1,6 @@
 import base64
 import collections
+from functools import cache
 import json
 import os
 import requests
@@ -18,11 +19,10 @@ from rptest.services.provider_clients.ec2_client import RTBS_LABEL
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
 from urllib.parse import urlparse
 
+from rptest.services.redpanda_types import SaslCredentials
+
 ns_name_prefix = "rp-ducktape-ns-"
 ns_name_date_fmt = "%Y-%m-%d-%H%M%S-"
-
-SaslCredentials = collections.namedtuple("SaslCredentials",
-                                         ["username", "password", "algorithm"])
 
 CLOUD_TYPE_FMC = 'FMC'
 CLOUD_TYPE_BYOC = 'BYOC'
@@ -506,7 +506,7 @@ class CloudCluster():
             },
         }
 
-    def _get_cluster(self, _id):
+    def _get_cluster(self, _id) -> dict[str, Any]:
         """
         Calls CloudV2 API to get cluster info
         """
@@ -715,7 +715,28 @@ class CloudCluster():
 
         return
 
-    def _ensure_cluster_health(self, superuser) -> str | None:
+    @cache
+    def panda_proxy_url(self):
+        cluster = self._get_cluster(self.current.cluster_id)
+        return cluster['status']['listeners']['pandaProxy']['panda-proxy'][
+            'urls'][0]
+
+    def _query_panda_proxy(self, path):
+        # Prepare credentials
+        _u = self._superuser.username
+        _p = self._superuser.password
+        b64 = base64.b64encode(bytes(f'{_u}:{_p}', 'utf-8'))
+        token = b64.decode('utf-8')
+        headers = {'Authorization': f'Basic {token}'}
+        return self.cloudv2._http_get(path,
+                                      base_url=self.panda_proxy_url(),
+                                      override_headers=headers)
+
+    def get_brokers(self):
+        """Get the list of brokers from the pandaproxy API."""
+        return self._query_panda_proxy("/brokers")['brokers']
+
+    def _ensure_cluster_health(self) -> str | None:
         """
             Check if current cluster is healthy
               - check connectivity
@@ -725,25 +746,11 @@ class CloudCluster():
             Returns a string describing the problem if a check fails or
             None otherwise.
         """
-        def _get(cluster, path, user):
-            # Prepare credentials
-            _u = user.username
-            _p = user.password
-            b64 = base64.b64encode(bytes(f'{_u}:{_p}', 'utf-8'))
-            token = b64.decode('utf-8')
-            headers = {'Authorization': f'Basic {token}'}
-            proxy_url = cluster['status']['listeners']['pandaProxy'][
-                'panda-proxy']['urls'][0]
-            return self.cloudv2._http_get(path,
-                                          base_url=proxy_url,
-                                          override_headers=headers)
-
         def warn_and_return(msg: str):
             self._logger.warning(msg)
             return msg
 
         # Get cluster details
-        cluster = {}
         try:
             self._logger.info("Getting cluster specs")
             cluster = self._get_cluster(self.current.cluster_id)
@@ -767,16 +774,15 @@ class CloudCluster():
         # Check that cluster is operational
         # Check brokers count
         self._logger.info("Checking cluster brokers")
-        _brokers = _get(cluster, "/brokers", superuser)
-        if len(_brokers['brokers']) < 3:
+        brokers = self.get_brokers()
+        if len(brokers) < 3:
             return warn_and_return("Less than 3 brokers operational")
         else:
-            self._logger.info(
-                f"Console reports '{len(_brokers['brokers'])}' brokers")
+            self._logger.info(f"Console reports '{len(brokers)}' brokers")
 
         # Check topic count
         self._logger.info("Checking cluster topics")
-        _topics = _get(cluster, "/topics", superuser)
+        _topics = self._query_panda_proxy("/topics")
         _critical = [
             "_schemas", "__redpanda.connectors_logs",
             "_internal_connectors_status", "_internal_connectors_configs",
@@ -834,12 +840,15 @@ class CloudCluster():
             # if there is still no id, just copy what globals.json had
             return self.config.id
 
-    def create(self, superuser: Optional[SaslCredentials] = None) -> str:
+    def create(self, superuser: SaslCredentials) -> str:
         """Create a cloud cluster and a new namespace; block until cluster is finished creating.
 
         :param config_profile_name: config profile name, default 'tier-1-aws'
         :return: clusterId, e.g. 'cimuhgmdcaa1uc1jtabc'
         """
+
+        self._superuser = superuser
+
         # Select cluster id for the test run
         # From this point, only self.current.cluster_id should be used
         self.current.cluster_id = self._select_cluster_id()
@@ -860,8 +869,7 @@ class CloudCluster():
                 self.current.consoleUrl = self._get_cluster_console_url()
                 self.update_cluster_acls(superuser)
                 # Do the health check
-                unhealthy_reason: str | None = self._ensure_cluster_health(
-                    superuser)
+                unhealthy_reason: str | None = self._ensure_cluster_health()
             except Exception as e:
                 if fail_on_unhealthy:
                     raise
