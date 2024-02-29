@@ -19,6 +19,7 @@
 #include "cloud_storage_clients/types.h"
 #include "cloud_storage_clients/util.h"
 #include "model/metadata.h"
+#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "utils/retry_chain_node.h"
 
@@ -1268,10 +1269,16 @@ ss::future<upload_result> remote::delete_objects_sequentially(
                              results.push_back(result);
                          });
                    })
-            .handle_exception_type(
-              [](const ss::abort_requested_exception& /* ignore */) {})
             .handle_exception_type([ctxlog](const std::exception& ex) {
-                vlog(ctxlog.error, "Failed to delete keys: {}", ex.what());
+                if (ssx::is_shutdown_exception(std::make_exception_ptr(ex))) {
+                    vlog(
+                      ctxlog.debug,
+                      "Failed to delete keys during shutdown: {}",
+                      ex.what());
+
+                } else {
+                    vlog(ctxlog.error, "Failed to delete keys: {}", ex.what());
+                }
             })
             .then([&results] { return results; });
       });
