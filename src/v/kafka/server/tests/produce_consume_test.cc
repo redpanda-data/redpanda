@@ -24,7 +24,13 @@
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/metrics_types.hh>
+#include <seastar/core/sleep.hh>
+#include <seastar/core/smp.hh>
+#include <seastar/util/bool_class.hh>
+
 #include <boost/test/tools/old/interface.hpp>
+#include <boost/test/unit_test_log.hpp>
 
 #include <vector>
 
@@ -33,26 +39,39 @@ using std::vector;
 using tests::kv_t;
 
 struct prod_consume_fixture : public redpanda_thread_fixture {
-    void start() {
-        consumer = std::make_unique<kafka::client::transport>(
-          make_kafka_client().get0());
-        producer = std::make_unique<kafka::client::transport>(
-          make_kafka_client().get0());
-        consumer->connect().get0();
-        producer->connect().get0();
-        model::topic_namespace tp_ns(model::ns("kafka"), test_topic);
-        add_topic(tp_ns).get0();
-        model::ntp ntp(tp_ns.ns, tp_ns.tp, model::partition_id(0));
-        tests::cooperative_spin_wait_with_timeout(2s, [ntp, this] {
-            auto shard = app.shard_table.local().shard_for(ntp);
-            if (!shard) {
-                return ss::make_ready_future<bool>(false);
-            }
-            return app.partition_manager.invoke_on(
-              *shard, [ntp](cluster::partition_manager& pm) {
-                  return pm.get(ntp)->is_leader();
-              });
-        }).get0();
+    void start(unsigned int count = 1) {
+        producers.reserve(count);
+        consumers.reserve(count);
+        fetch_offsets.resize(count, model::offset{0});
+
+        add_topic(test_tp_ns, static_cast<int>(count)).get();
+
+        ss::parallel_for_each(boost::irange(0u, count), [&](auto i) {
+            consumers.emplace_back(make_kafka_client().get());
+            auto& consumer = consumers.back();
+
+            producers.emplace_back(make_kafka_client().get());
+            auto& producer = producers.back();
+
+            model::ntp ntp(
+              test_tp_ns.ns, test_tp_ns.tp, model::partition_id(i));
+            return ss::when_all_succeed(
+                     producer.connect(),
+                     consumer.connect(),
+                     tests::cooperative_spin_wait_with_timeout(
+                       2s,
+                       [ntp, this] {
+                           auto shard = app.shard_table.local().shard_for(ntp);
+                           if (!shard) {
+                               return ss::make_ready_future<bool>(false);
+                           }
+                           return app.partition_manager.invoke_on(
+                             *shard, [ntp](cluster::partition_manager& pm) {
+                                 return pm.get(ntp)->is_leader();
+                             });
+                       }))
+              .discard_result();
+        }).get();
     }
 
     std::vector<kafka::produce_request::partition> small_batches(size_t count) {
@@ -74,8 +93,9 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         return res;
     }
 
-    ss::future<kafka::produce_response>
-    produce_raw(std::vector<kafka::produce_request::partition>&& partitions) {
+    ss::future<kafka::produce_response> produce_raw(
+      kafka::client::transport& producer,
+      std::vector<kafka::produce_request::partition>&& partitions) {
         kafka::produce_request::topic tp;
         tp.partitions = std::move(partitions);
         tp.name = test_topic;
@@ -85,7 +105,12 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         req.data.timeout_ms = std::chrono::seconds(2);
         req.has_idempotent = false;
         req.has_transactional = false;
-        return producer->dispatch(std::move(req));
+        return producer.dispatch(std::move(req));
+    }
+
+    ss::future<kafka::produce_response>
+    produce_raw(std::vector<kafka::produce_request::partition>&& partitions) {
+        return produce_raw(producers.front(), std::move(partitions));
     }
 
     template<typename T>
@@ -98,10 +123,11 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
           });
     }
 
-    ss::future<kafka::fetch_response> fetch_next() {
+    ss::future<kafka::fetch_response>
+    fetch_next(kafka::client::transport& consumer, model::partition_id p_id) {
         kafka::fetch_request::partition partition;
-        partition.fetch_offset = fetch_offset;
-        partition.partition_index = model::partition_id(0);
+        partition.fetch_offset = fetch_offsets[p_id()];
+        partition.partition_index = p_id;
         partition.log_start_offset = model::offset(0);
         partition.max_bytes = 1_MiB;
         kafka::fetch_request::topic topic;
@@ -114,8 +140,8 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         req.data.max_wait_ms = 1000ms;
         req.data.topics.push_back(std::move(topic));
 
-        return consumer->dispatch(std::move(req), kafka::api_version(4))
-          .then([this](kafka::fetch_response resp) {
+        return consumer.dispatch(std::move(req), kafka::api_version(4))
+          .then([this, p_id](kafka::fetch_response resp) {
               if (resp.data.topics.empty()) {
                   return resp;
               }
@@ -125,18 +151,24 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
                   const auto& data = part.partitions.begin()->records;
                   if (data && !data->empty()) {
                       // update next fetch offset the same way as Kafka clients
-                      fetch_offset = ++data->last_offset();
+                      fetch_offsets[p_id()] = ++data->last_offset();
                   }
               }
               return resp;
           });
     }
 
-    model::offset fetch_offset{0};
-    std::unique_ptr<kafka::client::transport> consumer;
-    std::unique_ptr<kafka::client::transport> producer;
+    ss::future<kafka::fetch_response> fetch_next() {
+        return fetch_next(consumers.front(), model::partition_id{0});
+    }
+
+    std::vector<model::offset> fetch_offsets;
+    std::vector<kafka::client::transport> consumers;
+    std::vector<kafka::client::transport> producers;
     ss::abort_source as;
-    const model::topic test_topic = model::topic("test-topic");
+    const model::topic_namespace test_tp_ns = {
+      model::ns("kafka"), model::topic("test-topic")};
+    const model::topic& test_topic = test_tp_ns.tp;
 };
 
 /**
@@ -184,8 +216,8 @@ FIXTURE_TEST(test_version_handler, prod_consume_fixture) {
     const auto unsupported_version = kafka::api_version(
       kafka::produce_handler::max_supported() + 1);
     BOOST_CHECK_THROW(
-      producer
-        ->dispatch(
+      producers.front()
+        .dispatch(
           // NOLINTNEXTLINE(bugprone-use-after-move)
           kafka::produce_request(std::nullopt, 1, std::move(topics)),
           unsupported_version)
@@ -194,7 +226,7 @@ FIXTURE_TEST(test_version_handler, prod_consume_fixture) {
 }
 
 static std::vector<kafka::produce_request::partition>
-single_batch(const size_t volume) {
+single_batch(model::partition_id p_id, const size_t volume) {
     storage::record_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
     {
@@ -205,7 +237,7 @@ single_batch(const size_t volume) {
     }
 
     kafka::produce_request::partition partition;
-    partition.partition_index = model::partition_id(0);
+    partition.partition_index = p_id;
     partition.records.emplace(std::move(builder).build());
 
     std::vector<kafka::produce_request::partition> res;
@@ -215,7 +247,105 @@ single_batch(const size_t volume) {
 
 namespace ch = std::chrono;
 
+namespace {
+
+enum class execution { seq, par };
+
+/// Runs func in a thread on the given shard
+template<typename Func>
+auto async_submit_to(unsigned int shard, Func&& func) {
+    return ss::smp::submit_to(shard, [&func, shard]() {
+        return ss::async(std::forward<Func>(func), shard);
+    });
+}
+
+/// std::transform_reduce, but with an api that matches ss::map_reduce
+///
+/// Mapper must be synchronous
+template<typename Range, typename Mapper, typename Initial, typename Reduce>
+auto transform_reduce(
+  Range&& rng, Mapper&& mapper, Initial&& initial, Reduce&& reduce) {
+    return std::transform_reduce(
+      rng.begin(),
+      rng.end(),
+      std::forward<Initial>(initial),
+      std::forward<Reduce>(reduce),
+      std::forward<Mapper>(mapper));
+}
+
+template<typename Mapper, typename Initial, typename Reduce>
+auto map_reduce_thread_per_core(
+  Mapper&& mapper, Initial&& initial, Reduce&& reduce) {
+    return ss::map_reduce(
+      boost::irange(0u, ss::smp::count),
+      [&mapper](auto shard) {
+          return async_submit_to(shard, std::forward<Mapper>(mapper));
+      },
+      std::forward<Initial>(initial),
+      std::forward<Reduce>(reduce));
+}
+
+template<typename Mapper, typename Initial, typename Reduce>
+auto transform_reduce_thread_per_core(
+  Mapper&& mapper, Initial&& initial, Reduce&& reduce) {
+    return transform_reduce(
+      boost::irange(0u, ss::smp::count),
+      [&mapper](auto shard) {
+          return async_submit_to(shard, std::forward<Mapper>(mapper)).get();
+      },
+      std::forward<Initial>(initial),
+      std::forward<Reduce>(reduce));
+}
+
+/// Run mapper in a thread on each core, and then reduce on the original core,
+/// returning a synchrous result
+///
+/// execution::par - Run mapper on each core in parallel
+/// execution::par - Run mapper on each core sequentially
+template<typename Mapper, typename Initial, typename Reduce>
+auto transform_reduce_thread_per_core(
+  execution policy, Mapper&& mapper, Initial&& initial, Reduce&& reduce) {
+    switch (policy) {
+    case execution::seq:
+        return transform_reduce_thread_per_core(
+          std::forward<Mapper>(mapper),
+          std::forward<Initial>(initial),
+          std::forward<Reduce>(reduce));
+    case execution::par:
+        return map_reduce_thread_per_core(
+                 std::forward<Mapper>(mapper),
+                 std::forward<Initial>(initial),
+                 std::forward<Reduce>(reduce))
+          .get();
+    }
+}
+
+/// Return a tuple of the result of applying BinaryOp element-wise to each tuple
+template<typename BinaryOp>
+struct tuple_binary_op {
+    auto operator()(auto&& t1, auto&& t2) const {
+        return std::apply(
+          [&](auto&&... args1) {
+              return std::apply(
+                [&](auto&&... args2) {
+                    return std::make_tuple(BinaryOp{}(
+                      std::forward<decltype(args1)>(args1),
+                      std::forward<decltype(args2)>(args2))...);
+                },
+                std::forward<decltype(t2)>(t2));
+          },
+          std::forward<decltype(t1)>(t1));
+    }
+};
+
+} // namespace
+
 struct throughput_limits_fixure : prod_consume_fixture {
+    using honour_throttle = ss::bool_class<class hounour_throttle_tag>;
+
+    static constexpr size_t kafka_packet_in_overhead = 127;
+    static constexpr size_t kafka_packet_eg_overhead = 62;
+
     ch::milliseconds _window_width;
     ch::milliseconds _balancer_period;
     int64_t _rate_minimum;
@@ -273,18 +403,17 @@ struct throughput_limits_fixure : prod_consume_fixture {
       const size_t batch_size,
       const int tolerance_percent) {
         size_t kafka_in_data_len = 0;
-        constexpr size_t kafka_packet_overhead = 127;
         // do not divide rate by smp::count because
         // - balanced case: TP will be balanced and  the entire quota will end
         // up in one shard
         // - static case: rate_limit is per shard
         const auto batches_cnt = /* 1s * */ rate_limit_in
-                                 / (batch_size + kafka_packet_overhead);
+                                 / (batch_size + kafka_packet_in_overhead);
         ch::steady_clock::time_point start;
         ch::milliseconds throttle_time{};
 
         for (int k = -warmup_cycles(
-               rate_limit_in, batch_size + kafka_packet_overhead);
+               rate_limit_in, batch_size + kafka_packet_in_overhead);
              k != batches_cnt;
              ++k) {
             if (k == 0) {
@@ -294,7 +423,8 @@ struct throughput_limits_fixure : prod_consume_fixture {
                   false,
                   "Ingress measurement starts. batches: " << batches_cnt);
             }
-            throttle_time += produce_raw(single_batch(batch_size))
+            throttle_time += produce_raw(
+                               single_batch(model::partition_id{0}, batch_size))
                                .then([](const kafka::produce_response& r) {
                                    return r.data.throttle_time_ms;
                                })
@@ -302,7 +432,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
             kafka_in_data_len += batch_size;
         }
         const auto stop = ch::steady_clock::now();
-        const auto wire_data_length = (batch_size + kafka_packet_overhead)
+        const auto wire_data_length = (batch_size + kafka_packet_in_overhead)
                                       * batches_cnt;
         const auto rate_estimated = rate_limit_in
                                     - _rate_minimum * (ss::smp::count - 1);
@@ -324,7 +454,6 @@ struct throughput_limits_fixure : prod_consume_fixture {
       const size_t batch_size,
       const int tolerance_percent) {
         size_t kafka_out_data_len = 0;
-        constexpr size_t kafka_packet_overhead = 62;
         ch::steady_clock::time_point start;
         size_t total_size{};
         ch::milliseconds throttle_time{};
@@ -334,7 +463,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
         // to fetch. We only can consume almost as much as have been produced:
         const auto kafka_data_cap = kafka_data_available - batch_size * 2;
         for (int k = -warmup_cycles(
-               rate_limit_out, batch_size + kafka_packet_overhead);
+               rate_limit_out, batch_size + kafka_packet_eg_overhead);
              kafka_out_data_len < kafka_data_cap;
              ++k) {
             if (k == 0) {
@@ -356,7 +485,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
                                           .partitions[0]
                                           .records.value()
                                           .size_bytes();
-            total_size += kafka_data_len + kafka_packet_overhead;
+            total_size += kafka_data_len + kafka_packet_eg_overhead;
             throttle_time += fetch_resp.data.throttle_time_ms;
             kafka_out_data_len += kafka_data_len;
         }
@@ -374,13 +503,265 @@ struct throughput_limits_fixure : prod_consume_fixture {
             << (stop - start - time_estimated) * 100.0 / time_estimated << "%");
         return kafka_out_data_len;
     }
+
+    auto do_produce(
+      unsigned i,
+      size_t batches_cnt,
+      size_t batch_size,
+      honour_throttle honour_throttle) {
+        const model::partition_id p_id{i};
+        size_t data_len{0};
+        size_t total_len{0};
+        ch::milliseconds total_throttle_time{};
+        ch::milliseconds throttle_time{};
+        for (size_t k{0}; k != batches_cnt; ++k) {
+            if (honour_throttle && throttle_time > ch::milliseconds::zero()) {
+                ss::sleep(throttle_time).get();
+            }
+            auto res
+              = produce_raw(producers[i], single_batch(p_id, batch_size)).get();
+            throttle_time = res.data.throttle_time_ms;
+            total_throttle_time += throttle_time;
+            data_len += batch_size;
+            total_len += batch_size + kafka_packet_in_overhead;
+        }
+        return std::make_tuple(data_len, total_len, total_throttle_time);
+    }
+
+    auto do_consume(
+      unsigned int i, size_t data_cap, honour_throttle honour_throttle) {
+        const model::partition_id p_id{i};
+        size_t data_len{0};
+        size_t total_len{0};
+        ch::milliseconds total_throttle_time{};
+        ch::milliseconds throttle_time{};
+        while (data_len < data_cap) {
+            if (honour_throttle && throttle_time > ch::milliseconds::zero()) {
+                ss::sleep(throttle_time).get();
+            }
+            const auto fetch_resp = fetch_next(consumers[i], p_id).get();
+            BOOST_REQUIRE_EQUAL(fetch_resp.data.topics.size(), 1);
+            BOOST_REQUIRE_EQUAL(fetch_resp.data.topics[0].partitions.size(), 1);
+            BOOST_TEST_REQUIRE(
+              fetch_resp.data.topics[0].partitions[0].records.has_value());
+            const auto kafka_data_len = fetch_resp.data.topics[0]
+                                          .partitions[0]
+                                          .records.value()
+                                          .size_bytes();
+            throttle_time = fetch_resp.data.throttle_time_ms;
+            total_throttle_time += throttle_time;
+            data_len += kafka_data_len;
+            total_len += kafka_data_len + kafka_packet_eg_overhead;
+        }
+        return std::make_tuple(data_len, total_len, total_throttle_time);
+    }
+
+    auto get_recorded_traffic() {
+        return app.snc_quota_mgr
+          .map_reduce0(
+            [](kafka::snc_quota_manager& snc) {
+                return std::make_tuple(
+                  snc.get_snc_quotas_probe().get_traffic_in(),
+                  snc.get_snc_quotas_probe().get_traffic_eg());
+            },
+            std::make_tuple(size_t{0}, size_t{0}),
+            tuple_binary_op<std::plus<>>{})
+          .get();
+    };
+
+    auto get_throttle_time() {
+        return app.snc_quota_mgr
+          .map_reduce0(
+            [](kafka::snc_quota_manager& snc) {
+                return snc.get_snc_quotas_probe().get_throttle_time();
+            },
+            ss::metrics::histogram{},
+            std::plus{})
+          .get();
+    };
+
+    void test_throughput(honour_throttle honour_throttle, execution policy) {
+        using clock = kafka::snc_quota_manager::clock;
+        // configure
+        constexpr int64_t rate_limit_in = 9_KiB;
+        constexpr int64_t rate_limit_out = 7_KiB;
+        constexpr size_t batch_size = 256;
+        constexpr auto max_rate = std::max(rate_limit_in, rate_limit_out);
+        constexpr auto min_rate = std::min(rate_limit_in, rate_limit_out);
+        const double expected_max_throttle
+          = (double(batch_size) / min_rate)
+            * (policy == execution::seq ? 1 : ss::smp::count)
+            * (honour_throttle ? 1 : 2);
+        const size_t tolerance_percent = 8;
+        config_set("kafka_throughput_throttling_v2", true);
+        config_set(
+          "kafka_throughput_limit_node_in_bps",
+          std::make_optional(rate_limit_in));
+        config_set(
+          "kafka_throughput_limit_node_out_bps",
+          std::make_optional(rate_limit_out));
+        config_set("fetch_max_bytes", batch_size);
+        config_set("max_kafka_throttle_delay_ms", 30'000ms);
+
+        wait_for_controller_leadership().get();
+        start(ss::smp::count);
+
+        // PRODUCE smaller batches for 5s per client
+        const auto batches_cnt = (5s).count() * rate_limit_in
+                                 / (batch_size + kafka_packet_in_overhead);
+
+        constexpr auto now = []() {
+            clock::update();
+            return clock::now();
+        };
+
+        BOOST_TEST_MESSAGE("Warming up");
+        ss::sleep(
+          produce_raw(
+            producers[0], single_batch(model::partition_id{0}, max_rate))
+            .get()
+            .data.throttle_time_ms)
+          .get();
+
+        auto [init_recorded_in, init_recorded_eg] = get_recorded_traffic();
+
+        BOOST_TEST_MESSAGE("Producing");
+        auto start_in = now();
+        auto [kafka_in_data_len, kafka_in_total_len, throttle_time_in]
+          = transform_reduce_thread_per_core(
+            policy,
+            [&](auto i) {
+                return do_produce(i, batches_cnt, batch_size, honour_throttle);
+            },
+            std::make_tuple(size_t{0}, size_t{0}, ch::milliseconds{0}),
+            tuple_binary_op<std::plus<>>{});
+        auto duration_in = now() - start_in;
+        auto [produce_recorded_in, produce_recorded_eg]
+          = tuple_binary_op<std::minus<>>{}(
+            get_recorded_traffic(),
+            std::make_tuple(init_recorded_in, init_recorded_eg));
+
+        BOOST_TEST_MESSAGE("Finished Producing, Warming up");
+
+        // Consume the warmup batch and wait for throttle time
+        ss::sleep(fetch_next(consumers[0], model::partition_id{0})
+                    .get()
+                    .data.throttle_time_ms)
+          .get();
+        std::tie(init_recorded_in, init_recorded_eg) = get_recorded_traffic();
+
+        BOOST_TEST_MESSAGE("Consuming");
+        // CONSUME
+        auto start_eg = now();
+        auto [kafka_eg_data_len, kafka_eg_total_len, throttle_time_out]
+          = transform_reduce_thread_per_core(
+            policy,
+            [&](auto i) {
+                const model::partition_id p_id{i};
+                const auto data_cap = (kafka_in_data_len / ss::smp::count)
+                                      - batch_size * 2;
+                return do_consume(i, data_cap, honour_throttle);
+            },
+            std::make_tuple(size_t{0}, size_t{0}, ch::milliseconds{0}),
+            tuple_binary_op<std::plus<>>{});
+        auto duration_eg = now() - start_eg;
+        BOOST_TEST_MESSAGE("Finished Consuming");
+        auto [consume_recorded_in, consume_recorded_eg]
+          = tuple_binary_op<std::minus<>>{}(
+            get_recorded_traffic(),
+            std::make_tuple(init_recorded_in, init_recorded_eg));
+        auto throttle_hist = get_throttle_time();
+
+        // otherwise test is not valid:
+        BOOST_REQUIRE_GT(kafka_in_data_len, kafka_eg_data_len);
+
+        BOOST_CHECK_GT(produce_recorded_in, produce_recorded_eg);
+        BOOST_CHECK_LT(consume_recorded_in, consume_recorded_eg);
+
+        BOOST_CHECK_EQUAL(produce_recorded_in, kafka_in_total_len);
+        BOOST_CHECK_EQUAL(consume_recorded_eg, kafka_eg_total_len);
+
+        const auto time_estimated_in = std::chrono::milliseconds{
+          kafka_in_total_len * 1000 / rate_limit_in};
+
+        const auto time_estimated_eg = std::chrono::milliseconds{
+          kafka_eg_total_len * 1000 / rate_limit_out};
+
+        BOOST_TEST_CHECK(
+          abs(duration_in - time_estimated_in)
+            < time_estimated_in * tolerance_percent / 100,
+          "Total ingress time: stop-start["
+            << duration_in << "] ≈ time_estimated[" << time_estimated_in
+            << "] ±" << tolerance_percent
+            << "%, error: " << std::setprecision(3)
+            << (duration_in - time_estimated_in) * 100.0 / time_estimated_in
+            << "%");
+
+        BOOST_TEST_CHECK(
+          abs(duration_eg - time_estimated_eg)
+            < time_estimated_eg * tolerance_percent / 100,
+          "Total egress time: stop-start["
+            << duration_eg << "] ≈ time_estimated[" << time_estimated_eg
+            << "] ±" << tolerance_percent
+            << "%, error: " << std::setprecision(3)
+            << (duration_eg - time_estimated_eg) * 100.0 / time_estimated_eg
+            << "%");
+
+        constexpr auto get_throttle_percentile =
+          [](ss::metrics::histogram const& h, int p) {
+              auto count_p = double(h.sample_count) * p / 100;
+              auto lb = std::ranges::lower_bound(
+                h.buckets,
+                count_p,
+                std::less{},
+                &ss::metrics::histogram_bucket::count);
+              if (lb != h.buckets.begin()) {
+                  auto prev = std::prev(lb);
+                  double ratio = (count_p - prev->count)
+                                 / (lb->count - prev->count);
+                  return prev->upper_bound
+                         + ratio * (lb->upper_bound - prev->upper_bound);
+              }
+              return lb->upper_bound;
+          };
+
+        const auto expected_bucket = std::ranges::lower_bound(
+          throttle_hist.buckets,
+          expected_max_throttle * 2, // add some leeway
+          std::less{},
+          &ss::metrics::histogram_bucket::upper_bound);
+
+        auto throttle_90 = get_throttle_percentile(throttle_hist, 90);
+        BOOST_TEST_CHECK(throttle_90 <= expected_bucket->upper_bound);
+    }
 };
+
+FIXTURE_TEST(
+  test_node_throughput_v2_limits_no_throttle_seq, throughput_limits_fixure) {
+    test_throughput(honour_throttle::no, execution::seq);
+}
+
+FIXTURE_TEST(
+  test_node_throughput_v2_limits_with_throttle_seq, throughput_limits_fixure) {
+    test_throughput(honour_throttle::yes, execution::seq);
+}
+
+FIXTURE_TEST(
+  test_node_throughput_v2_limits_no_throttle_par, throughput_limits_fixure) {
+    test_throughput(honour_throttle::no, execution::par);
+}
+
+FIXTURE_TEST(
+  test_node_throughput_v2_limits_with_throttle_par, throughput_limits_fixure) {
+    test_throughput(honour_throttle::yes, execution::par);
+}
 
 FIXTURE_TEST(test_node_throughput_limits_static, throughput_limits_fixure) {
     // configure
     constexpr int64_t pershard_rate_limit_in = 9_KiB;
     constexpr int64_t pershard_rate_limit_out = 7_KiB;
     constexpr size_t batch_size = 256;
+    config_set("kafka_throughput_throttling_v2", false);
     config_set(
       "kafka_throughput_limit_node_in_bps",
       std::make_optional(pershard_rate_limit_in * ss::smp::count));
@@ -414,6 +795,7 @@ FIXTURE_TEST(test_node_throughput_limits_balanced, throughput_limits_fixure) {
     constexpr int64_t rate_limit_in = 9_KiB;
     constexpr int64_t rate_limit_out = 7_KiB;
     constexpr size_t batch_size = 256;
+    config_set("kafka_throughput_throttling_v2", false);
     config_set(
       "kafka_throughput_limit_node_in_bps", std::make_optional(rate_limit_in));
     config_set(
@@ -558,22 +940,9 @@ FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {
 // TODO: move producer utilities somewhere else and give this test a proper
 // home.
 FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
-    producer = std::make_unique<kafka::client::transport>(
-      make_kafka_client().get0());
-    producer->connect().get0();
-    model::topic_namespace tp_ns(model::ns("kafka"), test_topic);
-    add_topic(tp_ns).get0();
-    model::ntp ntp(tp_ns.ns, tp_ns.tp, model::partition_id(0));
-    tests::cooperative_spin_wait_with_timeout(10s, [ntp, this] {
-        auto shard = app.shard_table.local().shard_for(ntp);
-        if (!shard) {
-            return ss::make_ready_future<bool>(false);
-        }
-        return app.partition_manager.invoke_on(
-          *shard, [ntp](cluster::partition_manager& pm) {
-              return pm.get(ntp)->is_leader();
-          });
-    }).get0();
+    wait_for_controller_leadership().get();
+    start();
+    model::ntp ntp(test_tp_ns.ns, test_tp_ns.tp, model::partition_id(0));
     auto shard = app.shard_table.local().shard_for(ntp);
     for (int i = 0; i < 3; i++) {
         // Refresh leadership.
@@ -613,8 +982,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
 
     // Make a request getting the offset from a term below the start of the
     // log.
-    auto client = make_kafka_client().get0();
-    client.connect().get();
+    auto& client = consumers.front();
     auto current_term = app.partition_manager
                           .invoke_on(
                             *shard,
@@ -659,9 +1027,8 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
 FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
     wait_for_controller_leadership().get0();
     start();
-    const model::topic_namespace tp_ns(model::ns("kafka"), test_topic);
     const model::partition_id pid(0);
-    const model::ntp ntp(tp_ns.ns, tp_ns.tp, pid);
+    const model::ntp ntp(test_tp_ns.ns, test_tp_ns.tp, pid);
     auto partition = app.partition_manager.local().get(ntp);
     auto log = partition->log();
 
@@ -796,8 +1163,7 @@ FIXTURE_TEST(test_produce_bad_timestamps, prod_consume_fixture) {
 
     wait_for_controller_leadership().get0();
     start();
-    auto ntp = model::ntp(
-      model::ns("kafka"), test_topic, model::partition_id(0));
+    auto ntp = model::ntp(test_tp_ns.ns, test_tp_ns.tp, model::partition_id(0));
 
     auto producer = tests::kafka_produce_transport(make_kafka_client().get());
     producer.start().get();

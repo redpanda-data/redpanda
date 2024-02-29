@@ -14,7 +14,9 @@
 #include "config/property.h"
 #include "config/throughput_control_group.h"
 #include "metrics/metrics.h"
+#include "ssx/sharded_ptr.h"
 #include "utils/bottomless_token_bucket.h"
+#include "utils/log_hist.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
@@ -22,6 +24,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/util/shared_token_bucket.hh>
 
 #include <chrono>
 #include <optional>
@@ -48,17 +51,30 @@ public:
     ~snc_quotas_probe() noexcept = default;
 
     void rec_balancer_step() noexcept { ++_balancer_runs; }
-    void rec_traffic_in(const size_t bytes) noexcept { _traffic_in += bytes; }
+    void rec_traffic_in(const size_t bytes) noexcept { _traffic.in += bytes; }
+    void rec_traffic_eg(const size_t bytes) noexcept { _traffic.eg += bytes; }
 
     void setup_metrics();
 
     uint64_t get_balancer_runs() const noexcept { return _balancer_runs; }
 
+    auto get_traffic_in() const { return _traffic.in; }
+    auto get_traffic_eg() const { return _traffic.eg; }
+
+    auto record_throttle_time(std::chrono::microseconds t) {
+        return _throttle_time_us.record(t.count());
+    }
+
+    auto get_throttle_time() const {
+        return _throttle_time_us.public_histogram_logform();
+    }
+
 private:
     class snc_quota_manager& _qm;
     metrics::internal_metric_groups _metrics;
     uint64_t _balancer_runs = 0;
-    size_t _traffic_in = 0;
+    ingress_egress_state<size_t> _traffic = {};
+    log_hist_public _throttle_time_us;
 };
 
 class snc_quota_context {
@@ -91,8 +107,15 @@ class snc_quota_manager
 public:
     using clock = ss::lowres_clock;
     using quota_t = bottomless_token_bucket::quota_t;
+    using bucket_t = ss::internal::shared_token_bucket<
+      uint64_t,
+      std::ratio<1>,
+      ss::internal::capped_release::no,
+      clock>;
+    using buckets_t = kafka::ingress_egress_state<
+      ssx::sharded_ptr<kafka::snc_quota_manager::bucket_t>>;
 
-    snc_quota_manager();
+    explicit snc_quota_manager(buckets_t& node_quota);
     snc_quota_manager(const snc_quota_manager&) = delete;
     snc_quota_manager& operator=(const snc_quota_manager&) = delete;
     snc_quota_manager(snc_quota_manager&&) = delete;
@@ -199,8 +222,10 @@ private:
     void adjust_quota(const ingress_egress_state<quota_t>& delta) noexcept;
 
 private:
+    void update_balance_config();
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
+    config::binding<bool> _use_throttling_v2;
     ingress_egress_state<config::binding<std::optional<quota_t>>>
       _kafka_throughput_limit_node_bps;
     config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
@@ -222,9 +247,10 @@ private:
     ingress_egress_state<std::optional<quota_t>> _node_quota_default;
     ingress_egress_state<quota_t> _shard_quota_minimum;
     ingress_egress_state<bottomless_token_bucket> _shard_quota;
+    buckets_t& _node_quota;
 
     // service
-    snc_quotas_probe _probe;
+    mutable snc_quotas_probe _probe;
 };
 
 // Names exposed in this namespace are for unit test integration only
