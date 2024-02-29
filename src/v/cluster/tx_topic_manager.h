@@ -47,11 +47,17 @@ public:
 
 private:
     ss::future<std::error_code> try_create_coordinator_topic();
+
+    void reconcile_topic_properties();
+
+    ss::future<> do_reconcile_topic_properties();
+
     controller& _controller;
     ss::sharded<features::feature_table>& _features;
     config::binding<int32_t> _partition_count;
     config::binding<uint64_t> _segment_size;
     config::binding<std::chrono::milliseconds> _retention_duration;
     ss::gate _gate;
+    mutex _reconciliation_mutex;
 };
 } // namespace cluster

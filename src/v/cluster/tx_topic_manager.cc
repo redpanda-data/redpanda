@@ -45,7 +45,101 @@ tx_topic_manager::tx_topic_manager(
   , _segment_size(std::move(segment_size))
   , _retention_duration(std::move(retention_duration)) {}
 
-ss::future<> tx_topic_manager::start() { co_return; }
+ss::future<> tx_topic_manager::start() {
+    co_await do_reconcile_topic_properties();
+
+    _segment_size.watch([this] { reconcile_topic_properties(); });
+    _retention_duration.watch([this] { reconcile_topic_properties(); });
+}
+
+void tx_topic_manager::reconcile_topic_properties() {
+    ssx::spawn_with_gate(
+      _gate, [this] { return do_reconcile_topic_properties(); });
+}
+
+ss::future<> tx_topic_manager::do_reconcile_topic_properties() {
+    /**
+     * We hold mutex to make sure only one instance of reconciliation loop is
+     * active. Properties update evens are asynchronous hence there would be a
+     * possibility to have more than one reconciliation process active.
+     */
+    auto u = co_await _reconciliation_mutex.get_units();
+
+    vlog(txlog.trace, "Reconciling tx manager topic properties");
+    auto tp_md = _controller.get_topics_state().local().get_topic_metadata_ref(
+      model::tx_manager_nt);
+    // nothing to do, topic does not exists
+    if (!tp_md) {
+        vlog(
+          txlog.trace,
+          "Transactional manager topic does not exist. Skipping "
+          "reconciliation");
+        co_return;
+    }
+
+    const auto& topic_properties
+      = tp_md.value().get().get_configuration().properties;
+    const bool needs_update
+      = topic_properties.retention_duration
+          != tristate<std::chrono::milliseconds>(_retention_duration())
+        || topic_properties.segment_size != _segment_size();
+
+    if (!needs_update) {
+        vlog(
+          txlog.trace,
+          "Transactional manager topic does not need properties update");
+        co_return;
+    }
+
+    topic_properties_update topic_update(model::tx_manager_nt);
+    topic_update.properties.retention_duration.value
+      = tristate<std::chrono::milliseconds>(_retention_duration());
+    topic_update.properties.retention_duration.op
+      = incremental_update_operation::set;
+    topic_update.properties.segment_size.value = _segment_size();
+    topic_update.properties.segment_size.op = incremental_update_operation::set;
+    try {
+        vlog(
+          txlog.info,
+          "Updating properties of transactional manager topic with: {}",
+          topic_update);
+
+        auto results = co_await _controller.get_topics_frontend()
+                         .local()
+                         .update_topic_properties(
+                           {std::move(topic_update)},
+                           topic_operation_timeout
+                             + model::timeout_clock::now());
+        vassert(
+          results.size() == 1,
+          "Transaction topic manager update properties requests contains only "
+          "one topic therefore one result is expected, actual results: {}",
+          results.size());
+
+        const auto& result = results[0];
+        if (result.ec == errc::success) {
+            co_return;
+        }
+        vlog(
+          txlog.warn,
+          "Unable to update transaction manager topic properties - {}",
+          make_error_code(result.ec).message());
+    } catch (...) {
+        vlog(
+          txlog.warn,
+          "Unable to update transaction manager topic properties - {}",
+          std::current_exception());
+    }
+    /**
+     * In case of an error, retry after a while
+     */
+    if (!_gate.is_closed()) {
+        co_await ss::sleep_abortable(
+          10s, _controller.get_abort_source().local());
+
+        reconcile_topic_properties();
+    }
+}
 
 ss::future<> tx_topic_manager::stop() { return _gate.close(); }
 
