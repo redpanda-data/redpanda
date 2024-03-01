@@ -34,9 +34,14 @@ def write_json(ioclass, data):
 
 
 class TopicSwarm():
+    # Based on manual runs, maximum creation time
+    # is 16 sec for a batch with 16384 topics
+    create_topic_timeout_ms = 30 * 1000
+
     def __init__(self, brokers, workers, issilent, logger):
         self.logger = logger
-        self.brokers = brokers
+        # Remove quotes if any
+        self.brokers = brokers.strip('\"').strip("'")
         self.workers = workers
         self.issilent = issilent
 
@@ -92,7 +97,8 @@ class TopicSwarm():
                                 num_partitions=topic_item['partitions'],
                                 replication_factor=topic_item['replicas'])
             # Send create topic request
-            r = kclient.create_topics([newTopic])
+            r = kclient.create_topics([newTopic],
+                                      timeout_ms=self.create_topic_timeout_ms)
             # Save timing
             topic_item["time-to-create-sec"] = time.time() - create_start_s
             # Save errors if any for this single topic
@@ -112,7 +118,8 @@ class TopicSwarm():
                              num_partitions=topic['partitions'],
                              replication_factor=topic['replicas']))
             # Send whole batch to kafka client
-            r = kclient.create_topics(specs)
+            r = kclient.create_topics(specs,
+                                      timeout_ms=self.create_topic_timeout_ms)
             time_to_create_sec = time.time() - create_start_s
             # Filter topic errors if any
             _errors = [e for e in getattr(r, 'topic_errors', []) if e[1] != 0]
@@ -292,6 +299,8 @@ def main(args):
             data = {'error': f"{e.__str__()} for '{args.brokers}'"}
         except Exception as e:
             import traceback
+            # If timeout happens, it will go here
+            # and be reported and handled like a normal error
             data = {
                 'error':
                 ''.join(traceback.format_exception(type(e), e,
