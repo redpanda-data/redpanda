@@ -105,7 +105,9 @@ class PythonLibrdkafka:
                 conf.update({
                     'security.protocol': 'ssl',
                 })
-        self._redpanda.logger.info(conf)
+        # log as debug to eliminate log spamming
+        # when creating a lot of producers
+        self._redpanda.logger.debug(conf)
         return conf
 
     def _get_oauth_config(self):
