@@ -26,6 +26,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 func newInstallCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -81,10 +82,11 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 	}
 
 	byoc, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find("byoc")
-
+	zap.L().Debug("looking for existing byoc plugin", zap.Bool("exists", pluginExists))
 	// If the plugin exists, and we don't want a version check we want to exit
 	// early and avoid calling the Cloud API.
 	if c := overrides.BYOCSkipVersionCheck; pluginExists && (c == "1" || c == "true") {
+		zap.L().Sugar().Warn("overriding byoc plugin version check. RPK_CLOUD_SKIP_VERSION_CHECK is enabled")
 		return byoc.Path, token, false, nil
 	}
 
@@ -142,12 +144,15 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 		}
 
 		if strings.HasPrefix(currentSha, expShaPrefix) {
+			zap.L().Sugar().Debug("version check: installed byoc plugin matches expected version")
 			return byoc.Path, token, false, nil // remote version matches, all is good, return token
 		}
+		zap.L().Sugar().Debug("version check: installed byoc plugin does not match expected version")
 	}
 
 	// Remote version is different: download current plugin version and
 	// replace.
+	zap.L().Debug("downloading byoc plugin", zap.String("version", artifact.Version))
 	bin, err := plugin.Download(ctx, artifact.Location, false, expShaPrefix)
 	if err != nil {
 		return "", "", false, fmt.Errorf("unable to replace out of date plugin: %w", err)
@@ -165,6 +170,7 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 		}
 	}
 
+	zap.L().Sugar().Debugf("writing byoc plugin to %v", pluginDir)
 	path, err := plugin.WriteBinary(fs, "byoc", pluginDir, bin, false, true)
 	if err != nil {
 		return "", "", false, fmt.Errorf("unable to write byoc plugin to disk: %w", err)
