@@ -57,3 +57,11 @@ class SelfRedpandaCloudTest(RedpandaCloudTest):
         ]
         samples = self.redpanda.metrics_samples(sample_patterns)
         assert samples is not None, 'expected sample patterns to match'
+
+    @cluster(num_nodes=1)
+    def test_metric_sum(self):
+        """Test metric_sum() can retrieve internal metrics.
+        """
+
+        count = self.redpanda.metric_sum('vectorized_application_uptime')
+        assert count > 0, 'expected count greater than 0'
