@@ -110,6 +110,9 @@ public:
     bool is_new_log() const final;
     offset_stats offsets() const final;
     raft::offset_translator& offset_translator() { return _offset_translator; }
+    model::offset_delta delta(model::offset) const final;
+    model::offset from_log_offset(model::offset) const final;
+    model::offset to_log_offset(model::offset) const final;
     model::offset find_last_term_start_offset() const final;
     model::timestamp start_timestamp() const final;
     std::optional<model::term_id> get_term(model::offset) const final;

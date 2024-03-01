@@ -1403,6 +1403,18 @@ bool disk_log_impl::is_new_log() const {
            && os.start_offset == not_initialized;
 }
 
+model::offset_delta disk_log_impl::delta(model::offset o) const {
+    return model::offset_delta{_offset_translator.state()->delta(o)};
+}
+
+model::offset disk_log_impl::from_log_offset(model::offset log_offset) const {
+    return _offset_translator.state()->from_log_offset(log_offset);
+}
+
+model::offset disk_log_impl::to_log_offset(model::offset data_offset) const {
+    return _offset_translator.state()->to_log_offset(data_offset);
+}
+
 offset_stats disk_log_impl::offsets() const {
     if (_segs.empty()) {
         offset_stats ret;

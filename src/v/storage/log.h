@@ -97,6 +97,16 @@ public:
     virtual ss::future<std::optional<timequery_result>>
       timequery(timequery_config) = 0;
 
+    // Returns the offset delta for a given offset. This can be used for
+    // example to translate a Raft offset to a data offset.
+    virtual model::offset_delta delta(model::offset) const = 0;
+
+    // Translate the given log offset into a data offset.
+    virtual model::offset from_log_offset(model::offset) const = 0;
+
+    // Translate the given data offset into a log offset.
+    virtual model::offset to_log_offset(model::offset) const = 0;
+
     const ntp_config& config() const { return _config; }
 
     // Returns whether the log has never been appended to.
