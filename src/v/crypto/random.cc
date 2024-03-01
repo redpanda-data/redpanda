@@ -37,4 +37,24 @@ bytes generate_random(size_t len, use_private_rng private_rng) {
     generate_random(ret, private_rng);
     return ret;
 }
+
+namespace {
+template<typename T>
+T generate_random(use_private_rng private_rng) {
+    std::array<bytes::value_type, sizeof(T)> x{};
+    generate_random(x, private_rng);
+    return std::bit_cast<T>(x);
+}
+} // namespace
+
+template<>
+secure_private_rng::result_type secure_private_rng::operator()() {
+    return generate_random<secure_private_rng::result_type>(
+      use_private_rng::yes);
+}
+
+template<>
+secure_public_rng::result_type secure_public_rng::operator()() {
+    return generate_random<secure_public_rng::result_type>(use_private_rng::no);
+}
 } // namespace crypto
