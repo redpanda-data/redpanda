@@ -1003,6 +1003,44 @@ class RedpandaServiceABC(ABC):
         else:
             return MetricSamples(sample_values)
 
+    @abstractmethod
+    def metrics_samples(
+        self,
+        sample_patterns: list[str],
+        nodes=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> dict[str, MetricSamples]:
+        '''Implement this method to iterate over nodes to query multiple sample patterns.
+
+        Query metrics for multiple sample names using fuzzy matching.
+        Similar to metrics_sample(), but works with multiple patterns.
+        '''
+        pass
+
+    def _metrics_samples(
+        self,
+        sample_patterns: list[str],
+        ns,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> dict[str, MetricSamples]:
+        '''Does the main work of the metrics_samples() implementation given a list of ns to iterate over.
+        '''
+        sample_values_per_pattern = {
+            pattern: []
+            for pattern in sample_patterns
+        }
+
+        for n in ns:
+            for pattern in sample_patterns:
+                metrics = self.metrics(n, metrics_endpoint)
+                sample_values_per_pattern[pattern] += self._extract_samples(
+                    metrics, pattern, n)
+
+        return {
+            pattern: MetricSamples(values)
+            for pattern, values in sample_values_per_pattern.items() if values
+        }
+
 
 class RedpandaServiceBase(RedpandaServiceABC, Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -1918,6 +1956,19 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             pods = self.pods
 
         return self._metrics_sample(sample_pattern, pods, metrics_endpoint)
+
+    def metrics_samples(
+        self,
+        sample_patterns: list[str],
+        pods=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> dict[str, MetricSamples]:
+        '''
+        Query metrics for multiple sample names using fuzzy matching.
+        Similar to metrics_sample(), but works with multiple patterns.
+        '''
+        pods = pods or self.pods
+        return self._metrics_samples(sample_patterns, pods, metrics_endpoint)
 
     def metric_sum(
             self,
@@ -4036,26 +4087,12 @@ class RedpandaService(RedpandaServiceBase):
         nodes=None,
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
     ) -> dict[str, MetricSamples]:
-        """
+        '''
         Query metrics for multiple sample names using fuzzy matching.
-        The same as metrics_sample, but works with multiple patterns.
-        """
+        Similar to metrics_sample(), but works with multiple patterns.
+        '''
         nodes = nodes or self.nodes
-        sample_values_per_pattern = {
-            pattern: []
-            for pattern in sample_patterns
-        }
-
-        for node in nodes:
-            for pattern in sample_patterns:
-                metrics = self.metrics(node, metrics_endpoint)
-                sample_values_per_pattern[pattern] += self._extract_samples(
-                    metrics, pattern, node)
-
-        return {
-            pattern: MetricSamples(values)
-            for pattern, values in sample_values_per_pattern.items() if values
-        }
+        return self._metrics_samples(sample_patterns, nodes, metrics_endpoint)
 
     def shards(self):
         """
