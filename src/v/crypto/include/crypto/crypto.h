@@ -212,6 +212,7 @@ bytes hmac(digest_type type, std::string_view key, std::string_view msg);
 ///////////////////////////////////////////////////////////////////////////////
 /// Asymmetric key operations
 ///////////////////////////////////////////////////////////////////////////////
+class verify_ctx;
 /**
  * Structure that holds the key implementation
  */
@@ -252,8 +253,75 @@ public:
 
 private:
     class impl;
-    std::unique_ptr<impl> _impl;
-
     explicit key(std::unique_ptr<impl>&& impl);
+    std::unique_ptr<impl> _impl;
+    friend class verify_ctx;
 };
+
+/**
+ * Class used to hold signature verification context
+ */
+class verify_ctx final {
+public:
+    /**
+     * Constructs new verify context
+     *
+     * @param type The type of signature to verify
+     * @param key The key type
+     * @throws crypto::exception On error
+     */
+    verify_ctx(digest_type type, const key& key);
+    ~verify_ctx() noexcept;
+    verify_ctx(const verify_ctx&) = delete;
+    verify_ctx& operator=(const verify_ctx&) = delete;
+    verify_ctx(verify_ctx&&) noexcept;
+    verify_ctx& operator=(verify_ctx&&) noexcept;
+
+    /**
+     * Updates the verify context
+     *
+     * @return verify_ctx& Itself for chaining
+     * @throws crypto::exception On internal error
+     */
+    verify_ctx& update(bytes_view msg);
+    verify_ctx& update(std::string_view msg);
+
+    /**
+     * Finishes verification and returns whether or not the signature has been
+     * verified
+     *
+     * @throws crypto::exception On internal error
+     */
+    bool final(bytes_view sig) &&;
+    bool final(std::string_view sig) &&;
+
+    /**
+     * Finishes verification, returns whether or not the signature has been
+     * verified and resets the context so it can be used again
+     *
+     * @throws crypto::exception On internal error
+     */
+    bool reset(bytes_view sig);
+    bool reset(std::string_view sig);
+
+private:
+    class impl;
+    std::unique_ptr<impl> _impl;
+};
+
+/**
+ * Verifies the signature
+ *
+ * @param type The type of digest used to construct the signature
+ * @param key The key to use
+ * @param msg The message to verify
+ * @param sig The signature to verify
+ * @return true If @p sig is a valid signature for @p msg
+ * @return false Otherwise
+ * @throws crypto::exception On internal error
+ */
+bool verify_signature(
+  digest_type type, const key& key, bytes_view msg, bytes_view sig);
+bool verify_signature(
+  digest_type type, const key& key, std::string_view msg, std::string_view sig);
 } // namespace crypto

@@ -6,6 +6,7 @@ rp_test(
       digest_tests.cc
       hmac_tests.cc
       key_tests.cc
+      signature_tests.cc
     LIBRARIES
       v::crypto
       v::gtest_main

@@ -103,3 +103,38 @@ bytes public_exponent {...};
 
 auto key = crypto::key::load_rsa_public_key(modulus, public_exponent);
 ```
+
+## Signature Verification
+
+ Performing signature verification can be done either one-shot or multi part.
+
+ One-shot:
+
+ ```c++
+ #include "crypto/crypto.h"
+
+auto key = {...};
+bytes msg {...};
+bytes sig {...};
+
+auto sig_verified = crypto::verify_signature(
+  crypto::digest_type::SHA256,
+  key,
+  msg,
+  sig
+);
+ ```
+
+ For multi-part:
+
+ ```c++
+  #include "crypto/crypto.h"
+
+auto key = {...};
+bytes msg {...};
+bytes sig {...};
+
+crypto::verify_ctx ctx(crypto::digest_type::SHA256, key);
+ctx.update(msg);
+bool verified = std::move(ctx).final(sig);
+ ```
