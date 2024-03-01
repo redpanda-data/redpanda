@@ -23,6 +23,7 @@
 #include "ssx/abort_source.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
+#include "utils/absl_sstring_hash.h"
 #include "utils/log_hist.h"
 #include "utils/named_type.h"
 
@@ -227,19 +228,6 @@ private:
     ss::future<session_resources>
     throttle_request(const request_header&, size_t sz);
 
-    /**
-     * Process zero or more ready responses in request order.
-     *
-     * The future<> returned by this method resolves when all ready *and*
-     * in-order responses have been processed, which is not the same as all
-     * ready responses. In particular, responses which are ready may not be
-     * processed if there are earlier (lower sequence number) responses
-     * which are not yet ready: they will be processed by a future
-     * invocation.
-     *
-     * @return ss::future<> a future which as described above.
-     */
-    ss::future<> maybe_process_responses();
     ss::future<> do_process(request_context);
 
     ss::future<> handle_auth_v0(size_t);
@@ -263,12 +251,9 @@ private:
      * stage of processing and allows for some request handling overlap.
      */
     ss::future<> dispatch_method_once(request_header, size_t sz);
-    ss::future<> handle_response(
-      ss::lw_shared_ptr<connection_context>,
-      ss::future<response_ptr>,
-      ss::lw_shared_ptr<session_resources>,
-      sequence_id,
-      correlation_id);
+    bool is_first_request() const {
+        return _protocol_state.is_first_request() && _virtual_states.empty();
+    }
 
     class ctx_log {
     public:
@@ -319,15 +304,122 @@ private:
         const ss::net::inet_address& _client_addr;
         uint16_t _client_port;
     };
+    /**
+     * Class aggregating a state of protocol per client. During normal operation
+     * a connection context contains a single protocol state.
+     */
+    class client_protocol_state {
+    public:
+        /**
+         * Standard process request.
+         *
+         * In this case the first phase of the request
+         * processing is done in foreground (the first phase is the one that is
+         * supposed to guarantee ordering) the second phase is handled in the
+         * background allowing multiple concurrent produce/offset_commit
+         * requests pending per client
+         */
+        ss::future<> process_request(
+          ss::lw_shared_ptr<connection_context>,
+          request_context,
+          ss::lw_shared_ptr<session_resources>);
+
+        /**
+         * Checks if the request that currently is being processed is the first
+         * request processed in the context this virtual connection
+         */
+        bool is_first_request() const {
+            return _next_response == sequence_id(0)
+                   && _seq_idx == sequence_id(0);
+        }
+
+    private:
+        /**
+         * Process zero or more ready responses in request order.
+         *
+         * The future<> returned by this method resolves when all ready *and*
+         * in-order responses have been processed, which is not the same as all
+         * ready responses. In particular, responses which are ready may not be
+         * processed if there are earlier (lower sequence number) responses
+         * which are not yet ready: they will be processed by a future
+         * invocation.
+         */
+        ss::future<>
+          maybe_process_responses(ss::lw_shared_ptr<connection_context>);
+
+        ss::future<> handle_response(
+          ss::lw_shared_ptr<connection_context>,
+          ss::future<response_ptr>,
+          ss::lw_shared_ptr<session_resources>,
+          sequence_id,
+          correlation_id);
+
+        sequence_id _next_response;
+        sequence_id _seq_idx;
+        map_t _responses;
+    };
+
+    /**
+     * Class representing state of virtualized connection. It allow us to track
+     * multiple sequences of request and responses in withing a single standard
+     * connection context.
+     *
+     * This is the place to extend if any additional context will be required to
+     * store per virtual connection. Currently only the only part that is kept
+     * per virtual connection is a protocol state i.e. sequence and response
+     * tracking.
+     */
+    class virtual_connection_state {
+    public:
+        /**
+         * In this case the first phase of the request
+         * processing is done in background if there is no request being
+         * processed by the same client in the same time. This way from the
+         * perspective of a physical connection, requests may be processed out
+         * of order but for each client only one request may be processed at the
+         * time.
+         *
+         * NOTE: to propagate backpressure and being able to control the
+         * resource usage, only one first phase of a request at a time is
+         * allowed to be processed by a client. If a previously dispatched
+         * request first phase didn't finished the next request dispatch will
+         * block processing requests for the whole connection.
+         */
+        ss::future<> process_request(
+          ss::lw_shared_ptr<connection_context>,
+          request_context,
+          ss::lw_shared_ptr<session_resources>);
+
+    private:
+        client_protocol_state _state;
+        /**
+         * Mutex is used to control concurrency per virtual connection.
+         */
+        mutex _lock;
+        ss::lowres_clock::time_point _last_request_timestamp;
+    };
 
     std::optional<
       std::reference_wrapper<boost::intrusive::list<connection_context>>>
       _hook;
     class server& _server;
     ss::lw_shared_ptr<net::connection> conn;
-    sequence_id _next_response;
-    sequence_id _seq_idx;
-    map_t _responses;
+
+    /**
+     * We keep a separate instance of a protocol state not to lookup for the
+     * state if we are not using virtualized connection. This may seem like an
+     * overhead but considering the size of protocol state is a low price to pay
+     * to prevent map lookups on each request.
+     */
+    client_protocol_state _protocol_state;
+    /**
+     * A map keeping virtual connection states, during default operation the map
+     * is empty
+     */
+    absl::node_hash_map<bytes, ss::lw_shared_ptr<virtual_connection_state>>
+      _virtual_states;
+
+    ss::gate _gate;
     ssx::sharded_abort_source _as;
     std::optional<security::sasl_server> _sasl;
     const ss::net::inet_address _client_addr;
@@ -339,6 +431,8 @@ private:
       _kafka_throughput_controlled_api_keys;
     std::unique_ptr<snc_quota_context> _snc_quota_context;
     ss::promise<> _wait_input_shutdown;
+
+    bool _is_virtualized_connection = false;
 };
 
 } // namespace kafka

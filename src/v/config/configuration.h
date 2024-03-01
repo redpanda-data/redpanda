@@ -560,6 +560,9 @@ struct configuration final : public config_store {
     // HTTP Authentication
     property<std::vector<ss::sstring>> http_authentication;
 
+    // MPX
+    property<bool> enable_mpx_extensions;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
