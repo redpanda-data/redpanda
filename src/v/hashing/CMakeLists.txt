@@ -9,7 +9,7 @@ v_cc_library(
   DEPS
     xxHash::xxhash
     Crc32c::crc32c
-    GnuTLS::GnuTLS
+    v::crypto
     v::bytes
   DEFINES
     -DXXH_PRIVATE_API
