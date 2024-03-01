@@ -30,3 +30,11 @@ rp_test(
   LABELS
     kafka
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME role_store_bench
+  SOURCES role_store_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::utils v::security
+  LABELS security
+)
