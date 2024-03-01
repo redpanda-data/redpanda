@@ -42,6 +42,7 @@ v_cc_library(
     re2
     gssapi_krb5
     krb5
+    v::crypto
  )
 
 add_subdirectory(audit)

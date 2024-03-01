@@ -11,6 +11,7 @@
 
 #include "base/oncore.h"
 #include "base/outcome.h"
+#include "crypto/crypto.h"
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
 #include "json/pointer.h"
@@ -26,10 +27,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string/split.hpp>
 #include <cryptopp/base64.h>
-#include <cryptopp/cryptlib.h>
-#include <cryptopp/integer.h>
-#include <cryptopp/osrng.h>
-#include <cryptopp/rsa.h>
 
 #include <iosfwd>
 #include <optional>
@@ -69,9 +66,6 @@ struct string_viewable_hasher {
     }
 };
 
-using cryptopp_bytes = ss::basic_sstring<CryptoPP::byte, uint32_t, 31, false>;
-using cryptopp_byte_view = std::basic_string_view<cryptopp_bytes::value_type>;
-
 template<typename CharT = std::string_view::value_type>
 std::basic_string_view<CharT> as_string_view(json::Value const& v) {
     expression_in_debug_mode(
@@ -101,8 +95,10 @@ time_point(json::Value const& doc, std::string_view field) {
       typename Clock::time_point(std::chrono::seconds(it->value.GetInt64()));
 }
 
-template<string_viewable StringT = cryptopp_bytes>
-auto base64_url_decode(cryptopp_byte_view sv) {
+template<string_viewable StringT = bytes>
+auto base64_url_decode(bytes_view sv) {
+    // TODO: Replace this with non-CryptoPP implementation
+    // TODO: https://github.com/redpanda-data/core-internal/issues/1132
     CryptoPP::Base64URLDecoder decoder;
 
     decoder.Put(sv.data(), sv.size());
@@ -117,15 +113,14 @@ auto base64_url_decode(cryptopp_byte_view sv) {
     return decoded;
 };
 
-inline std::optional<CryptoPP::Integer>
-as_cryptopp_integer(json::Value const& v, std::string_view field) {
-    CryptoPP::Integer integer;
-    auto b64 = string_view<CryptoPP::byte>(v, field);
+template<string_viewable StringT = bytes>
+std::optional<StringT>
+base64_url_decode(json::Value const& v, std::string_view field) {
+    auto b64 = string_view<bytes::value_type>(v, field);
     if (!b64.has_value()) {
         return std::nullopt;
     }
-    auto chars = base64_url_decode(b64.value());
-    return CryptoPP::Integer{chars.data(), chars.size()};
+    return base64_url_decode(b64.value());
 }
 
 } // namespace detail
@@ -356,13 +351,31 @@ private:
 
 namespace detail {
 
+template<crypto::digest_type DigestType>
+struct crypto_lib_sig_verifier {
+    explicit crypto_lib_sig_verifier(crypto::key&& key)
+      : _ctx(DigestType, key) {}
+
+    bool operator()(bytes_view msg, bytes_view sig) const {
+        return _ctx.update(msg).reset(sig);
+    }
+
+private:
+    mutable crypto::verify_ctx _ctx;
+};
+
+template<crypto::digest_type DigestType>
+struct crypto_lib_algorithm {
+    using Verifier = crypto_lib_sig_verifier<DigestType>;
+    using PublicKey = crypto::key;
+};
+
 // Base class for verifying and signing tokens
 template<typename Algo, const char* Alg, const char* Kty>
 class signature_base {
 public:
     using algorithm = Algo;
     using verifier = algorithm::Verifier;
-    using signer = algorithm::Signer;
 
     constexpr std::string_view alg() const { return Alg; }
     constexpr std::string_view kty() const { return Kty; }
@@ -383,9 +396,8 @@ public:
     explicit verifier_impl(public_key&& k)
       : _verifier(std::move(k)) {}
 
-    bool verify(cryptopp_byte_view msg, cryptopp_byte_view sig) const {
-        return _verifier.VerifyMessage(
-          msg.data(), msg.length(), sig.data(), sig.length());
+    bool verify(bytes_view msg, bytes_view sig) const {
+        return _verifier(msg, sig);
     }
 
 private:
@@ -395,7 +407,7 @@ private:
 constexpr const char rsa_str[] = "RSA";
 constexpr const char rs256_str[] = "RS256";
 using rs256_verifier = verifier_impl<
-  CryptoPP::RSASS<CryptoPP::PKCS1v15, CryptoPP::SHA256>,
+  crypto_lib_algorithm<crypto::digest_type::SHA256>,
   rs256_str,
   rsa_str>;
 
@@ -414,7 +426,7 @@ public:
         return ss::visit(_impl, [](auto const& impl) { return impl.kty(); });
     }
 
-    bool verify(cryptopp_byte_view msg, cryptopp_byte_view sig) const {
+    bool verify(bytes_view msg, bytes_view sig) const {
         return ss::visit(
           _impl, [=](auto const& impl) { return impl.verify(msg, sig); });
     }
@@ -424,23 +436,20 @@ private:
     verifier_impls _impl;
 };
 
-inline result<verifier> make_rs256_verifier(
-  json::Value const& jwk, CryptoPP::AutoSeededRandomPool& rng) {
-    CryptoPP::RSA::PublicKey key;
+inline result<verifier> make_rs256_verifier(json::Value const& jwk) {
     try {
-        auto n = detail::as_cryptopp_integer(jwk, "n");
-        auto e = detail::as_cryptopp_integer(jwk, "e");
+        auto n = detail::base64_url_decode(jwk, "n");
+        auto e = detail::base64_url_decode(jwk, "e");
         if (!n.has_value() || !e.has_value()) {
             return errc::jwk_invalid;
         }
-        key.Initialize(n.value(), e.value());
-        if (!key.Validate(rng, 3)) {
-            return errc::jwk_invalid;
-        }
+        auto key = crypto::key::load_rsa_public_key(n.value(), e.value());
+        return verifier{rs256_verifier{std::move(key)}};
     } catch (CryptoPP::Exception const& ex) {
         return errc::jwk_invalid;
+    } catch (crypto::exception const&) {
+        return errc::jwk_invalid;
     }
-    return verifier{rs256_verifier{key}};
 }
 
 using verifiers = absl::flat_hash_map<
@@ -449,8 +458,7 @@ using verifiers = absl::flat_hash_map<
   detail::string_viewable_hasher,
   detail::string_viewable_compare>;
 
-inline result<verifiers>
-make_verifiers(jwks const& jwks, CryptoPP::AutoSeededRandomPool& rng) {
+inline result<verifiers> make_verifiers(jwks const& jwks) {
     auto keys = jwks.keys();
     verifiers vs;
     for (auto const& key : keys) {
@@ -466,8 +474,7 @@ make_verifiers(jwks const& jwks, CryptoPP::AutoSeededRandomPool& rng) {
             continue;
         }
 
-        using factory = result<verifier> (*)(
-          json::Value const&, CryptoPP::AutoSeededRandomPool&);
+        using factory = result<verifier> (*)(json::Value const&);
         auto v = string_switch<std::optional<factory>>(alg)
                    .match(rs256_str, &make_rs256_verifier)
                    .default_match(std::optional<factory>{});
@@ -475,7 +482,7 @@ make_verifiers(jwks const& jwks, CryptoPP::AutoSeededRandomPool& rng) {
             continue;
         }
 
-        auto r = v.value()(key, rng);
+        auto r = v.value()(key);
         if (!r) {
             continue;
         }
@@ -499,19 +506,18 @@ public:
     // Verify the JWS signature and return the JWT
     result<jwt> verify(jws const& jws) const {
         std::string_view sv(jws._encoded);
-        std::vector<detail::cryptopp_byte_view> jose_enc;
+        std::vector<bytes_view> jose_enc;
         jose_enc.reserve(3);
         boost::algorithm::split(
-          jose_enc, detail::char_view_cast<CryptoPP::byte>(sv), [](char c) {
-              return c == '.';
-          });
+          jose_enc,
+          detail::char_view_cast<bytes_view::value_type>(sv),
+          [](char c) { return c == '.'; });
 
         if (jose_enc.size() != 3) {
             return errc::jws_invalid_parts;
         }
 
-        constexpr auto make_dom =
-          [](detail::cryptopp_byte_view bv) -> result<json::Document> {
+        constexpr auto make_dom = [](bytes_view bv) -> result<json::Document> {
             try {
                 auto bytes = detail::base64_url_decode(bv);
                 auto str = detail::char_view_cast<char>(bytes);
@@ -553,7 +559,7 @@ public:
         auto second_dot = jose_enc[0].length() + 1 + jose_enc[1].length();
         auto msg = sv.substr(0, second_dot);
         if (!verifier->second.verify(
-              detail::char_view_cast<CryptoPP::byte>(msg), signature)) {
+              detail::char_view_cast<bytes_view::value_type>(msg), signature)) {
             return errc::jws_invalid_sig;
         }
 
@@ -562,7 +568,7 @@ public:
 
     // Update the verification keys
     result<void> update_keys(jwks const& keys) {
-        auto verifiers = detail::make_verifiers(keys, _rng);
+        auto verifiers = detail::make_verifiers(keys);
         if (verifiers.has_error()) {
             return verifiers.assume_error();
         }
@@ -571,7 +577,6 @@ public:
     }
 
 private:
-    CryptoPP::AutoSeededRandomPool _rng;
     detail::verifiers _verifiers;
 };
 
