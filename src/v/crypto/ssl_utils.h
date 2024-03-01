@@ -43,6 +43,8 @@ struct deleter {
 template<typename T, void (*fn)(T*)>
 using handle = std::unique_ptr<T, deleter<T, fn>>;
 
+using EVP_MAC_ptr = handle<EVP_MAC, EVP_MAC_free>;
+using EVP_MAC_CTX_ptr = handle<EVP_MAC_CTX, EVP_MAC_CTX_free>;
 using EVP_MD_CTX_ptr = handle<EVP_MD_CTX, EVP_MD_CTX_free>;
 
 /// Exception class used to extract the error from OpenSSL

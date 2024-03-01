@@ -4,6 +4,7 @@ rp_test(
     BINARY_NAME gtest_crypto
     SOURCES
       digest_tests.cc
+      hmac_tests.cc
     LIBRARIES
       v::crypto
       v::gtest_main

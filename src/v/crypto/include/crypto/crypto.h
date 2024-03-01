@@ -109,4 +109,103 @@ private:
  */
 bytes digest(digest_type type, bytes_view msg);
 bytes digest(digest_type type, std::string_view msg);
+
+///////////////////////////////////////////////////////////////////////////////
+/// MAC operations
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Context structure used to perform HMAC operations
+ */
+struct hmac_ctx final {
+public:
+    /**
+     * Construct a new hmac ctx object
+     *
+     * @param type The type of HMAC to generate
+     * @param key The key to use
+     * @throws crypto::exception On internal error
+     */
+    hmac_ctx(digest_type type, bytes_view key);
+    hmac_ctx(digest_type type, std::string_view key);
+    ~hmac_ctx() noexcept;
+    hmac_ctx(const hmac_ctx&) = delete;
+    hmac_ctx& operator=(const hmac_ctx&) = delete;
+    hmac_ctx(hmac_ctx&&) noexcept;
+    hmac_ctx& operator=(hmac_ctx&&) noexcept;
+
+    /**
+     * @return size_t Size of the resulting HMAC signature
+     */
+    size_t size() const;
+    static size_t size(digest_type type);
+
+    /**
+     * Updates HMAC operation
+     *
+     * @return hmac_ctx& Itself for update chaining
+     * @throws crypto::exception On internal error
+     */
+    hmac_ctx& update(bytes_view msg);
+    hmac_ctx& update(std::string_view msg);
+
+    /**
+     * Finalizes HMAC operation and returns signature
+     *
+     * @return bytes The signature
+     * @throws crypto::exception On internal error
+     */
+    bytes final() &&;
+
+    /**
+     * Finalizes digest operation and returns the signature in the provided
+     * buffer
+     *
+     * @param signature The buffer to place the signature into.  It must be
+     * exactly the size of the signature
+     * @return The provided buffer
+     * @throws crypto::exception On internal error or if @p signature is an
+     * invalid size
+     */
+    bytes_span<> final(bytes_span<> signature) &&;
+    std::span<char> final(std::span<char> signature) &&;
+
+    /**
+     * Finalizes HMAC operation and returns signature and resets context so it
+     * can be used again
+     *
+     * @return bytes The signature
+     * @throws crypto::exception On internal error
+     */
+    bytes reset();
+
+    /**
+     * Finalizes digest operation and returns the signature in the provided
+     * buffer and resets the context so it can be used again
+     *
+     * @param signature The buffer to place the signature into.  It must be
+     * exactly the size of the signature
+     * @return The provided buffer
+     * @throws crypto::exception On internal error or if @p signature is an
+     * invalid size
+     */
+    bytes_span<> reset(bytes_span<> signature);
+    std::span<char> reset(std::span<char> signature);
+
+private:
+    class impl;
+    std::unique_ptr<impl> _impl;
+};
+
+/**
+ * Performs one-shot digest operation
+ *
+ * @param type The type of digest to create
+ * @param key The key to use
+ * @param msg The message
+ * @return bytes The signature
+ * @throws crypto::exception On internal error
+ */
+bytes hmac(digest_type type, bytes_view key, bytes_view msg);
+bytes hmac(digest_type type, std::string_view key, std::string_view msg);
 } // namespace crypto
