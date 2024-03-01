@@ -161,7 +161,7 @@ class ClusterMetadataUploadTest(RedpandaTest):
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
         orig_cluster_uuid, orig_highest_manifest_id = \
             check_cluster_metadata_is_consistent(s3_snapshot)
-        assert orig_cluster_uuid in orig_cluster_uuid_resp, \
+        assert orig_cluster_uuid == orig_cluster_uuid_resp, \
             f"{orig_cluster_uuid_resp} vs {orig_cluster_uuid}"
         for n in self.redpanda.nodes:
             self.redpanda.remove_local_data(n)
