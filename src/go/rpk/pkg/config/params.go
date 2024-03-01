@@ -955,67 +955,72 @@ func (p *Params) SugarLogger() *zap.SugaredLogger {
 	return p.Logger().Sugar()
 }
 
+// BuildLogger returns the zap logger, p.Logger should be preferred.
+// Use BuildLogger when you need to force the logger re-creation.
+func (p *Params) BuildLogger() *zap.Logger {
+	if !p.DebugLogs {
+		return zap.NewNop()
+	}
+
+	// Now the zap config. The log time is effectively time.TimeMillisOnly.
+	// We disable logging the callsite and sampling, we shorten the log
+	// level to three letters, and we only add color if this is a
+	// terminal.
+	zcfg := zap.NewProductionConfig()
+	zcfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	zcfg.DisableCaller = true
+	zcfg.DisableStacktrace = true
+	zcfg.Sampling = nil
+	zcfg.Encoding = "console"
+	zcfg.EncoderConfig.EncodeTime = zapcore.TimeEncoder(func(t time.Time, pae zapcore.PrimitiveArrayEncoder) {
+		pae.AppendString(t.Format("15:04:05.000"))
+	})
+	zcfg.EncoderConfig.EncodeDuration = zapcore.StringDurationEncoder
+	zcfg.EncoderConfig.ConsoleSeparator = "  "
+
+	// https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
+	const (
+		red     = 31
+		yellow  = 33
+		blue    = 34
+		magenta = 35
+	)
+
+	// Zap's OutputPaths bydefault is []string{"stderr"}, so we
+	// only need to check os.Stderr.
+	tty := term.IsTerminal(int(os.Stderr.Fd()))
+	color := func(n int, s string) string {
+		if !tty {
+			return s
+		}
+		return fmt.Sprintf("\x1b[%dm%s\x1b[0m", n, s)
+	}
+	colors := map[zapcore.Level]string{
+		zapcore.ErrorLevel: color(red, "ERROR"),
+		zapcore.WarnLevel:  color(yellow, "WARN"),
+		zapcore.InfoLevel:  color(blue, "INFO"),
+		zapcore.DebugLevel: color(magenta, "DEBUG"),
+	}
+	zcfg.EncoderConfig.EncodeLevel = func(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+		switch l {
+		case zapcore.ErrorLevel,
+			zapcore.WarnLevel,
+			zapcore.InfoLevel,
+			zapcore.DebugLevel:
+		default:
+			l = zapcore.ErrorLevel
+		}
+		enc.AppendString(colors[l])
+	}
+
+	logger, _ := zcfg.Build() // this configuration does not error
+	return logger
+}
+
 // Logger parses returns the corresponding zap logger or a NopLogger.
 func (p *Params) Logger() *zap.Logger {
 	p.loggerOnce.Do(func() {
-		if !p.DebugLogs {
-			p.logger = zap.NewNop()
-			return
-		}
-
-		// Now the zap config. We want to to the console and make the logs
-		// somewhat nice. The log time is effectively time.TimeMillisOnly.
-		// We disable logging the callsite and sampling, we shorten the log
-		// level to three letters, and we only add color if this is a
-		// terminal.
-		zcfg := zap.NewProductionConfig()
-		zcfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
-		zcfg.DisableCaller = true
-		zcfg.DisableStacktrace = true
-		zcfg.Sampling = nil
-		zcfg.Encoding = "console"
-		zcfg.EncoderConfig.EncodeTime = zapcore.TimeEncoder(func(t time.Time, pae zapcore.PrimitiveArrayEncoder) {
-			pae.AppendString(t.Format("15:04:05.000"))
-		})
-		zcfg.EncoderConfig.EncodeDuration = zapcore.StringDurationEncoder
-		zcfg.EncoderConfig.ConsoleSeparator = "  "
-
-		// https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
-		const (
-			red     = 31
-			yellow  = 33
-			blue    = 34
-			magenta = 35
-		)
-
-		// Zap's OutputPaths bydefault is []string{"stderr"}, so we
-		// only need to check os.Stderr.
-		tty := term.IsTerminal(int(os.Stderr.Fd()))
-		color := func(n int, s string) string {
-			if !tty {
-				return s
-			}
-			return fmt.Sprintf("\x1b[%dm%s\x1b[0m", n, s)
-		}
-		colors := map[zapcore.Level]string{
-			zapcore.ErrorLevel: color(red, "ERROR"),
-			zapcore.WarnLevel:  color(yellow, "WARN"),
-			zapcore.InfoLevel:  color(blue, "INFO"),
-			zapcore.DebugLevel: color(magenta, "DEBUG"),
-		}
-		zcfg.EncoderConfig.EncodeLevel = func(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
-			switch l {
-			case zapcore.ErrorLevel,
-				zapcore.WarnLevel,
-				zapcore.InfoLevel,
-				zapcore.DebugLevel:
-			default:
-				l = zapcore.ErrorLevel
-			}
-			enc.AppendString(colors[l])
-		}
-
-		p.logger, _ = zcfg.Build() // this configuration does not error
+		p.logger = p.BuildLogger()
 	})
 	return p.logger
 }
