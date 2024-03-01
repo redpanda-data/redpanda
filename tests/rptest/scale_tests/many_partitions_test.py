@@ -1007,15 +1007,19 @@ class ManyPartitionsTest(PreallocNodesTest):
             )
             return None
 
-    def _write_and_random_read_many_topics(self, num_topics, topic_names):
-        """
-            Test checks that each of the many topics can be written to.
-            This produce/consume implementation will check actual data
-            of the messages to ensure that all of the messages are delivered
+    def _produce_messages_to_random_topics(self, kclient, message_count,
+                                           num_topics, topic_names):
+        """Select random num_topics from the list topic_names
+        and send message_count to it with consecutive numbers as values
 
-            Pick X number of topics, write 1000 messages in each
-            Pick random one among them, consume all messages
-            Iterate.
+        Args:
+            kclient (_type_): python_librdkafka client
+            message_count (_type_): number of messages to produce
+            num_topics (_type_): number of random topics to produce to
+            topic_names (_type_): list of topic names
+
+        return values:
+            used_topics_list, ununsed_topics_list, errors
         """
         def _send_messages(topic):
             """
@@ -1045,18 +1049,6 @@ class ManyPartitionsTest(PreallocNodesTest):
             # Return stats and errors
             return sent_count, errors
 
-        def check_consecutive(numbers_list):
-            n = len(numbers_list) - 1
-            # Calculate iterative difference for the array. It should be 1.
-            return (sum(numpy.diff(sorted(numbers_list)) == 1) >= n)
-
-        # Prepare librdkafka python client
-        kclient = PythonLibrdkafka(self.redpanda)
-        # Messages to produce
-        message_count = 100
-        self.logger.info(
-            f"Producing {message_count} messages to {num_topics} random topics"
-        )
         # Pick random topics to send messages to
         total_topics = len(topic_names) - 1
         if total_topics > num_topics:
@@ -1087,9 +1079,37 @@ class ManyPartitionsTest(PreallocNodesTest):
             self.logger.error(f"{total_errors} Errors detected "
                               "while sending messages")
 
+        return next_topic_batch, new_topic_names, errors
+
+    def _consume_messages_from_random_topic(self,
+                                            kclient,
+                                            message_count,
+                                            topic_names,
+                                            timeout_sec=300):
+        """Consume message_count from random topic in the list topic_names
+
+        Args:
+            kclient (_type_): python_librdkafka client
+            message_count (_type_): number of messages to consume
+            topic_names (_type_): list of topic names to select from
+            timeout_sec (int, optional): Timeout. Defaults to 300.
+
+        Raises:
+            KafkaException: On Kafka transport errors
+            RuntimeError: On timeout consuming messages
+            RuntimeError: On non-consecutive values in messages
+
+        Returns: None
+        """
+
+        # Function checks if numbers in list are consecutive
+        def check_consecutive(numbers_list):
+            n = len(numbers_list) - 1
+            # Calculate iterative difference for the array. It should be 1.
+            return (sum(numpy.diff(sorted(numbers_list)) == 1) >= n)
+
         # Select random topic from the list
-        target_topic = next_topic_batch[random.randint(0,
-                                                       len(next_topic_batch))]
+        target_topic = topic_names[random.randint(0, len(topic_names))]
         # Consumer specific config
         consumer_extra_config = {
             "auto.offset.reset": "smallest",
@@ -1125,7 +1145,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 # calculate elapsed time
                 elapsed = time.time() - start_time_s
                 # Exit on target number reached or timeout
-                if len(numbers) == message_count or elapsed > 300:
+                if len(numbers) == message_count or elapsed > timeout_sec:
                     break
         finally:
             # Close down consumer to commit final offsets.
@@ -1133,12 +1153,48 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         self.logger.info(f"Consumed {len(numbers)} messages")
         # Check that we received all numbers
-        if not check_consecutive(numbers):
-            self.logger.error(
-                f"Produced and consumed messages mismatch for {target_topic}")
+        if elapsed > timeout_sec:
+            raise RuntimeError("Timeout consuming messages "
+                               f"from {target_topic}")
+        elif not check_consecutive(numbers):
+            raise RuntimeError("Produced and consumed messages mismatch "
+                               f"for {target_topic}")
+
+        return
+
+    def _write_and_random_read_many_topics(self, num_topics, topic_names):
+        """
+            Test checks that each of the many topics can be written to.
+            This produce/consume implementation will check actual data
+            of the messages to ensure that all of the messages are delivered
+
+            Pick X number of topics, write 100 messages in each
+            Pick random one among them, consume all messages
+            Iterate.
+        """
+        # Prepare librdkafka python client
+        kclient = PythonLibrdkafka(self.redpanda)
+        # Messages to produce
+        message_count = 100
+        self.logger.info(
+            f"Producing {message_count} messages to {num_topics} random topics"
+        )
+
+        # Produce messages
+        used_topics, unused_topics, errors = \
+            self._produce_messages_to_random_topics(kclient, message_count,
+                                                    num_topics, topic_names)
+
+        # Consume messages
+        # Will raise RuntimeException on timeout
+        # or non-consecutive message values
+        self._consume_messages_from_random_topic(kclient,
+                                                 message_count,
+                                                 topic_names,
+                                                 timeout_sec=300)
 
         # Return list of topics that was not used
-        return new_topic_names, errors
+        return unused_topics, errors
 
     def _create_many_topics(self,
                             brokers,
