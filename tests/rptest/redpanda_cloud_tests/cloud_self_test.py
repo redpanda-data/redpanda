@@ -47,3 +47,13 @@ class SelfRedpandaCloudTest(RedpandaCloudTest):
         vectorized_application_uptime = self.redpanda.metrics_sample(
             sample_pattern='vectorized_application_uptime')
         assert vectorized_application_uptime is not None, 'expected some metrics'
+
+    @cluster(num_nodes=1)
+    def test_metrics_samples(self):
+        """Test metrics_samples() can retrieve internal metrics.
+        """
+        sample_patterns = [
+            'vectorized_application_uptime', 'vectorized_reactor_utilization'
+        ]
+        samples = self.redpanda.metrics_samples(sample_patterns)
+        assert samples is not None, 'expected sample patterns to match'
