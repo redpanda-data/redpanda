@@ -26,6 +26,7 @@ from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import nodes_report_cloud_segments
+from rptest.scale_tests.topic_scale_profiles import TopicScaleProfileManager
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig, MetricsEndpoint
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer, KgoVerifierRandomConsumer
@@ -1162,7 +1163,8 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         return
 
-    def _write_and_random_read_many_topics(self, num_topics, topic_names):
+    def _write_and_random_read_many_topics(self, message_count, num_topics,
+                                           topic_names):
         """
             Test checks that each of the many topics can be written to.
             This produce/consume implementation will check actual data
@@ -1174,8 +1176,6 @@ class ManyPartitionsTest(PreallocNodesTest):
         """
         # Prepare librdkafka python client
         kclient = PythonLibrdkafka(self.redpanda)
-        # Messages to produce
-        message_count = 100
         self.logger.info(
             f"Producing {message_count} messages to {num_topics} random topics"
         )
@@ -1304,16 +1304,8 @@ class ManyPartitionsTest(PreallocNodesTest):
         # default settings is 1000 partitions per shard/cpu
         # (9 nodes × 4 vcpus/shards × 1000) / 3 replicas
         # 12000
-
-        # Parameters
-        topic_count = 11950
-        batch_size = 2048
-        topic_name_length = 200
-        num_partitions = 1
-        num_replicas = 3
-        use_kafka_batching = True
-        topic_name_prefix = \
-            f"topic-swarm-create-p{num_partitions}-r{num_replicas}"
+        tsm = TopicScaleProfileManager()
+        profile = tsm.get_profile("topic_profile_t10k_p1")
 
         # Start kafka
         self.redpanda.start()
@@ -1328,13 +1320,13 @@ class ManyPartitionsTest(PreallocNodesTest):
         topic_details = self._create_many_topics(
             brokers,
             node,
-            topic_name_prefix,
-            topic_count,
-            batch_size,
-            num_partitions,
-            num_replicas,
-            use_kafka_batching,
-            topic_name_length=topic_name_length,
+            profile.topic_name_prefix,
+            profile.topic_count,
+            profile.batch_size,
+            profile.num_partitions,
+            profile.num_replicas,
+            profile.use_kafka_batching,
+            topic_name_length=profile.topic_name_length,
             skip_name_randomization=False)
 
         # Validate topics
@@ -1399,12 +1391,14 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         # Move on to traffic checks
         topics_to_go = topics_available
+        # Messages to produce
+        message_count = 100
         self.logger.info(
             f"Starting Produce/Consume stage for {len(topics_to_go)} topics")
         producer_errors = []
         while len(topics_to_go) > 0:
             topics_to_go, errors = self._write_and_random_read_many_topics(
-                batch_size, topics_to_go)
+                message_count, profile.batch_size, topics_to_go)
             producer_errors += errors
             self.logger.info(
                 f"iteration complete, topics left {len(topics_to_go)}")
@@ -1433,17 +1427,13 @@ class ManyPartitionsTest(PreallocNodesTest):
         # default settings is 1000 partitions per shard/cpu
         # (9 nodes × 4 vcpus/shards × 1000) / 3 replicas
         # 12000
-
+        tsm = TopicScaleProfileManager()
+        profile = tsm.get_custom_profile("topic_profile_t10k_p1",
+                                         {"batch_size": 1024})
         # Start kafka
         self.redpanda.start()
         # Brokers list suitable for script arguments
         brokers = ",".join(self.redpanda.brokers_list())
-
-        # Common params for swarming
-        num_partitions = 1
-        num_replicas = 3
-        batch_size = 1024
-        use_kafka_batching = True
 
         # Calculate topic counts
         # This test by default designed for 12 nodes, 9 node cluster, 4 cpus each node
@@ -1483,10 +1473,11 @@ class ManyPartitionsTest(PreallocNodesTest):
                                 f"{node_topic_count} = "
                                 f"{node_topic_count * nodes_available})")
 
-        # Messages params
+        # Notes on messages params and BW calculations
         # default msg size is 16KB
-        messages = 1000
-        # 16k * 10 = ~150KB/s
+        # 16k * 10 = ~150KB/s per single producer
+        # 10k Producers generate 1.56GB/sec load to the cluster
+
         # Rate beyond 40 is unreachable in most cases
         # Example: 60 msg/sec on 10k topics
         # [2024-02-26T23:26:50Z INFO  client_swarm] Producer rates: [min=390095, max=682666, avg=506402] bytes/s
@@ -1505,10 +1496,10 @@ class ManyPartitionsTest(PreallocNodesTest):
                 node,
                 topic_name_prefix,
                 node_topic_count,
-                batch_size,
-                num_partitions,
-                num_replicas,
-                use_kafka_batching,
+                profile.batch_size,
+                profile.num_partitions,
+                profile.num_replicas,
+                profile.use_kafka_batching,
                 skip_name_randomization=True)
 
             self.logger.info(f"Created {len(topic_details)} topics with "
@@ -1525,7 +1516,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                                        self.redpanda,
                                        topic_prefix,
                                        node_topic_count,
-                                       messages,
+                                       profile.message_count,
                                        unique_topics=True,
                                        messages_per_second_per_producer=
                                        messages_per_second_per_producer)
@@ -1539,7 +1530,8 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Wait for all messages to be produced
         # Logic is that we sleep for normal running time
         # And then running checks when swarm nodes running last messages delivery
-        running_time_sec = messages // messages_per_second_per_producer
+        running_time_sec = \
+            profile.message_count // messages_per_second_per_producer
         self.logger.info(f"Sleeping for {running_time_sec} sec (running time)")
         # Just pause for running time to eliminate unnesesary requests
         # and not put noise into already overloaded network traffic
@@ -1561,7 +1553,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             return _hwm
 
         # Validate high watermark
-        target_messages_per_node = messages * node_topic_count
+        target_messages_per_node = profile.message_count * node_topic_count
         hwms = []
         for topic_prefix in topic_prefixes:
             # messages per node
