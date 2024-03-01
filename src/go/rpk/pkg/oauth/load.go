@@ -7,6 +7,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 // LoadFlow loads or creates a config at default path, and validates and
@@ -28,8 +29,10 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 
 	var resp Token
 	if authVir.HasClientCredentials() {
+		zap.L().Sugar().Debug("logging in using client credential flow")
 		resp, err = ClientCredentialFlow(ctx, cl, authVir)
 	} else {
+		zap.L().Sugar().Debug("logging in using OAUTH flow")
 		resp, err = DeviceFlow(ctx, cl, authVir, noUI)
 	}
 	if err != nil {

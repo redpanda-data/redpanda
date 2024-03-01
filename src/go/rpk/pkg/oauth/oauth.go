@@ -9,6 +9,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"go.uber.org/zap"
 )
 
 type (
@@ -67,8 +68,11 @@ func ClientCredentialFlow(ctx context.Context, cl Client, auth *config.RpkCloudA
 			return Token{}, fmt.Errorf("unable to validate your authorization token: %v", err)
 		}
 		if !expired {
+			zap.L().Sugar().Debug("using existing authorization token")
 			return Token{AccessToken: auth.AuthToken}, nil
 		}
+		zap.L().Sugar().Debug("authorization token expired. Requesting a new one")
+
 	}
 	return cl.Token(ctx, auth.ClientID, auth.ClientSecret)
 }
@@ -81,11 +85,13 @@ func DeviceFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth, noUI 
 	if auth.AuthToken != "" && auth.ClientID != "" {
 		expired, err := ValidateToken(auth.AuthToken, cl.Audience(), auth.ClientID)
 		if err != nil {
-			return Token{}, err
+			return Token{}, fmt.Errorf("unable to validate your authorization token: %v", err)
 		}
 		if !expired {
+			zap.L().Sugar().Debug("using existing authorization token")
 			return Token{AccessToken: auth.AuthToken}, nil
 		}
+		zap.L().Sugar().Debug("authorization token expired. Requesting a new one")
 	}
 
 	dcode, err := cl.DeviceCode(ctx)
