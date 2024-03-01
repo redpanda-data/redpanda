@@ -1,3 +1,6 @@
-build
-.vim
-Testing
+build/
+.vim/
+Testing/
+*.wasm
+*.wat
+binaryen/

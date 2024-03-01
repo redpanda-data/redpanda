@@ -21,6 +21,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <expected>
 #include <print>
 #include <unordered_map>
 #include <utility>

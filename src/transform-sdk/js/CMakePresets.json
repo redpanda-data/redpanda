@@ -5,10 +5,8 @@
       "name": "base",
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
-      "generator": "Ninja",
+      "generator": "Unix Makefiles",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang-17",
-        "CMAKE_CXX_COMPILER": "clang++-17"
       }
     },
     {

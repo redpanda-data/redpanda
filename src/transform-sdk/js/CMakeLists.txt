@@ -56,14 +56,14 @@ target_link_libraries(
 add_library(Redpanda::js_vm ALIAS redpanda_js_vm)
 
 # Main entry point that defines JavaScript Data Transforms
-# add_executable(
-#   redpanda_js_transform 
-#   main.cc
-# )
-# target_link_libraries(
-#   redpanda_js_transform
-#   qjs Redpanda::transform_sdk Redpanda::js_vm
-# )
+add_executable(
+  redpanda_js_transform 
+  main.cc
+)
+target_link_libraries(
+  redpanda_js_transform
+  qjs Redpanda::transform_sdk Redpanda::js_vm
+)
 
 # Tests
 enable_testing()
