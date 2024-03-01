@@ -1041,6 +1041,51 @@ class RedpandaServiceABC(ABC):
             for pattern, values in sample_values_per_pattern.items() if values
         }
 
+    @abstractmethod
+    def metric_sum(self,
+                   metric_name,
+                   metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+                   namespace: str = None,
+                   topic: str = None,
+                   nodes=None):
+        '''Implement this method to sum the metrics.
+
+        Pings the 'metrics_endpoint' of each node and returns the summed values
+        of the given metric, optionally filtering by namespace and topic.
+        '''
+        pass
+
+    def _metric_sum(
+            self,
+            metric_name: str,
+            metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+            namespace: str = None,
+            topic: str = None,
+            ns=None):
+        '''Does the main work of the metric_sum() implementation given a list of ns to iterate over.
+        '''
+
+        count = 0
+        for n in ns:
+            metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
+            for family in metrics:
+                for sample in family.samples:
+                    if sample.name != metric_name:
+                        continue
+                    labels = sample.labels
+                    if namespace:
+                        assert "redpanda_namespace" in labels or "namespace" in labels, f"Missing namespace label: {sample}"
+                        if labels.get("redpanda_namespace",
+                                      labels.get("namespace")) != namespace:
+                            continue
+                    if topic:
+                        assert "redpanda_topic" in labels or "topic" in labels, f"Missing topic label: {sample}"
+                        if labels.get("redpanda_topic",
+                                      labels.get("topic")) != topic:
+                            continue
+                    count += int(sample.value)
+        return count
+
 
 class RedpandaServiceBase(RedpandaServiceABC, Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -1255,39 +1300,21 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         return text_string_to_metric_families(text)
 
     def metric_sum(self,
-                   metric_name,
+                   metric_name: str,
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
-                   ns=None,
-                   topic=None,
+                   namespace: str = None,
+                   topic: str = None,
                    nodes=None):
-        """
+        '''
         Pings the 'metrics_endpoint' of each node and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
-        """
+        '''
 
         if nodes is None:
             nodes = self.nodes
 
-        count = 0
-        for n in nodes:
-            metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample.name != metric_name:
-                        continue
-                    labels = sample.labels
-                    if ns:
-                        assert "redpanda_namespace" in labels or "namespace" in labels, f"Missing namespace label: {sample}"
-                        if labels.get("redpanda_namespace",
-                                      labels.get("namespace")) != ns:
-                            continue
-                    if topic:
-                        assert "redpanda_topic" in labels or "topic" in labels, f"Missing topic label: {sample}"
-                        if labels.get("redpanda_topic",
-                                      labels.get("topic")) != topic:
-                            continue
-                    count += int(sample.value)
-        return count
+        return self._metric_sum(metric_name, metrics_endpoint, namespace,
+                                topic, nodes)
 
     def healthy(self):
         """
@@ -1998,6 +2025,23 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 if sample.name == metric_name:
                     count += int(sample.value)
         return count
+
+    def metric_sum(self,
+                   metric_name: str,
+                   metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+                   namespace: str = None,
+                   topic: str = None,
+                   pods=None):
+        '''
+        Pings the 'metrics_endpoint' of each pod and returns the summed values
+        of the given metric, optionally filtering by namespace and topic.
+        '''
+
+        if pods is None:
+            pods = self.pods
+
+        return self._metric_sum(metric_name, metrics_endpoint, namespace,
+                                topic, pods)
 
     @staticmethod
     def get_cloud_globals(globals: dict[str, Any]) -> dict[str, Any]:

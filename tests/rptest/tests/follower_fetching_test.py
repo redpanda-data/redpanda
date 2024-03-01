@@ -67,7 +67,7 @@ class FollowerFetchingTest(PreallocNodesTest):
         producer.free()
 
     def get_node_metric(self, node, topic, metric):
-        return self.redpanda.metric_sum(ns="kafka",
+        return self.redpanda.metric_sum(namespace="kafka",
                                         nodes=[node],
                                         topic=topic,
                                         metric_name=metric)
