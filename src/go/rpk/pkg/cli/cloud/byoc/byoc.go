@@ -23,6 +23,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 const (
@@ -111,6 +112,9 @@ func parseBYOCFlags(fs afero.Fs, p *config.Params, cmd *cobra.Command, args []st
 	if err != nil {
 		return nil, "", nil, err
 	}
+	// Since we are manually parsing the flags, we need to force building the
+	// logger again.
+	zap.ReplaceGlobals(p.BuildLogger())
 	return cfg, redpandaID, keepForPlugin, nil
 }
 
