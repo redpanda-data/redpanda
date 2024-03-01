@@ -24,6 +24,7 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import BucketView
 from rptest.util import expect_exception
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.services.producer_swarm import ProducerSwarm
 
 
 class OpenBenchmarkSelfTest(RedpandaTest):
@@ -51,6 +52,31 @@ class OpenBenchmarkSelfTest(RedpandaTest):
         # docker runs have high variance in perf numbers, check only in dedicate node
         # setup.
         benchmark.check_succeed(validate_metrics=self.redpanda.dedicated_nodes)
+
+
+class ProducerSwarmSelfTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, num_brokers=3, **kwargs)
+
+    @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
+    @cluster(num_nodes=4)
+    def test_producer_swarm(self):
+        spec = TopicSpec(name="test_topic",
+                         partition_count=10,
+                         replication_factor=3)
+        self.client().create_topic(spec)
+        topic_name = spec.name
+
+        producer = ProducerSwarm(self.test_context,
+                                 self.redpanda,
+                                 topic_name,
+                                 producers=10,
+                                 records_per_producer=500,
+                                 messages_per_second_per_producer=10)
+        producer.start()
+        producer.await_progress(target_msg_rate=8, timeout_sec=40)
+        producer.wait()
+        producer.stop()
 
 
 class KgoRepeaterSelfTest(RedpandaTest):

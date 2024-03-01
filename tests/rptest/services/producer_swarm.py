@@ -7,9 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from dataclasses import dataclass
 from ducktape.tests.test import TestContext
 from ducktape.services.service import Service
 from typing import Optional
+
+import time
+import requests
 
 
 class ProducerSwarm(Service):
@@ -49,6 +53,9 @@ class ProducerSwarm(Service):
         self._max_record_size = max_record_size
         self._keys = keys
         self._unique_topics = unique_topics
+        self._node = None
+        self._remote_port = 8080
+        self._remote_addr = "0.0.0.0"
 
         if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
             security_config = redpanda.security_config()
@@ -62,6 +69,7 @@ class ProducerSwarm(Service):
 
     def clean_node(self, node):
         self._redpanda.logger.debug(f"{self.__class__.__name__}.clean_node")
+        self._node = None
         node.account.kill_process(self.EXE, clean_shutdown=False)
         if node.account.exists(self.LOG_PATH):
             node.account.remove(self.LOG_PATH)
@@ -69,6 +77,7 @@ class ProducerSwarm(Service):
     def start_node(self, node, clean=None):
         cmd = f"{self.EXE}"
         cmd += f" --brokers {self._redpanda.brokers()}"
+        cmd += f" --metrics-address {self._remote_addr}"
         cmd += f" producers --topic {self._topic}"
         cmd += f" --count {self._producers}"
         cmd += f" --messages {self._records_per_producer}"
@@ -107,6 +116,8 @@ class ProducerSwarm(Service):
             f"producer_swarm service {node.account.hostname} failed to start within {600} sec",
         )
 
+        self._node = node
+
     def is_alive(self, node):
         result = node.account.ssh_output(
             f"bash /opt/remote/control/alive.sh {self.EXE}")
@@ -121,3 +132,42 @@ class ProducerSwarm(Service):
 
     def stop_node(self, node):
         node.account.ssh(f"bash /opt/remote/control/stop.sh {self.EXE}")
+
+    def _remote_url(self, node, path) -> str:
+        return f"http://{node.account.hostname}:{self._remote_port}/{path}"
+
+    def _get(self, node, rest_handle):
+        """
+            Perform a GET to client_swarm's metrics API.
+        """
+        url = self._remote_url(node, rest_handle)
+        try:
+            r = requests.get(url, timeout=10)
+        except Exception as e:
+            raise RuntimeError(f"Failed to get data from '{url}'") from e
+        return r.json()
+
+    @dataclass
+    class MetricsSummary:
+        p0: int
+        p50: int
+        p100: int
+
+    def get_metrics_summary(self, seconds=None) -> MetricsSummary:
+        path = f"metrics/summary"
+        if seconds:
+            path = f"{path}?seconds={seconds}"
+
+        res = self._get(self._node, path)
+
+        return self.MetricsSummary(int(res["min"]), int(res["median"]),
+                                   int(res["max"]))
+
+    def await_progress(self, target_msg_rate, timeout_sec, err_msg=None):
+        def check():
+            return self.get_metrics_summary(seconds=20).p50 >= target_msg_rate
+
+        self._redpanda.wait_until(check,
+                                  timeout_sec=timeout_sec,
+                                  backoff_sec=1,
+                                  err_msg=err_msg)
