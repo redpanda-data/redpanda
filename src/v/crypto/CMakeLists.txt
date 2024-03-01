@@ -5,6 +5,7 @@ v_cc_library(
     SRCS
       crypto.cc
       digest.cc
+      hmac.cc
       ssl_utils.cc
     DEPS
       absl::node_hash_set

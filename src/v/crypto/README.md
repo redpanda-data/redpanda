@@ -41,3 +41,31 @@ crypto::digest_ctx ctx(crypto::digest_type::SHA256);
 ctx.update(msg);
 auto digest = std::move(ctx).final();
 ```
+
+## HMAC
+
+Like digests, this library can perform HMAC two ways: one-shot and multi-part.
+
+For one-shot:
+
+```c++
+#include "crypto/crypto.h"
+
+bytes key = {...};
+bytes msg = {...};
+
+auto sig = crypto::hmac(crypto::digest_type::SHA256, key, msg);
+```
+
+For multi-part:
+
+```c++
+#include "crypto/crypto.h"
+
+bytes key = {...};
+bytes msg = {...};
+
+crypto::hmac_ctx ctx(crypto::digest_type::SHA256, key);
+ctx.update(msg);
+auto sig = std::move(ctx).final();
+```

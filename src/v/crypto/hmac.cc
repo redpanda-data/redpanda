@@ -1,0 +1,138 @@
+/*
+ * Copyright 2024 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+#include "crypto/crypto.h"
+#include "internal.h"
+#include "ssl_utils.h"
+
+#include <openssl/evp.h>
+#include <openssl/params.h>
+
+namespace crypto {
+hmac_ctx::~hmac_ctx() noexcept = default;
+
+class hmac_ctx::impl {
+public:
+    impl(digest_type type, bytes_view key) {
+        std::array<OSSL_PARAM, 2> params{
+          OSSL_PARAM_construct_utf8_string(
+            "digest",
+            // NOLINTNEXTLINE
+            const_cast<char*>(get_digest_str(type)),
+            0),
+          OSSL_PARAM_construct_end()};
+        _mac = internal::EVP_MAC_ptr(EVP_MAC_fetch(nullptr, "HMAC", nullptr));
+        if (!_mac) {
+            throw internal::ossl_error(
+              "Failed to fetch HMAC for MAC operation");
+        }
+
+        _mac_ctx = internal::EVP_MAC_CTX_ptr(EVP_MAC_CTX_new(_mac.get()));
+        if (
+          1
+          != EVP_MAC_init(
+            _mac_ctx.get(), key.data(), key.size(), params.data())) {
+            throw internal::ossl_error(
+              fmt::format("Failed to initialize HMAC-{}", type));
+        }
+    }
+
+    void update(bytes_view msg) {
+        if (1 != EVP_MAC_update(_mac_ctx.get(), msg.data(), msg.size())) {
+            throw internal::ossl_error("Failed to update MAC operation");
+        }
+    }
+
+    bytes finish() {
+        bytes sig(bytes::initialized_later(), length());
+        finish_no_check(sig);
+        return sig;
+    }
+
+    bytes_span<> finish(bytes_span<> sig) {
+        auto len = sig.size();
+        if (len != length()) {
+            throw exception(fmt::format(
+              "Invalid signature buffer length: {} != {}", len, length()));
+        }
+        return finish_no_check(sig);
+    }
+
+    size_t length() const { return EVP_MAC_CTX_get_mac_size(_mac_ctx.get()); }
+    static size_t length(digest_type type) { return digest_ctx::len(type); }
+
+private:
+    internal::EVP_MAC_ptr _mac;
+    internal::EVP_MAC_CTX_ptr _mac_ctx;
+
+    static const char* get_digest_str(digest_type type) {
+        switch (type) {
+        case digest_type::MD5:
+            return "MD5";
+        case digest_type::SHA256:
+            return "SHA256";
+        case digest_type::SHA512:
+            return "SHA512";
+        }
+    }
+
+    bytes_span<> finish_no_check(bytes_span<> sig) {
+        size_t outl = sig.size();
+        if (1 != EVP_MAC_final(_mac_ctx.get(), sig.data(), &outl, sig.size())) {
+            throw internal::ossl_error("Failed to finalize MAC operation");
+        }
+        return sig;
+    }
+};
+
+hmac_ctx::hmac_ctx(digest_type type, bytes_view key)
+  : _impl(std::make_unique<impl>(type, key)) {}
+
+hmac_ctx::hmac_ctx(digest_type type, std::string_view key)
+  : _impl(
+    std::make_unique<impl>(type, internal::string_view_to_bytes_view(key))) {}
+
+size_t hmac_ctx::len() const { return _impl->length(); }
+size_t hmac_ctx::len(digest_type type) { return impl::length(type); }
+
+hmac_ctx& hmac_ctx::update(bytes_view msg) {
+    _impl->update(msg);
+    return *this;
+}
+
+hmac_ctx& hmac_ctx::update(std::string_view msg) {
+    return update(internal::string_view_to_bytes_view(msg));
+}
+
+bytes hmac_ctx::final() && { return _impl->finish(); }
+bytes_span<> hmac_ctx::final(bytes_span<> signature) && {
+    return _impl->finish(signature);
+}
+
+std::span<char> hmac_ctx::final(std::span<char> signature) && {
+    _impl->finish(internal::char_span_to_bytes_span(signature));
+    return signature;
+}
+
+// NOLINTNEXTLINE
+bytes hmac(digest_type type, bytes_view key, bytes_view msg) {
+    hmac_ctx ctx(type, key);
+    ctx.update(msg);
+    return std::move(ctx).final();
+}
+
+// NOLINTNEXTLINE
+bytes hmac(digest_type type, std::string_view key, std::string_view msg) {
+    hmac_ctx ctx(type, key);
+    ctx.update(msg);
+    return std::move(ctx).final();
+}
+} // namespace crypto
