@@ -39,4 +39,13 @@ private:
 void apply_validator(
   json::validator& validator, const json::Document::ValueType& doc);
 
+/**
+ * Helper for decoding path parameters.
+ *
+ * It is a slightly modified version of ss::http::internal::url_decode
+ * which only differs in that it correctly does not replace +
+ * with ' ' in the input. It only replaces percent encoded values.
+ */
+bool path_decode(const std::string_view in, ss::sstring& out);
+
 } // namespace admin

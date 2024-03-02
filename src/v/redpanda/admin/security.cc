@@ -13,6 +13,7 @@
 #include "kafka/server/server.h"
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/server.h"
+#include "redpanda/admin/util.h"
 #include "security/credential_store.h"
 #include "security/oidc_authenticator.h"
 #include "security/oidc_service.h"
@@ -226,7 +227,7 @@ admin_server::delete_user_handler(std::unique_ptr<ss::http::request> req) {
     }
 
     ss::sstring user_v;
-    if (!ss::http::internal::url_decode(req->param["user"], user_v)) {
+    if (!admin::path_decode(req->param["user"], user_v)) {
         throw ss::httpd::bad_param_exception{fmt::format(
           "Invalid parameter 'user' got {{{}}}", req->param["user"])};
     }
@@ -258,7 +259,7 @@ admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
     }
 
     ss::sstring user_v;
-    if (!ss::http::internal::url_decode(req->param["user"], user_v)) {
+    if (!admin::path_decode(req->param["user"], user_v)) {
         throw ss::httpd::bad_param_exception{fmt::format(
           "Invalid parameter 'user' got {{{}}}", req->param["user"])};
     }

@@ -202,3 +202,29 @@ class RpkACLTest(RedpandaTest):
                                                    auth_password=self.password,
                                                    mechanism=self.mechanism)
         assert f'Created user "{user_2}"' in out
+
+    @cluster(num_nodes=1)
+    def test_create_delete_user_special_chars(self):
+        """
+        This test ensures that we can create and delete users that have 
+        special characters (eg. +, /) in their names. It indirectly tests 
+        that url encoding and decoding works across rpk and the redpanda
+        admin API.
+        """
+
+        username = "a+complex/username?"
+
+        superclient = self._superclient()
+        superclient.sasl_create_user(username)
+
+        wait_until(lambda: username in self._rpk.sasl_list_users(),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="fUser {username} has not been created in time")
+
+        superclient.sasl_delete_user(username)
+
+        wait_until(lambda: username not in self._rpk.sasl_list_users(),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="fUser {username} has not been deleted in time")
