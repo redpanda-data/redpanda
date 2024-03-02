@@ -13,9 +13,6 @@ redpanda:
 {% if node_id is not none %}
   node_id: {{node_id}}
 {% endif %}
-{% if memory_allocation_warning_threshold is not none %}
-  memory_allocation_warning_threshold: {{memory_allocation_warning_threshold}}
-{% endif %}
   rpc_server:
     address: "{{node.account.hostname}}"
     port: 33145
