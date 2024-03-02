@@ -158,7 +158,7 @@ node_config::node_config() noexcept
       "memory_allocation_warning_threshold",
       "Enables log messages for allocations greater than the given size.",
       {.visibility = visibility::tunable},
-      std::nullopt)
+      128_KiB + 1) // 128 KiB is the largest allowed allocation size
   , storage_failure_injection_enabled(
       *this,
       "storage_failure_injection_enabled",
