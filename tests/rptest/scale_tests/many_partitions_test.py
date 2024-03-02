@@ -34,6 +34,7 @@ from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_tr
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 from rptest.services.producer_swarm import ProducerSwarm
+from rptest.services.consumer_swarm import ConsumerSwarm
 from rptest.utils.scale_parameters import ScaleParameters
 from rptest.util import inject_remote_script
 
@@ -1413,6 +1414,50 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         return
 
+    def _run_producers_with_constant_rate(self, profile, node_topic_count,
+                                          topics):
+        swarm_node_producers = []
+        for topic in topics:
+            swarm_producer = ProducerSwarm(
+                self.test_context,
+                self.redpanda,
+                topic,
+                node_topic_count,
+                profile.message_count,
+                unique_topics=True,
+                messages_per_second_per_producer=profile.
+                messages_per_second_per_producer)
+            swarm_node_producers.append(swarm_producer)
+
+        # Run topic swarm for each topic group
+        for swarm_client in swarm_node_producers:
+            self.logger.info(f"Starting swarm client on node {swarm_client}")
+            swarm_client.start()
+
+        return swarm_node_producers
+
+    def _run_consumers_with_constant_rate(self, profile, node_topic_count,
+                                          topics):
+        swarm_node_consumers = []
+        for topic in topics:
+            swarm_producer = ConsumerSwarm(
+                self.test_context,
+                self.redpanda,
+                topic,
+                node_topic_count,
+                profile.message_count,
+                unique_topics=True,
+                messages_per_second_per_producer=profile.
+                messages_per_second_per_producer)
+            swarm_node_consumers.append(swarm_producer)
+
+        # Run topic swarm for each topic group
+        for swarm_client in swarm_node_consumers:
+            self.logger.info(f"Starting swarm client on node {swarm_client}")
+            swarm_client.start()
+
+        return swarm_node_consumers
+
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_many_topics_throughput(self):
         """Test creates 11950 topics, and uses client-swarm to
@@ -1427,6 +1472,17 @@ class ManyPartitionsTest(PreallocNodesTest):
         # default settings is 1000 partitions per shard/cpu
         # (9 nodes × 4 vcpus/shards × 1000) / 3 replicas
         # 12000
+
+        # Notes on messages params and BW calculations
+        # default msg size is 16KB
+        # 16k * 10 = ~150KB/s per single producer
+        # 10k Producers generate 1.56GB/sec load to the cluster
+        # Rate beyond 40 is unreachable in most cases
+        # Example: 60 msg/sec on 10k topics
+        # [2024-02-26T23:26:50Z INFO  client_swarm] Producer rates: [min=390095, max=682666, avg=506402] bytes/s
+        # => 506402 / 16384 = ~30
+
+        # Get profile for 10k topics
         tsm = TopicScaleProfileManager()
         profile = tsm.get_custom_profile("topic_profile_t10k_p1",
                                          {"batch_size": 1024})
@@ -1473,28 +1529,17 @@ class ManyPartitionsTest(PreallocNodesTest):
                                 f"{node_topic_count} = "
                                 f"{node_topic_count * nodes_available})")
 
-        # Notes on messages params and BW calculations
-        # default msg size is 16KB
-        # 16k * 10 = ~150KB/s per single producer
-        # 10k Producers generate 1.56GB/sec load to the cluster
-
-        # Rate beyond 40 is unreachable in most cases
-        # Example: 60 msg/sec on 10k topics
-        # [2024-02-26T23:26:50Z INFO  client_swarm] Producer rates: [min=390095, max=682666, avg=506402] bytes/s
-        # => 506402 / 16384 = ~30
-        messages_per_second_per_producer = 10
-
         # Grab node to run creation script on it.
         node = self.cluster.alloc(ClusterSpec.simple_linux(1))[0]
         topic_prefixes = []
-        # Create topics
+        # Create unique topics for each swarm node
         for idx in range(nodes_available):
-            topic_name_prefix = f"topic-swarm{idx}"
+            node_topic_name_prefix = f"{profile.topic_name_prefix}{idx}"
             # Call function to create the topics
             topic_details = self._create_many_topics(
                 brokers,
                 node,
-                topic_name_prefix,
+                node_topic_name_prefix,
                 node_topic_count,
                 profile.batch_size,
                 profile.num_partitions,
@@ -1503,42 +1548,47 @@ class ManyPartitionsTest(PreallocNodesTest):
                 skip_name_randomization=True)
 
             self.logger.info(f"Created {len(topic_details)} topics with "
-                             f"prefix of '{topic_name_prefix}'")
+                             f"prefix of '{node_topic_name_prefix}'")
 
-            topic_prefixes.append(topic_name_prefix)
+            topic_prefixes.append(node_topic_name_prefix)
         # Free node that used to create topics
         self.cluster.free_single(node)
 
-        # Prepare client swarm client
-        swarm_nodes = []
-        for topic_prefix in topic_prefixes:
-            swarm_node = ProducerSwarm(self.test_context,
-                                       self.redpanda,
-                                       topic_prefix,
-                                       node_topic_count,
-                                       profile.message_count,
-                                       unique_topics=True,
-                                       messages_per_second_per_producer=
-                                       messages_per_second_per_producer)
-            swarm_nodes.append(swarm_node)
+        # Do the healthcheck on RP
+        # to make sure that all topics are settle down and have their leader
 
-        # Run topic swarm
-        for swarm_client in swarm_nodes:
-            self.logger.info(f"Starting swarm client on node {swarm_client}")
-            swarm_client.start()
+        # Calculate how much time ideally needed for the producers to finish
+        # Logic is that we sleep for normal running time
+        # And then running checks when swarm nodes running last messages delivery
+        running_time_sec = \
+            profile.message_count // profile.messages_per_second_per_producer
+        self.logger.info(f"Sleeping for {running_time_sec} sec (running time)")
+
+        # Run swarm producers
+        swarm_producers = self._run_producers_with_constant_rate(
+            profile, node_topic_count, topic_prefixes)
+
+        # Run swarm consumers
+        swarm_consumers = self._run_consumers_with_constant_rate(
+            profile, node_topic_count, topic_prefixes)
 
         # Wait for all messages to be produced
         # Logic is that we sleep for normal running time
         # And then running checks when swarm nodes running last messages delivery
         running_time_sec = \
-            profile.message_count // messages_per_second_per_producer
+            profile.message_count // profile.messages_per_second_per_producer
         self.logger.info(f"Sleeping for {running_time_sec} sec (running time)")
         # Just pause for running time to eliminate unnesesary requests
         # and not put noise into already overloaded network traffic
         time.sleep(running_time_sec)
+
         # Run checks if swarm nodes finished
-        self.logger.info("Make sure that swarm nodes finished")
-        for s in swarm_nodes:
+        self.logger.info("Make sure that swarm node producers are finished")
+        for s in swarm_producers:
+            # account for up to one-third delays
+            s.wait(running_time_sec * 2)
+        self.logger.info("Make sure that swarm node consumers are finished")
+        for s in swarm_consumers:
             # account for up to one-third delays
             s.wait(running_time_sec * 2)
 
