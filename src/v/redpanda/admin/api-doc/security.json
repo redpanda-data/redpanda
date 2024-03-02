@@ -62,6 +62,39 @@
         }
     }
 },
+"/v1/security/users/roles": {
+    "get": {
+        "tags": [
+            "User"
+        ],
+        "summary": "List roles assignments for a user",
+        "operationId": "list_user_roles",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "filter",
+                "description": "Return only roles whose names match this substring",
+                "in": "query",
+                "required": false,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/roles_list"
+                }
+            },
+            "401": {
+                "description": "Unauthorized"
+            }
+        }
+    }
+},
 "/v1/security/oidc/whoami": {
     "get": {
         "summary": "Obtain the principal and details of the JWT passed in the bearer token",
@@ -112,4 +145,293 @@
             }
         }
     }
+},
+"/v1/security/roles": {
+    "get": {
+        "tags": [
+            "Roles"
+        ],
+        "summary": "List roles",
+        "operationId": "list_roles",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "filter",
+                "description": "Return only roles whose names match this substring",
+                "in": "query",
+                "required": false,
+                "type": "string"
+            },
+            {
+                "name": "user",
+                "description": "Return only roles which are assigned to this user",
+                "in": "query",
+                "required": false,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/roles_list"
+                }
+            }
+        }
+    },
+    "post": {
+        "tags": [
+            "Roles"
+        ],
+        "summary": "Create a role",
+        "operationId": "create_role",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role",
+                "in": "body",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "201": {
+                "description": "Created",
+                "schema": {
+                    "$ref": "#/definitions/role_definition"
+                }
+            },
+            "400": {
+                "description": "Bad Request",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            },
+            "409": {
+                "description": "Conflict",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    }
+},
+"/v1/security/roles/{role}": {
+    "get": {
+        "tags": [
+            "Roles"
+        ],
+        "summary": "Get the specified role",
+        "operationId": "get_role",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/role"
+                }
+            },
+            "404": {
+                "description": "Not Found",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    },
+    "put": {
+        "tags": [
+            "Roles"
+        ],
+        "summary": "Update the specified role",
+        "operationId": "update_role",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            },
+            {
+                "name": "role",
+                "in": "body",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/role_definition"
+                }
+            },
+            "400": {
+                "description": "Bad Request",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            },
+            "404": {
+                "description": "Not Found",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            },
+            "409": {
+                "description": "Conflict",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    },
+    "delete": {
+        "tags": [
+            "Roles"
+        ],
+        "summary": "Remove a role by name",
+        "operationId": "delete_role",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "204": {
+                "description": ""
+            },
+            "404": {
+                "description": "Not Found",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    }
+},
+"/v1/security/roles/{role}/members": {
+    "get": {
+        "tags": [
+            "Members"
+        ],
+        "summary": "List members assigned a given role",
+        "operationId": "list_role_members",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/role_members_list"
+                }
+            },
+            "404": {
+                "description": "Not Found",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    },
+    "post": {
+        "tags": [
+            "Members"
+        ],
+        "summary": "Update role membership",
+        "operationId": "update_role_members",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            },
+            {
+                "name": "add",
+                "in": "body",
+                "required": false,
+                "schema": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/role_member"
+                    }
+                }
+            },
+            {
+                "name": "remove",
+                "in": "body",
+                "required": false,
+                "schema": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/role_member"
+                    }
+                }
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/role_membership_update_response"
+                }
+            },
+            "400": {
+                "description": "Bad Request",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            },
+            "404": {
+                "description": "Not found",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    }
 }
+

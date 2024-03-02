@@ -31,21 +31,32 @@ struct acl_conversion_error : std::exception {
 
 inline security::acl_principal to_acl_principal(const ss::sstring& principal) {
     std::string_view view(principal);
-    if (unlikely(!view.starts_with("User:"))) {
+    // TODO(oren): tremendous jank to account for franz-go convenience function
+    auto rol = view.starts_with("User:Role:");
+    // TODO(oren): might want to handle this elsewhere
+    auto usr = !rol && view.starts_with("User:");
+
+    if (unlikely(!usr && !rol)) {
         throw acl_conversion_error(
           fmt::format("Invalid principal name: {{{}}}", principal));
     }
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    auto user = principal.substr(5);
+    auto user = principal.substr(usr ? 5 : 10);
     if (unlikely(user.empty())) {
         throw acl_conversion_error(
           fmt::format("Principal name cannot be empty"));
     }
     if (user == "*") {
-        return security::acl_wildcard_user;
+        if (usr) {
+            return security::acl_wildcard_user;
+        } else {
+            throw acl_conversion_error(
+              fmt::format("Illegal wildcard role: {{{}}}", principal));
+        }
     }
     return security::acl_principal(
-      security::principal_type::user, std::move(user));
+      usr ? security::principal_type::user : security::principal_type::role,
+      std::move(user));
 }
 
 inline security::acl_host to_acl_host(const ss::sstring& host) {
@@ -303,6 +314,8 @@ inline ss::sstring to_kafka_principal(const security::acl_principal& p) {
         return fmt::format("User:{}", p.name());
     case security::principal_type::ephemeral_user:
         return fmt::format("Ephemeral user:{}", p.name());
+    case security::principal_type::role:
+        return fmt::format("Role:{}", p.name());
     }
     __builtin_unreachable();
 }

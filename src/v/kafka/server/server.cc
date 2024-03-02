@@ -58,6 +58,7 @@
 #include "security/gssapi_authenticator.h"
 #include "security/mtls.h"
 #include "security/oidc_authenticator.h"
+#include "security/role_store.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "ssx/future-util.h"
@@ -121,6 +122,7 @@ server::server(
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
   ss::sharded<security::credential_store>& credentials,
   ss::sharded<security::authorizer>& authorizer,
+  ss::sharded<security::role_store>& roles,
   ss::sharded<security::audit::audit_log_manager>& audit_mgr,
   ss::sharded<security::oidc::service>& oidc_service,
   ss::sharded<cluster::security_frontend>& sec_fe,
@@ -152,6 +154,7 @@ server::server(
   , _recovery_mode_enabled(config::node().recovery_mode_enabled.value())
   , _credentials(credentials)
   , _authorizer(authorizer)
+  , _roles(roles)
   , _audit_mgr(audit_mgr)
   , _oidc_service(oidc_service)
   , _security_frontend(sec_fe)

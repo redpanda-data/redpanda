@@ -317,6 +317,8 @@ std::ostream& operator<<(std::ostream& os, principal_type type) {
         return os << "user";
     case principal_type::ephemeral_user:
         return os << "ephemeral user";
+    case principal_type::role:
+        return os << "role";
     }
     __builtin_unreachable();
 }

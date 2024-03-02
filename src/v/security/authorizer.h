@@ -17,6 +17,7 @@
 #include "security/acl.h"
 #include "security/acl_store.h"
 #include "security/logger.h"
+#include "security/role_store.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
@@ -240,7 +241,8 @@ public:
       const T& resource_name,
       acl_operation operation,
       const acl_principal& principal,
-      const acl_host& host) const {
+      const acl_host& host,
+      std::optional<role_store*> roles = std::nullopt) const {
         auto type = get_resource_type<T>();
         auto acls = _store.find(type, resource_name());
 
@@ -258,21 +260,52 @@ public:
               bool(_allow_empty_matches));
         }
 
+        std::vector<acl_principal> principals{principal};
+        if (roles.has_value()) {
+            auto member_roles = (*roles)->range(
+              [&principal](const auto& role_ent) {
+                  return security::role_store::has_member(
+                    role_ent, security::role_member::from_principal(principal));
+              });
+            // TODO(oren): this should be pretty small, but it might be better
+            // to do this monadically, keeping the principals in the range and
+            // materializing when it's time to check
+            std::transform(
+              member_roles.begin(),
+              member_roles.end(),
+              std::back_inserter(principals),
+              [](const auto e) {
+                  return security::role::to_principal(e.first);
+              });
+        }
+
         // check for deny
-        if (auto entry = acls.find(
-              operation, principal, host, acl_permission::deny);
-            entry.has_value()) {
+        for (const auto& pr : principals) {
+            if (auto entry = acls.find(
+                  operation, pr, host, acl_permission::deny);
+                entry.has_value()) {
+                // TODO(oren): should we report the authenticated principal
+                // regardless, or the _role_ that wound up matching?
+                return auth_result::acl_match(
+                  principal, host, operation, resource_name, false, *entry);
+            }
+        }
+
+        // TODO(oren): this can probably be made MUCH more efficient...or can
+        // it?
+        for (const auto& pr : principals) {
+            auto match = acl_any_implied_ops_allowed(acls, pr, host, operation);
+            if (!match) {
+                continue;
+            }
             return auth_result::acl_match(
-              principal, host, operation, resource_name, false, *entry);
+              principal, host, operation, resource_name, true, *match);
         }
 
         // check for allow
         return auth_result::opt_acl_match(
-          principal,
-          host,
-          operation,
-          resource_name,
-          acl_any_implied_ops_allowed(acls, principal, host, operation));
+          principal, host, operation, resource_name, std::nullopt);
+        // acl_any_implied_ops_allowed(acls, principal, host, operation));
     }
 
     ss::future<fragmented_vector<acl_binding>> all_bindings() const {

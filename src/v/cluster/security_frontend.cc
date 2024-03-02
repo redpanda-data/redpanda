@@ -31,6 +31,7 @@
 #include "rpc/errc.h"
 #include "rpc/types.h"
 #include "security/authorizer.h"
+#include "security/role.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 
@@ -114,6 +115,36 @@ ss::future<std::error_code> security_frontend::update_user(
   security::scram_credential credential,
   model::timeout_clock::time_point tout) {
     update_user_cmd cmd(std::move(username), std::move(credential));
+    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::create_role(
+  security::role_name name,
+  security::role role,
+  model::timeout_clock::time_point tout) {
+    create_role_cmd cmd(std::move(name), std::move(role));
+    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::delete_role(
+  security::role_name name, model::timeout_clock::time_point tout) {
+    delete_role_cmd cmd(std::move(name), 0 /* unused */);
+    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::update_role(
+  security::role_name name,
+  security::role role,
+  model::timeout_clock::time_point tout) {
+    update_role_cmd cmd(std::move(name), std::move(role));
+    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::rename_role(
+  security::role_name name,
+  security::role_name new_name,
+  model::timeout_clock::time_point tout) {
+    rename_role_cmd cmd(std::move(name), std::move(new_name));
     return replicate_and_wait(_stm, _as, std::move(cmd), tout);
 }
 
