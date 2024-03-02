@@ -45,6 +45,7 @@ private:
     bool can_evict_producer(const producer_state&) const;
 
     size_t _num_producers = 0;
+    size_t _eviction_counter = 0;
     // if a producer is inactive for this long, it will be gc-ed
     std::chrono::milliseconds _producer_expiration_ms;
     // maximum # of active producers allowed on this shard across
