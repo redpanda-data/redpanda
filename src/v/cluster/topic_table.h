@@ -121,7 +121,7 @@ public:
           reconfiguration_state state,
           model::revision_id update_revision,
           reconfiguration_policy policy,
-          topic_table_probe& probe)
+          topic_table_probe* probe)
           : _previous_replicas(std::move(previous_replicas))
           , _target_replicas(std::move(target_replicas))
           , _state(state)
@@ -129,15 +129,19 @@ public:
           , _last_cmd_revision(update_revision)
           , _policy(policy)
           , _probe(probe) {
-            _probe.handle_update(_previous_replicas, _target_replicas);
+            if (_probe) {
+                _probe->handle_update(_previous_replicas, _target_replicas);
+            }
         }
 
         ~in_progress_update() {
-            _probe.handle_update_finish(_previous_replicas, _target_replicas);
-            if (is_cancelled_state(_state)) {
-                _probe.handle_update_cancel_finish(
+            if (_probe) {
+                _probe->handle_update_finish(
                   _previous_replicas, _target_replicas);
-                ;
+                if (is_cancelled_state(_state)) {
+                    _probe->handle_update_cancel_finish(
+                      _previous_replicas, _target_replicas);
+                }
             }
         }
 
@@ -149,8 +153,10 @@ public:
         const reconfiguration_state& get_state() const { return _state; }
 
         void set_state(reconfiguration_state state, model::revision_id rev) {
-            if (!is_cancelled_state(_state) && is_cancelled_state(state)) {
-                _probe.handle_update_cancel(
+            if (
+              _probe && !is_cancelled_state(_state)
+              && is_cancelled_state(state)) {
+                _probe->handle_update_cancel(
                   _previous_replicas, _target_replicas);
             }
             _state = state;
@@ -194,7 +200,8 @@ public:
         model::revision_id _update_revision;
         model::revision_id _last_cmd_revision;
         reconfiguration_policy _policy;
-        topic_table_probe& _probe;
+        // _probe can be nullptr, in this case metrics are not updated.
+        topic_table_probe* _probe;
     };
 
     struct partition_meta {

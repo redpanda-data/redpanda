@@ -1166,7 +1166,7 @@ public:
               initial_state,
               update.revision,
               update.policy,
-              _probe,
+              &_probe,
             };
             inp_update.set_state(update.state, update.last_cmd_revision);
             vlog(
@@ -1709,7 +1709,7 @@ void topic_table::change_partition_replicas(
                   : reconfiguration_state::in_progress,
         update_revision,
         policy,
-        _probe));
+        &_probe));
     auto previous_assignment = current_assignment.replicas;
     // replace partition replica set
     current_assignment.replicas = new_assignment;
