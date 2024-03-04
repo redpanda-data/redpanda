@@ -15,6 +15,7 @@
 #include "json/validator.h"
 #include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/server.h"
+#include "redpanda/admin/util.h"
 #include "transform/api.h"
 
 #include <system_error>
@@ -45,7 +46,11 @@ admin_server::delete_transform(std::unique_ptr<ss::http::request> req) {
     if (!_transform_service->local_is_initialized()) {
         throw transforms_not_enabled();
     }
-    auto name = model::transform_name(req->param["name"]);
+    ss::sstring raw_name;
+    if (!admin::path_decode(req->param["name"], raw_name)) {
+        throw seastar::httpd::bad_request_exception("invalid transform name");
+    }
+    auto name = model::transform_name(std::move(raw_name));
     std::error_code ec = co_await _transform_service->local().delete_transform(
       std::move(name));
     co_await throw_on_error(*req, ec, model::controller_ntp);
