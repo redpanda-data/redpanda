@@ -68,6 +68,17 @@ class ProfileDefinitions():
         "message_count": 1000,
         "messages_per_second_per_producer": 1
     }
+    topic_profile_t40k_p1 = {
+        "topic_count": 39_996,
+        "batch_size": 4096,
+        "topic_name_length": 200,
+        "num_partitions": 1,
+        "num_replicas": 3,
+        "use_kafka_batching": True,
+        "profile_name": "topic-scale-t40k-p1",
+        "message_count": 1000,
+        "messages_per_second_per_producer": 1
+    }
 
 
 class TopicScaleProfileManager():
