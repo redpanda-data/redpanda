@@ -34,6 +34,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
 #include <ostream>
@@ -141,6 +142,7 @@ struct simple_kv : public raft::state_machine_base {
     state_t state;
     raft_node_instance& raft_node;
 };
+using wait_for_each_batch = ss::bool_class<struct wait_for_each_tag>;
 
 struct state_machine_fixture : raft_fixture {
     ss::future<result<raft::replicate_result>>
@@ -171,7 +173,8 @@ struct state_machine_fixture : raft_fixture {
     }
 
     ss::future<absl::flat_hash_map<ss::sstring, value_entry>>
-    build_random_state(int op_cnt) {
+    build_random_state(
+      int op_cnt, wait_for_each_batch wait_for_each = wait_for_each_batch::no) {
         absl::flat_hash_map<ss::sstring, value_entry> state;
 
         for (int i = 0; i < op_cnt;) {
@@ -212,6 +215,10 @@ struct state_machine_fixture : raft_fixture {
               logger().debug,
               "replication result: [last_offset: {}]",
               result.value().last_offset);
+
+            if (wait_for_each) {
+                co_await wait_for_apply();
+            }
         }
         co_return state;
     }
