@@ -8,17 +8,20 @@
 // by the Apache License, Version 2.0
 
 #include "base/seastarx.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "storage/readers_cache.h"
-#include "test_utils/fixture.h"
+#include "test_utils/test.h"
 
 #include <fmt/ostream.h>
+#include <gtest/gtest.h>
 
 namespace storage {
-struct readers_cache_test_fixture {
+struct readers_cache_test_fixture : seastar_test {
     readers_cache_test_fixture()
       : cache(
-        model::ntp("test", "test", 0), std::chrono::milliseconds(360000)) {}
+        model::ntp("test", "test", 0),
+        std::chrono::milliseconds(360000)) {}
 
     bool intersects_locked_range(model::offset begin, model::offset end) {
         return cache.intersects_with_locked_range(begin, end);
@@ -26,7 +29,7 @@ struct readers_cache_test_fixture {
 
     void test_intersects_locked(
       model::offset::type begin, model::offset::type end, bool in_range) {
-        BOOST_REQUIRE_EQUAL(
+        ASSERT_EQ(
           intersects_locked_range(model::offset(begin), model::offset(end)),
           in_range);
     }
@@ -37,7 +40,7 @@ struct readers_cache_test_fixture {
 } // namespace storage
 using namespace storage;
 
-FIXTURE_TEST(test_range_is_correctly_locked, readers_cache_test_fixture) {
+TEST_F(readers_cache_test_fixture, test_range_is_correctly_locked) {
     {
         /**
          * Evict truncate locks range starting from give offset up to max
