@@ -884,36 +884,34 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
 }
 
 ss::future<bool> consensus::dispatch_prevote(bool leadership_transfer) {
-    auto pvstm_p = std::make_unique<prevote_stm>(this);
-    auto pvstm = pvstm_p.get();
     if (leadership_transfer) {
-        return ss::make_ready_future<bool>(true);
+        co_return true;
     }
-    return pvstm->prevote(leadership_transfer)
-      .then_wrapped([this, pvstm_p = std::move(pvstm_p), pvstm](
-                      ss::future<bool> prevote_f) mutable {
-          bool ready = false;
-          try {
-              ready = prevote_f.get();
-          } catch (...) {
-              vlog(
-                _ctxlog.warn,
-                "Error returned from prevoting process {}",
-                std::current_exception());
-          }
-          auto f = pvstm->wait().finally([pvstm_p = std::move(pvstm_p)] {});
-          // make sure we wait for all futures when gate is closed
-          if (_bg.is_closed()) {
-              return f.then([ready] { return ready; });
-          }
-          // background
-          ssx::spawn_with_gate(
-            _bg, [pvstm_p = std::move(pvstm_p), f = std::move(f)]() mutable {
-                return std::move(f);
-            });
+    auto pv_stm = std::make_unique<prevote_stm>(this);
 
-          return ss::make_ready_future<bool>(ready);
-      });
+    bool ready = false;
+    try {
+        ready = co_await pv_stm->prevote(leadership_transfer);
+    } catch (...) {
+        vlog(
+          _ctxlog.warn,
+          "Error returned from prevoting process {}",
+          std::current_exception());
+    }
+
+    // make sure we wait for all futures when gate is closed
+    if (_bg.is_closed()) {
+        co_await pv_stm->wait();
+        co_return ready;
+    }
+    // background
+
+    ssx::spawn_with_gate(_bg, [pv_stm = std::move(pv_stm)]() mutable {
+        auto stm = pv_stm.get();
+        return stm->wait().finally([pv_stm = std::move(pv_stm)] {});
+    });
+
+    co_return ready;
 }
 
 /// performs no raft-state mutation other than resetting the timer
