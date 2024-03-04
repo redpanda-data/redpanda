@@ -124,6 +124,31 @@ TEST_F_CORO(state_machine_fixture, test_apply_throwing_exception) {
         ASSERT_EQ_CORO(stm->state, expected);
     }
 }
+TEST_F_CORO(
+  state_machine_fixture, test_apply_throwing_exception_waiting_for_each_batch) {
+    /**
+     * Create 3 replicas group with simple_kv STM
+     */
+    create_nodes();
+    std::vector<ss::shared_ptr<simple_kv>> stms;
+
+    for (auto& [id, node] : nodes()) {
+        raft::state_machine_manager_builder builder;
+        auto kv_stm = builder.create_stm<simple_kv>(*node);
+        auto throwing_kv_stm = builder.create_stm<throwing_kv>(*node);
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
+        stms.push_back(kv_stm);
+        stms.push_back(ss::dynamic_pointer_cast<simple_kv>(throwing_kv_stm));
+    }
+
+    auto expected = co_await build_random_state(5000, wait_for_each_batch::yes);
+
+    co_await wait_for_apply();
+
+    for (auto& stm : stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+    }
+}
 
 TEST_F_CORO(state_machine_fixture, test_recovery_without_snapshot) {
     /**
