@@ -66,17 +66,17 @@ For amd64:
 
 ```
 curl -LO \
-  https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/raw/names/redpanda-amd64/versions/22.3.3/redpanda-22.3.3-amd64.tar.gz
+  https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/raw/names/redpanda-amd64/versions/23.3.6/redpanda-23.3.6-amd64.tar.gz
 ```
 
 For arm64:
 
 ```
 curl -LO \
-  https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/raw/names/redpanda-arm64/versions/22.3.3/redpanda-22.3.3-arm64.tar.gz
+  https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/raw/names/redpanda-arm64/versions/23.3.6/redpanda-23.3.6-arm64.tar.gz
 ```
 
-Replace `22.3.3` with the appropriate version you are trying to download.
+Replace `23.3.6` with the appropriate version you are trying to download.
 
 ## GitHub Actions
 
