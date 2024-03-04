@@ -14,7 +14,7 @@
 
 //! An internal crate providing shared types for Redpanda's Data Transforms Schema Registry client.
 //!
-//! If you are looking to use schema registry within transforms you probably want crate
+//! If you are looking to use Schema Registry within transforms you probably want crate
 //! [redpanda-transform-sdk-sr](https://crates.io/crates/redpanda-transform-sdk-sr). These types are
 //! re-exported there for usage.
 
@@ -22,7 +22,7 @@ use std::string::FromUtf8Error;
 
 use redpanda_transform_sdk_varint as varint;
 
-/// SchemaFormat is an enum that represents the different types of schemas stored in schema registry.
+/// SchemaFormat is an enum that represents the schema formats supported in the Schema Registry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SchemaFormat {
     Avro,
@@ -34,12 +34,12 @@ pub enum SchemaFormat {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SchemaId(pub i32);
 
-/// SchemaVersion is the version of a schema under a subject within the schema registry.
+/// SchemaVersion is the version of a schema for a subject within the Schema Registry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SchemaVersion(pub i32);
 
-/// Reference is a way for a one schema to reference another. The details
-/// for how referencing is done are type specific; for example, JSON objects
+/// Reference is a way for one schema to reference another. The details
+/// for how referencing is done are type-specific; for example, JSON objects
 /// that use the key "$ref" can refer to another schema via URL. For more details
 /// on references, see the following link:
 ///
@@ -81,7 +81,7 @@ impl Reference {
     }
 }
 
-/// Schema is a schema that can be registered within schema registry
+/// Schema is a schema that can be registered within Schema Registry
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Schema {
     schema: String,
@@ -141,7 +141,7 @@ pub struct SubjectSchema {
 }
 
 impl SubjectSchema {
-    /// Create a new schema that has been registered in the schema registry under the given
+    /// Create a new schema that has been registered in the Schema Registry under the given
     /// subject/version and ID.
     pub fn new(
         schema: Schema,
@@ -178,7 +178,7 @@ impl SubjectSchema {
     }
 }
 
-/// An error that can occur interacting with the schema registry
+/// An error that can occur when interacting with the Schema Registry
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SchemaRegistryError {
@@ -222,12 +222,12 @@ impl From<FromUtf8Error> for SchemaRegistryError {
     }
 }
 
-/// A result type for the schema registry where errors are SchemaRegistryError.
+/// A result type for the Schema Registry where errors are SchemaRegistryError.
 pub type Result<T> = std::result::Result<T, SchemaRegistryError>;
 
-/// A client for interacting with the schema registry within Redpanda.
+/// A client for interacting with the Schema Registry within Redpanda.
 pub trait SchemaRegistryClientImpl {
-    /// Lookup a schema via it's global ID.
+    /// Lookup a schema via its global ID.
     fn lookup_schema_by_id(&self, id: SchemaId) -> Result<Schema>;
 
     /// Lookup a schema for a given subject at a specific version.
@@ -240,7 +240,7 @@ pub trait SchemaRegistryClientImpl {
     /// Lookup the latest schema for a subject.
     fn lookup_latest_schema(&self, subject: &str) -> Result<SubjectSchema>;
 
-    /// Create a schema in the schema registry under the given subject, returning the version and
+    /// Create a schema in the Schema Registry under the given subject, returning the version and
     /// ID.
     ///
     /// If an equivalent schema already exists globally, that schema ID will be reused.
