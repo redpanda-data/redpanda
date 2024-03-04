@@ -117,7 +117,9 @@ disk_log_impl::disk_log_impl(
   , _probe(std::make_unique<storage::probe>())
   , _max_segment_size(compute_max_segment_size())
   , _readers_cache(std::make_unique<readers_cache>(
-      config().ntp(), _manager.config().readers_cache_eviction_timeout)) {
+      config().ntp(),
+      _manager.config().readers_cache_eviction_timeout,
+      config::shard_local_cfg().readers_cache_target_max_size.bind())) {
     const bool is_compacted = config().is_compacted();
     for (auto& s : _segs) {
         _probe->add_initial_segment(*s);
