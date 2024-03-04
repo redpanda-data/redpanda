@@ -594,7 +594,7 @@ private:
      * requests stable leadership optimization to be ignored.
      */
     void dispatch_vote(bool leadership_transfer);
-    ss::future<bool> dispatch_prevote(bool leadership_transfer);
+    ss::future<election_success> dispatch_prevote(bool leadership_transfer);
     bool should_skip_vote(bool ignore_heartbeat);
 
     /// Replicates configuration to other nodes,

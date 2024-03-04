@@ -44,6 +44,7 @@ using timer_type = ss::timer<clock_type>;
 static constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
+using election_success = ss::bool_class<struct election_success_tag>;
 using group_id = named_type<int64_t, struct raft_group_id_type>;
 
 struct protocol_metadata
