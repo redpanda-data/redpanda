@@ -18,6 +18,7 @@
 
 #include <seastar/core/preempt.hh>
 #include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <type_traits>
 
@@ -33,6 +34,7 @@ using namespace distributed_kv_stm_types;
  * put(map<key, val>) - bulk/batched put
  * get(key)
  * remove(key)
+ * remove_all(predicate)
  * coordinator(key) - only on routing partition (discussed below)
  *
  * Input KV pairs are spread across the partitions of the topic for
@@ -57,7 +59,7 @@ using namespace distributed_kv_stm_types;
  * The query pattern from clients is expected to be as follows.
  * - query routing_partition using coordinator(key) to get the coordinator
  *   for key.
- * - call put(map<key, val>)/get(key)/remove(key) on the coordinator.
+ * - call put/get/remove/remove_all on the coordinator.
  *
  * For a reference client implementation, look at transforms_offsets topic
  * that uses this KV store to track consumption offsets for transforms.
@@ -167,6 +169,9 @@ public:
     // TODO: implement delete retention with incremental raft snapshots.
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
+    /**
+     * Discover the partition that is responsible for holding this key.
+     */
     ss::future<result<model::partition_id, cluster::errc>>
     coordinator(Key key) {
         auto holder = _gate.hold();
@@ -214,6 +219,9 @@ public:
         co_return co_await coordinator(key);
     }
 
+    /**
+     * Return this value in the stm if it exists.
+     */
     ss::future<result<std::optional<Value>, cluster::errc>> get(Key key) {
         auto holder = _gate.hold();
         auto units = co_await _snapshot_lock.hold_read_lock();
@@ -227,6 +235,9 @@ public:
         co_return it->second;
     }
 
+    /**
+     * Return an inconsistent snapshot of the data in the stm.
+     */
     ss::future<result<kv_data_t, cluster::errc>> list() {
         auto holder = _gate.hold();
         auto units = co_await _snapshot_lock.hold_read_lock();
@@ -250,6 +261,7 @@ public:
         co_return std::move(copy);
     }
 
+    /** Batch write values to the stm. */
     ss::future<errc> put(absl::btree_map<Key, Value> kvs) {
         auto holder = _gate.hold();
         auto units = co_await _snapshot_lock.hold_read_lock();
@@ -260,6 +272,7 @@ public:
           make_kv_data_batch(std::move(kvs)));
     }
 
+    /** Remove a singular key from the stm. */
     ss::future<errc> remove(Key key) {
         auto holder = _gate.hold();
         auto units = co_await _snapshot_lock.hold_read_lock();
@@ -268,9 +281,40 @@ public:
             co_return errc::success;
         }
         co_return co_await replicate_and_wait(
-          make_kv_data_batch_remove_key<Key, Value>(key));
+          make_kv_data_batch_remove_all<Key, Value>({key}));
     }
 
+    /**
+     * Remove all keys that match the predicate. This operation aquires a lock
+     * on this partition so that the predicate sees a consistent snapshot of the
+     * stm state.
+     */
+    ss::future<errc> remove_all(ss::noncopyable_function<bool(Key)> pred) {
+        auto holder = _gate.hold();
+        auto units = co_await _snapshot_lock.hold_write_lock();
+        absl::btree_set<Key> deleted;
+        auto it = _kvs.begin();
+        while (it != _kvs.end()) {
+            if (pred(it->first)) {
+                auto result = _kvs.extract_and_get_next(it);
+                deleted.insert(result.node.key());
+                it = result.next;
+            } else {
+                ++it;
+            }
+            // We don't need to worry about iterators being invalidated due to
+            // the write lock we hold.
+            co_await ss::yield();
+        }
+        co_return co_await replicate_and_wait(
+          make_kv_data_batch_remove_all<Key, Value>(std::move(deleted)));
+    }
+
+    /**
+     * When adding new partitions we call this to notify the coordinator of the
+     * new partitions where keys can be routed too. This does **not** reshard
+     * the existing data.
+     */
     ss::future<result<size_t, cluster::errc>>
     repartition(size_t new_partition_count) {
         auto holder = _gate.hold();

@@ -146,6 +146,18 @@ public:
           });
     }
 
+    ss::future<cluster::errc> delete_committed_offsets_on_shard(
+      ss::shard_id shard,
+      const model::ntp& ntp,
+      absl::btree_set<model::transform_id> ids) final {
+        return invoke_func_on_shard_impl(
+          shard,
+          [this, ntp, ids = std::move(ids)](
+            cluster::partition_manager& mgr) mutable {
+              return do_delete_committed_offsets(mgr.get(ntp), std::move(ids));
+          });
+    }
+
 private:
     static constexpr auto coordinator_partition = model::partition_id{0};
 
@@ -230,6 +242,20 @@ private:
         auto stm
           = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
         co_return co_await stm->list();
+    }
+
+    ss::future<cluster::errc> do_delete_committed_offsets(
+      ss::lw_shared_ptr<cluster::partition> partition,
+      absl::btree_set<model::transform_id> ids) {
+        if (!partition) {
+            co_return cluster::errc::not_leader;
+        }
+        auto stm
+          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
+        co_return co_await stm->remove_all(
+          [&ids](model::transform_offsets_key key) {
+              return ids.contains(key.id);
+          });
     }
 
     ss::future<cluster::errc> invoke_on_shard_impl(

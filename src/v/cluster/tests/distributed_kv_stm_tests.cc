@@ -97,7 +97,7 @@ FIXTURE_TEST(test_stm_list, stm_test_fixture) {
     }
 }
 
-FIXTURE_TEST(test_batched_put, stm_test_fixture) {
+FIXTURE_TEST(test_batched_actions, stm_test_fixture) {
     create_stm_and_start_raft(1);
     auto& stm = *_stm;
     stm.start().get0();
@@ -117,6 +117,16 @@ FIXTURE_TEST(test_batched_put, stm_test_fixture) {
 
     for (int i = 0; i < 30; i++) {
         BOOST_REQUIRE_EQUAL(stm.get(i).get0().value(), test_value{i});
+    }
+
+    // Delete the even keys
+    stm.remove_all([](int key) { return key % 2 == 0; }).get();
+    for (int i = 0; i < 30; i++) {
+        if (i % 2 == 0) {
+            BOOST_REQUIRE(!stm.get(i).get().value().has_value());
+        } else {
+            BOOST_REQUIRE_EQUAL(stm.get(i).get().value(), test_value{i});
+        }
     }
 }
 

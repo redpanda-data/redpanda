@@ -186,4 +186,18 @@ std::ostream& operator<<(std::ostream& os, const list_commits_reply& reply) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, const delete_commits_request& req) {
+    fmt::print(
+      os,
+      "{{ partition: {}, transform_ids_size: {} }}",
+      req.partition,
+      req.ids.size());
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const delete_commits_reply& reply) {
+    fmt::print(os, "{{ ec: {} }}", reply.errc);
+    return os;
+}
+
 } // namespace transform::rpc

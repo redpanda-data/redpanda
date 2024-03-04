@@ -49,6 +49,11 @@
             "name": "list_committed_offsets",
             "input_type": "list_commits_request",
             "output_type": "list_commits_reply"
+        },
+        {
+            "name": "delete_committed_offsets",
+            "input_type": "delete_commits_request",
+            "output_type": "delete_commits_reply"
         }
     ]
 }

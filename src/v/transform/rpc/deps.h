@@ -200,6 +200,10 @@ public:
 
     virtual ss::future<result<model::transform_offsets_map, cluster::errc>>
     list_committed_offsets_on_shard(ss::shard_id, const model::ntp&) = 0;
+
+    virtual ss::future<cluster::errc> delete_committed_offsets_on_shard(
+      ss::shard_id, const model::ntp&, absl::btree_set<model::transform_id>)
+      = 0;
 };
 
 }; // namespace transform::rpc

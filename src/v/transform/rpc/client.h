@@ -92,6 +92,12 @@ public:
     ss::future<result<model::transform_offsets_map, cluster::errc>>
     list_committed_offsets();
 
+    /**
+     * Delete all committed offsets for this transform ID.
+     */
+    ss::future<cluster::errc>
+    delete_committed_offsets(absl::btree_set<model::transform_id> ids);
+
     ss::future<> start();
     ss::future<> stop();
 
@@ -169,6 +175,18 @@ private:
     do_remote_list_committed_offsets(
       model::node_id,
       model::partition_id,
+      model::timeout_clock::duration timeout);
+
+    ss::future<cluster::errc> do_delete_committed_offsets(
+      model::partition_id, absl::btree_set<model::transform_id>);
+    ss::future<cluster::errc> do_delete_committed_offsets_once(
+      model::partition_id, absl::btree_set<model::transform_id>);
+    ss::future<cluster::errc> do_local_delete_committed_offsets(
+      model::partition_id, absl::btree_set<model::transform_id>);
+    ss::future<cluster::errc> do_remote_delete_committed_offsets(
+      model::node_id,
+      model::partition_id,
+      absl::btree_set<model::transform_id>,
       model::timeout_clock::duration timeout);
 
     template<typename Func>

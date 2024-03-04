@@ -58,6 +58,9 @@ public:
     ss::future<result<model::transform_offsets_map, cluster::errc>>
       list_committed_offsets(list_commits_request);
 
+    ss::future<cluster::errc> delete_committed_offsets(
+      model::partition_id, absl::btree_set<model::transform_id>);
+
 private:
     ss::future<transformed_topic_data_result>
       produce(transformed_topic_data, model::timeout_clock::duration);
@@ -110,6 +113,9 @@ public:
 
     ss::future<list_commits_reply> list_committed_offsets(
       list_commits_request, ::rpc::streaming_context&) override;
+
+    ss::future<delete_commits_reply> delete_committed_offsets(
+      delete_commits_request, ::rpc::streaming_context&) override;
 
     ss::future<generate_report_reply> generate_report(
       generate_report_request, ::rpc::streaming_context&) override;

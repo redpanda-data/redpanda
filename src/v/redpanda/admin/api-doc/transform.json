@@ -78,6 +78,19 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/v1/transform/debug/committed_offsets/garbage_collect",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Cleanup unknown commits for transforms that where deleted.",
+          "nickname": "garbage_collect_committed_offsets",
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
     }
   ],
   "models": {
