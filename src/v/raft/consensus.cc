@@ -26,7 +26,6 @@
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
-#include "raft/prevote_stm.h"
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/rpc_client_protocol.h"

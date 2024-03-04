@@ -30,7 +30,6 @@
 #include "raft/logger.h"
 #include "raft/mutex_buffer.h"
 #include "raft/offset_translator.h"
-#include "raft/prevote_stm.h"
 #include "raft/probe.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
@@ -53,7 +52,6 @@
 namespace raft {
 class replicate_entries_stm;
 class vote_stm;
-class prevote_stm;
 class recovery_stm;
 class heartbeat_manager;
 
@@ -521,7 +519,6 @@ public:
 private:
     friend replicate_entries_stm;
     friend vote_stm;
-    friend prevote_stm;
     friend recovery_stm;
     friend replicate_batcher;
     friend event_manager;
