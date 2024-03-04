@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 const (
@@ -35,7 +36,7 @@ func (a *AdminAPI) DeployWasmTransform(ctx context.Context, t TransformMetadata,
 
 // DeleteWasmTransform deletes a wasm transform in a cluster.
 func (a *AdminAPI) DeleteWasmTransform(ctx context.Context, name string) error {
-	return a.sendToLeader(ctx, http.MethodDelete, baseTransformEndpoint+name, nil, nil)
+	return a.sendToLeader(ctx, http.MethodDelete, baseTransformEndpoint+url.PathEscape(name), nil, nil)
 }
 
 // PartitionTransformStatus is the status of a single transform that is running on an input partition.
