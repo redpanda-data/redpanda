@@ -371,7 +371,7 @@ them in rpk with
 func CloudClusterMessage(p config.RpkProfile, clusterName, clusterID string) string {
 	return fmt.Sprintf(`
 Cluster %s
-  Web UI: https://cloudv2.redpanda.com/clusters/%s/overview
+  Web UI: https://cloud.redpanda.com/clusters/%s/overview
   Redpanda Seed Brokers: [%s]
 `, clusterName, clusterID, strings.Join(p.KafkaAPI.Brokers, ", "))
 }
