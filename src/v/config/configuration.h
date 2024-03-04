@@ -51,6 +51,8 @@ struct configuration final : public config_store {
     bounded_property<uint16_t> log_segment_size_jitter_percent;
     bounded_property<uint64_t> compacted_log_segment_size;
     property<std::chrono::milliseconds> readers_cache_eviction_timeout_ms;
+    bounded_property<size_t> readers_cache_target_max_size;
+
     bounded_property<std::optional<std::chrono::milliseconds>> log_segment_ms;
     property<std::chrono::milliseconds> log_segment_ms_min;
     property<std::chrono::milliseconds> log_segment_ms_max;
