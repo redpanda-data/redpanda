@@ -383,14 +383,15 @@ void state_machine_manager::maybe_start_background_apply(
         return entry->background_apply_mutex.get_units().then(
           [this, entry](auto u) {
               return ss::with_scheduling_group(
-                       _apply_sg,
-                       [this, entry] { return background_apply_fiber(entry); })
-                .finally([u = std::move(u)] {});
+                _apply_sg, [this, entry, u = std::move(u)]() mutable {
+                    return background_apply_fiber(entry, std::move(u));
+                });
           });
     });
 }
 
-ss::future<> state_machine_manager::background_apply_fiber(entry_ptr entry) {
+ss::future<> state_machine_manager::background_apply_fiber(
+  entry_ptr entry, ssx::semaphore_units units) {
     while (!_as.abort_requested() && entry->stm->next() < _next) {
         storage::log_reader_config config(
           entry->stm->next(), _next, ss::default_priority_class());
@@ -421,6 +422,7 @@ ss::future<> state_machine_manager::background_apply_fiber(entry_ptr entry) {
             co_await ss::sleep_abortable(1s, _as);
         }
     }
+    units.return_all();
     vlog(
       _log.debug,
       "finished background apply for '{}' state machine",
