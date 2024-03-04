@@ -86,6 +86,15 @@ configuration::configuration()
       "Duration after which inactive readers will be evicted from cache",
       {.visibility = visibility::tunable},
       30s)
+  , readers_cache_target_max_size(
+      *this,
+      "readers_cache_target_max_size",
+      "Maximum desired number of readers cached per ntp. This a soft limit, a "
+      "number of readers in cache may temporary increase as cleanup is done in "
+      "background",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      200,
+      {.min = 0, .max = 10000})
   , log_segment_ms(
       *this,
       "log_segment_ms",
