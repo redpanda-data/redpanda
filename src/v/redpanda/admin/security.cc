@@ -10,6 +10,8 @@
  */
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
+#include "json/json.h"
+#include "json/stringbuffer.h"
 #include "kafka/server/server.h"
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/server.h"
@@ -101,6 +103,74 @@ bool is_no_op_user_write(
     }
 }
 
+enum class role_errc {
+    malformed_def = 40001,
+    invalid_name = 40002,
+    unrecognized_field = 40003,
+    member_list_conflict = 40004,
+    role_not_found = 40401,
+    role_already_exists = 40901,
+    role_name_conflict = 40902,
+};
+
+// NOTE(oren): bogus -Wunneeded-internal-declaration here from clang-tidy (?)
+std::ostream& operator<<(std::ostream& os, role_errc code) {
+    switch (code) {
+    case role_errc::malformed_def:
+        return os << "Malformed role definition";
+    case role_errc::invalid_name:
+        return os << "Invalid role name";
+    case role_errc::unrecognized_field:
+        return os << "Unrecognized field";
+    case role_errc::member_list_conflict:
+        return os << "Conflict between 'add' and 'remove' lists";
+    case role_errc::role_not_found:
+        return os << "Role not found";
+    case role_errc::role_already_exists:
+        return os << "Role already exists";
+    case role_errc::role_name_conflict:
+        return os << "Role name conflict";
+    }
+    __builtin_unreachable();
+}
+
+ss::http::reply::status_type role_errc_to_status(role_errc c) {
+    return ss::http::reply::status_type{static_cast<int>(c) / 100};
+}
+
+} // namespace
+
+namespace json {
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const ss::httpd::security_json::rbac_error_body& v) {
+    w.StartObject();
+    w.Key("message");
+    w.String(v.message());
+    w.Key("code");
+    w.Uint(v.code());
+    w.EndObject();
+}
+} // namespace json
+
+namespace {
+std::string role_errc_to_json(role_errc e) {
+    ss::httpd::security_json::rbac_error_body body;
+    body.code = static_cast<int>(e);
+    body.message = fmt::format("{}", e);
+
+    json::StringBuffer sb;
+    json::Writer<json::StringBuffer> writer(sb);
+    using ::json::rjson_serialize;
+    rjson_serialize(writer, body);
+    return {sb.GetString(), sb.GetSize()};
+}
+
+void throw_role_exception(role_errc ec) {
+    throw ss::httpd::base_exception(
+      role_errc_to_json(ec), role_errc_to_status(ec));
+}
+
 } // namespace
 
 void admin_server::register_security_routes() {
@@ -159,6 +229,72 @@ void admin_server::register_security_routes() {
           }
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(users));
+      });
+
+    // RBAC stubs
+
+    register_route<user>(
+      ss::httpd::security_json::list_user_roles,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          ss::httpd::security_json::roles_list body;
+          co_return ss::json::json_return_type(body);
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::list_roles,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          ss::httpd::security_json::roles_list body;
+          co_return ss::json::json_return_type(body);
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::create_role,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw_role_exception(role_errc::malformed_def);
+          co_return ss::json::json_return_type(ss::json::json_void());
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::get_role,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw_role_exception(role_errc::role_not_found);
+          co_return ss::json::json_return_type(ss::json::json_void());
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::update_role,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw_role_exception(role_errc::role_not_found);
+          co_return ss::json::json_return_type(ss::json::json_void());
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::delete_role,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw_role_exception(role_errc::role_not_found);
+          co_return ss::json::json_return_type(ss::json::json_void());
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::list_role_members,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw_role_exception(role_errc::role_not_found);
+          co_return ss::json::json_return_type(ss::json::json_void());
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::update_role_members,
+      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          throw_role_exception(role_errc::role_not_found);
+          co_return ss::json::json_return_type(ss::json::json_void());
       });
 }
 
