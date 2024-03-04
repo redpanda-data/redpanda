@@ -14,32 +14,32 @@
 
 //! Redpanda Data Transforms Rust Schema Registry Client library.
 //!
-//! Within Data Transforms access is provided to schema registry built-in to Redpanda.
+//! Access to the Schema Registry built into Redpanda is available within data transforms.
 //! This client is the provided interface to read and write schemas within the registry.
 
 use redpanda_transform_sdk_sr_sys::AbiSchemaRegistryClient;
 pub use redpanda_transform_sdk_sr_types::*;
 
-/// A client for interacting with the schema registry within Redpanda.
+/// A client for interacting with the Schema Registry within Redpanda.
 pub struct SchemaRegistryClient {
     delegate: Box<dyn SchemaRegistryClientImpl>,
 }
 
 impl SchemaRegistryClient {
-    /// Create a new default schema registry client that connects to Redpanda's Schema Registry
+    /// Create a new default Schema Registry client that connects to Redpanda's Schema Registry
     /// when running within the context of a data transform.
     pub fn new() -> Self {
         Self::new_wrapping(Box::new(AbiSchemaRegistryClient::new()))
     }
 
-    /// Create a new custom schema registry client wrapping the implementation.
+    /// Create a new custom Schema Registry client wrapping the implementation.
     ///
     /// This is useful in testing when you want to inject a mock client.
     pub fn new_wrapping(delegate: Box<dyn SchemaRegistryClientImpl>) -> Self {
         Self { delegate }
     }
 
-    /// Lookup a schema via it's global ID.
+    /// Lookup a schema via its global ID.
     pub fn lookup_schema_by_id(&self, id: SchemaId) -> Result<Schema> {
         self.delegate.lookup_schema_by_id(id)
     }
@@ -59,7 +59,7 @@ impl SchemaRegistryClient {
         self.delegate.lookup_latest_schema(subject.as_ref())
     }
 
-    /// Create a schema in the schema registry under the given subject, returning the version and
+    /// Create a schema in the Schema Registry under the given subject, returning the version and
     /// ID.
     ///
     /// If an equivalent schema already exists globally, that schema ID will be reused.
