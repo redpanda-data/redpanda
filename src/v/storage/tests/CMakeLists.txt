@@ -31,7 +31,6 @@ rp_test(
     timequery_test.cc
     kvstore_test.cc
     backlog_controller_test.cc
-    readers_cache_test.cc
     concat_segment_reader_test.cc
     offset_to_filepos_test.cc
     offset_translator_state_test.cc
@@ -142,6 +141,7 @@ rp_test(
   SOURCES
     scoped_file_tracker_test.cc
     segment_deduplication_test.cc
+    readers_cache_test.cc
   LIBRARIES  v::storage v::storage_test_utils v::gtest_main
   LABELS storage
   ARGS "-- -c 1"
