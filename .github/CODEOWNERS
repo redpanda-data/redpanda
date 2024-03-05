@@ -24,6 +24,11 @@ licenses           @emaxerrno @dswang
 /.yapfignore               @redpanda-data/devprod
 
 #
+# crypto
+#
+/src/v/crypto              @michael-redpanda
+
+#
 # rpk
 #
 /src/go/rpk        @twmb @r-vasquez @gene-redpanda
