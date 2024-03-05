@@ -221,6 +221,16 @@ class DescribeTopicsTest(RedpandaTest):
                 "storage write enabled. If no initial local target retention is "
                 "configured all locally retained data will be delivered to learner when "
                 "joining partition replica set"),
+            "write.caching":
+            ConfigProperty(
+                config_type="STRING",
+                value="off",
+                doc_string=
+                "Cache batches until the segment appender chunk is full instead of "
+                "flushing for every acks=all write. This is the global default "
+                "for all topics and can be overriden at a topic scope with property "
+                "write.caching. 'disabled' mode takes precedence over topic overrides "
+                "and disables the feature altogether for the entire cluster."),
         }
 
         tp_spec = TopicSpec()

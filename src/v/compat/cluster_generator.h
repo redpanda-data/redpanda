@@ -635,7 +635,13 @@ struct instance_generator<cluster::topic_properties> {
             [] { return random_generators::get_int<size_t>(); }),
           tests::random_tristate([] { return tests::random_duration_ms(); }),
           tests::random_optional(
-            [] { return model::vcluster_id(random_xid()); })};
+            [] { return model::vcluster_id(random_xid()); }),
+          tests::random_optional([] {
+              return random_generators::random_choice(
+                {model::write_caching_mode::on,
+                 model::write_caching_mode::off,
+                 model::write_caching_mode::disabled});
+          })};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }

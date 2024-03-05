@@ -283,6 +283,43 @@ private:
     }
 };
 
+struct write_caching_configs_validator {
+    static constexpr const char* error_message
+      = "Unsupported write caching configuration.";
+    static constexpr const auto config_name = topic_property_write_caching;
+    static constexpr error_code ec = error_code::invalid_config;
+
+    static bool validate_write_caching(const creatable_topic& c) {
+        auto it = std::find_if(
+          c.configs.begin(),
+          c.configs.end(),
+          [](const createable_topic_config& cfg) {
+              return cfg.name == topic_property_write_caching;
+          });
+        if (it == c.configs.end() || it->value.has_value()) {
+            return true;
+        }
+        auto mode = model::write_caching_mode_from_string(it->value.value());
+        if (!mode) {
+            // nothing is set.
+            return true;
+        }
+        auto is_user_topic = model::is_user_topic(
+          model::topic_namespace{model::kafka_namespace, c.name});
+        if (is_user_topic) {
+            // disabled mode only allowed globally and cannot be set at topic
+            // level.
+            return mode != model::write_caching_mode::disabled;
+        }
+        // write caching cannot be turned on for internal topics.
+        return mode != model::write_caching_mode::on;
+    }
+
+    static bool is_valid(const creatable_topic& c) {
+        return validate_write_caching(c);
+    }
+};
+
 template<typename T>
 struct configuration_value_validator {
     static constexpr const char* error_message = T::error_message;

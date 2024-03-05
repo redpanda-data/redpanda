@@ -351,6 +351,9 @@ struct compat_check<cluster::topic_properties> {
         json_write(initial_retention_local_target_bytes);
         json_write(initial_retention_local_target_ms);
         json_write(mpx_virtual_cluster_id);
+        json::write_exceptional_member_type(
+          wr, "write_caching", obj.write_caching);
+        json_write(write_caching);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -383,6 +386,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(initial_retention_local_target_bytes);
         json_read(initial_retention_local_target_ms);
         json_read(mpx_virtual_cluster_id);
+        json_read(write_caching);
         return obj;
     }
 
@@ -410,6 +414,7 @@ struct compat_check<cluster::topic_properties> {
         obj.initial_retention_local_target_ms
           = tristate<std::chrono::milliseconds>{std::nullopt};
         obj.mpx_virtual_cluster_id = std::nullopt;
+        obj.write_caching = std::nullopt;
 
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -484,6 +489,7 @@ struct compat_check<cluster::topic_configuration> {
           std::nullopt};
         obj.properties.initial_retention_local_target_ms
           = tristate<std::chrono::milliseconds>{std::nullopt};
+        obj.properties.write_caching = std::nullopt;
 
         obj.properties.mpx_virtual_cluster_id = std::nullopt;
 
@@ -550,6 +556,7 @@ struct compat_check<cluster::create_topics_request> {
             topic.properties.initial_retention_local_target_ms
               = tristate<std::chrono::milliseconds>{std::nullopt};
             topic.properties.mpx_virtual_cluster_id = std::nullopt;
+            topic.properties.write_caching = std::nullopt;
         }
         if (req != obj) {
             throw compat_error(fmt::format(
@@ -613,6 +620,7 @@ struct compat_check<cluster::create_topics_reply> {
             topic.properties.initial_retention_local_target_ms
               = tristate<std::chrono::milliseconds>{std::nullopt};
             topic.properties.mpx_virtual_cluster_id = std::nullopt;
+            topic.properties.write_caching = std::nullopt;
         }
         if (reply != obj) {
             throw compat_error(fmt::format(

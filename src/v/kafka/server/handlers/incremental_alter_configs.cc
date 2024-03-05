@@ -276,6 +276,14 @@ create_topic_properties_update(
                 // Skip unsupported Kafka config
                 continue;
             }
+            if (cfg.name == topic_property_write_caching) {
+                parse_and_set_optional(
+                  update.properties.write_caching,
+                  cfg.value,
+                  op,
+                  write_caching_config_validator{});
+                continue;
+            }
 
         } catch (const validation_error& e) {
             return make_error_alter_config_resource_response<

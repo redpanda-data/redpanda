@@ -197,7 +197,8 @@ bool topic_properties::has_overrides() const {
            || record_value_subject_name_strategy.has_value()
            || record_value_subject_name_strategy_compat.has_value()
            || initial_retention_local_target_bytes.is_engaged()
-           || initial_retention_local_target_ms.is_engaged();
+           || initial_retention_local_target_ms.is_engaged()
+           || write_caching.has_value();
 }
 
 bool topic_properties::requires_remote_erase() const {
@@ -227,6 +228,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.initial_retention_local_target_bytes
       = initial_retention_local_target_bytes;
     ret.initial_retention_local_target_ms = initial_retention_local_target_ms;
+    ret.write_caching = write_caching;
     return ret;
 }
 
@@ -354,7 +356,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "record_value_subject_name_strategy_compat: {}, "
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, "
-      "mpx_virtual_cluster_id: {}}}",
+      "mpx_virtual_cluster_id: {}, ",
+      "write_caching: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -382,7 +385,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.record_value_subject_name_strategy_compat,
       properties.initial_retention_local_target_bytes,
       properties.initial_retention_local_target_ms,
-      properties.mpx_virtual_cluster_id);
+      properties.mpx_virtual_cluster_id,
+      properties.write_caching);
 
     return o;
 }
@@ -654,7 +658,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "record_value_subject_name_strategy: {}"
       "record_value_subject_name_strategy_compat: {}, "
       "initial_retention_local_target_bytes: {}, "
-      "initial_retention_local_target_ms: {}",
+      "initial_retention_local_target_ms: {}, write_caching: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -677,7 +681,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.record_value_subject_name_strategy,
       i.record_value_subject_name_strategy_compat,
       i.initial_retention_local_target_bytes,
-      i.initial_retention_local_target_ms);
+      i.initial_retention_local_target_ms,
+      i.write_caching);
     return o;
 }
 
@@ -2198,6 +2203,7 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       tristate<size_t>{std::nullopt},
       tristate<std::chrono::milliseconds>{std::nullopt},
+      std::nullopt,
       std::nullopt};
 }
 

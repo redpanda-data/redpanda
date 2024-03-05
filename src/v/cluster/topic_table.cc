@@ -900,6 +900,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       properties.initial_retention_local_target_ms,
       overrides.initial_retention_local_target_ms);
+    incremental_update(properties.write_caching, overrides.write_caching);
     // no configuration change, no need to generate delta
     if (properties == properties_snapshot) {
         co_return errc::success;

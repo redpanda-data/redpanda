@@ -71,6 +71,8 @@ public:
         tristate<std::chrono::milliseconds> initial_retention_local_target_ms{
           std::nullopt};
 
+        std::optional<model::write_caching_mode> write_caching;
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };
@@ -253,6 +255,17 @@ public:
         }
 
         return config::shard_local_cfg().log_segment_ms;
+    }
+
+    bool write_caching() const {
+        auto cluster_default = config::shard_local_cfg().write_caching();
+        if (cluster_default == model::write_caching_mode::disabled) {
+            return false;
+        }
+        auto value = _overrides
+                       ? _overrides->write_caching.value_or(cluster_default)
+                       : cluster_default;
+        return value == model::write_caching_mode::on;
     }
 
 private:

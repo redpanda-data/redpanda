@@ -529,5 +529,4 @@ write_caching_mode_from_string(std::string_view s) {
         model::write_caching_mode::disabled)
       .default_match(std::nullopt);
 }
-
 } // namespace model

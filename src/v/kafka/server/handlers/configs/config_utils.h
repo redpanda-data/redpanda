@@ -358,6 +358,30 @@ struct replication_factor_must_be_greater_or_equal_to_minimum {
     }
 };
 
+struct write_caching_config_validator {
+    std::optional<ss::sstring> operator()(
+      const ss::sstring&,
+      const std::optional<model::write_caching_mode>& maybe_value) {
+        if (!maybe_value) {
+            return std::nullopt;
+        }
+        auto value = maybe_value.value();
+        if (value == model::write_caching_mode::disabled) {
+            return fmt::format(
+              "Invalid value {} for {}, accepted values: [{}, {}]",
+              value,
+              topic_property_write_caching,
+              model::write_caching_mode::on,
+              model::write_caching_mode::off);
+        }
+        auto cluster_default = config::shard_local_cfg().write_caching();
+        if (cluster_default == model::write_caching_mode::disabled) {
+            return fmt::format("write caching disabled at cluster level");
+        }
+        return std::nullopt;
+    }
+};
+
 template<typename T, typename... ValidatorTypes>
 requires requires(
   model::topic_namespace_view tns,
