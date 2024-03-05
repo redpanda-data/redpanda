@@ -1508,7 +1508,9 @@ struct topic_properties
       tristate<size_t> initial_retention_local_target_bytes,
       tristate<std::chrono::milliseconds> initial_retention_local_target_ms,
       std::optional<model::vcluster_id> mpx_virtual_cluster_id,
-      std::optional<model::write_caching_mode> write_caching)
+      std::optional<model::write_caching_mode> write_caching,
+      std::optional<std::chrono::milliseconds> flush_ms,
+      std::optional<size_t> flush_bytes)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1542,7 +1544,9 @@ struct topic_properties
           initial_retention_local_target_bytes)
       , initial_retention_local_target_ms(initial_retention_local_target_ms)
       , mpx_virtual_cluster_id(mpx_virtual_cluster_id)
-      , write_caching(write_caching) {}
+      , write_caching(write_caching)
+      , flush_ms(flush_ms)
+      , flush_bytes(flush_bytes) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1586,6 +1590,8 @@ struct topic_properties
       std::nullopt};
     std::optional<model::vcluster_id> mpx_virtual_cluster_id;
     std::optional<model::write_caching_mode> write_caching;
+    std::optional<std::chrono::milliseconds> flush_ms;
+    std::optional<size_t> flush_bytes;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1624,7 +1630,9 @@ struct topic_properties
           initial_retention_local_target_bytes,
           initial_retention_local_target_ms,
           mpx_virtual_cluster_id,
-          write_caching);
+          write_caching,
+          flush_ms,
+          flush_bytes);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1767,6 +1775,8 @@ struct incremental_topic_updates
     property_update<tristate<std::chrono::milliseconds>>
       initial_retention_local_target_ms;
     property_update<std::optional<model::write_caching_mode>> write_caching;
+    property_update<std::optional<std::chrono::milliseconds>> flush_ms;
+    property_update<std::optional<size_t>> flush_bytes;
 
     auto serde_fields() {
         return std::tie(
@@ -1793,7 +1803,9 @@ struct incremental_topic_updates
           record_value_subject_name_strategy_compat,
           initial_retention_local_target_bytes,
           initial_retention_local_target_ms,
-          write_caching);
+          write_caching,
+          flush_ms,
+          flush_bytes);
     }
 
     friend std::ostream&

@@ -382,6 +382,36 @@ struct write_caching_config_validator {
     }
 };
 
+struct flush_ms_validator {
+    std::optional<ss::sstring> operator()(
+      const ss::sstring&,
+      const std::optional<std::chrono::milliseconds>& maybe_value) {
+        if (!maybe_value) {
+            return std::nullopt;
+        }
+        auto value = maybe_value.value();
+        if (value < 1ms) {
+            return fmt::format(
+              "config value too low, expected to be atleast 1ms");
+        }
+        return std::nullopt;
+    }
+};
+
+struct flush_bytes_validator {
+    std::optional<ss::sstring>
+    operator()(const ss::sstring&, const std::optional<size_t>& maybe_value) {
+        if (!maybe_value) {
+            return std::nullopt;
+        }
+        auto value = maybe_value.value();
+        if (value <= 0) {
+            return fmt::format("config value too low, expected to be > 0");
+        }
+        return std::nullopt;
+    }
+};
+
 template<typename T, typename... ValidatorTypes>
 requires requires(
   model::topic_namespace_view tns,

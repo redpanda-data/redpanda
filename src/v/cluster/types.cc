@@ -198,7 +198,8 @@ bool topic_properties::has_overrides() const {
            || record_value_subject_name_strategy_compat.has_value()
            || initial_retention_local_target_bytes.is_engaged()
            || initial_retention_local_target_ms.is_engaged()
-           || write_caching.has_value();
+           || write_caching.has_value() || flush_ms.has_value()
+           || flush_bytes.has_value();
 }
 
 bool topic_properties::requires_remote_erase() const {
@@ -229,6 +230,8 @@ topic_properties::get_ntp_cfg_overrides() const {
       = initial_retention_local_target_bytes;
     ret.initial_retention_local_target_ms = initial_retention_local_target_ms;
     ret.write_caching = write_caching;
+    ret.flush_ms = flush_ms;
+    ret.flush_bytes = flush_bytes;
     return ret;
 }
 
@@ -357,7 +360,9 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, "
       "mpx_virtual_cluster_id: {}, ",
-      "write_caching: {}}}",
+      "write_caching: {}, ",
+      "flush_ms: {}, "
+      "flush_bytes: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -386,7 +391,9 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.initial_retention_local_target_bytes,
       properties.initial_retention_local_target_ms,
       properties.mpx_virtual_cluster_id,
-      properties.write_caching);
+      properties.write_caching,
+      properties.flush_ms,
+      properties.flush_bytes);
 
     return o;
 }
@@ -2203,6 +2210,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       tristate<size_t>{std::nullopt},
       tristate<std::chrono::milliseconds>{std::nullopt},
+      std::nullopt,
+      std::nullopt,
       std::nullopt,
       std::nullopt};
 }

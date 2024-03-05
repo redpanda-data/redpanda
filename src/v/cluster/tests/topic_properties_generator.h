@@ -69,6 +69,10 @@ inline cluster::topic_properties random_topic_properties() {
            model::write_caching_mode::off,
            model::write_caching_mode::disabled});
     });
+    properties.flush_ms = tests::random_optional(
+      [] { return tests::random_duration_ms(); });
+    properties.flush_bytes = tests::random_optional(
+      [] { return random_generators::get_int<size_t>(); });
 
     return properties;
 }

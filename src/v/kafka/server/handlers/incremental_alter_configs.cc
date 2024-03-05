@@ -284,6 +284,22 @@ create_topic_properties_update(
                   write_caching_config_validator{});
                 continue;
             }
+            if (cfg.name == topic_property_flush_ms) {
+                parse_and_set_optional_duration(
+                  update.properties.flush_ms,
+                  cfg.value,
+                  op,
+                  flush_ms_validator{});
+                continue;
+            }
+            if (cfg.name == topic_property_flush_bytes) {
+                parse_and_set_optional(
+                  update.properties.flush_bytes,
+                  cfg.value,
+                  op,
+                  flush_bytes_validator{});
+                continue;
+            }
 
         } catch (const validation_error& e) {
             return make_error_alter_config_resource_response<

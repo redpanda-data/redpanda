@@ -606,6 +606,8 @@ inline void rjson_serialize(
       tps.initial_retention_local_target_ms);
     write_member(w, "mpx_virtual_cluster_id", tps.mpx_virtual_cluster_id);
     write_exceptional_member_type(w, "write_caching", tps.write_caching);
+    write_member(w, "flush_bytes", tps.flush_bytes);
+    write_member(w, "flush_ms", tps.flush_ms);
     w.EndObject();
 }
 
@@ -670,6 +672,8 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
       obj.initial_retention_local_target_ms);
     read_member(rd, "mpx_virtual_cluster_id", obj.mpx_virtual_cluster_id);
     read_member(rd, "write_caching", obj.write_caching);
+    read_member(rd, "flush_bytes", obj.flush_bytes);
+    read_member(rd, "flush_ms", obj.flush_ms);
 }
 
 inline void rjson_serialize(

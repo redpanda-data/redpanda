@@ -641,7 +641,10 @@ struct instance_generator<cluster::topic_properties> {
                 {model::write_caching_mode::on,
                  model::write_caching_mode::off,
                  model::write_caching_mode::disabled});
-          })};
+          }),
+          tests::random_optional([] { return tests::random_duration_ms(); }),
+          tests::random_optional(
+            [] { return random_generators::get_int<size_t>(); })};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }

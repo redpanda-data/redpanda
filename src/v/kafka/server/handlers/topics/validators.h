@@ -315,8 +315,47 @@ struct write_caching_configs_validator {
         return mode != model::write_caching_mode::on;
     }
 
+    static bool validate_flush_ms(const creatable_topic& c) {
+        auto it = std::find_if(
+          c.configs.begin(),
+          c.configs.end(),
+          [](const createable_topic_config& cfg) {
+              return cfg.name == topic_property_flush_ms;
+          });
+        if (it == c.configs.end() || it->value.has_value()) {
+            return true;
+        }
+        try {
+            auto val = boost::lexical_cast<std::chrono::milliseconds::rep>(
+              it->value.value());
+            // atleast 1ms, anything less than that is suspiciously small.
+            return val >= 1;
+        } catch (...) {
+        }
+        return false;
+    }
+
+    static bool validate_flush_bytes(const creatable_topic& c) {
+        auto it = std::find_if(
+          c.configs.begin(),
+          c.configs.end(),
+          [](const createable_topic_config& cfg) {
+              return cfg.name == topic_property_flush_bytes;
+          });
+        if (it == c.configs.end() || it->value.has_value()) {
+            return true;
+        }
+        try {
+            auto val = boost::lexical_cast<size_t>(it->value.value());
+            return val > 0;
+        } catch (...) {
+        }
+        return false;
+    }
+
     static bool is_valid(const creatable_topic& c) {
-        return validate_write_caching(c);
+        return validate_write_caching(c) && validate_flush_ms(c)
+               && validate_flush_bytes(c);
     }
 };
 
