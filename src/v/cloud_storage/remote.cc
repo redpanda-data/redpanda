@@ -1337,7 +1337,7 @@ ss::future<remote::list_result> remote::list_objects(
     // Gathers the items from a series of successful ListObjectsV2 calls
     cloud_storage_clients::client::list_bucket_result list_bucket_result;
 
-    // Keep iterating until the ListObjectsV2 calls has more items to return
+    // Keep iterating while the ListObjectsV2 calls has more items to return
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto res = co_await lease.client->list_objects(
           bucket,
