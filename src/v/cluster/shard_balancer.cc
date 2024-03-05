@@ -14,6 +14,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "config/node_config.h"
+#include "random/generators.h"
 #include "ssx/async_algorithm.h"
 
 namespace cluster {
@@ -131,9 +132,17 @@ ss::future<> shard_balancer::process_delta(const topic_table::delta& delta) {
     auto shard_rev = model::shard_revision_id{
       replicas_view.last_cmd_revision()};
 
+    if (target) {
+        if (_shard_placement.local().ntp2target().contains(ntp)) {
+            co_return;
+        } else {
+            target->shard = random_generators::get_int(ss::smp::count - 1);
+        }
+    }
+
     vlog(
-      clusterlog.trace,
-      "[{}] setting placement target on on this node: {}, shard_rev: {}",
+      clusterlog.info,
+      "[{}] setting placement target on this node: {}, shard_rev: {}",
       ntp,
       target,
       shard_rev);

@@ -155,6 +155,11 @@ public:
 
     // getters
 
+    const absl::node_hash_map<model::ntp, shard_placement_target>&
+    ntp2target() const {
+        return _ntp2target;
+    }
+
     std::optional<placement_state> state_on_this_shard(const model::ntp&) const;
 
     // partition lifecycle methods
