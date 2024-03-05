@@ -987,7 +987,7 @@ class RedpandaServiceABC(ABC):
     def _metrics_sample(
         self,
         sample_pattern: str,
-        ns,
+        ns: list[Any],
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
     ) -> Optional[MetricSamples]:
         '''Does the main work of the metrics_sample() implementation given a list of ns to iterate over.
@@ -1020,7 +1020,7 @@ class RedpandaServiceABC(ABC):
     def _metrics_samples(
         self,
         sample_patterns: list[str],
-        ns,
+        ns: list[Any],
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
     ) -> dict[str, MetricSamples]:
         '''Does the main work of the metrics_samples() implementation given a list of ns to iterate over.
@@ -1058,10 +1058,10 @@ class RedpandaServiceABC(ABC):
     def _metric_sum(
             self,
             metric_name: str,
+            ns: list[Any],
             metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
             namespace: str = None,
-            topic: str = None,
-            ns=None):
+            topic: str = None):
         '''Does the main work of the metric_sum() implementation given a list of ns to iterate over.
         '''
 
@@ -1313,8 +1313,8 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         if nodes is None:
             nodes = self.nodes
 
-        return self._metric_sum(metric_name, metrics_endpoint, namespace,
-                                topic, nodes)
+        return self._metric_sum(metric_name, nodes, metrics_endpoint,
+                                namespace, topic)
 
     def healthy(self):
         """
@@ -2040,8 +2040,8 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         if pods is None:
             pods = self.pods
 
-        return self._metric_sum(metric_name, metrics_endpoint, namespace,
-                                topic, pods)
+        return self._metric_sum(metric_name, pods, metrics_endpoint, namespace,
+                                topic)
 
     @staticmethod
     def get_cloud_globals(globals: dict[str, Any]) -> dict[str, Any]:
