@@ -95,13 +95,12 @@ public:
 
     /// Removes the offset translation state up to and including the offset. The
     /// offset delta for the next offsets is preserved.
-    ss::future<> prefix_truncate(model::offset);
-
-    /// Removes the offset translation state up to and including the offset. The
-    /// offset delta for the next offsets is set to `delta`. If there is offset
-    /// translation state for the next offsets, it must be consistent with
-    /// `delta`.
-    ss::future<> prefix_truncate_reset(model::offset, int64_t delta);
+    //
+    /// The offset delta for the next offsets is set to `delta`. If there is
+    /// offset translation state for the next offsets, it must be consistent
+    /// with `delta`.
+    ss::future<> prefix_truncate(
+      model::offset, std::optional<model::offset_delta> = std::nullopt);
 
     ss::future<> remove_persistent_state();
 

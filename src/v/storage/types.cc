@@ -157,7 +157,11 @@ std::ostream& operator<<(std::ostream& o, const truncate_config& cfg) {
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const truncate_prefix_config& cfg) {
-    fmt::print(o, "{{start_offset:{}}}", cfg.start_offset);
+    fmt::print(
+      o,
+      "{{start_offset:{}, force_truncate_delta:{}}}",
+      cfg.start_offset,
+      cfg.force_truncate_delta);
     return o;
 }
 

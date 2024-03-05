@@ -475,8 +475,8 @@ struct fuzz_checker {
             _gate = ss::gate{};
 
             co_await _tr->start(raft::offset_translator::must_reset::no);
-            co_await _tr->prefix_truncate_reset(
-              _snapshot_offset, _snapshot_delta);
+            co_await _tr->prefix_truncate(
+              _snapshot_offset, model::offset_delta(_snapshot_delta));
             co_await _tr->sync_with_log(_log, std::nullopt);
         }
     }

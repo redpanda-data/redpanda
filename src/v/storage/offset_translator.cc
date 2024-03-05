@@ -18,6 +18,7 @@
 #include "storage/storage_resources.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/util/log.hh>
 
 namespace raft {
 
@@ -253,63 +254,40 @@ ss::future<> offset_translator::truncate(model::offset offset) {
     co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
 }
 
-ss::future<> offset_translator::prefix_truncate(model::offset offset) {
+ss::future<> offset_translator::prefix_truncate(
+  model::offset offset,
+  std::optional<model::offset_delta> force_truncate_delta) {
     if (_filtered_types.empty()) {
         co_return;
     }
 
-    if (offset > _highest_known_offset) {
-        throw std::runtime_error{_logger.format(
-          "trying to prefix truncate offset translator at offset {} which "
-          "is > highest_known_offset {}",
-          offset,
-          _highest_known_offset)};
-    }
-
-    if (!_state->prefix_truncate(offset)) {
+    if (unlikely(offset > _highest_known_offset)) {
+        if (!force_truncate_delta.has_value()) {
+            throw std::runtime_error{_logger.format(
+              "trying to prefix truncate offset translator at offset {} which "
+              "is > highest_known_offset {}",
+              offset,
+              _highest_known_offset)};
+        }
+        // If the truncation is for past the end of the log (e.g. in the case
+        // of a stale replica being caught up from a snapshot), allow it.
+        *_state = storage::offset_translator_state(
+          _state->ntp(), offset, force_truncate_delta.value());
+        _highest_known_offset = offset;
+    } else if (!_state->prefix_truncate(offset)) {
         co_return;
     }
 
     ++_map_version;
 
-    vlog(
-      _logger.debug,
-      "prefix_truncate at offset: {}, new state: {}",
+    vlogl(
+      _logger,
+      force_truncate_delta.has_value() ? ss::log_level::info
+                                       : ss::log_level::debug,
+      "prefix_truncate at offset: {}, force_truncate_delta: {}, new state: {}",
       offset,
+      force_truncate_delta,
       _state);
-
-    co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
-}
-
-ss::future<>
-offset_translator::prefix_truncate_reset(model::offset offset, int64_t delta) {
-    if (_filtered_types.empty()) {
-        co_return;
-    }
-
-    if (offset <= _highest_known_offset) {
-        co_await prefix_truncate(offset);
-        co_return;
-    }
-
-    vassert(
-      delta >= 0,
-      "not enough state to recover offset translator. Requested to reset "
-      "at offset {}. Translator highest_known_offset: {}, state: {}",
-      offset,
-      _highest_known_offset,
-      _state);
-
-    *_state = storage::offset_translator_state(_state->ntp(), offset, delta);
-    ++_map_version;
-
-    _highest_known_offset = offset;
-
-    vlog(
-      _logger.info,
-      "prefix_truncate_reset at offset/delta: {}/{}",
-      offset,
-      delta);
 
     co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
 }
