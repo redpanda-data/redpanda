@@ -238,8 +238,8 @@ class NodeOpsExecutor():
         return self.redpanda.node_id(self.redpanda.get_node(idx),
                                      force_refresh=True)
 
-    def decommission(self, idx: int):
-        node_id = self.node_id(idx)
+    def decommission(self, idx: int, node_id=None):
+        node_id = self.node_id(idx) if not node_id else node_id
         self.logger.info(
             f"executor - decommissioning node {node_id} (idx: {idx})")
         admin = Admin(self.redpanda)
