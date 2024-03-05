@@ -963,6 +963,21 @@ configuration::configuration()
       "one follower",
       {.visibility = visibility::tunable},
       16)
+  , write_caching(
+      *this,
+      "write_caching",
+      "Cache batches until the segment appender chunk is full instead of "
+      "flushing for every acks=all write. This is the global default "
+      "for all topics and can be overriden at a topic scope with property "
+      "write.caching. 'disabled' mode takes precedence over topic overrides "
+      "and disables the feature altogether for the entire cluster.",
+      {.needs_restart = needs_restart::no,
+       .example = "on",
+       .visibility = visibility::user},
+      model::write_caching_mode::off,
+      {model::write_caching_mode::on,
+       model::write_caching_mode::off,
+       model::write_caching_mode::disabled})
   , reclaim_min_size(
       *this,
       "reclaim_min_size",
