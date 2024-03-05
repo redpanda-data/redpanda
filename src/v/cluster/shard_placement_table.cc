@@ -89,7 +89,89 @@ operator<<(std::ostream& o, const shard_placement_table::placement_state& ps) {
     return o;
 }
 
+struct assignment_marker
+  : serde::
+      envelope<assignment_marker, serde::version<0>, serde::compat_version<0>> {
+    model::revision_id log_revision;
+    model::shard_revision_id shard_revision;
+};
+
+static bytes assignment_kvstore_key(const model::ntp& ntp) {
+    iobuf buf;
+    reflection::serialize(buf, ntp.ns(), ntp.tp.topic(), ntp.tp.partition);
+    return iobuf_to_bytes(buf);
+}
+
+struct shard_placement_table::shard_init_data {
+    absl::node_hash_map<model::ntp, assignment_marker> assignments;
+
+    using ptr = ss::foreign_ptr<std::unique_ptr<shard_init_data>>;
+};
+
+shard_placement_table::shard_placement_table(storage::kvstore& kvstore)
+  : _kvstore(kvstore) {}
+
 ss::future<> shard_placement_table::initialize(
+  const chunked_vector<model::ntp>& partitions) {
+    vassert(
+      ss::this_shard_id() == assignment_shard_id,
+      "method can only be invoked on shard {}",
+      assignment_shard_id);
+
+    auto shard2init_data = co_await container().map(
+      [&partitions](shard_placement_table& spt) {
+          return spt.get_init_data(partitions);
+      });
+
+    for (ss::shard_id s = 0; s < shard2init_data.size(); ++s) {
+        for (const auto& [ntp, marker] : shard2init_data[s]->assignments) {
+            auto [it, _] = _ntp2target.try_emplace(ntp, marker.log_revision, s);
+            vlog(
+              clusterlog.trace,
+              "[{}] recovered target: {}",
+              it->first,
+              it->second);
+        }
+    }
+}
+
+ss::future<
+  ss::foreign_ptr<std::unique_ptr<shard_placement_table::shard_init_data>>>
+shard_placement_table::get_init_data(
+  const chunked_vector<model::ntp>& partitions) {
+    shard_init_data ret;
+
+    co_await ssx::async_for_each(
+      partitions.begin(),
+      partitions.end(),
+      [this, &ret](const model::ntp& ntp) {
+          auto marker_buf = _kvstore.get(
+            storage::kvstore::key_space::shard_placement,
+            assignment_kvstore_key(ntp));
+          if (marker_buf) {
+              auto marker = serde::from_iobuf<assignment_marker>(
+                std::move(*marker_buf));
+              ret.assignments.emplace(ntp, marker);
+
+              // TODO: do it in the scatter phase
+              shard_placement_target target(
+                marker.log_revision, ss::this_shard_id());
+              placement_state state;
+              state.current = shard_local_state::initial(shard_local_assignment{
+                .log_revision = marker.log_revision,
+                .shard_revision = marker.shard_revision});
+              state.assigned = shard_local_assignment{
+                .log_revision = marker.log_revision,
+                .shard_revision = marker.shard_revision};
+              _states.emplace(ntp, state);
+          };
+      });
+
+    co_return ss::make_foreign(
+      std::make_unique<shard_init_data>(std::move(ret)));
+}
+
+ss::future<> shard_placement_table::do_initialize(
   const topic_table& topics, model::node_id self) {
     // We expect topic_table to remain unchanged throughout the loop because the
     // method is supposed to be called after local controller replay is finished
@@ -282,6 +364,15 @@ ss::future<> shard_placement_table::set_assigned_on_this_shard(
       shard_rev,
       is_initial);
 
+    auto marker_buf = serde::to_iobuf(assignment_marker{
+      .log_revision = target_log_rev,
+      .shard_revision = shard_rev,
+    });
+    co_await _kvstore.put(
+      storage::kvstore::key_space::shard_placement,
+      assignment_kvstore_key(ntp),
+      std::move(marker_buf));
+
     auto& state = _states.try_emplace(ntp).first->second;
     state.assigned = shard_local_assignment{
       .log_revision = target_log_rev,
@@ -293,7 +384,6 @@ ss::future<> shard_placement_table::set_assigned_on_this_shard(
 
     // Notify the caller that something has changed on this shard.
     shard_callback(ntp, shard_rev);
-    co_return;
 }
 
 ss::future<> shard_placement_table::remove_assigned_on_this_shard(
@@ -305,6 +395,10 @@ ss::future<> shard_placement_table::remove_assigned_on_this_shard(
       "[{}] removing assigned on this shard, shard_revision: {}",
       ntp,
       shard_rev);
+
+    co_await _kvstore.remove(
+      storage::kvstore::key_space::shard_placement,
+      assignment_kvstore_key(ntp));
 
     auto it = _states.find(ntp);
     if (it == _states.end()) {

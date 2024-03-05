@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "cluster/types.h"
+#include "storage/fwd.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>
@@ -136,8 +137,10 @@ public:
         std::optional<ss::shard_id> _next;
     };
 
-    // must be called on each shard
-    ss::future<> initialize(const topic_table&, model::node_id self);
+    explicit shard_placement_table(storage::kvstore&);
+
+    // must be called on shard 0
+    ss::future<> initialize(const chunked_vector<model::ntp>&);
 
     using shard_callback_t
       = std::function<void(const model::ntp&, model::shard_revision_id)>;
@@ -192,6 +195,13 @@ private:
 
     ss::future<> do_delete(const model::ntp&, placement_state&);
 
+    ss::future<> do_initialize(const topic_table&, model::node_id self);
+
+    struct shard_init_data;
+
+    ss::future<ss::foreign_ptr<std::unique_ptr<shard_init_data>>>
+    get_init_data(const chunked_vector<model::ntp>&);
+
 private:
     friend class shard_placement_test_fixture;
 
@@ -199,6 +209,7 @@ private:
     //
     // node_hash_map for pointer stability
     absl::node_hash_map<model::ntp, placement_state> _states;
+    storage::kvstore& _kvstore;
 
     // only on shard 0, _ntp2target will hold targets for all ntps on this node.
     mutex _mtx{"shard_placement_table"};
