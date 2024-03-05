@@ -98,6 +98,10 @@ public:
 
     const ntp_config& config() const { return _config; }
 
+    // Returns whether the log has never been appended to.
+    // NOTE: this is different than having no segments, which also may happen
+    // if we GC away all our segments.
+    virtual bool is_new_log() const = 0;
     virtual size_t segment_count() const = 0;
     virtual storage::offset_stats offsets() const = 0;
     // Returns counter which is incremented after every log suffix truncation

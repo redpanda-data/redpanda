@@ -105,6 +105,7 @@ public:
     ss::future<std::optional<timequery_result>>
     timequery(timequery_config cfg) final;
     size_t segment_count() const final { return _segs.size(); }
+    bool is_new_log() const final;
     offset_stats offsets() const final;
     model::offset find_last_term_start_offset() const final;
     model::timestamp start_timestamp() const final;

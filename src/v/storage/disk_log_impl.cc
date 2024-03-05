@@ -1393,6 +1393,13 @@ model::term_id disk_log_impl::term() const {
     return _segs.back()->offsets().term;
 }
 
+bool disk_log_impl::is_new_log() const {
+    static constexpr model::offset not_initialized{};
+    const auto os = offsets();
+    return segment_count() == 0 && os.dirty_offset == not_initialized
+           && os.start_offset == not_initialized;
+}
+
 offset_stats disk_log_impl::offsets() const {
     if (_segs.empty()) {
         offset_stats ret;

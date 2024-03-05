@@ -656,19 +656,6 @@ private:
     voter_priority next_target_priority();
     voter_priority get_node_priority(vnode) const;
 
-    /**
-     * Return true if there is no state backing this consensus group i.e. there
-     * is no snapshot and log is empty
-     */
-    bool is_initial_state() const {
-        static constexpr model::offset not_initialized{};
-        auto lstats = _log->offsets();
-        return _log->segment_count() == 0
-               && lstats.dirty_offset == not_initialized
-               && lstats.start_offset == not_initialized
-               && _last_snapshot_index == not_initialized;
-    }
-
     template<typename Reply>
     result<Reply> validate_reply_target_node(
       std::string_view request,

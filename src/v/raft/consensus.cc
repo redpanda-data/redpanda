@@ -1373,7 +1373,7 @@ ss::future<> consensus::do_start() {
         auto u = co_await _op_lock.get_units();
 
         read_voted_for();
-        bool initial_state = is_initial_state();
+        bool initial_state = _log->is_new_log();
 
         vlog(
           _ctxlog.info,
