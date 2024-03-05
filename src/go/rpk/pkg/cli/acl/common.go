@@ -36,6 +36,8 @@ const (
 	operationFlag      = "operation"
 
 	kafkaCluster = "kafka-cluster"
+
+	rolePrefix = "RedpandaRole:"
 )
 
 var (
@@ -282,7 +284,7 @@ func (a *acls) createCreations() (*kadm.ACLBuilder, error) {
 		Deny(a.denyPrincipals...).
 		DenyHosts(a.denyHosts...)
 
-	b.PrefixUserExcept() // add "User:" prefix to everything if needed
+	b.PrefixUserExcept(rolePrefix) // add "User:" prefix to everything if needed
 
 	return b, b.ValidateCreate()
 }
@@ -329,7 +331,7 @@ func (a *acls) createDeletionsAndDescribes(
 		b.DenyHosts()
 	}
 
-	b.PrefixUserExcept() // add "User:" prefix to everything if needed
+	b.PrefixUserExcept(rolePrefix) // add "User:" prefix to everything if needed
 
 	return b, b.ValidateFilter()
 }

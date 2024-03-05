@@ -7,11 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from subprocess import CalledProcessError
+
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.util import expect_exception
 
 
 class KafkaCliClientCompatTest(RedpandaTest):
@@ -36,3 +39,35 @@ class KafkaCliClientCompatTest(RedpandaTest):
         client = client_factory(self.redpanda)
         res = client.describe_broker_config()
         assert res.count("All configs for broker") == len(self.redpanda.nodes)
+
+    @cluster(num_nodes=1)
+    def test_create_role_acl(self):
+        """
+        Verify that we can bind an ACL to a "RedpandaRole" principal and that this
+        binding appears, unaltered, in the ACLs list.
+        """
+        ROLE_NAME = 'my_role'
+        ROLE_PFX = 'RedpandaRole'
+        for client_factory in KafkaCliTools.instances():
+            client = client_factory(self.redpanda)
+            client.create_cluster_acls(ROLE_NAME, "describe", ptype=ROLE_PFX)
+            res = client.list_acls()
+            assert f"principal={ROLE_PFX}:{ROLE_NAME}" in res, f"Failed to list role ACL: {res}"
+
+    @cluster(num_nodes=1)
+    def test_create_bad_acl(self):
+        """
+        Verify that Redpanda rejects (and kafka cli tools correctly handle)
+        ACL bindings with a bogus principal type
+        """
+        ROLE_NAME = 'my_role'
+        ROLE_PFX = 'InvalidPrefix'
+        for client_factory in KafkaCliTools.instances():
+            client = client_factory(self.redpanda)
+            with expect_exception(CalledProcessError,
+                                  lambda e: "exit status 1" in str(e)):
+                client.create_cluster_acls(ROLE_NAME,
+                                           "describe",
+                                           ptype=ROLE_PFX)
+            res = client.list_acls()
+            assert f"principal={ROLE_PFX}:{ROLE_NAME}" not in res, f"Unexpectedly found bogus ACL: {res}"
