@@ -34,7 +34,7 @@ from rptest.scale_tests.topic_scale_profiles import TopicScaleProfileManager
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 
 
-class NewTopicsTest(RedpandaTest):
+class ManyTopicsTest(RedpandaTest):
 
     LEADER_BALANCER_PERIOD_MS = 60 * 1_000  # 60s
 
@@ -72,6 +72,7 @@ class NewTopicsTest(RedpandaTest):
                                      }),
             **kwargs)
 
+        self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
         self.thread_local = threading.Lock()
         self.node_ops_exec = NodeOpsExecutor(
