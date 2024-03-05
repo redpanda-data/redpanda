@@ -21,6 +21,7 @@ import (
 // the control plane endpoints of the Public API.
 type ControlPlaneClientSet struct {
 	Namespace controlplanev1beta1connect.NamespaceServiceClient
+	Cluster   controlplanev1beta1connect.ClusterServiceClient
 }
 
 // NewControlPlaneClientSet creates a Public API client set with the service
@@ -40,5 +41,6 @@ func NewControlPlaneClientSet(host, authToken string, opts ...connect.ClientOpti
 
 	return &ControlPlaneClientSet{
 		Namespace: controlplanev1beta1connect.NewNamespaceServiceClient(httpCl, host, opts...),
+		Cluster:   controlplanev1beta1connect.NewClusterServiceClient(httpCl, host, opts...),
 	}, nil
 }

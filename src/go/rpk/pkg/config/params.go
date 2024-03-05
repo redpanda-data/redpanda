@@ -85,7 +85,7 @@ const (
 	xkindGlobal           // configuration for rpk.yaml globals
 )
 
-const currentRpkYAMLVersion = 3
+const currentRpkYAMLVersion = 4
 
 type xflag struct {
 	path        string
