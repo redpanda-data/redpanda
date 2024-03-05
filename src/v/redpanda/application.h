@@ -129,6 +129,8 @@ public:
     ss::sharded<cluster::self_test_frontend> self_test_frontend;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<cluster::tm_stm_cache_manager> tm_stm_cache_manager;
+    // only one instance on core 0
+    ss::sharded<cluster::tx_topic_manager> tx_topic_manager;
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
     ss::sharded<features::feature_table> feature_table;
