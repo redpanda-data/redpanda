@@ -2440,11 +2440,7 @@ configuration::configuration()
       {.visibility = visibility::tunable},
       8_MiB)
   , full_raft_configuration_recovery_pattern(
-      *this,
-      "full_raft_configuration_recovery_pattern",
-      "Recover raft configuration on start for NTPs matching pattern",
-      {.visibility = visibility::tunable},
-      {})
+      *this, "full_raft_configuration_recovery_pattern")
   , enable_auto_rebalance_on_node_add(
       *this,
       "enable_auto_rebalance_on_node_add",

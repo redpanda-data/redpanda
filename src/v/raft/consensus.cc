@@ -1362,30 +1362,7 @@ ss::future<> consensus::do_start() {
         auto u = co_await _op_lock.get_units();
 
         read_voted_for();
-
-        /*
-         * temporary workaround:
-         *
-         * if the group's ntp matches the pattern, then do not load the
-         * initial configuration snapshot from the keyvalue store. more info
-         * here:
-         *
-         * https://github.com/redpanda-data/redpanda/issues/1870
-         */
-        const auto& ntp = _log->config().ntp();
-        const auto normalized_ntp = fmt::format(
-          "{}.{}.{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition());
-        const auto& patterns = config::shard_local_cfg()
-                                 .full_raft_configuration_recovery_pattern();
-        auto initial_state = std::any_of(
-          patterns.cbegin(),
-          patterns.cend(),
-          [&normalized_ntp](const ss::sstring& pattern) {
-              return pattern == "*" || normalized_ntp.starts_with(pattern);
-          });
-        if (!initial_state) {
-            initial_state = is_initial_state();
-        }
+        bool initial_state = is_initial_state();
 
         vlog(
           _ctxlog.info,
