@@ -378,6 +378,8 @@ struct heartbeat_metadata {
 
     friend bool operator==(const heartbeat_metadata&, const heartbeat_metadata&)
       = default;
+    friend std::ostream&
+    operator<<(std::ostream& o, const heartbeat_metadata& r);
 };
 
 /// \brief this is our _biggest_ modification to how raft works

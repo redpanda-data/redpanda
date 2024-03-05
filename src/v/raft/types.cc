@@ -27,6 +27,7 @@
 
 #include <seastar/coroutine/maybe_yield.hh>
 
+#include <fmt/format.h>
 #include <fmt/ostream.h>
 
 #include <chrono>
@@ -149,52 +150,85 @@ void follower_index_metadata::reset() {
 }
 
 std::ostream& operator<<(std::ostream& o, const vnode& id) {
-    return o << "{id: " << id.id() << ", revision: " << id.revision() << "}";
+    fmt::print(o, "{{id: {}, revision: {}}}", id.id(), id.revision());
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
-    return o << "{node_id: " << r.node_id << ", target_node_id"
-             << r.target_node_id << ", group: " << r.group
-             << ", term:" << r.term
-             << ", last_dirty_log_index:" << r.last_dirty_log_index
-             << ", last_flushed_log_index:" << r.last_flushed_log_index
-             << ", last_term_base_offset:" << r.last_term_base_offset
-             << ", result: " << r.result << ", may_recover:" << r.may_recover
-             << "}";
+    fmt::print(
+      o,
+      "{{node_id: {}, target_node_id: {}, group: {}, term: {}, "
+      "last_dirty_log_index: {}, last_flushed_log_index: {}, "
+      "last_term_base_offset: {}, result: {}, may_recover: {}}}",
+      r.node_id,
+      r.target_node_id,
+      r.group,
+      r.term,
+      r.last_dirty_log_index,
+      r.last_flushed_log_index,
+      r.last_term_base_offset,
+      r.result,
+      r.may_recover);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const vote_request& r) {
-    return o << "{node_id: " << r.node_id << ", target_node_id"
-             << r.target_node_id << ", group: " << r.group
-             << ", term:" << r.term << ", prev_log_index:" << r.prev_log_index
-             << ", prev_log_term: " << r.prev_log_term
-             << ", leadership_xfer: " << r.leadership_transfer << "}";
+    fmt::print(
+      o,
+      "{{node_id: {}, target_node_id: {}, group: {}, term: {}, prev_log_index: "
+      "{}, prev_log_term: {}, leadership_xfer: {}}}",
+      r.node_id,
+      r.target_node_id,
+      r.group,
+      r.term,
+      r.prev_log_index,
+      r.prev_log_term,
+      r.leadership_transfer);
+    return o;
 }
 std::ostream& operator<<(std::ostream& o, const follower_index_metadata& i) {
-    return o << "{node_id: " << i.node_id
-             << ", last_committed_log_idx: " << i.last_flushed_log_index
-             << ", last_dirty_log_idx: " << i.last_dirty_log_index
-             << ", match_index: " << i.match_index
-             << ", next_index: " << i.next_index
-             << ", is_learner: " << i.is_learner
-             << ", is_recovering: " << i.is_recovering << "}";
+    fmt::print(
+      o,
+      "{{node_id: {}, last_flushed_log_index: {}, last_dirty_log_index: {}, "
+      "match_index: {}, next_index: {}, expected_log_end_offset: {}, "
+      "heartbeats_failed: {}, last_sent_seq: {}, last_received_seq: {}, "
+      "last_successful_received_seq: {}, is_learner: {}, is_recovering: {}}}",
+      i.node_id,
+      i.last_flushed_log_index,
+      i.last_dirty_log_index,
+      i.match_index,
+      i.next_index,
+      i.expected_log_end_offset,
+      i.heartbeats_failed,
+      i.last_sent_seq,
+      i.last_received_seq,
+      i.last_successful_received_seq,
+      i.is_learner,
+      i.is_recovering);
+    return o;
+}
+std::ostream& operator<<(std::ostream& o, const heartbeat_metadata& hm) {
+    fmt::print(
+      o,
+      "{{node_id: {}, target_node_id: {}, protocol_metadata: {}}}",
+      hm.node_id,
+      hm.target_node_id,
+      hm.meta);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const heartbeat_request& r) {
-    o << "{meta:(" << r.heartbeats.size() << ") [";
-    for (auto& m : r.heartbeats) {
-        o << "meta: " << m.meta << ","
-          << "node_id: " << m.node_id << ","
-          << "target_node_id: " << m.target_node_id << ",";
-    }
-    return o << "]}";
+    fmt::print(
+      o,
+      "{{meta: ({}) [{}]}}",
+      r.heartbeats.size(),
+      fmt::join(r.heartbeats, ","));
+    return o;
 }
+
 std::ostream& operator<<(std::ostream& o, const heartbeat_reply& r) {
-    o << "{meta:[";
-    for (auto& m : r.meta) {
-        o << m << ",";
-    }
-    return o << "]}";
+    fmt::print(o, "{{meta: [{}] }}", fmt::join(r.meta, ","));
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const consistency_level& l) {
@@ -214,16 +248,29 @@ std::ostream& operator<<(std::ostream& o, const consistency_level& l) {
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const protocol_metadata& m) {
-    return o << "{raft_group:" << m.group << ", commit_index:" << m.commit_index
-             << ", term:" << m.term << ", prev_log_index:" << m.prev_log_index
-             << ", prev_log_term:" << m.prev_log_term
-             << ", last_visible_index:" << m.last_visible_index
-             << ", dirty_offset:" << m.dirty_offset << "}";
+    fmt::print(
+      o,
+      "{{group: {}, commit_index: {}, term: {}, prev_log_index: {}, "
+      "prev_log_term: {}, last_visible_index: {}, dirty_offset: {}}}",
+      m.group,
+      m.commit_index,
+      m.term,
+      m.prev_log_index,
+      m.prev_log_term,
+      m.last_visible_index,
+      m.dirty_offset);
+    return o;
 }
+
 std::ostream& operator<<(std::ostream& o, const vote_reply& r) {
-    return o << "{term:" << r.term << ", target_node_id" << r.target_node_id
-             << ", vote_granted: " << r.granted << ", log_ok:" << r.log_ok
-             << "}";
+    fmt::print(
+      o,
+      "{{term: {}, target_node: {}, vote_granted: {}, log_ok: {}}}",
+      r.term,
+      r.target_node_id,
+      r.granted,
+      r.log_ok);
+    return o;
 }
 std::ostream& operator<<(std::ostream& o, const reply_result& r) {
     switch (r) {
