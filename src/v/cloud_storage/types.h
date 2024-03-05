@@ -439,6 +439,10 @@ enum class download_type {
 
 std::ostream& operator<<(std::ostream&, download_type);
 
+enum class existence_check_type { object, segment };
+
+std::ostream& operator<<(std::ostream&, existence_check_type);
+
 class remote_probe;
 using probe_callback_t = ss::noncopyable_function<void(remote_probe&)>;
 

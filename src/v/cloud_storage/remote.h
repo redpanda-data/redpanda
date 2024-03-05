@@ -355,6 +355,12 @@ public:
     ss::future<download_result>
     download_object(download_request download_request) override;
 
+    ss::future<download_result> object_exists(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& path,
+      retry_chain_node& parent,
+      existence_check_type object_type);
+
     /// Checks if the segment exists in the bucket
     ss::future<download_result> segment_exists(
       const cloud_storage_clients::bucket_name& bucket,
