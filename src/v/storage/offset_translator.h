@@ -18,6 +18,7 @@
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/offset_translator_state.h"
+#include "storage/storage_resources.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
@@ -47,6 +48,13 @@ public:
       raft::group_id group,
       model::ntp ntp,
       storage::api& storage_api);
+
+    offset_translator(
+      std::vector<model::record_batch_type> filtered_types,
+      raft::group_id group,
+      model::ntp ntp,
+      storage::kvstore& kvstore,
+      storage::storage_resources& resources);
 
     offset_translator(const offset_translator&) = delete;
     offset_translator& operator=(const offset_translator&) = delete;
@@ -145,7 +153,8 @@ private:
     size_t _bytes_processed_at_checkpoint = 0;
     size_t _map_version_at_checkpoint = 0;
 
-    storage::api& _storage_api;
+    storage::kvstore& _kvs;
+    storage::storage_resources& _resources;
 };
 
 } // namespace raft

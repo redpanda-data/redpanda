@@ -15,6 +15,7 @@
 #include "storage/api.h"
 #include "storage/kvstore.h"
 #include "storage/logger.h"
+#include "storage/storage_resources.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -26,12 +27,26 @@ offset_translator::offset_translator(
   std::vector<model::record_batch_type> filtered_types,
   raft::group_id group,
   model::ntp ntp,
-  storage::api& storage_api)
+  storage::kvstore& kvs,
+  storage::storage_resources& resources)
   : _filtered_types(std::move(filtered_types))
   , _state(ss::make_lw_shared<storage::offset_translator_state>(std::move(ntp)))
   , _group(group)
   , _logger(logger, ssx::sformat("ntp: {}", _state->ntp()))
-  , _storage_api(storage_api) {}
+  , _kvs(kvs)
+  , _resources(resources) {}
+
+offset_translator::offset_translator(
+  std::vector<model::record_batch_type> filtered_types,
+  raft::group_id group,
+  model::ntp ntp,
+  storage::api& storage_api)
+  : offset_translator(
+    std::move(filtered_types),
+    group,
+    std::move(ntp),
+    storage_api.kvs(),
+    storage_api.resources()) {}
 
 void offset_translator::process(const model::record_batch& batch) {
     if (_filtered_types.empty()) {
@@ -42,7 +57,7 @@ void offset_translator::process(const model::record_batch& batch) {
 
     // Update resource manager for the extra dirty bytes, it may hint us
     // to checkpoint early in response.
-    _checkpoint_hint |= _storage_api.resources().offset_translator_take_bytes(
+    _checkpoint_hint |= _resources.offset_translator_take_bytes(
       batch.size_bytes(), _bytes_processed_units);
 
     if (
@@ -109,9 +124,9 @@ ss::future<> offset_translator::start(must_reset reset) {
 
         co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
     } else {
-        auto map_buf = _storage_api.kvs().get(
+        auto map_buf = _kvs.get(
           storage::kvstore::key_space::offset_translator, offsets_map_key());
-        auto highest_known_offset_buf = _storage_api.kvs().get(
+        auto highest_known_offset_buf = _kvs.get(
           storage::kvstore::key_space::offset_translator,
           highest_known_offset_key());
 
@@ -304,10 +319,10 @@ ss::future<> offset_translator::remove_persistent_state() {
         co_return;
     }
 
-    co_await _storage_api.kvs().remove(
+    co_await _kvs.remove(
       storage::kvstore::key_space::offset_translator,
       highest_known_offset_key());
-    co_await _storage_api.kvs().remove(
+    co_await _kvs.remove(
       storage::kvstore::key_space::offset_translator, offsets_map_key());
 }
 
@@ -366,14 +381,14 @@ ss::future<> offset_translator::do_checkpoint() {
     // recreated by reading log from the highest known offset).
 
     if (map_buf) {
-        co_await _storage_api.kvs().put(
+        co_await _kvs.put(
           storage::kvstore::key_space::offset_translator,
           offsets_map_key(),
           std::move(*map_buf));
         _map_version_at_checkpoint = map_version;
     }
 
-    co_await _storage_api.kvs().put(
+    co_await _kvs.put(
       storage::kvstore::key_space::offset_translator,
       highest_known_offset_key(),
       std::move(hko_buf));
