@@ -41,6 +41,9 @@ class NewTopicsTest(RedpandaTest):
     # Max time to wait for the cluster to be healthy once more.
     HEALTHY_WAIT_SECONDS = 20 * 60
 
+    # Max topic count supported by single client-swarm node
+    MAX_SWARM_NODE_TOPIC_COUNT = 4500
+
     def __init__(self, *args, **kwargs):
         super().__init__(
             *args,
@@ -523,7 +526,7 @@ class NewTopicsTest(RedpandaTest):
         self.logger.warn(
             f"Time it took to replace node {unsafe_end - unsafe_start}")
 
-    @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=11, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_topic_swarm(self):
         """Test creates 11950 topics, validates partitions and replicas,
         produces 100 messages to each topic using batches, consumes
@@ -688,65 +691,46 @@ class NewTopicsTest(RedpandaTest):
 
         return swarm_node_consumers
 
-    @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_many_topics_throughput(self):
-        """Test creates 11950 topics, and uses client-swarm to
-        generate 1000 messages with 5 msg/sec rate to each topic
-        and validates high watermark values
+    def _adjust_topic_count(self, node_topic_count, nodes_available,
+                            max_topics):
+        # swarm node can generate traffic for 4.5k topics max due to network limitations
+        new_node_topic_count = node_topic_count
+        if new_node_topic_count > self.MAX_SWARM_NODE_TOPIC_COUNT:
+            self.logger.warning(
+                f"Cluster supports up to {max_topics}"
+                " topics, nodes available for swarm "
+                f"{nodes_available}, topics per swarm node would be "
+                f"{node_topic_count}, which is more than one "
+                f"node can handle ({self.MAX_SWARM_NODE_TOPIC_COUNT})")
+            new_node_topic_count = self.MAX_SWARM_NODE_TOPIC_COUNT
+            self.logger.warning("Setting swarm topic count to MAX of "
+                                f"{self.MAX_SWARM_NODE_TOPIC_COUNT} per swarm "
+                                f"node ({nodes_available} swarm nodes * "
+                                f"{self.MAX_SWARM_NODE_TOPIC_COUNT} = "
+                                f"{node_topic_count * nodes_available})")
+        else:
+            self.logger.warning("Using swarm topic count of "
+                                f"{node_topic_count} per swarm node "
+                                f"({nodes_available} swarm nodes * "
+                                f"{node_topic_count} = "
+                                f"{node_topic_count * nodes_available})")
 
-        Returns:
-            None
-        """
+        return new_node_topic_count
 
-        # Max number of partitions for i3en.xlarge
-        # default settings is 1000 partitions per shard/cpu
-        # (9 nodes × 4 vcpus/shards × 1000) / 3 replicas
-        # 12000
-
-        # Notes on messages params and BW calculations
-        # default msg size is 16KB
-        # 16k * 10 = ~150KB/s per single producer
-        # 10k Producers generate 1.56GB/sec load to the cluster
-        # Rate beyond 40 is unreachable in most cases
-        # Example: 60 msg/sec on 10k topics
-        # [2024-02-26T23:26:50Z INFO  client_swarm] Producer rates: [min=390095, max=682666, avg=506402] bytes/s
-        # => 506402 / 16384 = ~30
-
-        def _adjust_topic_count(node_topic_count, nodes_available):
-            # swarm node can generate traffic for 4.5k topics max due to network limitations
-            max_node_topic_count = 4500
-            new_node_topic_count = node_topic_count
-            if new_node_topic_count > max_node_topic_count:
-                self.logger.warning(
-                    f"Cluster supports up to {max_supported_topics}"
-                    " topics, nodes available for swarm "
-                    f"{nodes_available}, topics per swarm node would be "
-                    f"{node_topic_count}, which is more than one "
-                    f"node can handle ({max_node_topic_count})")
-                new_node_topic_count = max_node_topic_count
-                self.logger.warning("Setting swarm topic count to MAX of "
-                                    f"{max_node_topic_count} per swarm node "
-                                    f"({nodes_available} swarm nodes * "
-                                    f"{max_node_topic_count} = "
-                                    f"{node_topic_count * nodes_available})")
-            else:
-                self.logger.warning("Using swarm topic count of "
-                                    f"{node_topic_count} per swarm node "
-                                    f"({nodes_available} swarm nodes * "
-                                    f"{node_topic_count} = "
-                                    f"{node_topic_count * nodes_available})")
-
-            return new_node_topic_count
-
-        # Get profile for 6k topics
-        # This should be enough for default tests with 12 nodes cluster
-        tsm = TopicScaleProfileManager()
-        profile = tsm.get_custom_profile("default", {"batch_size": 1024})
-
-        # Start kafka
-        self.redpanda.start()
+    def _stage_create_topics(self, profile):
         # Brokers list suitable for script arguments
         brokers = ",".join(self.redpanda.brokers_list())
+
+        # Divide available nodes between producers and consumers
+        nodes_available = self.test_context.cluster.available().size()
+        produce_nodes = nodes_available // 2
+        consume_nodes = nodes_available // 2
+
+        # get the target topic counts
+        # It is understood that these numbers will be the same
+        # But for code readability, it is divided into producers and consumers
+        produce_node_topic_count = profile.topic_count // produce_nodes
+        consume_node_topic_count = profile.topic_count // consume_nodes
 
         # Calculate topic counts
         # This test by default designed for 12 nodes, 9 node cluster, 4 cpus each node
@@ -756,27 +740,16 @@ class NewTopicsTest(RedpandaTest):
         max_supported_topics = num_cpus * 1000 * len(self.redpanda.nodes) // 3
         # Account for system level topics
         max_supported_topics -= 50
-        # Divide available nodes between producers and consumers
-        nodes_available = self.test_context.cluster.available().size()
-
-        produce_nodes = nodes_available // 2
-        consume_nodes = nodes_available // 2
 
         # uncomment for manual max topics
         # node_topic_count = max_supported_topics // nodes_available
 
-        # get the target topic counts
-        # It is understood that these numbers will be the same
-        # But for code readability, it is divided into producers and consumers
-        produce_node_topic_count = profile.topic_count // produce_nodes
-        consume_node_topic_count = profile.topic_count // consume_nodes
-
         self.logger.warning("Checking produce swarm nodes topic count")
-        produce_node_topic_count = _adjust_topic_count(
-            produce_node_topic_count, produce_nodes)
+        produce_node_topic_count = self._adjust_topic_count(
+            produce_node_topic_count, produce_nodes, max_supported_topics)
         self.logger.warning("Checking consume swarm nodes topic count")
-        consume_node_topic_count = _adjust_topic_count(
-            consume_node_topic_count, consume_nodes)
+        consume_node_topic_count = self._adjust_topic_count(
+            consume_node_topic_count, consume_nodes, max_supported_topics)
 
         # Grab node to run creation script on it.
         node = self.cluster.alloc(ClusterSpec.simple_linux(1))[0]
@@ -804,24 +777,62 @@ class NewTopicsTest(RedpandaTest):
         # Free node that used to create topics
         self.cluster.free_single(node)
 
+        return topic_prefixes, produce_node_topic_count, consume_node_topic_count
+
+    @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_many_topics_throughput(self):
+        """Test creates 11950 topics, and uses client-swarm to
+        generate 1000 messages with 5 msg/sec rate to each topic
+        and validates high watermark values
+
+        Returns:
+            None
+        """
+
+        # Max number of partitions for i3en.xlarge
+        # default settings is 1000 partitions per shard/cpu
+        # (9 nodes × 4 vcpus/shards × 1000) / 3 replicas
+        # 12000
+
+        # Notes on messages params and BW calculations
+        # default msg size is 16KB
+        # 16k * 10 = ~150KB/s per single producer
+        # 10k Producers generate 1.56GB/sec load to the cluster
+        # Rate beyond 40 is unreachable in most cases
+        # Example: 60 msg/sec on 10k topics
+        # [2024-02-26T23:26:50Z INFO  client_swarm] Producer rates: [min=390095, max=682666, avg=506402] bytes/s
+        # => 506402 / 16384 = ~30
+
+        # Get profile for 6k topics
+        # This should be enough for default tests with 12 nodes cluster
+        tsm = TopicScaleProfileManager()
+        profile = tsm.get_custom_profile("default", {"batch_size": 1024})
+
+        # Start kafka
+        self.redpanda.start()
+
+        # Do create topics stage
+        topic_prefixes, pnode_topic_count, cnode_topic_count = \
+            self._stage_create_topics(profile)
+
         # Do the healthcheck on RP
         # to make sure that all topics are settle down and have their leader
+        self._wait_until_cluster_healthy()
 
         # Calculate how much time ideally needed for the producers to finish
         # Logic is that we sleep for normal running time
         # And then running checks when swarm nodes running last messages delivery
         running_time_sec = \
             profile.message_count // profile.messages_per_second_per_producer
-        self.logger.info(f"Sleeping for {running_time_sec} sec (running time)")
 
         # Run swarm producers
         swarm_producers = self._run_producers_with_constant_rate(
-            profile, produce_node_topic_count, topic_prefixes)
+            profile, pnode_topic_count, topic_prefixes)
 
         # Run swarm consumers
         _group = "topic_swarm_group"
         swarm_consumers = self._run_consumers_with_constant_rate(
-            profile, consume_node_topic_count, topic_prefixes, _group)
+            profile, cnode_topic_count, topic_prefixes, _group)
 
         # Wait for all messages to be produced
         # Logic is that we sleep for normal running time
@@ -854,13 +865,12 @@ class NewTopicsTest(RedpandaTest):
             return _hwm
 
         # Validate high watermark
-        target_messages_per_node = profile.message_count * produce_node_topic_count
+        target_messages_per_node = profile.message_count * pnode_topic_count
         hwms = []
         for topic_prefix in topic_prefixes:
             # messages per node
             _topic_names = [
-                f"{topic_prefix}-{idx}"
-                for idx in range(produce_node_topic_count)
+                f"{topic_prefix}-{idx}" for idx in range(pnode_topic_count)
             ]
             # Use Thread pool to speed things up
             with concurrent.futures.ThreadPoolExecutor(max_workers=32) as exec:
