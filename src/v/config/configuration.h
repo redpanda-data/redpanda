@@ -106,6 +106,7 @@ struct configuration final : public config_store {
     bounded_property<size_t> raft_recovery_concurrency_per_shard;
     property<std::optional<size_t>> raft_replica_max_pending_flush_bytes;
     property<std::chrono::milliseconds> raft_flush_timer_interval_ms;
+    property<std::chrono::milliseconds> raft_replica_max_flush_delay_ms;
     // Kafka
     property<bool> enable_usage;
     bounded_property<size_t> usage_num_windows;

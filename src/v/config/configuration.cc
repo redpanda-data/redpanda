@@ -382,6 +382,8 @@ configuration::configuration()
       "requested",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       256_KiB)
+  // todo (bharathv): deprecate raft_flush_timer_interval_ms in favor of
+  // raft_replica_max_flush_delay_ms
   , raft_flush_timer_interval_ms(
       *this,
       "raft_flush_timer_interval_ms",
@@ -389,6 +391,19 @@ configuration::configuration()
       "`raft_replica_max_pending_flush_bytes`",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100ms)
+  , raft_replica_max_flush_delay_ms(
+      *this,
+      "raft_replica_max_flush_delay_ms",
+      "Maximum delay (in ms) between two subsequent flushes. After this delay, "
+      "the log will be automatically force flushed.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100ms,
+      [](auto const& v) -> std::optional<ss::sstring> {
+          if (v < 1ms) {
+              return "flush delay should be atleast 1ms";
+          }
+          return std::nullopt;
+      })
   , enable_usage(
       *this,
       "enable_usage",
