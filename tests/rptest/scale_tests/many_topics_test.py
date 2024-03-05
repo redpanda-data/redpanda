@@ -392,7 +392,8 @@ class ManyTopicsTest(RedpandaTest):
                 'redpanda_cluster_topics',
                 metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
                 nodes=self.redpanda.started_nodes())
-            self.logger.info(f"topic count: {num_topics}")
+            self.logger.info(
+                f"current topic count: {num_topics} target count: {count}")
             return num_topics >= count
 
         wait_until(lambda: has_count_topics(),
@@ -401,6 +402,9 @@ class ManyTopicsTest(RedpandaTest):
                    err_msg=f"couldn't reach topic count target: {0}")
 
     def _wait_until_cluster_healthy(self):
+        """
+        Waits until the cluster is reporting no under-replicated or leaderless partitions.
+        """
         def is_healthy():
             unavailable_count = self.redpanda.metric_sum(
                 'redpanda_cluster_unavailable_partitions',
@@ -410,7 +414,7 @@ class ManyTopicsTest(RedpandaTest):
                 'vectorized_cluster_partition_under_replicated_replicas',
                 nodes=self.redpanda.started_nodes())
             self.logger.info(
-                f"under-replicated partitions count: {under_replicated_count}\n"
+                f"under-replicated partitions count: {under_replicated_count} "
                 f"unavailable_count: {unavailable_count}")
             return unavailable_count == 0 and under_replicated_count == 0
 
@@ -427,9 +431,12 @@ class ManyTopicsTest(RedpandaTest):
         """
         # select a node at random from the current broker set to decom.
         node_to_decom = random.choice(self.redpanda.started_nodes())
+        self.logger.debug(f"Force stopping node {node_to_decom.name}")
         node_id = self.redpanda.node_id(node_to_decom, force_refresh=True)
         self.redpanda.stop_node(node_to_decom, forced=True)
+
         # clean node so we can re-used it as the "newly" created replacement node:
+        self.logger.debug(f"Adding node {node_to_decom.name} to the cluster")
         self.redpanda.clean_node(node_to_decom)
         self.redpanda.start_node(node_to_decom,
                                  first_start=True,
@@ -445,6 +452,8 @@ class ManyTopicsTest(RedpandaTest):
         node_to_decom = random.choice(self.redpanda.started_nodes())
 
         # Add a new node in the cluster replace the one that will soon be decomissioned.
+        self.logger.debug(
+            f"Adding node {self._standby_broker.name} to the cluster")
         self.redpanda.clean_node(self._standby_broker)
         self.redpanda.start_node(self._standby_broker,
                                  first_start=True,
@@ -454,6 +463,7 @@ class ManyTopicsTest(RedpandaTest):
                    backoff_sec=5)
 
         # select a node at random from the current broker set to decom.
+        self.logger.debug(f"Decommissioning node {node_to_decom.name}")
         node_to_decom_idx = self.redpanda.idx(node_to_decom)
         node_to_decom_id = self.redpanda.node_id(node_to_decom)
         self.node_ops_exec.decommission(node_to_decom_idx)
