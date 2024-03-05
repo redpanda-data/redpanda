@@ -69,6 +69,9 @@ static constexpr std::string_view topic_property_segment_ms = "segment.ms";
 static constexpr std::string_view topic_property_write_caching
   = "write.caching";
 
+static constexpr std::string_view topic_property_flush_ms = "flush.ms";
+static constexpr std::string_view topic_property_flush_bytes = "flush.bytes";
+
 // Server side schema id validation
 static constexpr std::string_view topic_property_record_key_schema_id_validation
   = "redpanda.key.schema.id.validation";
