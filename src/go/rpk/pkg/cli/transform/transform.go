@@ -28,6 +28,7 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 		newListCommand(fs, p),
 		newInitializeCommand(fs),
 		newBuildCommand(fs, execFn),
+		newLogsCommand(fs, p),
 	)
 	return cmd
 }
