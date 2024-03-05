@@ -37,6 +37,7 @@
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
 #include "storage/storage_resources.h"
+#include "storage/types.h"
 #include "utils/directory_walker.h"
 
 #include <seastar/core/abort_source.hh>
@@ -481,14 +482,15 @@ log_manager::create_cache(with_cache ntp_cache_enabled) {
     return batch_cache_index(_batch_cache);
 }
 
-ss::future<ss::shared_ptr<log>> log_manager::manage(ntp_config cfg) {
+ss::future<ss::shared_ptr<log>>
+log_manager::manage(ntp_config cfg, raft::group_id group) {
     auto gate = _open_gate.hold();
 
     auto units = co_await _resources.get_recovery_units();
-    co_return co_await do_manage(std::move(cfg));
+    co_return co_await do_manage(std::move(cfg), group);
 }
 
-ss::future<> log_manager::recover_log_state(const ntp_config& cfg) {
+ss::future<> log_manager::maybe_clear_kvstore(const ntp_config& cfg) {
     return ss::file_exists(cfg.work_directory())
       .then([this,
              offset_key = internal::start_offset_key(cfg.ntp()),
@@ -499,6 +501,7 @@ ss::future<> log_manager::recover_log_state(const ntp_config& cfg) {
           }
           // directory was deleted, make sure we do not have any state in KV
           // store.
+          // NOTE: this only removes state in the storage key space.
           return _kvstore.remove(kvstore::key_space::storage, offset_key)
             .then([this, segment_key] {
                 return _kvstore.remove(
@@ -507,7 +510,8 @@ ss::future<> log_manager::recover_log_state(const ntp_config& cfg) {
       });
 }
 
-ss::future<ss::shared_ptr<log>> log_manager::do_manage(ntp_config cfg) {
+ss::future<ss::shared_ptr<log>>
+log_manager::do_manage(ntp_config cfg, raft::group_id group) {
     if (_config.base_dir.empty()) {
         throw std::runtime_error(
           "log_manager:: cannot have empty config.base_dir");
@@ -525,7 +529,7 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(ntp_config cfg) {
                                .segment_name;
     }
 
-    co_await recover_log_state(cfg);
+    co_await maybe_clear_kvstore(cfg);
 
     with_cache cache_enabled = cfg.cache_enabled();
     auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(cfg.ntp());
@@ -543,7 +547,13 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(ntp_config cfg) {
       std::move(ntp_sanitizer_cfg));
 
     auto l = storage::make_disk_backed_log(
-      std::move(cfg), *this, std::move(segments), _kvstore, _feature_table);
+      std::move(cfg),
+      group,
+      *this,
+      std::move(segments),
+      _kvstore,
+      _feature_table);
+
     auto [it, success] = _logs.emplace(
       l->config().ntp(), std::make_unique<log_housekeeping_meta>(l));
     _logs_list.push_back(*it->second);

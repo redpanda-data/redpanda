@@ -17,6 +17,7 @@
 #include "storage/failure_probes.h"
 #include "storage/lock_manager.h"
 #include "storage/log.h"
+#include "storage/offset_translator.h"
 #include "storage/probe.h"
 #include "storage/readers_cache.h"
 #include "storage/types.h"
@@ -54,6 +55,7 @@ public:
 
     disk_log_impl(
       ntp_config,
+      raft::group_id,
       log_manager&,
       segment_set,
       kvstore&,
@@ -107,6 +109,7 @@ public:
     size_t segment_count() const final { return _segs.size(); }
     bool is_new_log() const final;
     offset_stats offsets() const final;
+    raft::offset_translator& offset_translator() { return _offset_translator; }
     model::offset find_last_term_start_offset() const final;
     model::timestamp start_timestamp() const final;
     std::optional<model::term_id> get_term(model::offset) const final;
@@ -318,6 +321,8 @@ private:
     // method.
     mutex _start_offset_lock{"disk_log_impl::start_offset_lock"};
     lock_manager _lock_mngr;
+    raft::offset_translator _offset_translator;
+
     std::unique_ptr<storage::probe> _probe;
     failure_probes _failure_probes;
     std::optional<eviction_monitor> _eviction_monitor;

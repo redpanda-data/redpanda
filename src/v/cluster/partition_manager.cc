@@ -214,7 +214,7 @@ ss::future<consensus_ptr> partition_manager::manage(
               ntp_cfg, manifest, max_offset);
         }
     }
-    auto log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
+    auto log = co_await _storage.log_mgr().manage(std::move(ntp_cfg), group);
     vlog(
       clusterlog.debug,
       "Log created manage completed, ntp: {}, rev: {}, {} "

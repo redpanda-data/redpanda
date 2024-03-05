@@ -16,6 +16,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
+#include "raft/fundamental.h"
 #include "storage/log_appender.h"
 #include "storage/ntp_config.h"
 #include "storage/segment_reader.h"
@@ -214,6 +215,7 @@ class segment_set;
 class kvstore;
 ss::shared_ptr<log> make_disk_backed_log(
   ntp_config,
+  raft::group_id,
   log_manager&,
   segment_set,
   kvstore&,

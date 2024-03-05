@@ -15,6 +15,7 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
@@ -105,6 +106,7 @@ bool deletion_exempt(const model::ntp& ntp) {
 
 disk_log_impl::disk_log_impl(
   ntp_config cfg,
+  raft::group_id group,
   log_manager& manager,
   segment_set segs,
   kvstore& kvstore,
@@ -118,6 +120,7 @@ disk_log_impl::disk_log_impl(
   , _feature_table(feature_table)
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs)
+  , _offset_translator({}, group, config().ntp(), _kvstore, resources())
   , _probe(std::make_unique<storage::probe>())
   , _max_segment_size(compute_max_segment_size())
   , _readers_cache(std::make_unique<readers_cache>(
@@ -2934,12 +2937,14 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
 
 ss::shared_ptr<log> make_disk_backed_log(
   ntp_config cfg,
+  raft::group_id group,
   log_manager& manager,
   segment_set segs,
   kvstore& kvstore,
   ss::sharded<features::feature_table>& feature_table) {
-    return ss::make_shared<disk_log_impl>(
-      std::move(cfg), manager, std::move(segs), kvstore, feature_table);
+    auto disk_log = ss::make_shared<disk_log_impl>(
+      std::move(cfg), group, manager, std::move(segs), kvstore, feature_table);
+    return disk_log;
 }
 
 /*
