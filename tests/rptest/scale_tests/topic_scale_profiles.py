@@ -69,7 +69,7 @@ class ProfileDefinitions():
         "messages_per_second_per_producer": 1
     }
     topic_profile_t40k_p1 = {
-        "topic_count": 40000,
+        "topic_count": 39_996,
         "batch_size": 4096,
         "topic_name_length": 200,
         "num_partitions": 1,
