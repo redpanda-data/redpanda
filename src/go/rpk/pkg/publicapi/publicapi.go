@@ -18,7 +18,10 @@ import (
 )
 
 // ControlPlaneProdURL is the host of the Cloud Redpanda API.
-const ControlPlaneProdURL = "https://api.redpanda.com"
+const (
+	ControlPlaneProdURL   = "https://api.redpanda.com"
+	ServerlessClusterType = "TYPE_SERVERLESS"
+)
 
 func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {

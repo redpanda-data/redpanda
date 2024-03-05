@@ -38,7 +38,7 @@ func defaultVirtualRpkYaml() (RpkYaml, error) {
 	path, _ := DefaultRpkYamlPath() // if err is non-nil, we fail in Write
 	y := RpkYaml{
 		fileLocation: path,
-		Version:      3,
+		Version:      4,
 		Profiles:     []RpkProfile{DefaultRpkProfile()},
 		CloudAuths:   []RpkCloudAuth{DefaultRpkCloudAuth()},
 	}
@@ -69,7 +69,7 @@ func DefaultRpkCloudAuth() RpkCloudAuth {
 
 func emptyVirtualRpkYaml() RpkYaml {
 	return RpkYaml{
-		Version: 3,
+		Version: 4,
 	}
 }
 
@@ -153,6 +153,8 @@ type (
 		ClusterName string `json:"cluster_name" yaml:"cluster_name"`
 		AuthOrgID   string `json:"auth_org_id" yaml:"auth_org_id"`
 		AuthKind    string `json:"auth_kind" yaml:"auth_kind"`
+		ClusterType string `json:"cluster_type" yaml:"cluster_type"`
+		ClusterURL  string `json:"cluster_url,omitempty" yaml:"cluster_url,omitempty"`
 	}
 
 	// RpkCloudAuth is unique by name and org ID. We support multiple auths
