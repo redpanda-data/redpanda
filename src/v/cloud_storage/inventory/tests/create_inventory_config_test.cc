@@ -46,6 +46,23 @@ public:
       download_object,
       (cst::download_request),
       (override));
+    MOCK_METHOD(
+      ss::future<cloud_storage::cloud_storage_api::list_result>,
+      list_objects,
+      (const cloud_storage_clients::bucket_name&,
+       retry_chain_node&,
+       std::optional<cloud_storage_clients::object_key>,
+       std::optional<char>,
+       std::optional<cloud_storage_clients::client::item_filter>),
+      (override));
+    MOCK_METHOD(
+      ss::future<cloud_storage::download_result>,
+      object_exists,
+      (const cloud_storage_clients::bucket_name&,
+       const cloud_storage_clients::object_key&,
+       retry_chain_node&,
+       cloud_storage::existence_check_type),
+      (override));
 };
 
 std::string iobuf_to_xml(iobuf buf) {

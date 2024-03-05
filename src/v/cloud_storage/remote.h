@@ -123,8 +123,25 @@ struct api_activity_notification {
 // references/pointers to this interface instead of remote to enable testing.
 class cloud_storage_api {
 public:
+    using list_result = result<
+      cloud_storage_clients::client::list_bucket_result,
+      cloud_storage_clients::error_outcome>;
+
     virtual ss::future<upload_result> upload_object(upload_request) = 0;
     virtual ss::future<download_result> download_object(download_request) = 0;
+    virtual ss::future<list_result> list_objects(
+      const cloud_storage_clients::bucket_name&,
+      retry_chain_node&,
+      std::optional<cloud_storage_clients::object_key> = std::nullopt,
+      std::optional<char> = std::nullopt,
+      std::optional<cloud_storage_clients::client::item_filter> = std::nullopt)
+      = 0;
+    virtual ss::future<download_result> object_exists(
+      const cloud_storage_clients::bucket_name&,
+      const cloud_storage_clients::object_key&,
+      retry_chain_node&,
+      existence_check_type)
+      = 0;
     virtual ~cloud_storage_api() = default;
 };
 
@@ -359,7 +376,7 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent,
-      existence_check_type object_type);
+      existence_check_type object_type) override;
 
     /// Checks if the segment exists in the bucket
     ss::future<download_result> segment_exists(
@@ -400,10 +417,6 @@ public:
       R keys,
       retry_chain_node& parent);
 
-    using list_result = result<
-      cloud_storage_clients::client::list_bucket_result,
-      cloud_storage_clients::error_outcome>;
-
     /// \brief Lists objects in a bucket
     ///
     /// \param name The bucket to delete from
@@ -419,7 +432,7 @@ public:
       std::optional<cloud_storage_clients::object_key> prefix = std::nullopt,
       std::optional<char> delimiter = std::nullopt,
       std::optional<cloud_storage_clients::client::item_filter> item_filter
-      = std::nullopt);
+      = std::nullopt) override;
 
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment
