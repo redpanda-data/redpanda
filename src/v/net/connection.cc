@@ -17,6 +17,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/net/tls.hh>
 
+#include <asm-generic/errno.h>
 #include <gnutls/gnutls.h>
 
 namespace net {
@@ -53,6 +54,10 @@ bool is_reconnect_error(const std::system_error& e) {
         case ECONNABORTED:
         case EAGAIN:
         case EPIPE:
+        case EHOSTUNREACH:
+        case EHOSTDOWN:
+        case ENETRESET:
+        case ENETDOWN:
             return true;
         default:
             return false;
