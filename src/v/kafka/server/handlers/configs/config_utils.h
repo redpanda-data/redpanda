@@ -445,6 +445,41 @@ void parse_and_set_optional(
     }
 }
 
+template<class Dur, class Validator = noop_validator<Dur>>
+requires requires(
+  const Dur& value, const ss::sstring& str, Validator validator) {
+    { boost::lexical_cast<typename Dur::rep>(str) };
+    {
+        validator(str, value)
+    } -> std::convertible_to<std::optional<ss::sstring>>;
+}
+inline void parse_and_set_optional_duration(
+  cluster::property_update<std::optional<Dur>>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op,
+  Validator validator = noop_validator<Dur>{}) {
+    // remove property value
+    if (op == config_resource_operation::remove) {
+        property.op = cluster::incremental_update_operation::remove;
+        return;
+    }
+    // set property value if preset, otherwise do nothing
+    if (op == config_resource_operation::set && value) {
+        property.op = cluster::incremental_update_operation::set;
+        try {
+            auto v = Dur(boost::lexical_cast<typename Dur::rep>(*value));
+            auto v_error = validator(*value, v);
+            if (v_error) {
+                throw validation_error(*v_error);
+            }
+            property.value = std::move(v);
+        } catch (std::runtime_error const&) {
+            throw boost::bad_lexical_cast();
+        }
+        return;
+    }
+}
+
 inline void parse_and_set_optional_bool_alpha(
   cluster::property_update<std::optional<bool>>& property,
   const std::optional<ss::sstring>& value,
