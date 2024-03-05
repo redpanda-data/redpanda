@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
 #include "gtest/gtest.h"
+#include "utils/fragmented_vector.h"
 #include "wasm/parser/parser.h"
 
 #include <gtest/gtest.h>
@@ -43,7 +44,8 @@ bytes wat2wasm(std::string_view wat) {
 
 struct test_data {
     std::string wat;
-    module_declarations expected;
+    std::vector<module_export> exports;
+    std::vector<module_import> imports;
 };
 
 void PrintTo(const test_data& d, std::ostream* os) { *os << d.wat; }
@@ -54,7 +56,13 @@ TEST_P(ParserTest, ExtractDeclarations) {
     const auto& testcase = GetParam();
     bytes wasm = wat2wasm(testcase.wat);
     auto decls = extract_declarations(bytes_to_iobuf(wasm)).get();
-    EXPECT_EQ(decls, testcase.expected);
+    module_declarations expected = {
+      .exports = chunked_vector<module_export>(
+        testcase.exports.begin(), testcase.exports.end()),
+      .imports = chunked_vector<module_import>(
+        testcase.imports.begin(), testcase.imports.end()),
+    };
+    EXPECT_EQ(decls, std::ref(expected));
 }
 
 module_export func(
@@ -134,10 +142,8 @@ INSTANTIATE_TEST_SUITE_P(
     {
       {
         .wat = R"WAT((module))WAT",
-        .expected = {
-          .exports = {},
-          .imports = {},
-        }
+        .exports = {},
+        .imports = {},
       },
       {
         .wat = R"WAT(
@@ -154,15 +160,13 @@ INSTANTIATE_TEST_SUITE_P(
   (export "_start" (func $main))
 )
 )WAT",
-        .expected = {
-          .exports = {
-            func("_start", {}, {})
-          },
-          .imports = {
-            func("console", "log", {val_type::i32}, {}),
-            global("env", "from_js", val_type::i32),
-          },
-        }
+        .exports = {
+          func("_start", {}, {})
+        },
+        .imports = {
+          func("console", "log", {val_type::i32}, {}),
+          global("env", "from_js", val_type::i32),
+        },
       },
       {
         .wat = R"WAT(
@@ -186,26 +190,24 @@ INSTANTIATE_TEST_SUITE_P(
   (func (export "get-6") (result f64) (global.get 6))
 )
 )WAT",
-        .expected = {
-          .exports = {
-            func("get-0", {}, {val_type::i32}),
-            func("get-1", {}, {val_type::i32}),
-            func("get-x", {}, {val_type::i32}),
-            func("get-y", {}, {val_type::i32}),
-            func("get-4", {}, {val_type::i64}),
-            func("get-5", {}, {val_type::f32}),
-            func("get-6", {}, {val_type::f64}),
-          },
-          .imports = {
-            global("spectest", "global_i32", val_type::i32),
-            global("spectest", "global_i32", val_type::i32),
-            global("spectest", "global_i32", val_type::i32),
-            global("spectest", "global_i32", val_type::i32),
-            global("spectest", "global_i64", val_type::i64),
-            global("spectest", "global_f32", val_type::f32),
-            global("spectest", "global_f64", val_type::f64),
-          },
-        }
+        .exports = {
+          func("get-0", {}, {val_type::i32}),
+          func("get-1", {}, {val_type::i32}),
+          func("get-x", {}, {val_type::i32}),
+          func("get-y", {}, {val_type::i32}),
+          func("get-4", {}, {val_type::i64}),
+          func("get-5", {}, {val_type::f32}),
+          func("get-6", {}, {val_type::f64}),
+        },
+        .imports = {
+          global("spectest", "global_i32", val_type::i32),
+          global("spectest", "global_i32", val_type::i32),
+          global("spectest", "global_i32", val_type::i32),
+          global("spectest", "global_i32", val_type::i32),
+          global("spectest", "global_i64", val_type::i64),
+          global("spectest", "global_f32", val_type::f32),
+          global("spectest", "global_f64", val_type::f64),
+        },
       },
       {
         .wat = R"WAT(
@@ -221,10 +223,8 @@ INSTANTIATE_TEST_SUITE_P(
   (func $g (result i32) (i32.const 22))
 )
 )WAT",
-        .expected = {
-          .exports = {func("call", {val_type::i32}, {val_type::i32})},
-          .imports = {table("spectest", "table", val_type::funcref, {.min = 10, .max = 20})},
-        }
+        .exports = {func("call", {val_type::i32}, {val_type::i32})},
+        .imports = {table("spectest", "table", val_type::funcref, {.min = 10, .max = 20})},
       },
       {
         .wat = R"WAT(
@@ -235,46 +235,36 @@ INSTANTIATE_TEST_SUITE_P(
   (func (export "load") (param i32) (result i32) (i32.load (local.get 0)))
 )
 )WAT",
-        .expected = {
-          .exports = {func("load", {val_type::i32}, {val_type::i32})},
-          .imports = {memory("spectest", "memory", {.min = 1, .max = 2})},
-        }
+        .exports = {func("load", {val_type::i32}, {val_type::i32})},
+        .imports = {memory("spectest", "memory", {.min = 1, .max = 2})},
       },
       {
         .wat = R"WAT(
 (module (memory (export "a") 0))
 )WAT",
-        .expected = {
-          .exports = {memory("a", {})},
-          .imports = {},
-        }
+        .exports = {memory("a", {})},
+        .imports = {},
       },
       {
         .wat = R"WAT(
 (module (table 0 funcref) (export "a" (table 0)))
 )WAT",
-        .expected = {
-          .exports = {table("a", val_type::funcref, {})},
-          .imports = {},
-        }
+        .exports = {table("a", val_type::funcref, {})},
+        .imports = {},
       },
       {
         .wat = R"WAT(
 (module (global i32 (i32.const 0)) (export "a" (global 0)))
 )WAT",
-        .expected = {
-          .exports = {global("a", val_type::i32)},
-          .imports = {},
-        }
+        .exports = {global("a", val_type::i32)},
+        .imports = {},
       },
       {
         .wat = R"WAT(
 (module (func) (export "a" (func 0)))
 )WAT",
-        .expected = {
-          .exports = {func("a", {}, {})},
-          .imports = {},
-        }
+        .exports = {func("a", {}, {})},
+        .imports = {},
       },
       {
         .wat = R"WAT(
@@ -337,38 +327,36 @@ INSTANTIATE_TEST_SUITE_P(
   )
 )
 )WAT",
-        .expected = {
-          .exports = {
-            func("p1", {val_type::i32}, {}),
-            func("p2", {val_type::i32}, {}),
-            func("p3", {val_type::i32}, {}),
-            func("p4", {val_type::i32}, {}),
-            func("p5", {val_type::i32}, {}),
-            func("p6", {val_type::i32}, {}),
-            func("print32", {val_type::i32}, {}),
-            func("print64", {val_type::i64}, {}),
-          },
-          .imports = {
-            func("spectest", "print_i32", {val_type::i32}, {}),
-            func("spectest", "print_i64", {val_type::i64}, {}),
-            func("spectest", "print_i32", {val_type::i32}, {}),
-            func("spectest", "print_i64", {val_type::i64}, {}),
-            func("spectest", "print_f32", {val_type::f32}, {}),
-            func("spectest", "print_f64", {val_type::f64}, {}),
-            func("spectest", "print_i32_f32", {val_type::i32, val_type::f32}, {}),
-            func("spectest", "print_f64_f64", {val_type::f64, val_type::f64}, {}),
-            func("spectest", "print_i32", {val_type::i32}, {}),
-            func("spectest", "print_f64", {val_type::f64}, {}),
-            func("test", "func-i64->i64", {val_type::i64}, {val_type::i64}),
-            func("spectest", "print_i32", {val_type::i32}, {}),
-            func("spectest", "print_i32", {val_type::i32}, {}),
-            func("spectest", "print_i32", {val_type::i32}, {}),
-            func("spectest", "print_i32", {val_type::i32}, {}),
-            func("spectest", "print_i32", {val_type::i32}, {}),
-            func("spectest", "print_i32", {val_type::i32}, {}),
-            func("spectest", "print_i32", {val_type::i32}, {}),
-          },
-        }
+        .exports = {
+          func("p1", {val_type::i32}, {}),
+          func("p2", {val_type::i32}, {}),
+          func("p3", {val_type::i32}, {}),
+          func("p4", {val_type::i32}, {}),
+          func("p5", {val_type::i32}, {}),
+          func("p6", {val_type::i32}, {}),
+          func("print32", {val_type::i32}, {}),
+          func("print64", {val_type::i64}, {}),
+        },
+        .imports = {
+          func("spectest", "print_i32", {val_type::i32}, {}),
+          func("spectest", "print_i64", {val_type::i64}, {}),
+          func("spectest", "print_i32", {val_type::i32}, {}),
+          func("spectest", "print_i64", {val_type::i64}, {}),
+          func("spectest", "print_f32", {val_type::f32}, {}),
+          func("spectest", "print_f64", {val_type::f64}, {}),
+          func("spectest", "print_i32_f32", {val_type::i32, val_type::f32}, {}),
+          func("spectest", "print_f64_f64", {val_type::f64, val_type::f64}, {}),
+          func("spectest", "print_i32", {val_type::i32}, {}),
+          func("spectest", "print_f64", {val_type::f64}, {}),
+          func("test", "func-i64->i64", {val_type::i64}, {val_type::i64}),
+          func("spectest", "print_i32", {val_type::i32}, {}),
+          func("spectest", "print_i32", {val_type::i32}, {}),
+          func("spectest", "print_i32", {val_type::i32}, {}),
+          func("spectest", "print_i32", {val_type::i32}, {}),
+          func("spectest", "print_i32", {val_type::i32}, {}),
+          func("spectest", "print_i32", {val_type::i32}, {}),
+          func("spectest", "print_i32", {val_type::i32}, {}),
+        },
       },
       {
         .wat = R"WAT(
@@ -377,10 +365,8 @@ INSTANTIATE_TEST_SUITE_P(
   (data (i32.const 0) "a")
 )
 )WAT",
-        .expected = {
-          .exports = {},
-          .imports = {},
-        }
+        .exports = {},
+        .imports = {},
       },
 }));
 
