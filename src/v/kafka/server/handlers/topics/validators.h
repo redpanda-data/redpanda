@@ -155,20 +155,6 @@ struct replication_factor_must_be_greater_or_equal_to_minimum {
     }
 };
 
-struct unsupported_configuration_entries {
-    static constexpr error_code ec = error_code::invalid_config;
-    static constexpr const char* error_message
-      = "Not supported configuration entry ";
-
-    static bool is_valid(const creatable_topic& c) {
-        auto config_entries = config_map(c.configs);
-        auto end = config_entries.end();
-        return end == config_entries.find("min.insync.replicas")
-               && end == config_entries.find("flush.messages")
-               && end == config_entries.find("flush.ms");
-    }
-};
-
 struct remote_read_and_write_are_not_supported_for_read_replica {
     static constexpr error_code ec = error_code::invalid_config;
     static constexpr const char* error_message

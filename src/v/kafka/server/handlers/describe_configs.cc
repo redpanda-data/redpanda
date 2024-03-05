@@ -610,30 +610,6 @@ static void report_broker_config(
       &describe_as_string<bool>);
 }
 
-int64_t describe_retention_duration(
-  tristate<std::chrono::milliseconds>& overrides,
-  std::optional<std::chrono::milliseconds> def) {
-    if (overrides.is_disabled()) {
-        return -1;
-    }
-    if (overrides.has_optional_value()) {
-        return overrides.value().count();
-    }
-
-    return def ? def->count() : -1;
-}
-int64_t describe_retention_bytes(
-  tristate<size_t>& overrides, std::optional<size_t> def) {
-    if (overrides.is_disabled()) {
-        return -1;
-    }
-    if (overrides.has_optional_value()) {
-        return overrides.value();
-    }
-
-    return def.value_or(-1);
-}
-
 template<>
 ss::future<response_ptr> describe_configs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
