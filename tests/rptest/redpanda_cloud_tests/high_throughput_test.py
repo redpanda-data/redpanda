@@ -821,9 +821,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             # Wait until theres some traffic
             tgen.wait_for_traffic(acked=self.msg_count,
                                   timeout_sec=self.msg_timeout)
-
+            self.logger.info(f"Topic is: {self.topic}")
             # S3 up -> down -> up
-            self.stage_block_s3()
+            self.stage_block_s3(self.topic)
 
         self.redpanda.assert_cluster_is_reusable()
 
@@ -841,8 +841,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         return increase == 0
 
     def stage_block_s3(self):
-        self.logger.info(f"Getting the first 100 segments into the cloud")
-        wait_until(lambda: nodes_report_cloud_segments(self.redpanda, 100),
+        self.logger.info(
+            f"Getting the first 100 segments into the cloud for specific topic"
+        )
+        wait_until(lambda: nodes_report_cloud_segments(self.redpanda, 100, self
+                                                       .topic),
                    timeout_sec=600,
                    backoff_sec=5)
         self.logger.info(f"Blocking S3 traffic for all nodes")
