@@ -1729,6 +1729,7 @@ struct incremental_topic_updates
     static constexpr int8_t version_with_segment_ms = -5;
     static constexpr int8_t version_with_schema_id_validation = -6;
     static constexpr int8_t version_with_initial_retention = -7;
+    static constexpr int8_t version_with_write_caching = -8;
     // negative version indicating different format:
     // -1 - topic_updates with data_policy
     // -2 - topic_updates without data_policy
@@ -1736,7 +1737,8 @@ struct incremental_topic_updates
     // -4 - topic update with batch_max_bytes and retention.local.target
     // -6 - topic updates with schema id validation
     // -7 - topic updates with initial retention
-    static constexpr int8_t version = version_with_initial_retention;
+    // -8 - write caching properties
+    static constexpr int8_t version = version_with_write_caching;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
