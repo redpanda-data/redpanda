@@ -239,7 +239,7 @@ private:
     void handle_topic_delta(cluster::topic_table::delta_range_t);
 
     ss::future<> cleanup_removed_topic_partitions(
-      const std::vector<model::topic_partition>&);
+      const chunked_vector<model::topic_partition>&);
 
     ss::future<> handle_partition_leader_change(
       model::term_id,

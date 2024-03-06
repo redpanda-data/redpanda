@@ -17,6 +17,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/topic_table.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
@@ -454,17 +455,17 @@ void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
 }
 
 ss::future<> group_manager::cleanup_removed_topic_partitions(
-  const std::vector<model::topic_partition>& tps) {
+  const chunked_vector<model::topic_partition>& tps) {
     // operate on a light-weight copy of group pointers to avoid iterating over
     // the main index which is subject to concurrent modification.
-    std::vector<group_ptr> groups;
+    chunked_vector<group_ptr> groups;
     groups.reserve(_groups.size());
     for (auto& group : _groups) {
         groups.push_back(group.second);
     }
 
     return ss::do_with(
-      std::move(groups), [this, &tps](std::vector<group_ptr>& groups) {
+      std::move(groups), [this, &tps](chunked_vector<group_ptr>& groups) {
           return ss::do_for_each(groups, [this, &tps](group_ptr& group) {
               return group->remove_topic_partitions(tps).then(
                 [this, g = group] {
@@ -492,7 +493,7 @@ void group_manager::handle_topic_delta(
   cluster::topic_table::delta_range_t deltas) {
     // topic-partition deletions in the kafka namespace are the only deltas that
     // are relevant to the group manager
-    std::vector<model::topic_partition> tps;
+    chunked_vector<model::topic_partition> tps;
     for (const auto& delta : deltas) {
         if (
           delta.type == cluster::topic_table_delta_type::removed
@@ -511,7 +512,7 @@ void group_manager::handle_topic_delta(
           [this, tps = std::move(tps)]() mutable {
               return ss::do_with(
                 std::move(tps),
-                [this](const std::vector<model::topic_partition>& tps) {
+                [this](const chunked_vector<model::topic_partition>& tps) {
                     return cleanup_removed_topic_partitions(tps);
                 });
           })
