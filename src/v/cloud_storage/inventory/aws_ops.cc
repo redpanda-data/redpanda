@@ -129,7 +129,7 @@ ss::future<bool> aws_ops::inventory_configuration_exists(
     co_return dl_res == download_result::success;
 }
 
-ss::future<result<report_metadata_path, cloud_storage_clients::error_outcome>>
+ss::future<result<report_metadata_path, client_error>>
 aws_ops::latest_report_path(
   cloud_storage::cloud_storage_api& remote, retry_chain_node& parent_rtc) {
     // The prefix is generated according to

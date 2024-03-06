@@ -74,4 +74,12 @@ inv_ops::maybe_create_inventory_configuration(
     }
 }
 
+ss::future<result<report_metadata_path, cloud_storage_clients::error_outcome>>
+inv_ops::latest_report_path(
+  cloud_storage_api& remote, retry_chain_node& parent) {
+    return ss::visit(_inv_ops, [&remote, &parent](auto& ops) {
+        return ops.latest_report_path(remote, parent);
+    });
+}
+
 } // namespace cloud_storage::inventory

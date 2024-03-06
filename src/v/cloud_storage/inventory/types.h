@@ -11,6 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "cloud_storage_clients/types.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sharded.hh>
@@ -80,5 +81,7 @@ std::ostream& operator<<(std::ostream&, inventory_creation_result);
 
 using report_metadata_path
   = named_type<ss::sstring, struct report_metadata_path_t>;
+
+using client_error = cloud_storage_clients::error_outcome;
 
 } // namespace cloud_storage::inventory

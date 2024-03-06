@@ -9,6 +9,7 @@
  */
 
 #include "cloud_storage/inventory/aws_ops.h"
+#include "cloud_storage/inventory/inv_ops.h"
 #include "cloud_storage/inventory/tests/common.h"
 
 namespace cst = cloud_storage;
@@ -52,10 +53,26 @@ TEST(FindLatestReport, NoReportsExist) {
     EXPECT_EQ(result.error(), cl::error_outcome::key_not_found);
 }
 
-TEST(FindLatestReport, LatestReportPathReturned) {
+TEST(FindLatestReport, NonDatePathsIgnored) {
     ss::abort_source as;
     retry_chain_node parent{as};
 
+    const auto dates = cl::client::list_bucket_result{
+      .common_prefixes = {"1215-06/", "133701Z/"}};
+
+    cst::inventory::MockRemote remote;
+    validate_list_objects(remote, parent, dates);
+
+    cst::inventory::aws_ops ops{bucket, id, prefix};
+    const auto result = ops.latest_report_path(remote, parent).get();
+
+    EXPECT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), cl::error_outcome::key_not_found);
+}
+
+template<typename Ops, typename... T>
+void run_test(
+  cst::inventory::MockRemote& remote, retry_chain_node& parent, T... ts) {
     constexpr auto latest_date = "1945-05-07T23-23Z/";
     constexpr auto latest_date_which_has_report = "1757-06-23T00-02Z/";
 
@@ -69,7 +86,6 @@ TEST(FindLatestReport, LatestReportPathReturned) {
         latest_date,
         "1337-05-24T02-01Z/"}};
 
-    cst::inventory::MockRemote remote;
     validate_list_objects(remote, parent, dates);
 
     // The latest date does not have a manifest checksum, so it will be checked
@@ -98,7 +114,7 @@ TEST(FindLatestReport, LatestReportPathReturned) {
       .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
         cst::download_result::success)));
 
-    cst::inventory::aws_ops ops{bucket, id, prefix};
+    auto ops = Ops{ts...};
     const auto result = ops.latest_report_path(remote, parent).get();
 
     EXPECT_TRUE(result.has_value());
@@ -108,19 +124,17 @@ TEST(FindLatestReport, LatestReportPathReturned) {
         "{}{}manifest.json", list_prefix, latest_date_which_has_report));
 }
 
-TEST(FindLatestReport, NonDatePathsIgnored) {
+TEST(FindLatestReport, LatestReportPathReturned) {
     ss::abort_source as;
     retry_chain_node parent{as};
-
-    const auto dates = cl::client::list_bucket_result{
-      .common_prefixes = {"1215-06/", "133701Z/"}};
-
     cst::inventory::MockRemote remote;
-    validate_list_objects(remote, parent, dates);
+    run_test<cst::inventory::aws_ops>(remote, parent, bucket, id, prefix);
+}
 
-    cst::inventory::aws_ops ops{bucket, id, prefix};
-    const auto result = ops.latest_report_path(remote, parent).get();
-
-    EXPECT_TRUE(result.has_error());
-    EXPECT_EQ(result.error(), cl::error_outcome::key_not_found);
+TEST(FindLatestReport, InvOps) {
+    ss::abort_source as;
+    retry_chain_node parent{as};
+    cst::inventory::MockRemote remote;
+    run_test<cst::inventory::inv_ops>(
+      remote, parent, cst::inventory::aws_ops{bucket, id, prefix});
 }
