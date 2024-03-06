@@ -377,6 +377,11 @@ class CreateTopicsResponseTest(RedpandaTest):
     DEFAULT_CLEANUP_POLICY = 'delete'
     DEFAULT_CONFIG_SOURCE = 5
 
+    CONFIG_SOURCE_MAPPING = {
+        1: 'DYNAMIC_TOPIC_CONFIG',
+        5: 'DEFAULT_CONFIG',
+    }
+
     def __init__(self, test_context):
         super(CreateTopicsResponseTest,
               self).__init__(test_context=test_context)
@@ -398,6 +403,16 @@ class CreateTopicsResponseTest(RedpandaTest):
         return self.kcl_client.create_topics(6,
                                              topics=topics,
                                              validate_only=validate_only)
+
+    def create_topic(self, name):
+        topics = [{
+            'name': f"{name}",
+            'partition_count': 1,
+            'replication_factor': 1
+        }]
+        return self.kcl_client.create_topics(6,
+                                             topics=topics,
+                                             validate_only=False)
 
     def get_np(self, tp):
         return tp['NumPartitions']
@@ -458,14 +473,22 @@ class CreateTopicsResponseTest(RedpandaTest):
           b. serialized correctly
         """
 
-        topics = self.create_topics(1, 1)
-        for topic in topics:
-            cleanup_policy = self.get_config_by_name(topic, 'cleanup.policy')
-            assert cleanup_policy is not None, "cleanup.policy missing from topic config"
-            assert cleanup_policy[
-                'Value'] == self.DEFAULT_CLEANUP_POLICY, f"cleanup.policy = {cleanup_policy['Value']}, expected {self.DEFAULT_CLEANUP_POLICY}"
-            assert cleanup_policy[
-                'Source'] == self.DEFAULT_CONFIG_SOURCE, f"cleanup.policy = {cleanup_policy['Source']}, expected {self.DEFAULT_CONFIG_SOURCE}"
+        topic_name = 'test-create-topic-response'
+        create_topics_response = self.create_topic(topic_name)
+        topic_response = create_topics_response[0]
+
+        res = self.kcl_client.describe_topic(topic_name)
+        describe_configs = [line.split() for line in res.strip().split('\n')]
+
+        for (key, value, source) in describe_configs:
+            topic_config = self.get_config_by_name(topic_response, key)
+
+            assert topic_config, f"Config '{key}' returned by DescribeConfigs is missing from configs response in CreateTopic"
+            assert topic_config[
+                'Value'] == value, f"config value mismatch for {key} across CreateTopic and DescribeConfigs: {topic_config['Value']} != {value}"
+
+            assert self.CONFIG_SOURCE_MAPPING[topic_config[
+                'Source']] == source, f"config source mismatch for {key} across CreateTopic and DescribeConfigs: {self.CONFIG_SOURCE_MAPPING[topic_config['Source']]} != {source}"
 
     @cluster(num_nodes=3)
     def test_create_topic_validate_only(self):
