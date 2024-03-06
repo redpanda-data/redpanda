@@ -189,6 +189,12 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::recovery_validation_mode& v) {
+    stringize(w, v);
+}
+
+void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const model::broker_endpoint& ep) {
     w.StartObject();
     w.Key("name");

@@ -535,4 +535,34 @@ write_caching_mode_from_string(std::string_view s) {
         model::write_caching_mode::disabled)
       .default_match(std::nullopt);
 }
+
+std::ostream& operator<<(std::ostream& os, recovery_validation_mode vm) {
+    using enum recovery_validation_mode;
+    switch (vm) {
+    case check_manifest_existence:
+        return os << "check_manifest_existence";
+    case check_manifest_and_segment_metadata:
+        return os << "check_manifest_and_segment_metadata";
+    case no_check:
+        return os << "no_check";
+    }
+}
+
+std::istream& operator>>(std::istream& is, recovery_validation_mode& vm) {
+    using enum recovery_validation_mode;
+    auto s = ss::sstring{};
+    is >> s;
+    try {
+        vm = string_switch<recovery_validation_mode>(s)
+               .match("check_manifest_existence", check_manifest_existence)
+               .match(
+                 "check_manifest_and_segment_metadata",
+                 check_manifest_and_segment_metadata)
+               .match("no_check", no_check);
+    } catch (std::runtime_error const&) {
+        is.setstate(std::ios::failbit);
+    }
+    return is;
+}
+
 } // namespace model
