@@ -652,7 +652,7 @@ class CreateSITopicsTest(RedpandaTest):
         # overriden.
         topic_config = rpk.describe_topic_configs(topic)
         value, src = topic_config["cleanup.policy"]
-        assert value == "delete" and src == "DYNAMIC_TOPIC_CONFIG"
+        assert value == "delete" and src == "DEFAULT_CONFIG"
 
         kcl.alter_topic_config({"cleanup.policy": "compact"},
                                incremental=False,
