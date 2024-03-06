@@ -301,9 +301,14 @@ TEST_F_CORO(
                 id,
                 o,
                 last_visible[id]);
+              auto dirty_offset = node->raft()->dirty_offset();
               vassert(
-                o <= node->raft()->dirty_offset(),
-                "last visible offset can not be larger than log end offset");
+                o <= dirty_offset,
+                "last visible offset {} on node {} can not be larger than log "
+                "end offset {}",
+                o,
+                id,
+                dirty_offset);
               last_visible[id] = o;
           }
           return ss::sleep(10ms);
