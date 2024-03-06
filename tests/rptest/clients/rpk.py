@@ -315,6 +315,18 @@ class RpkTool:
 
         return self._run(cmd)
 
+    def sasl_list_users(self):
+        cmd = ["acl", "user", "list"]
+        cmd += ["--api-urls", self._redpanda.admin_endpoints()]
+
+        return self._run(cmd)
+
+    def sasl_delete_user(self, username):
+        cmd = ["acl", "user", "delete", username]
+        cmd += ["--api-urls", self._redpanda.admin_endpoints()]
+
+        return self._run(cmd)
+
     def sasl_create_user_basic(self,
                                new_username,
                                auth_user="",
