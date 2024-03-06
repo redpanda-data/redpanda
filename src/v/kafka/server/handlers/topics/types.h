@@ -110,6 +110,12 @@ static constexpr std::string_view
 
 static constexpr std::string_view topic_property_mpx_virtual_cluster_id
   = "redpanda.virtual.cluster.id";
+// topic recovery validation checks, flatten out the fields
+static constexpr std::string_view topic_property_recovery_checks_mode
+  = "recovery.checks.mode";
+static constexpr std::string_view
+  topic_property_recovery_checks_max_segment_depth
+  = "recovery.checks.depth";
 
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler

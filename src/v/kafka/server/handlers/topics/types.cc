@@ -146,6 +146,38 @@ get_tristate_value(const config_map_t& config, std::string_view key) {
     return tristate<T>(std::make_optional<T>(*v));
 }
 
+static std::optional<cluster::recovery_checks>
+get_recovery_checks(const config_map_t& config) {
+    auto mode = get_config_value<model::recovery_validation_mode>(
+      config, topic_property_recovery_checks_mode);
+    auto depth = get_config_value<uint16_t>(
+      config, topic_property_recovery_checks_max_segment_depth);
+    if (!mode.has_value() && !depth.has_value()) {
+        return std::nullopt;
+    }
+
+    if (!mode.has_value() && depth.has_value()) {
+        // depth imply a metadata validation mode
+        return cluster::recovery_checks{
+          .mode = model::recovery_validation_mode::
+            check_manifest_and_segment_metadata,
+          .max_segment_depth = depth.value(),
+        };
+    }
+
+    if (mode.has_value() && !depth.has_value()) {
+        // get depth from cluster config
+        return cluster::recovery_checks{
+          .mode = mode.value(),
+          .max_segment_depth = config::shard_local_cfg()
+                                 .cloud_storage_recovery_topic_validation_depth,
+        };
+    }
+
+    return cluster::recovery_checks{
+      .mode = mode.value(), .max_segment_depth = depth.value()};
+}
+
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t) {
     auto cfg = cluster::topic_configuration(
@@ -212,6 +244,8 @@ to_cluster_type(const creatable_topic& t) {
         schema_id_validation_config_parser(
           p, kafka::config_resource_operation::set);
     }
+
+    cfg.properties.recovery_checks = get_recovery_checks(config_entries);
 
     /// Final topic_property not decoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user

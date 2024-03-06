@@ -199,7 +199,7 @@ bool topic_properties::has_overrides() const {
            || initial_retention_local_target_bytes.is_engaged()
            || initial_retention_local_target_ms.is_engaged()
            || write_caching.has_value() || flush_ms.has_value()
-           || flush_bytes.has_value();
+           || flush_bytes.has_value() || recovery_checks.has_value();
 }
 
 bool topic_properties::requires_remote_erase() const {
@@ -362,7 +362,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "mpx_virtual_cluster_id: {}, "
       "write_caching: {}, "
       "flush_ms: {}, "
-      "flush_bytes: {}}}",
+      "flush_bytes: {}, ",
+      "recovery_checks: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -393,7 +394,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.mpx_virtual_cluster_id,
       properties.write_caching,
       properties.flush_ms,
-      properties.flush_bytes);
+      properties.flush_bytes,
+      properties.recovery_checks);
 
     return o;
 }
@@ -671,7 +673,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "record_value_subject_name_strategy_compat: {}, "
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
-      "flush_bytes: {}",
+      "flush_bytes: {}, recovery_checks: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -697,7 +699,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.initial_retention_local_target_ms,
       i.write_caching,
       i.flush_ms,
-      i.flush_bytes);
+      i.flush_bytes,
+      i.recovery_checks);
     return o;
 }
 
@@ -2237,6 +2240,7 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       std::nullopt,
       std::nullopt,
+      std::nullopt,
       std::nullopt};
 }
 
@@ -2255,3 +2259,11 @@ adl<cluster::cluster_property_kv>::from(iobuf_parser& p) {
 }
 
 } // namespace reflection
+
+auto fmt::formatter<cluster::recovery_checks>::format(
+  cluster::recovery_checks const& rc, fmt::format_context& ctx) const
+  -> decltype(ctx.out()) {
+    return formatter<std::string_view>::format(
+      fmt::format("{{ mode: {}, depth: {}}}", rc.mode, rc.max_segment_depth),
+      ctx);
+}

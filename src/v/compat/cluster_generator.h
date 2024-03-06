@@ -584,6 +584,23 @@ struct instance_generator<cluster::remote_topic_properties> {
 };
 
 template<>
+struct instance_generator<cluster::recovery_checks> {
+    static cluster::recovery_checks random() {
+        using enum model::recovery_validation_mode;
+        return {
+          .mode = random_generators::random_choice(
+            {check_manifest_existence,
+             check_manifest_and_segment_metadata,
+             no_check}),
+          .max_segment_depth = random_generators::get_int<
+            decltype(cluster::recovery_checks::max_segment_depth)>(),
+        };
+    }
+
+    static std::vector<cluster::recovery_checks> limits() { return {}; }
+};
+
+template<>
 struct instance_generator<cluster::topic_properties> {
     static xid random_xid() {
         auto data = random_generators::get_bytes(12);
@@ -648,7 +665,11 @@ struct instance_generator<cluster::topic_properties> {
           }),
           tests::random_optional([] { return tests::random_duration_ms(); }),
           tests::random_optional(
-            [] { return random_generators::get_int<size_t>(); })};
+            [] { return random_generators::get_int<size_t>(); }),
+          tests::random_optional([] {
+              return instance_generator<cluster::recovery_checks>::random();
+          }),
+        };
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }

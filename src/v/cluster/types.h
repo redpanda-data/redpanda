@@ -1456,6 +1456,20 @@ struct remote_topic_properties
     operator<<(std::ostream&, const remote_topic_properties&);
 };
 
+// Properties read by topic_recovery_validator to choose the depth of recovery
+struct recovery_checks
+  : public serde::
+      envelope<recovery_checks, serde::version<0>, serde::compat_version<0>> {
+    model::recovery_validation_mode mode{
+      model::recovery_validation_mode::check_manifest_existence};
+
+    // how many segment_meta validate, most recent to old
+    uint32_t max_segment_depth{0};
+
+    auto serde_fields() { return std::tie(mode, max_segment_depth); }
+    auto operator==(recovery_checks const&) const -> bool = default;
+};
+
 /**
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults
@@ -1499,7 +1513,8 @@ struct topic_properties
       std::optional<model::vcluster_id> mpx_virtual_cluster_id,
       std::optional<model::write_caching_mode> write_caching,
       std::optional<std::chrono::milliseconds> flush_ms,
-      std::optional<size_t> flush_bytes)
+      std::optional<size_t> flush_bytes,
+      std::optional<recovery_checks> recovery_checks)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1535,7 +1550,8 @@ struct topic_properties
       , mpx_virtual_cluster_id(mpx_virtual_cluster_id)
       , write_caching(write_caching)
       , flush_ms(flush_ms)
-      , flush_bytes(flush_bytes) {}
+      , flush_bytes(flush_bytes)
+      , recovery_checks(recovery_checks) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1582,6 +1598,11 @@ struct topic_properties
     std::optional<std::chrono::milliseconds> flush_ms;
     std::optional<size_t> flush_bytes;
 
+    // introduced to drive validation at recovery time, when .recovery=true and
+    // .remote_topic_properties.has_value() the main use case is to have a
+    // manually editable knob in the topic_manifest json file
+    std::optional<recovery_checks> recovery_checks{std::nullopt};
+
     bool is_compacted() const;
     bool has_overrides() const;
     bool requires_remote_erase() const;
@@ -1621,7 +1642,8 @@ struct topic_properties
           mpx_virtual_cluster_id,
           write_caching,
           flush_ms,
-          flush_bytes);
+          flush_bytes,
+          recovery_checks);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1768,6 +1790,7 @@ struct incremental_topic_updates
     property_update<std::optional<model::write_caching_mode>> write_caching;
     property_update<std::optional<std::chrono::milliseconds>> flush_ms;
     property_update<std::optional<size_t>> flush_bytes;
+    property_update<std::optional<recovery_checks>> recovery_checks;
 
     auto serde_fields() {
         return std::tie(
@@ -1796,7 +1819,8 @@ struct incremental_topic_updates
           initial_retention_local_target_ms,
           write_caching,
           flush_ms,
-          flush_bytes);
+          flush_bytes,
+          recovery_checks);
     }
 
     friend std::ostream&
@@ -5425,3 +5449,11 @@ std::ostream& operator<<(std::ostream& o, const absl::flat_hash_map<K, V>& r) {
 }
 
 } // namespace absl
+
+template<>
+struct fmt::formatter<cluster::recovery_checks>
+  : public fmt::formatter<std::string_view> {
+    auto
+    format(cluster::recovery_checks const& rc, fmt::format_context& ctx) const
+      -> decltype(ctx.out());
+};
