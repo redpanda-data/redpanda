@@ -590,11 +590,11 @@ absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
     return nodes;
 }
 
-absl::flat_hash_set<raft::group_id> leader_balancer::muted_groups() const {
-    absl::flat_hash_set<raft::group_id> res;
-    res.reserve(_muted.size());
+leader_balancer_types::muted_groups_t leader_balancer::muted_groups() const {
+    leader_balancer_types::muted_groups_t res;
+
     for (const auto& e : _muted) {
-        res.insert(e.first);
+        res.add(static_cast<uint64_t>(e.first));
     }
     return res;
 }
