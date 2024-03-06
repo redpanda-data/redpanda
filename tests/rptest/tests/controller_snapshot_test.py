@@ -9,7 +9,7 @@
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaInstaller
-from rptest.services.redpanda_installer import ver_triple, RedpandaVersionTriple
+from rptest.services.redpanda_installer import ver_triple, RedpandaVersionTriple, RedpandaVersionLine
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
@@ -143,9 +143,9 @@ class ControllerState:
             set(broker['version'] for broker in brokers_resp
                 if 'version' in broker))
         assert len(versions) == 1, f"Unexpected versions: {versions}"
-        version_line = versions[0]
+        self.version_line = versions[0]
 
-        self.version = ver_triple(version_line)
+        self.version = ver_triple(self.version_line)
 
     def _check_features(self, other, allow_upgrade_changes=False):
         for k, v in self.features_response.items():
@@ -188,11 +188,21 @@ class ControllerState:
             symdiff = to_set(self.topic_configs[t]) ^ to_set(
                 other.topic_configs[t])
 
-            # Version 24.1.0 includes a bugfix to change the source type of cleanup.policy from
+            # Newer versions include a bugfix to change the source type of cleanup.policy from
             # DYNAMIC_TOPIC_CONFIG to DEFAULT_CONFIG if the cleanup.policy wasn't specified as
-            # a config value when the topic is created.
-            if self.version < RedpandaVersionTriple((24, 1, 0)) and \
-                other.version >= RedpandaVersionTriple((24, 1, 0)):
+            # a config value when the topic is created. Versions that include the bugfix:
+            #  * v23.3.12+
+            #  * v24.1.*
+            #  * v23.3.11* versions, except for the v23.3.11 release, i.e. all development and
+            #    PR builder redpanda versions built off of v23.3.11 before v23.3.12.
+            def contains_config_fix(version: RedpandaVersionTriple,
+                                    version_line: RedpandaVersionLine) -> bool:
+                V23_3_11_RELEASE = "v23.3.11 - 93f88bf377e558132eba04f81e4f83b033cec6e7"
+                return version >= RedpandaVersionTriple((23, 3, 12)) or \
+                    (version == RedpandaVersionTriple((23, 3, 11)) and version_line != V23_3_11_RELEASE)
+
+            if contains_config_fix(self.version, self.version_line) ^ \
+                contains_config_fix(other.version, other.version_line):
 
                 symdiff -= set({('cleanup.policy', ('delete',
                                                     'DYNAMIC_TOPIC_CONFIG'))})
