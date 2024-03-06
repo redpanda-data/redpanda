@@ -17,6 +17,7 @@ class acl_store;
 class authorizer;
 class credential_store;
 class ephemeral_credential_store;
+class role_store;
 
 namespace oidc {
 
