@@ -27,6 +27,7 @@
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/shard_table.h"
+#include "cluster/topic_recovery_validator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
@@ -447,8 +448,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
 
         const auto& bucket_config
           = cloud_storage::configuration::get_bucket_config();
-        auto bucket = bucket_config.value();
-        if (!bucket.has_value()) {
+        if (!bucket_config.value().has_value()) {
             vlog(
               clusterlog.error,
               "Can't run topic recovery for the topic {}, {} is not set",
@@ -457,6 +457,10 @@ ss::future<topic_result> topics_frontend::do_create_topic(
             co_return make_error_result(
               assignable_config.cfg.tp_ns, errc::topic_operation_error);
         }
+
+        auto bucket = cloud_storage_clients::bucket_name{
+          bucket_config.value().value()};
+
         auto cfg_source = remote_topic_configuration_source(
           _cloud_storage_api.local());
 
@@ -468,9 +472,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
                .has_value()) {
             errc download_res
               = co_await cfg_source.set_recovered_topic_properties(
-                assignable_config,
-                cloud_storage_clients::bucket_name(bucket.value()),
-                _as.local());
+                assignable_config, bucket, _as.local());
 
             if (download_res != errc::success) {
                 vlog(
@@ -486,6 +488,32 @@ ss::future<topic_result> topics_frontend::do_create_topic(
               "remote_topic_properties not set after successful download of "
               "valid "
               "topic manifest");
+        }
+        auto validation_map = co_await maybe_validate_recovery_topic(
+          assignable_config, bucket, _cloud_storage_api.local(), _as.local());
+        if (std::ranges::any_of(
+              validation_map,
+              [](std::pair<model::partition_id, validation_result> const& vp) {
+                  using enum validation_result;
+                  switch (vp.second) {
+                  case passed:
+                  case missing_manifest:
+                      // passed or missing_manifest do not fail validation
+                      return false;
+                  case anomaly_detected:
+                  case download_issue:
+                      // failure needs to be handled by an operator,
+                      // download_issue likely is a config issue
+                      return true;
+                  }
+              })) {
+            vlog(
+              clusterlog.error,
+              "Stopping recovery of {} due to validation error",
+              assignable_config.cfg.tp_ns);
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns,
+              make_error_code(errc::validation_of_recovery_topic_failed));
         }
 
         vlog(
