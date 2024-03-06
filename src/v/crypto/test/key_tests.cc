@@ -86,8 +86,8 @@ TEST(crypto_key, load_pem_private_key) {
       crypto::format_type::PEM,
       crypto::is_private_key_t::yes);
 
-    ASSERT_EQ(key.get_type(), crypto::key_type::RSA);
-    ASSERT_TRUE(key.is_private_key());
+    EXPECT_EQ(key.get_type(), crypto::key_type::RSA);
+    EXPECT_TRUE(key.is_private_key());
 }
 
 TEST(crypto_key, load_pem_public_key) {
@@ -96,8 +96,8 @@ TEST(crypto_key, load_pem_public_key) {
       crypto::format_type::PEM,
       crypto::is_private_key_t::no);
 
-    ASSERT_EQ(key.get_type(), crypto::key_type::RSA);
-    ASSERT_FALSE(key.is_private_key());
+    EXPECT_EQ(key.get_type(), crypto::key_type::RSA);
+    EXPECT_FALSE(key.is_private_key());
 }
 
 TEST(crypto_key, load_ec_key) {
@@ -110,6 +110,6 @@ TEST(crypto_key, load_ec_key) {
 }
 
 TEST(crypto_key, load_rsa_pub_key_components) {
-    ASSERT_NO_THROW(
+    EXPECT_NO_THROW(
       crypto::key::load_rsa_public_key(rsa_pub_key_n, rsa_pub_key_e));
 }

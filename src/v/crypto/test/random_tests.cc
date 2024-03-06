@@ -17,25 +17,25 @@
 TEST(crypto_rand, generate_rand) {
     const size_t len = 32;
     auto ret = crypto::generate_random(len, crypto::use_private_rng::no);
-    ASSERT_EQ(ret.size(), len);
+    EXPECT_EQ(ret.size(), len);
 }
 
 TEST(crypto_rand, generate_rand_priv) {
     const size_t len = 32;
     auto ret = crypto::generate_random(len, crypto::use_private_rng::yes);
-    ASSERT_EQ(ret.size(), len);
+    EXPECT_EQ(ret.size(), len);
 }
 
 TEST(crypto_rand, generate_rand_span) {
     std::vector<uint8_t> rand_data(32);
     auto copy_of_orig = rand_data;
     crypto::generate_random(rand_data, crypto::use_private_rng::no);
-    ASSERT_NE(copy_of_orig, rand_data);
+    EXPECT_NE(copy_of_orig, rand_data);
 }
 
 TEST(crypto_rand, generate_rand_span_private) {
     std::vector<uint8_t> rand_data(32);
     auto copy_of_orig = rand_data;
     crypto::generate_random(rand_data, crypto::use_private_rng::yes);
-    ASSERT_NE(copy_of_orig, rand_data);
+    EXPECT_NE(copy_of_orig, rand_data);
 }

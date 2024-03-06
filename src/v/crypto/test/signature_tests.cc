@@ -63,14 +63,14 @@ const auto sig_bad_sig = convert_from_hex(
 TEST(crypto_sig_validation, rsa_2k_sha256_good) {
     auto key = crypto::key::load_rsa_public_key(rsa_pub_key_n, rsa_pub_key_e);
 
-    ASSERT_TRUE(crypto::verify_signature(
+    EXPECT_TRUE(crypto::verify_signature(
       crypto::digest_type::SHA256, key, sig_good_msg, sig_good_sig));
 }
 
 TEST(crypto_sig_validation, rsa_2k_sha256_bad) {
     auto key = crypto::key::load_rsa_public_key(rsa_pub_key_n, rsa_pub_key_e);
 
-    ASSERT_FALSE(crypto::verify_signature(
+    EXPECT_FALSE(crypto::verify_signature(
       crypto::digest_type::SHA256,
       key,
       bytes_view_to_string_view(sig_bad_msg),
@@ -82,7 +82,7 @@ TEST(crypto_sig_validation, rsa_2k_sha256_good_multi_string) {
 
     crypto::verify_ctx ctx(crypto::digest_type::SHA256, key);
     ctx.update(bytes_view_to_string_view(sig_good_msg));
-    ASSERT_TRUE(std::move(ctx).final(bytes_view_to_string_view(sig_good_sig)));
+    EXPECT_TRUE(std::move(ctx).final(bytes_view_to_string_view(sig_good_sig)));
 }
 
 TEST(crypto_sig_validation, rsa_2k_sha256_reset) {
@@ -90,7 +90,7 @@ TEST(crypto_sig_validation, rsa_2k_sha256_reset) {
 
     crypto::verify_ctx ctx(crypto::digest_type::SHA256, key);
     ctx.update(sig_good_msg);
-    ASSERT_TRUE(ctx.reset(sig_good_sig));
+    EXPECT_TRUE(ctx.reset(sig_good_sig));
     ctx.update(bytes_view_to_string_view(sig_good_msg));
-    ASSERT_TRUE(ctx.reset(bytes_view_to_string_view(sig_good_sig)));
+    EXPECT_TRUE(ctx.reset(bytes_view_to_string_view(sig_good_sig)));
 }

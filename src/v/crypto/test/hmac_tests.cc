@@ -54,23 +54,23 @@ TEST(crypto_hmac, length) {
     // NOLINTNEXTLINE
     bytes fake_key('k', 16);
     for (auto&& [k, v] : expected_sizes) {
-        ASSERT_EQ(crypto::hmac_ctx::size(k), v)
+        EXPECT_EQ(crypto::hmac_ctx::size(k), v)
           << "Mismatch on HMAC size for digest type " << k;
         crypto::hmac_ctx ctx(k, fake_key);
-        ASSERT_EQ(ctx.size(), v)
+        EXPECT_EQ(ctx.size(), v)
           << "Mismatch on HMAC size for context using digest type " << k;
     }
 }
 
 TEST(crypto_hmac, hmac_sha256_one_shot) {
-    ASSERT_EQ(
+    EXPECT_EQ(
       crypto::hmac(
         crypto::digest_type::SHA256, hmac_sha256_key, hmac_sha256_msg),
       hmac_sha256_expected);
 }
 
 TEST(crypto_hmac, hmac_sha512_one_shot) {
-    ASSERT_EQ(
+    EXPECT_EQ(
       crypto::hmac(
         crypto::digest_type::SHA512,
         bytes_view_to_string_view(hmac_sha512_key),
@@ -83,7 +83,7 @@ TEST(crypto_hmac, hmac_sha256_multipart_bytes) {
     ctx.update(hmac_sha256_msg);
     bytes sig(bytes::initialized_later{}, ctx.size());
     ASSERT_NO_THROW(std::move(ctx).final(sig));
-    ASSERT_EQ(sig, hmac_sha256_expected);
+    EXPECT_EQ(sig, hmac_sha256_expected);
 }
 
 TEST(crypto_hmac, hmac_sha256_multipart_string) {
@@ -92,14 +92,14 @@ TEST(crypto_hmac, hmac_sha256_multipart_string) {
     ctx.update(bytes_view_to_string_view(hmac_sha256_msg));
     bytes sig(bytes::initialized_later{}, ctx.size());
     ASSERT_NO_THROW(std::move(ctx).final(bytes_span_to_char_span(sig)));
-    ASSERT_EQ(sig, hmac_sha256_expected);
+    EXPECT_EQ(sig, hmac_sha256_expected);
 }
 
 TEST(crypto_hmac, hmac_sha256_multipart_bad_len) {
     crypto::hmac_ctx ctx(crypto::digest_type::SHA256, hmac_sha256_key);
     ctx.update(hmac_sha256_msg);
     bytes sig(bytes::initialized_later{}, ctx.size() - 1);
-    ASSERT_THROW(std::move(ctx).final(sig), crypto::exception);
+    EXPECT_THROW(std::move(ctx).final(sig), crypto::exception);
 }
 
 TEST(crypto_hmac, hmac_sha256_reset) {
@@ -107,9 +107,9 @@ TEST(crypto_hmac, hmac_sha256_reset) {
     ctx.update(bytes_view_to_string_view(hmac_sha256_msg));
     bytes sig(bytes::initialized_later{}, ctx.size());
     ctx.reset(bytes_span_to_char_span(sig));
-    ASSERT_EQ(sig, hmac_sha256_expected);
+    EXPECT_EQ(sig, hmac_sha256_expected);
     ctx.update(hmac_sha256_msg);
     bytes sig2(bytes::initialized_later{}, ctx.size());
     ctx.reset(sig2);
-    ASSERT_EQ(sig2, hmac_sha256_expected);
+    EXPECT_EQ(sig2, hmac_sha256_expected);
 }

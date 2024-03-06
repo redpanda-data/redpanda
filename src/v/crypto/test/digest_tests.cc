@@ -47,27 +47,27 @@ static const absl::flat_hash_map<crypto::digest_type, size_t> expected_sizes = {
 
 TEST(crypto_hashing, length) {
     for (auto&& [k, v] : expected_sizes) {
-        ASSERT_EQ(crypto::digest_ctx::size(k), v)
+        EXPECT_EQ(crypto::digest_ctx::size(k), v)
           << "Mismatch on size for digest type " << k;
         crypto::digest_ctx ctx(k);
-        ASSERT_EQ(ctx.size(), v)
+        EXPECT_EQ(ctx.size(), v)
           << "Mismatch on size for context using digest type " << k;
     }
 }
 
 TEST(crypto_hashing, md5_one_shot) {
     auto result = crypto::digest(crypto::digest_type::MD5, md5_test_val);
-    ASSERT_EQ(result, md5_expected_val);
+    EXPECT_EQ(result, md5_expected_val);
 }
 
 TEST(crypto_hashing, sha256_one_shot) {
     auto result = crypto::digest(crypto::digest_type::SHA256, sha256_test_val);
-    ASSERT_EQ(result, sha256_expected_val);
+    EXPECT_EQ(result, sha256_expected_val);
 }
 
 TEST(crypto_hashing, sha512_one_shot) {
     auto result = crypto::digest(crypto::digest_type::SHA512, sha512_test_val);
-    ASSERT_EQ(result, sha512_expected_val);
+    EXPECT_EQ(result, sha512_expected_val);
 }
 
 TEST(crypto_hashing, sha256_multipart_bytes) {
@@ -75,7 +75,7 @@ TEST(crypto_hashing, sha256_multipart_bytes) {
     ctx.update(sha256_test_val);
     bytes dgst(bytes::initialized_later{}, ctx.size());
     ASSERT_NO_THROW(std::move(ctx).final(dgst));
-    ASSERT_EQ(dgst, sha256_expected_val);
+    EXPECT_EQ(dgst, sha256_expected_val);
 }
 
 TEST(crypto_hashing, sha256_multipart_string) {
@@ -83,14 +83,14 @@ TEST(crypto_hashing, sha256_multipart_string) {
     ctx.update(bytes_view_to_string_view(sha256_test_val));
     bytes dgst(bytes::initialized_later{}, ctx.size());
     ASSERT_NO_THROW(std::move(ctx).final(bytes_span_to_char_span(dgst)));
-    ASSERT_EQ(dgst, sha256_expected_val);
+    EXPECT_EQ(dgst, sha256_expected_val);
 }
 
 TEST(crypto_hashing, sha256_bad_len) {
     crypto::digest_ctx ctx(crypto::digest_type::SHA256);
     ctx.update(sha256_test_val);
     bytes dgst(bytes::initialized_later{}, ctx.size() - 1);
-    ASSERT_THROW(std::move(ctx).final(dgst), crypto::exception);
+    EXPECT_THROW(std::move(ctx).final(dgst), crypto::exception);
 }
 
 TEST(crypto_hashing, sha256_reset) {
@@ -98,9 +98,9 @@ TEST(crypto_hashing, sha256_reset) {
     ctx.update(bytes_view_to_string_view(sha256_test_val));
     bytes dgst(bytes::initialized_later{}, ctx.size());
     ctx.reset(bytes_span_to_char_span(dgst));
-    ASSERT_EQ(dgst, sha256_expected_val);
+    EXPECT_EQ(dgst, sha256_expected_val);
     ctx.update(sha256_test_val);
     bytes dgst2(bytes::initialized_later{}, ctx.size());
     ctx.reset(dgst2);
-    ASSERT_EQ(dgst2, sha256_expected_val);
+    EXPECT_EQ(dgst2, sha256_expected_val);
 }
