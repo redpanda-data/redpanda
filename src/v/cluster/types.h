@@ -3896,7 +3896,7 @@ struct partition_stm_state
 struct partition_raft_state
   : serde::envelope<
       partition_raft_state,
-      serde::version<2>,
+      serde::version<3>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -3918,6 +3918,9 @@ struct partition_raft_state
     bool is_leader;
     bool is_elected_leader;
     std::vector<partition_stm_state> stms;
+    bool write_caching_enabled;
+    size_t flush_bytes;
+    std::chrono::milliseconds flush_ms;
 
     struct follower_state
       : serde::envelope<
@@ -4006,7 +4009,10 @@ struct partition_raft_state
           is_elected_leader,
           followers,
           stms,
-          recovery_state);
+          recovery_state,
+          write_caching_enabled,
+          flush_bytes,
+          flush_ms);
     }
 
     friend bool

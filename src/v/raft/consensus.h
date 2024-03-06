@@ -521,6 +521,10 @@ public:
     // hook called on desired cluster/topic configuration updates.
     void notify_config_update();
 
+    bool write_caching_enabled() const { return _write_caching_enabled; }
+    size_t flush_bytes() const { return _flush_bytes; }
+    std::chrono::milliseconds flush_ms() const { return _flush_ms; }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;

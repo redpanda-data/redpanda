@@ -1032,6 +1032,18 @@
                     "type": "boolean",
                     "description": "True of voted a leader"
                 },
+                "write_caching_enabled": {
+                    "type": "boolean",
+                    "description": "Whether write caching is enabled for this replica"
+                },
+                "flush_ms": {
+                    "type": "long",
+                    "description": "flush delay ms, used for cached writes."
+                },
+                "flush_bytes": {
+                    "type": "long",
+                    "description": "unflushed bytes size flush trigger, used for cached writes."
+                },
                 "followers": {
                     "type": "array",
                     "items": {
