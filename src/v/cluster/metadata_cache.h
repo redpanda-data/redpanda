@@ -204,6 +204,9 @@ public:
     const topic_disabled_partitions_set*
       get_topic_disabled_set(model::topic_namespace_view) const;
 
+    std::optional<model::write_caching_mode>
+      get_topic_write_caching_mode(model::topic_namespace_view) const;
+
 private:
     ss::sharded<topic_table>& _topics_state;
     ss::sharded<members_table>& _members_table;
