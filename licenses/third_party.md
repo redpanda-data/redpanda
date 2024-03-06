@@ -1,7 +1,6 @@
 # Licenses list
 
-
-Dependencies sometimes change licenses between versions, 
+Dependencies sometimes change licenses between versions,
 please keep this up to date with every new library use.
 
 # Native deps _used_ in production (exclude all test dependencies)
@@ -32,12 +31,13 @@ please keep this up to date with every new library use.
 | lksctp-tools    | LGPL v2.1                          |
 | lz4             | BSD 2                              |
 | nettle          | LGPL v3                            |
+| OpenSSL v3      | Apache License 2                   |
 | protobuf        | Apache License 2                   |
 | rapidjson       | MIT                                |
 | re2             | BSD 3-Clause                       |
-| sasl2           | https://github.com/cyrusimap/cyrus-sasl/blob/master/COPYING |
+| sasl2           | <https://github.com/cyrusimap/cyrus-sasl/blob/master/COPYING> |
 | seastar         | Apache License 2                   |
-| snappy          | https://github.com/google/snappy/blob/master/COPYING |
+| snappy          | <https://github.com/google/snappy/blob/master/COPYING> |
 | xml2            | MIT                                |
 | xxhash          | BSD                                |
 | xz:liblzma      | Public Domain                      |
@@ -197,7 +197,7 @@ cat /tmp/license.md | sort | uniq
 | zstd | MIT |
 | zstd-safe | Apache-2.0 OR MIT |
 | zstd-sys | Apache-2.0 OR MIT |
- 
+
 # Go deps _used_ in production in RPK (exclude all test dependencies)
 
 | software                                              | license                   |
@@ -262,5 +262,3 @@ cat /tmp/license.md | sort | uniq
 | k8s.io/client-go                          | Apache License 2          |
 | k8s.io/utils                              | Apache License 2          |
 | sigs.k8s.io/controller-runtime            | Apache License 2          |
-
-
