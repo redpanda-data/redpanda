@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ast import main
 import threading
 import json
 import time
@@ -43,6 +44,12 @@ class ManyTopicsTest(RedpandaTest):
 
     # Max topic count supported by single client-swarm node
     MAX_SWARM_NODE_TOPIC_COUNT = 4500
+
+    # Up to 5 min to stop the node with a lot of topics
+    STOP_TIMEOUT = 60 * 5
+
+    # Progress wait timeout
+    PROGRESS_TIMEOUT = 60 * 3
 
     def __init__(self, *args, **kwargs):
         super().__init__(
@@ -539,7 +546,8 @@ class ManyTopicsTest(RedpandaTest):
         has been drained from it.
         """
         def restart_node(node):
-            if safe: self._enable_maintenance_mode(node)
+            if safe:
+                self._enable_maintenance_mode(node)
             self.redpanda.restart_nodes(node)
             if safe:
                 self._disable_maintenance_mode(node)
@@ -549,14 +557,7 @@ class ManyTopicsTest(RedpandaTest):
             self.logger.debug(f"Starting restart for node {node.name}")
             restart_node(node)
 
-    @skip_debug_mode
-    @cluster(num_nodes=11, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_decommission_safely(self):
-        self._start_initial_broker_set()
-
-        tsm = TopicScaleProfileManager()
-        profile = tsm.get_profile("topic_profile_t40k_p1")
-
+    def _stage_create_topics(self, profile):
         # Brokers list suitable for script arguments
         brokers = ",".join(self.redpanda.brokers_list())
 
@@ -579,6 +580,180 @@ class ManyTopicsTest(RedpandaTest):
         # Free node that used to create topics
         self.cluster.free_single(node)
 
+        return topic_details
+
+    def _wait_workload_progress(self, profile, swarm_producers):
+        def _check():
+            metrics = []
+            for node in swarm_producers:
+                metrics.append(node.get_metrics_summary(seconds=20).p50)
+            total_rate = sum(metrics)
+            _m = [str(m) for m in metrics]
+            self.logger.debug(f"...last 20 sec rate is {total_rate} "
+                              f"({', '.join(_m)})")
+            return total_rate >= target_rate
+
+        # Value for progress checks is 20 sec
+        # We'll have exactly one node here, so the rate should be exactly as configured
+        target_rate = profile.messages_per_second_per_producer
+
+        self.redpanda.wait_until(
+            _check,
+            timeout_sec=self.PROGRESS_TIMEOUT,
+            backoff_sec=5,
+            err_msg="Producer Swarm nodes not making progress")
+
+    def _wait_for_leadership_stabilized(self, maintenance_node):
+        def is_stabilized(threshold=0.1):
+            leaders_per_node = [
+                self.redpanda.metric_sum('vectorized_cluster_partition_leader',
+                                         nodes=[n]) for n in nodes
+            ]
+            stddev = numpy.std(leaders_per_node)
+            error = stddev / (self._get_partition_count() / len(nodes))
+            self.logger.info(
+                f"leadership info (stddev: {stddev:.2f}; want error {error:.2f} < {threshold})"
+            )
+
+            return error < threshold
+
+        # get nodes w/o maintenance one
+        nodes = [
+            n for n in self.redpanda.started_nodes() if n != maintenance_node
+        ]
+        wait_until(is_stabilized,
+                   timeout_sec=self.HEALTHY_WAIT_SECONDS,
+                   backoff_sec=30)
+
+        return
+
+    def _select_random_node(self):
+        ids = [self.redpanda.node_id(n) for n in self.redpanda.started_nodes()]
+        return self.redpanda.get_node_by_id(random.choice(ids))
+
+    @skip_debug_mode
+    @cluster(num_nodes=11, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_restart_safely(self):
+        self._start_initial_broker_set()
+
+        self.logger.info(f"Using topic profile of 'topic_profile_t40k_p1'")
+        tsm = TopicScaleProfileManager()
+        profile = tsm.get_profile("topic_profile_t40k_p1")
+
+        # Do create topics stage
+        self.logger.info("Creating topics")
+        topic_prefixes, pnode_topic_count, cnode_topic_count = \
+            self._stage_create_topics_adjusted(profile,
+                                               producer_node_only=True)
+
+        # Do the healthcheck on RP
+        # to make sure that all topics are settle down and have their leader
+        self.logger.info("Making sure that cluster is healthy")
+        self._wait_until_cluster_healthy()
+
+        # Start constant workload
+        self.logger.info("Running constant producers")
+        swarm_producers = self._run_producers_with_constant_rate(
+            profile, pnode_topic_count, topic_prefixes)
+
+        # Put node in maintenance
+        maintenance_node = self._select_random_node()
+        self.logger.info("Selected maintenance node is "
+                         f"'{maintenance_node.account.hostname}'")
+        self._enable_maintenance_mode(maintenance_node)
+
+        # Wait for healthy status
+        self.logger.info("Waiting for leadership stabilization ")
+        self._wait_for_leadership_stabilized(maintenance_node)
+        self._wait_until_cluster_healthy()
+
+        # Check workload progress
+        self.logger.info("Waiting for progress on producers")
+        self._wait_workload_progress(profile, swarm_producers)
+
+        # Stop node in maintenance
+        self.logger.info("Stopping maintenance node of "
+                         f"'{maintenance_node.account.hostname}'")
+        self.redpanda.stop_node(maintenance_node, timeout=self.STOP_TIMEOUT)
+
+        # Again, wait for healthy cluster
+        self.logger.info("Making sure that cluster is healthy")
+        self._wait_until_cluster_healthy()
+
+        # Check workload progress
+        self.logger.info("Waiting for progress on producers")
+        self._wait_workload_progress(profile, swarm_producers)
+
+        # Restart node
+        self.logger.info("Starting maintenance node of "
+                         f"'{maintenance_node.account.hostname}'")
+        self.redpanda.start_node(maintenance_node)
+        self.logger.info("Disabling maintenance on node "
+                         f"'{maintenance_node.account.hostname}'")
+        self._disable_maintenance_mode(maintenance_node)
+
+    @skip_debug_mode
+    @cluster(num_nodes=11, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_restart_unsafely(self):
+        self._start_initial_broker_set()
+
+        self.logger.info(f"Using topic profile of 'topic_profile_t40k_p1'")
+        tsm = TopicScaleProfileManager()
+        profile = tsm.get_profile("topic_profile_t40k_p1")
+
+        # Do create topics stage
+        self.logger.info("Creating topics")
+        topic_prefixes, pnode_topic_count, cnode_topic_count = \
+            self._stage_create_topics_adjusted(profile,
+                                               producer_node_only=True)
+
+        # Do the healthcheck on RP
+        # to make sure that all topics are settle down and have their leader
+        self.logger.info("Making sure that cluster is healthy")
+        self._wait_until_cluster_healthy()
+
+        # Start constant workload
+        self.logger.info("Running constant producers")
+        swarm_producers = self._run_producers_with_constant_rate(
+            profile, pnode_topic_count, topic_prefixes)
+
+        # Stop node in maintenance
+        maintenance_node = self._select_random_node()
+        self.logger.info("Selected node for hard stop is "
+                         f"'{maintenance_node.account.hostname}'")
+        self.redpanda.stop_node(maintenance_node,
+                                timeout=self.STOP_TIMEOUT,
+                                forced=True)
+
+        # Again, wait for healthy cluster
+        self.logger.info("Making sure that cluster is healthy")
+        self._wait_until_cluster_healthy()
+
+        # Check workload progress
+        self.logger.info("Waiting for progress on producers")
+        self._wait_workload_progress(profile, swarm_producers)
+
+        # Restart node
+        self.redpanda.start_node(maintenance_node)
+        self.logger.info("Disabling maintenance on node "
+                         f"'{maintenance_node.account.hostname}'")
+        self._disable_maintenance_mode(maintenance_node)
+
+        # Check workload progress
+        self.logger.info("Waiting for progress on producers")
+        self._wait_workload_progress(profile, swarm_producers)
+
+    @skip_debug_mode
+    @cluster(num_nodes=11, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_decommission_safely(self):
+        self._start_initial_broker_set()
+
+        tsm = TopicScaleProfileManager()
+        profile = tsm.get_profile("topic_profile_t40k_p1")
+
+        # Create topics
+        topic_details = self._stage_create_topics(profile)
+        # Wait for topic count and do a health check
         self._wait_for_topic_count(profile.topic_count)
         self._wait_until_cluster_healthy()
 
@@ -805,20 +980,30 @@ class ManyTopicsTest(RedpandaTest):
 
         return new_node_topic_count
 
-    def _stage_create_topics(self, profile):
+    def _stage_create_topics_adjusted(self, profile, producer_node_only=False):
         # Brokers list suitable for script arguments
         brokers = ",".join(self.redpanda.brokers_list())
 
-        # Divide available nodes between producers and consumers
         nodes_available = self.test_context.cluster.available().size()
-        produce_nodes = nodes_available // 2
-        consume_nodes = nodes_available // 2
+        if producer_node_only:
+            produce_nodes = nodes_available
+            consume_nodes = 0
+            # get topic count
+            produce_node_topic_count = profile.topic_count // produce_nodes
+            consume_node_topic_count = 0
+        else:
+            if nodes_available < 2:
+                raise RuntimeError("Not enough nodes for producers and "
+                                   f"consumers. Available {nodes_available}")
+            # Divide available nodes between producers and consumers
+            produce_nodes = nodes_available // 2
+            consume_nodes = nodes_available // 2
 
-        # get the target topic counts
-        # It is understood that these numbers will be the same
-        # But for code readability, it is divided into producers and consumers
-        produce_node_topic_count = profile.topic_count // produce_nodes
-        consume_node_topic_count = profile.topic_count // consume_nodes
+            # get the target topic counts
+            # It is understood that these numbers will be the same
+            # But for code readability, it is divided into producers and consumers
+            produce_node_topic_count = profile.topic_count // produce_nodes
+            consume_node_topic_count = profile.topic_count // consume_nodes
 
         # Calculate topic counts
         # This test by default designed for 12 nodes, 9 node cluster, 4 cpus each node
@@ -832,12 +1017,14 @@ class ManyTopicsTest(RedpandaTest):
         # uncomment for manual max topics
         # node_topic_count = max_supported_topics // nodes_available
 
-        self.logger.warning("Checking produce swarm nodes topic count")
-        produce_node_topic_count = self._adjust_topic_count(
-            produce_node_topic_count, produce_nodes, max_supported_topics)
-        self.logger.warning("Checking consume swarm nodes topic count")
-        consume_node_topic_count = self._adjust_topic_count(
-            consume_node_topic_count, consume_nodes, max_supported_topics)
+        if produce_node_topic_count > 0:
+            self.logger.warning("Checking produce swarm nodes topic count")
+            produce_node_topic_count = self._adjust_topic_count(
+                produce_node_topic_count, produce_nodes, max_supported_topics)
+        if consume_node_topic_count > 0:
+            self.logger.warning("Checking consume swarm nodes topic count")
+            consume_node_topic_count = self._adjust_topic_count(
+                consume_node_topic_count, consume_nodes, max_supported_topics)
 
         # Grab node to run creation script on it.
         node = self.cluster.alloc(ClusterSpec.simple_linux(1))[0]
@@ -901,7 +1088,7 @@ class ManyTopicsTest(RedpandaTest):
 
         # Do create topics stage
         topic_prefixes, pnode_topic_count, cnode_topic_count = \
-            self._stage_create_topics(profile)
+            self._stage_create_topics_adjusted(profile)
 
         # Do the healthcheck on RP
         # to make sure that all topics are settle down and have their leader
