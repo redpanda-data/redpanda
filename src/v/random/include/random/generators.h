@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "crypto/crypto.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -30,15 +31,18 @@ inline std::random_device::result_type get_seed() {
 
 static const auto seed = get_seed();
 
-// NOLINTNEXTLINE
+// NOLINTBEGIN
 static thread_local std::default_random_engine gen(internal::seed);
+static thread_local crypto::secure_private_rng secure_private_rng{};
+static thread_local crypto::secure_public_rng secure_public_rng{};
+// NOLINTEND
 } // namespace internal
 
 /**
  * Random string generator. Total number of distinct values that may be
  * generated is unlimited (within all possible values of given size).
  */
-ss::sstring gen_alphanum_string(size_t n);
+ss::sstring gen_alphanum_string(size_t n, bool use_secure_rng = false);
 
 static constexpr size_t alphanum_max_distinct_strlen = 32;
 /**
@@ -59,6 +63,16 @@ std::vector<T> randomized_range(T min, T max) {
     std::iota(r.begin(), r.end(), min);
     std::shuffle(r.begin(), r.end(), internal::gen);
     return r;
+}
+
+template<typename T>
+T get_int_secure(bool use_private) {
+    std::uniform_int_distribution<T> dist;
+    if (use_private) {
+        return dist(internal::secure_private_rng);
+    } else {
+        return dist(internal::secure_public_rng);
+    }
 }
 
 template<typename T>

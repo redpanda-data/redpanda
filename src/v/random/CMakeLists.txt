@@ -5,6 +5,7 @@ v_cc_library(
   DEPS
     absl::random_seed_sequences
     Seastar::seastar
+    v::crypto
 )
 
 add_subdirectory(tests)

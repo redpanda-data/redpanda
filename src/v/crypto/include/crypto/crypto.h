@@ -356,4 +356,28 @@ bytes_span<> generate_random(
  */
 bytes generate_random(
   size_t len, use_private_rng private_rng = use_private_rng::no);
+
+/**
+ * Secure RNG structure that can be used with stdlib RNG utilities
+ *
+ * @tparam UsePrivate Whether or not to use the private RNG
+ * @tparam UIntType The return type
+ */
+template<bool UsePrivate, std::unsigned_integral UIntType>
+struct secure_rng {
+public:
+    using result_type = UIntType;
+
+    static constexpr result_type min() {
+        return std::numeric_limits<result_type>::min();
+    }
+    static constexpr result_type max() {
+        return std::numeric_limits<result_type>::max();
+    }
+
+    result_type operator()();
+};
+
+using secure_private_rng = secure_rng<true, uint32_t>;
+using secure_public_rng = secure_rng<false, uint32_t>;
 } // namespace crypto

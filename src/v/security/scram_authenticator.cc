@@ -56,7 +56,7 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     // build server reply
     _server_first = std::make_unique<server_first_message>(
       _client_first->nonce(),
-      random_generators::gen_alphanum_string(nonce_size),
+      random_generators::gen_alphanum_string(nonce_size, true),
       _credential->salt(),
       _credential->iterations());
 

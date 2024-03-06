@@ -21,13 +21,20 @@ void fill_buffer_randomchars(char* start, size_t amount) {
 static constexpr std::string_view chars
   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-ss::sstring gen_alphanum_string(size_t n) {
+ss::sstring gen_alphanum_string(size_t n, bool use_secure_rng) {
     // do not include \0
     static constexpr std::size_t max_index = chars.size() - 2;
     std::uniform_int_distribution<size_t> dist(0, max_index);
     auto s = ss::uninitialized_string(n);
-    std::generate_n(
-      s.begin(), n, [&dist] { return chars[dist(internal::gen)]; });
+
+    if (use_secure_rng) {
+        std::generate_n(s.begin(), n, [&dist] {
+            return chars[dist(internal::secure_public_rng)];
+        });
+    } else {
+        std::generate_n(
+          s.begin(), n, [&dist] { return chars[dist(internal::gen)]; });
+    }
     return s;
 }
 

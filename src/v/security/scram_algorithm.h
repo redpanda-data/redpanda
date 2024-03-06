@@ -232,7 +232,7 @@ public:
      */
     static scram_credential
     make_credentials(const ss::sstring& password, int iterations) {
-        bytes salt = random_generators::get_bytes(SaltSize);
+        bytes salt = random_generators::get_crypto_bytes(SaltSize);
         bytes salted_password = salt_password(password, salt, iterations);
         auto clientkey = client_key(salted_password);
         auto storedkey = stored_key(clientkey);
@@ -245,7 +245,7 @@ public:
     }
     static scram_credential make_credentials(
       acl_principal principal, const ss::sstring& password, int iterations) {
-        bytes salt = random_generators::get_bytes(SaltSize);
+        bytes salt = random_generators::get_crypto_bytes(SaltSize);
         bytes salted_password = salt_password(password, salt, iterations);
         auto clientkey = client_key(salted_password);
         auto storedkey = stored_key(clientkey);
