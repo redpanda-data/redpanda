@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "cloud_storage/inventory/types.h"
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
@@ -32,6 +33,12 @@ public:
 
     ss::future<bool> inventory_configuration_exists(
       cloud_storage::cloud_storage_api&, retry_chain_node&) override;
+
+    /// Returns the manifest path to the latest available report for the
+    /// inventory configuration assigned to this object
+    ss::future<
+      result<report_metadata_path, cloud_storage_clients::error_outcome>>
+    latest_report_path(cloud_storage::cloud_storage_api&, retry_chain_node&);
 
 private:
     cloud_storage_clients::bucket_name _bucket;

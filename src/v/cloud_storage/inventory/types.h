@@ -70,4 +70,15 @@ enum class inventory_creation_result {
 
 std::ostream& operator<<(std::ostream&, inventory_creation_result);
 
+// The report metadata path is the path in bucket to a manifest JSON file which
+// contains directions to the report. For some vendors such as AWS there is a
+// simple path to the report in the manifest. For Google the report may be split
+// into shards, and the manifest will contain paths to all the shards. Vendor
+// specific APIs will parse this metadata object and download the actual
+// reports. The presence of this path also guarantees that the report has been
+// fully generated.
+
+using report_metadata_path
+  = named_type<ss::sstring, struct report_metadata_path_t>;
+
 } // namespace cloud_storage::inventory

@@ -10,9 +10,7 @@
 
 #include "cloud_storage/inventory/aws_ops.h"
 #include "cloud_storage/inventory/inv_ops.h"
-#include "cloud_storage/remote.h"
-
-#include <gmock/gmock.h>
+#include "cloud_storage/inventory/tests/common.h"
 
 namespace cst = cloud_storage;
 namespace t = ::testing;
@@ -34,20 +32,6 @@ const auto expected_xml_payload = fmt::format(
   fmt::arg("schedule", frequency),
   fmt::arg("id", id));
 
-class MockRemote : public cst::cloud_storage_api {
-public:
-    MOCK_METHOD(
-      ss::future<cst::upload_result>,
-      upload_object,
-      (cst::upload_request),
-      (override));
-    MOCK_METHOD(
-      ss::future<cst::download_result>,
-      download_object,
-      (cst::download_request),
-      (override));
-};
-
 std::string iobuf_to_xml(iobuf buf) {
     iobuf_parser p{std::move(buf)};
     return p.read_string(p.bytes_left());
@@ -65,7 +49,7 @@ validate_create_request(cst::upload_request request) {
 
 template<typename T, typename... Ts>
 void test_create(T t, Ts... args) {
-    MockRemote remote;
+    cst::inventory::MockRemote remote;
     EXPECT_CALL(remote, upload_object(t::_))
       .Times(1)
       .WillOnce(t::Invoke(validate_create_request));
@@ -104,7 +88,7 @@ validate_inventory_exists_request(cst::download_request request) {
 }
 
 TEST(InvCfgExists, HighLevelApi) {
-    MockRemote remote;
+    cst::inventory::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(1)
       .WillOnce(t::Invoke(validate_inventory_exists_request));
@@ -121,7 +105,7 @@ TEST(InvCfgExists, HighLevelApi) {
 }
 
 TEST(CreateInvCfg, IfExistsDoesNotCreate) {
-    MockRemote remote;
+    cst::inventory::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(1)
       .WillOnce(t::Invoke(validate_inventory_exists_request));
@@ -140,7 +124,7 @@ TEST(CreateInvCfg, IfExistsDoesNotCreate) {
 }
 
 TEST(CreateInvCfg, IfDoesNotExistCreates) {
-    MockRemote remote;
+    cst::inventory::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(1)
       .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
@@ -169,7 +153,7 @@ TEST(CreateInvCfg, CreationRace) {
     // Then, we try to create and it fails
     // Finally, the config exists
     // The outcome should be `already_exists` and not `failed`
-    MockRemote remote;
+    cst::inventory::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(2)
       .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
@@ -196,7 +180,7 @@ TEST(CreateInvCfg, CreationRace) {
 }
 
 TEST(CreateInvCfg, FailedToCreate) {
-    MockRemote remote;
+    cst::inventory::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(2)
       .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
