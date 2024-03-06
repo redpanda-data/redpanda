@@ -97,4 +97,6 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>&, const model::broker_endpoint&);
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&, const model::recovery_validation_mode&);
 } // namespace json
