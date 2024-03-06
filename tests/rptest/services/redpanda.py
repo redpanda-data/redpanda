@@ -925,6 +925,167 @@ class RedpandaServiceABC(ABC):
         assert isinstance(
             v, t), f'{name} had wrong type, expected {t} but was {type(v)}'
 
+    def _extract_samples(self, metrics, sample_pattern: str,
+                         node) -> list[MetricSamples]:
+        '''Extract metrics samples given a sample pattern. Embed the node in which it came from.
+        '''
+        found_sample = None
+        sample_values = []
+
+        for family in metrics:
+            for sample in family.samples:
+                if sample_pattern not in sample.name:
+                    continue
+                if not found_sample:
+                    found_sample = (family.name, sample.name)
+                if found_sample != (family.name, sample.name):
+                    raise Exception(
+                        f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
+                    )
+                sample_values.append(
+                    MetricSample(family.name, sample.name, node, sample.value,
+                                 sample.labels))
+
+        return sample_values
+
+    @abstractmethod
+    def metrics(self,
+                node,
+                mmetrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
+        '''Implement this method to parse the prometheus text format metric from a given node.'''
+        pass
+
+    @abstractmethod
+    def metrics_sample(
+        self,
+        sample_pattern: str,
+        nodes=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> Optional[MetricSamples]:
+        '''Implement this method to iterate over nodes to query metrics.
+
+        Query metrics for a single sample using fuzzy name matching. This
+        interface matches the sample pattern against sample names, and requires
+        that exactly one (family, sample) match the query. All values for the
+        sample across the requested set of nodes are returned in a flat array.
+
+        None will be returned if less than one (family, sample) matches.
+        An exception will be raised if more than one (family, sample) matches.
+
+        For example, the query:
+
+            redpanda.metrics_sample("under_replicated")
+
+        will return an array containing MetricSample instances for each node and
+        core/shard in the cluster. Each entry will correspond to a value from:
+
+            family = vectorized_cluster_partition_under_replicated_replicas
+            sample = vectorized_cluster_partition_under_replicated_replicas
+        '''
+        pass
+
+    def _metrics_sample(
+        self,
+        sample_pattern: str,
+        ns: list[Any],
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> Optional[MetricSamples]:
+        '''Does the main work of the metrics_sample() implementation given a list of ns to iterate over.
+        '''
+
+        sample_values = []
+        for n in ns:
+            metrics = self.metrics(n, metrics_endpoint)
+            sample_values += self._extract_samples(metrics, sample_pattern, n)
+
+        if not sample_values:
+            return None
+        else:
+            return MetricSamples(sample_values)
+
+    @abstractmethod
+    def metrics_samples(
+        self,
+        sample_patterns: list[str],
+        nodes=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> dict[str, MetricSamples]:
+        '''Implement this method to iterate over nodes to query multiple sample patterns.
+
+        Query metrics for multiple sample names using fuzzy matching.
+        Similar to metrics_sample(), but works with multiple patterns.
+        '''
+        pass
+
+    def _metrics_samples(
+        self,
+        sample_patterns: list[str],
+        ns: list[Any],
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> dict[str, MetricSamples]:
+        '''Does the main work of the metrics_samples() implementation given a list of ns to iterate over.
+        '''
+        sample_values_per_pattern = {
+            pattern: []
+            for pattern in sample_patterns
+        }
+
+        for n in ns:
+            for pattern in sample_patterns:
+                metrics = self.metrics(n, metrics_endpoint)
+                sample_values_per_pattern[pattern] += self._extract_samples(
+                    metrics, pattern, n)
+
+        return {
+            pattern: MetricSamples(values)
+            for pattern, values in sample_values_per_pattern.items() if values
+        }
+
+    @abstractmethod
+    def metric_sum(self,
+                   metric_name,
+                   metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+                   namespace: str = None,
+                   topic: str = None,
+                   nodes=None):
+        '''Implement this method to sum the metrics.
+
+        Pings the 'metrics_endpoint' of each node and returns the summed values
+        of the given metric, optionally filtering by namespace and topic.
+        '''
+        pass
+
+    def _metric_sum(
+            self,
+            metric_name: str,
+            ns: list[Any],
+            metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+            namespace: str = None,
+            topic: str = None):
+        '''Does the main work of the metric_sum() implementation given a list of ns to iterate over.
+        '''
+
+        count = 0
+        for n in ns:
+            metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
+            for family in metrics:
+                for sample in family.samples:
+                    if sample.name != metric_name:
+                        continue
+                    labels = sample.labels
+                    if namespace:
+                        assert "redpanda_namespace" in labels or "namespace" in labels, f"Missing namespace label: {sample}"
+                        if labels.get("redpanda_namespace",
+                                      labels.get("namespace")) != namespace:
+                            continue
+                    if topic:
+                        assert "redpanda_topic" in labels or "topic" in labels, f"Missing topic label: {sample}"
+                        if labels.get("redpanda_topic",
+                                      labels.get("topic")) != topic:
+                            continue
+                    count += int(sample.value)
+        return count
+
 
 class RedpandaServiceBase(RedpandaServiceABC, Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -1134,43 +1295,26 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     def metrics(self,
                 node,
                 metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
+        '''Parse the prometheus text format metric from a given node.'''
         text = self.raw_metrics(node, metrics_endpoint)
         return text_string_to_metric_families(text)
 
     def metric_sum(self,
-                   metric_name,
+                   metric_name: str,
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
-                   ns=None,
-                   topic=None,
+                   namespace: str = None,
+                   topic: str = None,
                    nodes=None):
-        """
+        '''
         Pings the 'metrics_endpoint' of each node and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
-        """
+        '''
 
         if nodes is None:
             nodes = self.nodes
 
-        count = 0
-        for n in nodes:
-            metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample.name != metric_name:
-                        continue
-                    labels = sample.labels
-                    if ns:
-                        assert "redpanda_namespace" in labels or "namespace" in labels, f"Missing namespace label: {sample}"
-                        if labels.get("redpanda_namespace",
-                                      labels.get("namespace")) != ns:
-                            continue
-                    if topic:
-                        assert "redpanda_topic" in labels or "topic" in labels, f"Missing topic label: {sample}"
-                        if labels.get("redpanda_topic",
-                                      labels.get("topic")) != topic:
-                            continue
-                    count += int(sample.value)
-        return count
+        return self._metric_sum(metric_name, nodes, metrics_endpoint,
+                                namespace, topic)
 
     def healthy(self):
         """
@@ -1797,11 +1941,61 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def metrics(
             self,
-            node,
+            pod,
             metrics_endpoint: MetricsEndpoint = MetricsEndpoint.PUBLIC_METRICS
     ):
-        text = self._cloud_cluster.get_public_metrics()
+        '''Parse the prometheus text format metric from a given pod.'''
+        if metrics_endpoint == MetricsEndpoint.PUBLIC_METRICS:
+            text = self._cloud_cluster.get_public_metrics()
+        else:
+            text = self.__kubectl.exec(
+                'curl -f -s -S http://localhost:9644/metrics',
+                pod.name).decode()
         return text_string_to_metric_families(text)
+
+    def metrics_sample(
+        self,
+        sample_pattern: str,
+        pods=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> Optional[MetricSamples]:
+        '''
+        Query metrics for a single sample using fuzzy name matching. This
+        interface matches the sample pattern against sample names, and requires
+        that exactly one (family, sample) match the query. All values for the
+        sample across the requested set of pods are returned in a flat array.
+
+        None will be returned if less than one (family, sample) matches.
+        An exception will be raised if more than one (family, sample) matches.
+
+        For example, the query:
+
+            redpanda.metrics_sample("under_replicated")
+
+        will return an array containing MetricSample instances for each pod and
+        core/shard in the cluster. Each entry will correspond to a value from:
+
+            family = vectorized_cluster_partition_under_replicated_replicas
+            sample = vectorized_cluster_partition_under_replicated_replicas
+        '''
+
+        if pods is None:
+            pods = self.pods
+
+        return self._metrics_sample(sample_pattern, pods, metrics_endpoint)
+
+    def metrics_samples(
+        self,
+        sample_patterns: list[str],
+        pods=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> dict[str, MetricSamples]:
+        '''
+        Query metrics for multiple sample names using fuzzy matching.
+        Similar to metrics_sample(), but works with multiple patterns.
+        '''
+        pods = pods or self.pods
+        return self._metrics_samples(sample_patterns, pods, metrics_endpoint)
 
     def metric_sum(
             self,
@@ -1831,6 +2025,23 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 if sample.name == metric_name:
                     count += int(sample.value)
         return count
+
+    def metric_sum(self,
+                   metric_name: str,
+                   metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+                   namespace: str = None,
+                   topic: str = None,
+                   pods=None):
+        '''
+        Pings the 'metrics_endpoint' of each pod and returns the summed values
+        of the given metric, optionally filtering by namespace and topic.
+        '''
+
+        if pods is None:
+            pods = self.pods
+
+        return self._metric_sum(metric_name, pods, metrics_endpoint, namespace,
+                                topic)
 
     @staticmethod
     def get_cloud_globals(globals: dict[str, Any]) -> dict[str, Any]:
@@ -3871,32 +4082,17 @@ class RedpandaService(RedpandaServiceBase):
 
     def _extract_samples(self, metrics, sample_pattern: str,
                          node: ClusterNode) -> list[MetricSamples]:
-        found_sample = None
-        sample_values = []
+        '''Override superclass method by ensuring node is type ClusterNode.'''
 
-        for family in metrics:
-            for sample in family.samples:
-                if sample_pattern not in sample.name:
-                    continue
-                if not found_sample:
-                    found_sample = (family.name, sample.name)
-                if found_sample != (family.name, sample.name):
-                    raise Exception(
-                        f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
-                    )
-                sample_values.append(
-                    MetricSample(family.name, sample.name, node, sample.value,
-                                 sample.labels))
-
-        return sample_values
+        return super()._extract_samples(metrics, sample_pattern, node)
 
     def metrics_sample(
         self,
-        sample_pattern,
+        sample_pattern: str,
         nodes=None,
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
     ) -> Optional[MetricSamples]:
-        """
+        '''
         Query metrics for a single sample using fuzzy name matching. This
         interface matches the sample pattern against sample names, and requires
         that exactly one (family, sample) match the query. All values for the
@@ -3905,31 +4101,21 @@ class RedpandaService(RedpandaServiceBase):
         None will be returned if less than one (family, sample) matches.
         An exception will be raised if more than one (family, sample) matches.
 
-        Example:
+        For example, the query:
 
-           The query:
+            redpanda.metrics_sample("under_replicated")
 
-              redpanda.metrics_sample("under_replicated")
+        will return an array containing MetricSample instances for each node and
+        core/shard in the cluster. Each entry will correspond to a value from:
 
-           will return an array containing MetricSample instances for each node and
-           core/shard in the cluster. Each entry will correspond to a value from:
+            family = vectorized_cluster_partition_under_replicated_replicas
+            sample = vectorized_cluster_partition_under_replicated_replicas
+        '''
 
-              family = vectorized_cluster_partition_under_replicated_replicas
-              sample = vectorized_cluster_partition_under_replicated_replicas
-        """
         if nodes is None:
             nodes = self.nodes
 
-        sample_values = []
-        for node in nodes:
-            metrics = self.metrics(node, metrics_endpoint)
-            sample_values += self._extract_samples(metrics, sample_pattern,
-                                                   node)
-
-        if not sample_values:
-            return None
-        else:
-            return MetricSamples(sample_values)
+        return self._metrics_sample(sample_pattern, nodes, metrics_endpoint)
 
     def metrics_samples(
         self,
@@ -3937,26 +4123,12 @@ class RedpandaService(RedpandaServiceBase):
         nodes=None,
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
     ) -> dict[str, MetricSamples]:
-        """
+        '''
         Query metrics for multiple sample names using fuzzy matching.
-        The same as metrics_sample, but works with multiple patterns.
-        """
+        Similar to metrics_sample(), but works with multiple patterns.
+        '''
         nodes = nodes or self.nodes
-        sample_values_per_pattern = {
-            pattern: []
-            for pattern in sample_patterns
-        }
-
-        for node in nodes:
-            for pattern in sample_patterns:
-                metrics = self.metrics(node, metrics_endpoint)
-                sample_values_per_pattern[pattern] += self._extract_samples(
-                    metrics, pattern, node)
-
-        return {
-            pattern: MetricSamples(values)
-            for pattern, values in sample_values_per_pattern.items() if values
-        }
+        return self._metrics_samples(sample_patterns, nodes, metrics_endpoint)
 
     def shards(self):
         """
