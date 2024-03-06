@@ -3,6 +3,7 @@ package namespace
 import (
 	"fmt"
 
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
@@ -34,25 +35,27 @@ func deleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			priorProfile := cfg.ActualProfile()
 			_, authVir, clearedProfile, _, err := oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()), false, false, cfg.DevOverrides().CloudAPIURL)
 			out.MaybeDie(err, "unable to authenticate with Redpanda Cloud: %v", err)
+
 			oauth.MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
 			authToken := authVir.AuthToken
-			cl, err := publicapi.NewClientSet(cmd.Context(), cfg.DevOverrides().PublicAPIURL, authToken)
+
+			cl, err := publicapi.NewClientSet(cfg.DevOverrides().PublicAPIURL, authToken)
 			out.MaybeDie(err, "unable to create the public api client: %v", err)
 
 			name := args[0]
-			listed, err := cl.Namespace.ListNamespaces(cmd.Context(), &controlplanev1beta1.ListNamespacesRequest{
+			listed, err := cl.Namespace.ListNamespaces(cmd.Context(), connect.NewRequest(&controlplanev1beta1.ListNamespacesRequest{
 				Filter: &controlplanev1beta1.ListNamespacesRequest_Filter{Name: name},
-			})
+			}))
 			out.MaybeDie(err, "unable to find namespace %q: %v", name, err)
-			if len(listed.Namespaces) == 0 {
+			if len(listed.Msg.Namespaces) == 0 {
 				out.Die("unable to find namespace %q", name)
 			}
-			if len(listed.Namespaces) > 1 {
+			if len(listed.Msg.Namespaces) > 1 {
 				// This is currently not possible, the filter is an exact
 				// filter. This is just being cautious.
 				out.Die("multiple namespaces were found for %q, please provide an exact match", name)
 			}
-			namespace := listed.Namespaces[0]
+			namespace := listed.Msg.Namespaces[0]
 			if !noConfirm {
 				confirmed, err := out.Confirm("Confirm deletion of namespace %q with ID %q?", namespace.Name, namespace.Id)
 				out.MaybeDie(err, "unable to confirm deletion: %v", err)
@@ -61,7 +64,7 @@ func deleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				}
 			}
 
-			_, err = cl.Namespace.DeleteNamespace(cmd.Context(), &controlplanev1beta1.DeleteNamespaceRequest{Id: namespace.Id})
+			_, err = cl.Namespace.DeleteNamespace(cmd.Context(), connect.NewRequest(&controlplanev1beta1.DeleteNamespaceRequest{Id: namespace.Id}))
 			out.MaybeDie(err, "unable to delete namespace %q: %v", name, err)
 			res := deleteResponse{namespace.Name, namespace.Id}
 			if isText, _, s, err := f.Format(res); !isText {
