@@ -11,60 +11,58 @@ package publicapi
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
+	"net/http"
+	"time"
 
-	controlplanev1beta1 "github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/controlplane/v1beta1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/metadata"
+	"connectrpc.com/connect"
+	"github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/controlplane/v1beta1/controlplanev1beta1connect"
+	"go.uber.org/zap"
 )
 
 // ProdURL is the host of the Cloud Redpanda API.
-const ProdURL = "api.redpanda.com:443"
+const ProdURL = "https://api.redpanda.com"
 
 // ClientSet holds the respective service clients to interact with the Public
 // API.
 type ClientSet struct {
-	Namespace controlplanev1beta1.NamespaceServiceClient
+	Namespace controlplanev1beta1connect.NamespaceServiceClient
 }
 
 // NewClientSet creates a Public API client set with the service clients of
 // each resource available to interact with this package.
-func NewClientSet(ctx context.Context, host, authToken string, opts ...grpc.DialOption) (*ClientSet, error) {
+func NewClientSet(host, authToken string, opts ...connect.ClientOption) (*ClientSet, error) {
 	if host == "" {
 		host = ProdURL
 	}
-	opts = append([]grpc.DialOption{
-		// Intercept to add the Bearer token.
-		grpc.WithUnaryInterceptor(
-			func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-				return invoker(metadata.AppendToOutgoingContext(ctx, "authorization", fmt.Sprintf("Bearer %s", authToken)), method, req, reply, cc, opts...)
-			},
-		),
-		// Provide TLS config.
-		grpc.WithTransportCredentials(
-			credentials.NewTLS(
-				&tls.Config{
-					MinVersion: tls.VersionTLS12,
-				},
-			),
+	opts = append([]connect.ClientOption{
+		connect.WithInterceptors(
+			newAuthInterceptor(authToken), // Add the Bearer token.
+			newLoggerInterceptor(),        // Add logs to every request.
 		),
 	}, opts...)
 
-	conn, err := clientConnection(ctx, host, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create a connection with %q", host)
-	}
+	httpCl := &http.Client{Timeout: 15 * time.Second}
+
 	return &ClientSet{
-		Namespace: controlplanev1beta1.NewNamespaceServiceClient(conn),
+		Namespace: controlplanev1beta1connect.NewNamespaceServiceClient(httpCl, host, opts...),
 	}, nil
 }
 
-func clientConnection(ctx context.Context, url string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return grpc.DialContext(
-		ctx,
-		url,
-		opts...,
-	)
+func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {
+	return func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			req.Header().Set("Authorization", fmt.Sprintf("Bearer %s", token))
+			return next(ctx, req)
+		}
+	}
+}
+
+func newLoggerInterceptor() connect.UnaryInterceptorFunc {
+	return func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			zap.L().Debug("Sending request", zap.String("host", req.Peer().Addr), zap.String("procedure", req.Spec().Procedure))
+			return next(ctx, req)
+		}
+	}
 }
