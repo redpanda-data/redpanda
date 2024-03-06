@@ -97,8 +97,9 @@ struct simple_raft_fixture {
                   .replica_max_not_flushed_bytes
                   = config::mock_binding<std::optional<size_t>>(std::nullopt),
                   .flush_timer_interval_ms = config::mock_binding(100ms),
-
-                };
+                  .write_caching = config::mock_binding(
+                    model::write_caching_mode::off),
+                  .write_caching_flush_ms = config::mock_binding(100ms)};
             },
             [] {
                 return raft::recovery_memory_quota::configuration{

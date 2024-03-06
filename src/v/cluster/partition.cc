@@ -751,6 +751,8 @@ ss::future<> partition::update_configuration(topic_properties properties) {
         _topic_cfg->properties = std::move(properties);
     }
 
+    _raft->notify_config_update();
+
     // If this partition's cloud storage mode changed, rebuild the archiver.
     // This must happen after raft update, because it reads raft's
     // ntp_config to decide whether to construct an archiver.
