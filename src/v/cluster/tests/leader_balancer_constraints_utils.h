@@ -150,7 +150,11 @@ static bool no_movement(
   const absl::flat_hash_set<int>& muted = {},
   const absl::flat_hash_set<raft::group_id>& skip = {}) {
     auto [shard_index, muted_index] = from_spec(spec, muted);
-    muted_index.update_muted_groups(skip);
+    cluster::leader_balancer_types::muted_groups_t skip_typed;
+    for (auto& s : skip) {
+        skip_typed.add(static_cast<uint64_t>(s));
+    }
+    muted_index.update_muted_groups(skip_typed);
     auto balancer = lbt::even_shard_load_constraint(shard_index, muted_index);
 
     return !balancer.recommended_reassignment();
@@ -175,12 +179,10 @@ static ss::sstring expect_movement(
   const absl::flat_hash_set<int>& skip = {}) {
     auto [shard_index, mute_index] = from_spec(spec, muted);
 
-    absl::flat_hash_set<raft::group_id> skip_typed;
-    std::transform(
-      skip.begin(),
-      skip.end(),
-      std::inserter(skip_typed, skip_typed.begin()),
-      [](auto groupid) { return raft::group_id{groupid}; });
+    cluster::leader_balancer_types::muted_groups_t skip_typed;
+    for (auto& s : skip) {
+        skip_typed.add(static_cast<uint64_t>(s));
+    }
 
     mute_index.update_muted_groups(std::move(skip_typed));
     auto balancer = lbt::even_shard_load_constraint(shard_index, mute_index);

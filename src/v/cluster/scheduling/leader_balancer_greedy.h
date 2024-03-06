@@ -33,7 +33,7 @@ public:
     explicit greedy_balanced_shards(
       index_type cores, absl::flat_hash_set<model::node_id> muted_nodes)
       : _mi(std::make_unique<leader_balancer_types::muted_index>(
-        std::move(muted_nodes), absl::flat_hash_set<raft::group_id>{}))
+        std::move(muted_nodes), leader_balancer_types::muted_groups_t{}))
       , _even_shard_load_c(
           leader_balancer_types::shard_index{std::move(cores)}, *_mi) {}
 
@@ -55,7 +55,7 @@ public:
      * muted node should not be touched in case the mute is temporary.
      */
     std::optional<reassignment>
-    find_movement(const absl::flat_hash_set<raft::group_id>& skip) final {
+    find_movement(const leader_balancer_types::muted_groups_t& skip) final {
         _mi->update_muted_groups(skip);
         return _even_shard_load_c.recommended_reassignment();
     }
