@@ -138,8 +138,7 @@ BOOST_DATA_TEST_CASE(test_jwk_RS256, bdata::make(jwk_data), d) {
     json::Document doc;
     BOOST_REQUIRE(!doc.Parse(d.data.data(), d.data.length()).HasParseError());
 
-    CryptoPP::AutoSeededRandomPool rng;
-    auto verifiers = oidc::detail::make_rs256_verifier(doc, rng);
+    auto verifiers = oidc::detail::make_rs256_verifier(doc);
     if (d.err == oidc::errc::success) {
         BOOST_REQUIRE(verifiers.has_value());
     } else {
