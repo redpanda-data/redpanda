@@ -12,45 +12,178 @@
 package transform
 
 import (
+	"container/list"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
+	"os"
+	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/zap"
+)
+
+var (
+	minTime = time.Unix(0, 0).UTC()
+	maxTime = time.Unix(math.MaxInt64, math.MaxInt64).UTC()
 )
 
 func newLogsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var follow bool
 	var head, tail int
 	var since, until timequery
-	since.offset = kgo.NewOffset().AtStart()
-	since.offset = kgo.NewOffset().At(math.MaxInt64)
+	since.time = minTime
+	until.time = maxTime
 	cmd := &cobra.Command{
 		Use:     "logs [NAME]",
 		Aliases: []string{"log"},
 		Short:   "View logs for a transform",
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			_, err := p.LoadVirtualProfile(fs)
+			f := p.Formatter
+			if h, ok := f.Help([]string{}); ok {
+				out.Exit(h)
+			}
+
+			transformName := args[0]
+
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-			// TODO(rockwood): Implement the command
+
+			admin, err := kafka.NewAdmin(fs, p)
+			out.MaybeDie(err, "unable to create admin client: %v", err)
+
+			topics, err := admin.ListTopics(cmd.Context(), "_redpanda.transform_logs")
+			out.MaybeDie(err, "unable to get logs topic: %v", err)
+			topic := topics.TopicsList()[0]
+			partition := computeLogPartition(transformName, topic)
+
+			startOffset := int64(-2) // NewOffset.At treats this as start
+			if !since.time.Equal(minTime) {
+				offsets, err := admin.ListOffsetsAfterMilli(
+					cmd.Context(),
+					since.time.UnixMilli(),
+					topic.Topic,
+				)
+				out.MaybeDie(err, "unable to list offsets: %v", err)
+				offset, ok := offsets.Lookup(topic.Topic, partition)
+				if !ok {
+					out.Die("unable to list offset for partition: %d", partition)
+				}
+				startOffset = offset.Offset
+			}
+			maxOffset := int64(math.MaxInt64)
+			if !follow {
+				offsets, err := admin.ListCommittedOffsets(cmd.Context(), topic.Topic)
+				out.MaybeDie(err, "unable to list offsets: %v", err)
+				offset, ok := offsets.Lookup(topic.Topic, partition)
+				if !ok {
+					out.Die("unable to list offset for partition: %d", partition)
+				}
+				// The max offset here is exclusive of the last record, so minus one so that we stop once we hit that last record.
+				maxOffset = offset.Offset - 1
+				// If we are starting after our max offset we need to short circuit
+				if !until.time.Equal(maxTime) {
+					untilOffsets, err := admin.ListOffsetsAfterMilli(
+						cmd.Context(),
+						until.time.UnixMilli(),
+						topic.Topic,
+					)
+					out.MaybeDie(err, "unable to list offsets: %v", err)
+					untilOffset, ok := untilOffsets.Lookup(topic.Topic, partition)
+					if !ok {
+						out.Die("unable to list offset for partition: %d", partition)
+					}
+					maxOffset = min(maxOffset, untilOffset.Offset)
+				}
+			}
+			zap.L().Sugar().Infof("reading logs topic with bounds [%v, %v] on partition %d", startOffset, maxOffset, partition)
+			if startOffset > maxOffset {
+				return
+			}
+
+			consumeStart := map[string]map[int32]kgo.Offset{
+				topic.Topic: {
+					partition: kgo.NewOffset().At(startOffset),
+				},
+			}
+			client, err := kafka.NewFranzClient(fs, p, kgo.ConsumePartitions(consumeStart))
+			out.MaybeDie(err, "unable to create client: %v", err)
+
+			sigs := make(chan os.Signal, 2)
+			signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+			donePrinting := make(chan struct{})
+			var output io.Writer = os.Stdout
+			// kgo only supports consuming in a single direction per client, the simplest way to get
+			// the last N elements is to just read them all, and buffer the last N
+			if tail > 0 {
+				tw := &tailWriter{w: output, limit: tail}
+				defer tw.Close()
+				output = tw
+			}
+			go func() {
+				defer close(donePrinting)
+				printLogs(
+					cmd.Context(),
+					&clientLogSource{client},
+					logsQuery{
+						transformName: transformName,
+						maxOffset:     maxOffset,
+						limit:         head,
+					},
+					output,
+					f,
+				)
+			}()
+
+			select {
+			case <-sigs:
+			case <-donePrinting:
+			}
+
+			doneClose := make(chan struct{})
+			go func() {
+				defer close(doneClose)
+				client.Close()
+			}()
+
+			select {
+			case <-sigs:
+			case <-doneClose:
+			}
 		},
 	}
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Specify if the logs should be streamed")
 	cmd.Flags().IntVar(&head, "head", 0, "The number of log entries to fetch from the start")
 	cmd.Flags().IntVar(&tail, "tail", 0, "The number of log entries to fetch from the end")
 	cmd.MarkFlagsMutuallyExclusive("head", "tail")
+	// Tail and follow cannot be used together, if you're streaming forever it doesn't make since to get the "last" N logs.
+	cmd.MarkFlagsMutuallyExclusive("tail", "follow")
 	cmd.Flags().Var(&since, "since", "Start reading logs after this time")
 	cmd.Flags().Var(&until, "until", "Read logs up unto this time")
 	p.InstallFormatFlag(cmd)
 	return cmd
+}
+
+func computeLogPartition(name string, tp kadm.TopicPartitions) int32 {
+	// Use the murmur2 hash function to compute the partition
+	p := kgo.StickyKeyPartitioner(nil)
+	r := kgo.KeyStringRecord(name, "")
+	return int32(p.ForTopic(tp.Topic).Partition(r, len(tp.Partitions)))
 }
 
 type timequery struct {
@@ -67,6 +200,10 @@ func (*timequery) Type() string {
 }
 
 func (tq *timequery) String() string {
+	// Return empty string for defaults
+	if tq.time.Equal(minTime) || tq.time.Equal(maxTime) {
+		return ""
+	}
 	return tq.time.String()
 }
 
@@ -108,12 +245,226 @@ func parseTimeQuery(s string, now time.Time) (time.Time, error) {
 		var rel time.Duration
 		rel, err := time.ParseDuration(s)
 		if err != nil {
-			return kgo.NewOffset(), fmt.Errorf("unable to parse duration in %q", s)
+			return now, fmt.Errorf("unable to parse duration in %q", s)
 		}
 		if negate {
 			rel = -rel
 		}
-		at := now.Add(rel).UTC()
-		return kgo.NewOffset().AfterMilli(at.UnixMilli()), nil
+		return now.Add(rel).UTC(), nil
 	}
+}
+
+type RecordIter interface {
+	Done() bool
+	Next() *kgo.Record
+}
+
+type logSource interface {
+	PollFetches(ctx context.Context) (RecordIter, error)
+}
+
+type clientLogSource struct {
+	cl *kgo.Client
+}
+
+func (c *clientLogSource) PollFetches(ctx context.Context) (RecordIter, error) {
+	fetches := c.cl.PollFetches(ctx)
+	if fetches.IsClientClosed() {
+		return nil, kgo.ErrClientClosed
+	}
+	fetches.EachError(func(t string, p int32, err error) {
+		fmt.Fprintf(os.Stderr, "ERR: %v\n", err)
+	})
+	return fetches.RecordIter(), nil
+}
+
+type logsQuery struct {
+	transformName string
+	maxOffset     int64
+	limit         int
+}
+
+type attributeValue struct {
+	IntValue    int    `json:"intValue"`
+	StringValue string `json:"stringValue"`
+}
+
+func (av attributeValue) MarshalJSON() ([]byte, error) {
+	if len(av.StringValue) > 0 {
+		return json.Marshal(map[string]string{"stringValue": av.StringValue})
+	}
+	return json.Marshal(map[string]int{"intValue": av.IntValue})
+}
+
+type rawLogEvent struct {
+	Body struct {
+		StringValue string `json:"stringValue"`
+	} `json:"body"`
+	TimeUnixNano   uint64 `json:"timeUnixNano"`
+	SeverityNumber int    `json:"severityNumber"`
+	Attributes     []struct {
+		Key   string         `json:"key"`
+		Value attributeValue `json:"value"`
+	}
+}
+
+type logEventMode = int
+
+const (
+	logEventModeEmpty = iota
+	logEventModeShort
+	logEventModeWide
+)
+
+type logEvent struct {
+	body    string
+	time    time.Time
+	warning bool
+	mode    logEventMode
+}
+
+func printLogs(ctx context.Context, src logSource, q logsQuery, output io.Writer, f config.OutFormatter) error {
+	numRecords := 0
+	current := logEvent{
+		body:    "",
+		warning: false,
+		mode:    logEventModeEmpty,
+	}
+	flush := func(force bool) error {
+		if current.mode == logEventModeEmpty {
+			return nil
+		}
+		write := func(line string) (int, error) { return fmt.Fprintf(output, "%s\n", line) }
+		if current.mode == logEventModeWide {
+			level := "INFO"
+			if current.warning {
+				level = "WARN"
+			}
+			write = func(line string) (int, error) {
+				return fmt.Fprintf(output, "%s %s %s\n", current.time.UTC().Format("Jan 02 15:04:05"), level, line)
+			}
+		}
+		for {
+			advance, line := scanLine(current.body, force)
+			if advance < 0 {
+				return nil
+			}
+			current.body = current.body[advance:]
+			if _, err := write(line); err != nil {
+				return err
+			}
+			if advance == 0 || len(current.body) == 0 {
+				current.mode = logEventModeEmpty
+				return nil
+			}
+		}
+	}
+	for {
+		zap.L().Sugar().Debugf("polling for log entries")
+		it, err := src.PollFetches(ctx)
+		if errors.Is(err, kgo.ErrClientClosed) {
+			return flush(true)
+		}
+		for !it.Done() {
+			r := it.Next()
+			zap.L().Sugar().Debugf("seeing log entry: %s", r.Value)
+			if r.Key == nil || string(r.Key) != q.transformName {
+				if r.Offset >= q.maxOffset {
+					return flush(true)
+				}
+				continue
+			}
+			numRecords += 1
+			var evt rawLogEvent
+			err := json.Unmarshal(r.Value, &evt)
+			out.MaybeDie(err, "unable to parse log event: %v", err)
+			isShort, isLong, formatted, err := f.Format(&evt)
+			out.MaybeDie(err, "unable to format log event: %v", evt)
+			if !isShort && !isLong {
+				fmt.Fprintf(output, "%s\n", formatted)
+				// Check if the limits are reached.
+				// No need to flush, json/yaml output doesn't buffer.
+				if q.limit > 0 && numRecords >= q.limit {
+					return nil
+				}
+				if r.Offset >= q.maxOffset {
+					return nil
+				}
+				continue
+			}
+			warning := evt.SeverityNumber > 9
+			if warning != current.warning {
+				if err := flush(true); err != nil {
+					return err
+				}
+			}
+			current.mode = logEventModeShort
+			if isLong {
+				current.mode = logEventModeWide
+			}
+			current.warning = warning
+			current.body += evt.Body.StringValue
+			current.time = time.Unix(0, int64(evt.TimeUnixNano))
+			if err := flush(false); err != nil {
+				return err
+			}
+			// Limit is reached, we're done
+			if q.limit > 0 && numRecords >= q.limit {
+				return flush(true)
+			}
+			if r.Offset >= q.maxOffset {
+				return flush(true)
+			}
+		}
+	}
+}
+
+func scanLine(data string, atEOF bool) (advance int, line string) {
+	if atEOF && len(data) == 0 {
+		return 0, ""
+	}
+
+	dropCR := func(data string) string {
+		if len(data) > 0 && data[len(data)-1] == '\r' {
+			return data[0 : len(data)-1]
+		}
+		return data
+	}
+
+	if i := strings.IndexByte(data, '\n'); i >= 0 {
+		// We have a full newline-terminated line.
+		return i + 1, dropCR(data[0:i])
+	}
+	// If we're at EOF, we have a final, non-terminated line. Return it.
+	if atEOF {
+		return len(data), dropCR(data)
+	}
+	// Request more data.
+	return -1, ""
+}
+
+type tailWriter struct {
+	w        io.Writer
+	buffered list.List
+	limit    int
+}
+
+func (w *tailWriter) Write(p []byte) (n int, err error) {
+	cpy := make([]byte, len(p))
+	_ = copy(cpy, p)
+	w.buffered.PushBack(cpy)
+	// Keep only N elements in the buffer
+	for w.buffered.Len() > w.limit {
+		w.buffered.Remove(w.buffered.Front())
+	}
+	return len(p), nil
+}
+
+func (w *tailWriter) Close() error {
+	for e := w.buffered.Front(); e != nil; e = e.Next() {
+		if _, err := w.w.Write(e.Value.([]byte)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
