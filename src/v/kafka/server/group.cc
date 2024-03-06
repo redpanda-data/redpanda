@@ -2684,9 +2684,9 @@ ss::future<error_code> group::remove() {
     co_return error_code::none;
 }
 
-ss::future<>
-group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
-    std::vector<std::pair<model::topic_partition, offset_metadata>> removed;
+ss::future<> group::remove_topic_partitions(
+  const chunked_vector<model::topic_partition>& tps) {
+    chunked_vector<std::pair<model::topic_partition, offset_metadata>> removed;
     for (const auto& tp : tps) {
         _pending_offset_commits.erase(tp);
         if (auto offset = _offsets.extract(tp); offset) {
