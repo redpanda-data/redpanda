@@ -18,6 +18,7 @@
 #include "transform/logging/errc.h"
 #include "transform/logging/io.h"
 #include "transform/logging/logger.h"
+#include "transform/logging/probes.h"
 #include "utils/utf8.h"
 #include "vassert.h"
 
@@ -45,10 +46,12 @@ public:
     explicit flusher(
       ss::abort_source* as,
       transform::logging::client* c,
-      config::binding<std::chrono::milliseconds> fi)
+      config::binding<std::chrono::milliseconds> fi,
+      manager_probe* probe)
       : _as(as)
       , _client(c)
       , _interval_ms(std::move(fi))
+      , _probe(probe)
       , _jitter(_interval_ms(), jitter_amt) {
         _interval_ms.watch([this]() {
             _jitter = simple_time_jitter<ClockType>{_interval_ms(), jitter_amt};
@@ -184,12 +187,14 @@ private:
         // been produced.
         std::error_code ec = co_await _client->write(pid, std::move(events));
         if (ec != errc::success) {
+            _probe->write_error();
             vlog(tlg_log.warn, "Flush failed: {}", ec.message());
         }
     }
     ss::abort_source* _as = nullptr;
     transform::logging::client* _client = nullptr;
     config::binding<std::chrono::milliseconds> _interval_ms;
+    manager_probe* _probe;
     simple_time_jitter<ClockType> _jitter;
     ss::condition_variable _wakeup_signal{};
     ss::gate _gate{};
@@ -213,21 +218,32 @@ manager<ClockType>::manager(
   , _buffer_limit_bytes(bc)
   , _buffer_low_water_mark(_buffer_limit_bytes / lwm_denom)
   , _buffer_sem(_buffer_limit_bytes, "Log manager buffer semaphore")
-  , _flusher(std::make_unique<detail::flusher<ClockType>>(
-      &_as, _client.get(), std::move(fi))) {}
+  , _flush_interval(std::move(fi)) {}
 
 template<typename ClockType>
 manager<ClockType>::~manager() = default;
 
 template<typename ClockType>
 ss::future<> manager<ClockType>::start() {
+    _probe = std::make_unique<manager_probe>();
+    _probe->setup_metrics([this] {
+        return 1.0
+               - (static_cast<double>(_buffer_sem.available_units()) / static_cast<double>(_buffer_limit_bytes));
+    });
+    _flusher = std::make_unique<detail::flusher<ClockType>>(
+      &_as, _client.get(), _flush_interval, _probe.get());
     co_return co_await _flusher->template start<>(&_log_buffers);
 }
 
 template<typename ClockType>
 ss::future<> manager<ClockType>::stop() {
     _as.request_abort();
-    co_await _flusher->stop();
+    if (_flusher != nullptr) {
+        co_await _flusher->stop();
+    }
+    _flusher.reset(nullptr);
+    _probe.reset(nullptr);
+    std::exchange(_logger_probes, probe_map_t{});
 }
 
 template<typename ClockType>
@@ -274,10 +290,25 @@ void manager<ClockType>::enqueue_log(
         return res;
     };
 
+    auto get_probe = [this](std::string_view name) -> logger_probe* {
+        auto res = _logger_probes.find(name);
+        if (res == _logger_probes.end()) {
+            auto [it, _] = _logger_probes.emplace(
+              ss::sstring{name.data(), name.size()},
+              std::make_unique<logger_probe>());
+            it->second->setup_metrics(model::transform_name_view{name});
+            return it->second.get();
+        }
+        return res->second.get();
+    };
+
     auto it = get_queue(transform_name);
     if (it == _log_buffers.end()) {
         return;
     }
+
+    auto probe = get_probe(transform_name);
+    probe->log_event();
 
     // Unfortunately, we don't know how long an escaped string will be
     // until we've allocated memory for it. So we optimistically grab
@@ -289,6 +320,7 @@ void manager<ClockType>::enqueue_log(
     message = message.substr(0, msg_len(message));
     auto units = ss::try_get_units(_buffer_sem, message.size());
     if (!units) {
+        probe->dropped_log_event();
         vlog(tlg_log.debug, "Failed to enqueue transform log: Buffer full");
         return;
     }

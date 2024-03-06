@@ -10,13 +10,17 @@
 import typing
 import time
 import random
+import string
 import json
+from typing import Optional
 
 from requests.exceptions import RequestException
 
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import MetricSamples, MetricsEndpoint
 from ducktape.utils.util import wait_until
 from rptest.services.transform_verifier_service import TransformVerifierProduceConfig, TransformVerifierProduceStatus, TransformVerifierService, TransformVerifierConsumeConfig, TransformVerifierConsumeStatus
 from rptest.services.admin import Admin
@@ -25,7 +29,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.utils.utf8 import CONTROL_CHARS_VALS, generate_string_with_control_character
-from rptest.util import expect_exception
+from rptest.util import expect_exception, wait_until_result
 
 
 class WasmException(Exception):
@@ -394,118 +398,123 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
         assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
 
 
-class DataTransformsLoggingTest(BaseDataTransformsTest):
+# TODO(oren): be nice to actually use the OTel protobufs here
+class LogRecord:
+    class Attribute:
+        def __init__(self, attr: dict):
+            self.key = attr['key']
+            assert len(attr['value']) == 1
+            self.value_type = list(attr['value'].keys())[0]
+            self.value = attr['value'][self.value_type]
+
+        # don't really care about the value, just the correct key and value _type_
+        def __eq__(self, other):
+            return (self.key == other.key
+                    and self.value_type == other.value_type
+                    and type(self.value) == type(other.value))
+
+    EXPECTED_ATTRS = [
+        Attribute({
+            'key': 'transform_name',
+            'value': {
+                'stringValue': 'any'  # don't care for validation
+            }
+        }),
+        Attribute({
+            'key': 'node',
+            'value': {
+                'intValue': 23  # don't care for validation
+            }
+        })
+    ]
+
+    BODY_FIELD = 'body'
+    TS_FIELD = 'timeUnixNano'
+    SEVERITY_FIELD = 'severityNumber'
+    ATTRS_FIELD = 'attributes'
+
+    def __init__(self, raw: str):
+        self._record = json.loads(raw)
+        self._record['value'] = json.loads(self._record['value'])
+
+        # Redpanda bits
+        self.offset = self._record['offset']
+        self.key = self._record['key']
+
+        # OTel bits
+        self._rep = self._record['value']
+        self.body = self._rep.get(self.BODY_FIELD, None)
+        self.timestamp_ns = self._rep.get(self.TS_FIELD, None)
+        self.severity = self._rep.get(self.SEVERITY_FIELD, None)
+        self.attributes = [
+            self.Attribute(attr)
+            for attr in self._rep.get(self.ATTRS_FIELD, [])
+        ]
+
+    def __str__(self):
+        return json.dumps(self._record, indent=1)
+
+    def validate(
+            self,
+            offset: typing.Optional[int] = None) -> typing.Optional[list[str]]:
+        errors = []
+        if offset is not None and offset != self.offset:
+            errors.append(f"Expected offset {offset} got {self.offset}")
+        if self.body is None:
+            errors.append(f"Missing {self.BODY_FIELD}")
+        if self.timestamp_ns is None:
+            errors.append(f"Missing {self.TS_FIELD}")
+        if self.severity is None:
+            errors.append(f"Missing {self.SEVERITY_FIELD}")
+        if self.ATTRS_FIELD not in self._rep:
+            errors.append(f"Missing {self.ATTRS_FIELD}")
+
+        if len(self.attributes) != 2:
+            errors.append(f"Expected 2 attributes, got {len(self.attributes)}")
+
+        for attr in self.EXPECTED_ATTRS:
+            if attr not in self.attributes:
+                errors.append(f"Missing attribute '{attr.key}'")
+
+        if len(errors) > 0:
+            return errors
+
+        return None
+
+
+class BaseDataTransformsLoggingTest(BaseDataTransformsTest):
     """
     Tests for data transforms logging
     """
 
-    topics = [TopicSpec(partition_count=9), TopicSpec(partition_count=9)]
-
     logs_topic = TopicSpec(name='_redpanda.transform_logs', partition_count=4)
 
-    # TODO(oren): be nice to actually use the OTel protobufs here
-    class LogRecord:
-        class Attribute:
-            def __init__(self, attr: dict):
-                self.key = attr['key']
-                assert len(attr['value']) == 1
-                self.value_type = list(attr['value'].keys())[0]
-                self.value = attr['value'][self.value_type]
-
-            # don't really care about the value, just the correct key and value _type_
-            def __eq__(self, other):
-                return (self.key == other.key
-                        and self.value_type == other.value_type
-                        and type(self.value) == type(other.value))
-
-        EXPECTED_ATTRS = [
-            Attribute({
-                'key': 'transform_name',
-                'value': {
-                    'stringValue': 'any'  # don't care for validation
-                }
-            }),
-            Attribute({
-                'key': 'node',
-                'value': {
-                    'intValue': 23  # don't care for validation
-                }
-            })
-        ]
-
-        BODY_FIELD = 'body'
-        TS_FIELD = 'timeUnixNano'
-        SEVERITY_FIELD = 'severityNumber'
-        ATTRS_FIELD = 'attributes'
-
-        def __init__(self, raw: str):
-            self._record = json.loads(raw)
-            self._record['value'] = json.loads(self._record['value'])
-
-            # Redpanda bits
-            self.offset = self._record['offset']
-            self.key = self._record['key']
-
-            # OTel bits
-            self._rep = self._record['value']
-            self.body = self._rep.get(self.BODY_FIELD, None)
-            self.timestamp_ns = self._rep.get(self.TS_FIELD, None)
-            self.severity = self._rep.get(self.SEVERITY_FIELD, None)
-            self.attributes = [
-                self.Attribute(attr)
-                for attr in self._rep.get(self.ATTRS_FIELD, [])
-            ]
-
-        def __str__(self):
-            return json.dumps(self._record, indent=1)
-
-        def validate(
-                self,
-                offset: typing.Optional[int] = None
-        ) -> typing.Optional[list[str]]:
-            errors = []
-            if offset is not None and offset != self.offset:
-                errors.append(f"Expected offset {offset} got {self.offset}")
-            if self.body is None:
-                errors.append(f"Missing {self.BODY_FIELD}")
-            if self.timestamp_ns is None:
-                errors.append(f"Missing {self.TS_FIELD}")
-            if self.severity is None:
-                errors.append(f"Missing {self.SEVERITY_FIELD}")
-            if self.ATTRS_FIELD not in self._rep:
-                errors.append(f"Missing {self.ATTRS_FIELD}")
-
-            if len(self.attributes) != 2:
-                errors.append(
-                    f"Expected 2 attributes, got {len(self.attributes)}")
-
-            for attr in self.EXPECTED_ATTRS:
-                if attr not in self.attributes:
-                    errors.append(f"Missing attribute '{attr.key}'")
-
-            if len(errors) > 0:
-                return errors
-
-            return None
-
-    def setup_identity_xform(self):
-        it, ot = self.topics
-        self._deploy_wasm(name="identity-logging-xform",
-                          input_topic=self.topics[0],
-                          output_topic=self.topics[1],
+    def setup_identity_xform(self, it, ot, name="identity-logging_xform"):
+        self._deploy_wasm(name=name,
+                          input_topic=it,
+                          output_topic=ot,
                           file="tinygo/identity_logging.wasm")
-        return self.topics
+        return [it, ot]
 
     def consume_one_log_record(self, offset=0, timeout=10) -> LogRecord:
-        return self.LogRecord(
+        return LogRecord(
             self._rpk.consume(self.logs_topic.name,
                               n=1,
                               offset=offset,
                               timeout=timeout))
 
+
+class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
+
+    topics = [
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+    ]
+
     @cluster(num_nodes=4)
     def test_logs_volume(self):
-        input_topic, output_topic = self.setup_identity_xform()
+        input_topic, output_topic = self.setup_identity_xform(
+            self.topics[0], self.topics[1])
         producer_status = self._produce_input_topic(topic=input_topic,
                                                     transactional=False)
         consumer_status = self._consume_output_topic(topic=output_topic,
@@ -534,7 +543,8 @@ class DataTransformsLoggingTest(BaseDataTransformsTest):
         """
         Verify that log events conform to a subset OTel logging spec as laid out in our RFC
         """
-        input_topic, output_topic = self.setup_identity_xform()
+        input_topic, _ = self.setup_identity_xform(self.topics[0],
+                                                   self.topics[1])
 
         self._rpk.produce(input_topic.name, 'foo', 'bar')
         log = self.consume_one_log_record()
@@ -545,7 +555,8 @@ class DataTransformsLoggingTest(BaseDataTransformsTest):
 
     @cluster(num_nodes=3)
     def test_logs_cc_escaping(self):
-        input_topic, output_topic = self.setup_identity_xform()
+        input_topic, output_topic = self.setup_identity_xform(
+            self.topics[0], self.topics[1])
 
         val = generate_string_with_control_character(12)
         buf = bytearray()
@@ -563,7 +574,7 @@ class DataTransformsLoggingTest(BaseDataTransformsTest):
 
     @cluster(num_nodes=3)
     def test_log_topic_integrity(self):
-        self.setup_identity_xform()
+        self.setup_identity_xform(self.topics[0], self.topics[1])
 
         self.logger.debug(
             f"{self.logs_topic.name}: delete topic should fail (empty response table)"
@@ -581,7 +592,7 @@ class DataTransformsLoggingTest(BaseDataTransformsTest):
 
     @cluster(num_nodes=3)
     def test_tunable_configs(self):
-        it, ot = self.setup_identity_xform()
+        it, _ = self.setup_identity_xform(self.topics[0], self.topics[1])
 
         self.logger.debug(
             "See that we can consume a log message w/in 5s with the default interval"
@@ -622,4 +633,209 @@ class DataTransformsLoggingTest(BaseDataTransformsTest):
             log.body
         ) == max_line, f"Expected {max_line}B, got {len(log.body)}B ({log.body})"
 
-    # TODO(oren): some tests based on metrics would probably be good
+
+class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
+
+    topics = [
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+        TopicSpec(partition_count=9),
+    ]
+
+    LOGGER_METRICS = ["events_total", "events_dropped_total"]
+    LOGGER_LABELS = ["function_name", "shard"]
+    MANAGER_METRICS = [
+        "log_manager_buffer_usage_ratio", "log_manager_write_errors_total"
+    ]
+    MANAGER_LABELS = ["shard"]
+
+    def get_metrics_from_node(
+        self,
+        node: ClusterNode,
+        patterns: list[str],
+        endpoint=MetricsEndpoint.METRICS
+    ) -> Optional[dict[str, MetricSamples]]:
+        def get_metrics_from_node_sync(patterns: list[str]):
+            samples = self.redpanda.metrics_samples(
+                patterns,
+                [node],
+                endpoint,
+            )
+            success = samples is not None
+            return success, samples
+
+        try:
+            return wait_until_result(
+                lambda: get_metrics_from_node_sync(patterns),
+                timeout_sec=2,
+                backoff_sec=.1)
+        except TimeoutError as e:
+            return None
+
+    def unpack_samples(self, metric_samples):
+        return {
+            k: [{
+                'value': s.value,
+                'labels': s.labels
+            } for s in metric_samples[k].samples]
+            for k in metric_samples.keys()
+        }
+
+    def random_ascii_string(self, min_len, max_len) -> str:
+        return ''.join(
+            random.choices(string.ascii_letters + string.digits,
+                           k=random.randint(min_len, max_len)))
+
+    @cluster(num_nodes=3)
+    def test_logger_metrics_present(self):
+        it, _ = self.setup_identity_xform(self.topics[0], self.topics[1])
+        self._rpk.produce(it.name, 'foo', 'bar')
+        self.consume_one_log_record()
+
+        def has_logger_metrics(node, endpoint):
+            metrics_samples = self.get_metrics_from_node(node,
+                                                         self.LOGGER_METRICS,
+                                                         endpoint=endpoint)
+            assert metrics_samples is not None, "get_metrics timed out"
+            return sorted(metrics_samples.keys()) == sorted(
+                self.LOGGER_METRICS)
+
+        assert any(
+            [
+                has_logger_metrics(n, MetricsEndpoint.METRICS)
+                for n in self.redpanda.nodes
+            ]
+        ), "Expected some node to export logger metrics on the internal endpoint"
+
+        assert any(
+            [
+                has_logger_metrics(n, MetricsEndpoint.PUBLIC_METRICS)
+                for n in self.redpanda.nodes
+            ]
+        ), "Expected some node to export logger metrics on the public endpoint"
+
+    @cluster(num_nodes=3)
+    def test_logger_metrics_values(self):
+        n_xform = len(self.topics) // 2
+
+        its = []
+        for i in range(0, n_xform):
+            its.append(
+                self.setup_identity_xform(
+                    self.topics[2 * i],
+                    self.topics[2 * i + 1],
+                    name=f"logger{i+1}",
+                )[0])
+        N_PER_TP = 100
+        for i in range(0, N_PER_TP):
+            for it in its:
+                self._rpk.produce(
+                    it.name,
+                    self.random_ascii_string(10, 100),
+                    self.random_ascii_string(10, 100),
+                )
+
+        def get_total_events_per_xform() -> tuple[dict[str, int], int]:
+            totals = {}
+            dropped = 0
+            for node in self.redpanda.nodes:
+                samples = self.unpack_samples(
+                    self.get_metrics_from_node(
+                        node,
+                        self.LOGGER_METRICS,
+                        endpoint=MetricsEndpoint.METRICS))
+                for m in samples['events_total']:
+                    xfm_name = m['labels']['function_name']
+                    totals[xfm_name] = totals.get(xfm_name, 0) + m['value']
+                dropped += sum(
+                    [m['value'] for m in samples["events_dropped_total"]])
+            self.logger.debug(json.dumps(totals, indent=1))
+            return (totals, dropped)
+
+        def get_total_events() -> tuple[int, int]:
+            tot = 0
+            totals, dropped = get_total_events_per_xform()
+            for k in totals:
+                tot += totals[k]
+            self.logger.debug(f"Cluster total log events: {tot}")
+            return (tot, dropped)
+
+        n_events_expected = N_PER_TP * len(its)
+        wait_until(lambda: get_total_events()[0] >= n_events_expected,
+                   timeout_sec=30,
+                   backoff_sec=5,
+                   err_msg=f"never got all the events")
+
+        totals, dropped = get_total_events_per_xform()
+        assert len(totals) == len(its)
+        for name in totals:
+            assert totals[
+                name] >= N_PER_TP, f"Expected {N_PER_TP} log events from transform {name}, got{totals[name]}"
+        assert dropped == 0, f"Expected no dropped events, got {dropped}"
+
+    @cluster(num_nodes=3)
+    def test_manager_metrics_present(self):
+        it, _ = self.setup_identity_xform(self.topics[0], self.topics[1])
+
+        def has_manager_metrics(node, endpoint):
+            metrics_samples = self.get_metrics_from_node(node,
+                                                         self.MANAGER_METRICS,
+                                                         endpoint=endpoint)
+            assert metrics_samples is not None, "Get_metrics timed out"
+            return sorted(metrics_samples.keys()) == sorted(
+                self.MANAGER_METRICS)
+
+        assert all(
+            [
+                has_manager_metrics(n, MetricsEndpoint.METRICS)
+                for n in self.redpanda.nodes
+            ]
+        ), "Expected all nodes to export manager metrics on the internal endpoint"
+
+        assert not any([
+            has_manager_metrics(n, MetricsEndpoint.PUBLIC_METRICS)
+            for n in self.redpanda.nodes
+        ]), "Expected no node to export manager metrics on the public endpoint"
+
+    @cluster(num_nodes=3)
+    def test_manager_metrics_values(self):
+        self.logger.debug("Set flush interval to 1h so buffers fill up")
+        self.redpanda.set_cluster_config(
+            {'data_transforms_logging_flush_interval_ms': 60 * 60 * 1000})
+
+        it, ot = self.setup_identity_xform(
+            self.topics[0],
+            self.topics[1],
+            name=f"logger-xform",
+        )
+
+        N_PER_TP = 32
+        for _ in range(0, N_PER_TP):
+            self._rpk.produce(
+                it.name,
+                self.random_ascii_string(128, 128),
+                self.random_ascii_string(128, 128),
+            )
+
+        self._rpk.consume(ot.name, n=1, offset=N_PER_TP - 1)
+
+        all_nodes_usage = []
+        for node in self.redpanda.nodes:
+            samples = self.unpack_samples(
+                self.get_metrics_from_node(
+                    node,
+                    ["log_manager_buffer_usage"],
+                    endpoint=MetricsEndpoint.METRICS,
+                ))
+
+            for s in samples['log_manager_buffer_usage']:
+                all_nodes_usage.append(s['value'])
+
+        assert any(
+            bu > 0.0 for bu in all_nodes_usage
+        ), f"Expected some non-zero buffer usage, got {all_nodes_usage}"
