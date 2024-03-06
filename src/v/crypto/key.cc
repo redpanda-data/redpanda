@@ -49,8 +49,6 @@ EVP_PKEY_ptr load_private_pem_key(bytes_view key) {
     return pkey;
 }
 
-// NOLINTNEXTLINE
-static const absl::flat_hash_set<int> supported_key_types{EVP_PKEY_RSA};
 } // namespace internal
 
 key::~key() noexcept = default;
@@ -70,9 +68,11 @@ key::impl::impl(
   _private, internal::EVP_PKEY_ptr pkey, is_private_key_t is_private_key)
   : _pkey(std::move(pkey))
   , _is_private_key(is_private_key) {
+    static const absl::flat_hash_set<int> supported_key_types{EVP_PKEY_RSA};
+
     auto key_type = EVP_PKEY_get_base_id(_pkey.get());
 
-    if (!internal::supported_key_types.contains(key_type)) {
+    if (!supported_key_types.contains(key_type)) {
         throw exception(fmt::format("Unsupported key type {}", key_type));
     }
 }

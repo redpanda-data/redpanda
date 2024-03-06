@@ -11,58 +11,18 @@
 
 #include "security/license.h"
 
+#include "crypto/crypto.h"
+#include "crypto/types.h"
 #include "hashing/secure.h"
 #include "json/document.h"
 #include "json/validator.h"
 #include "utils/base64.h"
 
-#include <cryptopp/base64.h>
-#include <cryptopp/rsa.h>
-#include <cryptopp/sha.h>
-
 namespace security {
 
 namespace crypto {
 
-static ss::sstring parse_pem_contents(const ss::sstring& pem_key) {
-    static constexpr std::string_view public_key_header
-      = "-----BEGIN PUBLIC KEY-----";
-    static constexpr std::string_view public_key_footer
-      = "-----END PUBLIC KEY-----";
-
-    size_t pos1{ss::sstring::npos}, pos2{ss::sstring::npos};
-    pos1 = pem_key.find(public_key_header.begin());
-    if (pos1 == ss::sstring::npos) {
-        throw std::runtime_error(
-          "Embedded public key error: PEM header not found");
-    }
-
-    pos2 = pem_key.find(public_key_footer.begin(), pos1 + 1);
-    if (pos2 == ss::sstring::npos) {
-        throw std::runtime_error(
-          "Embedded public key error: PEM footer not found");
-    }
-
-    // Start position and length
-    pos1 = pos1 + public_key_header.length();
-    pos2 = pos2 - pos1;
-    return pem_key.substr(pos1, pos2);
-}
-
-static CryptoPP::ByteQueue convert_pem_to_ber(const ss::sstring& pem_key) {
-    const ss::sstring keystr = parse_pem_contents(pem_key);
-    CryptoPP::StringSource ss{keystr.c_str(), true};
-
-    // Base64 decode, place in a ByteQueue
-    CryptoPP::ByteQueue queue;
-    CryptoPP::Base64Decoder decoder;
-    decoder.Attach(new CryptoPP::Redirector(queue));
-    ss.TransferTo(decoder);
-    decoder.MessageEnd();
-    return queue;
-}
-
-static const CryptoPP::RSA::PublicKey public_key = []() {
+static const ::crypto::key public_key = []() {
     static const ss::sstring public_key_material
       = "-----BEGIN PUBLIC KEY-----\n"
         "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt0Y2jGOLI70xkF4rmpNM\n"
@@ -73,10 +33,10 @@ static const CryptoPP::RSA::PublicKey public_key = []() {
         "dcVQBm3tqIySLGFtiJp+RIa+nJhMrd+G4sqwm4FhsmG35Fbr0XQJY0sM6MaFJcDH\n"
         "swIDAQAB\n"
         "-----END PUBLIC KEY-----\n";
-    auto queue = convert_pem_to_ber(public_key_material);
-    CryptoPP::RSA::PublicKey public_key;
-    public_key.BERDecode(queue);
-    return public_key;
+    return ::crypto::key::load_key(
+      public_key_material,
+      ::crypto::format_type::PEM,
+      ::crypto::is_private_key_t::no);
 }();
 
 /// The redpanda license is comprised of 2 sections seperated by a delimiter.
@@ -84,13 +44,8 @@ static const CryptoPP::RSA::PublicKey public_key = []() {
 /// signature, which is a PCKS1.5 sigature of the contents of the data section.
 static bool
 verify_license(const ss::sstring& data, const ss::sstring& signature) {
-    CryptoPP::RSASS<CryptoPP::PKCS1v15, CryptoPP::SHA256>::Verifier verifier(
-      public_key);
-    return verifier.VerifyMessage(
-      reinterpret_cast<const CryptoPP::byte*>(data.c_str()), // NOLINT
-      data.length(),
-      reinterpret_cast<const CryptoPP::byte*>(signature.data()), // NOLINT
-      signature.size());
+    return ::crypto::verify_signature(
+      ::crypto::digest_type::SHA256, public_key, data, signature);
 }
 
 } // namespace crypto
