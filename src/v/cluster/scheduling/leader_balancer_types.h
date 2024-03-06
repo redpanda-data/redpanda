@@ -17,6 +17,8 @@
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
+#include <roaring/roaring64map.hh>
 
 namespace cluster::leader_balancer_types {
 
@@ -43,6 +45,7 @@ using index_type = absl::node_hash_map<
 using group_id_to_topic_revision_t
   = absl::btree_map<raft::group_id, model::revision_id>;
 
+using muted_groups_t = roaring::Roaring64Map;
 /*
  * Leaders per shard.
  */
