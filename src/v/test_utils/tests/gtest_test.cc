@@ -50,6 +50,11 @@ TEST_CORO(SeastarTest, assert_eventually_coro) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(100ms, [] { return true; });
 }
 
+TEST_CORO(SeastarTest, SkippingWorks) {
+    GTEST_SKIP_CORO() << "Skipping should not trip the following assertion";
+    ASSERT_FALSE_CORO(true);
+}
+
 /*
  * TEST_F() runs within a seastar thread
  */
