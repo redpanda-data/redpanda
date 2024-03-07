@@ -94,6 +94,13 @@ ss::future<> kvstore::start() {
       .then([this] {
           _started = true;
 
+          vlog(lg.info, "KEY COUNT {}", _db.size());
+          for (const auto& [k, v] : _db) {
+              iobuf buf;
+              buf.append(k.data(), k.size());
+              vlog(lg.info, "KEY {}", buf.hexdump(100));
+          }
+
           // Flushing background fiber
           ssx::spawn_with_gate(_gate, [this] {
               return ss::do_until(

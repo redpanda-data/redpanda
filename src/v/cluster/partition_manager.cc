@@ -214,6 +214,39 @@ ss::future<consensus_ptr> partition_manager::manage(
               ntp_cfg, manifest, max_offset);
         }
     }
+
+    bool log_kvs_exists = _storage.kvs()
+                            .get(
+                              storage::kvstore::key_space::storage,
+                              storage::internal::start_offset_key(
+                                ntp_cfg.ntp()))
+                            .has_value();
+
+    bool raft_kvs_exists = _storage.kvs()
+                             .get(
+                               storage::kvstore::key_space::consensus,
+                               raft::details::serialize_group_key(
+                                 group, raft::metadata_key::config_map))
+                             .has_value();
+
+    auto stm_key_str = ssx::sformat(
+      "{}/{}", "log_eviction_stm.snapshot", ntp_cfg.ntp());
+    bool stm_kvs_exists = _storage.kvs()
+                            .get(
+                              storage::kvstore::key_space::stms,
+                              bytes{stm_key_str.begin(), stm_key_str.end()})
+                            .has_value();
+
+    vlog(
+      clusterlog.info,
+      "AAA MANAGE {} rev:{} gid:{}, l:{} r:{} s:{}",
+      ntp_cfg.ntp(),
+      ntp_cfg.get_revision(),
+      group,
+      log_kvs_exists,
+      raft_kvs_exists,
+      stm_kvs_exists);
+
     auto log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
     vlog(
       clusterlog.debug,

@@ -522,3 +522,74 @@ class DisablingPartitionsTest(RedpandaTest):
 
         rpk.consume('mytopic1', n=3000, quiet=True)
         rpk.consume('mytopic2', n=2000, quiet=True)
+
+    @cluster(num_nodes=5)
+    def test_topic_delete(self):
+        def print_storage():
+            for n in self.redpanda.nodes:
+                storage = self.redpanda.node_storage(n)
+                for ns, ns_storage in storage.ns.items():
+                    self.logger.warn(
+                        f"FFF {n.name=} {ns=} topics: {ns_storage.topics.keys()}"
+                    )
+                    for topic, topic_storage in ns_storage.topics.items():
+                        self.logger.warn(
+                            f"TOPIC {topic}: {topic_storage.partitions}")
+
+        self.logger.warn("after start")
+        print_storage()
+
+        rpk = RpkTool(self.redpanda)
+        admin = Admin(self.redpanda)
+
+        segment_size = 1024
+        topic_config = {
+            'segment.bytes': segment_size,
+            'retention.bytes': segment_size,
+            'retention.local.target.bytes': segment_size,
+            'cleanup.policy': 'delete',
+        }
+
+        topics = ["mytopic1", "mytopic2"]
+        for topic in topics:
+            rpk.create_topic(topic,
+                             partitions=2,
+                             replicas=3,
+                             config=topic_config)
+            _produce(self, topic)
+
+        import time
+        # give time for log eviction
+        time.sleep(10)
+
+        admin.set_partitions_disabled(ns="kafka",
+                                      topic="mytopic1",
+                                      partition=1)
+        admin.set_partitions_disabled(ns="kafka", topic="mytopic2")
+
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_for_membership(first_start=False)
+
+        self.logger.warn("after topic create")
+        print_storage()
+
+        for topic in topics:
+            rpk.delete_topic(topic)
+
+        self.logger.warn("after topic delete")
+        print_storage()
+
+        for topic in topics:
+            rpk.create_topic(topic,
+                             partitions=2,
+                             replicas=3,
+                             config=topic_config)
+
+        # give time for leader election
+        time.sleep(5)
+
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_for_membership(first_start=False)
+
+        self.logger.warn("after restart")
+        print_storage()

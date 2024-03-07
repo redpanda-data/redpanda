@@ -166,17 +166,17 @@ ss::future<> disk_log_impl::remove() {
                 vlog(stlog.info, "Finished removing all segments:{}", config());
             })
             .then([this] {
-                return _kvstore.remove(
-                  kvstore::key_space::storage,
-                  internal::start_offset_key(config().ntp()));
-            })
-            .then([this] {
-                return _kvstore.remove(
-                  kvstore::key_space::storage,
-                  internal::clean_segment_key(config().ntp()));
+                return remove_kvstore_state(_kvstore, config().ntp());
             });
       })
       .finally([this] { _probe->clear_metrics(); });
+}
+
+ss::future<> disk_log_impl::remove_kvstore_state(kvstore& kvs, model::ntp ntp) {
+    co_await kvs.remove(
+      kvstore::key_space::storage, internal::start_offset_key(ntp));
+    co_await kvs.remove(
+      kvstore::key_space::storage, internal::clean_segment_key(ntp));
 }
 
 ss::future<std::optional<ss::sstring>> disk_log_impl::close() {

@@ -1203,6 +1203,13 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           ntp,
           claim_it->second);
         // TODO: if hosting = true, delete persistent kvstore state.
+        if (claim_it->second.hosting) {
+            vlog(
+              clusterlog.info,
+              "AAA DELETE NOT MANAGED {} rev:{}",
+              ntp,
+              claim_it->second.log_revision);
+        }
         _ntp_claims.erase(claim_it);
         claim_it = _ntp_claims.end();
     }
@@ -2070,6 +2077,12 @@ ss::future<> controller_backend::delete_partition(
       [ntp, group_id, rev](shard_table& st) mutable {
           st.erase(ntp, group_id, rev);
       });
+
+    vlog(
+      clusterlog.info,
+      "AAA DELETE MANAGED {} rev:{}",
+      ntp,
+      part->get_log_revision_id());
 
     co_await _partition_manager.local().remove(ntp, mode);
 

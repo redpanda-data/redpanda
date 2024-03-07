@@ -612,6 +612,20 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     co_await dispatch_topic_dir_deletion(topic_dir);
 }
 
+// ss::future<> log_manager::remove_unmanaged(model::ntp ntp) {
+//     vlog(stlog.info, "Asked to remove unmanaged ntp: {}", ntp);
+//     auto g = _open_gate.hold();
+
+//     if (_logs.contains(ntp)) {
+//         throw std::runtime_error{
+//           fmt_with_ctx(ssx::sformat, "ntp {} is still managed", ntp)};
+//     }
+
+
+
+//     co_return;
+// }
+
 ss::future<> remove_orphan_partition_files(
   ss::sstring topic_directory_path,
   model::topic_namespace nt,

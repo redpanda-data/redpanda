@@ -73,6 +73,8 @@ public:
     ss::future<> apply_segment_ms() final;
     ss::future<> gc(gc_config) final;
 
+    static ss::future<> remove_kvstore_state(kvstore&, model::ntp);
+
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
 
     /// Compute number of bytes between the two offset (including both offsets)
