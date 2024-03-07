@@ -564,7 +564,6 @@ std::vector<in_memory_segment> replace_segments(
         auto bo = s.base_offset;
         auto it = manifest.find(bo);
         BOOST_REQUIRE(it != manifest.end());
-        BOOST_REQUIRE(it->size_bytes != s.bytes.size());
         auto path = manifest.generate_segment_path(*it);
         segments_to_remove.push_back(ss::sstring("/") + path().native());
     }

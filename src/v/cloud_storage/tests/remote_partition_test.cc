@@ -1987,11 +1987,19 @@ FIXTURE_TEST(test_stale_reader, cloud_storage_fixture) {
     batch_t data = {
       .num_records = 1, .type = model::record_batch_type::raft_data};
 
+    batch_t merged = {
+      .num_records = 2, .type = model::record_batch_type::raft_data};
+
     // offsets 0-29
     const std::vector<std::vector<batch_t>> batch_types = {
       {data, data, data, data, data, data, data, data, data, data},
       {data, data, data, data, data, data, data, data, data, data},
       {data, data, data, data, data, data, data, data, data, data},
+    };
+    const std::vector<std::vector<batch_t>> merged_batch_types = {
+      {merged, merged, merged, merged, merged},
+      {merged, merged, merged, merged, merged},
+      {merged, merged, merged, merged, merged},
     };
 
     auto segments = setup_s3_imposter(
@@ -2000,9 +2008,9 @@ FIXTURE_TEST(test_stale_reader, cloud_storage_fixture) {
     print_segments(segments);
 
     auto headers_read = scan_remote_partition_with_replacements(
-      *this, model::offset(0), model::offset(29), batch_types, 0, 0);
+      *this, model::offset(0), model::offset(29), merged_batch_types, 0, 0);
 
-    BOOST_REQUIRE_EQUAL(headers_read.size(), 30);
+    BOOST_REQUIRE_EQUAL(headers_read.size(), 15);
 }
 
 // Returns true if a kafka::offset scan returns the expected number of records.
