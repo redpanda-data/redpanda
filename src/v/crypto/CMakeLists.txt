@@ -10,6 +10,7 @@ v_cc_library(
       random.cc
       signature.cc
       ssl_utils.cc
+      ossl_context_service.cc
     DEPS
       absl::node_hash_set
       v::bytes
