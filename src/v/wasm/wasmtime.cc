@@ -1598,11 +1598,14 @@ bool is_exported_memory(const parser::module_export& mod_export) {
 }
 
 bool is_transform_abi_check_fn(const parser::module_import& mod_import) {
-    return mod_import
-           == parser::module_import{
-             .module_name = ss::sstring(transform_module::name),
-             .item_name = "check_abi_version_1",
-             .description = parser::declaration::function{}};
+    constexpr std::array version = {1, 2};
+    return absl::c_any_of(version, [&mod_import](int version) {
+        return mod_import
+               == parser::module_import{
+                 .module_name = ss::sstring(transform_module::name),
+                 .item_name = ss::format("check_abi_version_{}", version),
+                 .description = parser::declaration::function{}};
+    });
 }
 
 ss::future<> wasmtime_runtime::validate(iobuf buf) {
