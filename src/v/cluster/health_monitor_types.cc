@@ -141,14 +141,15 @@ std::ostream& operator<<(std::ostream& o, const partition_status& ps) {
     fmt::print(
       o,
       "{{id: {}, term: {}, leader_id: {}, revision_id: {}, size_bytes: {}, "
-      "reclaimable_size_bytes: {}, under_replicated: {}}}",
+      "reclaimable_size_bytes: {}, under_replicated: {}, shard: {}}}",
       ps.id,
       ps.term,
       ps.leader_id,
       ps.revision_id,
       ps.size_bytes,
       ps.reclaimable_size_bytes,
-      ps.under_replicated_replicas);
+      ps.under_replicated_replicas,
+      ps.shard);
     return o;
 }
 
