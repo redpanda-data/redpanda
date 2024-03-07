@@ -376,6 +376,10 @@ public:
 
     void set_time(model::timestamp t) { _ts_cursor = t; }
 
+    ss::sharded<features::feature_table>& feature_table() {
+        return _feature_table;
+    }
+
 private:
     template<typename Consumer>
     auto consume_impl(Consumer c, log_reader_config config) {
