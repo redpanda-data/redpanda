@@ -101,6 +101,8 @@ std::string_view to_string_view(feature f) {
         return "compaction_placeholder_batch";
     case feature::node_local_core_assignment:
         return "node_local_core_assignment";
+    case feature::role_based_access_control:
+        return "role_base_access_control";
 
     /*
      * testing features
