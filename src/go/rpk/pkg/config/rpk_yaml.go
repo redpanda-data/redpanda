@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -424,6 +425,23 @@ func (c *RpkCloudCluster) HasAuth(a RpkCloudAuth) bool {
 		return false
 	}
 	return c.AuthOrgID == a.OrgID && c.AuthKind == a.Kind
+}
+
+func (c *RpkCloudCluster) IsServerless() bool {
+	return c != nil && c.ClusterType == publicapi.ServerlessClusterType
+}
+
+func (c *RpkCloudCluster) CheckClusterURL() (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("cluster information not present in current profile. Please delete and re-create the current profile with 'rpk profile create --from-cloud'")
+	}
+	if c.ClusterURL == "" {
+		if c.ClusterID != "" {
+			return "", fmt.Errorf("cluster URL not present in profile. Please delete and re-create the current profile with 'rpk profile create <name> --from-cloud=%v'", c.ClusterID)
+		}
+		return "", errors.New("cluster URL not present in profile. Please delete and re-create the current profile with 'rpk profile create --from-cloud' and selecting this cluster")
+	}
+	return c.ClusterURL, nil
 }
 
 ////////////////
