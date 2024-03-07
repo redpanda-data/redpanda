@@ -443,7 +443,9 @@ class LogRecord:
 
         # OTel bits
         self._rep = self._record['value']
-        self.body = self._rep.get(self.BODY_FIELD, None)
+        body_object = self._rep.get(self.BODY_FIELD, None)
+        if isinstance(body_object, dict):
+            self.body = body_object.get("stringValue", None)
         self.timestamp_ns = self._rep.get(self.TS_FIELD, None)
         self.severity = self._rep.get(self.SEVERITY_FIELD, None)
         self.attributes = [
