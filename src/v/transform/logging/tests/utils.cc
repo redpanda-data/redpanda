@@ -31,7 +31,7 @@ json::Document parse_json(iobuf resp) {
 
 std::string get_message_body(iobuf msg) {
     auto doc = parse_json(std::move(msg));
-    return {doc["body"].GetString()};
+    return {doc["body"]["stringValue"].GetString()};
 }
 
 model::transform_name random_transform_name(size_t len) {

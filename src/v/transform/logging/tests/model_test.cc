@@ -35,8 +35,10 @@ TEST(TransformLogEventTest, ValidateLogEventJson) {
     EXPECT_TRUE(doc.IsObject());
 
     EXPECT_TRUE(
-      doc.HasMember("body") && doc["body"].IsString()
-      && doc["body"].GetString() == message);
+      doc.HasMember("body") && doc["body"].IsObject()
+      && doc["body"].HasMember("stringValue")
+      && doc["body"]["stringValue"].IsString()
+      && doc["body"]["stringValue"].GetString() == message);
 
     EXPECT_TRUE(
       doc.HasMember("timeUnixNano") && doc["timeUnixNano"].IsUint64()
