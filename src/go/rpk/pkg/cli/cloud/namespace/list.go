@@ -1,8 +1,10 @@
 package namespace
 
 import (
+	"context"
 	"fmt"
 
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
@@ -53,4 +55,31 @@ func listCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 		},
 	}
+}
+
+// listAllNamespaces uses the pagination feature to traverse all pages of the
+// list request and return all namespaces.
+func listAllNamespaces(ctx context.Context, cl *publicapi.ClientSet) ([]listResponse, error) {
+	var (
+		pageToken string
+		listed    []*controlplanev1beta1.Namespace
+	)
+	for {
+		l, err := cl.Namespace.ListNamespaces(ctx, connect.NewRequest(&controlplanev1beta1.ListNamespacesRequest{PageToken: pageToken}))
+		if err != nil {
+			return nil, err
+		}
+		listed = append(listed, l.Msg.Namespaces...)
+		if pageToken = l.Msg.NextPageToken; pageToken == "" {
+			break
+		}
+	}
+	var res []listResponse
+	for _, n := range listed {
+		if n != nil {
+			res = append(res, listResponse{n.Name, n.Id})
+		}
+	}
+	sort.Slice(res, func(i, j int) bool { return strings.ToLower(res[i].Name) < strings.ToLower(res[j].Name) })
+	return res, nil
 }
