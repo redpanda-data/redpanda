@@ -206,7 +206,7 @@ ss::future<index_state> deduplicate_segment(
       &cmp_idx_writer,
       inject_reader_failure);
 
-    auto new_idx = co_await rdr.consume(
+    auto new_idx = co_await std::move(rdr).consume(
       std::move(copy_reducer), model::no_timeout);
     new_idx.broker_timestamp = seg->index().broker_timestamp();
     co_return new_idx;
