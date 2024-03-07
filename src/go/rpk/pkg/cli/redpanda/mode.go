@@ -59,7 +59,7 @@ func NewModeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 func executeMode(fs afero.Fs, p *config.Params, mode string) error {
 	cfg, err := p.Load(fs)
 	if err != nil {
-		return fmt.Errorf("unable to load config: %v", err)
+		return fmt.Errorf("rpk unable to load config: %v", err)
 	}
 	return cfg.SetMode(fs, mode)
 }

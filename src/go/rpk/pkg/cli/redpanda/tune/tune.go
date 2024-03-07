@@ -90,7 +90,7 @@ To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
 
 			tunerParams.CPUMask = cpuMask
 			y, err := p.LoadVirtualRedpandaYaml(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
 				exists, err := afero.Exists(fs, outTuneScriptFile)

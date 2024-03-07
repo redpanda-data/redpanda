@@ -55,8 +55,8 @@ command.`,
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-			out.CheckExitCloudAdmin(p)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			config.CheckExitCloudAdmin(p)
 
 			// Warn user before continuing, proceed only via explicit signal
 			if !noConfirm {

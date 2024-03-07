@@ -36,14 +36,14 @@ additionally clear your client ID and client secret.
 				out.Die("detected rpk is running with sudo; please execute this command without sudo to avoid saving the cloud configuration as a root owned file")
 			}
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			y, ok := cfg.ActualRpkYaml()
 			if !ok {
 				fmt.Println("You are not logged in.")
 				return
 			}
-			a := y.Auth(y.CurrentCloudAuth)
+			a := y.CurrentAuth()
 			if a == nil || a.AuthToken == "" && !clear {
 				fmt.Println("You are not logged in.")
 				return
