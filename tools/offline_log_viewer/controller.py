@@ -101,7 +101,14 @@ def read_topic_properties_serde(rdr: Reader, version):
         }
     if version >= 7:
         topic_properties |= {
-            'mpx_virtual_cluster_id': rdr.read_optional(Reader.read_bytes)
+            'mpx_virtual_cluster_id': rdr.read_optional(Reader.read_bytes),
+        }
+
+    if version >= 8:
+        topic_properties |= {
+            'write_caching': rdr.read_optional(Reader.read_serde_enum),
+            'flush_ms': rdr.read_optional(Reader.read_int64),
+            'flush_bytes': rdr.read_optional(Reader.read_int64)
         }
 
     return topic_properties
@@ -123,7 +130,7 @@ def read_topic_configuration_assignment_serde(rdr: Reader):
                     rdr.read_int16(),
                     'properties':
                     rdr.read_envelope(read_topic_properties_serde,
-                                      max_version=7),
+                                      max_version=8),
                 }, 1),
             'assignments':
             rdr.read_serde_vector(lambda r: r.read_envelope(
@@ -246,10 +253,16 @@ def read_incremental_topic_update_serde(rdr: Reader):
                 read_property_update_serde(
                     rdr, lambda r: r.read_tristate(Reader.read_uint64))
             }
+        if version >= 6:
+            incr_obj |= {
+                'write_caching': rdr.read_optional(Reader.read_serde_enum),
+                'flush_ms': rdr.read_optional(Reader.read_int64),
+                'flush_bytes': rdr.read_optional(Reader.read_int64)
+            }
 
         return incr_obj
 
-    return rdr.read_envelope(incr_topic_upd, max_version=5)
+    return rdr.read_envelope(incr_topic_upd, max_version=6)
 
 
 def read_create_partitions_serde(rdr: Reader):
