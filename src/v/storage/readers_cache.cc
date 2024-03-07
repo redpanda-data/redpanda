@@ -32,20 +32,22 @@ readers_cache::readers_cache(
   config::binding<size_t> target_max_size)
   : _ntp(std::move(ntp))
   , _eviction_timeout(eviction_timeout)
-  , _target_max_size(std::move(target_max_size)) {
+  , _target_max_size(std::move(target_max_size))
+  , _eviction_jitter(eviction_timeout) {
     _probe.setup_metrics(_ntp);
     // setup eviction timer
     _eviction_timer.set_callback([this] {
         ssx::spawn_with_gate(_gate, [this] {
             return maybe_evict().finally([this] {
                 if (!_gate.is_closed()) {
-                    _eviction_timer.arm(_eviction_timeout);
+                    _eviction_timer.arm(
+                      _eviction_jitter.next_jitter_duration());
                 }
             });
         });
     });
 
-    _eviction_timer.arm(_eviction_timeout);
+    _eviction_timer.arm(_eviction_jitter.next_jitter_duration());
 }
 
 model::record_batch_reader

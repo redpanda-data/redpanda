@@ -16,6 +16,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "random/generators.h"
+#include "random/simple_time_jitter.h"
 #include "storage/log_reader.h"
 #include "storage/readers_cache_probe.h"
 #include "storage/types.h"
@@ -205,5 +206,7 @@ private:
      */
     std::vector<offset_range> _locked_offset_ranges;
     ss::condition_variable _in_use_reader_destroyed;
+
+    simple_time_jitter<ss::lowres_clock> _eviction_jitter;
 };
 } // namespace storage
