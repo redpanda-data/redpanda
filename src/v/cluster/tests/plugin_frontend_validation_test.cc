@@ -24,6 +24,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <boost/range/irange.hpp>
 #include <gtest/gtest.h>
 
 #include <string_view>
@@ -161,6 +162,47 @@ TEST_F(PluginValidationTest, ValidateSuccess) {
       errc::success);
 }
 
+TEST_F(PluginValidationTest, TooManyOutputTopics) {
+    EXPECT_EQ(create_topic("foo"), errc::success);
+    for (int i : boost::irange(10)) {
+        EXPECT_EQ(create_topic(ss::format("bar_{}", i)), errc::success);
+    }
+    EXPECT_EQ(
+      upsert_transform({
+        .name = "qux",
+        .src = "foo",
+        .sinks = {
+          "bar_0",
+          "bar_1",
+          "bar_2",
+          "bar_3",
+          "bar_4",
+          "bar_5",
+          "bar_6",
+          "bar_7",
+          "bar_8",
+          "bar_9",
+        },
+      }),
+      errc::transform_invalid_create);
+    EXPECT_EQ(
+      upsert_transform({
+        .name = "qux",
+        .src = "foo",
+        .sinks = {
+          "bar_0",
+          "bar_1",
+          "bar_2",
+          "bar_3",
+          "bar_4",
+          "bar_5",
+          "bar_6",
+          "bar_7",
+        },
+      }),
+      errc::success);
+}
+
 TEST_F(PluginValidationTest, MissingTopic) {
     EXPECT_EQ(create_topic("bar"), errc::success);
     EXPECT_EQ(
@@ -291,19 +333,6 @@ TEST_F(PluginValidationTest, NoReadReplicas) {
         .name = "no-read-replica",
         .src = "qux",
         .sinks = {"bar"},
-      }),
-      errc::transform_invalid_create);
-}
-
-TEST_F(PluginValidationTest, MultipleOutputs) {
-    EXPECT_EQ(create_topic("foo"), errc::success);
-    EXPECT_EQ(create_topic("bar"), errc::success);
-    EXPECT_EQ(create_topic("qux"), errc::success);
-    EXPECT_EQ(
-      upsert_transform({
-        .name = "no-read-replica",
-        .src = "foo",
-        .sinks = {"bar", "qux"},
       }),
       errc::transform_invalid_create);
 }

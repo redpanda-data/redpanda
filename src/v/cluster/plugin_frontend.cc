@@ -487,7 +487,7 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
                 loggable_string(cmd.value.name()));
               return errc::transform_invalid_create;
           }
-          constexpr static size_t max_output_topics = 1;
+          constexpr static size_t max_output_topics = 8;
           if (cmd.value.output_topics.size() > max_output_topics) {
               vlog(
                 clusterlog.info,

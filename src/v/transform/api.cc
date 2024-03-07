@@ -372,14 +372,14 @@ public:
             throw std::runtime_error("unable to create transform source");
         }
         auto src = std::make_unique<partition_source>(*std::move(partition));
-        vassert(
-          meta.output_topics.size() == 1,
-          "only a single output topic is supported");
-        const auto& output_topic = meta.output_topics[0];
+
         std::vector<std::unique_ptr<sink>> sinks;
-        auto sink = std::make_unique<rpc_client_sink>(
-          output_topic.tp, ntp.tp.partition, _topic_table, _client);
-        sinks.push_back(std::move(sink));
+        sinks.reserve(meta.output_topics.size());
+        for (const auto& output_topic : meta.output_topics) {
+            auto sink = std::make_unique<rpc_client_sink>(
+              output_topic.tp, ntp.tp.partition, _topic_table, _client);
+            sinks.push_back(std::move(sink));
+        }
 
         auto offset_tracker = std::make_unique<offset_tracker_impl>(
           id, ntp.tp.partition, meta.output_topics.size(), _client, _batcher);
