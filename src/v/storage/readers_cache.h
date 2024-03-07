@@ -10,11 +10,13 @@
  */
 #pragma once
 #include "base/vlog.h"
+#include "config/property.h"
 #include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "random/generators.h"
+#include "random/simple_time_jitter.h"
 #include "storage/log_reader.h"
 #include "storage/readers_cache_probe.h"
 #include "storage/types.h"
@@ -35,6 +37,10 @@ namespace storage {
  */
 class readers_cache {
 public:
+    struct stats {
+        size_t in_use_readers;
+        size_t cached_readers;
+    };
     using offset_range = std::pair<model::offset, model::offset>;
     class range_lock_holder {
     public:
@@ -68,11 +74,14 @@ public:
         std::optional<offset_range> _range;
         readers_cache* _cache;
     };
-    explicit readers_cache(model::ntp, std::chrono::milliseconds);
+    explicit readers_cache(
+      model::ntp, std::chrono::milliseconds, config::binding<size_t>);
     std::optional<model::record_batch_reader>
     get_reader(const log_reader_config&);
 
     model::record_batch_reader put(std::unique_ptr<log_reader> reader);
+
+    stats get_stats() const;
 
     /**
      * Evict readers. No new readers holding log to given offset can be added to
@@ -85,7 +94,6 @@ public:
     ss::future<range_lock_holder> evict_range(model::offset, model::offset);
 
     ss::future<> stop();
-    readers_cache() noexcept = default;
     readers_cache(readers_cache&&) = delete;
     readers_cache(const readers_cache&) = delete;
     readers_cache& operator=(readers_cache&&) = delete;
@@ -98,7 +106,7 @@ private:
     struct entry;
     void touch(entry* e) {
         e->last_used = ss::lowres_clock::now();
-        e->_hook.unlink();
+        _readers.erase(_readers.iterator_to(*e));
         _readers.push_back(*e);
     };
 
@@ -110,7 +118,7 @@ private:
         std::unique_ptr<log_reader> reader;
         ss::lowres_clock::time_point last_used = ss::lowres_clock::now();
         bool valid = true;
-        intrusive_list_hook _hook;
+        safe_intrusive_list_hook _hook;
     };
     /**
      * RAII based entry lock guard, it touches entry in a cache and handles
@@ -128,7 +136,7 @@ private:
           , _cache(c) {}
 
         ~entry_guard() noexcept {
-            _e->_hook.unlink();
+            _cache->_in_use.erase(_cache->_in_use.iterator_to(*_e));
             /**
              * we only return reader to cache if it is reusable and wasn't
              * requested to be evicted
@@ -147,13 +155,14 @@ private:
     };
 
     ss::future<> maybe_evict();
-    ss::future<> dispose_entries(intrusive_list<entry, &entry::_hook>);
-    void dispose_in_background(intrusive_list<entry, &entry::_hook>);
+    ss::future<>
+      dispose_entries(uncounted_intrusive_list<entry, &entry::_hook>);
+    void dispose_in_background(uncounted_intrusive_list<entry, &entry::_hook>);
     void dispose_in_background(entry* e);
     ss::future<> wait_for_no_inuse_readers();
     template<typename Predicate>
     ss::future<> evict_if(Predicate predicate) {
-        intrusive_list<entry, &entry::_hook> to_evict;
+        uncounted_intrusive_list<entry, &entry::_hook> to_evict;
         // lock reders to make sure no new readers will be added
         for (auto it = _readers.begin(); it != _readers.end();) {
             auto should_evict = predicate(*it);
@@ -174,6 +183,8 @@ private:
         }
         co_await dispose_entries(std::move(to_evict));
     }
+    inline bool over_size_limit() const;
+    void maybe_evict_size();
 
     bool intersects_with_locked_range(model::offset, model::offset) const;
 
@@ -186,13 +197,16 @@ private:
      * when reader is in use we push it to _in_use intrusive list, otherwise it
      * is stored in _readers.
      */
-    intrusive_list<entry, &entry::_hook> _readers;
-    intrusive_list<entry, &entry::_hook> _in_use;
+    counted_intrusive_list<entry, &entry::_hook> _readers;
+    counted_intrusive_list<entry, &entry::_hook> _in_use;
+    config::binding<size_t> _target_max_size;
     /**
      * When offset range is locked any new readers for given offset will not be
      * added to cache.
      */
     std::vector<offset_range> _locked_offset_ranges;
     ss::condition_variable _in_use_reader_destroyed;
+
+    simple_time_jitter<ss::lowres_clock> _eviction_jitter;
 };
 } // namespace storage
