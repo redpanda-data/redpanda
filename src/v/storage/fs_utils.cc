@@ -106,7 +106,7 @@ segment_full_path segment_full_path::to_compacted_index() const {
     if (extension == ".log") {
         return with_extension(".compaction_index");
     } else if (extension == ".log.compaction.staging") {
-        return with_extension("log.compaction.compaction_index");
+        return with_extension(".log.compaction.compaction_index");
     } else {
         vassert(false, "Unexpected extension {}", extension);
     }
