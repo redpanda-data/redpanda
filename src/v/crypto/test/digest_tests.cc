@@ -12,6 +12,7 @@
 #include "crypto/crypto.h"
 #include "crypto_test_utils.h"
 #include "test_utils/test.h"
+#include "test_values.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <gtest/gtest.h>
@@ -19,26 +20,9 @@
 #include <iterator>
 #include <type_traits>
 
-static constexpr std::string_view md5_test_val
-  = "The quick brown fox jumps over the lazy dog";
+using namespace test_values;
 
 // NOLINTBEGIN
-const auto md5_expected_val = convert_from_hex(
-  "9e107d9d372bb6826bd81d3542a419d6");
-
-const auto sha256_test_val = convert_from_hex(
-  "09fc1accc230a205e4a208e64a8f204291f581a12756392da4b8c0cf5ef02b95");
-
-const auto sha256_expected_val = convert_from_hex(
-  "4f44c1c7fbebb6f9601829f3897bfd650c56fa07844be76489076356ac1886a4");
-
-const auto sha512_test_val = convert_from_hex(
-  "8ccb08d2a1a282aa8cc99902ecaf0f67a9f21cffe28005cb27fcf129e963f99d");
-
-const auto sha512_expected_val = convert_from_hex(
-  "4551def2f9127386eea8d4dae1ea8d8e49b2add0509f27ccbce7d9e950ac7db01d5bca579c27"
-  "1b9f2d806730d88f58252fd0c2587851c3ac8a0e72b4e1dc0da6");
-
 static const absl::flat_hash_map<crypto::digest_type, size_t> expected_sizes = {
   {crypto::digest_type::MD5, 16},
   {crypto::digest_type::SHA256, 32},
