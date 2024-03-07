@@ -83,10 +83,16 @@ func createKeyGenerator() func(maxSize int) ([]byte, error) {
 }
 
 func createValueGenerator() func(size int) ([]byte, error) {
+	// Generate random alphabetic payloads
+	//
+	// Don't generate random bytes because some tests ensure these are valid UTF-8
+	var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	rng := rand.New(rand.NewSource(9))
 	return func(size int) ([]byte, error) {
 		payload := make([]byte, size)
-		_, _ = rng.Read(payload) // Never errors
+		for i := range payload {
+			payload[i] = letters[rng.Intn(len(letters))]
+		}
 		return payload, nil
 	}
 }
