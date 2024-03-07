@@ -13,6 +13,7 @@
 #include "base/seastarx.h"
 #include "base/vlog.h"
 #include "cluster/controller_service.h"
+#include "cluster/health_monitor_backend.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
@@ -50,6 +51,7 @@ leader_balancer::leader_balancer(
   topic_table& topics,
   partition_leaders_table& leaders,
   members_table& members,
+  health_monitor_backend& health_monitor,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<partition_manager>& partition_manager,
@@ -68,6 +70,7 @@ leader_balancer::leader_balancer(
   , _topics(topics)
   , _leaders(leaders)
   , _members(members)
+  , _health_monitor(health_monitor)
   , _connections(connections)
   , _shard_table(shard_table)
   , _partition_manager(partition_manager)
