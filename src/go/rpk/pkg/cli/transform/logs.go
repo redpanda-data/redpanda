@@ -49,10 +49,68 @@ func newLogsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	since.time = minTime
 	until.time = maxTime
 	cmd := &cobra.Command{
-		Use:     "logs [NAME]",
+		Use:     "logs NAME",
 		Aliases: []string{"log"},
 		Short:   "View logs for a transform",
-		Args:    cobra.ExactArgs(1),
+		Long: `View logs for a transform.
+
+Data transform's STDOUT and STDERR are captured during runtime and written to 
+an internally managed topic _redpanda.transform_logs.
+This command ouputs logs for a single transform over a period of time and 
+printing them to STDOUT. The logs can be printed in various formats.
+
+By default, only logs that have been emitted are displayed.
+Use the --follow flag to stream new logs continuously.
+
+FILTERING
+
+The --head and --tail flags are mutually exclusive and limit the number of log
+entries from the beginning or end of the range, respectively.
+
+The --since and --until flags definate a time range. Use one of both flags to
+limit the log output to a desired period of time.
+
+Both flags accept values in the following formats:
+    
+    now                   the current time, useful for --since=now
+    13 digits             parsed as a Unix millisecond
+    9 digits              parsed as a Unix second
+    YYYY-MM-DD            parsed as a day, UTC
+    YYYY-MM-DDTHH:MM:SSZ  parsed as RFC3339, UTC; fractional seconds optional (.MMM)
+    -dur                  a negative duration from now
+    dur                   a positive duration from now
+
+Durations are parsed simply:
+
+    3ms    three milliseconds
+    10s    ten seconds
+    9m     nine minutes
+    1h     one hour
+    1m3ms  one minute and three milliseconds
+
+For example,
+
+    --since=-1h   reads logs within the last hour
+    --until=-30m  reads logs prior to 30 minutes ago
+
+The following command reads logs between noon and 1pm on March 12th:
+
+    rpk transform logs my-tranform --since=2024-03-12T12:00:00Z --until=2024-03-12T13:00:00Z
+
+FORMATTING
+
+Logs can be displayed in a variety of formats using --format.
+
+The default --format=text prints the log record's body line by line.
+
+When --format=wide is specified, the output includes a prefix that is the
+date of the log line and a level for the record. The INFO level corresponds 
+to being emitted on the transform's STDOUT, while the WARN level is used
+for STDERR.
+
+The --format=json flag emits logs in the JSON encoded version of 
+the Open Telemetry LogRecord protocol buffer.`,
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]rawLogEvent{}); ok {
@@ -173,8 +231,8 @@ func newLogsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("head", "tail")
 	// Tail and follow cannot be used together, if you're streaming forever it doesn't make since to get the "last" N logs.
 	cmd.MarkFlagsMutuallyExclusive("tail", "follow")
-	cmd.Flags().Var(&since, "since", "Start reading logs after this time")
-	cmd.Flags().Var(&until, "until", "Read logs up unto this time")
+	cmd.Flags().Var(&since, "since", "Start reading logs after this time (now, -10m, 2024-02-10)")
+	cmd.Flags().Var(&until, "until", "Read logs up unto this time (-1h, 2024-02-10T13:00:00Z)")
 	p.InstallFormatFlag(cmd)
 	return cmd
 }
