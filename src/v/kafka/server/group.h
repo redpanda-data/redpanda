@@ -17,6 +17,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_utils.h"
+#include "container/fragmented_vector.h"
 #include "kafka/group_probe.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/offset_commit.h"
@@ -644,7 +645,7 @@ public:
 
     // remove offsets associated with topic partitions
     ss::future<>
-    remove_topic_partitions(const std::vector<model::topic_partition>& tps);
+    remove_topic_partitions(const chunked_vector<model::topic_partition>& tps);
 
     const ss::lw_shared_ptr<cluster::partition> partition() const {
         return _partition;
