@@ -103,8 +103,48 @@ template<typename T, auto fn>
 struct deleter {
     void operator()(T* ptr) { fn(ptr); }
 };
+/** A unique_ptr that uses a free function as a deleter. */
 template<typename T, auto fn>
 using handle = std::unique_ptr<T, deleter<T, fn>>;
+
+/**
+ * This is similar to std::out_ptr in C++23 when used with handles.
+ *
+ * Example usage:
+ *
+ * class foo;
+ * int external_fn(foo** out_ptr);
+ * void free_foo(foo*);
+ *
+ * int main() {
+ *   handle<foo, free_foo> foo_ptr;
+ *   int errno = external_fn(out_handle(foo_ptr));
+ *   if (errno != 0) {
+ *     throw ...;
+ *   }
+ *   // foo_ptr is set with the out ptr from external_fn
+ * }
+ */
+template<typename T, auto fn>
+class out_handle {
+public:
+    explicit out_handle(handle<T, fn>& out_handle)
+      : _out_handle(&out_handle) {}
+    out_handle(const out_handle&) = delete;
+    out_handle(out_handle&&) = delete;
+    out_handle& operator=(const out_handle&) = delete;
+    out_handle& operator=(out_handle&&) = delete;
+    ~out_handle() noexcept {
+        _out_handle->reset(std::exchange(_raw_ptr, nullptr));
+    }
+
+    // NOLINTNEXTLINE
+    operator T**() noexcept { return &_raw_ptr; }
+
+private:
+    handle<T, fn>* _out_handle;
+    T* _raw_ptr = nullptr;
+};
 
 class wasmtime_runtime : public runtime {
 public:
@@ -630,34 +670,39 @@ private:
 
         // The wasm spec has a feature that a module can specify a startup
         // function that is run on start.
-        wasm_trap_t* trap_ptr = nullptr;
-        wasmtime_error_t* error_ptr = nullptr;
-        handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut{
-          wasmtime_instance_pre_instantiate_async(
-            _preinitialized->get(),
-            context,
-            &_instance,
-            &trap_ptr,
-            &error_ptr)};
+        handle<wasmtime_error_t, wasmtime_error_delete> error;
+        handle<wasm_trap_t, wasm_trap_delete> trap;
 
-        // The first poll of the call future is what allocates memory/stack so
-        // we need to do that before we assert that it was used.
-        ss::future<> ready = execute(std::move(fut));
+        {
+            // These pointers don't get set until `fut` is completed.
+            auto trap_out = out_handle(trap);
+            auto error_out = out_handle(error);
 
-        if (prereserved_memory) {
-            vlog(
-              wasm_log.error,
-              "did not use prereserved memory when instantiating wasm vm");
-            _runtime->heap_allocator()->deallocate(
-              std::exchange(prereserved_memory, std::nullopt).value(), 0);
+            handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut{
+              wasmtime_instance_pre_instantiate_async(
+                _preinitialized->get(),
+                context,
+                &_instance,
+                trap_out,
+                error_out)};
+
+            // The first poll of the call future is what allocates memory/stack
+            // so we need to do that before we assert that it was used.
+            ss::future<> ready = execute(std::move(fut));
+
+            if (prereserved_memory) {
+                vlog(
+                  wasm_log.error,
+                  "did not use prereserved memory when instantiating wasm vm");
+                _runtime->heap_allocator()->deallocate(
+                  std::exchange(prereserved_memory, std::nullopt).value(), 0);
+            }
+
+            co_await std::move(ready);
         }
-
-        co_await std::move(ready);
 
         // Now that the call future has returned as completed, we can assume the
         // out pointers have been set, we need to check them for errors.
-        handle<wasmtime_error_t, wasmtime_error_delete> error{error_ptr};
-        handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
         check_error(error.get());
         check_trap(trap.get());
         // initialization success (_instance is valid to use with this store)
@@ -670,27 +715,32 @@ private:
       std::span<const wasmtime_val_t> args,
       std::span<wasmtime_val_t> results) {
         reset_fuel(ctx);
-        wasm_trap_t* trap_ptr = nullptr;
-        wasmtime_error_t* err_ptr = nullptr;
-        handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut{
-          wasmtime_func_call_async(
-            ctx,
-            func,
-            args.data(),
-            args.size(),
-            results.data(),
-            results.size(),
-            &trap_ptr,
-            &err_ptr)};
+        handle<wasmtime_error_t, wasmtime_error_delete> error;
+        handle<wasm_trap_t, wasm_trap_delete> trap;
 
-        co_await execute(std::move(fut));
+        {
+            // These out pointers are not set until `fut` completes.
+            auto error_out = out_handle(error);
+            auto trap_out = out_handle(trap);
+
+            handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut{
+              wasmtime_func_call_async(
+                ctx,
+                func,
+                args.data(),
+                args.size(),
+                results.data(),
+                results.size(),
+                trap_out,
+                error_out)};
+
+            co_await execute(std::move(fut));
+        }
 
         // Now that the call future has returned as completed, we can assume the
         // out pointers have been set, we need to check them for errors.
         // Any results have been written to results and it's on the caller to
         // check.
-        handle<wasmtime_error_t, wasmtime_error_delete> error{err_ptr};
-        handle<wasm_trap_t, wasm_trap_delete> trap{trap_ptr};
         check_error(error.get());
         check_trap(trap.get());
     }
@@ -1433,10 +1483,10 @@ wasmtime_runtime::make_factory(model::transform_metadata meta, iobuf buf) {
           register_sr_module(linker.get(), ssc);
           register_wasi_module(linker.get(), ssc);
 
-          wasmtime_instance_pre_t* preinitialized_ptr = nullptr;
           error.reset(wasmtime_linker_instantiate_pre(
-            linker.get(), user_module.get(), &preinitialized_ptr));
-          preinitialized->_underlying.reset(preinitialized_ptr);
+            linker.get(),
+            user_module.get(),
+            out_handle(preinitialized->_underlying)));
           preinitialized->_memory_limits = lookup_memory_limits(
             user_module.get());
           check_error(error.get());
