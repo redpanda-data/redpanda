@@ -47,7 +47,7 @@ func createCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to authenticate with Redpanda Cloud: %v", err)
 			oauth.MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
 			authToken := authVir.AuthToken
-			cl, err := publicapi.NewClientSet(cfg.DevOverrides().PublicAPIURL, authToken)
+			cl, err := publicapi.NewControlPlaneClientSet(cfg.DevOverrides().PublicAPIURL, authToken)
 			out.MaybeDie(err, "unable to create the public api client: %v", err)
 
 			var (

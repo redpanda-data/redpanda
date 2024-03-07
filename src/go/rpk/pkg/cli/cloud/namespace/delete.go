@@ -1,3 +1,12 @@
+// Copyright 2024 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 package namespace
 
 import (
@@ -39,7 +48,7 @@ func deleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			oauth.MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
 			authToken := authVir.AuthToken
 
-			cl, err := publicapi.NewClientSet(cfg.DevOverrides().PublicAPIURL, authToken)
+			cl, err := publicapi.NewControlPlaneClientSet(cfg.DevOverrides().PublicAPIURL, authToken)
 			out.MaybeDie(err, "unable to create the public api client: %v", err)
 
 			name := args[0]
