@@ -114,7 +114,7 @@ private:
     using state_machines_t = absl::flat_hash_map<ss::sstring, entry_ptr>;
 
     void maybe_start_background_apply(const entry_ptr&);
-    ss::future<> background_apply_fiber(entry_ptr);
+    ss::future<> background_apply_fiber(entry_ptr, ssx::semaphore_units);
 
     ss::future<> apply_raft_snapshot();
     ss::future<> do_apply_raft_snapshot(
