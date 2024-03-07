@@ -569,6 +569,7 @@ ss::future<> controller::start(
             _partition_leaders.local(),
             _members_table.local(),
             _hm_backend.local(),
+            _feature_table.local(),
             std::ref(_connections),
             std::ref(_shard_table),
             std::ref(_partition_manager),

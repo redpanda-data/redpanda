@@ -52,6 +52,7 @@ leader_balancer::leader_balancer(
   partition_leaders_table& leaders,
   members_table& members,
   health_monitor_backend& health_monitor,
+  features::feature_table& feature_table,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<partition_manager>& partition_manager,
@@ -71,6 +72,7 @@ leader_balancer::leader_balancer(
   , _leaders(leaders)
   , _members(members)
   , _health_monitor(health_monitor)
+  , _feature_table(feature_table)
   , _connections(connections)
   , _shard_table(shard_table)
   , _partition_manager(partition_manager)

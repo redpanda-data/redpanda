@@ -86,6 +86,7 @@ public:
       partition_leaders_table&,
       members_table&,
       health_monitor_backend&,
+      features::feature_table&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<shard_table>&,
       ss::sharded<partition_manager>&,
@@ -195,6 +196,7 @@ private:
     partition_leaders_table& _leaders;
     members_table& _members;
     health_monitor_backend& _health_monitor;
+    features::feature_table& _feature_table;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
