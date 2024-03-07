@@ -81,6 +81,7 @@ class TopicSpec:
 
     PROPERTY_INITIAL_RETENTION_LOCAL_TARGET_BYTES = "initial.retention.local.target.bytes"
     PROPERTY_INITIAL_RETENTION_LOCAL_TARGET_MS = "initial.retention.local.target.ms"
+    PROPERTY_VIRTUAL_CLUSTER_ID = "redpanda.virtual.cluster.id"
 
     def __init__(self,
                  *,
@@ -108,7 +109,8 @@ class TopicSpec:
                  record_value_subject_name_strategy=None,
                  record_value_subject_name_strategy_compat=None,
                  initial_retention_local_target_bytes=None,
-                 initial_retention_local_target_ms=None):
+                 initial_retention_local_target_ms=None,
+                 virtual_cluster_id=None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
@@ -134,6 +136,7 @@ class TopicSpec:
         self.record_value_subject_name_strategy_compat = record_value_subject_name_strategy_compat
         self.initial_retention_local_target_bytes = initial_retention_local_target_bytes
         self.initial_retention_local_target_ms = initial_retention_local_target_ms
+        self.virtual_cluster_id = virtual_cluster_id
 
     def __str__(self):
         return self.name

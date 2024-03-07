@@ -353,7 +353,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "record_value_subject_name_strategy: {}, "
       "record_value_subject_name_strategy_compat: {}, "
       "initial_retention_local_target_bytes: {}, "
-      "initial_retention_local_target_ms: {}}}",
+      "initial_retention_local_target_ms: {}, "
+      "mpx_virtual_cluster_id: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -380,7 +381,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.record_value_subject_name_strategy,
       properties.record_value_subject_name_strategy_compat,
       properties.initial_retention_local_target_bytes,
-      properties.initial_retention_local_target_ms);
+      properties.initial_retention_local_target_ms,
+      properties.mpx_virtual_cluster_id);
 
     return o;
 }
@@ -2195,7 +2197,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       std::nullopt,
       tristate<size_t>{std::nullopt},
-      tristate<std::chrono::milliseconds>{std::nullopt}};
+      tristate<std::chrono::milliseconds>{std::nullopt},
+      std::nullopt};
 }
 
 void adl<cluster::cluster_property_kv>::to(

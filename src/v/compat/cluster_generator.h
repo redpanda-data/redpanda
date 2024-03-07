@@ -581,6 +581,14 @@ struct instance_generator<cluster::remote_topic_properties> {
 
 template<>
 struct instance_generator<cluster::topic_properties> {
+    static xid random_xid() {
+        auto data = random_generators::get_bytes(12);
+        xid::data_t array;
+        std::copy(std::begin(data), std::end(data), array.begin());
+
+        return xid{array};
+    }
+
     static cluster::topic_properties random() {
         return {
           tests::random_optional(
@@ -625,7 +633,9 @@ struct instance_generator<cluster::topic_properties> {
           std::nullopt,
           tests::random_tristate(
             [] { return random_generators::get_int<size_t>(); }),
-          tests::random_tristate([] { return tests::random_duration_ms(); })};
+          tests::random_tristate([] { return tests::random_duration_ms(); }),
+          tests::random_optional(
+            [] { return model::vcluster_id(random_xid()); })};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }
@@ -659,9 +669,12 @@ template<>
 struct instance_generator<cluster::create_topics_request> {
     static cluster::create_topics_request random() {
         return {
-          .topics = tests::random_vector([] {
-              return instance_generator<cluster::topic_configuration>::random();
-          }),
+          .topics = tests::random_vector(
+            [] {
+                return instance_generator<
+                  cluster::topic_configuration>::random();
+            },
+            5),
           .timeout = tests::random_duration_ms()};
     }
 

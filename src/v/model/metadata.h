@@ -17,6 +17,7 @@
 #include "net/unresolved_address.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
+#include "utils/xid.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -557,6 +558,11 @@ constexpr const char* fetch_read_strategy_to_string(fetch_read_strategy s) {
 
 std::ostream& operator<<(std::ostream&, fetch_read_strategy);
 std::istream& operator>>(std::istream&, fetch_read_strategy&);
+
+/**
+ * Type representing MPX virtual cluster. MPX uses XID to identify clusters.
+ */
+using vcluster_id = named_type<xid, struct v_cluster_id_tag>;
 
 namespace internal {
 /*

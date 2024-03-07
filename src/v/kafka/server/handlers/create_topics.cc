@@ -17,6 +17,7 @@
 #include "kafka/protocol/timeout.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/handlers/topics/types.h"
+#include "kafka/server/handlers/topics/validators.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/types.h"
 #include "model/metadata.h"
@@ -84,7 +85,8 @@ using validators = make_validator_types<
   remote_read_and_write_are_not_supported_for_read_replica,
   batch_max_bytes_limits,
   subject_name_strategy_validator,
-  replication_factor_must_be_greater_or_equal_to_minimum>;
+  replication_factor_must_be_greater_or_equal_to_minimum,
+  vcluster_id_validator>;
 
 static std::vector<creatable_topic_configs>
 properties_to_result_configs(config_map_t config_map) {
@@ -239,6 +241,12 @@ ss::future<response_ptr> create_topics_handler::handle(
     // Print log if not supported configuration options are present
     for (auto& r : boost::make_iterator_range(begin, valid_range_end)) {
         for (auto c : r.configs) {
+            // special case for vcluster topic property
+            if (
+              config::shard_local_cfg().enable_mpx_extensions()
+              && c.name == topic_property_mpx_virtual_cluster_id) {
+                continue;
+            }
             if (!is_supported(c.name)) {
                 vlog(
                   klog.info,
