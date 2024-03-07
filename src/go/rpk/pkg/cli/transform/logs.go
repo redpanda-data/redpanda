@@ -55,7 +55,7 @@ func newLogsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
-			if h, ok := f.Help([]string{}); ok {
+			if h, ok := f.Help([]rawLogEvent{}); ok {
 				out.Exit(h)
 			}
 
@@ -111,7 +111,7 @@ func newLogsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					maxOffset = min(maxOffset, untilOffset.Offset)
 				}
 			}
-			zap.L().Sugar().Infof("reading logs topic with bounds [%v, %v] on partition %d", startOffset, maxOffset, partition)
+			zap.L().Sugar().Debugf("reading logs topic with bounds [%v, %v] on partition %d", startOffset, maxOffset, partition)
 			if startOffset > maxOffset {
 				return
 			}
@@ -209,6 +209,8 @@ func (tq *timequery) String() string {
 
 func parseTimeQuery(s string, now time.Time) (time.Time, error) {
 	switch {
+	case strings.ToLower(s) == "now":
+		return now.UTC(), nil
 	// 13 digits is a millisecond.
 	case regexp.MustCompile(`^\d{13}$`).MatchString(s):
 		n, _ := strconv.ParseInt(s, 10, 64)
