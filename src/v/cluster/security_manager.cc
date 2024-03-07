@@ -56,10 +56,12 @@ security_manager::apply_update(model::record_batch batch) {
     });
 }
 
+namespace {
+
 /*
  * handle: delete acls command
  */
-static std::error_code
+std::error_code
 do_apply(delete_acls_cmd cmd, security::authorizer& authorizer) {
     authorizer.remove_bindings(cmd.key.filters);
     return errc::success;
@@ -68,7 +70,7 @@ do_apply(delete_acls_cmd cmd, security::authorizer& authorizer) {
 /*
  * handle: create acls command
  */
-static std::error_code
+std::error_code
 do_apply(create_acls_cmd cmd, security::authorizer& authorizer) {
     authorizer.add_bindings(cmd.key.bindings);
     return errc::success;
@@ -77,7 +79,7 @@ do_apply(create_acls_cmd cmd, security::authorizer& authorizer) {
 /*
  * handle: update user command
  */
-static std::error_code
+std::error_code
 do_apply(update_user_cmd cmd, security::credential_store& store) {
     auto removed = store.remove(cmd.key);
     if (!removed) {
@@ -90,7 +92,7 @@ do_apply(update_user_cmd cmd, security::credential_store& store) {
 /*
  * handle: delete user command
  */
-static std::error_code
+std::error_code
 do_apply(delete_user_cmd cmd, security::credential_store& store) {
     auto removed = store.remove(cmd.key);
     return removed ? errc::success : errc::user_does_not_exist;
@@ -99,7 +101,7 @@ do_apply(delete_user_cmd cmd, security::credential_store& store) {
 /*
  * handle: create user command
  */
-static std::error_code
+std::error_code
 do_apply(create_user_cmd cmd, security::credential_store& store) {
     if (store.contains(cmd.key)) {
         return errc::user_exists;
@@ -109,13 +111,15 @@ do_apply(create_user_cmd cmd, security::credential_store& store) {
 }
 
 template<typename Cmd, typename Service>
-static ss::future<std::error_code>
+ss::future<std::error_code>
 do_apply(ss::shard_id shard, Cmd cmd, ss::sharded<Service>& service) {
     return service.invoke_on(
       shard, [cmd = std::move(cmd)](auto& local_service) mutable {
           return do_apply(std::move(cmd), local_service);
       });
 }
+
+} // namespace
 
 template<typename Cmd, typename Service>
 ss::future<std::error_code> security_manager::dispatch_updates_to_cores(
