@@ -973,6 +973,7 @@ TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
     for (int i = 0; i < num_transforms; i++) {
         auto request_key = model::transform_offsets_key{};
         request_key.id = model::transform_id{i};
+        request_key.output_topic = model::output_topic_index{0};
         set_errors_to_inject(random_generators::get_int(0, 2));
         for (int32_t j = 0; j < num_src_partitions; j++) {
             request_key.partition = model::partition_id{j};

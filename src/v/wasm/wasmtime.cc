@@ -754,8 +754,10 @@ private:
                 _measurement = _probe->latency_measurement();
             }
 
-            void emit(model::transformed_data data) final {
-                _cb(std::move(data));
+            ss::future<write_success> emit(
+              std::optional<model::topic_view> topic,
+              model::transformed_data data) final {
+                return _cb(topic, std::move(data));
             }
 
             void post_record() final { _measurement = nullptr; }
@@ -1211,9 +1213,11 @@ void register_transform_module(
 #define REG_HOST_FN(name)                                                      \
     host_function<&transform_module::name>::reg(linker, #name, ssc)
     REG_HOST_FN(check_abi_version_1);
+    REG_HOST_FN(check_abi_version_2);
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_next_record);
     REG_HOST_FN(write_record);
+    REG_HOST_FN(write_record_with_options);
 #undef REG_HOST_FN
 }
 

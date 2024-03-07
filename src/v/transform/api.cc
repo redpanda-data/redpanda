@@ -43,6 +43,7 @@
 #include "wasm/errc.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
@@ -51,6 +52,9 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/optimized_optional.hh>
+
+#include <absl/container/flat_hash_map.h>
+#include <boost/range/irange.hpp>
 
 #include <system_error>
 
@@ -251,44 +255,86 @@ public:
     offset_tracker_impl(
       model::transform_id tid,
       model::partition_id pid,
+      uint32_t output_topic_count,
       rpc::client* client,
       commit_batcher<>* batcher)
-      : _key({.id = tid, .partition = pid})
+      : _id(tid)
+      , _partition(pid)
+      , _output_topic_count(output_topic_count)
       , _client(client)
       , _batcher(batcher) {}
 
     ss::future<> start() override { return ss::now(); }
 
     ss::future<> stop() override {
-        _batcher->unload(_key);
+        for (auto idx : boost::irange(_output_topic_count)) {
+            model::transform_offsets_key key = {
+              .id = _id,
+              .partition = _partition,
+              .output_topic = idx,
+            };
+            _batcher->unload(key);
+        }
         return ss::now();
     }
 
     ss::future<> wait_for_previous_flushes(ss::abort_source* as) override {
-        return _batcher->wait_for_previous_flushes(_key, as);
+        return ss::parallel_for_each(
+          boost::irange(_output_topic_count),
+          [this, as](model::output_topic_index idx) {
+              model::transform_offsets_key key = {
+                .id = _id,
+                .partition = _partition,
+                .output_topic = idx,
+              };
+              return _batcher->wait_for_previous_flushes(key, as);
+          });
     }
 
-    ss::future<std::optional<kafka::offset>> load_committed_offset() override {
-        auto result = co_await _client->offset_fetch(_key);
-        if (result.has_error()) {
-            cluster::errc ec = result.error();
-            throw std::runtime_error(ss::format(
-              "error committing offset: {}",
-              cluster::error_category().message(int(ec))));
-        }
-        auto value = result.value();
-        if (!value) {
-            co_return std::nullopt;
-        }
-        co_return value->offset;
+    ss::future<absl::flat_hash_map<model::output_topic_index, kafka::offset>>
+    load_committed_offsets() override {
+        absl::flat_hash_map<model::output_topic_index, kafka::offset> offsets;
+        offsets.reserve(_output_topic_count);
+        co_await ss::parallel_for_each(
+          boost::irange(_output_topic_count),
+          [this, &offsets](model::output_topic_index idx) {
+              model::transform_offsets_key key = {
+                .id = _id,
+                .partition = _partition,
+                .output_topic = idx,
+              };
+              return _client->offset_fetch(key).then(
+                [&offsets, idx](auto result) {
+                    if (result.has_error()) {
+                        cluster::errc ec = result.error();
+                        throw std::runtime_error(ss::format(
+                          "error loading committed offset: {}",
+                          cluster::error_category().message(int(ec))));
+                    }
+                    auto value = result.value();
+                    if (value) {
+                        offsets[idx] = value->offset;
+                    }
+                    return ss::now();
+                });
+          });
+        co_return offsets;
     }
 
-    ss::future<> commit_offset(kafka::offset offset) override {
-        return _batcher->commit_offset(_key, {.offset = offset});
+    ss::future<> commit_offset(
+      model::output_topic_index index, kafka::offset offset) override {
+        model::transform_offsets_key key = {
+          .id = _id,
+          .partition = _partition,
+          .output_topic = index,
+        };
+        return _batcher->commit_offset(key, {.offset = offset});
     }
 
 private:
-    model::transform_offsets_key _key;
+    model::transform_id _id;
+    model::partition_id _partition;
+    model::output_topic_index _output_topic_count;
     rpc::client* _client;
     commit_batcher<>* _batcher;
 };
@@ -336,7 +382,7 @@ public:
         sinks.push_back(std::move(sink));
 
         auto offset_tracker = std::make_unique<offset_tracker_impl>(
-          id, ntp.tp.partition, _client, _batcher);
+          id, ntp.tp.partition, meta.output_topics.size(), _client, _batcher);
 
         co_return std::make_unique<processor>(
           id,

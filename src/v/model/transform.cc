@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
+#include "serde/rw/rw.h"
 #include "utils/vint.h"
 
 #include <seastar/core/print.hh>
@@ -87,8 +88,35 @@ std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
 
 std::ostream& operator<<(std::ostream& os, const transform_offsets_key& key) {
     fmt::print(
-      os, "{{ transform id: {}, partition: {} }}", key.id, key.partition);
+      os,
+      "{{ transform id: {}, partition: {}, output_topic: {} }}",
+      key.id,
+      key.partition,
+      key.output_topic);
     return os;
+}
+
+void transform_offsets_key::serde_read(
+  iobuf_parser& in, const serde::header& h) {
+    using serde::read_nested;
+    id = read_nested<model::transform_id>(in, h._bytes_left_limit);
+    partition = read_nested<model::partition_id>(in, h._bytes_left_limit);
+    if (h._version == 0) {
+        // Only supported a single output topic
+        output_topic = output_topic_index(0);
+    } else {
+        output_topic = read_nested<output_topic_index>(in, h._bytes_left_limit);
+    }
+    // Skip unknown future fields.
+    if (in.bytes_left() > h._bytes_left_limit) {
+        in.skip(in.bytes_left() - h._bytes_left_limit);
+    }
+}
+
+void transform_offsets_key::serde_write(iobuf& out) const {
+    serde::write(out, id);
+    serde::write(out, partition);
+    serde::write(out, output_topic);
 }
 
 std::ostream&
@@ -255,6 +283,14 @@ iobuf transformed_data::to_serialized_record(
     out.trim_front(vint::max_length - encoded_size.size());
 
     return out;
+}
+
+size_t transformed_data::memory_usage() const {
+    return sizeof(*this) + _data.size_bytes();
+}
+
+transformed_data transformed_data::copy() const {
+    return transformed_data(_data.copy());
 }
 
 } // namespace model

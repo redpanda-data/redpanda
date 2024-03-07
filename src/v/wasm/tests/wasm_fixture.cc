@@ -29,6 +29,7 @@
 #include "wasm/wasmtime.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/future.hh>
 #include <seastar/util/file.hh>
 
 #include <fmt/chrono.h>
@@ -202,8 +203,10 @@ model::record_batch WasmTestFixture::transform(const model::record_batch& b) {
       ->transform(
         b.copy(),
         _probe.get(),
-        [&transformed](model::transformed_data data) {
+        [&transformed](auto, model::transformed_data data) {
             transformed.push_back(std::move(data));
+            return ss::make_ready_future<wasm::write_success>(
+              wasm::write_success::yes);
         })
       .get();
     return model::transformed_data::make_batch(

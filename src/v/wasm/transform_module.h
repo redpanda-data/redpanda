@@ -12,9 +12,11 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
 #include "utils/named_type.h"
+#include "wasm/api.h"
 #include "wasm/ffi.h"
 #include "wasm/wasi.h"
 
@@ -68,7 +70,8 @@ public:
     // Called before surfacing a record to the VM.
     virtual void pre_record() = 0;
     // Called for each record output from the VM.
-    virtual void emit(model::transformed_data) = 0;
+    virtual ss::future<write_success>
+      emit(std::optional<model::topic_view>, model::transformed_data) = 0;
     // Called after a VM specifies it's done with a record.
     virtual void post_record() = 0;
 };
@@ -130,6 +133,7 @@ public:
     // Start ABI exports
 
     void check_abi_version_1();
+    void check_abi_version_2();
 
     ss::future<int32_t> read_batch_header(
       int64_t* base_offset,
@@ -149,7 +153,10 @@ public:
       model::offset* offset_delta,
       ffi::array<uint8_t>);
 
-    int32_t write_record(ffi::array<uint8_t>);
+    ss::future<int32_t> write_record(ffi::array<uint8_t>);
+
+    ss::future<int32_t>
+      write_record_with_options(ffi::array<uint8_t>, ffi::array<uint8_t>);
 
     // End ABI exports
 

@@ -21,6 +21,7 @@
 #include "model/transform.h"
 #include "utils/named_type.h"
 #include "utils/vint.h"
+#include "wasm/api.h"
 #include "wasm/ffi.h"
 #include "wasm/logger.h"
 #include "wasm/wasi.h"
@@ -33,8 +34,33 @@
 
 namespace wasm {
 
+namespace {
 constexpr int32_t NO_ACTIVE_TRANSFORM = -1;
 constexpr int32_t INVALID_BUFFER = -2;
+constexpr int32_t INVALID_WRITE = -3;
+
+struct write_options {
+    std::optional<model::topic_view> topic;
+
+    static std::optional<write_options> parse(ffi::array<uint8_t> buffer) {
+        constexpr uint8_t output_topic_key = 0x01;
+
+        ffi::reader r(buffer);
+        write_options opts;
+        if (r.remaining_bytes() > 0) {
+            if (r.read_byte() != output_topic_key) {
+                return std::nullopt;
+            }
+            opts.topic = model::topic_view(r.read_sized_string_view());
+        }
+        if (r.remaining_bytes() > 0) {
+            return std::nullopt;
+        }
+        return opts;
+    }
+};
+
+} // namespace
 
 transform_module::transform_module(wasi::preview1_module* m)
   : _wasi_module(m) {}
@@ -90,6 +116,11 @@ ss::future<> transform_module::for_each_record_async(
 }
 
 void transform_module::check_abi_version_1() {
+    // This function does nothing at runtime, it's only an opportunity for
+    // static analysis of the module to determine which ABI version to use.
+}
+
+void transform_module::check_abi_version_2() {
     // This function does nothing at runtime, it's only an opportunity for
     // static analysis of the module to determine which ABI version to use.
 }
@@ -193,18 +224,43 @@ ss::future<int32_t> transform_module::read_next_record(
     co_return int32_t(record.payload_size);
 }
 
-int32_t transform_module::write_record(ffi::array<uint8_t> buf) {
+ss::future<int32_t> transform_module::write_record(ffi::array<uint8_t> buf) {
     if (!_call_ctx) {
-        return NO_ACTIVE_TRANSFORM;
+        co_return NO_ACTIVE_TRANSFORM;
     }
     iobuf b;
     b.append(buf.data(), buf.size());
     auto d = model::transformed_data::create_validated(std::move(b));
     if (!d) {
-        return INVALID_BUFFER;
+        co_return INVALID_BUFFER;
     }
-    _call_ctx->callback->emit(*std::move(d));
-    return int32_t(buf.size());
+    auto result = co_await _call_ctx->callback->emit(
+      std::nullopt, *std::move(d));
+    co_return result == write_success::yes ? int32_t(buf.size())
+                                           : INVALID_WRITE;
+}
+
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+ss::future<int32_t> transform_module::write_record_with_options(
+  ffi::array<uint8_t> buf, ffi::array<uint8_t> options_buf) {
+    // NOLINTEND(bugprone-easily-swappable-parameters)
+    if (!_call_ctx) {
+        co_return NO_ACTIVE_TRANSFORM;
+    }
+    iobuf b;
+    b.append(buf.data(), buf.size());
+    auto d = model::transformed_data::create_validated(std::move(b));
+    if (!d) {
+        co_return INVALID_BUFFER;
+    }
+    auto options = write_options::parse(options_buf);
+    if (!options) {
+        co_return INVALID_BUFFER;
+    }
+    auto result = co_await _call_ctx->callback->emit(
+      options->topic, *std::move(d));
+    co_return result == write_success::yes ? int32_t(buf.size())
+                                           : INVALID_WRITE;
 }
 
 void transform_module::start() {

@@ -23,6 +23,8 @@
 
 #include <algorithm>
 #include <iterator>
+#include <memory>
+#include <type_traits>
 
 namespace ssx {
 
@@ -426,6 +428,16 @@ seastar::future<T...> with_timeout_abortable(
     });
 
     return result;
+}
+
+// Create a ready future with template deduction.
+//
+// In most cases you should not need specify a template parameter using this
+// function over seastar's make_ready_future function.
+template<typename T>
+seastar::future<std::remove_cvref_t<T>> now(T&& v) noexcept {
+    return seastar::make_ready_future<std::remove_cvref_t<T>>(
+      std::forward<T>(v));
 }
 
 } // namespace ssx

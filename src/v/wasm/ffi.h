@@ -89,6 +89,7 @@ public:
     void append(int32_t);
     void append(uint64_t);
     void append(int64_t);
+    void append_byte(uint8_t);
 
     size_t total() const noexcept { return _offset; };
 
@@ -124,6 +125,7 @@ public:
     void append(int32_t);
     void append(uint64_t);
     void append(int64_t);
+    void append_byte(uint8_t);
 
     size_t total() const noexcept { return _offset; };
 
@@ -152,13 +154,18 @@ public:
     ~reader() = default;
 
     ss::sstring read_string(size_t);
+    std::string_view read_string_view(size_t);
     iobuf read_iobuf(size_t);
     iobuf read_sized_iobuf();
     ss::sstring read_sized_string();
+    std::string_view read_sized_string_view();
     int64_t read_varint();
+    uint8_t read_byte();
+
+    size_t remaining_bytes() const;
 
 private:
-    array<uint8_t> slice_remainder();
+    array<uint8_t> slice_remainder() const;
 
     array<uint8_t> _input;
     size_t _offset{0};

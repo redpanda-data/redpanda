@@ -27,6 +27,9 @@
 #include <seastar/core/queue.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <absl/container/flat_hash_map.h>
+
+#include <memory>
 #include <variant>
 
 namespace transform {
@@ -36,7 +39,7 @@ namespace transform {
  * committed offset.
  */
 struct transformed_output {
-    std::variant<model::record_batch, kafka::offset> data;
+    std::variant<model::transformed_data, kafka::offset> data;
 
     // How much memory this object is using.
     size_t memory_usage() const;
@@ -81,10 +84,17 @@ public:
 private:
     ss::future<> run_consumer_loop(kafka::offset);
     ss::future<> run_transform_loop();
-    ss::future<> run_producer_loop();
+    ss::future<> run_all_producers(
+      absl::flat_hash_map<model::output_topic_index, kafka::offset>);
+    ss::future<> run_producer_loop(
+      model::output_topic_index,
+      transfer_queue<transformed_output>*,
+      sink*,
+      kafka::offset);
     ss::future<> poll_sleep();
-    ss::future<kafka::offset> load_start_offset();
-    void report_lag(int64_t);
+    ss::future<absl::flat_hash_map<model::output_topic_index, kafka::offset>>
+    load_latest_committed();
+    void report_lag(model::output_topic_index, int64_t);
 
     template<typename... Future>
     ss::future<> when_all_shutdown(Future&&...);
@@ -95,21 +105,27 @@ private:
     model::transform_metadata _meta;
     ss::shared_ptr<wasm::engine> _engine;
     std::unique_ptr<source> _source;
-    std::vector<std::unique_ptr<sink>> _sinks;
     std::unique_ptr<offset_tracker> _offset_tracker;
     state_callback _state_callback;
     probe* _probe;
 
     static constexpr size_t buffer_chunk_size = 8;
+
     transfer_queue<model::record_batch, buffer_chunk_size>
       _consumer_transform_pipe;
-    transfer_queue<transformed_output, buffer_chunk_size>
-      _transform_producer_pipe;
+
+    struct output {
+        model::output_topic_index index;
+        transfer_queue<transformed_output> queue;
+        std::unique_ptr<sink> sink;
+    };
+    absl::flat_hash_map<model::topic, output> _outputs;
+    output* _default_output = nullptr;
 
     ss::abort_source _as;
     ss::future<> _task;
     prefix_logger _logger;
 
-    int64_t _last_reported_lag = 0;
+    std::vector<int64_t> _last_reported_lag;
 };
 } // namespace transform

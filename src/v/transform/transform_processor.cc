@@ -19,17 +19,21 @@
 #include "model/transform.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "random/simple_time_jitter.h"
+#include "ssx/future-util.h"
 #include "transform/logger.h"
 #include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <algorithm>
+#include <iterator>
 #include <optional>
 
 namespace transform {
@@ -83,7 +87,7 @@ class processor_shutdown_exception : public std::exception {
 
 // TODO(rockwood): This is an arbitrary value, we should instead be
 // limiting the size based on the amount of memory in the transform subsystem.
-constexpr size_t max_buffer_size = 64_KiB;
+constexpr size_t max_buffer_size = 128_KiB;
 
 } // namespace
 
@@ -102,18 +106,29 @@ processor::processor(
   , _meta(std::move(meta))
   , _engine(std::move(engine))
   , _source(std::move(source))
-  , _sinks(std::move(sinks))
   , _offset_tracker(std::move(offset_tracker))
   , _state_callback(std::move(cb))
   , _probe(p)
   , _consumer_transform_pipe(max_buffer_size)
-  , _transform_producer_pipe(max_buffer_size)
+  , _outputs()
   , _task(ss::now())
   , _logger(tlog, ss::format("{}/{}", _meta.name(), _ntp.tp.partition())) {
+    const auto& outputs = _meta.output_topics;
     vassert(
-      _sinks.size() == 1,
-      "expected only a single sink, got: {}",
-      _sinks.size());
+      outputs.size() == sinks.size(),
+      "expected the same number of output topics and sinks");
+    _outputs.reserve(outputs.size());
+    _last_reported_lag.reserve(outputs.size());
+    for (size_t i : boost::irange(outputs.size())) {
+        _outputs.emplace(
+          outputs[i].tp,
+          output{
+            .index = model::output_topic_index(i),
+            .queue = transfer_queue<transformed_output>(max_buffer_size),
+            .sink = std::move(sinks[i])});
+        _last_reported_lag.push_back(0);
+    }
+    _default_output = &_outputs.at(outputs.front().tp);
     // The processor needs to protect against multiple stops (or calling stop
     // before start), to do that we use the state in _as. Start out with an
     // abort so that we handle being stopped before we're started.
@@ -129,16 +144,29 @@ ss::future<> processor::start() {
     _as = {};
     co_await _source->start();
     co_await _offset_tracker->start();
-    _task = handle_processor_task(_engine->start().then([this] {
-        return load_start_offset().then([this](kafka::offset start_offset) {
-            // Mark that we're running now that the start offset is loaded.
-            _state_callback(_id, _ntp, state::running);
-            return when_all_shutdown(
-              run_consumer_loop(start_offset),
-              run_transform_loop(),
-              run_producer_loop());
-        });
-    }));
+    _task = handle_processor_task(
+      _engine->start()
+        .then([this] { return load_latest_committed(); })
+        .then(
+          [this](absl::flat_hash_map<model::output_topic_index, kafka::offset>
+                   latest_committed) {
+              // We start reading from the minimum process all producers have
+              // committed too. This means some producers will get transforms
+              // replayed, and in that case they can skip those records until
+              // they start seeing new records past their committed offset.
+              kafka::offset min = kafka::offset::max();
+              for (const auto& [_, offset] : latest_committed) {
+                  // next_offset is used here because we want to start at the
+                  // offset **after** the last one we've processed.
+                  min = std::min(min, kafka::next_offset(offset));
+              }
+              // Mark that we're running now that the start offset is loaded.
+              _state_callback(_id, _ntp, state::running);
+              return when_all_shutdown(
+                run_consumer_loop(min),
+                run_transform_loop(),
+                run_all_producers(std::move(latest_committed)));
+          }));
 }
 
 ss::future<> processor::stop() {
@@ -151,12 +179,16 @@ ss::future<> processor::stop() {
     _as.request_abort_ex(ex);
     co_await std::exchange(_task, ss::now());
     _consumer_transform_pipe.clear();
-    _transform_producer_pipe.clear();
+    for (auto& [_, output] : _outputs) {
+        output.queue.clear();
+    }
     co_await _source->stop();
     co_await _offset_tracker->stop();
     co_await _engine->stop();
     // reset lag now that we've stopped
-    report_lag(0);
+    for (const auto& [_, output] : _outputs) {
+        report_lag(output.index, 0);
+    }
 }
 
 ss::future<> processor::poll_sleep() {
@@ -170,35 +202,52 @@ ss::future<> processor::poll_sleep() {
     }
 }
 
-ss::future<kafka::offset> processor::load_start_offset() {
+ss::future<absl::flat_hash_map<model::output_topic_index, kafka::offset>>
+processor::load_latest_committed() {
     co_await _offset_tracker->wait_for_previous_flushes(&_as);
-    auto latest_committed = co_await _offset_tracker->load_committed_offset();
+    auto latest_committed = co_await _offset_tracker->load_committed_offsets();
     auto latest = _source->latest_offset();
-    if (!latest_committed) {
-        // If we have never committed, mark the end of the log as our starting
-        // place, and start processing from the next record that is produced.
-        co_await _offset_tracker->commit_offset(latest);
-        co_return kafka::next_offset(latest);
+    for (const auto& [_, output] : _outputs) {
+        auto it = latest_committed.find(output.index);
+        if (it == latest_committed.end()) {
+            // If we have never committed, mark the end of the log as our
+            // starting place, and start processing from the next record that is
+            // produced.
+            co_await _offset_tracker->commit_offset(output.index, latest);
+            latest_committed[output.index] = latest;
+            continue;
+        }
+        // The latest record is inclusive of the last record, so we want to
+        // start reading from the following record.
+        auto last_processed_offset = it->second;
+        if (
+          latest != kafka::offset::min()
+          && last_processed_offset == kafka::offset::min()) {
+            // In cases where we committed the start of the log without any
+            // records, then the log has added records, we will overflow
+            // computing small_offset - min_offset. Instead normalize last
+            // processed to -1 so that the computed lag is correct (these ranges
+            // are inclusive). For example: latest(1) - last_processed(-1) =
+            // lag(2)
+            last_processed_offset = kafka::offset(-1);
+        }
+        report_lag(output.index, latest - last_processed_offset);
     }
-    // The latest record is inclusive of the last record, so we want to start
-    // reading from the following record.
-    auto last_processed_offset = latest_committed.value();
-    if (
-      latest != kafka::offset::min()
-      && last_processed_offset == kafka::offset::min()) {
-        // In cases where we committed the start of the log without any records,
-        // then the log has added records, we will overflow computing
-        // small_offset - min_offset. Instead normalize last processed to -1 so
-        // that the computed lag is correct (these ranges are inclusive).
-        // For example: latest(1) - last_processed(-1) = lag(2)
-        last_processed_offset = kafka::offset(-1);
-    }
-    report_lag(latest - last_processed_offset);
-    co_return kafka::next_offset(last_processed_offset);
+    co_return latest_committed;
 }
 
 ss::future<> processor::run_consumer_loop(kafka::offset offset) {
     vlog(_logger.debug, "starting at offset {}", offset);
+    // Producers do not emit records until their previous committed records have
+    // been done being processed. In order to notify them this is the start
+    // position, we prime the output queue with the previous offset. This
+    // signifies that they have processed everything up to this point.
+    //
+    // This is important because on restart we start processing from the minimum
+    // offset.
+    for (auto& [_, output] : _outputs) {
+        co_await output.queue.push({kafka::prev_offset(offset)}, &_as);
+    }
     while (!_as.abort_requested()) {
         auto reader = co_await _source->read_batch(offset, &_as);
         auto last_offset = co_await std::move(reader).consume(
@@ -225,41 +274,98 @@ ss::future<> processor::run_transform_loop() {
         }
         auto offset = model::offset_cast(batch->last_offset());
         ss::chunked_fifo<model::transformed_data> transformed;
+        vlog(_logger.trace, "transforming offset {}", offset);
         co_await _engine->transform(
           std::move(*batch),
           _probe,
-          [&transformed](model::transformed_data data) {
-              transformed.push_back(std::move(data));
+          [this](
+            std::optional<model::topic_view> topic,
+            model::transformed_data data) {
+              if (!topic) {
+                  return _default_output->queue.push({std::move(data)}, &_as)
+                    .then([] { return wasm::write_success::yes; });
+              }
+              auto it = _outputs.find(topic.value());
+              if (it == _outputs.end()) {
+                  return ssx::now(wasm::write_success::no);
+              }
+              return it->second.queue.push({std::move(data)}, &_as).then([] {
+                  return wasm::write_success::yes;
+              });
           });
-        if (!transformed.empty()) {
-            auto b = model::transformed_data::make_batch(
-              model::timestamp::now(), std::move(transformed));
-            co_await _transform_producer_pipe.push({std::move(b)}, &_as);
+        vlog(_logger.trace, "transformed offset {}", offset);
+        // Mark all queues as processsed up to this point.
+        for (auto& [_, output] : _outputs) {
+            co_await output.queue.push({offset}, &_as);
         }
-        co_await _transform_producer_pipe.push({offset}, &_as);
     }
 }
 
-ss::future<> processor::run_producer_loop() {
+ss::future<> processor::run_all_producers(
+  absl::flat_hash_map<model::output_topic_index, kafka::offset>
+    latest_committed) {
+    return ss::parallel_for_each(
+      _outputs, [this, committed = std::move(latest_committed)](auto& entry) {
+          output& out = entry.second;
+          return run_producer_loop(
+            out.index, &out.queue, out.sink.get(), committed.at(out.index));
+      });
+}
+
+ss::future<> processor::run_producer_loop(
+  model::output_topic_index index,
+  transfer_queue<transformed_output>* queue,
+  sink* sink,
+  kafka::offset last_committed) {
+    vlog(
+      _logger.debug,
+      "starting producer {} - last committed: {}",
+      index,
+      last_committed);
+    // It's possible that we have to reprocess some data, in that case we want
+    // to suppress records until we've reached the previous offset we've
+    // committed.
+    bool suppress = true;
     while (!_as.abort_requested()) {
-        auto popped = co_await _transform_producer_pipe.pop_all(&_as);
+        auto popped = co_await queue->pop_all(&_as);
         if (popped.empty()) {
             continue;
         }
-        kafka::offset latest_offset;
-        ss::chunked_fifo<model::record_batch> batches;
+        kafka::offset latest_offset = last_committed;
+        ss::chunked_fifo<model::transformed_data> records;
         for (auto& entry : popped) {
             ss::visit(
               entry.data,
-              [&batches](model::record_batch& b) {
-                  batches.push_back(std::move(b));
+              [&records, &suppress](model::transformed_data& d) {
+                  if (suppress) {
+                      return;
+                  }
+                  records.push_back(std::move(d));
               },
-              [&latest_offset](kafka::offset o) { latest_offset = o; });
+              [&latest_offset, &suppress, last_committed](
+                kafka::offset offset) {
+                  // Stop supressing new records when we see new records from
+                  // the last commit.
+                  // This can happen if other sinks are behind this one and we
+                  // have to replay history.
+                  suppress = last_committed > offset;
+                  latest_offset = offset;
+              });
         }
-        co_await _sinks[0]->write(std::move(batches));
-        if (latest_offset != kafka::offset()) {
-            co_await _offset_tracker->commit_offset(latest_offset);
-            report_lag(_source->latest_offset() - latest_offset);
+        if (!records.empty()) {
+            // TODO(rockwood): Limit batch sizes so we don't overshoot
+            // max batch size limits.
+            auto batch = model::transformed_data::make_batch(
+              model::timestamp::now(), std::move(records));
+            _probe->increment_write_bytes(index, batch.size_bytes());
+            ss::chunked_fifo<model::record_batch> batches;
+            batches.push_back(std::move(batch));
+            co_await sink->write(std::move(batches));
+        }
+        if (latest_offset > last_committed) {
+            co_await _offset_tracker->commit_offset(index, latest_offset);
+            report_lag(index, _source->latest_offset() - latest_offset);
+            last_committed = latest_offset;
         }
     }
 }
@@ -281,10 +387,10 @@ ss::future<> processor::handle_processor_task(ss::future<> fut) {
     }
 }
 
-void processor::report_lag(int64_t lag) {
-    int64_t delta = lag - _last_reported_lag;
-    _probe->report_lag(delta);
-    _last_reported_lag = lag;
+void processor::report_lag(model::output_topic_index idx, int64_t lag) {
+    int64_t delta = lag - _last_reported_lag[idx()];
+    _probe->report_lag(idx, delta);
+    _last_reported_lag[idx()] = lag;
 }
 
 model::transform_id processor::id() const { return _id; }
@@ -294,17 +400,21 @@ bool processor::is_running() const {
     // Only mark this as running if we've called start without calling stop.
     return !_as.abort_requested();
 }
-int64_t processor::current_lag() const { return _last_reported_lag; }
+
+int64_t processor::current_lag() const {
+    return *std::max_element(
+      _last_reported_lag.begin(), _last_reported_lag.end());
+}
 
 size_t transformed_output::memory_usage() const {
     return sizeof(transformed_output)
            + ss::visit(
              data,
-             [](const model::record_batch& b) {
+             [](const model::transformed_data& d) {
                  // Account for the size of this struct, but don't double count
-                 // sizeof(model::record_batch), which b.memory_usage() accounts
-                 // for.
-                 return b.memory_usage() - sizeof(model::record_batch);
+                 // sizeof(model::transformed_data), which d.memory_usage()
+                 // accounts for.
+                 return d.memory_usage() - sizeof(model::transformed_data);
              },
              [](kafka::offset) { return size_t(0); });
 }
