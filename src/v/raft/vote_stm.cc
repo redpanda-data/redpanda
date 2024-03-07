@@ -16,6 +16,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "rpc/types.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/timed_out_error.hh>
@@ -49,9 +50,13 @@ vote_stm::~vote_stm() {
       "Must call vote_stm::wait()");
 }
 ss::future<result<vote_reply>> vote_stm::do_dispatch_one(vnode n) {
-    auto tout = _ptr->_jit.base_duration();
+    auto tout = _ptr->_jit.base_duration() * 3;
     vlog(
-      _ctxlog.info, "[pre-vote: {}] sending vote request to {}", _prevote, n);
+      _ctxlog.info,
+      "[pre-vote: {}] sending vote request to {} with timeout of {} ms",
+      _prevote,
+      n,
+      tout / 1ms);
 
     auto r = _req;
     /**
@@ -63,7 +68,10 @@ ss::future<result<vote_reply>> vote_stm::do_dispatch_one(vnode n) {
     }
     r.target_node_id = n;
     return _ptr->_client_protocol
-      .vote(n.id(), std::move(r), rpc::client_opts(tout))
+      .vote(
+        n.id(),
+        std::move(r),
+        rpc::client_opts(rpc::timeout_spec::from_now(tout)))
       .then([this, target_node_id = n.id()](result<vote_reply> reply) {
           return _ptr->validate_reply_target_node(
             "vote_request", reply, target_node_id);
