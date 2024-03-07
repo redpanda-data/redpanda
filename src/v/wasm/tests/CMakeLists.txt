@@ -49,19 +49,6 @@ rp_test(
 rp_test(
   UNIT_TEST
   GTEST
-  BINARY_NAME wasi_logs
-  SOURCES
-    wasi_logs_test.cc
-  LIBRARIES 
-    v::gtest_main
-    v::wasm
-  ARGS "-- -c 1"
-  LABELS wasm
-)
-
-rp_test(
-  UNIT_TEST
-  GTEST
   BINARY_NAME ffi_helpers_test
   SOURCES
     ffi_helpers_test.cc

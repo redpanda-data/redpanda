@@ -27,16 +27,13 @@
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 
-#include <absl/strings/escaping.h>
 #include <absl/strings/str_join.h>
-#include <fmt/chrono.h>
-#include <fmt/format.h>
-#include <fmt/ranges.h>
 
 #include <chrono>
 #include <cstdint>
 #include <exception>
 #include <numeric>
+#include <ranges>
 #include <ratio>
 #include <sstream>
 #include <stdexcept>
@@ -70,61 +67,10 @@ exit_exception::exit_exception(int32_t exit_code)
 const char* exit_exception::what() const noexcept { return _msg.c_str(); }
 int32_t exit_exception::code() const noexcept { return _code; }
 
-log_writer::log_writer(bool is_guest_stdout, wasm::logger* l)
-  : _is_guest_stdout(is_guest_stdout)
-  , _logger(l) {}
-
-log_writer log_writer::make_for_stderr(wasm::logger* l) {
-    return log_writer(false, l);
-}
-log_writer log_writer::make_for_stdout(wasm::logger* l) {
-    return log_writer(true, l);
-}
-
-uint32_t log_writer::write(std::string_view buf) {
-    uint32_t amt = 0;
-    while (!buf.empty()) {
-        size_t pos = buf.find('\n');
-        if (pos == std::string_view::npos) {
-            _buffer.push_back(buf);
-            return amt;
-        }
-        _buffer.push_back(buf.substr(0, pos));
-        // Add one for the newline we stripped off and flush adds
-        amt += flush() + 1;
-        buf = buf.substr(pos + 1);
-    }
-    return amt;
-}
-
-uint32_t log_writer::flush() {
-    if (_buffer.empty()) {
-        return 0;
-    }
-    auto buf = std::exchange(_buffer, {});
-    uint32_t amt = 0;
-    for (auto b : buf) {
-        amt += b.size();
-    }
-    auto level = _is_guest_stdout ? ss::log_level::info : ss::log_level::warn;
-    auto joined = absl::StrJoin(buf, "");
-    if (!is_valid_utf8(joined) || contains_control_character(joined))
-      [[unlikely]] {
-        joined = absl::CHexEscape(joined);
-    }
-    constexpr static size_t max_log_line = 2_KiB;
-    if (joined.size() > max_log_line) {
-        joined.resize(max_log_line);
-    }
-    _logger->log(level, joined);
-    return amt;
-}
-
 preview1_module::preview1_module(
   std::vector<ss::sstring> args, const environ_map_t& environ, wasm::logger* l)
   : _args(std::move(args))
-  , _stdout_log_writer(log_writer::make_for_stdout(l))
-  , _stderr_log_writer(log_writer::make_for_stderr(l)) {
+  , _logger(l) {
     _environ.reserve(environ.size());
     for (const auto& [k, v] : environ) {
         if (k.find("=") != ss::sstring::npos) {
@@ -306,21 +252,21 @@ errno_t preview1_module::fd_write(
   ffi::memory* mem, fd_t fd, ffi::array<iovec_t> iovecs, uint32_t* written) {
     if (fd == 1 || fd == 2) {
         uint32_t amt = 0;
-        auto logger = fd == 1 ? &_stdout_log_writer : &_stderr_log_writer;
-        for (const iovec_t& vec : iovecs) {
-            try {
-                ffi::array<char> data = mem->translate_array<char>(
+        auto level = fd == 1 ? ss::log_level::info : ss::log_level::warn;
+        if (iovecs.size() == 1) {
+            ffi::array<uint8_t> data = mem->translate_array<uint8_t>(
+              iovecs.front().buf_addr, iovecs.front().buf_len);
+            _logger->log(level, ffi::array_as_string_view(data));
+        } else {
+            auto as_string_view = [mem](iovec_t vec) {
+                ffi::array<uint8_t> data = mem->translate_array<uint8_t>(
                   vec.buf_addr, vec.buf_len);
-                amt += logger->write(
-                  std::string_view(data.data(), data.size()));
-            } catch (const std::exception& ex) {
-                vlog(wasm_log.warn, "fd_write: {}", ex);
-                return ERRNO_INVAL;
-            }
+                return ffi::array_as_string_view(data);
+            };
+            auto joined = absl::StrJoin(
+              iovecs | std::views::transform(as_string_view), "");
+            _logger->log(level, joined);
         }
-        // Always flush so we don't have to keep any memory around between
-        // calls.
-        amt += logger->flush();
         *written = amt;
         return ERRNO_SUCCESS;
     }
