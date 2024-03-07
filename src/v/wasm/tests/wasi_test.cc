@@ -46,7 +46,7 @@ TEST_F(WasmTestFixture, Wasi) {
     std::vector<std::string> expected_env{
       ss::format("REDPANDA_INPUT_TOPIC={}", meta().input_topic.tp()),
       ss::format(
-        "REDPANDA_OUTPUT_TOPIC={}", meta().output_topics.begin()->tp()),
+        "REDPANDA_OUTPUT_TOPIC_0={}", meta().output_topics.begin()->tp()),
     };
     ASSERT_EQ(environment_variables, expected_env);
 

@@ -424,7 +424,11 @@ absl::flat_hash_map<ss::sstring, ss::sstring>
 make_environment_vars(const model::transform_metadata& meta) {
     absl::flat_hash_map<ss::sstring, ss::sstring> env = meta.environment;
     env.emplace("REDPANDA_INPUT_TOPIC", meta.input_topic.tp());
-    env.emplace("REDPANDA_OUTPUT_TOPIC", meta.output_topics.begin()->tp());
+    for (size_t i = 0; i < meta.output_topics.size(); ++i) {
+        env.emplace(
+          ss::format("REDPANDA_OUTPUT_TOPIC_{}", i),
+          meta.output_topics[i].tp());
+    }
     return env;
 }
 
