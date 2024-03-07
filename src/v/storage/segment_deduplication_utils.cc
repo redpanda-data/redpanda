@@ -187,7 +187,8 @@ ss::future<index_state> deduplicate_segment(
   compacted_index_writer& cmp_idx_writer,
   probe& probe,
   offset_delta_time should_offset_delta_times,
-  ss::sharded<features::feature_table>&) {
+  ss::sharded<features::feature_table>& feature_table,
+  bool inject_reader_failure) {
     auto read_holder = co_await seg->read_lock();
     if (seg->is_closed()) {
         throw segment_closed_exception();
@@ -202,7 +203,8 @@ ss::future<index_state> deduplicate_segment(
       seg->path().is_internal_topic(),
       should_offset_delta_times,
       seg->offsets().committed_offset,
-      &cmp_idx_writer);
+      &cmp_idx_writer,
+      inject_reader_failure);
 
     auto new_idx = co_await rdr.consume(
       std::move(copy_reducer), model::no_timeout);

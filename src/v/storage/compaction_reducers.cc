@@ -340,6 +340,9 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
 
 ss::future<ss::stop_iteration>
 copy_data_segment_reducer::operator()(model::record_batch b) {
+    if (_inject_failure) {
+        throw std::runtime_error("injected error");
+    }
     const auto comp = b.header().attrs.compression();
     if (!b.compressed()) {
         co_return co_await filter_and_append(comp, std::move(b));
