@@ -40,6 +40,7 @@ func TestTimeQueryFlag(t *testing.T) {
 		"-48h":                     referenceTime.Add(-48 * time.Hour),
 		"-3m":                      referenceTime.Add(-3 * time.Minute),
 		"7m":                       referenceTime.Add(7 * time.Minute),
+		"now":                      referenceTime,
 	}
 	for str, want := range testcases {
 		got, err := parseTimeQuery(str, referenceTime)
