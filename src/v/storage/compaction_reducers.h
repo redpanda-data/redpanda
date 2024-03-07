@@ -125,13 +125,15 @@ public:
       bool internal_topic,
       offset_delta_time apply_offset,
       model::offset segment_last_offset,
-      compacted_index_writer* cidx = nullptr)
+      compacted_index_writer* cidx = nullptr,
+      bool inject_failure = false)
       : _should_keep_fn(std::move(f))
       , _segment_last_offset(segment_last_offset)
       , _appender(a)
       , _compacted_idx(cidx)
       , _idx(index_state::make_empty_index(apply_offset))
-      , _internal_topic(internal_topic) {}
+      , _internal_topic(internal_topic)
+      , _inject_failure(inject_failure) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch);
     storage::index_state end_of_stream() { return std::move(_idx); }
@@ -167,6 +169,9 @@ private:
     /// We need to know if this is an internal topic to inform whether to
     /// index on non-raft-data batches
     bool _internal_topic;
+
+    /// If set to true, will throw an exception on operator().
+    bool _inject_failure;
 };
 
 class index_rebuilder_reducer : public compaction_reducer {
