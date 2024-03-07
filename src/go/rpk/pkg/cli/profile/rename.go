@@ -26,7 +26,7 @@ func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			y, ok := cfg.ActualRpkYaml()
 			if !ok {

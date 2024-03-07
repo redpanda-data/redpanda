@@ -49,7 +49,7 @@ The --detailed flag (-d) opts in to printing extra per-processor information.
 			}
 
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			api, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)

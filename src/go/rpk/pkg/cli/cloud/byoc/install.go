@@ -43,7 +43,7 @@ exists if you want to download the plugin ahead of time.
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			_, _, installed, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID, false) // latest is always false, we only want to install the pinned byoc version when using `rpk cloud byoc install`
 			out.MaybeDie(err, "unable to install byoc plugin: %v", err)
 			if !installed {
@@ -75,10 +75,13 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 	if overrides.CloudToken != "" {
 		token = overrides.CloudToken
 	} else {
-		token, err = oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(overrides), false)
+		priorProfile := cfg.ActualProfile()
+		_, authVir, clearedProfile, _, err := oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(cfg.DevOverrides()), false, false, cfg.DevOverrides().CloudAPIURL)
 		if err != nil {
 			return "", "", false, fmt.Errorf("unable to load the cloud token: %w. You may need to logout with 'rpk cloud logout --clear-credentials' and try again", err)
 		}
+		oauth.MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
+		token = authVir.AuthToken
 	}
 
 	byoc, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find("byoc")

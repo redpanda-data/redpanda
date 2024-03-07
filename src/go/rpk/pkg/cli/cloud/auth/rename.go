@@ -13,7 +13,6 @@ import (
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -23,31 +22,9 @@ func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:     "rename-to [NAME]",
 		Short:   "Rename the current rpk auth",
 		Aliases: []string{"rename"},
-		Args:    cobra.ExactArgs(1),
-		Run: func(_ *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-
-			y, ok := cfg.ActualRpkYaml()
-			if !ok {
-				out.Die("rpk.yaml file does not exist")
-			}
-
-			p := y.Auth(y.CurrentCloudAuth)
-			if p == nil {
-				out.Die("current auth %q does not exist", y.CurrentCloudAuth)
-				return
-			}
-			to := args[0]
-			if y.Auth(to) != nil {
-				out.Die("destination cloud auth %q already exists", to)
-			}
-			p.Name = to
-			y.CurrentCloudAuth = to
-			y.MoveAuthToFront(p)
-			err = y.Write(fs)
-			out.MaybeDieErr(err)
-			fmt.Printf("Renamed current cloud auth to %q.\n", to)
+		Hidden:  true,
+		Run: func(*cobra.Command, []string) {
+			fmt.Println("rename-to is deprecated, rpk now fully manages auth names.")
 		},
 	}
 }

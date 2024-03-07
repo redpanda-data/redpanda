@@ -1077,8 +1077,10 @@ func TestXSetExamples(t *testing.T) {
 			delete(m, x)
 
 			xf := xflags[x]
-			y, _ := defaultVirtualRpkYaml()
-			if err := xf.parse(xf.testExample, &y); err != nil {
+			fs := afero.NewMemMapFs()
+			cfg, _ := new(Params).Load(fs)
+			y := cfg.VirtualRpkYaml()
+			if err := xf.parse(xf.testExample, y); err != nil {
 				t.Errorf("unable to parse test example for xflag %s: %v", x, err)
 			}
 			yamlPath := yamlPaths[i]

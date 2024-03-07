@@ -33,9 +33,9 @@ exist, this command creates it and switches to it.
 		ValidArgsFunction: ValidProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			y, err := cfg.ActualRpkYamlOrEmpty()
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			if len(args) == 0 {
 				args = append(args, y.CurrentProfile)

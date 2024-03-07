@@ -43,7 +43,7 @@ WARNING: this should only be used when redpanda is not running.
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, propertyNames []string) {
 			y, err := p.LoadVirtualRedpandaYaml(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			dataDir := y.Redpanda.Directory
 

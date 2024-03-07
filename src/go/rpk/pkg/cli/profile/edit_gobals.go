@@ -30,9 +30,9 @@ This command opens your default editor to edit the rpk global configurations.
 		Args: cobra.ExactArgs(0),
 		Run: func(*cobra.Command, []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			y, err := cfg.ActualRpkYamlOrEmpty()
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			y.Globals, err = rpkos.EditTmpYAMLFile(fs, y.Globals)
 			out.MaybeDieErr(err)

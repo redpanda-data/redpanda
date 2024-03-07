@@ -10,17 +10,12 @@
 package cloud
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
-	"sort"
-	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/profile"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -29,7 +24,7 @@ import (
 )
 
 func newLoginCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var save, noProfile, noBrowser bool
+	var save, noProfile, noBrowser, forceReload bool
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to the Redpanda cloud",
@@ -42,6 +37,11 @@ this command will login and save your token along with the client ID used to
 request the token.
 
 You may use either SSO or client credentials to log in.
+
+Logging in uses an existing current token if the token is still valid and not
+expired. If you switched organizations in your browser and want to log into the
+new organization, you can use the --reload flag to force a new token to be
+requested.
 
 SSO
 
@@ -65,29 +65,18 @@ If none of these are provided, rpk will use the SSO method to login.
 If you specify environment variables or flags, they will not be synced to the
 rpk.yaml file unless the --save flag is passed. The cloud authorization 
 token and client ID is always synced.
-
-PROFILE SELECTION
-
-This command by default attempts to populate a new profile that talks to a
-cloud cluster for you. If you have an existing cloud profile, this will select
-it, prompting which to use if you have many. If you have no cloud profile, this
-command will prompt you to select one that exists in your organization. If you
-want to disable automatic profile creation and selection, use --no-profile.
 `,
 		Run: func(cmd *cobra.Command, _ []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			y, err := cfg.ActualRpkYamlOrEmpty()
-			out.MaybeDie(err, "unable to load config: %v", err)
-			auth := y.Auth(y.CurrentCloudAuth)
-			var cc bool
-			if auth != nil {
-				cc = auth.HasClientCredentials()
-			}
-			_, err = oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()), noBrowser)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
+
+			p := y.Profile(y.CurrentProfile)
+			authAct, authVir, clearedProfile, isNewAuth, err := oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()), noBrowser, forceReload, cfg.DevOverrides().CloudAPIURL)
 			if err != nil {
 				fmt.Printf("Unable to login to Redpanda Cloud (%v).\n", err)
-				if e := (*oauth.BadClientTokenError)(nil); errors.As(err, &e) && cc {
+				if e := (*oauth.BadClientTokenError)(nil); errors.As(err, &e) && authVir != nil && authVir.HasClientCredentials() {
 					fmt.Println(`You may need to clear your client ID and secret with 'rpk cloud logout --clear-credentials',
 and then re-specify the client credentials next time you log in.`)
 				} else {
@@ -95,123 +84,72 @@ and then re-specify the client credentials next time you log in.`)
 				}
 				os.Exit(1)
 			}
-
-			if cc && save {
-				yAct, _ := cfg.ActualRpkYaml() // must exist due to LoadFlow checking
-				yAct.Auth(yAct.CurrentCloudAuth).ClientSecret = auth.ClientSecret
-				err = yAct.Write(fs)
+			if authVir.HasClientCredentials() && save {
+				authAct.ClientSecret = authVir.ClientSecret
+				err = y.Write(fs)
 				out.MaybeDie(err, "unable to save client ID and client secret: %v", err)
 			}
-			fmt.Println("Successfully logged in.")
-			if noProfile {
+
+			fmt.Printf("Successfully logged into organization %q (%s) via %s.\n", authAct.Organization, authAct.OrgID, authAct.AnyKind())
+			if !isNewAuth {
+				fmt.Println("If you are trying to authenticate to a different organization, use 'rpk cloud login --reload'.")
+			}
+			fmt.Println()
+
+			// When you have no profile, or you have one that is not selected.
+			if p == nil || len(y.Profiles) == 0 {
+				fmt.Println(`To create an rpk profile to talk to an existing cloud cluster, use 'rpk cloud cluster use'.
+To learn more about profiles, check 'rpk profile --help'.
+You are not currently in a profile; rpk talks to a localhost:9092 cluster by default.`)
 				return
 			}
 
-			msg, err := loginProfileFlow(cmd.Context(), fs, cfg, cfg.DevOverrides().CloudAPIURL)
-			if err != nil {
-				fmt.Printf("Unable to create and switch to profile: %v\n", err)
-				fmt.Printf("Once any error is fixed, you can create a profile with\n")
-				fmt.Printf("    rpk profile create {name} --from-cloud {cluster_id}\n")
+			// When you had a profile, but it was cleared due to your browser
+			// having a different org's auth.
+			if p != nil && clearedProfile {
+				priorAuth := p.ActualAuth()
+				fmt.Printf(`rpk swapped away from your prior profile %q because that profile authenticates
+with organization %q (%s).
+
+To create a new rpk profile for a cluster in this organization, try either:
+    rpk profile create --from-cloud
+    rpk cloud cluster use
+
+rpk will talk to a localhost:9092 cluster until you swap to a different profile.
+`, p.Name, priorAuth.Organization, priorAuth.OrgID)
 				return
 			}
-			fmt.Println(msg)
+
+			// When your current profile is a cloud cluster.
+			if p.FromCloud {
+				fmt.Printf("Your current profile %q is talking to your %q cloud cluster.\n", p.Name, p.CloudCluster.FullName())
+				fmt.Println("To switch which cluster you are talking to, use 'rpk cloud cluster use'.")
+				return
+			}
+
+			// When your current profile is pointing at the
+			// localhost cluster from rpk container start.
+			if p.Name == common.ContainerProfileName {
+				fmt.Printf("Your current profile %q is talking to a localhost 'rpk container' cluster.\n", p.Name)
+				fmt.Println("To talk to a cloud cluster, use 'rpk cloud cluster use'.")
+				return
+			}
+
+			// When your current profile is a self hosted cluster.
+			fmt.Printf("Your current profile %q is talking to a self hosted cluster.\n", p.Name)
+			fmt.Println("To talk to a cloud cluster, use 'rpk cloud cluster use'.")
 		},
 	}
 
 	p.InstallCloudFlags(cmd)
-	cmd.Flags().BoolVar(&noProfile, "no-profile", false, "Skip automatic profile creation and any associated prompts")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Opt out of auto-opening authentication URL")
 	cmd.Flags().BoolVar(&save, "save", false, "Save environment or flag specified client ID and client secret to the configuration file")
+	cmd.Flags().BoolVar(&forceReload, "reload", false, "Force a new token to be requested, even if the current token is still valid")
+
+	// Hide the deprecated no-profile flag.
+	// We used to automatically create a profile.
+	cmd.Flags().BoolVar(&noProfile, "no-profile", false, "Skip automatic profile creation and any associated prompts")
+	_ = cmd.Flags().MarkHidden("no-profile")
+
 	return cmd
-}
-
-func loginProfileFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, overrideCloudURL string) (string, error) {
-	y, err := cfg.ActualRpkYamlOrEmpty()
-	if err != nil {
-		return "", fmt.Errorf("unable to load config: %v", err)
-	}
-	auth := y.Auth(y.CurrentCloudAuth)
-	// If our current profile is a cloud cluster, we exit.
-	// If one cloud profile exists, we switch to it.
-	// If two+ cloud profiles exist, we prompt the user to select one.
-	if p := y.Profile(y.CurrentProfile); p != nil && p.FromCloud {
-		return "", nil
-	}
-	var cloudProfiles []*config.RpkProfile
-	for i := range y.Profiles {
-		p := &y.Profiles[i]
-		if p.FromCloud {
-			cloudProfiles = append(cloudProfiles, p)
-		}
-	}
-	if len(cloudProfiles) == 1 {
-		p := cloudProfiles[0]
-		y.MoveProfileToFront(p)
-		y.CurrentProfile = p.Name
-		return fmt.Sprintf("Set current profile to %q.", p.Name), y.Write(fs)
-	} else if len(cloudProfiles) > 1 {
-		var names []string
-		for _, p := range cloudProfiles {
-			names = append(names, p.Name)
-		}
-		sort.Strings(names)
-		name, err := out.Pick(names, "Which cloud profile would you like to switch to?")
-		if err != nil {
-			return "", err
-		}
-		for _, p := range cloudProfiles {
-			if p.Name == name {
-				y.MoveProfileToFront(p)
-				y.CurrentProfile = p.Name
-				return fmt.Sprintf("Set current profile to %q.", p.Name), y.Write(fs)
-			}
-		}
-		panic("unreachable")
-	}
-
-	// Zero cloud profiles exist. We automatically create one from any
-	// existing cloud cluster.
-	// * One cluster exists: create profile for it and swap, no prompt.
-	// * Multiple clusters exist: prompt which to choose and swap.
-	cl := cloudapi.NewClient(overrideCloudURL, auth.AuthToken, httpapi.ReqTimeout(10*time.Second))
-
-	pres, err := profile.PromptCloudClusterProfile(ctx, cl)
-	if err != nil {
-		if errors.Is(err, profile.ErrNoCloudClusters) {
-			return `You currently have no cloud clusters, when you create one you can run
-'rpk profile create --from-cloud' to create a profile for it.`, nil
-		}
-		return "", err
-	}
-
-	// Before pushing this profile, we first check if the name exists. If
-	// so, we prompt.
-	p := pres.Profile
-	name := p.Name
-	for {
-		if y.Profile(name) == nil {
-			break
-		}
-		p.Name, err = out.Prompt("Profile %q already exists, what would you like to name this new profile?", name)
-		if err != nil {
-			return "", err
-		}
-	}
-	y.CurrentProfile = y.PushProfile(p)
-
-	// We always print the cloud cluster message first, and then optionally
-	// print a few extra things. Serverless never has MTLS nor SASL
-	// messages, we don't need to worry about ordering much.
-	msg := fmt.Sprintf("Created profile %q and set it as the current profile.\n", p.Name)
-	msg += profile.CloudClusterMessage(p, pres.ClusterName, pres.ClusterID)
-	if pres.MessageMTLS {
-		msg += profile.RequiresMTLSMessage()
-	}
-	if pres.MessageSASL {
-		msg += profile.RequiresSASLMessage()
-	}
-	if pres.IsServerlessHello {
-		msg += profile.ServerlessHelloMessage()
-	}
-	return msg, y.Write(fs)
 }

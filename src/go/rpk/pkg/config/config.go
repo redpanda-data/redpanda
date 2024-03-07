@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 )
 
@@ -78,6 +79,14 @@ type Config struct {
 	devOverrides DevOverrides
 }
 
+// CheckExitCloudAdmin exits if the profile has FromCloud=true and no
+// ALLOW_RPK_CLOUD_ADMIN override.
+func CheckExitCloudAdmin(p *RpkProfile) {
+	if p.FromCloud && !p.DevOverrides().AllowRpkCloudAdmin {
+		out.Die("This admin API based command is not supported on Redpanda Cloud clusters.")
+	}
+}
+
 // VirtualRedpandaYaml returns a redpanda.yaml, starting with defaults,
 // then decoding a potential file, then applying env vars and then flags.
 func (c *Config) VirtualRedpandaYaml() *RedpandaYaml {
@@ -118,6 +127,12 @@ func (c *Config) VirtualRpkYaml() *RpkYaml {
 // Params.Load.
 func (c *Config) VirtualProfile() *RpkProfile {
 	return c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
+}
+
+// ActualProfile returns an actual rpk.yaml's current profile.
+// This may return nil if there is no current profile.
+func (c *Config) ActualProfile() *RpkProfile {
+	return c.rpkYamlActual.Profile(c.rpkYamlActual.CurrentProfile)
 }
 
 // ActualRpkYaml returns an actual rpk.yaml if it exists, with no other

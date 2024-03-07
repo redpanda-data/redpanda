@@ -53,9 +53,9 @@ central configuration store (and via 'rpk cluster config edit').
 `,
 		Run: func(cmd *cobra.Command, propertyNames []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			p := cfg.VirtualProfile()
-			out.CheckExitCloudAdmin(p)
+			config.CheckExitCloudAdmin(p)
 
 			client, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)

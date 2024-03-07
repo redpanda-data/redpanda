@@ -59,8 +59,8 @@ occurring in the specified node:
 
 func (m *movementCancelHandler) runMovementCancel(cmd *cobra.Command, _ []string) {
 	p, err := m.p.LoadVirtualProfile(m.fs)
-	out.MaybeDie(err, "unable to load config: %v", err)
-	out.CheckExitCloudAdmin(p)
+	out.MaybeDie(err, "rpk unable to load config: %v", err)
+	config.CheckExitCloudAdmin(p)
 
 	cl, err := adminapi.NewClient(m.fs, p)
 	out.MaybeDie(err, "unable to initialize admin client: %v", err)

@@ -89,7 +89,7 @@ rpk always switches to the newly created profile.
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			y, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load rpk.yaml: %v", err)
@@ -163,11 +163,11 @@ func createProfile(
 			return "", "", fmt.Errorf("unable to create docker client: %v", err)
 		}
 		err = container.CreateProfile(fs, c, y) //nolint:contextcheck // No need to pass the context, the underlying functions use a context with timeout.
-
 		if err != nil {
 			return "", "", fmt.Errorf("unable to create profile from rpk container: %v", err)
 		}
 		return container.ContainerProfileName, "", nil
+
 	case fromCloud != "":
 		var err error
 		o, err = createCloudProfile(ctx, y, cfg, fromCloud)
@@ -257,9 +257,9 @@ func createProfile(
 }
 
 func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterID string) (CloudClusterOutputs, error) {
-	a := y.Auth(y.CurrentCloudAuth)
+	a := y.CurrentAuth()
 	if a == nil {
-		return CloudClusterOutputs{}, fmt.Errorf("missing auth for current_cloud_auth %q", y.CurrentCloudAuth)
+		return CloudClusterOutputs{}, errors.New("missing current coud auth, please login with 'rpk cloud login'")
 	}
 
 	overrides := cfg.DevOverrides()
@@ -269,7 +269,7 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 		return CloudClusterOutputs{}, err
 	}
 	if expired {
-		return CloudClusterOutputs{}, fmt.Errorf("token for %q has expired, please login again", y.CurrentCloudAuth)
+		return CloudClusterOutputs{}, errors.New("current cloud auth has expired, please re-login with 'rpk cloud login'")
 	}
 	cl := cloudapi.NewClient(overrides.CloudAPIURL, a.AuthToken, httpapi.ReqTimeout(10*time.Second))
 

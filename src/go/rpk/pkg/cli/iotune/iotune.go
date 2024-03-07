@@ -37,7 +37,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			timeout += duration
 			y, err := p.LoadVirtualRedpandaYaml(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			var evalDirectories []string
 			if len(directories) != 0 {

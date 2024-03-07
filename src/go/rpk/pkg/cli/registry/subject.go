@@ -50,7 +50,7 @@ func subjectListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Exit(h)
 			}
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
@@ -95,7 +95,7 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Exit(h)
 			}
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)

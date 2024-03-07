@@ -26,7 +26,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:    cobra.ExactArgs(0),
 		Run: func(*cobra.Command, []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			tw := out.NewTable("name", "description")
 			defer tw.Flush()
