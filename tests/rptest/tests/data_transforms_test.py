@@ -28,7 +28,6 @@ from rptest.services.admin import Admin, CommittedWasmOffset
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.tests.cluster_config_test import wait_for_version_sync
-from rptest.utils.utf8 import CONTROL_CHARS_VALS, generate_string_with_control_character
 from rptest.util import expect_exception, wait_until_result
 
 
@@ -624,25 +623,6 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
         assert (
             validation_errors is None
         ), f"Log record validation failed, errors: {json.dumps(validation_errors, indent=1)}"
-
-    @cluster(num_nodes=3)
-    def test_logs_cc_escaping(self):
-        input_topic, output_topic = self.setup_identity_xform(
-            self.topics[0], self.topics[1])
-
-        val = generate_string_with_control_character(12)
-        buf = bytearray()
-        buf.extend(map(ord, val))
-        assert any([b in CONTROL_CHARS_VALS
-                    for b in buf]), f"Expected control char(s) in {buf}"
-
-        self._rpk.produce(input_topic.name, 'foo', val)
-
-        log = self.consume_one_log_record()
-        buf = bytearray()
-        buf.extend(map(ord, log.body))
-        assert all([b not in CONTROL_CHARS_VALS for b in buf
-                    ]), f"Found control char(s) in log output: {buf}"
 
     @cluster(num_nodes=3)
     def test_log_topic_integrity(self):

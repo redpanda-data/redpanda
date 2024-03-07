@@ -27,11 +27,20 @@
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/as_future.hh>
 
+#include <absl/algorithm/container.h>
 #include <absl/strings/escaping.h>
 
 namespace transform::logging {
 namespace {
 using namespace std::chrono_literals;
+
+bool contains_invalid_characters(std::string_view str) {
+    // Only allow valid utf8: non-control characters or newlines or tabs.
+    return !is_valid_utf8(str) || absl::c_any_of(str, [](char c) {
+        return is_control_char(c) && c != '\n' && c != '\t';
+    });
+}
+
 } // namespace
 
 namespace detail {
@@ -264,12 +273,8 @@ void manager<ClockType>::enqueue_log(
     auto validate_msg =
       [&msg_len](std::string_view message) -> std::optional<ss::sstring> {
         auto sub_view = message.substr(0, msg_len(message));
-        if (!is_valid_utf8(sub_view)) {
+        if (contains_invalid_characters(sub_view)) {
             return std::nullopt;
-        } else if (contains_control_character(sub_view)) {
-            // escape control chars and truncate (again, if necessary)
-            auto res = absl::CHexEscape(sub_view);
-            return res.substr(0, msg_len(res));
         }
         return ss::sstring{sub_view.data(), sub_view.size()};
     };
