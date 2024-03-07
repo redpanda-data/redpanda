@@ -66,22 +66,45 @@ func (WasmLang) Type() string {
 }
 
 type Config struct {
-	Name        string            `yaml:"name"`
-	Description string            `yaml:"description,omitempty"`
-	InputTopic  string            `yaml:"input-topic"`
-	OutputTopic string            `yaml:"output-topic"`
-	Language    WasmLang          `yaml:"language"`
-	Env         map[string]string `yaml:"env,omitempty"`
+	Name         string            `yaml:"name"`
+	InputTopic   string            `yaml:"input-topic"`
+	OutputTopics []string          `yaml:"output-topics"`
+	Language     WasmLang          `yaml:"language"`
+	Env          map[string]string `yaml:"env,omitempty"`
 }
 
 var ConfigFileName = "transform.yaml"
+
+type rawConfig struct {
+	Name         string            `yaml:"name"`
+	Description  string            `yaml:"description,omitempty"`
+	InputTopic   string            `yaml:"input-topic"`
+	OutputTopic  string            `yaml:"output-topic"`
+	OutputTopics []string          `yaml:"output-topics"`
+	Language     string            `yaml:"language"`
+	Env          map[string]string `yaml:"env,omitempty"`
+}
 
 func MarshalConfig(c Config) ([]byte, error) {
 	return yaml.Marshal(c)
 }
 
 func UnmarshalConfig(b []byte, c *Config) error {
-	return yaml.Unmarshal(b, c)
+	raw := rawConfig{}
+	if err := yaml.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*c = Config{
+		Name:         raw.Name,
+		InputTopic:   raw.InputTopic,
+		OutputTopics: raw.OutputTopics,
+		Language:     "",
+		Env:          raw.Env,
+	}
+	if (c.OutputTopics == nil || len(c.OutputTopics) == 0) && len(raw.OutputTopic) > 0 {
+		c.OutputTopics = []string{raw.OutputTopic}
+	}
+	return c.Language.Set(raw.Language)
 }
 
 func LoadCfg(fs afero.Fs) (c Config, err error) {
