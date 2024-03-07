@@ -58,7 +58,7 @@ public:
      * Find a group reassignment that reduces total error.
      */
     virtual std::optional<reassignment>
-    find_movement(const absl::flat_hash_set<raft::group_id>& skip) = 0;
+    find_movement(const leader_balancer_types::muted_groups_t& skip) = 0;
 
     virtual void apply_movement(const reassignment& reassignment) = 0;
 
