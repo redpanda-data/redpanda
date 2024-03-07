@@ -24,6 +24,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type (
+	detailedTransformMetadata struct {
+		Name         string                              `json:"name" yaml:"name"`
+		InputTopic   string                              `json:"input_topic" yaml:"input_topic"`
+		OutputTopics []string                            `json:"output_topics" yaml:"output_topics"`
+		Environment  map[string]string                   `json:"environment" yaml:"environment"`
+		Status       []adminapi.PartitionTransformStatus `json:"status" yaml:"status"`
+	}
+	summarizedTransformMetadata struct {
+		Name         string            `json:"name" yaml:"name"`
+		InputTopic   string            `json:"input_topic" yaml:"input_topic"`
+		OutputTopics []string          `json:"output_topics" yaml:"output_topics"`
+		Environment  map[string]string `json:"environment" yaml:"environment"`
+		Running      string            `json:"running" yaml:"running"`
+		Lag          int               `json:"lag" yaml:"lag"`
+	}
+)
+
 func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var detailed bool
 	cmd := &cobra.Command{
@@ -44,8 +62,14 @@ The --detailed flag (-d) opts in to printing extra per-processor information.
 		Args:    cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
-			if h, ok := f.Help([]string{}); ok {
-				out.Exit(h)
+			if detailed {
+				if h, ok := f.Help([]detailedTransformMetadata{}); ok {
+					out.Exit(h)
+				}
+			} else {
+				if h, ok := f.Help([]summarizedTransformMetadata{}); ok {
+					out.Exit(h)
+				}
 			}
 
 			p, err := p.LoadVirtualProfile(fs)
@@ -70,24 +94,6 @@ The --detailed flag (-d) opts in to printing extra per-processor information.
 	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "Print per-partition information for data transforms")
 	return cmd
 }
-
-type (
-	detailedTransformMetadata struct {
-		Name         string                              `json:"name"`
-		InputTopic   string                              `json:"input_topic"`
-		OutputTopics []string                            `json:"output_topics"`
-		Environment  map[string]string                   `json:"environment"`
-		Status       []adminapi.PartitionTransformStatus `json:"status"`
-	}
-	summarizedTransformMetadata struct {
-		Name         string            `json:"name"`
-		InputTopic   string            `json:"input_topic"`
-		OutputTopics []string          `json:"output_topics"`
-		Environment  map[string]string `json:"environment"`
-		Running      string            `json:"running"`
-		Lag          int               `json:"lag"`
-	}
-)
 
 func makeEnvMap(env []adminapi.EnvironmentVariable) map[string]string {
 	out := make(map[string]string)

@@ -91,6 +91,10 @@ func formatType(t any, includeTypeName bool) (string, error) {
 			fmt.Fprintf(sb, "[]")
 			return walk(typ.Elem())
 
+		case reflect.Map:
+			fmt.Fprintf(sb, "map[%v]%v", typ.Key(), typ.Elem())
+			return nil
+
 		case reflect.Struct:
 			// rest of this function
 		}
