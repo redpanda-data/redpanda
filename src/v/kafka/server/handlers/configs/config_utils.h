@@ -358,6 +358,60 @@ struct replication_factor_must_be_greater_or_equal_to_minimum {
     }
 };
 
+struct write_caching_config_validator {
+    std::optional<ss::sstring> operator()(
+      const ss::sstring&,
+      const std::optional<model::write_caching_mode>& maybe_value) {
+        if (!maybe_value) {
+            return std::nullopt;
+        }
+        auto value = maybe_value.value();
+        if (value == model::write_caching_mode::disabled) {
+            return fmt::format(
+              "Invalid value {} for {}, accepted values: [{}, {}]",
+              value,
+              topic_property_write_caching,
+              model::write_caching_mode::on,
+              model::write_caching_mode::off);
+        }
+        auto cluster_default = config::shard_local_cfg().write_caching();
+        if (cluster_default == model::write_caching_mode::disabled) {
+            return fmt::format("write caching disabled at cluster level");
+        }
+        return std::nullopt;
+    }
+};
+
+struct flush_ms_validator {
+    std::optional<ss::sstring> operator()(
+      const ss::sstring&,
+      const std::optional<std::chrono::milliseconds>& maybe_value) {
+        if (!maybe_value) {
+            return std::nullopt;
+        }
+        auto value = maybe_value.value();
+        if (value < 1ms) {
+            return fmt::format(
+              "config value too low, expected to be atleast 1ms");
+        }
+        return std::nullopt;
+    }
+};
+
+struct flush_bytes_validator {
+    std::optional<ss::sstring>
+    operator()(const ss::sstring&, const std::optional<size_t>& maybe_value) {
+        if (!maybe_value) {
+            return std::nullopt;
+        }
+        auto value = maybe_value.value();
+        if (value <= 0) {
+            return fmt::format("config value too low, expected to be > 0");
+        }
+        return std::nullopt;
+    }
+};
+
 template<typename T, typename... ValidatorTypes>
 requires requires(
   model::topic_namespace_view tns,
@@ -409,6 +463,41 @@ void parse_and_set_optional(
         property.op = cluster::incremental_update_operation::set;
         try {
             auto v = boost::lexical_cast<T>(*value);
+            auto v_error = validator(*value, v);
+            if (v_error) {
+                throw validation_error(*v_error);
+            }
+            property.value = std::move(v);
+        } catch (std::runtime_error const&) {
+            throw boost::bad_lexical_cast();
+        }
+        return;
+    }
+}
+
+template<class Dur, class Validator = noop_validator<Dur>>
+requires requires(
+  const Dur& value, const ss::sstring& str, Validator validator) {
+    { boost::lexical_cast<typename Dur::rep>(str) };
+    {
+        validator(str, value)
+    } -> std::convertible_to<std::optional<ss::sstring>>;
+}
+inline void parse_and_set_optional_duration(
+  cluster::property_update<std::optional<Dur>>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op,
+  Validator validator = noop_validator<Dur>{}) {
+    // remove property value
+    if (op == config_resource_operation::remove) {
+        property.op = cluster::incremental_update_operation::remove;
+        return;
+    }
+    // set property value if preset, otherwise do nothing
+    if (op == config_resource_operation::set && value) {
+        property.op = cluster::incremental_update_operation::set;
+        try {
+            auto v = Dur(boost::lexical_cast<typename Dur::rep>(*value));
             auto v_error = validator(*value, v);
             if (v_error) {
                 throw validation_error(*v_error);

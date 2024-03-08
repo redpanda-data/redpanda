@@ -564,6 +564,38 @@ std::istream& operator>>(std::istream&, fetch_read_strategy&);
  */
 using vcluster_id = named_type<xid, struct v_cluster_id_tag>;
 
+/**
+ * Type that represents the cluster wide write caching mode.
+ */
+enum class write_caching_mode : uint8_t {
+    // on by default for all topics
+    on = 0,
+    // off by default for all topics
+    off = 1,
+    // disabled by default clusterwide.
+    // cannot be overriden at topic level.
+    disabled = 2
+};
+
+constexpr const char* write_caching_mode_to_string(write_caching_mode s) {
+    switch (s) {
+    case write_caching_mode::on:
+        return "on";
+    case write_caching_mode::off:
+        return "off";
+    case write_caching_mode::disabled:
+        return "disabled";
+    default:
+        throw std::invalid_argument("unknown write_caching_mode");
+    }
+}
+
+std::optional<write_caching_mode>
+  write_caching_mode_from_string(std::string_view);
+
+std::ostream& operator<<(std::ostream&, write_caching_mode);
+std::istream& operator>>(std::istream&, write_caching_mode&);
+
 namespace internal {
 /*
  * Old version for use in backwards compatibility serialization /

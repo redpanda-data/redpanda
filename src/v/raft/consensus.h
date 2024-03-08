@@ -518,6 +518,13 @@ public:
 
     inline void maybe_update_leader(vnode request_node);
 
+    // hook called on desired cluster/topic configuration updates.
+    void notify_config_update();
+
+    bool write_caching_enabled() const { return _write_caching_enabled; }
+    size_t flush_bytes() const { return _flush_bytes; }
+    std::chrono::milliseconds flush_ms() const { return _flush_ms; }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -885,6 +892,14 @@ private:
      * queue to regulate how many raft groups can go into recovery concurrently.
      */
     std::optional<follower_recovery_state> _follower_recovery_state;
+
+    // write caching configurations
+    // cached locally so we don't reconcile them for every request. They are
+    // updated lazily via notify_config_update()
+    // todo(bharathv): add jitter
+    bool _write_caching_enabled;
+    size_t _flush_bytes;
+    std::chrono::milliseconds _flush_ms;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

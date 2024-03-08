@@ -166,6 +166,11 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::write_caching_mode& v) {
+    stringize(w, v);
+}
+
+void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const model::cloud_storage_chunk_eviction_strategy& v) {
     stringize(w, v);

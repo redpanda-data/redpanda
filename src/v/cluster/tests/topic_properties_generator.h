@@ -63,6 +63,16 @@ inline cluster::topic_properties random_topic_properties() {
 
     // Always set remote_delete=false to survive an ADL roundtrip
     properties.remote_delete = false;
+    properties.write_caching = tests::random_optional([] {
+        return random_generators::random_choice(
+          {model::write_caching_mode::on,
+           model::write_caching_mode::off,
+           model::write_caching_mode::disabled});
+    });
+    properties.flush_ms = tests::random_optional(
+      [] { return tests::random_duration_ms(); });
+    properties.flush_bytes = tests::random_optional(
+      [] { return random_generators::get_int<size_t>(); });
 
     return properties;
 }

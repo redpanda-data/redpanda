@@ -372,4 +372,19 @@ const topic_disabled_partitions_set* metadata_cache::get_topic_disabled_set(
     return _topics_state.local().get_topic_disabled_set(ns_tp);
 }
 
+std::optional<model::write_caching_mode>
+metadata_cache::get_topic_write_caching_mode(
+  model::topic_namespace_view tp) const {
+    auto topic = get_topic_cfg(tp);
+    if (!topic) {
+        return std::nullopt;
+    }
+    if (
+      config::shard_local_cfg().write_caching()
+      == model::write_caching_mode::disabled) {
+        return model::write_caching_mode::disabled;
+    }
+    return topic->properties.write_caching;
+}
+
 } // namespace cluster

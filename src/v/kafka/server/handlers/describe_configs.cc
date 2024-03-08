@@ -116,7 +116,8 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, config::data_directory_path> ||
         std::is_same_v<T, v8_engine::data_policy> ||
         std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> || 
-        std::is_same_v<T, model::vcluster_id>;
+        std::is_same_v<T, model::vcluster_id> ||
+        std::is_same_v<T, model::write_caching_mode>;
 
     constexpr auto is_long_type = is_long<T> ||
         // Long type since seconds is atleast a 35-bit signed integral
@@ -609,30 +610,6 @@ static void report_broker_config(
       &describe_as_string<bool>);
 }
 
-int64_t describe_retention_duration(
-  tristate<std::chrono::milliseconds>& overrides,
-  std::optional<std::chrono::milliseconds> def) {
-    if (overrides.is_disabled()) {
-        return -1;
-    }
-    if (overrides.has_optional_value()) {
-        return overrides.value().count();
-    }
-
-    return def ? def->count() : -1;
-}
-int64_t describe_retention_bytes(
-  tristate<size_t>& overrides, std::optional<size_t> def) {
-    if (overrides.is_disabled()) {
-        return -1;
-    }
-    if (overrides.has_optional_value()) {
-        return overrides.value();
-    }
-
-    return def.value_or(-1);
-}
-
 template<>
 ss::future<response_ptr> describe_configs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
@@ -777,6 +754,51 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 request.data.include_documentation,
                 config::shard_local_cfg().kafka_batch_max_bytes.desc()),
               &describe_as_string<uint32_t>);
+
+            add_topic_config_if_requested(
+              resource,
+              result,
+              config::shard_local_cfg().write_caching.name(),
+              config::shard_local_cfg().write_caching(),
+              topic_property_write_caching,
+              ctx.metadata_cache().get_topic_write_caching_mode(
+                topic_config->tp_ns),
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg().write_caching.desc()),
+              &describe_as_string<model::write_caching_mode>);
+
+            add_topic_config_if_requested(
+              resource,
+              result,
+              config::shard_local_cfg()
+                .raft_replica_max_pending_flush_bytes.name(),
+              config::shard_local_cfg()
+                .raft_replica_max_pending_flush_bytes()
+                .value_or(std::numeric_limits<size_t>::max()),
+              topic_property_flush_bytes,
+              topic_config->properties.flush_bytes,
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg()
+                  .raft_replica_max_pending_flush_bytes.desc()),
+              &describe_as_string<size_t>);
+
+            add_topic_config_if_requested(
+              resource,
+              result,
+              config::shard_local_cfg().raft_replica_max_flush_delay_ms.name(),
+              config::shard_local_cfg().raft_replica_max_flush_delay_ms(),
+              topic_property_flush_ms,
+              topic_config->properties.flush_ms,
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg()
+                  .raft_replica_max_flush_delay_ms.desc()),
+              &describe_as_string<std::chrono::milliseconds>);
 
             // Shadow indexing properties
             add_topic_config_if_requested(

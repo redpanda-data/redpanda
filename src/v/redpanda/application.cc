@@ -1329,6 +1329,10 @@ void application::wire_up_redpanda_services(
                   .raft_replica_max_pending_flush_bytes.bind(),
               .flush_timer_interval_ms
               = config::shard_local_cfg().raft_flush_timer_interval_ms.bind(),
+              .write_caching = config::shard_local_cfg().write_caching.bind(),
+              .write_caching_flush_ms
+              = config::shard_local_cfg()
+                  .raft_replica_max_flush_delay_ms.bind(),
             };
         },
         [] {

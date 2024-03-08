@@ -66,6 +66,11 @@ static constexpr std::string_view topic_property_replication_factor
 static constexpr std::string_view topic_property_remote_delete
   = "redpanda.remote.delete";
 static constexpr std::string_view topic_property_segment_ms = "segment.ms";
+static constexpr std::string_view topic_property_write_caching
+  = "write.caching";
+
+static constexpr std::string_view topic_property_flush_ms = "flush.ms";
+static constexpr std::string_view topic_property_flush_bytes = "flush.bytes";
 
 // Server side schema id validation
 static constexpr std::string_view topic_property_record_key_schema_id_validation
@@ -122,7 +127,6 @@ static constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {
   "leader.replication.throttled.replicas",
   "index.interval.bytes",
   "follower.replication.throttled.replicas",
-  "flush.ms",
   "flush.messages",
   "file.delete.delay.ms",
   "delete.retention.ms",

@@ -266,6 +266,31 @@ create_topic_properties_update(
                 // Skip unsupported Kafka config
                 continue;
             };
+            if (cfg.name == topic_property_write_caching) {
+                parse_and_set_optional(
+                  update.properties.write_caching,
+                  cfg.value,
+                  kafka::config_resource_operation::set,
+                  write_caching_config_validator{});
+                continue;
+            }
+            if (cfg.name == topic_property_flush_ms) {
+                parse_and_set_optional_duration(
+                  update.properties.flush_ms,
+                  cfg.value,
+                  kafka::config_resource_operation::set,
+                  flush_ms_validator{});
+                continue;
+            }
+            if (cfg.name == topic_property_flush_bytes) {
+                parse_and_set_optional(
+                  update.properties.flush_bytes,
+                  cfg.value,
+                  kafka::config_resource_operation::set,
+                  flush_bytes_validator{});
+                continue;
+            }
+
         } catch (const validation_error& e) {
             return make_error_alter_config_resource_response<
               alter_configs_resource_response>(

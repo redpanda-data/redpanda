@@ -155,20 +155,6 @@ struct replication_factor_must_be_greater_or_equal_to_minimum {
     }
 };
 
-struct unsupported_configuration_entries {
-    static constexpr error_code ec = error_code::invalid_config;
-    static constexpr const char* error_message
-      = "Not supported configuration entry ";
-
-    static bool is_valid(const creatable_topic& c) {
-        auto config_entries = config_map(c.configs);
-        auto end = config_entries.end();
-        return end == config_entries.find("min.insync.replicas")
-               && end == config_entries.find("flush.messages")
-               && end == config_entries.find("flush.ms");
-    }
-};
-
 struct remote_read_and_write_are_not_supported_for_read_replica {
     static constexpr error_code ec = error_code::invalid_config;
     static constexpr const char* error_message
@@ -280,6 +266,82 @@ private:
         } catch (...) {
             return false;
         }
+    }
+};
+
+struct write_caching_configs_validator {
+    static constexpr const char* error_message
+      = "Unsupported write caching configuration.";
+    static constexpr const auto config_name = topic_property_write_caching;
+    static constexpr error_code ec = error_code::invalid_config;
+
+    static bool validate_write_caching(const creatable_topic& c) {
+        auto it = std::find_if(
+          c.configs.begin(),
+          c.configs.end(),
+          [](const createable_topic_config& cfg) {
+              return cfg.name == topic_property_write_caching;
+          });
+        if (it == c.configs.end() || it->value.has_value()) {
+            return true;
+        }
+        auto mode = model::write_caching_mode_from_string(it->value.value());
+        if (!mode) {
+            // nothing is set.
+            return true;
+        }
+        auto is_user_topic = model::is_user_topic(
+          model::topic_namespace{model::kafka_namespace, c.name});
+        if (is_user_topic) {
+            // disabled mode only allowed globally and cannot be set at topic
+            // level.
+            return mode != model::write_caching_mode::disabled;
+        }
+        // write caching cannot be turned on for internal topics.
+        return mode != model::write_caching_mode::on;
+    }
+
+    static bool validate_flush_ms(const creatable_topic& c) {
+        auto it = std::find_if(
+          c.configs.begin(),
+          c.configs.end(),
+          [](const createable_topic_config& cfg) {
+              return cfg.name == topic_property_flush_ms;
+          });
+        if (it == c.configs.end() || it->value.has_value()) {
+            return true;
+        }
+        try {
+            auto val = boost::lexical_cast<std::chrono::milliseconds::rep>(
+              it->value.value());
+            // atleast 1ms, anything less than that is suspiciously small.
+            return val >= 1;
+        } catch (...) {
+        }
+        return false;
+    }
+
+    static bool validate_flush_bytes(const creatable_topic& c) {
+        auto it = std::find_if(
+          c.configs.begin(),
+          c.configs.end(),
+          [](const createable_topic_config& cfg) {
+              return cfg.name == topic_property_flush_bytes;
+          });
+        if (it == c.configs.end() || it->value.has_value()) {
+            return true;
+        }
+        try {
+            auto val = boost::lexical_cast<size_t>(it->value.value());
+            return val > 0;
+        } catch (...) {
+        }
+        return false;
+    }
+
+    static bool is_valid(const creatable_topic& c) {
+        return validate_write_caching(c) && validate_flush_ms(c)
+               && validate_flush_bytes(c);
     }
 };
 

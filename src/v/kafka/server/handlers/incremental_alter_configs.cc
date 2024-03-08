@@ -276,12 +276,46 @@ create_topic_properties_update(
                 // Skip unsupported Kafka config
                 continue;
             }
+            if (cfg.name == topic_property_write_caching) {
+                parse_and_set_optional(
+                  update.properties.write_caching,
+                  cfg.value,
+                  op,
+                  write_caching_config_validator{});
+                continue;
+            }
+            if (cfg.name == topic_property_flush_ms) {
+                parse_and_set_optional_duration(
+                  update.properties.flush_ms,
+                  cfg.value,
+                  op,
+                  flush_ms_validator{});
+                continue;
+            }
+            if (cfg.name == topic_property_flush_bytes) {
+                parse_and_set_optional(
+                  update.properties.flush_bytes,
+                  cfg.value,
+                  op,
+                  flush_bytes_validator{});
+                continue;
+            }
 
         } catch (const validation_error& e) {
+            vlog(
+              klog.debug,
+              "Validation error during request: {} for config: {}",
+              e.what(),
+              cfg.name);
             return make_error_alter_config_resource_response<
               incremental_alter_configs_resource_response>(
               resource, error_code::invalid_config, e.what());
         } catch (const boost::bad_lexical_cast& e) {
+            vlog(
+              klog.debug,
+              "Parsing error during request: {} for config: {}",
+              e.what(),
+              cfg.name);
             return make_error_alter_config_resource_response<
               incremental_alter_configs_resource_response>(
               resource,
@@ -289,6 +323,7 @@ create_topic_properties_update(
               fmt::format(
                 "unable to parse property {} value {}", cfg.name, cfg.value));
         }
+        vlog(klog.debug, "Unsupported property: {}", cfg.name);
         // Unsupported property, return error
         return make_error_alter_config_resource_response<resp_resource_t>(
           resource,

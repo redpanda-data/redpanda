@@ -221,6 +221,31 @@ class DescribeTopicsTest(RedpandaTest):
                 "storage write enabled. If no initial local target retention is "
                 "configured all locally retained data will be delivered to learner when "
                 "joining partition replica set"),
+            "write.caching":
+            ConfigProperty(
+                config_type="STRING",
+                value="off",
+                doc_string=
+                "Cache batches until the segment appender chunk is full instead of "
+                "flushing for every acks=all write. This is the global default "
+                "for all topics and can be overriden at a topic scope with property "
+                "write.caching. 'disabled' mode takes precedence over topic overrides "
+                "and disables the feature altogether for the entire cluster."),
+            "flush.ms":
+            ConfigProperty(
+                config_type="LONG",
+                value="100",
+                doc_string=
+                "Maximum delay (in ms) between two subsequent flushes. After this delay, "
+                "the log will be automatically force flushed."),
+            "flush.bytes":
+            ConfigProperty(
+                config_type="LONG",
+                value="262144",
+                doc_string=
+                "Max not flushed bytes per partition. If configured threshold is reached "
+                "log will automatically be flushed even though it wasn't explicitly "
+                "requested"),
         }
 
         tp_spec = TopicSpec()

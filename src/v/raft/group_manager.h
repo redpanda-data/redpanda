@@ -49,6 +49,8 @@ public:
         config::binding<std::chrono::milliseconds> election_timeout_ms;
         config::binding<std::optional<size_t>> replica_max_not_flushed_bytes;
         config::binding<std::chrono::milliseconds> flush_timer_interval_ms;
+        config::binding<model::write_caching_mode> write_caching;
+        config::binding<std::chrono::milliseconds> write_caching_flush_ms;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 
@@ -98,6 +100,8 @@ public:
 private:
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
+
+    void trigger_config_update_notification();
 
     ss::future<> flush_groups();
 

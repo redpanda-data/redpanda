@@ -202,7 +202,7 @@ inline void read_value(json::Value const& rd, model::topic_metadata& tm) {
 template<typename T>
 inline constexpr bool is_exceptional_enum
   = std::is_enum_v<T>
-    && (std::is_same_v<T, model::compression> || std::is_same_v<T, model::timestamp_type> || std::is_same_v<T, model::cleanup_policy_bitflags>);
+    && (std::is_same_v<T, model::compression> || std::is_same_v<T, model::timestamp_type> || std::is_same_v<T, model::cleanup_policy_bitflags> || std::is_same_v<T, model::write_caching_mode>);
 
 template<typename T>
 inline constexpr bool is_exceptional_enum_wrapped_opt
@@ -258,6 +258,12 @@ inline void rjson_serialize_exceptional_type(
   const model::cleanup_policy_bitflags& c) {
     using underlying_t = std::underlying_type_t<model::cleanup_policy_bitflags>;
     rjson_serialize(w, static_cast<underlying_t>(c));
+}
+
+inline void rjson_serialize_exceptional_type(
+  json::Writer<json::StringBuffer>& w, const model::write_caching_mode& m) {
+    using underlying_t = std::underlying_type_t<model::write_caching_mode>;
+    rjson_serialize(w, static_cast<underlying_t>(m));
 }
 
 } // namespace json

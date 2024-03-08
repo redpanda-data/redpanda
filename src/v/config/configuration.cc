@@ -382,6 +382,8 @@ configuration::configuration()
       "requested",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       256_KiB)
+  // todo (bharathv): deprecate raft_flush_timer_interval_ms in favor of
+  // raft_replica_max_flush_delay_ms
   , raft_flush_timer_interval_ms(
       *this,
       "raft_flush_timer_interval_ms",
@@ -389,6 +391,19 @@ configuration::configuration()
       "`raft_replica_max_pending_flush_bytes`",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100ms)
+  , raft_replica_max_flush_delay_ms(
+      *this,
+      "raft_replica_max_flush_delay_ms",
+      "Maximum delay (in ms) between two subsequent flushes. After this delay, "
+      "the log will be automatically force flushed.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100ms,
+      [](auto const& v) -> std::optional<ss::sstring> {
+          if (v < 1ms) {
+              return "flush delay should be atleast 1ms";
+          }
+          return std::nullopt;
+      })
   , enable_usage(
       *this,
       "enable_usage",
@@ -963,6 +978,21 @@ configuration::configuration()
       "one follower",
       {.visibility = visibility::tunable},
       16)
+  , write_caching(
+      *this,
+      "write_caching",
+      "Cache batches until the segment appender chunk is full instead of "
+      "flushing for every acks=all write. This is the global default "
+      "for all topics and can be overriden at a topic scope with property "
+      "write.caching. 'disabled' mode takes precedence over topic overrides "
+      "and disables the feature altogether for the entire cluster.",
+      {.needs_restart = needs_restart::no,
+       .example = "on",
+       .visibility = visibility::user},
+      model::write_caching_mode::off,
+      {model::write_caching_mode::on,
+       model::write_caching_mode::off,
+       model::write_caching_mode::disabled})
   , reclaim_min_size(
       *this,
       "reclaim_min_size",

@@ -86,7 +86,8 @@ using validators = make_validator_types<
   batch_max_bytes_limits,
   subject_name_strategy_validator,
   replication_factor_must_be_greater_or_equal_to_minimum,
-  vcluster_id_validator>;
+  vcluster_id_validator,
+  write_caching_configs_validator>;
 
 static std::vector<creatable_topic_configs>
 properties_to_result_configs(config_map_t config_map) {

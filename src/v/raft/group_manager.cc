@@ -63,6 +63,12 @@ group_manager::group_manager(
             });
         });
     });
+    _configuration.write_caching.watch(
+      [this]() { trigger_config_update_notification(); });
+    _configuration.write_caching_flush_ms.watch(
+      [this]() { trigger_config_update_notification(); });
+    _configuration.replica_max_not_flushed_bytes.watch(
+      [this]() { trigger_config_update_notification(); });
     setup_metrics();
 }
 
@@ -248,4 +254,14 @@ ss::future<> group_manager::flush_groups() {
           return ss::now();
       });
 }
+
+void group_manager::trigger_config_update_notification() {
+    if (_gate.is_closed()) {
+        return;
+    }
+    for (auto& group : _groups) {
+        group->notify_config_update();
+    }
+}
+
 } // namespace raft

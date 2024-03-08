@@ -13,6 +13,7 @@
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "ssx/sformat.h"
 #include "tristate.h"
 
@@ -70,6 +71,11 @@ public:
         tristate<size_t> initial_retention_local_target_bytes{std::nullopt};
         tristate<std::chrono::milliseconds> initial_retention_local_target_ms{
           std::nullopt};
+
+        std::optional<model::write_caching_mode> write_caching;
+
+        std::optional<std::chrono::milliseconds> flush_ms;
+        std::optional<size_t> flush_bytes;
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
@@ -253,6 +259,36 @@ public:
         }
 
         return config::shard_local_cfg().log_segment_ms;
+    }
+
+    bool write_caching() const {
+        if (!model::is_user_topic(_ntp)) {
+            return false;
+        }
+        auto cluster_default = config::shard_local_cfg().write_caching();
+        if (cluster_default == model::write_caching_mode::disabled) {
+            return false;
+        }
+        auto value = _overrides
+                       ? _overrides->write_caching.value_or(cluster_default)
+                       : cluster_default;
+        return value == model::write_caching_mode::on;
+    }
+
+    std::chrono::milliseconds flush_ms() const {
+        auto cluster_default
+          = config::shard_local_cfg().raft_replica_max_flush_delay_ms();
+        return _overrides ? _overrides->flush_ms.value_or(cluster_default)
+                          : cluster_default;
+    }
+
+    size_t flush_bytes() const {
+        const auto& conf
+          = config::shard_local_cfg().raft_replica_max_pending_flush_bytes();
+        auto cluster_default = conf.value_or(
+          std::numeric_limits<size_t>::max());
+        return _overrides ? _overrides->flush_bytes.value_or(cluster_default)
+                          : cluster_default;
     }
 
 private:

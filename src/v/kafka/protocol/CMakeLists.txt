@@ -40,6 +40,7 @@ v_cc_library(
     kafka_batch_adapter.cc
   DEPS
     Seastar::seastar
+    v::model
     v::bytes
     v::rpc
     absl::flat_hash_map

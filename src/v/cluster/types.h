@@ -1473,7 +1473,7 @@ struct remote_topic_properties
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<7>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<8>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -1507,7 +1507,10 @@ struct topic_properties
         record_value_subject_name_strategy_compat,
       tristate<size_t> initial_retention_local_target_bytes,
       tristate<std::chrono::milliseconds> initial_retention_local_target_ms,
-      std::optional<model::vcluster_id> mpx_virtual_cluster_id)
+      std::optional<model::vcluster_id> mpx_virtual_cluster_id,
+      std::optional<model::write_caching_mode> write_caching,
+      std::optional<std::chrono::milliseconds> flush_ms,
+      std::optional<size_t> flush_bytes)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1540,7 +1543,10 @@ struct topic_properties
       , initial_retention_local_target_bytes(
           initial_retention_local_target_bytes)
       , initial_retention_local_target_ms(initial_retention_local_target_ms)
-      , mpx_virtual_cluster_id(mpx_virtual_cluster_id) {}
+      , mpx_virtual_cluster_id(mpx_virtual_cluster_id)
+      , write_caching(write_caching)
+      , flush_ms(flush_ms)
+      , flush_bytes(flush_bytes) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1583,6 +1589,9 @@ struct topic_properties
     tristate<std::chrono::milliseconds> initial_retention_local_target_ms{
       std::nullopt};
     std::optional<model::vcluster_id> mpx_virtual_cluster_id;
+    std::optional<model::write_caching_mode> write_caching;
+    std::optional<std::chrono::milliseconds> flush_ms;
+    std::optional<size_t> flush_bytes;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1620,7 +1629,10 @@ struct topic_properties
           record_value_subject_name_strategy_compat,
           initial_retention_local_target_bytes,
           initial_retention_local_target_ms,
-          mpx_virtual_cluster_id);
+          mpx_virtual_cluster_id,
+          write_caching,
+          flush_ms,
+          flush_bytes);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1708,7 +1720,7 @@ struct property_update<tristate<T>>
 struct incremental_topic_updates
   : serde::envelope<
       incremental_topic_updates,
-      serde::version<5>,
+      serde::version<6>,
       serde::compat_version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
@@ -1717,6 +1729,7 @@ struct incremental_topic_updates
     static constexpr int8_t version_with_segment_ms = -5;
     static constexpr int8_t version_with_schema_id_validation = -6;
     static constexpr int8_t version_with_initial_retention = -7;
+    static constexpr int8_t version_with_write_caching = -8;
     // negative version indicating different format:
     // -1 - topic_updates with data_policy
     // -2 - topic_updates without data_policy
@@ -1724,7 +1737,8 @@ struct incremental_topic_updates
     // -4 - topic update with batch_max_bytes and retention.local.target
     // -6 - topic updates with schema id validation
     // -7 - topic updates with initial retention
-    static constexpr int8_t version = version_with_initial_retention;
+    // -8 - write caching properties
+    static constexpr int8_t version = version_with_write_caching;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -1762,6 +1776,9 @@ struct incremental_topic_updates
     property_update<tristate<size_t>> initial_retention_local_target_bytes;
     property_update<tristate<std::chrono::milliseconds>>
       initial_retention_local_target_ms;
+    property_update<std::optional<model::write_caching_mode>> write_caching;
+    property_update<std::optional<std::chrono::milliseconds>> flush_ms;
+    property_update<std::optional<size_t>> flush_bytes;
 
     auto serde_fields() {
         return std::tie(
@@ -1787,7 +1804,10 @@ struct incremental_topic_updates
           record_value_subject_name_strategy,
           record_value_subject_name_strategy_compat,
           initial_retention_local_target_bytes,
-          initial_retention_local_target_ms);
+          initial_retention_local_target_ms,
+          write_caching,
+          flush_ms,
+          flush_bytes);
     }
 
     friend std::ostream&
@@ -3876,7 +3896,7 @@ struct partition_stm_state
 struct partition_raft_state
   : serde::envelope<
       partition_raft_state,
-      serde::version<2>,
+      serde::version<3>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -3898,6 +3918,9 @@ struct partition_raft_state
     bool is_leader;
     bool is_elected_leader;
     std::vector<partition_stm_state> stms;
+    bool write_caching_enabled;
+    size_t flush_bytes;
+    std::chrono::milliseconds flush_ms;
 
     struct follower_state
       : serde::envelope<
@@ -3986,7 +4009,10 @@ struct partition_raft_state
           is_elected_leader,
           followers,
           stms,
-          recovery_state);
+          recovery_state,
+          write_caching_enabled,
+          flush_bytes,
+          flush_ms);
     }
 
     friend bool
