@@ -43,7 +43,7 @@ class ManyTopicsTest(RedpandaTest):
     HEALTHY_WAIT_SECONDS = 20 * 60
 
     # Max topic count supported by single client-swarm node
-    MAX_SWARM_NODE_TOPIC_COUNT = 4500
+    MAX_SWARM_NODE_TOPIC_COUNT = 15_000
 
     # Up to 5 min to stop the node with a lot of topics
     STOP_TIMEOUT = 60 * 5
