@@ -31,17 +31,12 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
 replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term,
   model::record_batch_reader r,
-  consistency_level consistency_lvl,
-  std::optional<std::chrono::milliseconds> timeout) {
+  replicate_options opts) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
 
     auto f = cache_and_wait_for_result(
-      std::move(enqueued),
-      expected_term,
-      std::move(r),
-      consistency_lvl,
-      timeout);
+      std::move(enqueued), expected_term, std::move(r), opts);
     return {std::move(enqueued_f), std::move(f)};
 }
 
@@ -50,13 +45,11 @@ replicate_batcher::cache_and_wait_for_result(
   ss::promise<> enqueued,
   std::optional<model::term_id> expected_term,
   model::record_batch_reader r,
-  consistency_level consistency_lvl,
-  std::optional<std::chrono::milliseconds> timeout) {
+  replicate_options opts) {
     item_ptr item;
     try {
         auto holder = _bg.hold();
-        item = co_await do_cache(
-          expected_term, std::move(r), consistency_lvl, timeout);
+        item = co_await do_cache(expected_term, std::move(r), opts);
 
         // now request is already enqueued, we can release first
         // stage future
@@ -116,11 +109,11 @@ ss::future<> replicate_batcher::stop() {
 ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
   std::optional<model::term_id> expected_term,
   model::record_batch_reader r,
-  consistency_level consistency_lvl,
-  std::optional<std::chrono::milliseconds> timeout) {
+  replicate_options opts) {
     auto batches = co_await model::consume_reader_to_memory(
       std::move(r),
-      timeout ? model::timeout_clock::now() + *timeout : model::no_timeout);
+      opts.timeout ? model::timeout_clock::now() + opts.timeout.value()
+                   : model::no_timeout);
 
     size_t bytes = std::accumulate(
       batches.cbegin(),
@@ -130,7 +123,7 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
           return sum + b.size_bytes();
       });
     co_return co_await do_cache_with_backpressure(
-      expected_term, std::move(batches), bytes, consistency_lvl, timeout);
+      expected_term, std::move(batches), bytes, opts);
 }
 
 ss::future<replicate_batcher::item_ptr>
@@ -138,8 +131,7 @@ replicate_batcher::do_cache_with_backpressure(
   std::optional<model::term_id> expected_term,
   ss::circular_buffer<model::record_batch> batches,
   size_t bytes,
-  consistency_level consistency_lvl,
-  std::optional<std::chrono::milliseconds> timeout) {
+  replicate_options opts) {
     /**
      * Produce a message larger than the internal raft batch accumulator
      * (default 1Mb) the semaphore can't be acquired. Closing
@@ -153,11 +145,11 @@ replicate_batcher::do_cache_with_backpressure(
      * them to be able to continue.
      */
     ssx::semaphore_units u;
-    if (timeout) {
+    if (opts.timeout) {
         u = co_await ss::get_units(
           _max_batch_size_sem,
           std::min(bytes, _max_batch_size),
-          ssx::semaphore::clock::now() + *timeout);
+          ssx::semaphore::clock::now() + opts.timeout.value());
     } else {
         u = co_await ss::get_units(
           _max_batch_size_sem, std::min(bytes, _max_batch_size));
@@ -175,12 +167,7 @@ replicate_batcher::do_cache_with_backpressure(
         }
     }
     auto i = ss::make_lw_shared<item>(
-      record_count,
-      std::move(data),
-      std::move(u),
-      expected_term,
-      consistency_lvl,
-      timeout);
+      record_count, std::move(data), std::move(u), expected_term, opts);
 
     _item_cache.emplace_back(i);
     co_return i;

@@ -846,7 +846,7 @@ replicate_stages consensus::do_replicate(
     }
 
     return wrap_stages_with_gate(
-      _bg, _batcher.replicate(expected_term, std::move(rdr), opts.consistency));
+      _bg, _batcher.replicate(expected_term, std::move(rdr), opts));
 }
 
 ss::future<model::record_batch_reader>
