@@ -140,8 +140,8 @@ class OMBValidationTest(RedpandaCloudTest):
         #
 
         PRODUCER_TIMEOUT_MS = 5000
-        OMB_WORKERS = 4
-        SWARM_WORKERS = 5
+        OMB_WORKERS = 2
+        SWARM_WORKERS = 7
 
         # OMB parameters
         #
@@ -209,7 +209,7 @@ class OMBValidationTest(RedpandaCloudTest):
 
         # single producer runtime
         # Roughly every 500 connection needs 60 seconds to ramp up
-        time_per_500_s = 120
+        time_per_500_s = 60
         warm_up_time_s = max(
             time_per_500_s * math.ceil(_target_per_node / 500), time_per_500_s)
         target_runtime_s = 60 * (test_duration +
@@ -268,10 +268,10 @@ class OMBValidationTest(RedpandaCloudTest):
         try:
             benchmark.wait(timeout_sec=benchmark_time_min * 60)
 
-            for s in swarm:
-                s.wait(timeout_sec=5 * 60)
-
             benchmark.check_succeed()
+
+            for s in swarm:
+                s.wait(timeout_sec=30 * 60)
 
         finally:
             self.rpk.delete_topic(swarm_topic_name)
