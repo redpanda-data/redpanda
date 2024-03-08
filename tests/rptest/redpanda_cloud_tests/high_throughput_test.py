@@ -1159,7 +1159,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         return self.redpanda.kubectl.cmd([
             'wait', 'cluster', cluster_name, '-n=redpanda',
             "--for=jsonpath='{.status.readyReplicas}'=" + str(ready_replicas),
-            '--timeout=600s'
+            '--timeout=900s'
         ]).decode()
 
     def _patch_cluster_replicas(self, cluster_name, replicas):
