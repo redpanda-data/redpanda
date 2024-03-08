@@ -25,14 +25,26 @@ enum class consistency_level { quorum_ack, leader_ack, no_ack };
 struct replicate_options {
     explicit replicate_options(consistency_level l)
       : consistency(l)
-      , timeout(std::nullopt) {}
+      , timeout(std::nullopt)
+      , _force_flush(false) {}
 
     replicate_options(consistency_level l, std::chrono::milliseconds timeout)
       : consistency(l)
-      , timeout(timeout) {}
+      , timeout(timeout)
+      , _force_flush(false) {}
+
+    // Callers may choose to force flush on an individual replicate request
+    // basis. This is useful if certain callers intend to override any
+    // default behavior at global/topic scope.
+    // For example: when write caching is enabled on the topic and a caller
+    // can still force a flush with this override. This override takes
+    // precendence over any other setting.
+    void set_force_flush() { _force_flush = true; }
+    bool force_flush() const { return _force_flush; }
 
     consistency_level consistency;
     std::optional<std::chrono::milliseconds> timeout;
+    bool _force_flush;
 };
 
 struct replicate_result {
