@@ -10,10 +10,14 @@
 
 #include "cloud_storage/inventory/aws_ops.h"
 
+#include "bytes/streambuf.h"
 #include "cloud_storage/remote.h"
+#include "json/istreamwrapper.h"
 
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
+#include <re2/re2.h>
 
 using boost::property_tree::ptree;
 
@@ -60,6 +64,37 @@ iobuf to_xml(const aws_report_configuration& cfg) {
     iobuf b;
     b.append(sstr.str().data(), sstr.str().size());
     return b;
+}
+
+// YYYY-MM-DDTHH-MMZ/
+const re2::RE2 trailing_date_expression{R"(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}Z/)"};
+
+struct path_with_datetime {
+    cloud_storage::inventory::report_datetime datetime;
+    cloud_storage_clients::object_key path;
+};
+
+bool is_datetime(std::string_view path) {
+    return RE2::FullMatch(path, trailing_date_expression);
+}
+
+path_with_datetime
+checksum_path(std::string_view prefix, std::string_view date_string) {
+    date_string.remove_suffix(1);
+    return {
+      .datetime = cloud_storage::inventory::
+        report_datetime{date_string.data(), date_string.size()},
+      .path = cloud_storage_clients::object_key{
+        fmt::format("{}{}/manifest.checksum", prefix, date_string)}};
+}
+
+json::Document parse_json_response(iobuf resp) {
+    iobuf_istreambuf ibuf{resp};
+    std::istream stream{&ibuf};
+    json::Document doc;
+    json::IStreamWrapper wrapper(stream);
+    doc.ParseStream(wrapper);
+    return doc;
 }
 
 } // namespace
@@ -109,6 +144,122 @@ ss::future<bool> aws_ops::inventory_configuration_exists(
        = {.bucket = _bucket, .key = _inventory_key, .parent_rtc = parent_rtc},
        .payload = buf});
     co_return dl_res == download_result::success;
+}
+
+ss::future<result<report_metadata, error_outcome>>
+aws_ops::latest_report_metadata(
+  cloud_storage::cloud_storage_api& remote, retry_chain_node& parent_rtc) {
+    // The prefix is generated according to
+    // https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-inventory-location.html
+    const auto prefix = cloud_storage_clients::object_key{
+      fmt::format("{}/{}/{}/", _prefix, _bucket, _inventory_config_id)};
+    const auto list_result = co_await remote.list_objects(
+      _bucket, parent_rtc, prefix, '/');
+
+    if (list_result.has_error()) {
+        co_return error_outcome::failed;
+    }
+
+    auto transform_to_checksum = [&prefix](auto datetime) {
+        return checksum_path(prefix().native(), datetime);
+    };
+
+    // The prefix may contain non-datetime folders such as hive data, which we
+    // ignore. The datetime folders are normalized with the prefix, and then the
+    // checksum file path is appended to them. The final result is a series of
+    // paths to checksums which we need to probe.
+    auto filtered = list_result.value().common_prefixes
+                    | std::views::filter(is_datetime)
+                    | std::views::transform(transform_to_checksum);
+
+    std::vector<path_with_datetime> checksum_paths{
+      filtered.begin(), filtered.end()};
+
+    // The datetime strings (YYYY-MM-DDTHH-MMZ) can be sorted by lexical
+    // comparison
+    std::ranges::sort(
+      checksum_paths, [](const auto& first, const auto& second) {
+          return first.datetime > second.datetime;
+      });
+
+    // A checksum appears in the bucket at the designated location only once the
+    // inventory is ready, so we probe the checksum files from latest to
+    // earliest. We stop at the first checksum we find.
+    for (const auto& path_with_datetime : checksum_paths) {
+        if (const auto result = co_await remote.object_exists(
+              _bucket,
+              path_with_datetime.path,
+              parent_rtc,
+              existence_check_type::object);
+            result == download_result::success) {
+            auto path = path_with_datetime.path();
+
+            // Once a checksum is found, we download the corresponding
+            // manifest.json file
+            path.replace_extension("json");
+
+            const auto manifest_path = cloud_storage_clients::object_key{path};
+
+            // The manifest is downloaded, parsed and report paths are extracted
+            // from it.
+            auto report_paths = co_await fetch_and_parse_metadata(
+              remote, parent_rtc, manifest_path);
+
+            if (report_paths.has_error()) {
+                co_return report_paths.error();
+            }
+
+            co_return report_metadata{
+              .metadata_path = manifest_path,
+              .report_paths = report_paths.value(),
+              .datetime = path_with_datetime.datetime};
+        }
+    }
+
+    co_return error_outcome::failed;
+}
+
+ss::future<result<report_paths, error_outcome>>
+aws_ops::fetch_and_parse_metadata(
+  cloud_storage::cloud_storage_api& remote,
+  retry_chain_node& parent_rtc,
+  cloud_storage_clients::object_key metadata_path) const {
+    iobuf json_recv;
+    const auto dl_res = co_await remote.download_object({
+      .transfer_details
+      = {.bucket = _bucket, .key = metadata_path, .parent_rtc = parent_rtc},
+      .type = download_type::inventory_report_manifest,
+      .payload = json_recv,
+    });
+
+    if (dl_res != download_result::success) {
+        co_return error_outcome::manifest_download_failed;
+    }
+
+    co_return parse_report_paths(std::move(json_recv));
+}
+
+result<report_paths, error_outcome>
+aws_ops::parse_report_paths(iobuf json_response) const {
+    const auto doc = parse_json_response(std::move(json_response));
+    if (doc.HasParseError()) {
+        return error_outcome::manifest_deserialization_failed;
+    }
+
+    if (!doc.IsObject() || !doc.HasMember("files") || !doc["files"].IsArray()) {
+        return error_outcome::manifest_files_parse_failed;
+    }
+
+    auto has_embedded_key_path = [](const auto& f) {
+        return f.IsObject() && f.HasMember("key") && f["key"].IsString();
+    };
+
+    auto paths = doc["files"].GetArray()
+                 | std::views::filter(has_embedded_key_path)
+                 | std::views::transform(
+                   [](const auto& f) { return f["key"].GetString(); });
+
+    return {paths.begin(), paths.end()};
 }
 
 } // namespace cloud_storage::inventory
