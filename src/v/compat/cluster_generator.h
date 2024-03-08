@@ -809,7 +809,7 @@ struct instance_generator<cluster::topic_properties_update> {
 template<>
 struct instance_generator<cluster::update_topic_properties_request> {
     static cluster::update_topic_properties_request random() {
-        return {.updates = tests::random_vector([] {
+        return {.updates = tests::random_chunked_vector([] {
                     return instance_generator<
                       cluster::topic_properties_update>::random();
                 })};

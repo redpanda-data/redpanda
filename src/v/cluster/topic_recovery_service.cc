@@ -16,6 +16,7 @@
 #include "cloud_storage/topic_manifest.h"
 #include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/types.h"
 
 #include <seastar/http/request.hh>
 #include <seastar/util/defer.hh>
@@ -533,7 +534,7 @@ ss::future<> topic_recovery_service::reset_topic_configurations() {
         co_return;
     }
 
-    std::vector<cluster::topic_properties_update> updates;
+    cluster::topic_properties_update_vector updates;
     updates.reserve(_downloaded_manifests->size());
     std::transform(
       std::make_move_iterator(_downloaded_manifests->begin()),
