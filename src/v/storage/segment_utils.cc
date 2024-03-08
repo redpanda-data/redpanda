@@ -373,7 +373,8 @@ ss::future<storage::index_state> do_copy_segment_data(
   storage::probe& pb,
   ss::rwlock::holder rw_lock_holder,
   storage_resources& resources,
-  offset_delta_time apply_offset) {
+  offset_delta_time apply_offset,
+  ss::sharded<features::feature_table>&) {
     // preserve broker_timestamp from the segment's index
     auto old_broker_timestamp = seg->index().broker_timestamp();
 
@@ -499,7 +500,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
   storage::readers_cache& readers_cache,
   storage_resources& resources,
   offset_delta_time apply_offset,
-  ss::rwlock::holder read_holder) {
+  ss::rwlock::holder read_holder,
+  ss::sharded<features::feature_table>& feature_table) {
     vlog(gclog.trace, "self compacting segment {}", s->reader().path());
     auto segment_generation = s->get_generation_id();
 
@@ -516,7 +518,13 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     auto staging_to_clean = scoped_file_tracker{
       cfg.files_to_cleanup, {staging_file}};
     auto idx = co_await do_copy_segment_data(
-      s, cfg, pb, std::move(read_holder), resources, apply_offset);
+      s,
+      cfg,
+      pb,
+      std::move(read_holder),
+      resources,
+      apply_offset,
+      feature_table);
 
     auto rdr_holder = co_await readers_cache.evict_segment_readers(s);
 
@@ -645,7 +653,7 @@ ss::future<compaction_result> self_compact_segment(
   storage::probe& pb,
   storage::readers_cache& readers_cache,
   storage_resources& resources,
-  offset_delta_time apply_offset) {
+  ss::sharded<features::feature_table>& feature_table) {
     if (s->has_appender()) {
         throw std::runtime_error(fmt::format(
           "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
@@ -702,6 +710,7 @@ ss::future<compaction_result> self_compact_segment(
       "Unexpected state {}",
       int(state));
     auto sz_before = s->size_bytes();
+    auto apply_offset = should_apply_delta_time_offset(feature_table);
     auto sz_after = co_await do_self_compact_segment(
       s,
       cfg,
@@ -709,7 +718,8 @@ ss::future<compaction_result> self_compact_segment(
       readers_cache,
       resources,
       apply_offset,
-      std::move(read_holder));
+      std::move(read_holder),
+      feature_table);
     // compaction wasn't executed, return
     if (!sz_after) {
         co_return compaction_result(sz_before);

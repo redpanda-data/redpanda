@@ -56,6 +56,8 @@ ss::future<index_state> deduplicate_segment(
   segment_appender& appender,
   compacted_index_writer& cmp_idx_writer,
   storage::probe& probe,
-  offset_delta_time should_offset_delta_times);
+  offset_delta_time should_offset_delta_times,
+  ss::sharded<features::feature_table>&,
+  bool inject_reader_failure = false);
 
 } // namespace storage
