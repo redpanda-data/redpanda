@@ -31,6 +31,8 @@ namespace cloud_storage::inventory {
 enum class error_outcome {
     success = 0,
     failed,
+    create_inv_cfg_failed,
+    failed_to_check_inv_status,
     manifest_download_failed,
     manifest_files_parse_failed,
     manifest_deserialization_failed,
@@ -47,6 +49,10 @@ struct error_outcome_category final : public std::error_category {
             return "Success";
         case error_outcome::failed:
             return "Failed";
+        case error_outcome::create_inv_cfg_failed:
+            return "Failed to create inventory configuration";
+        case error_outcome::failed_to_check_inv_status:
+            return "Failed to check inventory configuration status";
         case error_outcome::manifest_download_failed:
             return "Failed to download manifest";
         case error_outcome::manifest_files_parse_failed:
@@ -102,26 +108,34 @@ struct report_metadata {
     report_datetime datetime;
 };
 
+enum class inventory_creation_result {
+    success,
+    already_exists,
+};
+
+std::ostream& operator<<(std::ostream&, inventory_creation_result);
+
+template<typename R>
+using op_result = result<R, error_outcome>;
+
 /// \brief This class is not directly used for runtime polymorphism, it exists
 /// as a convenience to define constraints for inv_ops_variant, to make sure
 /// that the classes set as variants of inv_ops_variant have the expected set of
 /// methods defined in base_ops.
 class base_ops {
 public:
-    virtual ss::future<cloud_storage::upload_result>
-    create_inventory_configuration(
+    virtual ss::future<op_result<void>> create_inventory_configuration(
       cloud_storage::cloud_storage_api&,
       retry_chain_node&,
       report_generation_frequency,
       report_format)
       = 0;
 
-    virtual ss::future<bool> inventory_configuration_exists(
+    virtual ss::future<op_result<bool>> inventory_configuration_exists(
       cloud_storage::cloud_storage_api& remote, retry_chain_node& parent_rtc)
       = 0;
 
-    virtual ss::future<result<report_metadata, error_outcome>>
-    fetch_latest_report_metadata(
+    virtual ss::future<op_result<report_metadata>> fetch_latest_report_metadata(
       cloud_storage::cloud_storage_api&, retry_chain_node&) const noexcept
       = 0;
 };
@@ -131,14 +145,6 @@ concept vendor_ops_provider = std::is_base_of_v<base_ops, T>;
 
 template<vendor_ops_provider... Ts>
 using inv_ops_variant = std::variant<Ts...>;
-
-enum class inventory_creation_result {
-    success,
-    failed,
-    already_exists,
-};
-
-std::ostream& operator<<(std::ostream&, inventory_creation_result);
 
 } // namespace cloud_storage::inventory
 

@@ -10,6 +10,7 @@
 
 #include "cloud_storage/inventory/inv_ops.h"
 
+#include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
 #include "utils/retry_chain_node.h"
 
@@ -29,8 +30,7 @@ namespace cloud_storage::inventory {
 inv_ops::inv_ops(ops_t ops)
   : _inv_ops{std::move(ops)} {}
 
-ss::future<cloud_storage::upload_result>
-inv_ops::create_inventory_configuration(
+ss::future<op_result<void>> inv_ops::create_inventory_configuration(
   cloud_storage_api& remote, retry_chain_node& parent) {
     return ss::visit(_inv_ops, [&remote, &parent](auto& ops) {
         return ops.create_inventory_configuration(
@@ -38,40 +38,67 @@ inv_ops::create_inventory_configuration(
     });
 }
 
-ss::future<bool> inv_ops::inventory_configuration_exists(
+ss::future<op_result<bool>> inv_ops::inventory_configuration_exists(
   cloud_storage_api& remote, retry_chain_node& parent) {
     return ss::visit(_inv_ops, [&remote, &parent](auto& ops) {
         return ops.inventory_configuration_exists(remote, parent);
     });
 }
 
-ss::future<inventory_creation_result>
+ss::future<op_result<inventory_creation_result>>
 inv_ops::maybe_create_inventory_configuration(
   cloud_storage_api& remote, retry_chain_node& parent) {
-    if (const auto exists = co_await inventory_configuration_exists(
-          remote, parent);
-        exists) {
+    auto exists = co_await inventory_configuration_exists(remote, parent);
+    if (exists.has_error()) {
+        vlog(
+          cst_log.error,
+          "Failed to check if inventory exists before creation attempt");
+        co_return exists.error();
+    }
+
+    if (exists.value()) {
         co_return inventory_creation_result::already_exists;
     }
 
-    const auto create_res = co_await create_inventory_configuration(
-      remote, parent);
-
-    switch (create_res) {
-    case upload_result::success:
+    if (const auto create_res = co_await create_inventory_configuration(
+          remote, parent);
+        create_res.has_value()) {
         co_return inventory_creation_result::success;
-    case upload_result::timedout:
-    case upload_result::cancelled:
-        co_return inventory_creation_result::failed;
-    case upload_result::failed:
-        // If config creation failed, check if some other node raced to create
-        // it first.
-        if (co_await inventory_configuration_exists(remote, parent)) {
-            co_return inventory_creation_result::already_exists;
-        } else {
-            co_return inventory_creation_result::failed;
-        }
     }
+
+    vlog(
+      cst_log.info,
+      "Failed to create inventory, checking if it was created by another node");
+
+    // At this point we have tried to create the inventory config and failed.
+    // One possibility is that another node created the config and we lost the
+    // race.
+    exists = co_await inventory_configuration_exists(remote, parent);
+
+    if (exists.has_value()) {
+        if (exists.value()) {
+            vlog(cst_log.debug, "Inventory created by another node");
+            co_return inventory_creation_result::already_exists;
+        }
+
+        vlog(
+          cst_log.warn,
+          "Inventory does not exist after failed creation attempt");
+    }
+
+    if (exists.has_error()) {
+        vlog(
+          cst_log.warn,
+          "Failed to check inventory status after failed creation attempt");
+    }
+    co_return error_outcome::create_inv_cfg_failed;
+}
+
+ss::future<op_result<report_metadata>> inv_ops::fetch_latest_report_metadata(
+  cloud_storage_api& remote, retry_chain_node& parent) {
+    return ss::visit(_inv_ops, [&remote, &parent](auto& ops) {
+        return ops.fetch_latest_report_metadata(remote, parent);
+    });
 }
 
 } // namespace cloud_storage::inventory
