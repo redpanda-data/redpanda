@@ -534,6 +534,8 @@ std::ostream& operator<<(std::ostream& os, download_type download) {
         return os << "object";
     case segment_index:
         return os << "segment-index";
+    case inventory_report_manifest:
+        return os << "inventory-report-manifest";
     }
 }
 

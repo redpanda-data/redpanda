@@ -432,10 +432,7 @@ enum class upload_type {
 
 std::ostream& operator<<(std::ostream&, upload_type);
 
-enum class download_type {
-    object,
-    segment_index,
-};
+enum class download_type { object, segment_index, inventory_report_manifest };
 
 std::ostream& operator<<(std::ostream&, download_type);
 
