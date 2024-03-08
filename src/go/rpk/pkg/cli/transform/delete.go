@@ -12,9 +12,12 @@ package transform
 import (
 	"fmt"
 
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
+	dataplanev1alpha1 "github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/dataplane/v1alpha1"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -40,9 +43,23 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					out.Exit("Deletion canceled.")
 				}
 			}
+			if p.FromCloud && !p.CloudCluster.IsServerless() {
+				url, err := p.CloudCluster.CheckClusterURL()
+				out.MaybeDie(err, "unable to get cluster information: %v", err)
 
-			err = api.DeleteWasmTransform(cmd.Context(), functionName)
-			out.MaybeDie(err, "unable to delete transform %q: %v", functionName, err)
+				cl, err := publicapi.NewDataPlaneClientSet(url, p.CurrentAuth().AuthToken)
+				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
+
+				_, err = cl.Transform.DeleteTransform(
+					cmd.Context(),
+					connect.NewRequest(&dataplanev1alpha1.DeleteTransformRequest{
+						Name: functionName,
+					}))
+				out.MaybeDie(err, "unable to delete transform %q: %v", functionName, err)
+			} else {
+				err = api.DeleteWasmTransform(cmd.Context(), functionName)
+				out.MaybeDie(err, "unable to delete transform %q: %v", functionName, err)
+			}
 			fmt.Println("Delete successful!")
 		},
 	}
