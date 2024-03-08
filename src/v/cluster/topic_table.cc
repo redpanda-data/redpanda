@@ -28,24 +28,9 @@
 #include <optional>
 #include <span>
 #include <utility>
+#include <vector>
 
 namespace cluster {
-
-template<typename Func>
-std::vector<std::invoke_result_t<Func, const topic_table::topic_metadata_item&>>
-topic_table::transform_topics(Func&& f) const {
-    std::vector<std::invoke_result_t<Func, const topic_metadata_item&>> ret;
-    ret.reserve(_topics.size());
-    std::transform(
-      std::cbegin(_topics),
-      std::cend(_topics),
-      std::back_inserter(ret),
-      [f = std::forward<Func>(f)](
-        const std::pair<model::topic_namespace, topic_metadata_item>& p) {
-          return f(p.second);
-      });
-    return ret;
-}
 
 ss::future<std::error_code>
 topic_table::apply(create_topic_cmd cmd, model::offset offset) {
@@ -1450,9 +1435,12 @@ topic_table::wait_for_changes(ss::abort_source& as) {
 }
 
 std::vector<model::topic_namespace> topic_table::all_topics() const {
-    return transform_topics([](const topic_metadata_item& tp) {
-        return tp.get_configuration().tp_ns;
-    });
+    std::vector<model::topic_namespace> topics;
+    topics.reserve(topics.size());
+    for (auto& [tp_ns, _] : _topics) {
+        topics.push_back(tp_ns);
+    }
+    return topics;
 }
 
 size_t topic_table::all_topics_count() const { return _topics.size(); }
