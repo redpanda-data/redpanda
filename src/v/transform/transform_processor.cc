@@ -363,6 +363,11 @@ ss::future<> processor::run_producer_loop(
             co_await sink->write(std::move(batches));
         }
         if (latest_offset > last_committed) {
+            vlog(
+              _logger.trace,
+              "committing progress {} for output topic {}",
+              latest_offset,
+              index);
             co_await _offset_tracker->commit_offset(index, latest_offset);
             report_lag(index, _source->latest_offset() - latest_offset);
             last_committed = latest_offset;

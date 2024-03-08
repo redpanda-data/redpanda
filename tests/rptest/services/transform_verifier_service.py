@@ -244,12 +244,20 @@ class TransformVerifierService(Service):
         """
         Wait until the status endpoint reports that it is done
         """
+        latest_status = None
+
+        def poll_for_complete():
+            nonlocal latest_status
+            latest_status = self._get_status_for_node(node)
+            return self.config.is_done(latest_status)
+
         wait_until(
-            lambda: self.config.is_done(self._get_status_for_node(node)),
+            poll_for_complete,
             timeout_sec=timeout_sec or 5,
             backoff_sec=0.5,
             err_msg=
-            f"Timed out for transform verifier to complete {self.who_am_i()}")
+            f"Timed out for transform verifier to complete {self.who_am_i()}, latest status: {latest_status}"
+        )
         return True
 
     def stop_node(self, node):
