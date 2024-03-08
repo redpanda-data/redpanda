@@ -1698,7 +1698,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::topic_configuration> topics;
+        cluster::topic_configuration_vector topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_configuration());
         }

@@ -62,7 +62,7 @@ public:
       config::binding<int16_t>);
 
     ss::future<std::vector<topic_result>> create_topics(
-      std::vector<custom_assignable_topic_configuration>,
+      custom_assignable_topic_configuration_vector,
       model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> delete_topics(
@@ -83,7 +83,7 @@ public:
       do_purged_topic(nt_revision, model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> autocreate_topics(
-      std::vector<topic_configuration>, model::timeout_clock::duration);
+      topic_configuration_vector, model::timeout_clock::duration);
 
     ss::future<std::error_code> move_partition_replicas(
       model::ntp,
@@ -210,7 +210,7 @@ private:
 
     ss::future<std::vector<topic_result>> dispatch_create_to_leader(
       model::node_id,
-      std::vector<topic_configuration>,
+      topic_configuration_vector,
       model::timeout_clock::duration);
 
     ss::future<topic_result> dispatch_purged_topic_to_leader(

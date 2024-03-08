@@ -193,8 +193,8 @@ ss::future<std::error_code> replicate_and_wait(
       });
 }
 
-std::vector<custom_assignable_topic_configuration>
-  without_custom_assignments(std::vector<topic_configuration>);
+custom_assignable_topic_configuration_vector
+  without_custom_assignments(topic_configuration_vector);
 
 template<class T>
 inline std::vector<T>

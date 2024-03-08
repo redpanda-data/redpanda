@@ -108,7 +108,7 @@ needs_linearizable_barrier(const std::vector<topic_result>& results) {
 }
 
 ss::future<std::vector<topic_result>> topics_frontend::create_topics(
-  std::vector<custom_assignable_topic_configuration> topics,
+  custom_assignable_topic_configuration_vector topics,
   model::timeout_clock::time_point timeout) {
     for (auto& tp : topics) {
         /**
@@ -770,8 +770,7 @@ ss::future<topic_result> topics_frontend::do_purged_topic(
 }
 
 ss::future<std::vector<topic_result>> topics_frontend::autocreate_topics(
-  std::vector<topic_configuration> topics,
-  model::timeout_clock::duration timeout) {
+  topic_configuration_vector topics, model::timeout_clock::duration timeout) {
     vlog(clusterlog.trace, "Auto create topics {}", topics);
 
     auto leader = _leaders.local().get_leader(model::controller_ntp);
@@ -795,7 +794,7 @@ ss::future<std::vector<topic_result>> topics_frontend::autocreate_topics(
 ss::future<std::vector<topic_result>>
 topics_frontend::dispatch_create_to_leader(
   model::node_id leader,
-  std::vector<topic_configuration> topics,
+  topic_configuration_vector topics,
   model::timeout_clock::duration timeout) {
     vlog(clusterlog.trace, "Dispatching create topics to {}", leader);
     auto r = co_await _connections.local()

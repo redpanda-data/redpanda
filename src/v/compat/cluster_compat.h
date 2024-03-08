@@ -431,7 +431,7 @@ template<>
 struct compat_check<cluster::topic_configuration> {
     static constexpr std::string_view name = "cluster::topic_configuration";
 
-    static std::vector<cluster::topic_configuration> create_test_cases() {
+    static cluster::topic_configuration_vector create_test_cases() {
         return generate_instances<cluster::topic_configuration>();
     }
 

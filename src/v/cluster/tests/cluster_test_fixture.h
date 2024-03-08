@@ -221,7 +221,7 @@ public:
               return it.second->app.controller->is_raft0_leader();
           });
         auto& app_0 = leader_it->second->app;
-        std::vector<cluster::topic_configuration> cfgs = {
+        cluster::topic_configuration_vector cfgs = {
           cluster::topic_configuration{
             tp_ns.ns, tp_ns.tp, partitions, replication_factor}};
         auto results = app_0.controller->get_topics_frontend()

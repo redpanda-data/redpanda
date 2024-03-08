@@ -558,7 +558,7 @@ public:
       std::optional<cluster::topic_properties> props = std::nullopt,
       int16_t replication_factor = 1,
       bool wait = true) {
-        std::vector<cluster::topic_configuration> cfgs = {
+        cluster::topic_configuration_vector cfgs = {
           cluster::topic_configuration{
             tp_ns.ns, tp_ns.tp, partitions, replication_factor}};
         if (props.has_value()) {
