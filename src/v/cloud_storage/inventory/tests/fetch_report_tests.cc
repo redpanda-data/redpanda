@@ -155,7 +155,7 @@ void run_test(csi::MockRemote& remote, retry_chain_node& parent, T... ts) {
     const auto result = ops.fetch_latest_report_metadata(remote, parent).get();
 
     EXPECT_TRUE(result.has_value());
-    const auto report_metadata = result.value();
+    const auto& report_metadata = result.value();
 
     EXPECT_EQ(
       report_metadata.metadata_path,
@@ -181,4 +181,62 @@ TEST(FindLatestReport, InvOps) {
     retry_chain_node parent{as};
     csi::MockRemote remote;
     run_test<csi::inv_ops>(remote, parent, csi::aws_ops{bucket, id, prefix});
+}
+
+csi::op_result<csi::report_metadata>
+test_manifest_parse(std::string_view manifest) {
+    ss::abort_source as;
+    retry_chain_node parent{as};
+    csi::MockRemote remote;
+
+    setup_and_validate_list_call(
+      remote,
+      parent,
+      cl::client::list_bucket_result{
+        .common_prefixes = {latest_date_which_has_report}});
+
+    EXPECT_CALL(remote, object_exists(t::_, t::_, t::_, t::_))
+      .Times(1)
+      .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
+        cst::download_result::success)));
+
+    auto return_manifest = [&manifest](auto r) {
+        r.payload.append(manifest.data(), manifest.size());
+        return ss::make_ready_future<cst::download_result>(
+          cloud_storage::download_result::success);
+    };
+    EXPECT_CALL(remote, download_object(t::_))
+      .Times(1)
+      .WillOnce(return_manifest);
+
+    auto ops = csi::inv_ops{csi::aws_ops{bucket, id, prefix}};
+    return ops.fetch_latest_report_metadata(remote, parent).get();
+}
+
+TEST(FindLatestReport, ManifestWithNoFilesNode) {
+    const auto result = test_manifest_parse(
+      R"({"sourceBucket": "example-source-bucket"})");
+    EXPECT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), csi::error_outcome::manifest_files_parse_failed);
+}
+
+TEST(FindLatestReport, ManifestParseJSONError) {
+    const auto result = test_manifest_parse(
+      "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+      "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+      "++++++++++++++++++++++++++++++++++++++++++++++++");
+    EXPECT_TRUE(result.has_error());
+    EXPECT_EQ(
+      result.error(), csi::error_outcome::manifest_deserialization_failed);
+}
+
+TEST(FindLatestReport, BadKeysSkipped) {
+    const auto result = test_manifest_parse(
+      R"({"sourceBucket": "example-source-bucket",
+    "files":[{"MD5checksum":"f11166069f1990abeb9c97ace9cdfabc"},
+        {"MD5checksum":"f11166069f1990abeb9c97ace9cdfabc"},
+        {"key":"kx"},
+        {"MD5checksum":"f11166069f1990abeb9c97ace9cdfabc"}]})");
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().report_paths, std::vector{cl::object_key{"kx"}});
 }

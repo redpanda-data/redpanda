@@ -11,12 +11,14 @@
 #include "cloud_storage/inventory/aws_ops.h"
 
 #include "bytes/streambuf.h"
+#include "cloud_storage/logger.h"
 #include "cloud_storage/remote.h"
 #include "json/istreamwrapper.h"
 
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
+#include <rapidjson/error/en.h>
 #include <re2/re2.h>
 
 using boost::property_tree::ptree;
@@ -88,6 +90,8 @@ checksum_path(std::string_view prefix, std::string_view date_string) {
         fmt::format("{}{}/manifest.checksum", prefix, date_string)}};
 }
 
+constexpr auto max_logged_json_size = 128;
+
 json::Document parse_json_response(iobuf resp) {
     iobuf_istreambuf ibuf{resp};
     std::istream stream{&ibuf};
@@ -95,6 +99,18 @@ json::Document parse_json_response(iobuf resp) {
     json::IStreamWrapper wrapper(stream);
     doc.ParseStream(wrapper);
     return doc;
+}
+
+ss::sstring maybe_truncate_json(iobuf_parser p) {
+    if (p.bytes_left() <= max_logged_json_size) {
+        return p.read_string(p.bytes_left());
+    }
+
+    constexpr auto fragment_sz = max_logged_json_size / 4;
+    const auto head = p.read_string(fragment_sz);
+    p.skip(p.bytes_left() - fragment_sz);
+    const auto tail = p.read_string(p.bytes_left());
+    return head + "..." + tail;
 }
 
 } // namespace
@@ -286,8 +302,15 @@ ss::future<op_result<report_paths>> aws_ops::do_fetch_and_parse_metadata(
 }
 
 op_result<report_paths> aws_ops::parse_report_paths(iobuf json_response) const {
+    auto err_parser = iobuf_parser{json_response.copy()};
     const auto doc = parse_json_response(std::move(json_response));
     if (doc.HasParseError()) {
+        vlog(
+          cst_log.error,
+          "JSON parse error at offset {}: {}, JSON document: {}",
+          doc.GetErrorOffset(),
+          rapidjson::GetParseError_En(doc.GetParseError()),
+          maybe_truncate_json(std::move(err_parser)));
         return error_outcome::manifest_deserialization_failed;
     }
 
