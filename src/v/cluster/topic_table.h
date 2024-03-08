@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/limits.h"
 #include "model/metadata.h"
+#include "utils/contiguous_range_map.h"
 #include "utils/expiring_promise.h"
 #include "utils/stable_iterator_adaptor.h"
 
@@ -209,7 +210,8 @@ public:
 
     struct topic_metadata_item {
         topic_metadata metadata;
-        absl::node_hash_map<model::partition_id, partition_meta> partitions;
+        contiguous_range_map<model::partition_id::type, partition_meta>
+          partitions;
 
         assignments_set& get_assignments() {
             return metadata.get_assignments();
@@ -591,10 +593,6 @@ private:
     };
 
     void notify_waiters();
-
-    template<typename Func>
-    std::vector<std::invoke_result_t<Func, const topic_metadata_item&>>
-    transform_topics(Func&&) const;
 
     void change_partition_replicas(
       model::ntp ntp,
