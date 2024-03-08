@@ -25,6 +25,7 @@
 #include <seastar/core/future.hh>
 
 #include <chrono>
+#include <iterator>
 
 namespace cluster {
 
@@ -115,8 +116,8 @@ without_custom_assignments(std::vector<topic_configuration> topics) {
     std::vector<custom_assignable_topic_configuration> assignable_topics;
     assignable_topics.reserve(topics.size());
     std::transform(
-      topics.begin(),
-      topics.end(),
+      std::make_move_iterator(topics.begin()),
+      std::make_move_iterator(topics.end()),
       std::back_inserter(assignable_topics),
       [](topic_configuration cfg) {
           return custom_assignable_topic_configuration(std::move(cfg));
