@@ -63,6 +63,10 @@ class ManyTopicsTest(RedpandaTest):
                 "leader_balancer_idle_timeout": self.LEADER_BALANCER_PERIOD_MS,
                 "leader_balancer_mute_timeout": self.LEADER_BALANCER_PERIOD_MS,
 
+                # Increase connections limit to well above what this test reaches
+                "kafka_connections_max": 100_000,
+                "kafka_connections_max_per_ip": 100_000,
+
                 # We don't scrub tiered storage in this test because it is slow
                 # (on purpose) and takes unreasonable amount of time for a CI
                 # job. We should figure out how to make it faster for this
