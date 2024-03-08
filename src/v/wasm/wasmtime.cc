@@ -424,7 +424,11 @@ absl::flat_hash_map<ss::sstring, ss::sstring>
 make_environment_vars(const model::transform_metadata& meta) {
     absl::flat_hash_map<ss::sstring, ss::sstring> env = meta.environment;
     env.emplace("REDPANDA_INPUT_TOPIC", meta.input_topic.tp());
-    env.emplace("REDPANDA_OUTPUT_TOPIC", meta.output_topics.begin()->tp());
+    for (size_t i = 0; i < meta.output_topics.size(); ++i) {
+        env.emplace(
+          ss::format("REDPANDA_OUTPUT_TOPIC_{}", i),
+          meta.output_topics[i].tp());
+    }
     return env;
 }
 
@@ -1598,11 +1602,14 @@ bool is_exported_memory(const parser::module_export& mod_export) {
 }
 
 bool is_transform_abi_check_fn(const parser::module_import& mod_import) {
-    return mod_import
-           == parser::module_import{
-             .module_name = ss::sstring(transform_module::name),
-             .item_name = "check_abi_version_1",
-             .description = parser::declaration::function{}};
+    constexpr std::array version = {1, 2};
+    return absl::c_any_of(version, [&mod_import](int version) {
+        return mod_import
+               == parser::module_import{
+                 .module_name = ss::sstring(transform_module::name),
+                 .item_name = ss::format("check_abi_version_{}", version),
+                 .description = parser::declaration::function{}};
+    });
 }
 
 ss::future<> wasmtime_runtime::validate(iobuf buf) {
