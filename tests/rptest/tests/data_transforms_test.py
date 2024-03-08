@@ -695,13 +695,23 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
 
         self._rpk.produce(it.name, 'a' * max_line, 'b' * max_line)
 
-        # ignore the record at offset{0} b/c it was already in the buffers
-        # by the time we updated the max line length.
-        log = self.consume_one_log_record(offset=2)
+        # It's possible for log lines to be emitted multiple times, so we need to
+        # handle any duplicate foo:bar messages from above until we get an a*:b*
+        # message.
+        # Do this by skipping any foo:bar messages until we get to our first a*:b*
+        # message. We can start at offset 2 because we know we'll get at least 2
+        # of those (barring failures) messages, then add an upper cap of how many
+        # we attempt to read.
+        for o in range(2, 20):
+            log = self.consume_one_log_record(offset=o)
 
-        assert len(
-            log.body
-        ) == max_line, f"Expected {max_line}B, got {len(log.body)}B ({log.body})"
+            if "foo:bar" in log.body:
+                continue
+
+            assert len(
+                log.body
+            ) == max_line, f"Expected {max_line}B, got {len(log.body)}B ({log.body})"
+            break
 
 
 class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
