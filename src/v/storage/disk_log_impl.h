@@ -164,6 +164,7 @@ public:
     }
 
     size_t reclaimable_size_bytes() const override;
+    size_t reclaimable_local_size_bytes() const override;
 
     std::optional<model::offset> retention_offset(gc_config) const final;
 
@@ -352,6 +353,7 @@ private:
     std::optional<model::offset> _cloud_gc_offset;
     std::optional<model::offset> _last_compaction_window_start_offset;
     size_t _reclaimable_size_bytes{0};
+    size_t _reclaimable_local_size_bytes{0};
 };
 
 } // namespace storage

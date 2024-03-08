@@ -102,11 +102,12 @@ struct local_state
     struct log_data_state
       : serde::envelope<
           log_data_state,
-          serde::version<0>,
+          serde::version<1>,
           serde::compat_version<0>> {
         uint64_t data_target_size{0};
         uint64_t data_current_size{0};
         uint64_t data_reclaimable_size{0};
+        std::optional<uint64_t> data_reclaimable_local_size{0};
         friend bool operator==(const log_data_state&, const log_data_state&)
           = default;
         friend std::ostream& operator<<(std::ostream&, const log_data_state&);

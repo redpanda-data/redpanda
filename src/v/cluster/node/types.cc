@@ -24,10 +24,11 @@ std::ostream&
 operator<<(std::ostream& o, const local_state::log_data_state& s) {
     fmt::print(
       o,
-      "{{target: {} current: {} reclaimable: {}}}",
+      "{{target: {} current: {} reclaimable: {} reclaimable_lolca: {}}}",
       human::bytes(s.data_target_size),
       human::bytes(s.data_current_size),
-      human::bytes(s.data_reclaimable_size));
+      human::bytes(s.data_reclaimable_size),
+      human::bytes(s.data_reclaimable_local_size.value_or(0)));
     return o;
 }
 

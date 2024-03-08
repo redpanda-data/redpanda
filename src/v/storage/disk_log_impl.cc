@@ -3086,6 +3086,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
      * cache this for access by the health
      */
     _reclaimable_size_bytes = reclaim.available;
+    _reclaimable_local_size_bytes = reclaim.local_retention;
 
     co_return std::make_pair(usage, reclaim);
 }
@@ -3584,6 +3585,25 @@ size_t disk_log_impl::reclaimable_size_bytes() const {
         return 0;
     }
     return _reclaimable_size_bytes;
+}
+
+size_t disk_log_impl::reclaimable_local_size_bytes() const {
+    /*
+     * circumstances/configuration under which this log will be trimming back to
+     * local retention size may change. catch these before reporting potentially
+     * stale information.
+     */
+    if (!is_cloud_retention_active()) {
+        return 0;
+    }
+    if (config().is_read_replica_mode_enabled()) {
+        // https://github.com/redpanda-data/redpanda/issues/11936
+        return 0;
+    }
+    if (deletion_exempt(config().ntp())) {
+        return 0;
+    }
+    return _reclaimable_local_size_bytes;
 }
 
 } // namespace storage

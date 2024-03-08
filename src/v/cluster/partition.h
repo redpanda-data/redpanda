@@ -288,6 +288,10 @@ public:
         return _raft->log()->reclaimable_size_bytes();
     }
 
+    size_t reclaimable_local_size_bytes() const {
+        return _raft->log()->reclaimable_local_size_bytes();
+    }
+
     uint64_t non_log_disk_size_bytes() const;
 
     ss::future<> update_configuration(topic_properties);

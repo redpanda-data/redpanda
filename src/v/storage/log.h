@@ -188,6 +188,12 @@ public:
      * cases where this is not applicable, such as the log not being TS-enabled.
      */
     virtual size_t reclaimable_size_bytes() const = 0;
+    /*
+     * estimate amount of data reclaimable up to local retention setting. zero
+     * will be returned in cases where this is not applicable, such as the log
+     * not being TS-enabled.
+     */
+    virtual size_t reclaimable_local_size_bytes() const = 0;
     /**
      * Returns new log start offset for given retention settings.
      */
