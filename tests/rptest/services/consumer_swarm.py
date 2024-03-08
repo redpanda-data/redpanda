@@ -34,7 +34,8 @@ class ConsumerSwarm(Service):
                  log_level="DEBUG",
                  properties={},
                  unique_topics: Optional[bool] = False,
-                 static_prefix: Optional[bool] = False):
+                 static_prefix: Optional[bool] = False,
+                 unique_groups=False):
         super(ConsumerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -44,10 +45,12 @@ class ConsumerSwarm(Service):
         self._log_level = log_level
         self._properties = properties
         self._unique_topics = unique_topics
+        self._unique_topics = unique_groups
         self._static_prefix = static_prefix
         self._node = None
         self._remote_port = 8080
         self._remote_addr = "0.0.0.0"
+        self._unique_groups = unique_groups
 
         if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
             security_config = redpanda.security_config()
@@ -92,6 +95,9 @@ class ConsumerSwarm(Service):
 
         if self._unique_topics:
             cmd += " --unique-topics"
+
+        if self._unique_groups:
+            cmd += " --unique-groups"
 
         cmd = f"RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} \"{cmd}\""
         node.account.ssh(cmd)
