@@ -41,6 +41,7 @@ public:
       ss::sharded<cluster::rm_partition_frontend>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache_manager>&,
+      ss::sharded<tx_topic_manager>&,
       config::binding<uint64_t> max_transactions_per_coordinator);
 
     std::optional<model::ntp> ntp_for_tx_id(const kafka::transactional_id&);
@@ -93,6 +94,7 @@ private:
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
+    ss::sharded<tx_topic_manager>& _tx_topic_manager;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
@@ -129,8 +131,6 @@ private:
     ss::future<std::optional<model::node_id>>
     wait_for_leader(const model::ntp&);
 
-    ss::future<bool> try_create_coordinator_topic();
-    ss::future<errc> create_and_wait_for_coordinator_topic();
     ss::future<checked<tm_transaction, tx_errc>> get_tx(
       model::term_id,
       ss::shared_ptr<tm_stm>,
