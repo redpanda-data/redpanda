@@ -37,13 +37,13 @@ class ConsumerSwarm(Service):
                  max_record_size: Optional[int] = None,
                  keys: Optional[int] = None,
                  unique_topics: Optional[bool] = False,
-                 messages_per_second_per_producer: Optional[int] = None):
+                 static_prefix: Optional[bool] = False,
+                 unique_groups=False):
         super(ConsumerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
         self._producers = producers
         self._records_per_producer = records_per_producer
-        self._messages_per_second_per_producer = messages_per_second_per_producer
         self._log_level = log_level
         self._properties = properties
         self._timeout_ms = timeout_ms
@@ -53,9 +53,12 @@ class ConsumerSwarm(Service):
         self._max_record_size = max_record_size
         self._keys = keys
         self._unique_topics = unique_topics
+        self._unique_topics = unique_groups
+        self._static_prefix = static_prefix
         self._node = None
         self._remote_port = 8080
         self._remote_addr = "0.0.0.0"
+        self._unique_groups = unique_groups
 
         if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
             security_config = redpanda.security_config()
@@ -103,8 +106,8 @@ class ConsumerSwarm(Service):
         if self._unique_topics:
             cmd += " --unique-topics"
 
-        if self._messages_per_second_per_producer is not None:
-            cmd += f" --messages-per-second {self._messages_per_second_per_producer}"
+        if self._unique_groups:
+            cmd += " --unique-groups"
 
         cmd = f"RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} \"{cmd}\""
         node.account.ssh(cmd)
