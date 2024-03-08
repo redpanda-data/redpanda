@@ -170,7 +170,7 @@ private:
     absl::node_hash_map<model::ntp, placement_state> _states;
 
     // only on shard 0, _ntp2target will hold targets for all ntps on this node.
-    mutex _mtx;
+    mutex _mtx{"shard_placement_table"};
     absl::node_hash_map<model::ntp, shard_placement_target> _ntp2target;
 };
 

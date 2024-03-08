@@ -197,7 +197,7 @@ private:
     std::optional<size_t> _bytes_in_cloud_storage;
 
     ss::gate _gate;
-    mutex _refresh_mutex;
+    mutex _refresh_mutex{"health_monitor_backend::refresh"};
     ss::sharded<node::local_monitor>& _local_monitor;
 
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>

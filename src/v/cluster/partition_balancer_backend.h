@@ -108,7 +108,7 @@ private:
     config::binding<std::chrono::milliseconds> _node_status_interval;
     config::binding<size_t> _raft_learner_recovery_rate;
 
-    mutex _lock{};
+    mutex _lock{"partition_balancer_backend::lock"};
     ss::gate _gate;
     ss::timer<clock_t> _timer;
     notification_id_type _topic_table_updates;

@@ -27,7 +27,7 @@ namespace kafka::client {
 
 struct gated_mutex {
     gated_mutex()
-      : _mutex{}
+      : _mutex{"gated_mutex"}
       , _gate{} {}
 
     template<typename Func>
@@ -44,7 +44,7 @@ struct gated_mutex {
 
     ss::future<> close() { return _gate.close(); }
 
-    mutex _mutex;
+    mutex _mutex{"gated_mutex"};
     ss::gate _gate;
 };
 

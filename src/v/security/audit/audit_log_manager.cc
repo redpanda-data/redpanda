@@ -160,7 +160,7 @@ private:
     /// Primitives for ensuring background work and toggling of switch w/ async
     /// work occur in lock step
     ss::gate _gate;
-    mutex _mutex;
+    mutex _mutex{"audit_log_manager::mutex"};
 
     /// In the case the client did not finish intialization this optional may be
     /// fufilled by a fiber attempting to shutdown the client. The future will

@@ -119,7 +119,7 @@ private:
 
     /// Per-core metric, shard-0 aggregates these values across shards
     usage _current_bucket;
-    mutex _background_mutex;
+    mutex _background_mutex{"usage_monitor::_background_mutex"};
     ss::gate _background_gate;
 
     /// Valid on core-0 when usage_enabled() == true

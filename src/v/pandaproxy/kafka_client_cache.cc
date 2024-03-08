@@ -91,7 +91,7 @@ std::pair<client_ptr, client_mu_ptr> kafka_client_cache::fetch_or_insert(
         vlog(plog.debug, "Make client for user {}", k);
 
         client = make_client(user, authn_method);
-        client_mu = ss::make_lw_shared<mutex>();
+        client_mu = ss::make_lw_shared<mutex>("client_mu");
         inner_list.emplace_front(k, client, client_mu);
     } else {
         // If the passwords don't match, update the password on the client, so

@@ -162,7 +162,7 @@ private:
     ssx::semaphore _sem{0, "s/kvstore"};
     ss::lw_shared_ptr<segment> _segment;
     // Protect _db and _next_offset across asynchronous mutations.
-    mutex _db_mut;
+    mutex _db_mut{"kvstore::db_mut"};
     model::offset _next_offset;
     absl::btree_map<bytes, iobuf, bytes_type_cmp> _db;
     std::optional<ntp_sanitizer_config> _ntp_sanitizer_config;

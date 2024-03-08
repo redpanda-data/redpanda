@@ -164,6 +164,6 @@ private:
 
     // is null if not on shard0
     controller_stm* _controller;
-    mutex _mu;
+    mutex _mu{"plugin_frontend::mu"};
 };
 } // namespace cluster

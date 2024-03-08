@@ -142,7 +142,8 @@ private:
 
         ss::sstring name;
         ss::shared_ptr<state_machine_base> stm;
-        mutex background_apply_mutex;
+        mutex background_apply_mutex{
+          "state_machine_manager::background_apply_mutex"};
     };
     using entry_ptr = ss::lw_shared_ptr<state_machine_entry>;
     using state_machines_t
@@ -177,7 +178,7 @@ private:
 
     consensus* _raft;
     ctx_log _log;
-    mutex _apply_mutex;
+    mutex _apply_mutex{"stm_manager::apply"};
     state_machines_t _machines;
     model::offset _next{0};
     ss::gate _gate;

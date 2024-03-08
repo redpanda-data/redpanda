@@ -501,7 +501,7 @@ FIXTURE_TEST(timeout_test_cleanup_resources, rpc_integration_fixture) {
     auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     using units_t = std::vector<ssx::semaphore_units>;
-    ::mutex lock;
+    ::mutex lock{"rpc_integration_fixture"};
     units_t units;
     units.push_back(std::move(lock.get_units().get()));
 
@@ -536,7 +536,7 @@ FIXTURE_TEST(test_cleanup_on_timeout_before_sending, rpc_integration_fixture) {
     // case resource units must be returned before the request finishes.
     std::vector<ss::future<>> requests;
     for (size_t i = 0; i < num_reqs; ++i) {
-        auto lock = ss::make_lw_shared<::mutex>();
+        auto lock = ss::make_lw_shared<::mutex>("rpc_integration_fixture");
 
         auto units = lock->try_get_units();
         BOOST_REQUIRE(units);

@@ -321,7 +321,7 @@ private:
 private:
     prefix_logger _logger;
 
-    mutex _lock;
+    mutex _lock{"archival_metadata_stm"};
 
     ss::shared_ptr<util::mem_tracker> _mem_tracker;
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;

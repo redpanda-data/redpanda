@@ -202,7 +202,7 @@ private:
     model::offset _highest_known_offset;
     storage::api& _storage;
     ss::condition_variable _config_changed;
-    mutex _lock;
+    mutex _lock{"configuration_manager"};
     /**
      * We will persist highest known offset every 64MB, given this during
      * bootstrap redpanda will have to read up to 64MB per raft group.

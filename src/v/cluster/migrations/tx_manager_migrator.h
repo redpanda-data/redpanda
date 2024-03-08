@@ -221,7 +221,7 @@ private:
     int16_t _internal_topic_replication_factor;
     config::binding<int> _manager_partition_count;
     int32_t _requested_partition_count;
-    mutex _migration_mutex;
+    mutex _migration_mutex{"tx_manager_migrator"};
 
     ss::abort_source _as;
 };

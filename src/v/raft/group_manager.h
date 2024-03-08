@@ -107,7 +107,7 @@ private:
 
     raft::group_configuration create_initial_configuration(
       std::vector<model::broker>, model::revision_id) const;
-    mutex _groups_mutex;
+    mutex _groups_mutex{"group_manager"};
     model::node_id _self;
     ss::scheduling_group _raft_sg;
     raft::consensus_client_protocol _client;

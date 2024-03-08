@@ -221,10 +221,10 @@ protected:
 
     // Locked for the whole duration of writing a snapshot to ensure that there
     // are no concurrent attempts.
-    mutex _write_snapshot_mtx;
+    mutex _write_snapshot_mtx{"mex_state_machine::write_snapshot"};
     // Locked when a command is applied to the stm or when creating a snapshot
     // to ensure that the state machine state does not change.
-    mutex _apply_mtx;
+    mutex _apply_mtx{"mex_state_machine::apply"};
 
     // we keep states in a tuple to automatically dispatch updates to correct
     // state

@@ -240,7 +240,7 @@ private:
     ss::timer<ss::lowres_clock> _balancer_timer;
     ss::lowres_clock::time_point _balancer_timer_last_ran;
     ss::gate _balancer_gate;
-    mutex _balancer_mx;
+    mutex _balancer_mx{"snc_quota_manager::balancer"};
     ingress_egress_state<quota_t> _node_deficit{0, 0};
 
     // operational, used on each shard

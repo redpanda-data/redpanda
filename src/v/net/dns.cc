@@ -20,7 +20,7 @@ namespace net {
 
 ss::future<ss::socket_address> resolve_dns(unresolved_address address) {
     static thread_local ss::net::dns_resolver resolver;
-    static thread_local mutex m;
+    static thread_local mutex m{"resolve_dns"};
     // lock
     auto units = co_await m.get_units();
     // resolve

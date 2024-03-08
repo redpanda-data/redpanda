@@ -58,6 +58,6 @@ private:
     config::binding<uint64_t> _segment_size;
     config::binding<std::chrono::milliseconds> _retention_duration;
     ss::gate _gate;
-    mutex _reconciliation_mutex;
+    mutex _reconciliation_mutex{"tx_topic_manager::reconciliation_mutex"};
 };
 } // namespace cluster

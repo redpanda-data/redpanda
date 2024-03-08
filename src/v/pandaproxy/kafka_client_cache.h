@@ -101,6 +101,6 @@ private:
     std::list<timestamped_user> _evicted_items;
     ss::timer<ss::lowres_clock> _gc_timer;
     ss::gate _gc_gate;
-    mutex _gc_lock;
+    mutex _gc_lock{"kafka_client_cache::gc_lock"};
 };
 } // namespace pandaproxy

@@ -118,7 +118,7 @@ public:
     }
 
 private:
-    mutex _mu;
+    mutex _mu{"wasm_shared_engine"};
     size_t _ref_count = 0;
     ss::shared_ptr<engine> _underlying;
     // This factory reference is here to keep the cache entry alive.
@@ -146,7 +146,8 @@ public:
         auto it = mu_map->find(offset);
         mutex* mu = nullptr;
         if (it == mu_map->end()) {
-            auto inserted = mu_map->emplace(offset, std::make_unique<mutex>());
+            auto inserted = mu_map->emplace(
+              offset, std::make_unique<mutex>("factory_creation_lock_guard"));
             vassert(inserted.second, "expected mutex to be inserted");
             mu = inserted.first->second.get();
         } else {
@@ -205,7 +206,7 @@ public:
     ss::future<int64_t> gc() { return gc_btree_map(&_cache); }
 
 private:
-    mutex _mu;
+    mutex _mu{"wasm_engine_cache"};
     absl::btree_map<model::offset, ss::weak_ptr<shared_engine>> _cache;
 };
 
