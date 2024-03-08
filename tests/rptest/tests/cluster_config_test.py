@@ -1492,8 +1492,15 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
                                      prop_set.test_values[1])
 
         # The rpk CLI should also accept aliased names
-        self.rpk.cluster_config_set(prop_set.aliased_name,
-                                    prop_set.test_values[2])
+        rpk_output = self.rpk.cluster_config_set(prop_set.aliased_name,
+                                                 prop_set.test_values[2])
+        # extract new version from rpk_output, wait for this version to propagate
+        version_re = "New configuration version is (\\d+)"
+        new_version_match = re.search(version_re, rpk_output)
+        assert new_version_match is not None, f"expected {rpk_output=} to match {version_re=}"
+        wait_for_version_status_sync(self.admin, self.redpanda,
+                                     int(new_version_match.group(1)))
+
         # perform a restart to satisfy need_restart::yes properties
         self._check_propagated_and_persistent(prop_set.primary_name,
                                               prop_set.test_values[2])
