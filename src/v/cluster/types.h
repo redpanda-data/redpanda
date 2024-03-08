@@ -1868,6 +1868,8 @@ struct topic_properties_update
     }
 };
 
+using topic_properties_update_vector = chunked_vector<topic_properties_update>;
+
 // Structure holding topic configuration, optionals will be replaced by broker
 // defaults
 struct topic_configuration
@@ -2302,7 +2304,7 @@ struct update_topic_properties_request
       update_topic_properties_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    std::vector<topic_properties_update> updates;
+    topic_properties_update_vector updates;
 
     friend std::ostream&
     operator<<(std::ostream&, const update_topic_properties_request&);
@@ -2313,6 +2315,10 @@ struct update_topic_properties_request
       = default;
 
     auto serde_fields() { return std::tie(updates); }
+
+    update_topic_properties_request copy() const {
+        return {.updates = updates.copy()};
+    }
 };
 
 struct update_topic_properties_reply
@@ -5083,8 +5089,7 @@ struct adl<cluster::update_topic_properties_request> {
         serialize(out, std::move(r.updates));
     }
     cluster::update_topic_properties_request from(iobuf_parser& in) {
-        auto updates
-          = adl<std::vector<cluster::topic_properties_update>>{}.from(in);
+        auto updates = adl<cluster::topic_properties_update_vector>{}.from(in);
         return {.updates = std::move(updates)};
     }
 };

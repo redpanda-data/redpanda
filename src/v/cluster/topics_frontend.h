@@ -152,7 +152,7 @@ public:
       std::optional<model::term_id> = std::nullopt);
 
     ss::future<std::vector<topic_result>> update_topic_properties(
-      std::vector<topic_properties_update>, model::timeout_clock::time_point);
+      topic_properties_update_vector, model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> create_partitions(
       std::vector<create_partitions_configuration>,

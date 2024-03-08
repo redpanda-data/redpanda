@@ -203,7 +203,7 @@ cluster::errc map_errc(std::error_code ec) {
 }
 
 ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
-  std::vector<topic_properties_update> updates,
+  topic_properties_update_vector updates,
   model::timeout_clock::time_point timeout) {
     auto cluster_leader = _leaders.local().get_leader(model::controller_ntp);
 
@@ -249,20 +249,23 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
         co_return results;
     }
 
+    auto updates2 = updates.copy();
     co_return co_await _connections.local()
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
         *cluster_leader,
         timeout,
-        [updates, timeout](controller_client_protocol client) mutable {
+        [updates{std::move(updates)},
+         timeout](controller_client_protocol client) mutable {
             return client
               .update_topic_properties(
                 update_topic_properties_request{.updates = std::move(updates)},
                 rpc::client_opts(timeout))
               .then(&rpc::get_ctx_data<update_topic_properties_reply>);
         })
-      .then([updates](result<update_topic_properties_reply> r) {
+      .then([updates{std::move(updates2)}](
+              result<update_topic_properties_reply> r) {
           if (r.has_error()) {
               return make_error_topic_results(updates, map_errc(r.error()));
           }

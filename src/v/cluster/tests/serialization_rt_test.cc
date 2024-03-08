@@ -1337,7 +1337,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::topic_properties_update> updates;
+        cluster::topic_properties_update_vector updates;
         for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             cluster::property_update<std::optional<v8_engine::data_policy>>
               data_policy;
@@ -1350,16 +1350,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             cluster::incremental_topic_custom_updates custom_properties{
               .data_policy = data_policy,
             };
-            updates.push_back(cluster::topic_properties_update{
+            updates.emplace_back(
               model::random_topic_namespace(),
               random_incremental_topic_updates(),
-              custom_properties,
-            });
+              custom_properties);
         }
         cluster::update_topic_properties_request data{
-          .updates = updates,
+          .updates = std::move(updates),
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         cluster::topic_result data{

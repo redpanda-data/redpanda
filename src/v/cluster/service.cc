@@ -237,7 +237,7 @@ service::do_update_topic_properties(update_topic_properties_request req) {
     // local topic frontend instance will eventually dispatch request to _raft0
     // core
     auto res = co_await _topics_frontend.local().update_topic_properties(
-      req.updates,
+      std::move(req).updates,
       config::shard_local_cfg().replicate_append_timeout_ms()
         + model::timeout_clock::now());
 
