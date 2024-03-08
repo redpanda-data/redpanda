@@ -63,6 +63,7 @@ rp_test(
   BINARY_NAME utils_gunit
   SOURCES
     fragmented_vector_test.cc
+    contiguous_range_map_test.cc
   LIBRARIES v::utils v::gtest_main
   LABELS utils
 )
