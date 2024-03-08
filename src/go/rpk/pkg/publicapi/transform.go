@@ -20,6 +20,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
+	commonv1alpha1 "github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/common/v1alpha1"
 	v1alpha1 "github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/dataplane/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/dataplane/v1alpha1/dataplanev1alpha1connect"
 )
@@ -35,8 +36,8 @@ type transformServiceClient struct {
 }
 
 type DeployTransformRequest struct {
-	metadata   *v1alpha1.DeployTransformRequest
-	wasmBinary io.Reader
+	Metadata   *v1alpha1.DeployTransformRequest
+	WasmBinary io.Reader
 }
 
 func newTransformServiceClient(httpClient *http.Client, host, authToken string, opts ...connect.ClientOption) transformServiceClient {
@@ -44,6 +45,9 @@ func newTransformServiceClient(httpClient *http.Client, host, authToken string, 
 		httpapi.Host(host),
 		httpapi.BearerAuth(authToken),
 		httpapi.HTTPClient(httpClient),
+		httpapi.Err4xx(func(code int) error {
+			return &ConnectError{StatusCode: code}
+		}),
 	}
 	return transformServiceClient{
 		tCl:    dataplanev1alpha1connect.NewTransformServiceClient(httpClient, host, opts...),
@@ -63,33 +67,53 @@ func (tsc *transformServiceClient) DeleteTransform(ctx context.Context, r *conne
 	return tsc.tCl.DeleteTransform(ctx, r)
 }
 
-func (tsc *transformServiceClient) DeployTransform(ctx context.Context, r DeployTransformRequest) (*connect.Response[v1alpha1.TransformMetadata], error) {
+func (tsc *transformServiceClient) DeployTransform(ctx context.Context, r DeployTransformRequest) error {
 	body := &bytes.Buffer{}
+	// The body is a multipart/form data with 2 fields: metadata, and
+	// wasm_binary.
 	writer := multipart.NewWriter(body)
 
+	// Write metadata to the form.
 	metadataPart, err := writer.CreateFormField("metadata")
 	if err != nil {
-		return nil, fmt.Errorf("unable to create 'metadata' form field: %v", err)
+		return fmt.Errorf("unable to create 'metadata' form field: %v", err)
 	}
-	if err := json.NewEncoder(metadataPart).Encode(r.metadata); err != nil {
-		return nil, fmt.Errorf("unable to encode 'metadata': %v", err)
+	if err := json.NewEncoder(metadataPart).Encode(r.Metadata); err != nil {
+		return fmt.Errorf("unable to encode 'metadata': %v", err)
 	}
 
-	wasmPart, err := writer.CreateFormFile("wasm_binary", r.metadata.Name+".wasm")
+	// Write binary bytes to the form.
+	wasmPart, err := writer.CreateFormFile("wasm_binary", r.Metadata.Name+".wasm")
 	if err != nil {
-		return nil, fmt.Errorf("unable to create form file: %v", err)
+		return fmt.Errorf("unable to create form file: %v", err)
 	}
-	data, err := io.ReadAll(r.wasmBinary)
+	data, err := io.ReadAll(r.WasmBinary)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read file: %v", err)
+		return fmt.Errorf("unable to read file: %v", err)
 	}
 	_, err = wasmPart.Write(data)
-
-	var response v1alpha1.TransformMetadata
-	err = tsc.httpCl.Put(ctx, transformPath, nil, body, &response)
 	if err != nil {
-		return nil, fmt.Errorf("unable to request transform deployment: %v", err)
+		return fmt.Errorf("unable to write file to multiform body: %v", err)
+	}
+	err = writer.Close()
+	if err != nil {
+		return fmt.Errorf("unable to close form writer: %v", err)
 	}
 
-	return connect.NewResponse(&response), nil
+	tsc.httpCl = tsc.httpCl.With(httpapi.Headers("Content-Type", writer.FormDataContentType()))
+	err = tsc.httpCl.Put(ctx, transformPath, nil, body.Bytes(), nil)
+	if err != nil {
+		return fmt.Errorf("unable to request transform deployment: %v", err)
+	}
+	return nil
+}
+
+// ConnectError is the error returned by the data plane API.
+type ConnectError struct {
+	commonv1alpha1.ErrorStatus
+	StatusCode int
+}
+
+func (e *ConnectError) Error() string {
+	return fmt.Sprintf("unexpected status code %d: %v", e.StatusCode, e.Message)
 }

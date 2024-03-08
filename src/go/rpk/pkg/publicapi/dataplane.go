@@ -12,7 +12,6 @@ package publicapi
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"connectrpc.com/connect"
 )
@@ -36,9 +35,7 @@ func NewDataPlaneClientSet(host, authToken string, opts ...connect.ClientOption)
 		),
 	}, opts...)
 
-	httpCl := &http.Client{Timeout: 15 * time.Second}
-
 	return &DataPlaneClientSet{
-		Transform: newTransformServiceClient(httpCl, host, authToken, opts...),
+		Transform: newTransformServiceClient(http.DefaultClient, host, authToken, opts...),
 	}, nil
 }
