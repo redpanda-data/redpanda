@@ -111,8 +111,7 @@ aws_ops::aws_ops(
       fmt::format("?inventory&id={}", _inventory_config_id())})
   , _prefix(std::move(inventory_prefix)) {}
 
-ss::future<cloud_storage::upload_result>
-aws_ops::create_inventory_configuration(
+ss::future<op_result<void>> aws_ops::create_inventory_configuration(
   cloud_storage::cloud_storage_api& remote,
   retry_chain_node& parent_rtc,
   report_generation_frequency frequency,
@@ -124,14 +123,20 @@ aws_ops::create_inventory_configuration(
       .prefix = _prefix,
       .frequency = frequency};
 
-    co_return co_await remote.upload_object(
+    const auto create_res = co_await remote.upload_object(
       {.transfer_details
        = {.bucket = _bucket, .key = _inventory_key, .parent_rtc = parent_rtc},
        .type = upload_type::inventory_configuration,
        .payload = to_xml(cfg)});
+
+    if (create_res != upload_result::success) {
+        co_return error_outcome::create_inv_cfg_failed;
+    }
+
+    co_return outcome::success();
 }
 
-ss::future<bool> aws_ops::inventory_configuration_exists(
+ss::future<op_result<bool>> aws_ops::inventory_configuration_exists(
   cloud_storage::cloud_storage_api& remote, retry_chain_node& parent_rtc) {
     // This buffer is thrown away after the GET call returns, we might introduce
     // some sort of struct (or reuse the aws_report_configuration used for
@@ -143,11 +148,19 @@ ss::future<bool> aws_ops::inventory_configuration_exists(
       {.transfer_details
        = {.bucket = _bucket, .key = _inventory_key, .parent_rtc = parent_rtc},
        .payload = buf});
-    co_return dl_res == download_result::success;
+
+    if (dl_res == download_result::success) {
+        co_return true;
+    }
+
+    if (dl_res == download_result::notfound) {
+        co_return false;
+    }
+
+    co_return error_outcome::failed_to_check_inv_status;
 }
 
-ss::future<result<report_metadata, error_outcome>>
-aws_ops::latest_report_metadata(
+ss::future<op_result<report_metadata>> aws_ops::latest_report_metadata(
   cloud_storage::cloud_storage_api& remote, retry_chain_node& parent_rtc) {
     // The prefix is generated according to
     // https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-inventory-location.html
@@ -219,8 +232,7 @@ aws_ops::latest_report_metadata(
     co_return error_outcome::failed;
 }
 
-ss::future<result<report_paths, error_outcome>>
-aws_ops::fetch_and_parse_metadata(
+ss::future<op_result<report_paths>> aws_ops::fetch_and_parse_metadata(
   cloud_storage::cloud_storage_api& remote,
   retry_chain_node& parent_rtc,
   cloud_storage_clients::object_key metadata_path) const {
@@ -239,8 +251,7 @@ aws_ops::fetch_and_parse_metadata(
     co_return parse_report_paths(std::move(json_recv));
 }
 
-result<report_paths, error_outcome>
-aws_ops::parse_report_paths(iobuf json_response) const {
+op_result<report_paths> aws_ops::parse_report_paths(iobuf json_response) const {
     const auto doc = parse_json_response(std::move(json_response));
     if (doc.HasParseError()) {
         return error_outcome::manifest_deserialization_failed;

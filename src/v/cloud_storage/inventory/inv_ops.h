@@ -21,16 +21,16 @@ class inv_ops {
 public:
     explicit inv_ops(ops_t ops);
 
-    ss::future<cloud_storage::upload_result>
+    ss::future<op_result<void>>
     create_inventory_configuration(cloud_storage_api&, retry_chain_node&);
 
-    ss::future<bool>
+    ss::future<op_result<bool>>
     inventory_configuration_exists(cloud_storage_api&, retry_chain_node&);
 
-    ss::future<inventory_creation_result>
+    ss::future<op_result<inventory_creation_result>>
     maybe_create_inventory_configuration(cloud_storage_api&, retry_chain_node&);
 
-    ss::future<result<report_metadata, error_outcome>>
+    ss::future<op_result<report_metadata>>
     latest_report_metadata(cloud_storage_api&, retry_chain_node&);
 
 private:
