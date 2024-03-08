@@ -235,7 +235,7 @@ configuration::configuration()
       "calculated as the total size of buffered (i.e. emitted but not yet "
       "produced) log messages.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
-      100_KiB,
+      500_KiB,
       {.min = 100_KiB, .max = 2_MiB})
   , data_transforms_logging_flush_interval_ms(
       *this,
