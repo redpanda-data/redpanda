@@ -1943,7 +1943,7 @@ struct topic_configuration
       = default;
 };
 
-using topic_configuration_vector = std::vector<topic_configuration>;
+using topic_configuration_vector = chunked_vector<topic_configuration>;
 
 struct custom_partition_assignment {
     model::partition_id id;
@@ -1972,7 +1972,7 @@ struct custom_assignable_topic_configuration {
 };
 
 using custom_assignable_topic_configuration_vector
-  = std::vector<custom_assignable_topic_configuration>;
+  = chunked_vector<custom_assignable_topic_configuration>;
 
 struct create_partitions_configuration
   : serde::envelope<
@@ -2188,6 +2188,10 @@ struct create_topics_request
     operator<<(std::ostream&, const create_topics_request&);
 
     auto serde_fields() { return std::tie(topics, timeout); }
+
+    create_topics_request copy() const {
+        return {.topics = topics.copy(), .timeout = timeout};
+    }
 };
 
 struct create_topics_reply
@@ -2215,6 +2219,10 @@ struct create_topics_reply
     friend std::ostream& operator<<(std::ostream&, const create_topics_reply&);
 
     auto serde_fields() { return std::tie(results, metadata, configs); }
+
+    create_topics_reply copy() const {
+        return {results, metadata, configs.copy()};
+    }
 };
 
 struct purged_topic_request

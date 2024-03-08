@@ -420,7 +420,8 @@ topic_recovery_service::create_topics(const recovery_request& request) {
       [&request](const auto& m) { return make_topic_config(m, request); });
 
     co_return co_await _topics_frontend.local().autocreate_topics(
-      topic_configs, config::shard_local_cfg().create_topic_timeout_ms());
+      std::move(topic_configs),
+      config::shard_local_cfg().create_topic_timeout_ms());
 }
 
 ss::future<std::vector<cloud_storage::topic_manifest>>

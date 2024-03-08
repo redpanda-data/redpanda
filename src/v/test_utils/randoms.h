@@ -77,10 +77,18 @@ auto random_tristate(Func f) {
 }
 
 template<typename Fn, typename T = std::invoke_result_t<Fn>>
-inline auto random_vector(Fn&& gen, size_t size = 20) -> std::vector<T> {
+auto random_vector(Fn&& gen, size_t size = 20) -> std::vector<T> {
     std::vector<T> v;
     v.resize(size);
     std::generate_n(v.begin(), size, gen);
+    return v;
+}
+
+template<typename Fn, typename T = std::invoke_result_t<Fn>>
+auto random_chunked_vector(Fn&& gen, size_t size = 20) -> chunked_vector<T> {
+    chunked_vector<T> v;
+    v.reserve(size);
+    std::generate_n(std::back_inserter(v), size, gen);
     return v;
 }
 

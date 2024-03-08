@@ -51,7 +51,7 @@ FIXTURE_TEST(test_querying_ntp_status, cluster_test_fixture) {
     leader->controller->get_topics_frontend()
       .local()
       .create_topics(
-        cluster::without_custom_assignments(topics),
+        cluster::without_custom_assignments(std::move(topics)),
         1s + model::timeout_clock::now())
       .get();
 

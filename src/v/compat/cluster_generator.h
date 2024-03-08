@@ -669,7 +669,7 @@ template<>
 struct instance_generator<cluster::create_topics_request> {
     static cluster::create_topics_request random() {
         return {
-          .topics = tests::random_vector(
+          .topics = tests::random_chunked_vector(
             [] {
                 return instance_generator<
                   cluster::topic_configuration>::random();
@@ -689,7 +689,7 @@ struct instance_generator<cluster::create_topics_reply> {
             [] { return instance_generator<cluster::topic_result>::random(); }),
           tests::random_vector(
             [] { return instance_generator<model::topic_metadata>::random(); }),
-          tests::random_vector([] {
+          tests::random_chunked_vector([] {
               return instance_generator<cluster::topic_configuration>::random();
           })};
     }
