@@ -105,9 +105,12 @@ private:
     using index_type = leader_balancer_strategy::index_type;
     using reassignment = leader_balancer_strategy::reassignment;
 
+    using group_replicas_t = absl::btree_map<raft::group_id, replicas_t>;
+    ss::future<std::optional<group_replicas_t>>
+    collect_group_replicas_from_health_report();
     leader_balancer_types::group_id_to_topic_revision_t
     build_group_id_to_topic_rev() const;
-    index_type build_index();
+    index_type build_index(std::optional<group_replicas_t>);
     leader_balancer_types::muted_groups_t muted_groups() const;
     absl::flat_hash_set<model::node_id> muted_nodes() const;
 

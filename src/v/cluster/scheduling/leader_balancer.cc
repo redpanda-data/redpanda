@@ -403,7 +403,8 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         _need_controller_refresh = false;
     }
 
-    auto index = build_index();
+    auto group_replicas = co_await collect_group_replicas_from_health_report();
+    auto index = build_index(std::move(group_replicas));
     auto group_id_to_topic = build_group_id_to_topic_rev();
 
     if (!validate_indexes(group_id_to_topic, index)) {
@@ -628,6 +629,50 @@ leader_balancer::build_group_id_to_topic_rev() const {
     return group_id_to_topic_rev;
 }
 
+/// Returns nullopt if shard info from health report can not yet be used. In
+/// this case callers have to rely on shard info from topic table.
+ss::future<std::optional<leader_balancer::group_replicas_t>>
+leader_balancer::collect_group_replicas_from_health_report() {
+    if (!_feature_table.is_active(
+          features::feature::node_local_core_assignment)) {
+        co_return std::nullopt;
+    }
+
+    auto hr = co_await _health_monitor.get_cluster_health(
+      cluster_report_filter{},
+      force_refresh::no,
+      model::timeout_clock::now() + 5s);
+
+    group_replicas_t group_replicas;
+    ssx::async_counter counter;
+    for (const auto& node : hr.value().node_reports) {
+        for (const auto& topic : node.topics) {
+            auto maybe_meta = _topics.get_topic_metadata_ref(topic.tp_ns);
+            if (!maybe_meta) {
+                continue;
+            }
+            const auto& meta = maybe_meta->get();
+
+            co_await ssx::async_for_each_counter(
+              counter,
+              topic.partitions.begin(),
+              topic.partitions.end(),
+              [&](const partition_status& partition) {
+                  auto as_it = meta.get_assignments().find(partition.id);
+                  if (as_it != meta.get_assignments().end()) {
+                      group_replicas[as_it->group].push_back(
+                        model::broker_shard{
+                          .node_id = node.id,
+                          .shard = partition.shard,
+                        });
+                  }
+              });
+        }
+    }
+
+    co_return group_replicas;
+}
+
 /*
  * builds an index that maps each core in the cluster to the set of replica
  * groups such that the leader of each mapped replica group is on the given
@@ -635,7 +680,8 @@ leader_balancer::build_group_id_to_topic_rev() const {
  * search for leader movements that improve overall balance in the cluster. the
  * index is computed from controller metadata.
  */
-leader_balancer::index_type leader_balancer::build_index() {
+leader_balancer::index_type leader_balancer::build_index(
+  std::optional<leader_balancer::group_replicas_t> group_replicas) {
     absl::flat_hash_set<model::broker_shard> cores;
     index_type index;
 
@@ -643,15 +689,6 @@ leader_balancer::index_type leader_balancer::build_index() {
     for (const auto& topic : _topics.topics_map()) {
         const auto* disabled_set = _topics.get_topic_disabled_set(topic.first);
         for (const auto& partition : topic.second.get_assignments()) {
-            if (partition.replicas.empty()) {
-                vlog(
-                  clusterlog.warn,
-                  "Leadership encountered partition with no partition "
-                  "assignment: {}",
-                  model::ntp(topic.first.ns, topic.first.tp, partition.id));
-                continue;
-            }
-
             /*
              * skip balancing for the controller partition, otherwise we might
              * just constantly move ourselves around.
@@ -668,6 +705,36 @@ leader_balancer::index_type leader_balancer::build_index() {
                 continue;
             }
 
+            replicas_t replicas;
+            if (group_replicas) {
+                auto it = group_replicas->find(partition.group);
+                if (it == group_replicas->end()) {
+                    vlog(
+                      clusterlog.info,
+                      "skipping partition without replicas in health report: "
+                      "{} (replicas in topic table: {})",
+                      model::ntp(topic.first.ns, topic.first.tp, partition.id),
+                      partition.replicas);
+                    continue;
+                }
+                replicas = std::move(it->second);
+                vassert(
+                  !replicas.empty(),
+                  "[{}] expected non-empty replica set",
+                  model::ntp(topic.first.ns, topic.first.tp, partition.id));
+            } else {
+                // Node-local shard assignment not yet enabled, using shard info
+                // from the topic table.
+                if (partition.replicas.empty()) {
+                    vlog(
+                      clusterlog.warn,
+                      "skipping partition without replicas in topic table: {}",
+                      model::ntp(topic.first.ns, topic.first.tp, partition.id));
+                    continue;
+                }
+                replicas = partition.replicas;
+            }
+
             /*
              * if the partition group is a part of our in flight changes
              * then assume that leadership will be transferred to the target
@@ -676,7 +743,7 @@ leader_balancer::index_type leader_balancer::build_index() {
             if (auto it = _in_flight_changes.find(partition.group);
                 it != _in_flight_changes.end()) {
                 const auto& assignment = it->second.value;
-                index[assignment.to][partition.group] = partition.replicas;
+                index[assignment.to][partition.group] = std::move(replicas);
                 continue;
             }
 
@@ -690,13 +757,13 @@ leader_balancer::index_type leader_balancer::build_index() {
             auto leader_node = _leaders.get_leader(topic.first, partition.id);
             if (leader_node) {
                 auto it = std::find_if(
-                  partition.replicas.cbegin(),
-                  partition.replicas.cend(),
+                  replicas.cbegin(),
+                  replicas.cend(),
                   [node = *leader_node](const auto& replica) {
                       return replica.node_id == node;
                   });
 
-                if (it != partition.replicas.cend()) {
+                if (it != replicas.cend()) {
                     leader_core = *it;
                     _last_leader.insert_or_assign(
                       partition.group,
@@ -705,8 +772,11 @@ leader_balancer::index_type leader_balancer::build_index() {
                 } else {
                     vlog(
                       clusterlog.info,
-                      "Group {} has leader node but no leader shard: {}",
+                      "Group {} has leader node ({}) but no leader shard, "
+                      "replica shards: {} (from topic table: {})",
                       partition.group,
+                      *leader_node,
+                      replicas,
                       partition.replicas);
                 }
             }
@@ -731,12 +801,12 @@ leader_balancer::index_type leader_balancer::build_index() {
                      */
                     std::vector<model::broker_shard> leader;
                     std::sample(
-                      partition.replicas.cbegin(),
-                      partition.replicas.cend(),
+                      replicas.cbegin(),
+                      replicas.cend(),
                       std::back_inserter(leader),
                       1,
                       random_generators::internal::gen);
-                    // partition.replicas.empty() is checked above
+                    // replicas.empty() is checked above
                     vassert(!leader.empty(), "Failed to select replica");
                     leader_core = leader.front();
                 }
@@ -744,7 +814,7 @@ leader_balancer::index_type leader_balancer::build_index() {
             }
 
             // track superset of cores
-            for (const auto& replica : partition.replicas) {
+            for (const auto& replica : replicas) {
                 cores.emplace(replica);
             }
 
@@ -761,7 +831,7 @@ leader_balancer::index_type leader_balancer::build_index() {
                 }
             }
 
-            index[*leader_core][partition.group] = partition.replicas;
+            index[*leader_core][partition.group] = std::move(replicas);
         }
     }
 
