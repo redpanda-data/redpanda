@@ -21,7 +21,9 @@ rp_test(
 rp_test(
   BENCHMARK_TEST
   BINARY_NAME container
-  SOURCES vector_bench.cc
+  SOURCES 
+    vector_bench.cc
+    map_bench.cc
   LIBRARIES 
     Seastar::seastar_perf_testing
     v::seastar_testing_main
