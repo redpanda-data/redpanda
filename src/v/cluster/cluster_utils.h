@@ -26,22 +26,46 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <concepts>
+#include <ranges>
 #include <system_error>
 #include <utility>
 
 namespace detail {
 
-template<typename T, typename Fn>
+template<std::ranges::range Rng, typename Fn>
+requires std::same_as<
+  std::invoke_result_t<Fn, std::ranges::range_value_t<Rng>>,
+  cluster::topic_result>
 std::vector<cluster::topic_result>
-make_error_topic_results(const std::vector<T>& topics, Fn fn) {
+make_error_topic_results(const Rng& topics, Fn fn) {
     std::vector<cluster::topic_result> results;
     results.reserve(topics.size());
     std::transform(
-      topics.cbegin(),
-      topics.cend(),
-      std::back_inserter(results),
-      [&fn](const T& t) { return fn(t); });
+      topics.cbegin(), topics.cend(), std::back_inserter(results), fn);
     return results;
+}
+
+template<typename T>
+concept has_tp_ns = requires {
+    {
+        std::declval<T>().tp_ns
+    } -> std::convertible_to<const model::topic_namespace&>;
+};
+
+template<typename T>
+const model::topic_namespace& extract_tp_ns(const T& t) {
+    if constexpr (std::same_as<T, model::topic_namespace>) {
+        return t;
+    } else if constexpr (has_tp_ns<T>) {
+        return t.tp_ns;
+    } else if constexpr (std::same_as<
+                           T,
+                           cluster::custom_assignable_topic_configuration>) {
+        return t.cfg.tp_ns;
+    } else {
+        static_assert(always_false_v<T>, "couldn't extract tp_ns");
+    }
 }
 
 } // namespace detail
@@ -56,31 +80,11 @@ class metadata_cache;
 class partition;
 
 /// Creates the same topic_result for all requests
-template<typename T>
-requires requires(const T& req) {
-    { req.tp_ns } -> std::convertible_to<const model::topic_namespace&>;
-}
-std::vector<topic_result>
-make_error_topic_results(const std::vector<T>& requests, errc error_code) {
-    return detail::make_error_topic_results(requests, [error_code](const T& r) {
-        return topic_result(r.tp_ns, error_code);
-    });
-}
-
-inline std::vector<topic_result> make_error_topic_results(
-  const std::vector<model::topic_namespace>& topics, errc error_code) {
+std::vector<topic_result> make_error_topic_results(
+  const std::ranges::range auto& topics, errc error_code) {
     return detail::make_error_topic_results(
-      topics, [error_code](const model::topic_namespace& t) {
-          return topic_result(t, error_code);
-      });
-}
-
-inline std::vector<topic_result> make_error_topic_results(
-  const std::vector<custom_assignable_topic_configuration>& requests,
-  errc error_code) {
-    return detail::make_error_topic_results(
-      requests, [error_code](const custom_assignable_topic_configuration& r) {
-          return topic_result(r.cfg.tp_ns, error_code);
+      topics, [error_code](const auto& t) {
+          return topic_result(detail::extract_tp_ns(t), error_code);
       });
 }
 
