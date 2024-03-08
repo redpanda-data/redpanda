@@ -941,14 +941,17 @@ class ManyTopicsTest(RedpandaTest):
     def _run_consumers_with_constant_rate(self, profile, node_topic_count,
                                           topics, group):
         swarm_node_consumers = []
+        node_message_count = int(0.95 *
+                                 (profile.message_count * node_topic_count))
         for topic in topics:
             swarm_producer = ConsumerSwarm(self.test_context,
                                            self.redpanda,
                                            topic,
                                            group,
                                            node_topic_count,
-                                           profile.message_count,
-                                           unique_topics=True)
+                                           node_message_count,
+                                           unique_topics=True,
+                                           unique_groups=True)
             swarm_node_consumers.append(swarm_producer)
 
         # Run topic swarm for each topic group
