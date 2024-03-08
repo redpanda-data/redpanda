@@ -16,6 +16,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/later.hh>
 
+#include <bit>
 #include <climits>
 #include <compare>
 #include <cstddef>
@@ -47,23 +48,17 @@ public:
                                               == std::dynamic_extent;
 
 private:
-    // Compute the previous (or equal) power of two relative to `size`.
-    static constexpr size_t pow2_floor(size_t size) {
-        unsigned lz = std::countl_zero(size);
-        unsigned shift = (sizeof(size_t) * CHAR_BIT) - lz;
-        return 1UL << shift;
-    }
+    static constexpr size_t max_allocation_size = 128UL * 1024;
 
     // calculate the maximum number of elements per fragment while
     // keeping the element count a power of two
     static constexpr size_t calc_elems_per_frag(size_t esize) {
         size_t max = fragment_size_bytes / esize;
         if constexpr (is_chunked_vector) {
-            constexpr size_t max_allocation_size = 128UL * 1024;
             max = max_allocation_size / esize;
         }
         assert(max > 0);
-        return pow2_floor(max);
+        return std::bit_floor(max);
     }
 
     static constexpr size_t elems_per_frag = calc_elems_per_frag(sizeof(T));
@@ -88,6 +83,10 @@ public:
      * to a power of two.
      */
     static constexpr size_t max_frag_bytes = elems_per_frag * sizeof(T);
+
+    static_assert(
+      max_frag_bytes <= max_allocation_size,
+      "max size of a fragment must be <= 128KiB");
 
     fragmented_vector() noexcept = default;
     fragmented_vector& operator=(const fragmented_vector&) noexcept = delete;
