@@ -283,7 +283,8 @@ FIXTURE_TEST(recovery_with_existing_topic, fixture) {
         {model::ns{"kafka"}, model::topic{"test"}, 1, 1}}}};
     auto topic_create_result = app.controller->get_topics_frontend()
                                  .local()
-                                 .create_topics(topic_cfg, model::no_timeout)
+                                 .create_topics(
+                                   std::move(topic_cfg), model::no_timeout)
                                  .get();
     wait_for_topics(std::move(topic_create_result)).get();
     set_expectations_and_listen(
