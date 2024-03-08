@@ -409,7 +409,7 @@ static cluster::topic_configuration make_topic_config(
 
 ss::future<std::vector<cluster::topic_result>>
 topic_recovery_service::create_topics(const recovery_request& request) {
-    std::vector<cluster::topic_configuration> topic_configs;
+    cluster::topic_configuration_vector topic_configs;
     topic_configs.reserve(_downloaded_manifests->size());
 
     std::transform(

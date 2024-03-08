@@ -111,9 +111,9 @@ bool are_replica_sets_equal(
     return l_sorted == r_sorted;
 }
 
-std::vector<custom_assignable_topic_configuration>
-without_custom_assignments(std::vector<topic_configuration> topics) {
-    std::vector<custom_assignable_topic_configuration> assignable_topics;
+custom_assignable_topic_configuration_vector
+without_custom_assignments(topic_configuration_vector topics) {
+    custom_assignable_topic_configuration_vector assignable_topics;
     assignable_topics.reserve(topics.size());
     std::transform(
       std::make_move_iterator(topics.begin()),

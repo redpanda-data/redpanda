@@ -221,12 +221,11 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
     }).get();
 
     // create topics
-    std::vector<cluster::topic_configuration> topics;
-    topics.push_back(topic_cfg(model::kafka_namespace, "tp-1", 3, 3));
-    topics.push_back(topic_cfg(model::kafka_namespace, "tp-2", 3, 2));
-    topics.push_back(topic_cfg(model::kafka_namespace, "tp-3", 3, 1));
-    topics.push_back(
-      topic_cfg(model::kafka_internal_namespace, "internal-1", 3, 2));
+    cluster::topic_configuration_vector topics{
+      topic_cfg(model::kafka_namespace, "tp-1", 3, 3),
+      topic_cfg(model::kafka_namespace, "tp-2", 3, 2),
+      topic_cfg(model::kafka_namespace, "tp-3", 3, 1),
+      topic_cfg(model::kafka_internal_namespace, "internal-1", 3, 2)};
 
     n1->controller->get_topics_frontend()
       .local()

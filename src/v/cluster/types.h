@@ -1938,6 +1938,8 @@ struct topic_configuration
       = default;
 };
 
+using topic_configuration_vector = std::vector<topic_configuration>;
+
 struct custom_partition_assignment {
     model::partition_id id;
     std::vector<model::node_id> replicas;
@@ -1963,6 +1965,9 @@ struct custom_assignable_topic_configuration {
     friend std::ostream&
     operator<<(std::ostream&, const custom_assignable_topic_configuration&);
 };
+
+using custom_assignable_topic_configuration_vector
+  = std::vector<custom_assignable_topic_configuration>;
 
 struct create_partitions_configuration
   : serde::envelope<
@@ -2167,7 +2172,7 @@ struct create_topics_request
       create_topics_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    std::vector<topic_configuration> topics;
+    topic_configuration_vector topics;
     model::timeout_clock::duration timeout;
 
     friend bool
@@ -2187,13 +2192,13 @@ struct create_topics_reply
       serde::compat_version<0>> {
     std::vector<topic_result> results;
     std::vector<model::topic_metadata> metadata;
-    std::vector<topic_configuration> configs;
+    topic_configuration_vector configs;
 
     create_topics_reply() noexcept = default;
     create_topics_reply(
       std::vector<topic_result> results,
       std::vector<model::topic_metadata> metadata,
-      std::vector<topic_configuration> configs)
+      topic_configuration_vector configs)
       : results(std::move(results))
       , metadata(std::move(metadata))
       , configs(std::move(configs)) {}
