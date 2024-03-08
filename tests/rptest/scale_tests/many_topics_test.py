@@ -1061,6 +1061,80 @@ class ManyTopicsTest(RedpandaTest):
 
         return topic_prefixes, produce_node_topic_count, consume_node_topic_count
 
+    def _lifecycle_test(self, test):
+        self._start_initial_broker_set()
+
+        tsm = TopicScaleProfileManager()
+        profile = tsm.get_custom_profile("topic_profile_t40k_p1",
+                                         {"message_count": 25 * 60})
+
+        ##
+        # Create topics
+        #
+
+        topic_prefixes, pnode_topic_count, cnode_topic_count = \
+            self._stage_create_topics(profile)
+
+        # Do the healthcheck on RP
+        # to make sure that all topics are settle down and have their leader
+        self._wait_until_cluster_healthy()
+
+        ##
+        # Create clients
+        #
+
+        # Calculate how much time ideally needed for the producers to finish
+        running_time_sec = \
+            profile.message_count // profile.messages_per_second_per_producer
+
+        # Run swarm producers
+        swarm_producers = self._run_producers_with_constant_rate(
+            profile, pnode_topic_count, topic_prefixes)
+
+        # Run swarm consumers
+        _group = "topic_swarm_group"
+        swarm_consumers = self._run_consumers_with_constant_rate(
+            profile, cnode_topic_count, topic_prefixes, _group)
+
+        # Allow time for clients to start and stablize
+        time.sleep(2 * 60)
+
+        ##
+        # Lifecycle test
+        #
+
+        self.logger.info("Starting lifecycle test")
+        test()
+        self._wait_until_cluster_healthy()
+        self.logger.info("Finished lifecycle test")
+
+        ##
+        # Validate results
+        #
+
+        # account for delays from rolling restarts
+        running_time_sec = 5 * running_time_sec
+
+        # Run checks if swarm nodes finished
+        self.logger.info("Make sure that swarm node producers are finished")
+        for s in swarm_producers:
+            s.wait(running_time_sec)
+        self.logger.info("Make sure that swarm node consumers are finished")
+        for s in swarm_consumers:
+            s.wait(running_time_sec)
+
+    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def _test_rolling_restarts(self):
+        self._lifecycle_test(self._rolling_restarts)
+
+    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_decommission_node_safely(self):
+        self._lifecycle_test(self._decommission_node_safely)
+
+    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_decommission_node_unsafely(self):
+        self._lifecycle_test(self._decommission_node_unsafely)
+
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_many_topics_throughput(self):
         """Test creates 11950 topics, and uses client-swarm to
