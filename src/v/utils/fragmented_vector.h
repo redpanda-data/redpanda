@@ -16,6 +16,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/later.hh>
 
+#include <bit>
 #include <climits>
 #include <compare>
 #include <cstddef>
@@ -47,12 +48,6 @@ public:
                                               == std::dynamic_extent;
 
 private:
-    // Compute the previous (or equal) power of two relative to `size`.
-    static constexpr size_t pow2_floor(size_t size) {
-        unsigned lz = std::countl_zero(size);
-        unsigned shift = (sizeof(size_t) * CHAR_BIT) - lz;
-        return 1UL << shift;
-    }
 
     // calculate the maximum number of elements per fragment while
     // keeping the element count a power of two
@@ -63,7 +58,7 @@ private:
             max = max_allocation_size / esize;
         }
         assert(max > 0);
-        return pow2_floor(max);
+        return std::bit_floor(max);
     }
 
     static constexpr size_t elems_per_frag = calc_elems_per_frag(sizeof(T));
