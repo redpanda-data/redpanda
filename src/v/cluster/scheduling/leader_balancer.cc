@@ -676,16 +676,7 @@ leader_balancer::index_type leader_balancer::build_index() {
             if (auto it = _in_flight_changes.find(partition.group);
                 it != _in_flight_changes.end()) {
                 const auto& assignment = it->second.value;
-
-                std::vector<model::broker_shard> replicas = partition.replicas;
-                // Swap to and from in the replicas
-                if (auto r_it = std::find(
-                      replicas.begin(), replicas.end(), assignment.to);
-                    r_it != replicas.end()) {
-                    *r_it = assignment.from;
-                }
-
-                index[assignment.to][partition.group] = std::move(replicas);
+                index[assignment.to][partition.group] = partition.replicas;
                 continue;
             }
 
