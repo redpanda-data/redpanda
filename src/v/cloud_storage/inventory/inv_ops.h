@@ -30,6 +30,9 @@ public:
     ss::future<inventory_creation_result>
     maybe_create_inventory_configuration(cloud_storage_api&, retry_chain_node&);
 
+    ss::future<result<report_metadata, error_outcome>>
+    latest_report_metadata(cloud_storage_api&, retry_chain_node&);
+
 private:
     ops_t _inv_ops;
 };

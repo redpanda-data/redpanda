@@ -175,3 +175,10 @@ TEST(FindLatestReport, LatestReportPathReturned) {
     csi::MockRemote remote;
     run_test<csi::aws_ops>(remote, parent, bucket, id, prefix);
 }
+
+TEST(FindLatestReport, InvOps) {
+    ss::abort_source as;
+    retry_chain_node parent{as};
+    csi::MockRemote remote;
+    run_test<csi::inv_ops>(remote, parent, csi::aws_ops{bucket, id, prefix});
+}
