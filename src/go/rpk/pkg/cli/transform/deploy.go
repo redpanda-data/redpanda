@@ -26,6 +26,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
+	dataplanev1alpha1 "github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/dataplane/v1alpha1"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -62,9 +64,6 @@ The --var flag can be repeated to specify multiple variables like so:
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-
-			api, err := adminapi.NewClient(fs, p)
-			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
 			cfg := fc.ToProjectConfig()
 
@@ -110,16 +109,33 @@ The --var flag can be repeated to specify multiple variables like so:
 				Status:       nil,
 				Environment:  mapToEnvVars(cfg.Env),
 			}
-			err = api.DeployWasmTransform(cmd.Context(), t, wasm)
-			if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
-				if he.Response.StatusCode == 400 {
-					body, bodyErr := he.DecodeGenericErrorBody()
-					if bodyErr == nil {
-						out.Die("unable to deploy transform %s: %s", cfg.Name, body.Message)
+			if p.FromCloud && !p.CloudCluster.IsServerless() {
+				url, err := p.CloudCluster.CheckClusterURL()
+				out.MaybeDie(err, "unable to get cluster information: %v", err)
+
+				cl, err := publicapi.NewDataPlaneClientSet(url, p.CurrentAuth().AuthToken)
+				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
+
+				err = cl.Transform.DeployTransform(cmd.Context(), publicapi.DeployTransformRequest{
+					Metadata:   adminApiToDataplaneMetadata(t),
+					WasmBinary: wasm,
+				})
+				out.MaybeDie(err, "unable to deploy transform to Cloud Cluster: %v", err)
+			} else {
+				api, err := adminapi.NewClient(fs, p)
+				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+
+				err = api.DeployWasmTransform(cmd.Context(), t, wasm)
+				if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+					if he.Response.StatusCode == 400 {
+						body, bodyErr := he.DecodeGenericErrorBody()
+						if bodyErr == nil {
+							out.Die("unable to deploy transform %s: %s", cfg.Name, body.Message)
+						}
 					}
 				}
+				out.MaybeDie(err, "unable to deploy transform %s: %v", cfg.Name, err)
 			}
-			out.MaybeDie(err, "unable to deploy transform %s: %v", cfg.Name, err)
 
 			fmt.Printf("transform %q deployed.\n", cfg.Name)
 		},
@@ -278,4 +294,20 @@ func mapToEnvVars(env map[string]string) (vars []adminapi.EnvironmentVariable) {
 		})
 	}
 	return
+}
+
+func adminApiToDataplaneMetadata(m adminapi.TransformMetadata) *dataplanev1alpha1.DeployTransformRequest {
+	var envs []*dataplanev1alpha1.TransformMetadata_EnvironmentVariable
+	for _, e := range m.Environment {
+		envs = append(envs, &dataplanev1alpha1.TransformMetadata_EnvironmentVariable{
+			Key:   e.Key,
+			Value: e.Value,
+		})
+	}
+	return &dataplanev1alpha1.DeployTransformRequest{
+		Name:                 m.Name,
+		InputTopicName:       m.InputTopic,
+		OutputTopicNames:     m.OutputTopics,
+		EnvironmentVariables: envs,
+	}
 }
