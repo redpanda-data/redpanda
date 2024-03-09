@@ -393,7 +393,7 @@ void configuration_manager::maybe_store_highest_known_offset_in_background(
 }
 
 ss::future<>
-configuration_manager::do_maybe_store_highest_known_offset(size_t bytes) {
+configuration_manager::do_maybe_store_highest_known_offset(size_t) {
     if (_hko_checkpoint_in_progress) {
         // This could be a mutex, but it doesn't make much sense to wait on it.
         // In an unlikely event checkpointing fails, immediate retry by another
