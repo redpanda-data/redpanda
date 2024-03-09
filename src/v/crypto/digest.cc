@@ -18,17 +18,6 @@
 #include <type_traits>
 
 namespace crypto {
-digest_ctx::~digest_ctx() noexcept = default;
-digest_ctx::digest_ctx(digest_ctx&&) noexcept = default;
-digest_ctx& digest_ctx::operator=(digest_ctx&&) noexcept = default;
-
-static_assert(
-  std::is_nothrow_move_constructible_v<digest_ctx>,
-  "digest_ctx should be nothrow move constructible");
-static_assert(
-  std::is_nothrow_move_assignable_v<digest_ctx>,
-  "digest_ctx should be nothrow move assignable");
-
 class digest_ctx::impl {
 public:
     explicit impl(digest_type type)
@@ -111,6 +100,17 @@ private:
 
 digest_ctx::digest_ctx(digest_type type)
   : _impl(std::make_unique<impl>(type)) {}
+
+digest_ctx::~digest_ctx() noexcept = default;
+digest_ctx::digest_ctx(digest_ctx&&) noexcept = default;
+digest_ctx& digest_ctx::operator=(digest_ctx&&) noexcept = default;
+
+static_assert(
+  std::is_nothrow_move_constructible_v<digest_ctx>,
+  "digest_ctx should be nothrow move constructible");
+static_assert(
+  std::is_nothrow_move_assignable_v<digest_ctx>,
+  "digest_ctx should be nothrow move assignable");
 
 size_t digest_ctx::size() const { return _impl->size(); }
 size_t digest_ctx::size(digest_type type) {

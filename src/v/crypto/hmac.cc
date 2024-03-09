@@ -17,17 +17,6 @@
 #include <openssl/params.h>
 
 namespace crypto {
-hmac_ctx::~hmac_ctx() noexcept = default;
-hmac_ctx::hmac_ctx(hmac_ctx&&) noexcept = default;
-hmac_ctx& hmac_ctx::operator=(hmac_ctx&&) noexcept = default;
-
-static_assert(
-  std::is_nothrow_move_constructible_v<hmac_ctx>,
-  "hmac_ctx should be nothrow move constructible");
-static_assert(
-  std::is_nothrow_move_assignable_v<hmac_ctx>,
-  "hmac_ctx should be nothrow move assignable");
-
 class hmac_ctx::impl {
 public:
     impl(digest_type type, bytes_view key) {
@@ -128,6 +117,17 @@ hmac_ctx::hmac_ctx(digest_type type, bytes_view key)
 hmac_ctx::hmac_ctx(digest_type type, std::string_view key)
   : _impl(
     std::make_unique<impl>(type, internal::string_view_to_bytes_view(key))) {}
+
+hmac_ctx::~hmac_ctx() noexcept = default;
+hmac_ctx::hmac_ctx(hmac_ctx&&) noexcept = default;
+hmac_ctx& hmac_ctx::operator=(hmac_ctx&&) noexcept = default;
+
+static_assert(
+  std::is_nothrow_move_constructible_v<hmac_ctx>,
+  "hmac_ctx should be nothrow move constructible");
+static_assert(
+  std::is_nothrow_move_assignable_v<hmac_ctx>,
+  "hmac_ctx should be nothrow move assignable");
 
 size_t hmac_ctx::size() const { return _impl->size(); }
 size_t hmac_ctx::size(digest_type type) { return impl::size(type); }
