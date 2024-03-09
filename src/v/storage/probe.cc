@@ -152,6 +152,11 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _partition_bytes; },
           sm::description("Current size of partition in bytes"),
           labels),
+        sm::make_counter(
+          "bytes_prefix_truncated",
+          [this] { return _bytes_prefix_truncated; },
+          sm::description("Number of bytes removed by prefix truncation."),
+          labels),
       },
       {},
       {sm::shard_label, partition_label});
