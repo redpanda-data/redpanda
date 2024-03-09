@@ -505,7 +505,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
     }
 
     auto do_produce(
-      unsigned i,
+      int i,
       size_t batches_cnt,
       size_t batch_size,
       honour_throttle honour_throttle) {
@@ -528,8 +528,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
         return std::make_tuple(data_len, total_len, total_throttle_time);
     }
 
-    auto do_consume(
-      unsigned int i, size_t data_cap, honour_throttle honour_throttle) {
+    auto do_consume(int i, size_t data_cap, honour_throttle honour_throttle) {
         const model::partition_id p_id{i};
         size_t data_len{0};
         size_t total_len{0};
@@ -657,7 +656,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
           = transform_reduce_thread_per_core(
             policy,
             [&](auto i) {
-                const model::partition_id p_id{i};
+                const model::partition_id p_id(i);
                 const auto data_cap = (kafka_in_data_len / ss::smp::count)
                                       - batch_size * 2;
                 return do_consume(i, data_cap, honour_throttle);

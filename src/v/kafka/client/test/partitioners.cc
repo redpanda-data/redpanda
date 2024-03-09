@@ -31,7 +31,7 @@ model::partition_id murmur2(const iobuf& buf, size_t p_cnt) {
     iobuf_const_parser parser{buf};
     auto b = parser.read_bytes(parser.bytes_left());
     auto hash = murmur2(b.data(), b.size());
-    return model::partition_id{hash % p_cnt};
+    return model::partition_id(hash % p_cnt);
 }
 
 static const auto no_partition{std::nullopt};

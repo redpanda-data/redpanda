@@ -30,7 +30,7 @@ kafka_offset_for_epoch_transport::offsets_for_leaders(
         t.partitions.emplace_back(kafka::offset_for_leader_partition{
           .partition = pid,
           .current_leader_epoch = kafka::leader_epoch{-1},
-          .leader_epoch = kafka::leader_epoch{term()},
+          .leader_epoch = kafka::leader_epoch(term()),
         });
     }
     req.data.topics.emplace_back(std::move(t));
