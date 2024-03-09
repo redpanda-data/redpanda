@@ -18,6 +18,7 @@
 #include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
+#include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/record_batch_builder.h"
@@ -973,9 +974,14 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
         *shard,
         [ntp](cluster::partition_manager& mgr) {
             auto partition = mgr.get(ntp);
-            storage::truncate_prefix_config cfg(
-              model::offset(1), ss::default_priority_class());
-            partition->log()->truncate_prefix(cfg).get();
+            auto local_kafka_start_offset = partition->log()->from_log_offset(
+              model::offset(1));
+            partition
+              ->prefix_truncate(
+                model::offset(1),
+                model::offset_cast(local_kafka_start_offset),
+                model::no_timeout)
+              .get();
         })
       .get();
 
