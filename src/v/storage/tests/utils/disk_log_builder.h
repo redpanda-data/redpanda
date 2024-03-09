@@ -132,7 +132,9 @@ public:
     using should_flush_after = ss::bool_class<struct flush_after_tag>;
     // Constructors
     explicit disk_log_builder(
-      storage::log_config config = log_builder_config());
+      storage::log_config config = log_builder_config(),
+      std::vector<model::record_batch_type> offset_translator_types = {},
+      raft::group_id group_id = raft::group_id{});
     ~disk_log_builder() noexcept = default;
     disk_log_builder(const disk_log_builder&) = delete;
     disk_log_builder& operator=(const disk_log_builder&) = delete;
@@ -411,6 +413,8 @@ private:
     ss::logger _test_logger{"disk-log-test-logger"};
     ss::sharded<features::feature_table> _feature_table;
     storage::log_config _log_config;
+    std::vector<model::record_batch_type> _translator_batch_types;
+    raft::group_id _group_id;
     storage::api _storage;
     ss::shared_ptr<log> _log;
     size_t _bytes_written{0};

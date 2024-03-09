@@ -24,6 +24,7 @@
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record_batch_types.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
 #include "ssx/sformat.h"
@@ -947,7 +948,8 @@ FIXTURE_TEST(
 
 // NOLINTNEXTLINE
 SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
-    storage::disk_log_builder b;
+    storage::disk_log_builder b(
+      storage::log_builder_config(), model::offset_translator_batch_types());
     b | storage::start(manifest_ntp);
 
     archival::archival_policy policy(manifest_ntp, segment_time_limit{0s});
