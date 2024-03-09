@@ -126,6 +126,17 @@ public:
         return *ptr;
     }
 
+    ss::future<> wait_for_apply() {
+        auto committed_offset = co_await with_leader(
+          10s, [](auto& node) { return node.raft()->committed_offset(); });
+
+        co_await parallel_for_each_node([committed_offset](auto& node) {
+            return node.raft()->stm_manager()->wait(
+              committed_offset, model::no_timeout);
+        });
+        co_return;
+    }
+
 private:
     std::array<archival_stm_node, node_count> _archival_stm_nodes;
 };
@@ -174,6 +185,8 @@ TEST_F_CORO(archival_metadata_stm_gtest_fixture, test_archival_stm_happy_path) {
     ASSERT_EQ_CORO(
       get_leader_stm().get_dirty(),
       cluster::archival_metadata_stm::state_dirty::clean);
+
+    co_await wait_for_apply();
 }
 
 TEST_F_CORO(
@@ -303,6 +316,8 @@ TEST_F_CORO(
 
     ASSERT_EQ_CORO(committed_offset, model::offset{2});
     ASSERT_EQ_CORO(term, model::term_id{1});
+
+    co_await wait_for_apply();
 }
 
 TEST_F_CORO(
@@ -336,8 +351,7 @@ TEST_F_CORO(
     auto repl_err = co_await get_leader_stm()
                       .batch_start(deadline, never_abort)
                       .add_segments(
-                        std::move(good_segment),
-                        cluster::segment_validated::yes)
+                        good_segment, cluster::segment_validated::yes)
                       .replicate();
 
     ASSERT_EQ_CORO(repl_err, cluster::errc::success);
@@ -378,6 +392,7 @@ TEST_F_CORO(
     ASSERT_EQ_CORO(repl_err, cluster::errc::inconsistent_stm_update);
 
     // Check that it still works with consistent updates
+    good_segment.clear();
     good_segment.push_back(segment_meta{
       .base_offset = model::offset(100),
       .committed_offset = model::offset(999),
@@ -386,10 +401,11 @@ TEST_F_CORO(
 
     repl_err = co_await get_leader_stm()
                  .batch_start(deadline, never_abort)
-                 .add_segments(
-                   std::move(good_segment), cluster::segment_validated::yes)
+                 .add_segments(good_segment, cluster::segment_validated::yes)
                  .replicate();
     ASSERT_EQ_CORO(repl_err, cluster::errc::success);
+
+    co_await wait_for_apply();
 }
 
 TEST_F_CORO(
@@ -426,8 +442,7 @@ TEST_F_CORO(
                       .batch_start(deadline, never_abort)
                       .read_write_fence(applied_offset)
                       .add_segments(
-                        std::move(good_segment),
-                        cluster::segment_validated::yes)
+                        good_segment, cluster::segment_validated::yes)
                       .replicate();
     ASSERT_EQ_CORO(repl_err, cluster::errc::success);
 
@@ -441,6 +456,7 @@ TEST_F_CORO(
     applied_offset = get_leader_stm().manifest().get_applied_offset();
     ASSERT_TRUE_CORO(applied_offset > model::offset(0));
 
+    good_segment.clear();
     good_segment.push_back(segment_meta{
       .base_offset = model::offset(100),
       .committed_offset = model::offset(199),
@@ -450,13 +466,13 @@ TEST_F_CORO(
     repl_err = co_await get_leader_stm()
                  .batch_start(deadline, never_abort)
                  .read_write_fence(applied_offset)
-                 .add_segments(
-                   std::move(good_segment), cluster::segment_validated::yes)
+                 .add_segments(good_segment, cluster::segment_validated::yes)
                  .replicate();
     ASSERT_EQ_CORO(repl_err, cluster::errc::success);
 
     // Emulate concurrency violation
     applied_offset = model::offset{0};
+    good_segment.clear();
     good_segment.push_back(segment_meta{
       .base_offset = model::offset(200),
       .committed_offset = model::offset(299),
@@ -466,8 +482,9 @@ TEST_F_CORO(
     repl_err = co_await get_leader_stm()
                  .batch_start(deadline, never_abort)
                  .read_write_fence(applied_offset)
-                 .add_segments(
-                   std::move(good_segment), cluster::segment_validated::yes)
+                 .add_segments(good_segment, cluster::segment_validated::yes)
                  .replicate();
     ASSERT_EQ_CORO(repl_err, cluster::errc::concurrent_modification_error);
+
+    co_await wait_for_apply();
 }
