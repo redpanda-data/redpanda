@@ -197,7 +197,7 @@ FIXTURE_TEST(
     check_final_counts({4, 4, 4, 0});
 
     // get data needed to move a partition
-    auto get_partition = [&](size_t id) {
+    auto get_partition = [&](model::partition_id::type id) {
         model::ntp ntp{
           create_topic_cmd.key.ns,
           create_topic_cmd.key.tp,

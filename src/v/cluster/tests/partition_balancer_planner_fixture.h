@@ -214,7 +214,7 @@ struct partition_balancer_planner_fixture {
           replication_factor);
 
         ss::chunked_fifo<cluster::partition_assignment> assignments;
-        for (size_t i = 0; i < partition_nodes.size(); ++i) {
+        for (model::partition_id::type i = 0; i < partition_nodes.size(); ++i) {
             const auto& nodes = partition_nodes[i];
             BOOST_REQUIRE_EQUAL(nodes.size(), replication_factor);
             std::vector<model::broker_shard> replicas;
