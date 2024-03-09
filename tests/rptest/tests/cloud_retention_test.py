@@ -65,11 +65,6 @@ class CloudRetentionTest(PreallocNodesTest):
             msg_count = int(1024 * 1024 * 1024 / msg_size)
             segment_size = 1024 * 1024
 
-        if max_consume_rate_mb is None:
-            max_read_msgs = 25000
-        else:
-            max_read_msgs = 2000
-
         si_settings = SISettings(self.test_context,
                                  log_segment_size=segment_size,
                                  fast_uploads=True)
@@ -134,14 +129,15 @@ class CloudRetentionTest(PreallocNodesTest):
             for p in range(0, num_partitions):
                 try:
                     manifest = s3_snapshot.manifest_for_ntp(self.topic_name, p)
+
+                    kafka_last_offset = BucketView.kafka_last_offset(manifest)
+                    self.logger.info(
+                        f"Partition {p} kafka last offset: {kafka_last_offset}"
+                    )
+                    total_of_hwms += kafka_last_offset
                 except Exception as e:
                     self.logger.debug(f"Failed to get manifest: {e}")
                     return False
-
-                kafka_last_offset = BucketView.kafka_last_offset(manifest)
-                self.logger.info(
-                    f"Partition {p} kafka last offset: {kafka_last_offset}")
-                total_of_hwms += kafka_last_offset
 
             # Require that all data is uploaded except for up to one segment's
             # worth of messages for each partition
@@ -188,14 +184,15 @@ class CloudRetentionTest(PreallocNodesTest):
             msg_size,
             readers=3,
             loop=True,
-            max_msgs=max_read_msgs,
+            max_throughput_mb=max_consume_rate_mb,
             nodes=self.preallocated_nodes)
         consumer.start(clean=False)
 
         consumer.wait()
         self.logger.info("finished consuming")
-        assert consumer.consumer_status.validator.valid_reads > \
-            segment_size * num_partitions / msg_size
+        valid_reads = consumer.consumer_status.validator.valid_reads
+        threshold = segment_size * num_partitions / msg_size
+        assert valid_reads > threshold, f"valid_reads {valid_reads} are below the threshold {threshold}, segment_size {segment_size}, num_partitions {num_partitions}, msg_size {msg_size}"
 
     @cluster(num_nodes=4)
     @skip_debug_mode
