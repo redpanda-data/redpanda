@@ -60,6 +60,9 @@ public:
         consistency_level get_consistency_level() const {
             return _replicate_opts.consistency;
         }
+        bool force_flush_requested() const {
+            return _replicate_opts.force_flush();
+        }
 
         auto release_data() {
             return std::make_tuple(std::move(_data), std::move(_units));

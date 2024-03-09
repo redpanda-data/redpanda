@@ -214,7 +214,8 @@ ss::future<> replicate_batcher::flush(
         ss::circular_buffer<model::record_batch> data;
         std::vector<item_ptr> notifications;
         ssx::semaphore_units item_memory_units(_max_batch_size_sem, 0);
-        auto needs_flush = flush_after_append::no;
+        auto force_flush_requested = false;
+        auto has_quorum_ack_requests = false;
 
         for (auto& n : item_cache) {
             if (unlikely(n->ready())) {
@@ -225,10 +226,11 @@ ss::future<> replicate_batcher::flush(
               || n->get_expected_term().value() == term) {
                 auto [batches, units] = n->release_data();
                 item_memory_units.adopt(std::move(units));
-                if (
-                  n->get_consistency_level() == consistency_level::quorum_ack) {
-                    needs_flush = flush_after_append::yes;
-                }
+                force_flush_requested = force_flush_requested
+                                        || n->force_flush_requested();
+                has_quorum_ack_requests
+                  = has_quorum_ack_requests
+                    || (n->get_consistency_level() == consistency_level::quorum_ack);
                 for (auto& b : batches) {
                     b.set_term(term);
                     data.push_back(std::move(b));
@@ -241,6 +243,19 @@ ss::future<> replicate_batcher::flush(
 
         if (notifications.empty()) {
             co_return;
+        }
+
+        auto needs_flush = flush_after_append::no;
+        auto write_caching_enabled = _ptr->write_caching_enabled();
+        // We flush in the following cases
+        // 1. an explicit force flush was requested by one of the items. eg:
+        // transactions
+        // 2. there is atleast one quorum ack request *and* write caching is
+        // disabled.
+        if (
+          force_flush_requested
+          || (has_quorum_ack_requests && !write_caching_enabled)) {
+            needs_flush = flush_after_append::yes;
         }
 
         auto seqs = _ptr->next_followers_request_seq();
