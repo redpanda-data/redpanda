@@ -949,7 +949,7 @@ ss::future<result<kafka_result>> rm_stm::do_sync_and_transactional_replicate(
   producer_ptr producer,
   model::batch_identity bid,
   model::record_batch_reader rdr,
-  ssx::semaphore_units units) {
+  ssx::semaphore_units) {
     if (!co_await sync(_sync_timeout)) {
         vlog(
           _ctx_log.trace,

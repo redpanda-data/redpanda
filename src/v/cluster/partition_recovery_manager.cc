@@ -420,7 +420,7 @@ void partition_downloader::update_downloaded_offsets(
 ss::future<partition_downloader::download_part>
 partition_downloader::download_log_with_capped_size(
   offset_map_t offset_map,
-  const partition_manifest& manifest,
+  const partition_manifest&,
   const std::filesystem::path& prefix,
   size_t max_size) {
     vlog(_ctxlog.info, "Starting log download with size limit at {}", max_size);
@@ -499,7 +499,7 @@ partition_downloader::download_log_with_capped_size(
 ss::future<partition_downloader::download_part>
 partition_downloader::download_log_with_capped_time(
   offset_map_t offset_map,
-  const partition_manifest& manifest,
+  const partition_manifest&,
   const std::filesystem::path& prefix,
   model::timestamp_clock::duration retention_time) {
     vlog(

@@ -126,8 +126,8 @@ public:
           });
     }
 
-    ss::future<> apply_local_snapshot(
-      raft::stm_snapshot_header header, iobuf&& bytes) override {
+    ss::future<>
+    apply_local_snapshot(raft::stm_snapshot_header, iobuf&& bytes) override {
         auto holder = _gate.hold();
         auto units = _snapshot_lock.hold_write_lock();
 

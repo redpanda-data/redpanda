@@ -1446,8 +1446,8 @@ template<typename Func>
 ss::future<result<ss::stop_iteration>>
 controller_backend::apply_configuration_change_on_leader(
   ss::lw_shared_ptr<partition> partition,
-  const replicas_t& expected_replicas,
-  model::revision_id cmd_rev,
+  const replicas_t&,
+  model::revision_id,
   Func&& func) {
     if (partition->is_leader()) {
         // we are the leader, update configuration

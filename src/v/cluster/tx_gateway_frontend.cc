@@ -727,7 +727,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
   kafka::transactional_id tx_id,
   model::producer_identity pid,
   model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration) {
     auto term_opt = co_await stm->sync();
 
     if (!term_opt.has_value()) {
