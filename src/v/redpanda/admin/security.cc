@@ -449,7 +449,7 @@ admin_server::oidc_whoami_handler(std::unique_ptr<ss::http::request> req) {
 
 ss::future<ss::json::json_return_type>
 admin_server::oidc_keys_cache_invalidate_handler(
-  std::unique_ptr<ss::http::request> req) {
+  std::unique_ptr<ss::http::request>) {
     auto f = co_await ss::coroutine::as_future(
       _controller->get_oidc_service().invoke_on_all(
         [](auto& s) { return s.refresh_keys(); }));
