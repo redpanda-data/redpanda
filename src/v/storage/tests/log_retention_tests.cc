@@ -269,21 +269,21 @@ FIXTURE_TEST(retention_by_size_with_remote_write, gc_fixture) {
     overrides.retention_local_target_bytes = tristate<size_t>{size_limit};
     config.set_overrides(overrides);
 
-    auto batch_builder = [](size_t offset, size_t size) {
+    auto batch_builder = [](model::offset offset, size_t size) {
         return model::test::make_random_batch(
-          model::offset{offset},
+          offset,
           1,
           true,
           model::record_batch_type::raft_data,
           std::vector<size_t>{size});
     };
 
-    auto partition_size = 0;
-    size_t dirty_offset = 0;
+    size_t partition_size = 0;
+    model::offset dirty_offset{0};
 
     builder.start(std::move(config)).get();
     while (partition_size <= size_limit) {
-        builder.add_segment(model::offset{dirty_offset}).get();
+        builder.add_segment(dirty_offset).get();
         builder.add_batch(batch_builder(dirty_offset, 100)).get();
 
         ++dirty_offset;
