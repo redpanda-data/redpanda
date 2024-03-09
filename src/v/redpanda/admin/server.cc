@@ -3993,8 +3993,7 @@ admin_server::get_partition_cloud_storage_status(
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::get_cloud_storage_lifecycle(
-  std::unique_ptr<ss::http::request> req) {
+admin_server::get_cloud_storage_lifecycle(std::unique_ptr<ss::http::request>) {
     ss::httpd::shadow_indexing_json::get_lifecycle_response response;
 
     auto& topic_table = _controller->get_topics_state().local();
