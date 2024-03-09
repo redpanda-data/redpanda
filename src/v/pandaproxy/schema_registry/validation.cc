@@ -107,8 +107,6 @@ std::vector<int32_t> get_proto_offsets(iobuf_parser& p) {
 
 ss::future<std::optional<ss::sstring>> get_record_name(
   pandaproxy::schema_registry::sharded_store& store,
-  field field,
-  const model::topic& topic,
   subject_name_strategy sns,
   const canonical_schema_definition& schema,
   std::optional<std::vector<int32_t>>& offsets) {
@@ -275,7 +273,7 @@ public:
         }
 
         auto record_name = co_await get_record_name(
-          *_api->_store, field, topic, sns, *schema, proto_offsets);
+          *_api->_store, sns, *schema, proto_offsets);
         if (!record_name) {
             vlog(
               plog.debug,
