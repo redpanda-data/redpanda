@@ -129,7 +129,7 @@ seastar::future<> io_queue_workload_generator::generate_writes() {
 }
 
 seastar::future<> io_queue_workload_generator::generate_reads() {
-    return seastar::async([=] {
+    return seastar::async([this] {
         while (completed_reads.size() < num_io_ops) {
             if (auto* write = select_random_write(); write != nullptr) {
                 submitted_reads.push_back(make_page(write->offset()));
