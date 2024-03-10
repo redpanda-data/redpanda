@@ -293,7 +293,7 @@ private:
      */
     std::optional<acl_matches::acl_match> acl_any_implied_ops_allowed(
       const acl_matches& acls,
-      const acl_principal& principal,
+      const acl_principal_base& principal,
       const acl_host& host,
       const acl_operation operation) const {
         auto check_op = [&acls, &principal, &host](

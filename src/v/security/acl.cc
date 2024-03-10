@@ -25,7 +25,7 @@ seastar::logger seclog("security");
 
 std::optional<std::reference_wrapper<const acl_entry>> acl_entry_set::find(
   acl_operation operation,
-  const acl_principal& principal,
+  const acl_principal_base& principal,
   const acl_host& host,
   acl_permission perm) const {
     for (const auto& entry : _entries) {
@@ -63,7 +63,7 @@ bool acl_matches::empty() const {
 
 std::optional<acl_matches::acl_match> acl_matches::find(
   acl_operation operation,
-  const acl_principal& principal,
+  const acl_principal_base& principal,
   const acl_host& host,
   acl_permission perm) const {
     for (const auto& entries : prefixes) {
@@ -323,8 +323,10 @@ std::ostream& operator<<(std::ostream& os, principal_type type) {
     __builtin_unreachable();
 }
 
-std::ostream& operator<<(std::ostream& os, const acl_principal& principal) {
-    fmt::print(os, "type {{{}}} name {{{}}}", principal._type, principal._name);
+std::ostream&
+operator<<(std::ostream& os, const acl_principal_base& principal) {
+    fmt::print(
+      os, "type {{{}}} name {{{}}}", principal.type(), principal.name_view());
     return os;
 }
 

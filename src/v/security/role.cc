@@ -39,7 +39,7 @@ std::ostream& operator<<(std::ostream& os, const role_member& m) {
 }
 
 role_member role_member::from_principal(const security::acl_principal& p) {
-    return {member_type_for_principal_type(p.type()), p.name()};
+    return {member_type_for_principal_type(p.type()), ss::sstring{p.name()}};
 }
 
 // TODO(oren): maybe we should have the role name on the role?
@@ -51,6 +51,11 @@ std::ostream& operator<<(std::ostream& os, const role& r) {
 security::acl_principal role::to_principal(std::string_view role_name) {
     return {
       security::principal_type::role, {role_name.data(), role_name.size()}};
+}
+
+security::acl_principal_view
+role::to_principal_view(std::string_view role_name) {
+    return {security::principal_type::role, role_name};
 }
 
 } // namespace security

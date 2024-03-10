@@ -83,6 +83,11 @@ public:
      * Construct a concrete acl_principal of principal_type::role
      */
     static security::acl_principal to_principal(std::string_view role_name);
+    /**
+     * Construct a concrete acl_principal_view of principal_type::role
+     */
+    static security::acl_principal_view
+    to_principal_view(std::string_view role_name);
 
 private:
     friend bool operator==(const role&, const role&) = default;

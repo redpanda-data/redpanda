@@ -46,13 +46,13 @@ public:
 
     std::optional<const_reference> find(
       acl_operation operation,
-      const acl_principal& principal,
+      const acl_principal_base& principal,
       const acl_host& host,
       acl_permission perm) const;
 
     bool contains(
       acl_operation operation,
-      const acl_principal& principal,
+      const acl_principal_base& principal,
       const acl_host& host,
       acl_permission perm) const {
         return find(operation, principal, host, perm).has_value();
@@ -103,13 +103,13 @@ public:
 
     std::optional<acl_match> find(
       acl_operation operation,
-      const acl_principal& principal,
+      const acl_principal_base& principal,
       const acl_host& host,
       acl_permission perm) const;
 
     bool contains(
       acl_operation operation,
-      const acl_principal& principal,
+      const acl_principal_base& principal,
       const acl_host& host,
       acl_permission perm) const {
         return find(operation, principal, host, perm).has_value();
