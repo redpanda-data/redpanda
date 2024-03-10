@@ -20,6 +20,8 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
+#include <absl/algorithm/container.h>
+
 namespace transform::logging {
 
 rpc_client::rpc_client(
@@ -51,8 +53,12 @@ rpc_client::write(model::partition_id pid, io::json_batches batches) {
         }
     }
 
-    auto total_request_size = batcher.total_size_bytes();
     auto record_batches = batcher.finish();
+
+    size_t total_request_size = absl::c_accumulate(
+      record_batches, size_t(0), [](size_t acc, const auto& b) {
+          return acc + b.size_bytes();
+      });
 
     model::topic_partition tp{model::transform_log_internal_topic, pid};
     vlog(
