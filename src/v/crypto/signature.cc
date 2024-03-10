@@ -17,17 +17,6 @@
 #include <openssl/evp.h>
 
 namespace crypto {
-verify_ctx::~verify_ctx() noexcept = default;
-verify_ctx::verify_ctx(verify_ctx&&) noexcept = default;
-verify_ctx& verify_ctx::operator=(verify_ctx&&) noexcept = default;
-
-static_assert(
-  std::is_nothrow_move_constructible_v<verify_ctx>,
-  "verify_ctx should be nothrow move constructible");
-static_assert(
-  std::is_nothrow_move_assignable_v<verify_ctx>,
-  "verify_ctx should be nothrow move assignable");
-
 class verify_ctx::impl {
 public:
     impl(digest_type type, const key& key)
@@ -87,6 +76,17 @@ private:
 
 verify_ctx::verify_ctx(digest_type type, const key& key)
   : _impl(std::make_unique<impl>(type, key)) {}
+
+verify_ctx::~verify_ctx() noexcept = default;
+verify_ctx::verify_ctx(verify_ctx&&) noexcept = default;
+verify_ctx& verify_ctx::operator=(verify_ctx&&) noexcept = default;
+
+static_assert(
+  std::is_nothrow_move_constructible_v<verify_ctx>,
+  "verify_ctx should be nothrow move constructible");
+static_assert(
+  std::is_nothrow_move_assignable_v<verify_ctx>,
+  "verify_ctx should be nothrow move assignable");
 
 verify_ctx& verify_ctx::update(bytes_view msg) {
     _impl->update(msg);
