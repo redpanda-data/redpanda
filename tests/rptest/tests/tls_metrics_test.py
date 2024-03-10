@@ -310,16 +310,18 @@ class TLSMetricsTestExpiring(TLSMetricsTestBase):
         """
         node = self.redpanda.nodes[0]
 
-        metric_values = self._unpack_samples(
-            self._get_metrics_from_node(node, ['certificate_valid']))
-        assert all(
-            v['value']
-            for v in metric_values['certificate_valid']), "Cert(s) not valid"
+        def certs_expired():
+            metric_values = self._unpack_samples(
+                self._get_metrics_from_node(node, ['certificate_valid']))
+            success = all(not v['value']
+                          for v in metric_values['certificate_valid'])
+            return success, metric_values
 
-        time.sleep(20)
+        metric_values = wait_until_result(certs_expired,
+                                          timeout_sec=30,
+                                          backoff_sec=4)
 
-        metric_values = self._unpack_samples(
-            self._get_metrics_from_node(node, ['certificate_valid']))
-        assert all(
-            not v['value'] for v in
-            metric_values['certificate_valid']), "Certs should have expired"
+        assert metric_values is not None, "metric_values unexpectedly None"
+
+        assert all(not v['value'] for v in metric_values['certificate_valid']
+                   ), "Cert(s) unexpectedly still valid"
