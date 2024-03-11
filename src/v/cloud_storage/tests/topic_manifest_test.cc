@@ -18,6 +18,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "test_utils/randoms.h"
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -401,4 +402,138 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
         reconstructed_props));
 
     BOOST_CHECK(test_cfg == reconstructed.get_topic_config());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_v2_new_properties) {
+    // test random values for new properties mapped in v2
+    auto test_cfg = cfg;
+    auto modified_properties = std::tuple{
+      // v1 properties:
+      test_cfg.properties.compression = tests::random_optional([] {
+          using enum model::compression;
+          return random_generators::random_choice(
+            {gzip, lz4, none, producer, snappy, zstd});
+      }),
+      test_cfg.properties.cleanup_policy_bitflags = tests::random_optional([] {
+          using enum model::cleanup_policy_bitflags;
+          return random_generators::random_choice(
+            {none, compaction, deletion, compaction | deletion});
+      }),
+      test_cfg.properties.compaction_strategy = tests::random_optional([] {
+          using enum model::compaction_strategy;
+          return random_generators::random_choice({header, offset, timestamp});
+      }),
+      test_cfg.properties.timestamp_type = tests::random_optional([] {
+          using enum model::timestamp_type;
+          return random_generators::random_choice({append_time, create_time});
+      }),
+      test_cfg.properties.segment_size = tests::random_optional(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.retention_bytes = tests::random_tristate(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.retention_duration = tests::random_tristate(
+        tests::random_duration_ms),
+
+      // v2 new properties:
+      test_cfg.properties.recovery = tests::random_optional(tests::random_bool),
+      test_cfg.properties.shadow_indexing = tests::random_optional([] {
+          using enum model::shadow_indexing_mode;
+          return random_generators::random_choice({archival, fetch, full});
+      }),
+      test_cfg.properties.read_replica = tests::random_optional(
+        tests::random_bool),
+      test_cfg.properties.read_replica_bucket = tests::random_optional(
+        [] { return tests::random_named_string<ss::sstring>(); }),
+      test_cfg.properties.remote_topic_properties = tests::random_optional([] {
+          return cluster::remote_topic_properties{
+            tests::random_named_int<model::initial_revision_id>(),
+            random_generators::get_int<int32_t>()};
+      }),
+      test_cfg.properties.batch_max_bytes = tests::random_optional(
+        [] { return random_generators::get_int<uint32_t>(); }),
+      test_cfg.properties.retention_local_target_bytes = tests::random_tristate(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.retention_local_target_ms = tests::random_tristate(
+        tests::random_duration_ms),
+      test_cfg.properties.remote_delete = tests::random_bool(),
+      test_cfg.properties.segment_ms = tests::random_tristate(
+        tests::random_duration_ms),
+      test_cfg.properties.record_key_schema_id_validation
+      = tests::random_optional(tests::random_bool),
+      test_cfg.properties.record_key_schema_id_validation_compat
+      = tests::random_optional(tests::random_bool),
+      test_cfg.properties.record_key_subject_name_strategy
+      = tests::random_optional([] {
+            using enum pandaproxy::schema_registry::subject_name_strategy;
+            return random_generators::random_choice(
+              {topic_record_name, topic_name, record_name});
+        }),
+      test_cfg.properties.record_key_subject_name_strategy_compat
+      = tests::random_optional([] {
+            using enum pandaproxy::schema_registry::subject_name_strategy;
+            return random_generators::random_choice(
+              {topic_record_name, topic_name, record_name});
+        }),
+      test_cfg.properties.record_value_schema_id_validation
+      = tests::random_optional(tests::random_bool),
+      test_cfg.properties.record_value_schema_id_validation_compat
+      = tests::random_optional(tests::random_bool),
+      test_cfg.properties.record_value_subject_name_strategy
+      = tests::random_optional([] {
+            using enum pandaproxy::schema_registry::subject_name_strategy;
+            return random_generators::random_choice(
+              {topic_record_name, topic_name, record_name});
+        }),
+      test_cfg.properties.record_value_subject_name_strategy_compat
+      = tests::random_optional([] {
+            using enum pandaproxy::schema_registry::subject_name_strategy;
+            return random_generators::random_choice(
+              {topic_record_name, topic_name, record_name});
+        }),
+      test_cfg.properties.initial_retention_local_target_bytes
+      = tests::random_tristate(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.initial_retention_local_target_ms
+      = tests::random_tristate(tests::random_duration_ms),
+      test_cfg.properties.mpx_virtual_cluster_id = tests::random_optional([] {
+          auto raw_data = tests::random_vector(
+            [] { return random_generators::get_int<uint8_t>(); },
+            std::tuple_size_v<xid::data_t>);
+          auto data = xid::data_t{};
+          std::ranges::copy(raw_data, data.begin());
+          return model::vcluster_id{xid{data}};
+      }),
+      test_cfg.properties.write_caching = tests::random_optional([] {
+          using enum model::write_caching_mode;
+          return random_generators::random_choice({on, off, disabled});
+      }),
+      test_cfg.properties.flush_bytes = tests::random_optional(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.flush_ms = tests::random_optional(
+        tests::random_duration_ms),
+    };
+
+    BOOST_CHECK_MESSAGE(
+      std::tuple_size_v<decltype(modified_properties)>
+        == std::tuple_size_v<
+          decltype(cluster::topic_properties{}.serde_fields())>,
+      "Some fields of cluster::topic_properties are not fuzzed. Add the new "
+      "fields to `modified_properties` to make sure that the coverage of the "
+      "json serialization is complete");
+
+    auto manifest = topic_manifest{test_cfg, model::initial_revision_id{}};
+    auto serialized = manifest.serialize().get().stream;
+    auto buf = iobuf{};
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(serialized, os).get();
+
+    auto ibp = iobuf_parser{buf.copy()};
+    auto manifest_json = ibp.read_string(ibp.bytes_left());
+    BOOST_TEST_INFO(manifest_json);
+
+    auto reconstructed = topic_manifest{};
+    reconstructed.update(make_iobuf_input_stream(std::move(buf))).get();
+    BOOST_REQUIRE_EQUAL(
+      reconstructed.get_topic_config().value(),
+      manifest.get_topic_config().value());
 }
