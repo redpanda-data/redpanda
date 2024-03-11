@@ -149,7 +149,8 @@ consensus::consensus(
   , _append_requests_buffer(*this, 256)
   , _write_caching_enabled(log_config().write_caching())
   , _max_pending_flush_bytes(log_config().flush_bytes())
-  , _max_flush_delay_ms(log_config().flush_ms()) {
+  , _max_flush_delay_ms(flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
+                          .next_duration()) {
     setup_metrics();
     setup_public_metrics();
     update_follower_stats(_configuration_manager.get_latest());
@@ -3908,7 +3909,9 @@ std::optional<model::offset> consensus::get_learner_start_offset() const {
 void consensus::notify_config_update() {
     _write_caching_enabled = log_config().write_caching();
     _max_pending_flush_bytes = log_config().flush_bytes();
-    _max_flush_delay_ms = log_config().flush_ms();
+    _max_flush_delay_ms
+      = flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
+          .next_duration();
 }
 
 } // namespace raft

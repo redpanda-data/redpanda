@@ -900,7 +900,9 @@ private:
     // write caching configurations
     // cached locally so we don't reconcile them for every request. They are
     // updated lazily via notify_config_update()
-    // todo(bharathv): add jitter
+    using flush_jitter_t
+      = simple_time_jitter<clock_type, std::chrono::milliseconds>;
+    static constexpr std::chrono::milliseconds flush_ms_jitter{5};
     bool _write_caching_enabled;
     size_t _max_pending_flush_bytes;
     std::chrono::milliseconds _max_flush_delay_ms;
