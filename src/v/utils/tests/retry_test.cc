@@ -66,8 +66,6 @@ SEASTAR_THREAD_TEST_CASE(retry_then_fail_when_cancelled) {
                                std::rethrow_exception(eptr);
                            } catch (const ss::abort_requested_exception&) {
                                return true;
-                           } catch (const ss::sleep_aborted&) {
-                               return true;
                            } catch (...) {
                                return false;
                            }

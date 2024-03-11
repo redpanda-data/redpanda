@@ -435,7 +435,7 @@ ss::future<> create_offset_translator_state_for_pre_existing_partition(
   storage::api& api,
   const storage::ntp_config& ntp_cfg,
   raft::group_id group,
-  model::offset min_rp_offset,
+  model::offset,
   model::offset max_rp_offset,
   ss::lw_shared_ptr<storage::offset_translator_state> ot_state) {
     // Prepare offset_translator state in kvstore

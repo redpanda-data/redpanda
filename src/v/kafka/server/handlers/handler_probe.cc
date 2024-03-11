@@ -32,7 +32,7 @@ handler_probe_manager::handler_probe_manager()
   , _probes(max_api_key() + 2) {
     const auto unknown_handler_key = max_api_key() + 1;
     for (size_t i = 0; i < _probes.size(); i++) {
-        auto key = api_key{i};
+        auto key = api_key(i);
 
         if (handler_for_key(key) || i == unknown_handler_key) {
             _probes[i].setup_metrics(_metrics, key);

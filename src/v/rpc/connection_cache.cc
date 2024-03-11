@@ -240,7 +240,7 @@ ss::future<> connection_cache::apply_changes(
 }
 
 ss::future<> connection_cache::remove_broker_client_coordinator(
-  model::node_id self, model::node_id dest) {
+  model::node_id, model::node_id dest) {
     vassert(ss::this_shard_id() == _coordinator_shard, "not the coordinator");
 
     if (is_shutting_down()) {
