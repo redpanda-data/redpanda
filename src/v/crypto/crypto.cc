@@ -66,5 +66,16 @@ EVP_MD* get_md(digest_type type) {
 
     return it->second.get();
 }
+
+EVP_MAC* get_mac() {
+    static thread_local EVP_MAC_ptr mac;
+    if (!mac) {
+        mac = EVP_MAC_ptr(EVP_MAC_fetch(nullptr, "HMAC", "?provider=fips"));
+        if (!mac) {
+            throw ossl_error("Failed to fetch HMAC algorithm");
+        }
+    }
+    return mac.get();
+}
 } // namespace internal
 } // namespace crypto

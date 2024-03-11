@@ -27,4 +27,5 @@ inline bytes_span<> char_span_to_bytes_span(std::span<char> v) {
 }
 
 EVP_MD* get_md(digest_type type);
+EVP_MAC* get_mac();
 } // namespace crypto::internal
