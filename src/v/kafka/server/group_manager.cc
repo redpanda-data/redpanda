@@ -13,6 +13,7 @@
 #include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
+#include "cluster/partition.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/topic_table.h"
@@ -49,6 +50,15 @@ using cluster::cloud_metadata::group_offsets_snapshot;
 using cluster::cloud_metadata::group_offsets_snapshot_result;
 
 namespace kafka {
+
+group_manager::attached_partition::attached_partition(
+  ss::lw_shared_ptr<cluster::partition> p)
+  : loading(true)
+  , partition(std::move(p)) {
+    catchup_lock = ss::make_lw_shared<ssx::rwlock>();
+}
+
+group_manager::attached_partition::~attached_partition() noexcept = default;
 
 group_manager::group_manager(
   model::topic_namespace tp_ns,

@@ -10,6 +10,7 @@
  */
 #include "kafka/server/handlers/delete_acls.h"
 
+#include "cluster/security_frontend.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/delete_acls_response.h"
 #include "kafka/server/errors.h"

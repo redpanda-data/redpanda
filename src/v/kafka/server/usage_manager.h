@@ -13,7 +13,6 @@
 #include "base/oncore.h"
 #include "cluster/fwd.h"
 #include "config/property.h"
-#include "container/fragmented_vector.h"
 #include "kafka/server/usage_aggregator.h"
 #include "model/namespace.h"
 #include "storage/fwd.h"

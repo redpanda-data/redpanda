@@ -10,11 +10,8 @@
  */
 #pragma once
 
-#include "bytes/iobuf.h"
-#include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
-#include "base/units.h"
 
 #include <seastar/core/lowres_clock.hh>
 

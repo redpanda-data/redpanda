@@ -17,8 +17,6 @@
 #include <seastar/util/bool_class.hh>
 
 #include <chrono>
-#include <numeric>
-#include <vector>
 
 namespace kafka {
 

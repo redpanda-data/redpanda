@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/partition.h"
 #include "config/configuration.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"

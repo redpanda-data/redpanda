@@ -10,13 +10,14 @@
  */
 #pragma once
 
-#include "cluster/metadata_cache.h"
-#include "cluster/partition.h"
+#include "base/outcome.h"
+#include "cluster/fwd.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/record_batch_reader.h"
+#include "raft/replicate.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 
@@ -53,11 +54,10 @@ public:
           = 0;
         virtual ss::future<std::optional<storage::timequery_result>>
           timequery(storage::timequery_config) = 0;
-        virtual ss::future<std::vector<cluster::rm_stm::tx_range>>
-          aborted_transactions(
-            model::offset,
-            model::offset,
-            ss::lw_shared_ptr<const storage::offset_translator_state>)
+        virtual ss::future<std::vector<model::tx_range>> aborted_transactions(
+          model::offset,
+          model::offset,
+          ss::lw_shared_ptr<const storage::offset_translator_state>)
           = 0;
         virtual ss::future<error_code> validate_fetch_offset(
           model::offset, bool, model::timeout_clock::time_point)
@@ -106,7 +106,7 @@ public:
 
     const model::ntp& ntp() const { return _impl->ntp(); }
 
-    ss::future<std::vector<cluster::rm_stm::tx_range>> aborted_transactions(
+    ss::future<std::vector<model::tx_range>> aborted_transactions(
       model::offset base,
       model::offset last,
       ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {

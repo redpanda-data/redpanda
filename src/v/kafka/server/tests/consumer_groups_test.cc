@@ -21,6 +21,7 @@
 #include "model/timeout_clock.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/async.h"
+#include "utils/base64.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>

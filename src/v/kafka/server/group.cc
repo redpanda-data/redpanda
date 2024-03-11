@@ -14,15 +14,22 @@
 #include "bytes/bytes.h"
 #include "cluster/partition.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_utils.h"
 #include "config/configuration.h"
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/heartbeat.h"
+#include "kafka/protocol/leave_group.h"
+#include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
+#include "kafka/protocol/schemata/leave_group_response.h"
+#include "kafka/protocol/schemata/offset_fetch_response.h"
 #include "kafka/protocol/sync_group.h"
+#include "kafka/protocol/txn_offset_commit.h"
 #include "kafka/protocol/wire.h"
-#include "kafka/server/group_manager.h"
 #include "kafka/server/group_metadata.h"
+#include "kafka/server/group_stm.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
@@ -141,6 +148,8 @@ group::group(
 
     start_abort_timer();
 }
+
+group::~group() noexcept = default;
 
 bool group::valid_previous_state(group_state s) const {
     using g = group_state;

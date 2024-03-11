@@ -12,13 +12,10 @@
 #pragma once
 #include "base/seastarx.h"
 #include "bytes/bytes.h"
-#include "bytes/details/out_of_range.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "reflection/adl.h"
-#include "strings/string_switch.h"
-#include "utils/base64.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>

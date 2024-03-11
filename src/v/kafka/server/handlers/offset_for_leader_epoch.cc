@@ -9,17 +9,16 @@
 
 #include "kafka/server/handlers/offset_for_leader_epoch.h"
 
+#include "cluster/metadata_cache.h"
 #include "cluster/shard_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/offset_for_leader_epoch_response.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/request_context.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "security/acl.h"
-#include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
@@ -27,7 +26,6 @@
 #include <absl/container/flat_hash_set.h>
 
 #include <algorithm>
-#include <chrono>
 #include <iterator>
 #include <vector>
 

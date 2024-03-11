@@ -15,16 +15,16 @@
 #include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/logger.h"
 #include "kafka/types.h"
-#include "net/server.h"
+#include "net/connection.h"
+#include "net/server_probe.h"
 #include "security/acl.h"
 #include "security/authorizer.h"
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
 #include "ssx/abort_source.h"
-#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
-#include "utils/absl_sstring_hash.h"
 #include "utils/log_hist.h"
+#include "utils/mutex.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/future.hh>
@@ -34,10 +34,10 @@
 #include <seastar/net/socket_defs.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 #include <functional>
 #include <memory>
-#include <system_error>
 #include <vector>
 
 namespace kafka {

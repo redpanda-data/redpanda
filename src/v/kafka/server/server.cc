@@ -11,7 +11,9 @@
 
 #include "base/vlog.h"
 #include "cluster/id_allocator_frontend.h"
+#include "cluster/security_frontend.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "config/node_config.h"

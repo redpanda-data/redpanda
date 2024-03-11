@@ -11,9 +11,8 @@
 
 #pragma once
 #include "base/seastarx.h"
-#include "cluster/cloud_metadata/offsets_recovery_rpc_types.h"
 #include "cluster/cloud_metadata/offsets_snapshot.h"
-#include "cluster/fwd.h"
+#include "cluster/topic_table.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
@@ -24,6 +23,8 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_delete.h"
 #include "kafka/protocol/offset_fetch.h"
+#include "kafka/protocol/schemata/delete_groups_response.h"
+#include "kafka/protocol/schemata/list_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/protocol/txn_offset_commit.h"
 #include "kafka/server/group.h"
@@ -31,8 +32,7 @@
 #include "kafka/server/group_stm.h"
 #include "kafka/server/member.h"
 #include "model/metadata.h"
-#include "model/namespace.h"
-#include "raft/group_manager.h"
+#include "raft/fwd.h"
 #include "ssx/semaphore.h"
 #include "utils/rwlock.h"
 
@@ -43,7 +43,6 @@
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/node_hash_map.h>
-#include <cluster/partition_manager.h>
 
 #include <span>
 #include <system_error>
@@ -221,11 +220,8 @@ private:
         ss::lw_shared_ptr<ssx::rwlock> catchup_lock;
         model::term_id term{-1};
 
-        explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
-          : loading(true)
-          , partition(std::move(p)) {
-            catchup_lock = ss::make_lw_shared<ssx::rwlock>();
-        }
+        explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p);
+        ~attached_partition() noexcept;
     };
 
     cluster::notification_id_type _leader_notify_handle;

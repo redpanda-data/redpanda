@@ -1,12 +1,7 @@
 #pragma once
 #include "base/seastarx.h"
-#include "cluster/fwd.h"
-#include "cluster/partition.h"
-#include "kafka/protocol/fwd.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"
-#include "kafka/server/member.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 
@@ -18,7 +13,6 @@
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
-#include <iosfwd>
 #include <optional>
 #include <vector>
 
