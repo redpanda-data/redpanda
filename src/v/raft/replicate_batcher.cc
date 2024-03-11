@@ -321,7 +321,6 @@ ss::future<> replicate_batcher::do_flush(
   append_entries_request req,
   std::vector<ssx::semaphore_units> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
-    auto needs_flush = req.is_flush_required();
     _ptr->_probe->replicate_batch_flushed();
     auto stm = ss::make_lw_shared<replicate_entries_stm>(
       _ptr, std::move(req), std::move(seqs));
@@ -348,7 +347,7 @@ ss::future<> replicate_batcher::do_flush(
          * NOTE: this happens in background since we do not want to block
          * replicate batcher
          */
-        if (leader_result && needs_flush) {
+        if (leader_result) {
             (void)stm->wait_for_majority()
               .then([holder = std::move(holder),
                      notifications = std::move(notifications)](

@@ -382,8 +382,47 @@ replicate_entries_stm::wait_for_majority_flush() {
 }
 
 ss::future<result<replicate_result>>
+replicate_entries_stm::wait_for_majority_no_flush() {
+    if (!_append_result) {
+        co_return build_replicate_result();
+    }
+    auto appended_offset = _append_result->value().last_offset;
+    auto appended_term = _append_result->value().last_term;
+
+    auto stop_cond = [this, appended_offset, appended_term] {
+        const auto current_committed_offset = _ptr->committed_offset();
+        const auto current_majority_replicated
+          = _ptr->majority_replicated_index();
+        const auto replicated = current_majority_replicated >= appended_offset;
+        const auto truncated = _ptr->term() > appended_term
+                               && current_committed_offset
+                                    > _initial_committed_offset
+                               && _ptr->_log->get_term(appended_offset)
+                                    != appended_term;
+
+        return replicated || truncated;
+    };
+    try {
+        co_await _ptr->_majority_replicated_index_updated.wait(stop_cond);
+        co_return process_result(appended_offset, appended_term);
+    } catch (const ss::broken_condition_variable&) {
+        vlog(
+          _ctxlog.debug,
+          "Replication of entries with last offset: {}, flush: {} aborted - "
+          "shutting down",
+          _dirty_offset,
+          _is_flush_required);
+        co_return result<replicate_result>(
+          make_error_code(errc::shutting_down));
+    }
+}
+
+ss::future<result<replicate_result>>
 replicate_entries_stm::wait_for_majority() {
-    co_return co_await wait_for_majority_flush();
+    if (_is_flush_required) {
+        co_return co_await wait_for_majority_flush();
+    }
+    co_return co_await wait_for_majority_no_flush();
 }
 
 result<replicate_result> replicate_entries_stm::process_result(
@@ -415,21 +454,24 @@ result<replicate_result> replicate_entries_stm::process_result(
         }
     }
 
-    // better crash than allow for inconsistency
-    vassert(
-      appended_offset <= _ptr->_commit_index,
-      "{} - Successfull replication means that committed offset passed last "
-      "appended offset. Current committed offset: {}, last appended offset: "
-      "{}, initial_commited_offset: {}",
-      _ptr->ntp(),
-      _ptr->committed_offset(),
-      appended_offset,
-      _initial_committed_offset);
+    if (_is_flush_required) {
+        // better crash than allow for inconsistency
+        vassert(
+          appended_offset <= _ptr->_commit_index,
+          "{} - Successful replication means that committed offset passed "
+          "last appended offset. Current committed offset: {}, last appended "
+          "offset: {}, initial_commited_offset: {}",
+          _ptr->ntp(),
+          _ptr->committed_offset(),
+          appended_offset,
+          _initial_committed_offset);
+    }
 
     vlog(
       _ctxlog.trace,
-      "Replication success, last offset: {}, term: {}",
+      "Replication success, last offset: {}, flush:{}, term: {}",
       appended_offset,
+      _is_flush_required,
       appended_term);
     return build_replicate_result();
 }
