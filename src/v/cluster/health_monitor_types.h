@@ -57,8 +57,9 @@ struct node_state
 
 struct partition_status
   : serde::
-      envelope<partition_status, serde::version<2>, serde::compat_version<0>> {
+      envelope<partition_status, serde::version<3>, serde::compat_version<0>> {
     static constexpr size_t invalid_size_bytes = size_t(-1);
+    static constexpr uint32_t invalid_shard_id = uint32_t(-1);
 
     model::partition_id id;
     model::term_id term;
@@ -82,6 +83,8 @@ struct partition_status
      */
     std::optional<size_t> reclaimable_size_bytes;
 
+    uint32_t shard = invalid_shard_id;
+
     auto serde_fields() {
         return std::tie(
           id,
@@ -90,7 +93,8 @@ struct partition_status
           revision_id,
           size_bytes,
           under_replicated_replicas,
-          reclaimable_size_bytes);
+          reclaimable_size_bytes,
+          shard);
     }
 
     friend std::ostream& operator<<(std::ostream&, const partition_status&);

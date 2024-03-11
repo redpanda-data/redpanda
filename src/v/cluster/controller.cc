@@ -551,24 +551,6 @@ ss::future<> controller::start(
             _raft0->group());
       })
       .then([this] {
-          _leader_balancer = std::make_unique<leader_balancer>(
-            _tp_state.local(),
-            _partition_leaders.local(),
-            _members_table.local(),
-            std::ref(_connections),
-            std::ref(_shard_table),
-            std::ref(_partition_manager),
-            std::ref(_as),
-            config::shard_local_cfg().enable_leader_balancer.bind(),
-            config::shard_local_cfg().leader_balancer_idle_timeout.bind(),
-            config::shard_local_cfg().leader_balancer_mute_timeout.bind(),
-            config::shard_local_cfg().leader_balancer_node_mute_timeout.bind(),
-            config::shard_local_cfg()
-              .leader_balancer_transfer_limit_per_shard.bind(),
-            _raft0);
-          return _leader_balancer->start();
-      })
-      .then([this] {
           return _health_manager.start_single(
             _raft0->self().id(),
             config::shard_local_cfg().internal_topic_replication_factor(),
@@ -597,6 +579,26 @@ ss::future<> controller::start(
             std::ref(_feature_table),
             std::ref(_partition_leaders),
             std::ref(_tp_state));
+      })
+      .then([this] {
+          _leader_balancer = std::make_unique<leader_balancer>(
+            _tp_state.local(),
+            _partition_leaders.local(),
+            _members_table.local(),
+            _hm_backend.local(),
+            _feature_table.local(),
+            std::ref(_connections),
+            std::ref(_shard_table),
+            std::ref(_partition_manager),
+            std::ref(_as),
+            config::shard_local_cfg().enable_leader_balancer.bind(),
+            config::shard_local_cfg().leader_balancer_idle_timeout.bind(),
+            config::shard_local_cfg().leader_balancer_mute_timeout.bind(),
+            config::shard_local_cfg().leader_balancer_node_mute_timeout.bind(),
+            config::shard_local_cfg()
+              .leader_balancer_transfer_limit_per_shard.bind(),
+            _raft0);
+          return _leader_balancer->start();
       })
       .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
       .then([this] {

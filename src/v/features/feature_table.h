@@ -74,6 +74,7 @@ enum class feature : std::uint64_t {
     cloud_metadata_cluster_recovery = 1ULL << 40U,
     audit_logging = 1ULL << 41U,
     compaction_placeholder_batch = 1ULL << 42U,
+    node_local_core_assignment = 1ULL << 43U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -370,7 +371,14 @@ constexpr static std::array feature_schema{
     "compaction_placeholder_batch",
     feature::compaction_placeholder_batch,
     feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always}};
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{12},
+    "node_local_core_assignment",
+    feature::node_local_core_assignment,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+};
 
 std::string_view to_string_view(feature);
 std::string_view to_string_view(feature_state::state);

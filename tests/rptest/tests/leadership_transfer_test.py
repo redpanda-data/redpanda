@@ -10,6 +10,7 @@
 import collections
 import random
 import time
+import math
 
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
@@ -256,6 +257,18 @@ class AutomaticLeadershipBalancingTest(RedpandaTest):
         leaders = (p["leader"] for p in topic["partitions"])
         return collections.Counter(leaders)
 
+    def _get_leaders_by_shard(self):
+        admin = Admin(self.redpanda)
+        shard2count = dict()
+        for n in self.redpanda.started_nodes():
+            node_id = self.redpanda.node_id(n)
+            partitions = admin.get_partitions(node=n)
+            for p in partitions:
+                if p.get('leader') == node_id:
+                    shard = (node_id, p['core'])
+                    shard2count[shard] = shard2count.setdefault(shard, 0) + 1
+        return shard2count
+
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_automatic_rebalance(self):
         def all_partitions_present(num_nodes, per_node=None):
@@ -302,3 +315,11 @@ class AutomaticLeadershipBalancingTest(RedpandaTest):
                    timeout_sec=300,
                    backoff_sec=10,
                    err_msg="Leadership did not stablize")
+
+        shard2leaders = self._get_leaders_by_shard()
+        self.redpanda.logger.debug(f"Leaders by shard: {shard2leaders}")
+        expected_on_shard = sum(shard2leaders.values()) / len(shard2leaders)
+        for s, count in shard2leaders.items():
+            expected_min = math.floor(expected_on_shard * 0.8)
+            assert count >= expected_min, \
+                f"leader count on shard {s} ({count}) is < {expected_min}"
