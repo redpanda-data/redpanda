@@ -360,6 +360,10 @@ public:
     }
     size_t received_snapshot_bytes() const { return _received_snapshot_bytes; }
     bool has_pending_flushes() const { return _pending_flush_bytes > 0; }
+    std::chrono::milliseconds time_since_last_flush() const {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          clock_type::now() - _last_flush_time);
+    }
 
     model::offset start_offset() const {
         return model::next_offset(_last_snapshot_index);
@@ -824,6 +828,7 @@ private:
 
     replicate_batcher _batcher;
     size_t _pending_flush_bytes{0};
+    clock_type::time_point _last_flush_time;
 
     /// used to wait for background ops before shutting down
     ss::gate _bg;

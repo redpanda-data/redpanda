@@ -2615,6 +2615,7 @@ append_entries_reply consensus::make_append_entries_reply(
 
 ss::future<consensus::flushed> consensus::flush_log() {
     if (!has_pending_flushes()) {
+        _last_flush_time = clock_type::now();
         co_return flushed::no;
     }
     auto flushed_up_to = _log->offsets().dirty_offset;
@@ -2622,6 +2623,7 @@ ss::future<consensus::flushed> consensus::flush_log() {
     _probe->log_flushed();
     _pending_flush_bytes = 0;
     co_await _log->flush();
+    _last_flush_time = clock_type::now();
     const auto lstats = _log->offsets();
     /**
      * log flush may be interleaved with trucation, hence we need to check
