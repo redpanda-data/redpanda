@@ -28,7 +28,7 @@
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "raft/types.h"
+#include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 #include "strings/string_switch.h"
 
