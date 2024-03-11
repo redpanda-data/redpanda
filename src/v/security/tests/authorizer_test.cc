@@ -9,6 +9,7 @@
 #include "config/mock_property.h"
 #include "random/generators.h"
 #include "security/authorizer.h"
+#include "security/role_store.h"
 #include "utils/base64.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -76,13 +77,15 @@ static auto get_acls(authorizer& auth, acl_binding_filter filter) {
     }
     return found;
 }
+
 static authorizer make_test_instance(
-  authorizer::allow_empty_matches allow = authorizer::allow_empty_matches::no) {
-    auto b = []() {
-        return config::mock_binding<std::vector<ss::sstring>>(
-          std::vector<ss::sstring>{});
-    };
-    return authorizer(allow, b);
+  authorizer::allow_empty_matches allow = authorizer::allow_empty_matches::no,
+  std::optional<const role_store*> roles = std::nullopt) {
+    static role_store _roles;
+    auto b = config::mock_binding<std::vector<ss::sstring>>(
+      std::vector<ss::sstring>{});
+
+    return authorizer(allow, std::move(b), *roles.value_or(&_roles));
 }
 
 BOOST_AUTO_TEST_CASE(resource_type_auto) {
@@ -213,11 +216,8 @@ BOOST_AUTO_TEST_CASE(super_user_allow) {
 
     config::mock_property<std::vector<ss::sstring>> superuser_config_prop(
       std::vector<ss::sstring>{});
-    authorizer auth(
-      [&superuser_config_prop]() mutable
-      -> config::binding<std::vector<ss::sstring>> {
-          return superuser_config_prop.bind();
-      });
+    role_store roles;
+    authorizer auth(superuser_config_prop.bind(), roles);
 
     acl_entry acl(
       acl_wildcard_user,

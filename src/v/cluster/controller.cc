@@ -147,7 +147,9 @@ ss::future<> controller::wire_up() {
       .then([this] { return _roles.start(); })
       .then([this] {
           return _authorizer.start(
-            []() { return config::shard_local_cfg().superusers.bind(); });
+            ss::sharded_parameter(
+              []() { return config::shard_local_cfg().superusers.bind(); }),
+            ss::sharded_parameter([this] { return &_roles.local(); }));
       })
       .then([this] {
           return _oidc_service.start(

@@ -18,6 +18,7 @@
 #include "security/acl_store.h"
 #include "security/logger.h"
 #include "security/role.h"
+#include "security/role_store.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
@@ -215,15 +216,20 @@ public:
     // allow operation when no ACL match is found
     using allow_empty_matches = ss::bool_class<struct allow_empty_matches_type>;
 
-    explicit authorizer(
-      std::function<config::binding<std::vector<ss::sstring>>()> superusers_cb)
-      : authorizer(allow_empty_matches::no, superusers_cb) {}
+    authorizer() = delete;
+
+    authorizer(
+      config::binding<std::vector<ss::sstring>> superusers,
+      const role_store* roles)
+      : authorizer(allow_empty_matches::no, std::move(superusers), roles) {}
 
     authorizer(
       allow_empty_matches allow,
-      std::function<config::binding<std::vector<ss::sstring>>()> superusers_cb)
-      : _superusers_conf(superusers_cb())
-      , _allow_empty_matches(allow) {
+      config::binding<std::vector<ss::sstring>> superusers,
+      const role_store* roles)
+      : _superusers_conf(std::move(superusers))
+      , _allow_empty_matches(allow)
+      , _role_store(roles) {
         update_superusers();
         _superusers_conf.watch([this]() { update_superusers(); });
     }
@@ -378,6 +384,7 @@ private:
     }
 
     allow_empty_matches _allow_empty_matches;
+    const role_store* _role_store;
 };
 
 } // namespace security
