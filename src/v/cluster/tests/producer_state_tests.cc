@@ -18,24 +18,21 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <optional>
+#include <vector>
+
 using namespace std::chrono_literals;
 
 ss::logger logger{"producer_state_test"};
 
 struct test_fixture {
     static constexpr uint64_t default_max_producers = 10;
-    static constexpr auto default_producer_expiration
-      = std::chrono::duration_cast<std::chrono::milliseconds>(10min);
 
     cluster::producer_state_manager& manager() { return _psm.local(); }
 
-    void check_producers(size_t registered, size_t linked) {
-        BOOST_REQUIRE_EQUAL(manager()._num_producers, registered);
-        BOOST_REQUIRE_EQUAL(manager()._lru_producers.size(), linked);
-    }
-
-    void check_producers(size_t expected) {
-        check_producers(expected, expected);
+    void check_producers(size_t registered) {
+        BOOST_REQUIRE_EQUAL(
+          manager()._cache.get_stats().total_size, registered);
     }
 
     test_fixture() {
@@ -45,10 +42,8 @@ struct test_fixture {
         config::shard_local_cfg().disable_metrics.set_value(true);
         _max_producers.start(default_max_producers).get();
         _psm
-          .start(
-            ss::sharded_parameter(
-              [this] { return _max_producers.local().bind(); }),
-            default_producer_expiration)
+          .start(ss::sharded_parameter(
+            [this] { return _max_producers.local().bind(); }))
           .get();
         _psm.invoke_on_all(&cluster::producer_state_manager::start).get();
         check_producers(0);
@@ -59,25 +54,20 @@ struct test_fixture {
         _psm.stop().get();
     }
 
-    cluster::producer_ptr
-    new_producer(ss::noncopyable_function<void()> f = {}) {
-        return ss::make_lw_shared<cluster::producer_state>(
-          manager(),
+    cluster::producer_ptr new_producer(ss::noncopyable_function<void()> f = [] {
+    }) {
+        auto p = ss::make_lw_shared<cluster::producer_state>(
           model::random_producer_identity(),
           raft::group_id{_counter++},
           std::move(f));
-    }
-
-    void check_last_producer(cluster::producer_state& expected) {
-        auto pid = manager()._lru_producers.back()._id;
-        auto gid = manager()._lru_producers.back()._group;
-        BOOST_REQUIRE_EQUAL(pid, expected._id);
-        BOOST_REQUIRE_EQUAL(gid, expected._group);
+        manager().register_producer(*p, std::nullopt);
+        return p;
     }
 
     void clean(std::vector<cluster::producer_ptr>& producers) {
         for (auto& producer : producers) {
-            producer->shutdown_input().get0();
+            manager().deregister_producer(*producer, std::nullopt);
+            producer->shutdown_input();
         }
         producers.clear();
     }
@@ -87,8 +77,8 @@ struct test_fixture {
     ss::sharded<cluster::producer_state_manager> _psm;
 };
 
-FIXTURE_TEST(test_regisration, test_fixture) {
-    const size_t num_producers = 5;
+FIXTURE_TEST(test_locked_producer_is_not_evicted, test_fixture) {
+    const size_t num_producers = 10;
     std::vector<cluster::producer_ptr> producers;
     producers.reserve(num_producers);
     for (int i = 0; i < num_producers; i++) {
@@ -103,15 +93,22 @@ FIXTURE_TEST(test_regisration, test_fixture) {
     ss::condition_variable wait_for_func_begin;
     auto f = producers[0]->run_with_lock([&](auto units) {
         wait_for_func_begin.signal();
-        units.return_all();
-        return wait.get_future();
+        return wait.get_future().finally([u = std::move(units)] {});
     });
 
     wait_for_func_begin.wait().get();
-    check_producers(num_producers, num_producers - 1);
+    check_producers(num_producers);
+    // create one producer more and to trigger eviction
+    auto new_p = new_producer();
+    check_producers(num_producers);
+    // validate that first producer is not evicted
+    BOOST_REQUIRE(producers[0]->is_evicted() == false);
+    BOOST_REQUIRE(producers[0]->can_evict() == false);
     // unblock the function so producer can link itself back.
     wait.set_value();
+
     f.get();
+    producers.push_back(new_p);
     check_producers(num_producers);
 
     clean(producers);
@@ -123,7 +120,8 @@ FIXTURE_TEST(test_lru_maintenance, test_fixture) {
     std::vector<cluster::producer_ptr> producers;
     producers.reserve(num_producers);
     for (int i = 0; i < num_producers; i++) {
-        producers.push_back(new_producer());
+        auto prod = new_producer();
+        producers.push_back(prod);
     }
     check_producers(num_producers);
 
@@ -131,7 +129,6 @@ FIXTURE_TEST(test_lru_maintenance, test_fixture) {
     // moved to the end of LRU list
     for (auto& producer : producers) {
         producer->run_with_lock([](auto units) {}).get();
-        check_last_producer(*producer);
     }
 
     clean(producers);
@@ -153,7 +150,7 @@ FIXTURE_TEST(test_eviction_max_pids, test_fixture) {
         producers.push_back(new_producer([&] { evicted_so_far++; }));
     }
 
-    check_producers(default_max_producers + extra_producers);
+    check_producers(default_max_producers);
 
     RPTEST_REQUIRE_EVENTUALLY(
       10s, [&] { return evicted_so_far == extra_producers; });
@@ -166,34 +163,5 @@ FIXTURE_TEST(test_eviction_max_pids, test_fixture) {
         BOOST_REQUIRE_EQUAL(i < extra_producers, producers[i]->is_evicted());
     }
 
-    clean(producers);
-}
-
-FIXTURE_TEST(test_eviction_expired_pids, test_fixture) {
-    ss::sharded<cluster::producer_state_manager> psm;
-    psm
-      .start(
-        ss::sharded_parameter([this] { return _max_producers.local().bind(); }),
-        100ms)
-      .get();
-    psm.invoke_on_all(&cluster::producer_state_manager::start).get();
-    auto deferred = ss::defer([&] { psm.stop().get(); });
-
-    auto total_producers = default_max_producers - 1;
-    int evicted_so_far = 0;
-    std::vector<cluster::producer_ptr> producers;
-    producers.reserve(total_producers);
-    for (int i = 0; i < total_producers; i++) {
-        producers.push_back(ss::make_lw_shared<cluster::producer_state>(
-          psm.local(),
-          model::random_producer_identity(),
-          raft::group_id{i},
-          [&] { evicted_so_far++; }));
-    }
-    BOOST_REQUIRE_EQUAL(evicted_so_far, 0);
-    // even though we did not exceed max pids, all pids will expire
-    // by the time next tick runs.
-    RPTEST_REQUIRE_EVENTUALLY(
-      10s, [&] { return evicted_so_far == total_producers; });
     clean(producers);
 }

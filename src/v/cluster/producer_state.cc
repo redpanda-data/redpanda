@@ -13,7 +13,6 @@
 
 #include "base/vassert.h"
 #include "cluster/logger.h"
-#include "cluster/producer_state_manager.h"
 
 namespace cluster {
 
@@ -212,13 +211,11 @@ void requests::shutdown() {
 }
 
 producer_state::producer_state(
-  producer_state_manager& mgr,
-  ss::noncopyable_function<void()> hook,
+  ss::noncopyable_function<void()> post_eviction_hook,
   producer_state_snapshot snapshot) noexcept
   : _id(snapshot._id)
   , _group(snapshot._group)
-  , _parent(std::ref(mgr))
-  , _post_eviction_hook(std::move(hook)) {
+  , _post_eviction_hook(std::move(post_eviction_hook)) {
     // Hydrate from snapshot.
     for (auto& req : snapshot._finished_requests) {
         result_promise_t ready{};
@@ -229,12 +226,11 @@ producer_state::producer_state(
           model::term_id{-1},
           std::move(ready)));
     }
-    register_self();
 }
 
 bool producer_state::operator==(const producer_state& other) const {
     return _id == other._id && _group == other._group
-           && _evicted == other._evicted && _requests == other._requests;
+           && _requests == other._requests;
 }
 
 std::ostream& operator<<(std::ostream& o, const requests& requests) {
@@ -250,59 +246,29 @@ std::ostream& operator<<(std::ostream& o, const producer_state& state) {
     fmt::print(
       o,
       "{{ id: {}, group: {}, requests: {}, "
-      "ms_since_last_update: {}, evicted: {} }}",
+      "ms_since_last_update: {} }}",
       state._id,
       state._group,
       state._requests,
-      state.ms_since_last_update(),
-      state._evicted);
+      state.ms_since_last_update());
     return o;
 }
 
-ss::future<> producer_state::shutdown_input() {
-    if (_evicted) {
-        return ss::now();
-    }
+void producer_state::shutdown_input() {
     _op_lock.broken();
-    return _gate.close().then([this] { _requests.shutdown(); });
+    _requests.shutdown();
 }
 
-ss::future<> producer_state::evict() {
-    if (_evicted) {
-        return ss::now();
+bool producer_state::can_evict() {
+    // oplock is taken, do not allow producer state to be evicted
+    if (!_op_lock.ready() || _evicted) {
+        return false;
     }
+
     vlog(clusterlog.debug, "evicting producer: {}", *this);
     _evicted = true;
-    vassert(_hook.is_linked(), "unexpected state, producer unlinked.");
-    unlink_self();
-    return shutdown_input().then_wrapped([this](auto result) {
-        _post_eviction_hook();
-        return result;
-    });
-}
-
-void producer_state::register_self() {
-    _parent.get().register_producer(*this);
-    touch();
-}
-
-void producer_state::deregister_self() {
-    _parent.get().deregister_producer(*this);
-}
-
-void producer_state::unlink_self() {
-    if (_hook.is_linked()) {
-        _hook.unlink();
-        vlog(clusterlog.trace, "unlink self: {}", *this);
-    }
-}
-
-void producer_state::link_self() {
-    if (_ops_in_progress == 0) {
-        _parent.get().link(*this);
-        vlog(clusterlog.trace, "link self: {}", *this);
-    }
-    touch();
+    shutdown_input();
+    return true;
 }
 
 result<request_ptr> producer_state::try_emplace_request(
@@ -324,26 +290,19 @@ result<request_ptr> producer_state::try_emplace_request(
       bid.first_seq, bid.last_seq, current_term, reset);
 }
 
-void producer_state::update(
+bool producer_state::update(
   const model::batch_identity& bid, kafka::offset offset) {
-    if (_gate.is_closed()) {
-        return;
+    if (_evicted) {
+        return false;
     }
     bool relink_producer = _requests.stm_apply(bid, offset);
     vlog(
       clusterlog.trace,
-      "applied stm update for pid: {}, batch meta: {}, relink_producer: "
-      "{}",
+      "applied stm update for pid: {}, batch meta: {}, relink_producer: {}",
       *this,
       bid,
       relink_producer);
-    if (relink_producer) {
-        // relink for LRU tracking on followers.
-        // on leaders where this operation ran, it happens
-        // in run_with_lock() that relinks the producer.
-        unlink_self();
-        link_self();
-    }
+    return relink_producer;
 }
 
 std::optional<seq_t> producer_state::last_sequence_number() const {
