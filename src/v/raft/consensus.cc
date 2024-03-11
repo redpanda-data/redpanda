@@ -2620,7 +2620,7 @@ ss::future<consensus::flushed> consensus::flush_log() {
     auto flushed_up_to = _log->offsets().dirty_offset;
     const auto prior_truncations = _log->get_log_truncation_counter();
     _probe->log_flushed();
-    _not_flushed_bytes = 0;
+    _pending_flush_bytes = 0;
     co_await _log->flush();
     const auto lstats = _log->offsets();
     /**
@@ -2704,7 +2704,7 @@ ss::future<storage::append_result> consensus::disk_append(
                */
               _last_quorum_replicated_index_with_flush = ret.last_offset;
           }
-          _not_flushed_bytes += ret.byte_size;
+          _pending_flush_bytes += ret.byte_size;
           // TODO
           // if we rolled a log segment. write current configuration
           // for speedy recovery in the background
@@ -3875,7 +3875,7 @@ ss::future<> consensus::maybe_flush_log(size_t threshold_bytes) {
     // if there is nothing to do exit without grabbing an op_lock, this check is
     // sloppy as we data can be in flight but it is ok since next check will
     // detect it and flush log.
-    if (_not_flushed_bytes < threshold_bytes) {
+    if (_pending_flush_bytes < threshold_bytes) {
         co_return;
     }
     try {

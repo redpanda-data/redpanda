@@ -359,7 +359,7 @@ public:
         return _received_snapshot_index;
     }
     size_t received_snapshot_bytes() const { return _received_snapshot_bytes; }
-    bool has_pending_flushes() const { return _not_flushed_bytes > 0; }
+    bool has_pending_flushes() const { return _pending_flush_bytes > 0; }
 
     model::offset start_offset() const {
         return model::next_offset(_last_snapshot_index);
@@ -823,7 +823,7 @@ private:
     follower_stats _fstats;
 
     replicate_batcher _batcher;
-    size_t _not_flushed_bytes{0};
+    size_t _pending_flush_bytes{0};
 
     /// used to wait for background ops before shutting down
     ss::gate _bg;
