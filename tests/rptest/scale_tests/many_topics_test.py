@@ -28,7 +28,7 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig, Metr
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.node_operations import NodeOpsExecutor
-from rptest.util import inject_remote_script
+from rptest.util import inject_remote_script, firewall_blocked
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.consumer_swarm import ConsumerSwarm
 from rptest.scale_tests.topic_scale_profiles import TopicScaleProfileManager
@@ -94,6 +94,8 @@ class ManyTopicsTest(RedpandaTest):
         # Ongoing test vars
         self._current_profile = None
         self._swarm_producers = []
+        self._target_port = None
+        self._target_downtime_sec = 300
 
     def setUp(self):
         # start the nodes manually
@@ -721,6 +723,54 @@ class ManyTopicsTest(RedpandaTest):
         self.logger.info("Waiting for progress on producers")
         self._wait_workload_progress()
 
+    def _isolate(self, nodes):
+        with firewall_blocked(nodes, self._target_port, full_block=True):
+            self.logger.info("Waiting for cluster to acknoledge isolation")
+            time.sleep(30)
+
+            self.logger.info("Ensure workloads is progressing")
+            self._wait_workload_progress()
+
+            self.logger.info(f"Simulating {self._target_downtime_sec} sec "
+                             "isolation")
+            time.sleep(self._target_downtime_sec)
+
+            self.logger.info("Ensure leadership stays balanced")
+            self._wait_for_leadership_balanced()
+
+            self.logger.info("Ensure workloads is progressing")
+            self._wait_workload_progress()
+
+            self.logger.info("Ensure cluster healthy, "
+                             "ignoring underreplicated partitions")
+            self._wait_until_cluster_healthy(include_underreplicated=False)
+
+    def _isolate_all_nodes(self):
+        if self._target_port is None:
+            raise RuntimeError("Isolation port not selected")
+
+        self.logger.info("Isolating all redpanda nodes on port "
+                         f"{self._target_port}")
+        self._isolate(self.redpanda.nodes)
+
+        # Clean out isolation port
+        self._target_port = None
+
+    def _isolate_random_node(self):
+        if self._target_port is None:
+            raise RuntimeError("Isolation port not selected")
+
+        # Pick random node
+        isolated_node = self._select_random_node()
+        self.logger.info("Selected node for isolation "
+                         f"'{isolated_node.account.hostname}'")
+
+        # Isolate node using specified port
+        self._isolate([isolated_node])
+
+        # Clean out isolation port
+        self._target_port = None
+
     @skip_debug_mode
     @cluster(num_nodes=11, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_safely(self):
@@ -1123,6 +1173,21 @@ class ManyTopicsTest(RedpandaTest):
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_node_unsafely(self):
         self._lifecycle_test(self._decommission_node_unsafely)
+
+    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_block_s3_on_random_node(self):
+        self._target_port = 9000
+        self._lifecycle_test(self._isolate_all_nodes)
+
+    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_isolate_random_node_from_cluster(self):
+        self._target_port = 33145
+        self._lifecycle_test(self._isolate_random_node)
+
+    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_isolate_random_node_from_clients(self):
+        self._target_port = 9092
+        self._lifecycle_test(self._isolate_random_node)
 
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_many_topics_throughput(self):
