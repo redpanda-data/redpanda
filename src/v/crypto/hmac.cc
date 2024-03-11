@@ -27,13 +27,8 @@ public:
             const_cast<char*>(get_digest_str(type)),
             0),
           OSSL_PARAM_construct_end()};
-        _mac = internal::EVP_MAC_ptr(EVP_MAC_fetch(nullptr, "HMAC", nullptr));
-        if (!_mac) {
-            throw internal::ossl_error(
-              "Failed to fetch HMAC for MAC operation");
-        }
-
-        _mac_ctx = internal::EVP_MAC_CTX_ptr(EVP_MAC_CTX_new(_mac.get()));
+        _mac_ctx = internal::EVP_MAC_CTX_ptr(
+          EVP_MAC_CTX_new(internal::get_mac()));
         if (
           1
           != EVP_MAC_init(
@@ -88,7 +83,6 @@ public:
     static size_t size(digest_type type) { return digest_ctx::size(type); }
 
 private:
-    internal::EVP_MAC_ptr _mac;
     internal::EVP_MAC_CTX_ptr _mac_ctx;
 
     static const char* get_digest_str(digest_type type) {
