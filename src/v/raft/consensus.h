@@ -523,8 +523,8 @@ public:
     void notify_config_update();
 
     bool write_caching_enabled() const { return _write_caching_enabled; }
-    size_t flush_bytes() const { return _flush_bytes; }
-    std::chrono::milliseconds flush_ms() const { return _flush_ms; }
+    size_t flush_bytes() const { return _max_pending_flush_bytes; }
+    std::chrono::milliseconds flush_ms() const { return _max_flush_delay_ms; }
 
 private:
     friend replicate_entries_stm;
@@ -902,8 +902,8 @@ private:
     // updated lazily via notify_config_update()
     // todo(bharathv): add jitter
     bool _write_caching_enabled;
-    size_t _flush_bytes;
-    std::chrono::milliseconds _flush_ms;
+    size_t _max_pending_flush_bytes;
+    std::chrono::milliseconds _max_flush_delay_ms;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
