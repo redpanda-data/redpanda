@@ -199,7 +199,9 @@ replicate_entries_stm::append_to_self() {
           vlog(_ctxlog.trace, "Leader append result: {}", res);
           // only update visibility upper bound if all quorum
           // replicated entries are committed already
-          if (_ptr->_commit_index >= _ptr->_last_quorum_replicated_index) {
+          if (
+            _ptr->_commit_index
+            >= _ptr->_last_quorum_replicated_index_with_flush) {
               // for relaxed consistency mode update visibility
               // upper bound with last offset appended to the log
               _ptr->_visibility_upper_bound_index = std::max(

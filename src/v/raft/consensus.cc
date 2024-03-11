@@ -2034,8 +2034,9 @@ consensus::do_append_entries(append_entries_request&& r) {
                 truncate_at, _scheduling.default_iopc));
           })
           .then([this, truncate_at] {
-              _last_quorum_replicated_index = std::min(
-                model::prev_offset(truncate_at), _last_quorum_replicated_index);
+              _last_quorum_replicated_index_with_flush = std::min(
+                model::prev_offset(truncate_at),
+                _last_quorum_replicated_index_with_flush);
               // update flushed offset since truncation may happen to already
               // flushed entries
               _flushed_offset = std::min(
@@ -2701,7 +2702,7 @@ ss::future<storage::append_result> consensus::disk_append(
                * to deceide if follower flush is required basing on last quorum
                * replicated index.
                */
-              _last_quorum_replicated_index = ret.last_offset;
+              _last_quorum_replicated_index_with_flush = ret.last_offset;
           }
           _not_flushed_bytes += ret.byte_size;
           // TODO
@@ -2957,7 +2958,7 @@ consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
         _event_manager.notify_commit_index();
         // if we successfully acknowledged all quorum writes we can make pending
         // relaxed consistency requests visible
-        if (_commit_index >= _last_quorum_replicated_index) {
+        if (_commit_index >= _last_quorum_replicated_index_with_flush) {
             maybe_update_last_visible_index(_majority_replicated_index);
         } else {
             // still have to wait for some quorum consistency requests to be

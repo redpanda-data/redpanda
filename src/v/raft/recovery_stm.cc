@@ -193,7 +193,8 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
 
     const bool is_last_batch = _last_batch_offset == lstats.dirty_offset;
     const bool follower_has_batches_to_commit
-      = follower_committed_match_index < _ptr->_last_quorum_replicated_index;
+      = follower_committed_match_index
+        < _ptr->_last_quorum_replicated_index_with_flush;
 
     const bool is_last
       = is_last_batch

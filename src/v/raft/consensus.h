@@ -284,7 +284,7 @@ public:
     model::offset committed_offset() const { return _commit_index; }
     model::offset flushed_offset() const { return _flushed_offset; }
     model::offset last_quorum_replicated_index() const {
-        return _last_quorum_replicated_index;
+        return _last_quorum_replicated_index_with_flush;
     }
     model::offset majority_replicated_index() const {
         return _majority_replicated_index;
@@ -872,12 +872,13 @@ private:
     size_t _received_snapshot_bytes = 0;
 
     /**
-     * We keep an idex of the most recent entry replicated with quorum
-     * consistency level to make sure that all requests replicated with quorum
-     * consistency level will not be visible before they are committed by
-     * majority.
+     * We keep an index of the most recent entry replicated with quorum
+     * consistency level and flush to ensure they are not visible until
+     * they are raft committed (flushed on a majority). This ensures that
+     * writes with lower ack levels following the above writes do not
+     * mistakenly make them visible before they are raft committed.
      */
-    model::offset _last_quorum_replicated_index;
+    model::offset _last_quorum_replicated_index_with_flush;
     model::offset _last_leader_visible_offset;
     flush_after_append _last_write_flushed;
     offset_monitor _consumable_offset_monitor;
