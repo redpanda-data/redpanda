@@ -19,8 +19,10 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
+#include "raft/fundamental.h"
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
+#include "raft/replicate.h"
 #include "reflection/async_adl.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
@@ -38,14 +40,8 @@
 #include <exception>
 
 namespace raft {
-using clock_type = ss::lowres_clock;
-using duration_type = typename clock_type::duration;
-using timer_type = ss::timer<clock_type>;
-static constexpr clock_type::time_point no_timeout
-  = clock_type::time_point::max();
 
 using election_success = ss::bool_class<struct election_success_tag>;
-using group_id = named_type<int64_t, struct raft_group_id_type>;
 
 struct protocol_metadata
   : serde::
@@ -306,12 +302,6 @@ private:
     append_entries_request _request;
 };
 
-enum class reply_result : uint8_t {
-    success,
-    failure,
-    group_unavailable,
-    timeout
-};
 /*
  * append_entries_reply uses two different types of serialization: when
  * encoding/decoding directly normal adl/serde per-field serialization is used.
@@ -499,37 +489,6 @@ struct leadership_status {
     group_id group;
     // Empty when there is no known leader in the group
     std::optional<vnode> current_leader;
-};
-
-struct replicate_result {
-    /// used by the kafka API to produce a kafka reply to produce request.
-    /// see produce_request.cc
-    model::offset last_offset;
-};
-struct replicate_stages {
-    replicate_stages(ss::future<>, ss::future<result<replicate_result>>);
-    explicit replicate_stages(raft::errc);
-    // after this future is ready, request in enqueued in raft and it will not
-    // be reorderd
-    ss::future<> request_enqueued;
-    // after this future is ready, request was successfully replicated with
-    // requested consistency level
-    ss::future<result<replicate_result>> replicate_finished;
-};
-
-enum class consistency_level { quorum_ack, leader_ack, no_ack };
-
-struct replicate_options {
-    explicit replicate_options(consistency_level l)
-      : consistency(l)
-      , timeout(std::nullopt) {}
-
-    replicate_options(consistency_level l, std::chrono::milliseconds timeout)
-      : consistency(l)
-      , timeout(timeout) {}
-
-    consistency_level consistency;
-    std::optional<std::chrono::milliseconds> timeout;
 };
 
 struct transfer_leadership_options {
