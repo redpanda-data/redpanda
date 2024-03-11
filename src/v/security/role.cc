@@ -33,16 +33,28 @@ std::ostream& operator<<(std::ostream& os, role_member_type t) {
     __builtin_unreachable();
 }
 
-std::ostream& operator<<(std::ostream& os, const role_member& m) {
+std::ostream& operator<<(std::ostream& os, const role_member_view& m) {
     fmt::print(os, "{{{}}}:{{{}}}", m.type(), m.name());
     return os;
 }
 
-role_member role_member::from_principal(const security::acl_principal& p) {
-    return {member_type_for_principal_type(p.type()), ss::sstring{p.name()}};
+std::ostream& operator<<(std::ostream& os, const role_member& m) {
+    return os << role_member_view{m.type(), m.name()};
 }
 
-// TODO(oren): maybe we should have the role name on the role?
+role_member_view::role_member_view(const role_member& m)
+  : _type(m.type())
+  , _name(m.name()) {}
+
+role_member_view
+role_member_view::from_principal(const security::acl_principal& p) {
+    return {member_type_for_principal_type(p.type()), p.name_view()};
+}
+
+role_member role_member::from_principal(const security::acl_principal& p) {
+    return role_member{role_member_view::from_principal(p)};
+}
+
 std::ostream& operator<<(std::ostream& os, const role& r) {
     fmt::print(os, "role members: {{{}}}", fmt::join(r.members(), ","));
     return os;
