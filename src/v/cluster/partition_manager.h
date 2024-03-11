@@ -24,6 +24,7 @@
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
+#include "raft/group_configuration.h"
 #include "raft/group_manager.h"
 #include "raft/heartbeat_manager.h"
 #include "storage/api.h"
@@ -91,7 +92,7 @@ public:
     ss::future<consensus_ptr> manage(
       storage::ntp_config,
       raft::group_id,
-      std::vector<model::broker>,
+      std::vector<raft::vnode>,
       std::optional<remote_topic_properties> = std::nullopt,
       std::optional<cloud_storage_clients::bucket_name> = std::nullopt,
       raft::with_learner_recovery_throttle

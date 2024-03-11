@@ -14,6 +14,7 @@
 #include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
+#include "raft/group_configuration.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
@@ -29,6 +30,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <tuple>
+#include <vector>
 
 namespace raft {
 
@@ -71,7 +73,7 @@ public:
 
     ss::future<ss::lw_shared_ptr<raft::consensus>> create_group(
       raft::group_id id,
-      std::vector<model::broker> nodes,
+      std::vector<raft::vnode> nodes,
       ss::shared_ptr<storage::log> log,
       with_learner_recovery_throttle enable_learner_recovery_throttle,
       keep_snapshotted_log = keep_snapshotted_log::no);
@@ -106,7 +108,7 @@ private:
     ss::future<> flush_groups();
 
     raft::group_configuration create_initial_configuration(
-      std::vector<model::broker>, model::revision_id) const;
+      std::vector<raft::vnode>, model::revision_id) const;
     mutex _groups_mutex;
     model::node_id _self;
     ss::scheduling_group _raft_sg;

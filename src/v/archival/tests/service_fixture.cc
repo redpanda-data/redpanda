@@ -20,6 +20,7 @@
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
+#include "model/metadata.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "storage/directories.h"
@@ -286,8 +287,6 @@ void archiver_fixture::initialize_shard(
         all_ntp[d.ntp] += 1;
     }
     wait_for_controller_leadership().get();
-    auto nm = app.controller->get_members_table().local().get_node_metadata(
-      model::node_id(1));
     for (const auto& ntp : all_ntp) {
         vlog(
           fixt_log.trace,
@@ -308,7 +307,7 @@ void archiver_fixture::initialize_shard(
             storage::ntp_config(
               ntp.first, data_dir.string(), std::move(defaults)),
             raft::group_id(1),
-            {nm->broker})
+            {raft::vnode(model::node_id(1), model::revision_id{0})})
           .get();
         BOOST_CHECK_EQUAL(
           api.log_mgr().get(ntp.first)->segment_count(), ntp.second);

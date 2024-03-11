@@ -254,7 +254,9 @@ ss::future<> members_manager::handle_raft0_cfg_update(
         _in_progress_updates.erase(id);
     }
 
-    if (update_offset >= _last_connection_update_offset) {
+    if (
+      update_offset >= _last_connection_update_offset
+      && !fully_removed_nodes.empty()) {
         for (auto id : fully_removed_nodes) {
             if (id != _self.id()) {
                 co_await remove_broker_client(
@@ -1674,10 +1676,6 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
 }
 
 ss::future<std::error_code> members_manager::add_node(model::broker broker) {
-    if (!command_based_membership_active()) {
-        return _raft0->add_group_member(
-          std::move(broker), model::revision_id(0));
-    }
     return replicate_and_wait(
       _controller_stm,
       _as,
@@ -1686,10 +1684,6 @@ ss::future<std::error_code> members_manager::add_node(model::broker broker) {
 }
 
 ss::future<std::error_code> members_manager::update_node(model::broker broker) {
-    if (!command_based_membership_active()) {
-        return _raft0->update_group_member(std::move(broker));
-    }
-
     return replicate_and_wait(
       _controller_stm,
       _as,

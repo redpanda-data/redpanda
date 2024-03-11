@@ -61,6 +61,7 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "raft/fwd.h"
+#include "raft/group_configuration.h"
 #include "security/acl.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
@@ -190,23 +191,33 @@ ss::future<> controller::start(
     producer_id_recovery,
   ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>
     offsets_recovery) {
-    auto initial_raft0_brokers = discovery.founding_brokers();
+    auto founding_brokers = discovery.founding_brokers();
     std::vector<model::node_id> seed_nodes;
-    seed_nodes.reserve(initial_raft0_brokers.size());
+    seed_nodes.reserve(founding_brokers.size());
     std::transform(
-      initial_raft0_brokers.cbegin(),
-      initial_raft0_brokers.cend(),
+      founding_brokers.cbegin(),
+      founding_brokers.cend(),
       std::back_inserter(seed_nodes),
       [](const model::broker& b) { return b.id(); });
+    std::vector<raft::vnode> initial_raft0_nodes;
+    initial_raft0_nodes.reserve(founding_brokers.size());
+    std::transform(
+      founding_brokers.cbegin(),
+      founding_brokers.cend(),
+      std::back_inserter(initial_raft0_nodes),
+      [](const model::broker& b) {
+          return raft::vnode(b.id(), model::revision_id(0));
+      });
 
     return validate_configuration_invariants()
-      .then([this, initial_raft0_brokers]() mutable {
-          return create_raft0(
-            _partition_manager,
-            _shard_table,
-            config::node().data_directory().as_sstring(),
-            std::move(initial_raft0_brokers));
-      })
+      .then(
+        [this, initial_raft0_nodes = std::move(initial_raft0_nodes)]() mutable {
+            return create_raft0(
+              _partition_manager,
+              _shard_table,
+              config::node().data_directory().as_sstring(),
+              std::move(initial_raft0_nodes));
+        })
       .then([this](consensus_ptr c) { _raft0 = c; })
       .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
       .then(
@@ -400,7 +411,6 @@ ss::future<> controller::start(
             std::ref(_tp_state),
             std::ref(_shard_table),
             std::ref(_partition_manager),
-            std::ref(_members_table),
             std::ref(_partition_leaders),
             std::ref(_tp_frontend),
             std::ref(_storage),
@@ -421,12 +431,12 @@ ss::future<> controller::start(
       })
       .then(
         [this] { return _drain_manager.invoke_on_all(&drain_manager::start); })
-      .then([this, initial_raft0_brokers]() mutable {
+      .then([this, founding_brokers = std::move(founding_brokers)]() mutable {
           return _members_manager.invoke_on(
             members_manager::shard,
-            [initial_raft0_brokers = std::move(initial_raft0_brokers)](
+            [founding_brokers = std::move(founding_brokers)](
               members_manager& manager) mutable {
-                return manager.start(std::move(initial_raft0_brokers));
+                return manager.start(std::move(founding_brokers));
             });
       })
       .then([this] {

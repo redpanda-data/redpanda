@@ -16,6 +16,7 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "net/unresolved_address.h"
+#include "raft/group_configuration.h"
 #include "raft/group_manager.h"
 #include "raft/mux_state_machine.h"
 #include "raft/types.h"
@@ -127,7 +128,7 @@ struct simple_raft_fixture {
                       auto group = raft::group_id(0);
                       return _group_mgr.local().create_group(
                         group,
-                        {self_broker()},
+                        {self_node()},
                         log,
                         raft::with_learner_recovery_throttle::yes);
                   })
@@ -170,14 +171,7 @@ struct simple_raft_fixture {
           storage::make_sanitized_file_config());
     }
 
-    model::broker self_broker() {
-        return model::broker(
-          _self,
-          net::unresolved_address("localhost", 9092),
-          net::unresolved_address("localhost", 35543),
-          std::nullopt,
-          model::broker_properties{});
-    }
+    raft::vnode self_node() { return {_self, model::revision_id{0}}; }
 
     void wait_for_becoming_leader() {
         using namespace std::chrono_literals;
