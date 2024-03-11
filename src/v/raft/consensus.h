@@ -511,11 +511,6 @@ public:
     get_follower_recovery_state() const {
         return _follower_recovery_state;
     }
-    /**
-     * Flushes underlying log only if there are more not flushed bytes than the
-     * requested threshold.
-     */
-    ss::future<> maybe_flush_log(size_t threshold_bytes);
 
     inline void maybe_update_leader(vnode request_node);
 
@@ -776,6 +771,9 @@ private:
         return _features.is_active(features::feature::raft_config_serde);
     }
 
+    ss::future<> maybe_flush_log();
+    ss::future<> background_flusher();
+
     // args
     vnode _self;
     raft::group_id _group;
@@ -906,6 +904,8 @@ private:
     bool _write_caching_enabled;
     size_t _max_pending_flush_bytes;
     std::chrono::milliseconds _max_flush_delay_ms;
+
+    ss::condition_variable _background_flusher;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

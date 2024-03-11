@@ -94,12 +94,11 @@ struct simple_raft_fixture {
                   .recovery_concurrency_per_shard
                   = config::mock_binding<size_t>(64),
                   .election_timeout_ms = config::mock_binding(10ms),
-                  .replica_max_not_flushed_bytes
-                  = config::mock_binding<std::optional<size_t>>(std::nullopt),
-                  .flush_timer_interval_ms = config::mock_binding(100ms),
                   .write_caching = config::mock_binding(
                     model::write_caching_mode::off),
-                  .write_caching_flush_ms = config::mock_binding(100ms)};
+                  .write_caching_flush_ms = config::mock_binding(100ms),
+                  .write_caching_flush_bytes
+                  = config::mock_binding<std::optional<size_t>>(std::nullopt)};
             },
             [] {
                 return raft::recovery_memory_quota::configuration{

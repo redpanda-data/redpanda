@@ -158,6 +158,7 @@ consensus::consensus(
         maybe_step_down();
         dispatch_vote(false);
     });
+    ssx::spawn_with_gate(_bg, [this] { return background_flusher(); });
 }
 
 void consensus::setup_metrics() {
@@ -282,6 +283,7 @@ ss::future<> consensus::stop() {
     co_await _batcher.stop();
 
     _op_lock.broken();
+    _background_flusher.broken();
     co_await _bg.close();
 
     // close writer if we have to
@@ -2698,6 +2700,7 @@ ss::future<storage::append_result> consensus::disk_append(
       .then([this, should_update_last_quorum_idx](
               std::tuple<ret_t, std::vector<offset_configuration>> t) {
           auto& [ret, configurations] = t;
+          _pending_flush_bytes += ret.byte_size;
           if (should_update_last_quorum_idx) {
               /**
                * We have to update last quorum replicated index before we
@@ -2706,8 +2709,12 @@ ss::future<storage::append_result> consensus::disk_append(
                * replicated index.
                */
               _last_quorum_replicated_index_with_flush = ret.last_offset;
+          } else {
+              // Here are are appending entries without a flush, signal the
+              // flusher incase we hit the thresholds, particularly unflushed
+              // bytes.
+              _background_flusher.signal();
           }
-          _pending_flush_bytes += ret.byte_size;
           // TODO
           // if we rolled a log segment. write current configuration
           // for speedy recovery in the background
@@ -3874,11 +3881,13 @@ void consensus::upsert_recovery_state(
     }
 }
 
-ss::future<> consensus::maybe_flush_log(size_t threshold_bytes) {
+ss::future<> consensus::maybe_flush_log() {
     // if there is nothing to do exit without grabbing an op_lock, this check is
     // sloppy as we data can be in flight but it is ok since next check will
     // detect it and flush log.
-    if (_pending_flush_bytes < threshold_bytes) {
+    if (
+      _pending_flush_bytes < _max_pending_flush_bytes
+      && time_since_last_flush() < _max_flush_delay_ms) {
         co_return;
     }
     try {
@@ -3912,6 +3921,26 @@ void consensus::notify_config_update() {
     _max_flush_delay_ms
       = flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
           .next_duration();
+    // let the flusher know that the tunables have changed, this may result
+    // in an extra flush but that should be ok since this this is a rare
+    // operation.
+    _background_flusher.signal();
+}
+
+ss::future<> consensus::background_flusher() {
+    while (!_bg.is_closed()) {
+        try {
+            co_await _background_flusher.wait(log_config().flush_ms());
+        } catch (const ss::condition_variable_timed_out&) {
+        }
+        co_await maybe_flush_log().handle_exception(
+          [this](const std::exception_ptr& ex) {
+              vlog(
+                _ctxlog.warn,
+                "Ignoring exception from background flush: {}",
+                ex);
+          });
+    }
 }
 
 } // namespace raft

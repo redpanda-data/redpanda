@@ -143,9 +143,12 @@ TEST_F_CORO(raft_fixture, validate_adding_nodes_to_cluster) {
 TEST_F_CORO(
   raft_fixture, validate_committed_offset_advancement_after_log_flush) {
     co_await create_simple_group(3);
+
     // wait for leader
     auto leader = co_await wait_for_leader(10s);
     auto& leader_node = node(leader);
+
+    co_await disable_background_flushing();
 
     // replicate batches with acks=1 and validate that committed offset did not
     // advance
@@ -168,9 +171,10 @@ TEST_F_CORO(
 
     co_await assert_logs_equal();
 
-    // flush log on all of the nodes
-    co_await parallel_for_each_node(
-      [](auto& n) { return n.raft()->maybe_flush_log(0); });
+    vlog(logger().info, "Reset-ing background flushing..");
+
+    co_await reset_background_flushing();
+
     co_await wait_for_committed_offset(result.value().last_offset, 10s);
 }
 

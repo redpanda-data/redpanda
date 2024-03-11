@@ -561,6 +561,9 @@ void raft_node_instance::on_dispatch(
 }
 
 seastar::future<> raft_fixture::TearDownAsync() {
+    co_await ss::smp::invoke_on_all(
+      []() { config::shard_local_cfg().for_each([](auto& p) { p.reset(); }); });
+
     co_await seastar::coroutine::parallel_for_each(
       _nodes, [](auto& pair) { return pair.second->stop(); });
 
@@ -680,6 +683,31 @@ ss::future<> raft_fixture::wait_for_visible_offset(
               return pair.second->raft()->last_visible_index() >= offset;
           });
     });
+}
+
+void raft_fixture::notify_replicas_on_config_change() const {
+    for (const auto& [_, node] : _nodes) {
+        node->raft()->notify_config_update();
+    }
+}
+
+ss::future<> raft_fixture::disable_background_flushing() const {
+    co_await ss::smp::invoke_on_all([]() {
+        config::shard_local_cfg()
+          .raft_replica_max_pending_flush_bytes.set_value(
+            std::numeric_limits<size_t>::max());
+        config::shard_local_cfg().raft_replica_max_flush_delay_ms.set_value(
+          60min);
+    });
+    notify_replicas_on_config_change();
+}
+
+ss::future<> raft_fixture::reset_background_flushing() const {
+    co_await ss::smp::invoke_on_all([]() {
+        config::shard_local_cfg().raft_replica_max_pending_flush_bytes.reset();
+        config::shard_local_cfg().raft_replica_max_flush_delay_ms.reset();
+    });
+    notify_replicas_on_config_change();
 }
 
 std::ostream& operator<<(std::ostream& o, msg_type type) {
