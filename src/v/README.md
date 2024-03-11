@@ -13,6 +13,7 @@ compat                 | Compatibility checks |
 compression            | utilities supporting compression/decompression of many types |
 config                 | Redpanda cluster level and node level configuration options |
 container              | Generic Redpanda specific containers and data structures |
+crypto                 | Middleware library used to perform cryptographic operations |
 features               | Cluster feature flags for rolling upgrades |
 finjector              | Failure injector framework for testing and correctness |
 hashing                | hashing utility adaptors often used in cryptography or checksumming |

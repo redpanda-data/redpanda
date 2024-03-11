@@ -19,11 +19,25 @@
 
 #include <openssl/evp.h>
 #include <openssl/param_build.h>
+#include <openssl/provider.h>
 
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
 
 namespace crypto::internal {
+
+/// Exception class used to extract the error from OpenSSL
+class ossl_error final : public exception {
+public:
+    ossl_error()
+      : exception(build_error()) {}
+
+    explicit ossl_error(const std::string& msg)
+      : exception(msg + ": " + build_error()) {}
+
+    static std::string build_error();
+};
 
 inline const EVP_MD* get_md(digest_type type) {
     switch (type) {
@@ -51,18 +65,7 @@ using EVP_MAC_CTX_ptr = handle<EVP_MAC_CTX, EVP_MAC_CTX_free>;
 using EVP_MD_CTX_ptr = handle<EVP_MD_CTX, EVP_MD_CTX_free>;
 using EVP_PKEY_ptr = handle<EVP_PKEY, EVP_PKEY_free>;
 using EVP_PKEY_CTX_ptr = handle<EVP_PKEY_CTX, EVP_PKEY_CTX_free>;
+using OSSL_LIB_CTX_ptr = handle<OSSL_LIB_CTX, OSSL_LIB_CTX_free>;
 using OSSL_PARAM_ptr = handle<OSSL_PARAM, OSSL_PARAM_free>;
 using OSSL_PARAM_BLD_ptr = handle<OSSL_PARAM_BLD, OSSL_PARAM_BLD_free>;
-
-/// Exception class used to extract the error from OpenSSL
-class ossl_error final : public exception {
-public:
-    ossl_error()
-      : exception(build_error()) {}
-
-    explicit ossl_error(const std::string& msg)
-      : exception(msg + ": " + build_error()) {}
-
-    static std::string build_error();
-};
 } // namespace crypto::internal

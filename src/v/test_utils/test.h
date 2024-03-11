@@ -160,6 +160,8 @@ private:
     ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperNE, val1, val2)
 #define GTEST_TEST_THROW_CORO(statement, expected_exception)                   \
     GTEST_TEST_THROW_(statement, expected_exception, GTEST_FATAL_FAILURE_CORO_)
+#define GTEST_TEST_NO_THROW_CORO(statement)                                    \
+    GTEST_TEST_NO_THROW_(statement, GTEST_FATAL_FAILURE_CORO_)
 /*
  * Coroutine safe assertions
  */
@@ -179,6 +181,8 @@ private:
 
 #define ASSERT_THROW_CORO(statement, expected_exception)                       \
     GTEST_TEST_THROW_CORO(statement, expected_exception)
+
+#define ASSERT_NO_THROW_CORO(statement) GTEST_TEST_NO_THROW_CORO(statement)
 
 #define GTEST_SKIP_CORO() GTEST_SKIP_CORO_("")
 
