@@ -395,12 +395,7 @@ private:
       quorum_write_empty_batch(model::timeout_clock::time_point);
 
     ss::future<result<raft::replicate_result>>
-    replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
-        return _raft->replicate(
-          term,
-          model::make_memory_record_batch_reader(std::move(batch)),
-          raft::replicate_options{raft::consistency_level::quorum_ack});
-    }
+    replicate_quorum_ack(model::term_id term, model::record_batch&& batch);
 
     bool is_transaction_ga() {
         return _feature_table.local().is_active(
