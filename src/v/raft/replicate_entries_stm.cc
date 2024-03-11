@@ -341,7 +341,7 @@ result<replicate_result> replicate_entries_stm::build_replicate_result() const {
 }
 
 ss::future<result<replicate_result>>
-replicate_entries_stm::wait_for_majority() {
+replicate_entries_stm::wait_for_majority_flush() {
     if (!_append_result) {
         co_return build_replicate_result();
     }
@@ -379,6 +379,11 @@ replicate_entries_stm::wait_for_majority() {
         co_return result<replicate_result>(
           make_error_code(errc::shutting_down));
     }
+}
+
+ss::future<result<replicate_result>>
+replicate_entries_stm::wait_for_majority() {
+    co_return co_await wait_for_majority_flush();
 }
 
 result<replicate_result> replicate_entries_stm::process_result(
