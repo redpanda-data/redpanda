@@ -10,15 +10,12 @@
  */
 
 #pragma once
-#include "base/outcome.h"
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/record.h"
 #include "raft/fwd.h"
 #include "raft/offset_monitor.h"
-#include "raft/types.h"
 
 namespace raft {
 

@@ -12,9 +12,9 @@
 #pragma once
 
 #include "base/outcome.h"
-#include "model/metadata.h"
-#include "raft/logger.h"
+#include "raft/fwd.h"
 #include "raft/recovery_memory_quota.h"
+#include "raft/types.h"
 #include "storage/snapshot.h"
 #include "utils/prefix_logger.h"
 

@@ -15,10 +15,8 @@
 #include "base/seastarx.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
-#include "raft/group_configuration.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
-#include "utils/copy_range.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
@@ -29,7 +27,6 @@
 
 #include <absl/container/flat_hash_map.h>
 
-#include <memory>
 #include <vector>
 
 namespace raft {

@@ -13,10 +13,9 @@
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/record.h"
 #include "raft/offset_monitor.h"
-#include "raft/types.h"
+#include "raft/replicate.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>

@@ -16,8 +16,8 @@
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
+#include "raft/fundamental.h"
 #include "raft/group_configuration.h"
-#include "raft/types.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>

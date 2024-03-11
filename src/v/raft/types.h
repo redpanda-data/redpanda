@@ -12,18 +12,15 @@
 #pragma once
 
 #include "base/outcome.h"
-#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/record.h"
 #include "model/record_batch_reader.h"
-#include "model/timeout_clock.h"
 #include "raft/errc.h"
 #include "raft/fundamental.h"
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/replicate.h"
-#include "reflection/async_adl.h"
+#include "reflection/adl.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
 
@@ -37,7 +34,6 @@
 #include <boost/range/join.hpp>
 
 #include <cstdint>
-#include <exception>
 
 namespace raft {
 
@@ -734,11 +730,7 @@ struct transfer_leadership_request
     auto serde_fields() { return std::tie(group, target, timeout); }
 
     friend std::ostream&
-    operator<<(std::ostream& o, const transfer_leadership_request& r) {
-        fmt::print(
-          o, "group {} target {} timeout {}", r.group, r.target, r.timeout);
-        return o;
-    }
+    operator<<(std::ostream& o, const transfer_leadership_request& r);
 };
 
 struct transfer_leadership_reply

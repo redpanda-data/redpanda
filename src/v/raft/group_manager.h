@@ -13,7 +13,6 @@
 #include "cluster/types.h"
 #include "metrics/metrics.h"
 #include "model/metadata.h"
-#include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
@@ -27,8 +26,6 @@
 #include <seastar/core/scheduling.hh>
 
 #include <absl/container/flat_hash_map.h>
-
-#include <tuple>
 
 namespace raft {
 

@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "raft/group_configuration.h"
+#include "base/vassert.h"
 #include "ssx/semaphore.h"
 
 namespace raft {

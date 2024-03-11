@@ -12,7 +12,6 @@
 #pragma once
 
 #include "base/outcome.h"
-#include "base/units.h"
 #include "model/record_batch_reader.h"
 #include "raft/types.h"
 #include "ssx/semaphore.h"

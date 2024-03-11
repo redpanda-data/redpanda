@@ -11,15 +11,13 @@
 
 #pragma once
 
-#include "config/property.h"
 #include "model/fundamental.h"
-#include "model/record.h"
 #include "raft/fwd.h"
 #include "raft/logger.h"
 #include "raft/state_machine_base.h"
+#include "raft/types.h"
 #include "serde/envelope.h"
 #include "storage/snapshot.h"
-#include "storage/types.h"
 #include "utils/absl_sstring_hash.h"
 #include "utils/mutex.h"
 

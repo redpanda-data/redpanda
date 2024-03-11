@@ -13,7 +13,6 @@
 #include "model/metadata.h"
 #include "reflection/adl.h"
 #include "serde/envelope.h"
-#include "utils/to_string.h"
 
 #include <boost/range/join.hpp>
 

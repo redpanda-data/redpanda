@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "raft/group_configuration.h"
 #include "raft/logger.h"
 #include "raft/types.h"
 #include "ssx/semaphore.h"
@@ -20,9 +21,6 @@
 #include <seastar/util/bool_class.hh>
 
 #include <absl/container/flat_hash_map.h>
-
-#include <variant>
-#include <vector>
 
 namespace raft {
 using is_prevote = ss::bool_class<struct is_prevote_tag>;
