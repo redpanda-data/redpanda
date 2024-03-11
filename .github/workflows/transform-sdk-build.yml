@@ -26,22 +26,39 @@ on:
       - '.github/workflows/transform-sdk-build.yml'
 
 jobs:
+  build-integration-tests:
+    name: Build integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.22.1
+      - name: Build integration tests
+        working-directory: src/transform-sdk/tests
+        run: go test -c -o ./wasm-integration-test
+      - name: Upload integration test binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/tests/wasm-integration-test
+          retention-days: 1
+
   test-golang:
     name: Test Golang Transform SDK
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v3
-
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: 1.20.6
-
+          go-version: 1.22.1
       - name: Run tests
         working-directory: src/transform-sdk/go/transform
         run: go test -v ./...
-
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
@@ -49,24 +66,85 @@ jobs:
           args: --timeout 5m
           working-directory: src/transform-sdk/go/transform
 
+  integration-test-golang:
+    name: Integration Test Golang Transform SDK
+    needs: [test-golang, build-integration-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.22.1
+      - name: Set up Tinygo
+        working-directory: src/transform-sdk/go/transform
+        env:
+          TINYGO_VERSION: v0.31.0-rpk2
+        run: |
+          curl -S -s -L "https://github.com/redpanda-data/tinygo/releases/download/${TINYGO_VERSION}/tinygo-linux-amd64.tar.gz" | tar -xvz
+          echo "$PWD/tinygo/bin" >> $GITHUB_PATH
+      - name: Build integration tests
+        working-directory: src/transform-sdk/go/transform/internal/testdata
+        run: |
+          tinygo build -scheduler=none -target=wasi -o identity.wasm ./identity
+      - name: Download integration test suite
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/go/transform/internal/testdata
+      - name: Run integration tests
+        working-directory: src/transform-sdk/go/transform/internal/testdata
+        env:
+          IDENTITY: identity.wasm
+        run: |
+          chmod +x wasm-integration-test
+          ./wasm-integration-test -test.v
+
   test-rust:
     name: Test Rust Transform SDK
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v3
-
       - name: Set up Rust
-        run: rustup update stable --no-self-update && rustup default stable
-
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
       - name: Run tests
         working-directory: src/transform-sdk/rust
         run: cargo test --workspace
-
       - name: Check format
         working-directory: src/transform-sdk/rust
         run: cargo fmt --check --all
-
       - name: Run clippy
         working-directory: src/transform-sdk/rust
         run: cargo clippy --all
+      
+
+  integration-test-rust:
+    name: Integration Test Rust Transform SDK
+    needs: [test-rust, build-integration-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+      - name: Set up Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup target add wasm32-wasi
+      - name: Build integration tests
+        working-directory: src/transform-sdk/rust
+        run: cargo build --target=wasm32-wasi --release --example=identity
+      - name: Download integration test suite
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/rust
+      - name: Run integration tests
+        working-directory: src/transform-sdk/rust
+        env:
+          IDENTITY: target/wasm32-wasi/release/examples/identity.wasm
+        run: |
+          chmod +x wasm-integration-test
+          ./wasm-integration-test -test.v
