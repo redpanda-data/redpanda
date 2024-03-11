@@ -11,20 +11,13 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
-#include "cloud_storage/logger.h"
-#include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/segment_state.h"
 #include "cloud_storage/types.h"
-#include "cloud_storage_clients/types.h"
-#include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "raft/types.h"
-#include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
@@ -37,9 +30,6 @@
 
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/iterator/iterator_facade.hpp>
-
-#include <chrono>
-#include <functional>
 
 namespace cloud_storage {
 
