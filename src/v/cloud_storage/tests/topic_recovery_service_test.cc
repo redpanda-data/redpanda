@@ -278,13 +278,13 @@ FIXTURE_TEST(recovery_with_missing_topic_manifest, fixture) {
 }
 
 FIXTURE_TEST(recovery_with_existing_topic, fixture) {
-    cluster::topic_configuration cfg{
-      model::ns{"kafka"}, model::topic{"test"}, 1, 1};
-    std::vector<cluster::custom_assignable_topic_configuration> topic_cfg = {
-      cluster::custom_assignable_topic_configuration{std::move(cfg)}};
+    cluster::custom_assignable_topic_configuration_vector topic_cfg{
+      {cluster::custom_assignable_topic_configuration{
+        {model::ns{"kafka"}, model::topic{"test"}, 1, 1}}}};
     auto topic_create_result = app.controller->get_topics_frontend()
                                  .local()
-                                 .create_topics(topic_cfg, model::no_timeout)
+                                 .create_topics(
+                                   std::move(topic_cfg), model::no_timeout)
                                  .get();
     wait_for_topics(std::move(topic_create_result)).get();
     set_expectations_and_listen(

@@ -137,9 +137,8 @@ public:
 
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
-    std::
-      pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
-      fetch_metadata_and_cfg(const std::vector<topic_result>&);
+    std::pair<std::vector<model::topic_metadata>, topic_configuration_vector>
+    fetch_metadata_and_cfg(const std::vector<topic_result>&);
 
     ss::future<finish_partition_update_reply>
       do_finish_partition_update(finish_partition_update_request);

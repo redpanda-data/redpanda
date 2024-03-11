@@ -25,9 +25,9 @@
 #include <chrono>
 #include <vector>
 
-std::vector<cluster::topic_configuration> test_topics_configuration(
+cluster::topic_configuration_vector test_topics_configuration(
   cluster::replication_factor rf = cluster::replication_factor{1}) {
-    return std::vector<cluster::topic_configuration>{
+    return cluster::topic_configuration_vector{
       cluster::topic_configuration(test_ns, model::topic("tp-1"), 10, rf),
       cluster::topic_configuration(test_ns, model::topic("tp-2"), 10, rf),
       cluster::topic_configuration(test_ns, model::topic("tp-3"), 10, rf),

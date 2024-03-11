@@ -1337,7 +1337,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::topic_properties_update> updates;
+        cluster::topic_properties_update_vector updates;
         for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             cluster::property_update<std::optional<v8_engine::data_policy>>
               data_policy;
@@ -1350,16 +1350,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             cluster::incremental_topic_custom_updates custom_properties{
               .data_policy = data_policy,
             };
-            updates.push_back(cluster::topic_properties_update{
+            updates.emplace_back(
               model::random_topic_namespace(),
               random_incremental_topic_updates(),
-              custom_properties,
-            });
+              custom_properties);
         }
         cluster::update_topic_properties_request data{
-          .updates = updates,
+          .updates = std::move(updates),
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         cluster::topic_result data{
@@ -1698,18 +1697,18 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::topic_configuration> topics;
+        cluster::topic_configuration_vector topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_configuration());
         }
         cluster::create_topics_request data{
-          .topics = topics,
+          .topics = std::move(topics),
           .timeout = random_timeout_clock_duration(),
         };
         // adl encoding for topic_configuration doesn't encode/decode to exact
         // equality, but also already existed prior to serde support being added
         // so only testing the serde case.
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         auto data = random_partition_metadata();
@@ -1743,7 +1742,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // adl serialization doesn't preserve equality for topic_configuration.
         // serde serialization does and was added after support for adl so adl
         // semantics are preserved.
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         raft::transfer_leadership_request data{

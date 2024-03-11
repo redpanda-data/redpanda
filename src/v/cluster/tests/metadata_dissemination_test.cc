@@ -88,7 +88,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(cache_2.node_count(), 3);
 
     // Create topic with replication factor 1
-    std::vector<cluster::topic_configuration> topics;
+    cluster::topic_configuration_vector topics;
     topics.emplace_back(model::ns("default"), model::topic("test_1"), 3, 1);
     cntrl_0->controller->get_topics_frontend()
       .local()
@@ -122,7 +122,7 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     BOOST_REQUIRE_EQUAL(cache_1.node_count(), 2);
 
     // Create topic with replication factor 1
-    std::vector<cluster::topic_configuration> topics;
+    cluster::topic_configuration_vector topics;
     topics.emplace_back(model::ns("default"), model::topic("test_1"), 3, 1);
     cntrl_0->controller->get_topics_frontend()
       .local()

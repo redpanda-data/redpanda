@@ -441,8 +441,10 @@ template<>
 struct compat_check<cluster::topic_configuration> {
     static constexpr std::string_view name = "cluster::topic_configuration";
 
-    static std::vector<cluster::topic_configuration> create_test_cases() {
-        return generate_instances<cluster::topic_configuration>();
+    static cluster::topic_configuration_vector create_test_cases() {
+        auto i = generate_instances<cluster::topic_configuration>();
+        return {
+          std::make_move_iterator(i.begin()), std::make_move_iterator(i.end())};
     }
 
     static void to_json(
@@ -534,12 +536,12 @@ struct compat_check<cluster::create_topics_request> {
 
     static std::vector<compat_binary>
     to_binary(cluster::create_topics_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return compat_binary::serde_and_adl(std::move(obj));
     }
 
     static void check(cluster::create_topics_request obj, compat_binary test) {
         if (test.name == "serde") {
-            verify_serde_only(obj, test);
+            verify_serde_only(obj.copy(), test);
             return;
         }
         vassert(test.name == "adl", "Unknown compat_binary format encounterd");
@@ -602,12 +604,12 @@ struct compat_check<cluster::create_topics_reply> {
 
     static std::vector<compat_binary>
     to_binary(cluster::create_topics_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return compat_binary::serde_and_adl(std::move(obj));
     }
 
     static void check(cluster::create_topics_reply obj, compat_binary test) {
         if (test.name == "serde") {
-            verify_serde_only(obj, test);
+            verify_serde_only(obj.copy(), test);
             return;
         }
         vassert(test.name == "adl", "Unknown compat_binary format encounterd");

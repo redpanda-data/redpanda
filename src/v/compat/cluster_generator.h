@@ -678,7 +678,7 @@ template<>
 struct instance_generator<cluster::create_topics_request> {
     static cluster::create_topics_request random() {
         return {
-          .topics = tests::random_vector(
+          .topics = tests::random_chunked_vector(
             [] {
                 return instance_generator<
                   cluster::topic_configuration>::random();
@@ -698,7 +698,7 @@ struct instance_generator<cluster::create_topics_reply> {
             [] { return instance_generator<cluster::topic_result>::random(); }),
           tests::random_vector(
             [] { return instance_generator<model::topic_metadata>::random(); }),
-          tests::random_vector([] {
+          tests::random_chunked_vector([] {
               return instance_generator<cluster::topic_configuration>::random();
           })};
     }
@@ -818,7 +818,7 @@ struct instance_generator<cluster::topic_properties_update> {
 template<>
 struct instance_generator<cluster::update_topic_properties_request> {
     static cluster::update_topic_properties_request random() {
-        return {.updates = tests::random_vector([] {
+        return {.updates = tests::random_chunked_vector([] {
                     return instance_generator<
                       cluster::topic_properties_update>::random();
                 })};

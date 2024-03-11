@@ -217,7 +217,7 @@ ss::future<std::vector<R>> do_alter_topics_configuration(
           error_code::invalid_config,
           "duplicated topic {} alter config request"));
     }
-    std::vector<cluster::topic_properties_update> updates;
+    cluster::topic_properties_update_vector updates;
     for (auto& r : boost::make_iterator_range(resources.begin(), valid_end)) {
         auto res = f(r);
         if (res.has_error()) {
