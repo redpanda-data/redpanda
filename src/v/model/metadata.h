@@ -57,6 +57,10 @@ using revision_id = named_type<int64_t, struct revision_id_model_type>;
 using initial_revision_id
   = named_type<int64_t, struct initial_revision_id_model_type>;
 
+// tracking evolution of the shard table
+using shard_revision_id
+  = named_type<int64_t, struct shard_revision_id_model_type>;
+
 /// Rack id type
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
 struct broker_properties

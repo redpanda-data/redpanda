@@ -84,17 +84,6 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
         .available_memory_bytes = total_mem});
 }
 
-bool has_local_replicas(
-  model::node_id self, const std::vector<model::broker_shard>& replicas) {
-    return std::find_if(
-             std::cbegin(replicas),
-             std::cend(replicas),
-             [self](const model::broker_shard& bs) {
-                 return bs.node_id == self && bs.shard == ss::this_shard_id();
-             })
-           != replicas.cend();
-}
-
 bool are_replica_sets_equal(
   const std::vector<model::broker_shard>& lhs,
   const std::vector<model::broker_shard>& rhs) {
@@ -192,6 +181,62 @@ get_allocation_domain(const model::topic_namespace_view tp_ns) {
         return partition_allocation_domains::consumer_offsets;
     }
     return partition_allocation_domains::common;
+}
+
+std::optional<shard_placement_target> placement_target_on_node(
+  const topic_table::partition_replicas_view& replicas_view,
+  model::node_id node) {
+    // The desired partition placement is the following: if there is no replicas
+    // update, the partition object should exist only on the assigned nodes and
+    // shards. If there is an update, the rules are more complicated: the
+    // partition should exist on both new nodes (those not present in the
+    // original assignment) and the original nodes for the whole duration of the
+    // update. On original nodes, if there is a cross-shard move, the shard is
+    // determined by the end state of the move.
+    //
+    // Example: (x/y means node/shard) suppose there is an update
+    // {1/0, 2/0, 3/0} -> {2/1, 3/0, 4/0} in progress. Then the partition object
+    // must be present only on 1/0, 2/1, 3/0 and 4/0. If the update is then
+    // cancelled, the partition object must be present only on 1/0, 2/0, 3/0,
+    // 4/0 (note that the desired shard for node 2 changed).
+    //
+    // Note also that the partition on new nodes is always created, even if the
+    // update is cancelled. This is due to a possibility of "revert_cancel"
+    // scenario (i.e. when we cancel a move, but the raft layer has already
+    // completed it, in this case we end up with the "updated" replica set, not
+    // the original one).
+
+    auto orig_shard_on_node = find_shard_on_node(
+      replicas_view.orig_replicas(), node);
+    if (orig_shard_on_node) {
+        auto log_revision = replicas_view.revisions().at(node);
+        auto resulting_shard_on_node = find_shard_on_node(
+          replicas_view.resulting_replicas(), node);
+        if (resulting_shard_on_node) {
+            // partition stays on the node, possibly changing its shard.
+            // expected shard is determined by the resulting assignment
+            // (including cancellation effects).
+            return shard_placement_target{
+              log_revision, resulting_shard_on_node.value()};
+        } else {
+            // partition is moved away from this node, but we keep the original
+            // replica until update is finished.
+            return shard_placement_target{
+              log_revision, orig_shard_on_node.value()};
+        }
+    } else if (replicas_view.update) {
+        // if partition appears on the node as a result of the update, create
+        // and keep it until the update is finished irrespective of
+        // cancellations.
+        auto updated_shard_on_node = find_shard_on_node(
+          replicas_view.update->get_target_replicas(), node);
+        if (updated_shard_on_node) {
+            return shard_placement_target{
+              replicas_view.update->get_update_revision(),
+              updated_shard_on_node.value()};
+        }
+    }
+    return std::nullopt;
 }
 
 partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {

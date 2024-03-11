@@ -435,6 +435,11 @@ std::ostream& operator<<(std::ostream& o, const partition_assignment& p_as) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const shard_placement_target& eg) {
+    fmt::print(o, "{{log_revision: {}, shard: {}}}", eg.log_revision, eg.shard);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
     switch (tp) {
     case partition_operation_type::add:

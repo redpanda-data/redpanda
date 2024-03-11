@@ -21,8 +21,8 @@
 #include <seastar/net/socket_defs.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-SEASTAR_THREAD_TEST_CASE(test_has_local_replicas) {
-    model::node_id id{2};
+SEASTAR_THREAD_TEST_CASE(test_find_shard_on_node) {
+    model::node_id id{1};
 
     std::vector<model::broker_shard> replicas_1{
       model::broker_shard{model::node_id(1), 2},
@@ -34,8 +34,145 @@ SEASTAR_THREAD_TEST_CASE(test_has_local_replicas) {
       model::broker_shard{model::node_id(2), 0}, // local replica
     };
 
-    BOOST_REQUIRE_EQUAL(cluster::has_local_replicas(id, replicas_1), false);
-    BOOST_REQUIRE_EQUAL(cluster::has_local_replicas(id, replicas_2), true);
+    BOOST_REQUIRE(cluster::find_shard_on_node(replicas_1, id) == 2);
+    BOOST_REQUIRE(cluster::find_shard_on_node(replicas_2, id) == std::nullopt);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_placement_target_on_node) {
+    cluster::replicas_t orig_replicas{
+      model::broker_shard{model::node_id(1), 2},
+      model::broker_shard{model::node_id(2), 1},
+      model::broker_shard{model::node_id(3), 0}};
+
+    cluster::partition_assignment orig_assignment(
+      raft::group_id(111), model::partition_id(23), orig_replicas);
+
+    cluster::topic_table::partition_meta partition_meta{
+      .replicas_revisions = {
+        {model::node_id(1), model::revision_id{11}},
+        {model::node_id(2), model::revision_id{22}},
+        {model::node_id(3), model::revision_id{33}},
+      },
+      .last_update_finished_revision = model::revision_id{123},
+    };
+
+    // node_id, log_revision, shard_id
+    using expected_list_t = std::vector<std::tuple<int32_t, int64_t, uint32_t>>;
+
+    auto check = [](
+                   std::string_view case_id,
+                   const cluster::topic_table::partition_replicas_view& rv,
+                   expected_list_t expected_list) {
+        for (auto [node_id, log_revision, shard_id] : expected_list) {
+            cluster::shard_placement_target expected{
+              model::revision_id(log_revision), shard_id};
+            auto actual = cluster::placement_target_on_node(
+              rv, model::node_id(node_id));
+            BOOST_REQUIRE_MESSAGE(
+              actual == expected,
+              fmt::format(
+                "case '{}': placement target mismatch for node {}, "
+                "expected: {}, got: {}",
+                case_id,
+                node_id,
+                expected,
+                actual));
+        }
+    };
+
+    {
+        // case 1: no update
+        cluster::topic_table::partition_replicas_view rv{
+          .partition_meta = partition_meta,
+          .assignment = orig_assignment,
+          .update = nullptr};
+
+        BOOST_REQUIRE(
+          cluster::placement_target_on_node(rv, model::node_id(0))
+          == std::nullopt);
+
+        check(
+          "no update",
+          rv,
+          {
+            {1, 11, 2},
+            {2, 22, 1},
+            {3, 33, 0},
+          });
+    }
+
+    cluster::replicas_t updated_replicas{
+      model::broker_shard{model::node_id(1), 2},
+      model::broker_shard{model::node_id(2), 3},
+      model::broker_shard{model::node_id(4), 5}};
+
+    auto updated_assignment = orig_assignment;
+    updated_assignment.replicas = updated_replicas;
+
+    {
+        // case 2: in-progress update
+
+        cluster::topic_table::in_progress_update update(
+          orig_replicas,
+          updated_replicas,
+          cluster::reconfiguration_state::in_progress,
+          model::revision_id(145),
+          cluster::reconfiguration_policy::full_local_retention,
+          nullptr);
+
+        cluster::topic_table::partition_replicas_view rv{
+          .partition_meta = partition_meta,
+          .assignment = updated_assignment,
+          .update = &update};
+
+        BOOST_REQUIRE(
+          cluster::placement_target_on_node(rv, model::node_id(0))
+          == std::nullopt);
+
+        check(
+          "in-progress update",
+          rv,
+          {
+            {1, 11, 2},
+            {2, 22, 3},
+            {3, 33, 0},
+            {4, 145, 5},
+          });
+    }
+
+    {
+        // case 3: cancelled update
+
+        cluster::topic_table::in_progress_update update(
+          orig_replicas,
+          updated_replicas,
+          cluster::reconfiguration_state::in_progress,
+          model::revision_id(145),
+          cluster::reconfiguration_policy::full_local_retention,
+          nullptr);
+        update.set_state(
+          cluster::reconfiguration_state::cancelled, model::revision_id(167));
+
+        cluster::topic_table::partition_replicas_view rv{
+          .partition_meta = partition_meta,
+          .assignment
+          = orig_assignment, // orig_assignment reflects the cancelled update
+          .update = &update};
+
+        BOOST_REQUIRE(
+          cluster::placement_target_on_node(rv, model::node_id(0))
+          == std::nullopt);
+
+        check(
+          "cancelled update",
+          rv,
+          {
+            {1, 11, 2},
+            {2, 22, 1},
+            {3, 33, 0},
+            {4, 145, 5},
+          });
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(test_check_result_configuration) {

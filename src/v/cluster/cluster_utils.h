@@ -157,12 +157,6 @@ auto do_with_client_one_shot(
       });
 }
 
-/**
- * checks if current node/shard is part of the partition replica set replica set
- */
-bool has_local_replicas(
-  model::node_id, const std::vector<model::broker_shard>&);
-
 bool are_replica_sets_equal(
   const std::vector<model::broker_shard>&,
   const std::vector<model::broker_shard>&);
@@ -282,6 +276,23 @@ inline bool contains_node(
              [id](const model::broker_shard& bs) { return bs.node_id == id; })
            != replicas.end();
 }
+
+inline std::optional<ss::shard_id>
+find_shard_on_node(const replicas_t& replicas, model::node_id node) {
+    for (const auto& bs : replicas) {
+        if (bs.node_id == node) {
+            return bs.shard;
+        }
+    }
+    return std::nullopt;
+}
+
+/// Calculates the partition placement target (i.e. log revision and shard id)
+/// on a particular node of a partition with replicas assignment determined by
+/// partition_replicas_view (including effects of an in-progress or cancelled
+/// update if present).
+std::optional<shard_placement_target> placement_target_on_node(
+  const topic_table::partition_replicas_view&, model::node_id);
 
 // check if replica is moving from node
 inline bool moving_from_node(

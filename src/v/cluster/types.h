@@ -2419,6 +2419,25 @@ enum class reconfiguration_policy {
 using replicas_revision_map
   = absl::flat_hash_map<model::node_id, model::revision_id>;
 
+/// Describes the shard placement target for a partition replica on this node.
+/// Log revision is needed to distinguish different incarnations of the
+/// partition.
+struct shard_placement_target {
+    shard_placement_target(model::revision_id lr, ss::shard_id s)
+      : log_revision(lr)
+      , shard(s) {}
+
+    model::revision_id log_revision;
+    ss::shard_id shard;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const shard_placement_target&);
+
+    friend bool
+    operator==(const shard_placement_target&, const shard_placement_target&)
+      = default;
+};
+
 /// Type of controller backend operation
 /// TODO: remove legacy types and bring more in line with what
 /// controller_backend actually does.
@@ -2451,12 +2470,17 @@ std::ostream& operator<<(std::ostream&, const topic_table_delta_type&);
 
 struct topic_table_delta {
     model::ntp ntp;
+    raft::group_id group;
     model::revision_id revision;
     topic_table_delta_type type;
 
     topic_table_delta(
-      model::ntp ntp, model::revision_id rev, topic_table_delta_type type)
+      model::ntp ntp,
+      raft::group_id gr,
+      model::revision_id rev,
+      topic_table_delta_type type)
       : ntp(std::move(ntp))
+      , group(gr)
       , revision(rev)
       , type(type) {}
 

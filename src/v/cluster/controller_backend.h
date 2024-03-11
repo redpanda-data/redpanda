@@ -14,6 +14,7 @@
 #include "base/outcome.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/shard_placement_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "config/property.h"
@@ -196,6 +197,7 @@ class controller_backend
 public:
     controller_backend(
       ss::sharded<cluster::topic_table>&,
+      ss::sharded<shard_placement_table>&,
       ss::sharded<shard_table>&,
       ss::sharded<partition_manager>&,
       ss::sharded<members_table>&,
@@ -229,9 +231,10 @@ public:
     std::optional<in_progress_operation>
     get_current_op(const model::ntp&) const;
 
+    void notify_reconciliation(const model::ntp&, model::shard_revision_id);
+
 private:
     struct ntp_reconciliation_state;
-    struct partition_claim;
 
     // Topics
     ss::future<> bootstrap_controller_backend();
@@ -252,8 +255,6 @@ private:
 
     void start_fetch_deltas_loop();
     ss::future<> fetch_deltas();
-
-    ss::future<> bootstrap_partition_claims();
 
     ss::future<> reconcile_ntp_fiber(
       model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>);
@@ -279,33 +280,29 @@ private:
     ss::future<std::error_code> create_partition(
       model::ntp,
       raft::group_id,
-      // revision of the ntp log directory on this node.
-      model::revision_id log_revision,
-      // revision of the command executing this create. A partition can be
-      // created based off an update that moved the partition to this
-      // node shard, in which case this is the revision derived from the
-      // offset of the update delta. This is used to update the shard
-      // table.
-      model::revision_id cmd_revision,
+      model::revision_id,
+      model::shard_revision_id,
       replicas_t initial_replicas);
 
-    ss::future<std::error_code> do_create_partition(
-      model::ntp,
-      raft::group_id,
-      model::revision_id log_revision,
-      model::revision_id cmd_revision,
-      std::vector<model::broker>);
-
     ss::future<> add_to_shard_table(
-      model::ntp, raft::group_id, ss::shard_id, model::revision_id);
-    ss::future<>
-      remove_from_shard_table(model::ntp, raft::group_id, model::revision_id);
+      model::ntp, raft::group_id, ss::shard_id, model::shard_revision_id);
+    ss::future<> remove_from_shard_table(
+      model::ntp, raft::group_id, model::shard_revision_id);
 
     ss::future<> shutdown_partition(
-      ss::lw_shared_ptr<partition>, model::revision_id cmd_revision);
+      ss::lw_shared_ptr<partition>, model::shard_revision_id);
 
-    ss::future<> delete_partition(
-      model::ntp, model::revision_id, partition_removal_mode mode);
+    ss::future<std::error_code> transfer_partition(
+      model::ntp ntp,
+      raft::group_id,
+      model::revision_id,
+      model::shard_revision_id);
+
+    ss::future<std::error_code> delete_partition(
+      model::ntp,
+      std::optional<shard_placement_table::placement_state>,
+      model::revision_id cmd_revision,
+      partition_removal_mode mode);
 
     ss::future<result<ss::stop_iteration>> reconcile_partition_reconfiguration(
       ntp_reconciliation_state&,
@@ -365,6 +362,7 @@ private:
       const ss::lw_shared_ptr<partition>& partition) const;
 
     ss::sharded<topic_table>& _topics;
+    shard_placement_table& _shard_placement;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<members_table>& _members_table;
@@ -384,9 +382,6 @@ private:
 
     absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
       _states;
-
-    // node_hash_map for pointer stability
-    absl::node_hash_map<model::ntp, partition_claim> _ntp_claims;
 
     // Limits the number of concurrently executing reconciliation fibers.
     // Initially reconciliation is blocked and we deposit a non-zero amount of

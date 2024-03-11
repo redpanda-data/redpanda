@@ -109,31 +109,6 @@ public:
           node_application(0)->controller->get_topics_state().local(), res);
     }
 
-    ss::future<foreign_batches_t> read_replica_batches(
-      model::broker_shard replica, model::ntp ntp, model::offset max_offset) {
-        auto& pm = get_partition_manager(replica.node_id);
-        return pm.invoke_on(
-          replica.shard,
-          [ntp = std::move(ntp), max_offset](cluster::partition_manager& pm) {
-              auto p = pm.get(ntp);
-              if (!p) {
-                  return ss::make_ready_future<foreign_batches_t>(
-                    ss::make_lw_shared<batches_t>({}));
-              }
-              storage::log_reader_config cfg(
-                model::offset(0), max_offset, ss::default_priority_class());
-
-              return p->make_reader(cfg).then([](model::record_batch_reader r) {
-                  return model::consume_reader_to_memory(
-                           std::move(r), model::no_timeout)
-                    .then([](batches_t batches) {
-                        return ss::make_foreign<batches_ptr_t>(
-                          ss::make_lw_shared<batches_t>(std::move(batches)));
-                    });
-              });
-          });
-    }
-
     foreign_batches_t replicate_data(model::ntp ntp, int count) {
         // wait for topic to be created
         tests::cooperative_spin_wait_with_timeout(5s, [this, ntp] {
