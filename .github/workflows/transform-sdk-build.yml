@@ -99,6 +99,7 @@ jobs:
         env:
           IDENTITY: identity.wasm
           LOGGING: identity_logging.wasm
+          TEE: "@UNIMPLEMENTED@"
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
@@ -139,7 +140,8 @@ jobs:
         run: |
           cargo build --target=wasm32-wasi --release \
             --example=identity \
-            --example=identity_logging
+            --example=identity_logging \
+            --example=tee
       - name: Download integration test suite
         uses: actions/download-artifact@v4
         with:
@@ -150,6 +152,7 @@ jobs:
         env:
           IDENTITY: target/wasm32-wasi/release/examples/identity.wasm
           LOGGING: target/wasm32-wasi/release/examples/identity_logging.wasm
+          TEE: target/wasm32-wasi/release/examples/tee.wasm
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
@@ -202,6 +205,7 @@ jobs:
         env:
           IDENTITY: build/identity_transform
           LOGGING: build/identity_logging_transform
+          TEE: "@UNIMPLEMENTED@"
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v

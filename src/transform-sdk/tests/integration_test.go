@@ -106,7 +106,7 @@ func TestIdentity(t *testing.T) {
 			},
 		},
 	}
-	client := makeClient(t, kgo.DefaultProduceTopic("foo"), kgo.ConsumeTopics("bar"))
+	client := makeClient(t, kgo.DefaultProduceTopic(metadata.InputTopic), kgo.ConsumeTopics(metadata.OutputTopics...))
 	defer client.Close()
 	err := client.ProduceSync(ctx, r).FirstErr()
 	require.NoError(t, err)
@@ -168,4 +168,41 @@ func TestLogging(t *testing.T) {
 		{Key: "transform_name", Value: logValue{StringValue: metadata.Name}},
 		{Key: "node", Value: logValue{IntValue: 0}},
 	}, logEvent.Attributes)
+}
+
+func TestMultipleOutputs(t *testing.T) {
+	t.Parallel()
+	binary := loadWasmFile(t, "TEE")
+	metadata := TransformDeployMetadata{
+		Name:         "tee-xform",
+		InputTopic:   "zam",
+		OutputTopics: []string{"bam", "baz", "qux", "thud", "wham"},
+	}
+	deployTransform(t, metadata, binary)
+	r := &kgo.Record{
+		Key:   []byte("testing"),
+		Value: []byte("niceeeee"),
+		Headers: []kgo.RecordHeader{
+			{
+				Key:   "header-key",
+				Value: []byte("header-value"),
+			},
+		},
+	}
+	client := makeClient(t, kgo.DefaultProduceTopic(metadata.InputTopic), kgo.ConsumeTopics(metadata.OutputTopics...))
+	defer client.Close()
+	err := client.ProduceSync(ctx, r).FirstErr()
+	require.NoError(t, err)
+	outputs := map[string]bool{}
+	for _, topic := range metadata.OutputTopics {
+		outputs[topic] = true
+	}
+	for len(outputs) > 0 {
+		fetches := client.PollFetches(ctx)
+		for _, got := range fetches.Records() {
+			require.Contains(t, outputs, got.Topic, "record found in unexpected topic: %q", got.Topic)
+			delete(outputs, got.Topic)
+			requireRecordEquals(t, got, r, "record topic mismatch: %q", got.Topic)
+		}
+	}
 }
