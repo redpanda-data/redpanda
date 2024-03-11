@@ -189,9 +189,7 @@ replicate_entries_stm::append_to_self() {
       .then([this](model::record_batch_reader batches) mutable {
           vlog(_ctxlog.trace, "Self append entries - {}", _meta);
 
-          _ptr->_last_write_consistency_level
-            = _is_flush_required ? consistency_level::quorum_ack
-                                 : consistency_level::leader_ack;
+          _ptr->_last_write_flushed = _is_flush_required;
           return _ptr->disk_append(
             std::move(batches),
             _is_flush_required ? consensus::update_last_quorum_index::yes

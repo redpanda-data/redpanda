@@ -194,12 +194,10 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
     const bool is_last_batch = _last_batch_offset == lstats.dirty_offset;
     const bool follower_has_batches_to_commit
       = follower_committed_match_index < _ptr->_last_quorum_replicated_index;
-    const bool last_replicate_with_quorum = _ptr->_last_write_consistency_level
-                                            == consistency_level::quorum_ack;
 
     const bool is_last
       = is_last_batch
-        && (follower_has_batches_to_commit || last_replicate_with_quorum);
+        && (follower_has_batches_to_commit || _ptr->_last_write_flushed);
 
     // Flush every `checkpoint_flush_size` bytes recovered to ensure that the
     // follower's stms can apply batches from the cache rather than disk.
