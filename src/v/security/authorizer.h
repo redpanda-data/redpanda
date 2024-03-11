@@ -17,6 +17,7 @@
 #include "security/acl.h"
 #include "security/acl_store.h"
 #include "security/logger.h"
+#include "security/role.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
@@ -55,11 +56,14 @@ struct auth_result {
     // The operation request
     security::acl_operation operation;
 
+    // If found, the role that was matched to provide authZ decision
+    std::optional<security::role_name> role;
+
     friend std::ostream& operator<<(std::ostream& os, const auth_result& a) {
         fmt::print(
           os,
           "{{authorized:{}, authorization_disabled:{}, is_superuser:{}, "
-          "operation: {}, empty_matches:{}, principal:{}, host:{}, "
+          "operation: {}, empty_matches:{}, principal:{}, role:{}, host:{}, "
           "resource_type:{}, "
           "resource_name:{}, resource_pattern:{}, acl:{}}}",
           a.authorized,
@@ -68,6 +72,7 @@ struct auth_result {
           a.operation,
           a.empty_matches,
           a.principal,
+          a.role,
           a.host,
           a.resource_type,
           a.resource_name,
@@ -148,6 +153,27 @@ struct auth_result {
           .resource_type = get_resource_type<T>(),
           .resource_name = resource(),
           .operation = operation};
+    }
+
+    template<typename T>
+    static auth_result role_acl_match(
+      const security::acl_principal& principal,
+      const security::role_name& role,
+      security::acl_host host,
+      security::acl_operation operation,
+      const T& resource,
+      bool authorized,
+      const acl_matches::acl_match& match) {
+        return {
+          .authorized = authorized,
+          .resource_pattern = match.resource,
+          .acl = match.acl,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+          .operation = operation,
+          .role = role};
     }
 
     template<typename T>
