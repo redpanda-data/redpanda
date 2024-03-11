@@ -32,6 +32,8 @@ mod serde;
 
 use redpanda_transform_sdk_types::*;
 
+extern crate redpanda_transform_sdk_varint as varint;
+
 #[cfg(test)]
 #[macro_use]
 extern crate quickcheck;
@@ -70,22 +72,40 @@ struct BatchHeader {
 
 struct AbiRecordWriter {
     pub output_buffer: Vec<u8>,
+    pub options_buffer: Vec<u8>,
 }
 
 impl AbiRecordWriter {
     fn new() -> Self {
         Self {
             output_buffer: Vec::new(),
+            options_buffer: Vec::new(),
         }
     }
 }
 
 impl RecordSink for AbiRecordWriter {
-    fn write(&mut self, r: BorrowedRecord) -> Result<(), WriteError> {
+    fn write(&mut self, r: BorrowedRecord, opts: WriteOptions) -> Result<(), WriteError> {
         self.output_buffer.clear();
         serde::write_record_payload(r, &mut self.output_buffer);
-        let errno_or_amt = unsafe {
-            abi::write_record(self.output_buffer.as_ptr(), self.output_buffer.len() as u32)
+        let errno_or_amt = match opts.topic {
+            Some(topic) => {
+                self.options_buffer.clear();
+                // Encode the options buffer:
+                self.options_buffer.push(0x01);
+                varint::write_sized_buffer(&mut self.options_buffer, Some(topic.as_bytes()));
+                unsafe {
+                    abi::write_record_with_options(
+                        self.output_buffer.as_ptr(),
+                        self.output_buffer.len() as u32,
+                        self.options_buffer.as_ptr(),
+                        self.options_buffer.len() as u32,
+                    )
+                }
+            }
+            None => unsafe {
+                abi::write_record(self.output_buffer.as_ptr(), self.output_buffer.len() as u32)
+            },
         };
         if errno_or_amt == self.output_buffer.len() as i32 {
             Ok(())

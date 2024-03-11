@@ -14,7 +14,7 @@
 
 #[link(wasm_import_module = "redpanda_transform")]
 extern "C" {
-    #[link_name = "check_abi_version_1"]
+    #[link_name = "check_abi_version_2"]
     pub(crate) fn check_abi();
 
     #[link_name = "read_batch_header"]
@@ -42,4 +42,12 @@ extern "C" {
 
     #[link_name = "write_record"]
     pub(crate) fn write_record(buf: *const u8, len: u32) -> i32;
+
+    #[link_name = "write_record_with_options"]
+    pub(crate) fn write_record_with_options(
+        buf: *const u8,
+        buf_len: u32,
+        opts: *const u8,
+        opts_len: u32,
+    ) -> i32;
 }

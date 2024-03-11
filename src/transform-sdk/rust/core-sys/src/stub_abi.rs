@@ -47,3 +47,12 @@ pub(crate) unsafe fn read_next_record(
 pub(crate) unsafe fn write_record(_buf: *const u8, _len: u32) -> i32 {
     panic!("stub");
 }
+
+pub(crate) unsafe fn write_record_with_options(
+    _buf: *const u8,
+    _buf_len: u32,
+    _opts: *const u8,
+    _opts_len: u32,
+) -> i32 {
+    panic!("stub");
+}

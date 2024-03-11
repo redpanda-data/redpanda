@@ -116,13 +116,36 @@ impl<'a> From<&'a WrittenRecord<'a>> for BorrowedRecord<'a> {
     }
 }
 
+/// Allows you to customize a [`RecordWriter`]'s write.
+///
+/// For example, use [`WriteOptions`] to customize the output topic to write to.
+#[derive(Default, PartialEq, Eq, Clone, Debug)]
+pub struct WriteOptions<'a> {
+    pub topic: Option<&'a str>,
+}
+
+impl<'a> WriteOptions<'a> {
+    /// Create a new options struct with the [`Record`]'s destination to an optional `topic`.
+    ///
+    /// If `topic` is `None`, the record will be written to the first
+    /// output topic listed in the configuration.
+    pub fn new(topic: Option<&'a str>) -> Self {
+        Self { topic }
+    }
+
+    /// Create a new options struct with the [`Record`]'s destination to `topic`.
+    pub fn to_topic(topic: &'a str) -> Self {
+        Self::new(Some(topic))
+    }
+}
+
 /// An internal trait that can receive a stream of records and output them a destination topic.
 ///
 /// As a user of this framework you should not need to implement this, unless you're writing a mock
 /// implementation for testing.
 pub trait RecordSink {
-    /// Write a record to the output topic returning any errors.
-    fn write(&mut self, r: BorrowedRecord<'_>) -> Result<(), WriteError>;
+    /// Write a record with options, returning any errors.
+    fn write(&mut self, r: BorrowedRecord<'_>, opts: WriteOptions<'_>) -> Result<(), WriteError>;
 }
 
 /// A struct that writes transformed records to the output topic..
@@ -136,9 +159,18 @@ impl<'a> RecordWriter<'a> {
         Self { sink }
     }
 
-    /// Write a record to the output topic returning any errors.
+    /// Write a record to the default output topic, returning any errors.
     pub fn write<'b>(&mut self, r: impl Into<BorrowedRecord<'b>>) -> Result<(), WriteError> {
-        self.sink.write(r.into())
+        self.sink.write(r.into(), WriteOptions::default())
+    }
+
+    /// Write a record with the given options, returning any errors.
+    pub fn write_with_options<'b>(
+        &mut self,
+        r: impl Into<BorrowedRecord<'b>>,
+        opts: WriteOptions<'b>,
+    ) -> Result<(), WriteError> {
+        self.sink.write(r.into(), opts)
     }
 }
 
