@@ -1797,6 +1797,7 @@ FIXTURE_TEST(reader_reusability_test_parser_header, storage_test_fixture) {
     // then large batches
     append_exactly(log, 1, 128_KiB).get0();
     append_exactly(log, 1, 128_KiB).get0();
+    log->flush().get0();
 
     storage::log_reader_config reader_cfg(
       model::offset(0),
