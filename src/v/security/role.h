@@ -11,6 +11,7 @@
 #pragma once
 
 #include "absl/container/flat_hash_set.h"
+#include "security/acl.h"
 #include "security/types.h"
 #include "serde/envelope.h"
 
@@ -42,6 +43,8 @@ public:
     role_member_type type() const { return _type; }
 
     auto serde_fields() { return std::tie(_type, _name); }
+
+    static role_member from_principal(const security::acl_principal& p);
 
 private:
     friend bool operator==(const role_member&, const role_member&) = default;
@@ -75,6 +78,11 @@ public:
     auto end() const { return _members.end(); }
     auto cbegin() const { return _members.cbegin(); }
     auto cend() const { return _members.cend(); }
+
+    /**
+     * Construct a concrete acl_principal of principal_type::role
+     */
+    static security::acl_principal to_principal(std::string_view role_name);
 
 private:
     friend bool operator==(const role&, const role&) = default;
