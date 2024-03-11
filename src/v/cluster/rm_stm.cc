@@ -91,6 +91,11 @@ model::control_record_type parse_control_batch(const model::record_batch& b) {
       "unknown control record version");
     return model::control_record_type(key_reader.read_int16());
 }
+
+raft::replicate_options make_replicate_options() {
+    return raft::replicate_options(raft::consistency_level::quorum_ack);
+}
+
 } // namespace
 
 fence_batch_data read_fence_batch(model::record_batch&& b) {
@@ -474,9 +479,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
 
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _raft->replicate(
-      synced_term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
+      synced_term, std::move(reader), make_replicate_options());
 
     if (!r) {
         vlog(
@@ -616,9 +619,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
       pid, model::control_record_type::tx_commit);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _raft->replicate(
-      synced_term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
+      synced_term, std::move(reader), make_replicate_options());
 
     if (!r) {
         vlog(
@@ -770,9 +771,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
       pid, model::control_record_type::tx_abort);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _raft->replicate(
-      synced_term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
+      synced_term, std::move(reader), make_replicate_options());
 
     if (!r) {
         vlog(
@@ -1043,9 +1042,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
     expiration_it->second.is_expiration_requested = false;
 
     auto r = co_await _raft->replicate(
-      synced_term,
-      std::move(rdr),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
+      synced_term, std::move(rdr), make_replicate_options());
     if (!r) {
         vlog(
           _ctx_log.info,
@@ -1494,9 +1491,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(batch));
                 auto cr = co_await _raft->replicate(
-                  synced_term,
-                  std::move(reader),
-                  raft::replicate_options(raft::consistency_level::quorum_ack));
+                  synced_term, std::move(reader), make_replicate_options());
                 if (!cr) {
                     vlog(
                       _ctx_log.warn,
@@ -1536,9 +1531,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(batch));
                 auto cr = co_await _raft->replicate(
-                  synced_term,
-                  std::move(reader),
-                  raft::replicate_options(raft::consistency_level::quorum_ack));
+                  synced_term, std::move(reader), make_replicate_options());
                 if (!cr) {
                     vlog(
                       _ctx_log.warn,
@@ -1593,9 +1586,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
 
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
         auto cr = co_await _raft->replicate(
-          _insync_term,
-          std::move(reader),
-          raft::replicate_options(raft::consistency_level::quorum_ack));
+          _insync_term, std::move(reader), make_replicate_options());
 
         if (!cr) {
             vlog(
