@@ -42,6 +42,10 @@ public:
 
     ss::future<offsets_upload_reply> offsets_upload(
       offsets_upload_request req, rpc::streaming_context& ctx) override {
+        if (!_offsets_upload_router.local_is_initialized()) {
+            co_return offsets_upload_reply{.ec = errc::feature_disabled};
+        }
+
         auto ntp = req.offsets_ntp;
         co_return co_await _offsets_upload_router.local().process_or_dispatch(
           std::move(req), std::move(ntp), _metadata_timeout_ms());
@@ -49,6 +53,10 @@ public:
 
     ss::future<offsets_recovery_reply> offsets_recovery(
       offsets_recovery_request req, rpc::streaming_context& ctx) override {
+        if (!_offsets_recovery_router.local_is_initialized()) {
+            co_return offsets_recovery_reply{.ec = errc::feature_disabled};
+        }
+
         auto ntp = req.offsets_ntp;
         co_return co_await _offsets_recovery_router.local().process_or_dispatch(
           std::move(req), std::move(ntp), 30s);
