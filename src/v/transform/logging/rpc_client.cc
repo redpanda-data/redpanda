@@ -11,6 +11,7 @@
 
 #include "rpc_client.h"
 
+#include "cluster/metadata_cache.h"
 #include "hashing/murmur.h"
 #include "model/namespace.h"
 #include "transform/logging/logger.h"
