@@ -13,6 +13,7 @@
 #include "internal.h"
 #include "ssl_utils.h"
 
+#include <openssl/core_names.h>
 #include <openssl/evp.h>
 #include <openssl/params.h>
 
@@ -22,7 +23,7 @@ public:
     impl(digest_type type, bytes_view key) {
         std::array<OSSL_PARAM, 2> params{
           OSSL_PARAM_construct_utf8_string(
-            "digest",
+            OSSL_MAC_PARAM_DIGEST,
             // NOLINTNEXTLINE
             const_cast<char*>(get_digest_str(type)),
             0),
