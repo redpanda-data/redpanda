@@ -44,6 +44,7 @@ deb_deps=(
   libre2-dev
   libsctp-dev
   libsnappy-dev
+  libssl-dev
   libxxhash-dev
   libyaml-cpp-dev
   libzstd-dev
@@ -81,6 +82,7 @@ fedora_deps=(
   lz4-devel
   ninja-build
   numactl-devel
+  openssl-devel
   procps
   protobuf-devel
   python3
@@ -105,6 +107,7 @@ arch_deps=(
   go
   lld
   llvm
+  openssl
   pkg-config
   procps
   python-jinja
