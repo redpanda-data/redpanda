@@ -14,13 +14,9 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
-#include "cluster/partition_leaders_table.h"
-#include "cluster/types.h"
-#include "config/configuration.h"
 #include "http/tests/http_imposter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
 
 #include <seastar/core/future.hh>
@@ -29,9 +25,6 @@
 #include <seastar/http/httpd.hh>
 #include <seastar/util/tmp_file.hh>
 
-#include <chrono>
-#include <exception>
-#include <map>
 #include <vector>
 
 namespace archival {

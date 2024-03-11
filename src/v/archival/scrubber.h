@@ -14,13 +14,8 @@
 #include "archival/scrubber_scheduler.h"
 #include "archival/types.h"
 #include "cloud_storage/anomalies_detector.h"
-#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
-#include "cluster/fwd.h"
-#include "cluster/types.h"
 #include "features/feature_table.h"
-#include "random/simple_time_jitter.h"
-#include "storage/fwd.h"
 
 #include <seastar/core/future.hh>
 

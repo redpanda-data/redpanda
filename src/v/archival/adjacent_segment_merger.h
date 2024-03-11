@@ -11,9 +11,6 @@
 
 #include "archival/ntp_archiver_service.h"
 #include "archival/types.h"
-#include "cloud_storage/remote.h"
-#include "cluster/partition.h"
-#include "config/bounded_property.h"
 #include "config/property.h"
 #include "utils/retry_chain_node.h"
 

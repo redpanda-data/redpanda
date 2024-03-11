@@ -3091,6 +3091,10 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
     co_return true;
 }
 
+const storage::ntp_config& ntp_archiver::ntp_config() const {
+    return _parent.log()->config();
+}
+
 void ntp_archiver::complete_transfer_leadership() {
     vlog(
       _rtclog.trace,
