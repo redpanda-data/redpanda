@@ -24,7 +24,7 @@
 #include <seastar/core/sharded.hh>
 
 #include <chrono>
-#include <ostream>
+#include <iosfwd>
 #include <system_error>
 
 namespace cluster {
@@ -215,7 +215,6 @@ private:
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<controller_api>& _controller_api;
     ss::sharded<topic_table>& _topics;
-    ss::sharded<partition_manager>& _partition_manager;
     tx_manager_read_router _read_router;
     tx_manager_replicate_router _replicate_router;
     int16_t _internal_topic_replication_factor;

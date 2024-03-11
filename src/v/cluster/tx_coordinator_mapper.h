@@ -12,11 +12,8 @@
 #pragma once
 #include "base/seastarx.h"
 #include "cluster/metadata_cache.h"
-#include "cluster/partition_manager.h"
 #include "cluster/tx_hash_ranges.h"
-#include "hashing/murmur.h"
 #include "kafka/protocol/types.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "seastar/core/sharded.hh"

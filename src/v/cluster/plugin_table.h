@@ -11,15 +11,11 @@
 
 #pragma once
 
-#include "cluster/types.h"
-#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/transform.h"
-#include "utils/absl_sstring_hash.h"
 
 #include <absl/container/btree_map.h>
-
-#include <compare>
+#include <absl/container/flat_hash_set.h>
 
 namespace cluster {
 /**

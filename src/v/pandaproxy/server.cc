@@ -9,8 +9,8 @@
 
 #include "pandaproxy/server.h"
 
-#include "cluster/cluster_utils.h"
 #include "model/metadata.h"
+#include "net/dns.h"
 #include "net/tls_certificate_probe.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/logger.h"

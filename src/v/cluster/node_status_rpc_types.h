@@ -12,7 +12,9 @@
 #pragma once
 
 #include "model/metadata.h"
-#include "serde/serde.h"
+#include "serde/envelope.h"
+
+#include <fmt/ostream.h>
 
 namespace cluster {
 

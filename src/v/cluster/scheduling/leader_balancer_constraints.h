@@ -10,13 +10,9 @@
  */
 #pragma once
 
-#include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/leader_balancer_types.h"
-#include "cluster/topic_table.h"
-#include "cluster/types.h"
-#include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/sstring.hh>
@@ -26,12 +22,9 @@
 #include <absl/container/flat_hash_set.h>
 #include <boost/range/adaptor/reversed.hpp>
 
-#include <cstdint>
 #include <functional>
-#include <limits>
 #include <numeric>
 #include <optional>
-#include <unordered_map>
 
 namespace cluster::leader_balancer_types {
 

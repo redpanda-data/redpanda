@@ -11,9 +11,7 @@
 
 #pragma once
 
-#include "base/vlog.h"
 #include "cluster/commands.h"
-#include "config/configuration.h"
 #include "metrics/metrics.h"
 #include "utils/token_bucket.h"
 

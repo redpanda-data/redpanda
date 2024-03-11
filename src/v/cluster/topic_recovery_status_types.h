@@ -14,7 +14,6 @@
 #include "cluster/topic_recovery_service.h"
 #include "serde/envelope.h"
 
-#include <compare>
 #include <type_traits>
 
 namespace cluster {

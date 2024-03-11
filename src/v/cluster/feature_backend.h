@@ -13,11 +13,11 @@
 
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
-#include "cluster/types.h"
 #include "features/fwd.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 
 #include <system_error>
 

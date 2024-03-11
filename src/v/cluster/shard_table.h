@@ -15,7 +15,7 @@
 #include "cluster/logger.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 
 #include <seastar/core/reactor.hh> // shard_id
 

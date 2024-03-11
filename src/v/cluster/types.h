@@ -15,27 +15,24 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/tx_hash_ranges.h"
-#include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
-#include "raft/types.h"
+#include "raft/errc.h"
+#include "raft/fundamental.h"
+#include "raft/fwd.h"
 #include "security/acl.h"
 #include "security/license.h"
 #include "security/role.h"
 #include "security/scram_credential.h"
 #include "security/types.h"
 #include "serde/envelope.h"
-#include "serde/serde.h"
 #include "storage/ntp_config.h"
 #include "tristate.h"
-#include "utils/to_string.h"
-#include "utils/xid.h"
 #include "v8_engine/data_policy.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -55,9 +52,6 @@
 
 namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
-
-using transfer_leadership_request = raft::transfer_leadership_request;
-using transfer_leadership_reply = raft::transfer_leadership_reply;
 
 // A cluster version is a logical protocol version describing the content
 // of the raft0 on disk structures, and available features.  These are

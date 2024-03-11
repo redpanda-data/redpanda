@@ -10,6 +10,8 @@
  */
 #include "plugin_backend.h"
 
+#include "cluster/controller_snapshot.h"
+
 namespace cluster {
 
 plugin_backend::plugin_backend(ss::sharded<plugin_table>* t)

@@ -11,13 +11,10 @@
 
 #pragma once
 
-#include "cluster/errc.h"
-#include "config/configuration.h"
 #include "config/node_config.h"
 #include "json/document.h"
 #include "model/metadata.h"
-#include "random/generators.h"
-#include "serde/serde.h"
+#include "serde/envelope.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/io_priority_class.hh>

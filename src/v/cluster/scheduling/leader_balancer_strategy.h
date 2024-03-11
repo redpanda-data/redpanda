@@ -10,11 +10,7 @@
  */
 #pragma once
 
-#include "absl/container/btree_map.h"
-#include "absl/container/node_hash_map.h"
 #include "cluster/scheduling/leader_balancer_types.h"
-#include "cluster/types.h"
-#include "raft/types.h"
 
 namespace cluster {
 

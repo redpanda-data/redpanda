@@ -14,9 +14,7 @@
 #include "cluster/controller_stm.h"
 #include "cluster/feature_barrier.h"
 #include "cluster/fwd.h"
-#include "cluster/logger.h"
 #include "cluster/types.h"
-#include "config/node_config.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>

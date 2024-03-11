@@ -13,7 +13,6 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "random/simple_time_jitter.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 

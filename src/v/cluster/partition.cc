@@ -381,6 +381,8 @@ kafka_stages partition::replicate_in_stages(
       std::move(res.request_enqueued), std::move(replicate_finished));
 }
 
+raft::group_id partition::group() const { return _raft->group(); }
+
 ss::future<> partition::start(state_machine_registry& stm_registry) {
     const auto& ntp = _raft->ntp();
     raft::state_machine_manager_builder builder = stm_registry.make_builder_for(
@@ -921,7 +923,7 @@ ss::future<> partition::serialize_json_manifest_to_output_stream(
 }
 
 ss::future<std::error_code>
-partition::transfer_leadership(transfer_leadership_request req) {
+partition::transfer_leadership(raft::transfer_leadership_request req) {
     auto target = req.target;
 
     vlog(

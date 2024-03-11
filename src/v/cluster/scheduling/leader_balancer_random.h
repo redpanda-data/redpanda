@@ -16,18 +16,15 @@
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "container/fragmented_vector.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "random/generators.h"
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
-#include <functional>
 #include <memory>
 #include <optional>
 

@@ -13,6 +13,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/logger.h"
+#include "cluster/partition_leaders_table.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

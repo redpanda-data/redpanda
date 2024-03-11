@@ -11,28 +11,18 @@
 
 #pragma once
 
-#include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "container/intrusive_list_helpers.h"
-#include "features/feature_table.h"
-#include "kafka/protocol/errors.h"
-#include "kafka/types.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
-#include "model/timestamp.h"
-#include "raft/consensus.h"
-#include "raft/errc.h"
-#include "raft/logger.h"
-#include "raft/persisted_stm.h"
-#include "raft/state_machine.h"
-#include "raft/types.h"
-#include "storage/snapshot.h"
-#include "utils/expiring_promise.h"
-#include "utils/mutex.h"
+
+#include <seastar/core/rwlock.hh>
 
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
-
-#include <compare>
+#include <absl/container/node_hash_map.h>
 
 namespace cluster {
 

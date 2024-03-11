@@ -10,7 +10,7 @@
  */
 #pragma once
 #include "base/seastarx.h"
-#include "cluster/types.h"
+#include "cluster/fwd.h"
 #include "model/metadata.h"
 
 #include <seastar/core/abort_source.hh>

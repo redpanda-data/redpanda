@@ -12,15 +12,10 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "cluster/health_monitor_types.h"
-#include "cluster/members_table.h"
-#include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "features/fwd.h"
 #include "http/client.h"
 #include "model/metadata.h"
-#include "model/timestamp.h"
-#include "raft/consensus.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/abort_source.hh>

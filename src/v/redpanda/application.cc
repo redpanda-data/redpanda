@@ -89,6 +89,7 @@
 #include "migrations/migrators.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "net/dns.h"
 #include "net/server.h"
 #include "net/tls_certificate_probe.h"
 #include "pandaproxy/rest/api.h"

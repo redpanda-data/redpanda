@@ -16,8 +16,6 @@
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/types.h"
-#include "raft/consensus.h"
-#include "raft/consensus_client_protocol.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>

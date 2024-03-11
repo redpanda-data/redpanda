@@ -10,11 +10,9 @@
 
 #include "base/seastarx.h"
 #include "cluster/logger.h"
-#include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/shard_table.h"
-#include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"

@@ -12,7 +12,7 @@
 #pragma once
 
 #include "cluster/commands.h"
-#include "cluster/controller_snapshot.h"
+#include "cluster/fwd.h"
 #include "cluster/plugin_table.h"
 
 namespace cluster {

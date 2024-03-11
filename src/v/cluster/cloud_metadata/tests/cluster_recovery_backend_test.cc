@@ -20,6 +20,7 @@
 #include "cluster/feature_manager.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/partition.h"
+#include "cluster/security_frontend.h"
 #include "cluster/tests/topic_properties_generator.h"
 #include "cluster/tests/tx_compaction_utils.h"
 #include "cluster/types.h"

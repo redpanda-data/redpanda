@@ -11,9 +11,8 @@
 
 #pragma once
 
-#include "cluster/self_test_backend.h"
+#include "cluster/fwd.h"
 #include "cluster/self_test_rpc_service.h"
-#include "cluster/self_test_rpc_types.h"
 
 namespace cluster {
 

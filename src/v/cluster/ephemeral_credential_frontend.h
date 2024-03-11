@@ -14,7 +14,6 @@
 #include "cluster/errc.h"
 #include "features/fwd.h"
 #include "model/metadata.h"
-#include "model/timeout_clock.h"
 #include "rpc/fwd.h"
 #include "security/ephemeral_credential.h"
 #include "security/fwd.h"

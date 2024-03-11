@@ -13,7 +13,6 @@
 
 #include "base/seastarx.h"
 #include "cluster/types.h"
-#include "model/metadata.h"
 
 namespace cluster {
 

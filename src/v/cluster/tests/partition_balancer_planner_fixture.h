@@ -17,6 +17,8 @@
 #include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_planner.h"
 #include "cluster/partition_balancer_state.h"
+#include "cluster/scheduling/allocation_node.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/tests/utils.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "cluster/types.h"

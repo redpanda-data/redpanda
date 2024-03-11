@@ -14,7 +14,6 @@
 #include "cluster/fwd.h"
 #include "cluster/metadata_dissemination_rpc_service.h"
 #include "container/fragmented_vector.h"
-#include "raft/types.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/scheduling.hh>

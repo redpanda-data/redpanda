@@ -14,7 +14,6 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
-#include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 

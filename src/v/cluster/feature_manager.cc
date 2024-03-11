@@ -15,6 +15,7 @@
 #include "cluster/commands.h"
 #include "cluster/controller_service.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
 #include "config/validators.h"

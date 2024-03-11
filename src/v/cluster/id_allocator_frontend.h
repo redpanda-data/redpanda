@@ -19,8 +19,6 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 
-#include <vector>
-
 namespace cluster {
 
 class id_allocator;

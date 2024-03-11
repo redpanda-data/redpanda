@@ -17,7 +17,6 @@
 #include "cluster/state_machine_registry.h"
 #include "features/fwd.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/record.h"
 #include "raft/persisted_stm.h"
 #include "storage/record_batch_builder.h"

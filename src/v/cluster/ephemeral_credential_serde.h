@@ -12,12 +12,9 @@
 
 #include "cluster/errc.h"
 #include "security/acl.h"
-#include "security/ephemeral_credential.h"
 #include "security/scram_credential.h"
 #include "security/types.h"
 #include "serde/envelope.h"
-
-#include <iosfwd>
 
 namespace cluster {
 

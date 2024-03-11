@@ -11,7 +11,6 @@
 
 #pragma once
 #include "bytes/iobuf_parser.h"
-#include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
@@ -23,7 +22,6 @@
 #include "security/role.h"
 #include "security/scram_credential.h"
 #include "security/types.h"
-#include "serde/serde.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/coroutine.hh>

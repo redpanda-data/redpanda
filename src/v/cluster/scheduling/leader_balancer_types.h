@@ -10,9 +10,8 @@
  */
 #pragma once
 
-#include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>

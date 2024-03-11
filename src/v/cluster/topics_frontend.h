@@ -12,18 +12,17 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
-#include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
-#include "cluster/remote_topic_configuration_source.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "config/property.h"
+#include "features/fwd.h"
 #include "model/metadata.h"
-#include "model/record.h"
 #include "model/timeout_clock.h"
 #include "partition_balancer_types.h"
+#include "rpc/fwd.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>

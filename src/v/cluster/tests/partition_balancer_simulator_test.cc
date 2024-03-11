@@ -10,6 +10,7 @@
 #include "base/vlog.h"
 #include "cluster/tests/partition_balancer_planner_fixture.h"
 #include "random/generators.h"
+#include "test_utils/fixture.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
