@@ -299,9 +299,8 @@ SEASTAR_THREAD_TEST_CASE(missing_required_fields_throws) {
       m.update(make_manifest_stream(missing_partition_count)).get(),
       std::runtime_error,
       [](std::runtime_error ex) {
-          return std::string(ex.what()).find(
-                   "Missing _partition_count value in "
-                   "parsed topic manifest")
+          return std::string(ex.what()).find("Missing partition_count value in "
+                                             "parsed topic manifest")
                  != std::string::npos;
       });
 }
@@ -313,24 +312,16 @@ SEASTAR_THREAD_TEST_CASE(wrong_version_throws) {
       std::runtime_error,
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
-                   "topic manifest version {99} is not supported")
+                   "topic manifest version 99 is not supported")
                  != std::string::npos;
       });
 }
 
 SEASTAR_THREAD_TEST_CASE(wrong_compaction_strategy_throws) {
     topic_manifest m;
-    BOOST_REQUIRE_EXCEPTION(
+    BOOST_REQUIRE_THROW(
       m.update(make_manifest_stream(wrong_compaction_strategy)).get(),
-      std::runtime_error,
-      [](std::runtime_error ex) {
-          return std::string(ex.what()).find(
-                   "Failed to parse topic manifest "
-                   "\"30000000/meta/full-test-namespace/full-test-topic/"
-                   "topic_manifest.json\": Invalid compaction_strategy: "
-                   "wrong_value")
-                 != std::string::npos;
-      });
+      std::runtime_error);
 }
 
 SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {

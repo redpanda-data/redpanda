@@ -13,7 +13,6 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
-#include "json/document.h"
 
 #include <optional>
 
@@ -80,10 +79,6 @@ public:
     };
 
 private:
-    /// Update manifest content from json document that supposed to be generated
-    /// from manifest.json file
-    void do_update(const topic_manifest_handler& handler);
-
     std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;
     int32_t _manifest_version{first_version};
