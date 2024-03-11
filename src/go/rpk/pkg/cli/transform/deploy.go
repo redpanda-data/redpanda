@@ -50,6 +50,7 @@ To deploy Wasm files directly without a transform.yaml file:
   rpk transform deploy --file transform.wasm --name myTransform \
     --input-topic my-topic-1 \
     --output-topic my-topic-2
+    --output-topic my-topic-3
 
 Environment variables can be specified for the transform using the --var flag, these
 are separated by an equals for example: --var=KEY=VALUE
@@ -84,12 +85,13 @@ The --var flag can be repeated to specify multiple variables like so:
 					out.Die("missing input topic")
 				}
 			}
-			if cfg.OutputTopic == "" {
-				cfg.OutputTopic, err = out.Prompt("Select an output topic:")
+			if len(cfg.OutputTopics) == 0 {
+				ot, err := out.Prompt("Select an output topic:")
 				out.MaybeDie(err, "no output topic: %v", err)
-				if cfg.OutputTopic == "" {
+				if ot == "" {
 					out.Die("missing output topic")
 				}
+				cfg.OutputTopics = []string{ot}
 			}
 
 			if file == "" {
@@ -105,7 +107,7 @@ The --var flag can be repeated to specify multiple variables like so:
 
 			t := adminapi.TransformMetadata{
 				InputTopic:   cfg.InputTopic,
-				OutputTopics: []string{cfg.OutputTopic},
+				OutputTopics: cfg.OutputTopics,
 				Name:         cfg.Name,
 				Status:       nil,
 				Environment:  mapToEnvVars(cfg.Env),
@@ -127,7 +129,7 @@ The --var flag can be repeated to specify multiple variables like so:
 	cmd.Flags().StringVar(&file, "file", "", "The WebAssembly module to deploy")
 
 	cmd.Flags().StringVarP(&fc.inputTopic, "input-topic", "i", "", "The input topic to apply the transform to")
-	cmd.Flags().StringVarP(&fc.outputTopic, "output-topic", "o", "", "The output topic to write the transform results to")
+	cmd.Flags().StringSliceVarP(&fc.outputTopics, "output-topic", "o", []string{}, "The output topic to write the transform results to (repeatable)")
 	cmd.Flags().StringVar(&fc.functionName, "name", "", "The name of the transform")
 	cmd.Flags().Var(&fc.env, "var", "Specify an environment variable in the form of KEY=VALUE")
 	return cmd
@@ -174,7 +176,7 @@ func (e *environment) String() string {
 
 type deployFlagConfig struct {
 	inputTopic   string
-	outputTopic  string
+	outputTopics []string
 	functionName string
 	env          environment
 }
@@ -183,7 +185,7 @@ type deployFlagConfig struct {
 func (fc deployFlagConfig) ToProjectConfig() (out project.Config) {
 	out.Name = fc.functionName
 	out.InputTopic = fc.inputTopic
-	out.OutputTopic = fc.outputTopic
+	out.OutputTopics = fc.outputTopics
 	out.Env = fc.env.vars
 	return out
 }
@@ -211,15 +213,15 @@ func mergeProjectConfigs(lhs project.Config, rhs project.Config) (out project.Co
 	if rhs.InputTopic != "" {
 		out.InputTopic = rhs.InputTopic
 	}
-	if rhs.OutputTopic != "" {
-		out.OutputTopic = rhs.OutputTopic
+	if len(rhs.OutputTopics) > 0 {
+		out.OutputTopics = rhs.OutputTopics
 	}
 	return out
 }
 
 // isEmptyProjectConfig checks if a project config is completely empty.
 func isEmptyProjectConfig(cfg project.Config) bool {
-	return cfg.Name == "" && cfg.InputTopic == "" && cfg.OutputTopic == "" && (cfg.Env == nil || len(cfg.Env) == 0)
+	return cfg.Name == "" && cfg.InputTopic == "" && len(cfg.OutputTopics) == 0 && len(cfg.Env) == 0
 }
 
 // validateProjectConfig validates the merged command line and file configurations.
