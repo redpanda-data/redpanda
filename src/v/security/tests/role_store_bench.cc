@@ -27,10 +27,8 @@ using role_member_type = security::role_member_type;
 using role = security::role;
 using role_store = security::role_store;
 
-constexpr size_t N_MEMBERS = 1024ul;
-constexpr size_t N_ROLES = 512ul;
-
-static const std::vector<role_member> members_data = [](size_t N) {
+namespace {
+std::vector<role_member> generate_members(size_t N) {
     std::vector<role_member> mems;
     mems.reserve(N);
     absl::c_for_each(boost::irange(0ul, N), [&mems](auto) {
@@ -38,22 +36,28 @@ static const std::vector<role_member> members_data = [](size_t N) {
           role_member_type::user, random_generators::gen_alphanum_string(32));
     });
     return mems;
-}(N_MEMBERS);
+}
 
-static const std::vector<role_name> role_names_data = [](size_t N) {
+std::vector<role_name> generate_role_names(size_t N) {
     std::vector<role_name> roles;
     roles.reserve(N);
     absl::c_for_each(boost::irange(0ul, N), [&roles](auto) {
         roles.emplace_back(random_generators::gen_alphanum_string(32));
     });
     return roles;
-}(N_ROLES);
+}
+constexpr size_t N_MEMBERS = 1024ul;
+constexpr size_t N_ROLES = 512ul;
 
-role_store make_store() {
+const std::vector<role_member> members_data = generate_members(N_MEMBERS);
+
+role_store make_store(
+  const decltype(role_names_data)& roles = role_names_data,
+  const decltype(members_data)& mems = members_data) {
     role_store store;
-    for (auto n : role_names_data) {
+    for (auto n : roles) {
         role::container_type role_mems;
-        for (const auto& m : members_data) {
+        for (const auto& m : mems) {
             if (random_generators::get_int(0, 1)) {
                 role_mems.insert(m);
             }
@@ -63,18 +67,19 @@ role_store make_store() {
     return store;
 }
 
-static const role_store store_data = make_store();
+const role_store store_512_r_1Ki_m_data = make_store();
+} // namespace
 
 template<bool materialize>
 void run_get_member_roles() {
     perf_tests::start_measuring_time();
-    for (const auto& m : members_data) {
-        auto rng = store_data.roles_for_member(m);
-        perf_tests::do_not_optimize(rng);
-        if constexpr (materialize) {
-            bool is_empty = rng.empty();
-            perf_tests::do_not_optimize(is_empty);
-        }
+    const auto& m
+      = members_data[random_generators::get_int(members_data.size() - 1)];
+    auto rng = store_512_r_1Ki_m_data.roles_for_member(m);
+    perf_tests::do_not_optimize(rng);
+    if constexpr (materialize) {
+        bool is_empty = rng.empty();
+        perf_tests::do_not_optimize(is_empty);
     }
     perf_tests::stop_measuring_time();
 }
@@ -82,14 +87,14 @@ void run_get_member_roles() {
 template<bool materialize>
 void run_range_queries() {
     perf_tests::start_measuring_time();
-    for (const auto& m : members_data) {
-        auto rng = store_data.range(
-          [&m](const auto& e) { return role_store::has_member(e, m); });
-        perf_tests::do_not_optimize(rng);
-        if constexpr (materialize) {
-            bool is_empty = rng.empty();
-            perf_tests::do_not_optimize(is_empty);
-        }
+    const auto& m
+      = members_data[random_generators::get_int(members_data.size() - 1)];
+    auto rng = store_512_r_1Ki_m_data.range(
+      [&m](const auto& e) { return role_store::has_member(e, m); });
+    perf_tests::do_not_optimize(rng);
+    if constexpr (materialize) {
+        bool is_empty = rng.empty();
+        perf_tests::do_not_optimize(is_empty);
     }
     perf_tests::stop_measuring_time();
 }
@@ -118,15 +123,16 @@ PERF_TEST(role_store_bench, remove_role) {
 
 PERF_TEST(role_store_bench, update_role) {
     auto store = make_store();
-    std::vector<std::string_view> membership;
+    std::vector<std::string_view> member_roles;
     role_member m;
-    while (membership.empty()) {
+    while (member_roles.empty()) {
         m = members_data[random_generators::get_int(members_data.size() - 1)];
         auto rng = store.roles_for_member(m);
-        std::copy(rng.begin(), rng.end(), std::back_inserter(membership));
+        std::copy(rng.begin(), rng.end(), std::back_inserter(member_roles));
     }
 
-    role_name n{membership[random_generators::get_int(membership.size() - 1)]};
+    role_name n{
+      member_roles[random_generators::get_int(member_roles.size() - 1)]};
     perf_tests::start_measuring_time();
     auto r = store.get(n).value();
     auto mems = std::move(r).members();
