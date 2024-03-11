@@ -93,7 +93,9 @@ model::control_record_type parse_control_batch(const model::record_batch& b) {
 }
 
 raft::replicate_options make_replicate_options() {
-    return raft::replicate_options(raft::consistency_level::quorum_ack);
+    auto opts = raft::replicate_options(raft::consistency_level::quorum_ack);
+    opts.set_force_flush();
+    return opts;
 }
 
 } // namespace
