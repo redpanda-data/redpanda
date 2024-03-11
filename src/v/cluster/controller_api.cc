@@ -383,7 +383,7 @@ controller_api::get_partitions_reconfiguration_state(
                         .node = node_report.id, .bytes = p.size_bytes});
                 }
 
-                co_await ss::maybe_yield();
+                co_await ss::coroutine::maybe_yield();
             }
         }
     }

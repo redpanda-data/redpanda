@@ -856,7 +856,7 @@ ss::future<> audit_log_manager::drain() {
         b.append(as_json.c_str(), as_json.size());
         essences.push_back(
           kafka::client::record_essence{.value = std::move(b)});
-        co_await ss::maybe_yield();
+        co_await ss::coroutine::maybe_yield();
     }
 
     /// This call may block if the audit_clients semaphore is exhausted,

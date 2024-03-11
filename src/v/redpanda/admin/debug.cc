@@ -196,6 +196,7 @@ void admin_server::register_debug_routes() {
                     "Invalid parameter 'num_fibers' value {{{}}}", e));
               }
           }
+          cfg.sg = ss::default_scheduling_group();
           return _stress_fiber_manager
             .invoke_on_all([cfg](auto& stress_mgr) {
                 auto ran = stress_mgr.start(cfg);

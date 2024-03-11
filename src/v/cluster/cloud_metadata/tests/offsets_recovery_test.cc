@@ -45,7 +45,7 @@
 #include "test_utils/async.h"
 
 #include <seastar/core/io_priority_class.hh>
-#include <seastar/util/later.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/test/tools/old/interface.hpp>
@@ -232,9 +232,9 @@ public:
                 } else {
                     BOOST_REQUIRE(allowed_errors.contains(res.error()));
                 }
-                co_await ss::maybe_yield();
+                co_await ss::coroutine::maybe_yield();
             }
-            co_await ss::maybe_yield();
+            co_await ss::coroutine::maybe_yield();
         }
     }
 

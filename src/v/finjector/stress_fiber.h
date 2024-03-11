@@ -13,6 +13,7 @@
 #include "base/seastarx.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/scheduling.hh>
 
 #include <memory>
 
@@ -27,7 +28,11 @@ struct stress_config {
     std::optional<int> min_ms_per_scheduling_point;
     std::optional<int> max_ms_per_scheduling_point;
 
+    // the number of stress fibers to run per shard
     size_t num_fibers;
+
+    // the seastar scheduling group to run the stress fibers in
+    ss::scheduling_group sg;
 };
 
 class stress_payload;

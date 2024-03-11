@@ -135,7 +135,6 @@
 #include <seastar/json/json_elements.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/net/tls.hh>
-#include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/short_streams.hh>
 #include <seastar/util/variant_utils.hh>
@@ -864,7 +863,7 @@ map_partition_results(std::vector<cluster::move_cancellation_result> results) {
         result.partition = r.ntp.tp.partition;
         result.result = cluster::make_error_code(r.result).message();
         ret.push_back(std::move(result));
-        co_await ss::maybe_yield();
+        co_await ss::coroutine::maybe_yield();
     }
     co_return ret;
 }

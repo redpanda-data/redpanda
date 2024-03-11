@@ -19,7 +19,7 @@
 #include "kafka/server/partition_proxy.h"
 #include "model/ktp.h"
 
-#include <seastar/util/later.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 namespace cluster::cloud_metadata {
 
@@ -109,7 +109,7 @@ offsets_lookup::lookup(offsets_lookup_request req) {
         }
         // NOTE: the scheduling point is safe since the state being operated on
         // is local to this frame.
-        co_await ss::maybe_yield();
+        co_await ss::coroutine::maybe_yield();
     }
     co_return reply;
 }

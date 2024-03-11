@@ -42,7 +42,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
-#include <seastar/util/later.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/variant_utils.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -718,7 +718,7 @@ ss::future<> controller_backend::fetch_deltas() {
 
 ss::future<> controller_backend::bootstrap_partition_claims() {
     for (const auto& [ntp, rs] : _states) {
-        co_await ss::maybe_yield();
+        co_await ss::coroutine::maybe_yield();
 
         if (rs->removed) {
             continue;

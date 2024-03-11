@@ -39,8 +39,8 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/defer.hh>
-#include <seastar/util/later.hh>
 
 #include <system_error>
 
@@ -685,7 +685,7 @@ ss::future<group_offsets_snapshot_result> group_manager::snapshot_groups(
             cur_snap->offsets_topic_pid = ntp.tp.partition;
         }
         cur_snap->groups.emplace_back(std::move(go));
-        co_await ss::maybe_yield();
+        co_await ss::coroutine::maybe_yield();
     }
     co_return snapshots;
 }
@@ -754,7 +754,7 @@ group_manager::recover_offsets(group_offsets_snapshot snap) {
                 kafka_t.partitions.emplace_back(std::move(kafka_p));
             }
             kafka_topics.emplace_back(std::move(kafka_t));
-            co_await ss::maybe_yield();
+            co_await ss::coroutine::maybe_yield();
         }
         vlog(
           klog.info,

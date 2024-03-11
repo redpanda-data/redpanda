@@ -17,11 +17,15 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/core/with_scheduling_group.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 class stress_payload {
 public:
-    // Starts the stress payload with the given configuration.
+    // Starts the stress payload with the given configuration in the given
+    // seastar scheduling group.
     static std::unique_ptr<stress_payload> start(stress_config cfg) {
         return std::unique_ptr<stress_payload>(new stress_payload(cfg));
     }
@@ -47,9 +51,11 @@ stress_payload::stress_payload(stress_config cfg) {
       && cfg.min_spins_per_scheduling_point.has_value()) {
         for (size_t i = 0; i < cfg.num_fibers; i++) {
             ssx::spawn_with_gate(_gate, [cfg, this] {
-                return run_count_fiber(
-                  *cfg.min_spins_per_scheduling_point,
-                  *cfg.max_spins_per_scheduling_point);
+                return ss::with_scheduling_group(cfg.sg, [cfg, this]() {
+                    return run_count_fiber(
+                      *cfg.min_spins_per_scheduling_point,
+                      *cfg.max_spins_per_scheduling_point);
+                });
             });
         }
     }
@@ -58,9 +64,11 @@ stress_payload::stress_payload(stress_config cfg) {
       && cfg.min_ms_per_scheduling_point.has_value()) {
         for (size_t i = 0; i < cfg.num_fibers; i++) {
             ssx::spawn_with_gate(_gate, [cfg, this] {
-                return run_delay_fiber(
-                  *cfg.min_ms_per_scheduling_point,
-                  *cfg.max_ms_per_scheduling_point);
+                return ss::with_scheduling_group(cfg.sg, [this, cfg]() {
+                    return run_delay_fiber(
+                      *cfg.min_ms_per_scheduling_point,
+                      *cfg.max_ms_per_scheduling_point);
+                });
             });
         }
     }
@@ -72,7 +80,7 @@ ss::future<> stress_payload::run_count_fiber(int min_count, int max_count) {
                                            ? min_count
                                            : random_generators::get_int(
                                              min_count, max_count);
-        co_await ss::maybe_yield();
+        co_await ss::coroutine::maybe_yield();
         volatile int spins = 0;
         while (true) {
             if (spins == spins_per_scheduling_point) {
@@ -89,7 +97,7 @@ ss::future<> stress_payload::run_delay_fiber(int min_ms, int max_ms) {
                                         ? min_ms
                                         : random_generators::get_int(
                                           min_ms, max_ms);
-        co_await ss::maybe_yield();
+        co_await ss::coroutine::maybe_yield();
         const auto stop_time = ss::steady_clock_type::now()
                                + std::chrono::milliseconds(
                                  ms_per_scheduling_point);

@@ -16,6 +16,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
@@ -221,7 +222,7 @@ access_time_tracker::trim(const fragmented_vector<file_list_item>& existent) {
         if (existent_hashes.contains(it.first)) {
             tmp.insert(it);
         }
-        co_await ss::maybe_yield();
+        co_await ss::coroutine::maybe_yield();
     }
     if (_table.size() != tmp.size()) {
         // We dropped one or more entries, therefore mutated the table.
