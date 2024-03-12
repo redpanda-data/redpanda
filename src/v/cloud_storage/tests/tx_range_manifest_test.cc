@@ -102,3 +102,15 @@ SEASTAR_THREAD_TEST_CASE(serialization_roundtrip_test) {
     restored.update(std::move(rstr)).get();
     BOOST_REQUIRE(m == restored);
 }
+
+SEASTAR_THREAD_TEST_CASE(update_with_invalid_tx_manifest) {
+    auto m = tx_range_manifest{segment_path};
+
+    constexpr static auto invalid_manifest = std::string_view{"{}"};
+    auto in = iobuf{};
+    in.append(invalid_manifest.data(), invalid_manifest.size());
+    auto res = m.update(make_iobuf_input_stream(std::move(in)));
+    res.wait();
+    BOOST_REQUIRE(res.failed());
+    std::ignore = res.get_exception();
+}
