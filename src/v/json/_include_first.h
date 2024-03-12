@@ -11,7 +11,12 @@
 
 #pragma once
 
-#include "base/vassert.h"
+#include <seastar/util/backtrace.hh>
 
 #define RAPIDJSON_HAS_STDSTRING 1
-#define RAPIDJSON_ASSERT(x) vassert(x, "Rapidjson ")
+#define RAPIDJSON_ASSERT(x)                                                    \
+    do {                                                                       \
+        if (!(x)) [[unlikely]] {                                               \
+            seastar::throw_with_backtrace<std::runtime_error>("Rapidjson");    \
+        }                                                                      \
+    } while (0)
