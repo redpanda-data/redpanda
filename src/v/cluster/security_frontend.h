@@ -35,18 +35,43 @@ public:
       ss::sharded<ss::abort_source>&,
       ss::sharded<security::authorizer>&);
 
+    // Should be called ONLY on the controller leader node
     ss::future<std::error_code> create_user(
       security::credential_user,
       security::scram_credential,
       model::timeout_clock::time_point);
 
+    // Should be called ONLY on the controller leader node
     ss::future<std::error_code>
       delete_user(security::credential_user, model::timeout_clock::time_point);
 
+    // Should be called ONLY on the controller leader node
     ss::future<std::error_code> update_user(
       security::credential_user,
       security::scram_credential,
       model::timeout_clock::time_point);
+
+    // Should be called ONLY on the controller leader node
+    ss::future<std::error_code> create_role(
+      security::role_name name,
+      security::role role,
+      model::timeout_clock::time_point tout);
+
+    // Should be called ONLY on the controller leader node
+    ss::future<std::error_code> delete_role(
+      security::role_name name, model::timeout_clock::time_point tout);
+
+    // Should be called ONLY on the controller leader node
+    ss::future<std::error_code> update_role(
+      security::role_name name,
+      security::role role,
+      model::timeout_clock::time_point tout);
+
+    // Should be called ONLY on the controller leader node
+    ss::future<std::error_code> rename_role(
+      security::role_name name,
+      security::role_name new_name,
+      model::timeout_clock::time_point tout);
 
     ss::future<std::vector<errc>> create_acls(
       std::vector<security::acl_binding>, model::timeout_clock::duration);

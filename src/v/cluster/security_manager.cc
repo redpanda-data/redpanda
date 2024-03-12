@@ -17,6 +17,7 @@
 #include "raft/types.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
+#include "security/role_store.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/maybe_yield.hh>
@@ -29,9 +30,11 @@ namespace cluster {
 
 security_manager::security_manager(
   ss::sharded<security::credential_store>& credentials,
-  ss::sharded<security::authorizer>& authorizer)
+  ss::sharded<security::authorizer>& authorizer,
+  ss::sharded<security::role_store>& roles)
   : _credentials(credentials)
-  , _authorizer(authorizer) {}
+  , _authorizer(authorizer)
+  , _roles(roles) {}
 
 ss::future<std::error_code>
 security_manager::apply_update(model::record_batch batch) {
@@ -52,14 +55,28 @@ security_manager::apply_update(model::record_batch batch) {
           },
           [this](delete_acls_cmd cmd) {
               return dispatch_updates_to_cores(std::move(cmd), _authorizer);
+          },
+          [this](create_role_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd), _roles);
+          },
+          [this](delete_role_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd), _roles);
+          },
+          [this](update_role_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd), _roles);
+          },
+          [this](rename_role_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd), _roles);
           });
     });
 }
 
+namespace {
+
 /*
  * handle: delete acls command
  */
-static std::error_code
+std::error_code
 do_apply(delete_acls_cmd cmd, security::authorizer& authorizer) {
     authorizer.remove_bindings(cmd.key.filters);
     return errc::success;
@@ -68,7 +85,7 @@ do_apply(delete_acls_cmd cmd, security::authorizer& authorizer) {
 /*
  * handle: create acls command
  */
-static std::error_code
+std::error_code
 do_apply(create_acls_cmd cmd, security::authorizer& authorizer) {
     authorizer.add_bindings(cmd.key.bindings);
     return errc::success;
@@ -77,7 +94,7 @@ do_apply(create_acls_cmd cmd, security::authorizer& authorizer) {
 /*
  * handle: update user command
  */
-static std::error_code
+std::error_code
 do_apply(update_user_cmd cmd, security::credential_store& store) {
     auto removed = store.remove(cmd.key);
     if (!removed) {
@@ -90,7 +107,7 @@ do_apply(update_user_cmd cmd, security::credential_store& store) {
 /*
  * handle: delete user command
  */
-static std::error_code
+std::error_code
 do_apply(delete_user_cmd cmd, security::credential_store& store) {
     auto removed = store.remove(cmd.key);
     return removed ? errc::success : errc::user_does_not_exist;
@@ -99,7 +116,7 @@ do_apply(delete_user_cmd cmd, security::credential_store& store) {
 /*
  * handle: create user command
  */
-static std::error_code
+std::error_code
 do_apply(create_user_cmd cmd, security::credential_store& store) {
     if (store.contains(cmd.key)) {
         return errc::user_exists;
@@ -108,14 +125,67 @@ do_apply(create_user_cmd cmd, security::credential_store& store) {
     return errc::success;
 }
 
+/*
+ * handle: rename role command
+ */
+std::error_code do_apply(rename_role_cmd cmd, security::role_store& store) {
+    auto data = std::move(cmd.value);
+    if (store.contains(data.to_name)) {
+        return errc::role_exists;
+    }
+    auto role = store.get(data.from_name);
+    auto removed = store.remove(data.from_name);
+    if (!role || !removed) {
+        return errc::role_does_not_exist;
+    }
+    store.put(std::move(data.to_name), role.value().members());
+    return errc::success;
+}
+
+/*
+ * handle: update role command
+ */
+std::error_code do_apply(update_role_cmd cmd, security::role_store& store) {
+    auto data = std::move(cmd.value);
+    auto removed = store.remove(data.name);
+    if (!removed) {
+        return errc::role_does_not_exist;
+    }
+    store.put(std::move(data.name), std::move(data.role));
+    return errc::success;
+}
+
+/*
+ * handle: delete role command
+ */
+std::error_code do_apply(delete_role_cmd cmd, security::role_store& store) {
+    auto data = std::move(cmd.value);
+    auto removed = store.remove(data.name);
+    return removed ? errc::success : errc::role_does_not_exist;
+}
+
+/*
+ * handle: create role command
+ */
+std::error_code do_apply(create_role_cmd cmd, security::role_store& store) {
+    auto data = std::move(cmd.value);
+    if (store.contains(data.name)) {
+        return errc::role_exists;
+    }
+    store.put(std::move(data.name), std::move(data.role));
+    return errc::success;
+}
+
 template<typename Cmd, typename Service>
-static ss::future<std::error_code>
+ss::future<std::error_code>
 do_apply(ss::shard_id shard, Cmd cmd, ss::sharded<Service>& service) {
     return service.invoke_on(
       shard, [cmd = std::move(cmd)](auto& local_service) mutable {
           return do_apply(std::move(cmd), local_service);
       });
 }
+
+} // namespace
 
 template<typename Cmd, typename Service>
 ss::future<std::error_code> security_manager::dispatch_updates_to_cores(

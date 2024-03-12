@@ -27,6 +27,7 @@
 #include "raft/types.h"
 #include "security/acl.h"
 #include "security/license.h"
+#include "security/role.h"
 #include "security/scram_credential.h"
 #include "security/types.h"
 #include "serde/envelope.h"
@@ -4171,6 +4172,47 @@ struct revert_cancel_partition_move_reply
     friend bool operator==(
       const revert_cancel_partition_move_reply&,
       const revert_cancel_partition_move_reply&)
+      = default;
+};
+
+struct upsert_role_cmd_data
+  : serde::
+      envelope<upsert_role_cmd_data, serde::version<0>, serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    security::role_name name;
+    security::role role;
+
+    auto serde_fields() { return std::tie(name, role); }
+
+    friend bool
+    operator==(const upsert_role_cmd_data&, const upsert_role_cmd_data&)
+      = default;
+};
+
+struct rename_role_cmd_data
+  : serde::
+      envelope<rename_role_cmd_data, serde::version<0>, serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    security::role_name from_name;
+    security::role_name to_name;
+
+    auto serde_fields() { return std::tie(from_name, to_name); }
+
+    friend bool
+    operator==(const rename_role_cmd_data&, const rename_role_cmd_data&)
+      = default;
+};
+
+struct delete_role_cmd_data
+  : serde::
+      envelope<delete_role_cmd_data, serde::version<0>, serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    security::role_name name;
+
+    auto serde_fields() { return std::tie(name); }
+
+    friend bool
+    operator==(const delete_role_cmd_data&, const delete_role_cmd_data&)
       = default;
 };
 
