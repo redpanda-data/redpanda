@@ -270,11 +270,11 @@ void verify_serde_round_trip(T, compat_binary test) {
         }                                                                      \
                                                                                \
         static std::vector<compat_binary> to_binary(Type obj) {                \
-            return compat_binary::serde_and_adl(obj);                          \
+            return compat_binary::serde_and_adl(std::move(obj));               \
         }                                                                      \
                                                                                \
         static void check(Type obj, compat_binary test) {                      \
-            verify_adl_or_serde(obj, std::move(test));                         \
+            verify_adl_or_serde(std::move(obj), std::move(test));              \
         }                                                                      \
     };
 

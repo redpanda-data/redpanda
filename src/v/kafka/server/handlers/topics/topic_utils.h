@@ -122,8 +122,8 @@ requires(KafkaApiTypeIter it) {
 }
 // clang-format on
 auto to_cluster_type(KafkaApiTypeIter begin, KafkaApiTypeIter end)
-  -> std::vector<decltype(to_cluster_type(*begin))> {
-    std::vector<decltype(to_cluster_type(*begin))> cluster_types;
+  -> chunked_vector<decltype(to_cluster_type(*begin))> {
+    chunked_vector<decltype(to_cluster_type(*begin))> cluster_types;
     cluster_types.reserve(std::distance(begin, end));
     std::transform(
       begin,

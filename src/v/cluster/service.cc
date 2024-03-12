@@ -158,10 +158,10 @@ service::purged_topic(purged_topic_request r, rpc::streaming_context&) {
         [](topic_result res) { return purged_topic_reply(std::move(res)); });
 }
 
-std::pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
+std::pair<std::vector<model::topic_metadata>, topic_configuration_vector>
 service::fetch_metadata_and_cfg(const std::vector<topic_result>& res) {
     std::vector<model::topic_metadata> md;
-    std::vector<topic_configuration> cfg;
+    topic_configuration_vector cfg;
     md.reserve(res.size());
     for (const auto& r : res) {
         if (r.ec == errc::success) {
@@ -237,7 +237,7 @@ service::do_update_topic_properties(update_topic_properties_request req) {
     // local topic frontend instance will eventually dispatch request to _raft0
     // core
     auto res = co_await _topics_frontend.local().update_topic_properties(
-      req.updates,
+      std::move(req).updates,
       config::shard_local_cfg().replicate_append_timeout_ms()
         + model::timeout_clock::now());
 

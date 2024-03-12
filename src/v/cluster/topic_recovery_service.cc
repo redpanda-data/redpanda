@@ -16,6 +16,7 @@
 #include "cloud_storage/topic_manifest.h"
 #include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/types.h"
 
 #include <seastar/http/request.hh>
 #include <seastar/util/defer.hh>
@@ -409,7 +410,7 @@ static cluster::topic_configuration make_topic_config(
 
 ss::future<std::vector<cluster::topic_result>>
 topic_recovery_service::create_topics(const recovery_request& request) {
-    std::vector<cluster::topic_configuration> topic_configs;
+    cluster::topic_configuration_vector topic_configs;
     topic_configs.reserve(_downloaded_manifests->size());
 
     std::transform(
@@ -419,7 +420,8 @@ topic_recovery_service::create_topics(const recovery_request& request) {
       [&request](const auto& m) { return make_topic_config(m, request); });
 
     co_return co_await _topics_frontend.local().autocreate_topics(
-      topic_configs, config::shard_local_cfg().create_topic_timeout_ms());
+      std::move(topic_configs),
+      config::shard_local_cfg().create_topic_timeout_ms());
 }
 
 ss::future<std::vector<cloud_storage::topic_manifest>>
@@ -531,7 +533,7 @@ ss::future<> topic_recovery_service::reset_topic_configurations() {
         co_return;
     }
 
-    std::vector<cluster::topic_properties_update> updates;
+    cluster::topic_properties_update_vector updates;
     updates.reserve(_downloaded_manifests->size());
     std::transform(
       std::make_move_iterator(_downloaded_manifests->begin()),

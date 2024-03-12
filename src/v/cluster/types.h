@@ -1868,6 +1868,8 @@ struct topic_properties_update
     }
 };
 
+using topic_properties_update_vector = chunked_vector<topic_properties_update>;
+
 // Structure holding topic configuration, optionals will be replaced by broker
 // defaults
 struct topic_configuration
@@ -1938,6 +1940,8 @@ struct topic_configuration
       = default;
 };
 
+using topic_configuration_vector = chunked_vector<topic_configuration>;
+
 struct custom_partition_assignment {
     model::partition_id id;
     std::vector<model::node_id> replicas;
@@ -1963,6 +1967,9 @@ struct custom_assignable_topic_configuration {
     friend std::ostream&
     operator<<(std::ostream&, const custom_assignable_topic_configuration&);
 };
+
+using custom_assignable_topic_configuration_vector
+  = chunked_vector<custom_assignable_topic_configuration>;
 
 struct create_partitions_configuration
   : serde::envelope<
@@ -2167,7 +2174,7 @@ struct create_topics_request
       create_topics_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    std::vector<topic_configuration> topics;
+    topic_configuration_vector topics;
     model::timeout_clock::duration timeout;
 
     friend bool
@@ -2178,6 +2185,10 @@ struct create_topics_request
     operator<<(std::ostream&, const create_topics_request&);
 
     auto serde_fields() { return std::tie(topics, timeout); }
+
+    create_topics_request copy() const {
+        return {.topics = topics.copy(), .timeout = timeout};
+    }
 };
 
 struct create_topics_reply
@@ -2187,13 +2198,13 @@ struct create_topics_reply
       serde::compat_version<0>> {
     std::vector<topic_result> results;
     std::vector<model::topic_metadata> metadata;
-    std::vector<topic_configuration> configs;
+    topic_configuration_vector configs;
 
     create_topics_reply() noexcept = default;
     create_topics_reply(
       std::vector<topic_result> results,
       std::vector<model::topic_metadata> metadata,
-      std::vector<topic_configuration> configs)
+      topic_configuration_vector configs)
       : results(std::move(results))
       , metadata(std::move(metadata))
       , configs(std::move(configs)) {}
@@ -2205,6 +2216,10 @@ struct create_topics_reply
     friend std::ostream& operator<<(std::ostream&, const create_topics_reply&);
 
     auto serde_fields() { return std::tie(results, metadata, configs); }
+
+    create_topics_reply copy() const {
+        return {results, metadata, configs.copy()};
+    }
 };
 
 struct purged_topic_request
@@ -2289,7 +2304,7 @@ struct update_topic_properties_request
       update_topic_properties_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    std::vector<topic_properties_update> updates;
+    topic_properties_update_vector updates;
 
     friend std::ostream&
     operator<<(std::ostream&, const update_topic_properties_request&);
@@ -2300,6 +2315,10 @@ struct update_topic_properties_request
       = default;
 
     auto serde_fields() { return std::tie(updates); }
+
+    update_topic_properties_request copy() const {
+        return {.updates = updates.copy()};
+    }
 };
 
 struct update_topic_properties_reply
@@ -5070,8 +5089,7 @@ struct adl<cluster::update_topic_properties_request> {
         serialize(out, std::move(r.updates));
     }
     cluster::update_topic_properties_request from(iobuf_parser& in) {
-        auto updates
-          = adl<std::vector<cluster::topic_properties_update>>{}.from(in);
+        auto updates = adl<cluster::topic_properties_update_vector>{}.from(in);
         return {.updates = std::move(updates)};
     }
 };
