@@ -103,6 +103,8 @@ std::string_view to_string_view(feature f) {
         return "node_local_core_assignment";
     case feature::role_based_access_control:
         return "role_base_access_control";
+    case feature::topic_manifest_v2:
+        return "topic_manifest_v2";
 
     /*
      * testing features
