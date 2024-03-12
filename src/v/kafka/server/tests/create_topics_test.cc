@@ -9,6 +9,7 @@
 
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/metadata.h"
+#include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
@@ -135,8 +136,10 @@ public:
             /// Server should return default configs
             BOOST_TEST(topic_res.configs, "empty config response");
             auto cfg_map = config_map(*topic_res.configs);
-            const auto default_topic_properties = kafka::from_cluster_type(
-              app.metadata_cache.local().get_default_properties());
+            const auto default_topic_properties = config_map(
+              kafka::make_configs(
+                app.metadata_cache.local(),
+                app.metadata_cache.local().get_default_properties()));
             BOOST_TEST(
               cfg_map == default_topic_properties,
               "incorrect default properties");
@@ -153,8 +156,9 @@ public:
         auto cfg = app.metadata_cache.local().get_topic_cfg(
           model::topic_namespace_view{model::kafka_namespace, topic_res.name});
         BOOST_TEST(cfg, "missing topic config");
-        auto config_map = kafka::from_cluster_type(cfg->properties);
-        BOOST_TEST(config_map == resp_cfgs, "configs didn't match");
+        auto cfg_map = config_map(
+          kafka::make_configs(app.metadata_cache.local(), cfg->properties));
+        BOOST_TEST(cfg_map == resp_cfgs, "configs didn't match");
         BOOST_CHECK_EQUAL(
           topic_res.topic_config_error_code, kafka::error_code::none);
     }
