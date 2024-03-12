@@ -1061,6 +1061,7 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::base_exception(
               fmt::format("Too many requests: {}", ec.message()),
               ss::http::reply::status_type::too_many_requests);
+        case cluster::errc::topic_not_exists:
         case cluster::errc::transform_does_not_exist:
         case cluster::errc::transform_invalid_update:
         case cluster::errc::transform_invalid_create:
