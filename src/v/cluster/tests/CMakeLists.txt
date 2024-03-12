@@ -192,3 +192,17 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing v::cluster
   LABELS cluster
 )
+
+# Needs multiple cores
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME shard_placement_table_test
+  SOURCES
+    shard_placement_table_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::cluster
+  ARGS "-- -c 4"
+  LABELS cluster
+)
