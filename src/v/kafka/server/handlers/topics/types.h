@@ -146,5 +146,4 @@ config_map_t config_map(const std::vector<creatable_topic_configs>& config);
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t);
 
-config_map_t from_cluster_type(const cluster::topic_properties&);
 } // namespace kafka
