@@ -85,6 +85,8 @@ public:
             return _promise.get_future();
         }
 
+        bool ready() const { return _ready; }
+
     private:
         void expire_with_timeout() {
             if (!_ready) {

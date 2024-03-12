@@ -217,6 +217,9 @@ ss::future<> replicate_batcher::flush(
         auto needs_flush = flush_after_append::no;
 
         for (auto& n : item_cache) {
+            if (unlikely(n->ready())) {
+                continue;
+            }
             if (
               !n->get_expected_term().has_value()
               || n->get_expected_term().value() == term) {
