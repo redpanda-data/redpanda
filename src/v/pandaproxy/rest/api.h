@@ -13,7 +13,6 @@
 
 #include "base/seastarx.h"
 #include "kafka/client/fwd.h"
-#include "model/metadata.h"
 #include "pandaproxy/fwd.h"
 #include "pandaproxy/rest/fwd.h"
 

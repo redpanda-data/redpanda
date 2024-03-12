@@ -17,15 +17,12 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
 #include "pandaproxy/util.h"
-#include "security/request_auth.h"
 #include "utils/adjustable_semaphore.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/net/socket_defs.hh>
-
-#include <vector>
 
 namespace pandaproxy::rest {
 

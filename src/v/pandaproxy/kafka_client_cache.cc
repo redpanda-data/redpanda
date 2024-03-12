@@ -12,7 +12,6 @@
 #include "pandaproxy/kafka_client_cache.h"
 
 #include "pandaproxy/logger.h"
-#include "random/generators.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/loop.hh>

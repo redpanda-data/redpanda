@@ -9,13 +9,9 @@
 
 #include "handlers.h"
 
-#include "kafka/protocol/exceptions.h"
-#include "kafka/protocol/kafka_batch_adapter.h"
-#include "model/fundamental.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/parsing/httpd.h"
-#include "pandaproxy/reply.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/requests/compatibility.h"
@@ -24,16 +20,13 @@
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id_versions.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
-#include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/server.h"
-#include "storage/record_batch_builder.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
 
-#include <exception>
 #include <limits>
 
 namespace ppj = pandaproxy::json;

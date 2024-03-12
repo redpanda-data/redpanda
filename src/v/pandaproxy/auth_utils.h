@@ -16,8 +16,6 @@
 
 #include <seastar/http/request.hh>
 
-#include <vector>
-
 namespace pandaproxy {
 // Authenticate the request when HTTP Basic Auth is enabled and return the
 // authenticated user. Otherwise return the default user.

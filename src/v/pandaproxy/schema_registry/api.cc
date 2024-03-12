@@ -10,13 +10,11 @@
 #include "pandaproxy/schema_registry/api.h"
 
 #include "config/configuration.h"
-#include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "model/metadata.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/schema_id_cache.h"
-#include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/service.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/validation_metrics.h"

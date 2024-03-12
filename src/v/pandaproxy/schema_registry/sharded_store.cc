@@ -14,7 +14,6 @@
 #include "base/vlog.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
-#include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/error.h"

@@ -9,9 +9,7 @@
 
 #include "pandaproxy/rest/api.h"
 
-#include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
-#include "model/metadata.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
@@ -20,7 +18,6 @@
 #include <seastar/core/coroutine.hh>
 
 #include <functional>
-#include <memory>
 
 namespace pandaproxy::rest {
 api::api(

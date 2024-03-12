@@ -11,8 +11,6 @@
 
 #pragma once
 
-#include "pandaproxy/logger.h"
-#include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 
