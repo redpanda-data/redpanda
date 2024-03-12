@@ -57,9 +57,12 @@ static void add_config_if_requested(
 }
 
 template<typename T>
-static ss::sstring describe_as_string(const T& t) {
+ss::sstring describe_as_string(const T& t) {
     return ssx::sformat("{}", t);
 }
+
+// Instantiate explicitly for unit testing
+template ss::sstring describe_as_string(const int&);
 
 // Kafka protocol defines integral types by sizes. See
 // https://kafka.apache.org/protocol.html
@@ -307,7 +310,7 @@ override_if_not_default(const std::optional<T>& override, const T& def) {
 }
 
 template<typename T, typename Func>
-static void add_topic_config_if_requested(
+void add_topic_config_if_requested(
   const describe_configs_resource& resource,
   describe_configs_result& result,
   std::string_view default_name,
@@ -337,6 +340,20 @@ static void add_topic_config_if_requested(
           std::forward<Func>(describe_f));
     }
 }
+
+// Instantiate explicitly for unit testing
+using describe_int_t = decltype(&describe_as_string<int>);
+template void add_topic_config_if_requested<int, describe_int_t>(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  std::string_view default_name,
+  const int& default_value,
+  std::string_view override_name,
+  const std::optional<int>& overrides,
+  bool include_synonyms,
+  std::optional<ss::sstring> documentation,
+  describe_int_t&& describe_f,
+  bool hide_default_override = false);
 
 template<typename T>
 static ss::sstring maybe_print_tristate(const tristate<T>& tri) {
@@ -374,7 +391,7 @@ static void add_topic_config(
 }
 
 template<typename T>
-static void add_topic_config_if_requested(
+void add_topic_config_if_requested(
   const describe_configs_resource& resource,
   describe_configs_result& result,
   std::string_view default_name,
@@ -394,6 +411,17 @@ static void add_topic_config_if_requested(
           documentation);
     }
 }
+
+// Instantiate explicitly for unit testing
+template void add_topic_config_if_requested(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  std::string_view default_name,
+  const std::optional<int>& default_value,
+  std::string_view override_name,
+  const tristate<int>& overrides,
+  bool include_synonyms,
+  std::optional<ss::sstring> documentation);
 
 template<typename T, typename Func>
 static void add_topic_config_if_requested(
