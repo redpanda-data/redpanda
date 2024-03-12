@@ -867,4 +867,27 @@ void report_broker_config(
       &describe_as_string<bool>);
 }
 
+std::vector<creatable_topic_configs> make_configs(
+  const cluster::metadata_cache& metadata_cache,
+  const cluster::topic_properties& topic_config) {
+    describe_configs_resource resource{};
+    describe_configs_result describe_result{};
+
+    report_topic_config(
+      resource, describe_result, metadata_cache, topic_config, false, false);
+
+    std::vector<creatable_topic_configs> result;
+    result.reserve(describe_result.configs.size());
+
+    for (auto& describe_conf : describe_result.configs) {
+        result.push_back(creatable_topic_configs{
+          .name = std::move(describe_conf.name),
+          .value = std::move(describe_conf.value),
+          .config_source = describe_conf.config_source,
+        });
+    }
+
+    return result;
+}
+
 } // namespace kafka

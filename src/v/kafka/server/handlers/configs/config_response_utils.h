@@ -13,6 +13,7 @@
 
 #include "cluster/types.h"
 #include "kafka/protocol/describe_configs.h"
+#include "kafka/protocol/create_topics.h"
 
 namespace kafka {
 
@@ -29,5 +30,9 @@ void report_broker_config(
   describe_configs_result& result,
   bool include_synonyms,
   bool include_documentation);
+
+std::vector<creatable_topic_configs> make_configs(
+  const cluster::metadata_cache& metadata_cache,
+  const cluster::topic_properties& topic_config);
 
 } // namespace kafka
