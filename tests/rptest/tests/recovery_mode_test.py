@@ -203,6 +203,40 @@ class RecoveryModeTest(RedpandaTest):
         # check that group seek was successful
         assert len(consumed) == 2000
 
+    @cluster(num_nodes=5)
+    def test_rolling_restart(self):
+        self.redpanda.start()
+
+        # create a topic and produce some data
+
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic("mytopic1", partitions=5, replicas=3)
+        _produce(self, "mytopic1", msg_count=1000)
+
+        partitions = list(rpk.describe_topic("mytopic1", tolerant=False))
+        assert len(partitions) == 5
+        assert sum(p.high_watermark for p in partitions) == 1000
+
+        # consume and create some consumer groups
+
+        rpk.consume('mytopic1', n=500, group='mygroup1', quiet=True)
+        assert rpk.group_list() == ['mygroup1']
+        group1 = rpk.group_describe('mygroup1')
+        assert group1.total_lag == 500
+        rpk.consume('mytopic1', n=1000, group='mygroup2', quiet=True)
+
+        # do a rolling restart to recovery mode
+
+        for node in self.redpanda.nodes:
+            self.redpanda.restart_nodes(
+                [node], override_cfg_params={"recovery_mode_enabled": True})
+            self.redpanda.wait_for_membership(first_start=False)
+
+        # restart back in normal mode
+
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_for_membership(first_start=False)
+
 
 @dataclasses.dataclass(frozen=True)
 class PartitionInfo:
