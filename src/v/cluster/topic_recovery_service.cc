@@ -369,45 +369,62 @@ static cluster::topic_configuration make_topic_config(
           tm.get_manifest_path());
     }
 
-    cluster::topic_configuration topic_to_create_cfg(
-      topic_config->tp_ns.ns,
-      topic_config->tp_ns.tp,
-      topic_config->partition_count,
-      topic_config->replication_factor);
+    if (
+      tm.get_manifest_version()
+      < topic_manifest::cluster_topic_configuration_version) {
+        // before
+        // cloud_storage::topic_manifest::cluster_topic_configuration_version,
+        // not all the topic properties were preserved. as a result, we can take
+        // some of the properties from the manifest and the rest needs to be
+        // filled
+        cluster::topic_configuration topic_to_create_cfg(
+          topic_config->tp_ns.ns,
+          topic_config->tp_ns.tp,
+          topic_config->partition_count,
+          topic_config->replication_factor);
+        auto& topic_properties = topic_to_create_cfg.properties;
+        auto manifest_props = topic_config->properties;
 
-    auto& topic_properties = topic_to_create_cfg.properties;
-    auto manifest_props = topic_config->properties;
+        topic_properties.compression = manifest_props.compression;
+        topic_properties.cleanup_policy_bitflags
+          = manifest_props.cleanup_policy_bitflags;
+        topic_properties.compaction_strategy
+          = manifest_props.compaction_strategy;
 
-    topic_properties.compression = manifest_props.compression;
-    topic_properties.cleanup_policy_bitflags
-      = manifest_props.cleanup_policy_bitflags;
-    topic_properties.compaction_strategy = manifest_props.compaction_strategy;
+        topic_properties.retention_bytes = manifest_props.retention_bytes;
+        topic_properties.retention_duration = manifest_props.retention_duration;
 
-    topic_properties.retention_bytes = manifest_props.retention_bytes;
-    topic_properties.retention_duration = manifest_props.retention_duration;
-
-    topic_properties.retention_local_target_bytes = tristate<size_t>{
-      config::shard_local_cfg()
-        .cloud_storage_recovery_temporary_retention_bytes_default};
-
-    topic_properties.segment_size = manifest_props.segment_size;
-    topic_properties.timestamp_type = manifest_props.timestamp_type;
-    topic_properties.shadow_indexing = model::shadow_indexing_mode::full;
-    topic_properties.recovery = true;
-    topic_properties.mpx_virtual_cluster_id
-      = manifest_props.mpx_virtual_cluster_id;
-
-    if (request.retention_bytes().has_value()) {
         topic_properties.retention_local_target_bytes = tristate<size_t>{
-          request.retention_bytes()};
-        topic_properties.retention_local_target_ms = {};
-    } else if (request.retention_ms().has_value()) {
-        topic_properties.retention_local_target_ms
-          = tristate<std::chrono::milliseconds>{request.retention_ms()};
-        topic_properties.retention_local_target_bytes = {};
-    }
+          config::shard_local_cfg()
+            .cloud_storage_recovery_temporary_retention_bytes_default};
 
-    return topic_to_create_cfg;
+        topic_properties.segment_size = manifest_props.segment_size;
+        topic_properties.timestamp_type = manifest_props.timestamp_type;
+        topic_properties.shadow_indexing = model::shadow_indexing_mode::full;
+        topic_properties.recovery = true;
+        topic_properties.mpx_virtual_cluster_id
+          = manifest_props.mpx_virtual_cluster_id;
+
+        if (request.retention_bytes().has_value()) {
+            topic_properties.retention_local_target_bytes = tristate<size_t>{
+              request.retention_bytes()};
+            topic_properties.retention_local_target_ms = {};
+        } else if (request.retention_ms().has_value()) {
+            topic_properties.retention_local_target_ms
+              = tristate<std::chrono::milliseconds>{request.retention_ms()};
+            topic_properties.retention_local_target_bytes = {};
+        }
+        return topic_to_create_cfg;
+    } else {
+        // after
+        // cloud_storage::topic_manifest::cluster_topic_configuration_version,
+        // all the topic properties known at the time of the manifest generation
+        // are preserved.
+        topic_config->properties.recovery
+          = true; // ensure that the recovery flag is set to true, to start the
+                  // recovery process
+        return std::move(topic_config.value());
+    }
 }
 
 ss::future<std::vector<cluster::topic_result>>
