@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/inventory/aws_ops.h"
+#include "model/metadata.h"
 
 namespace cloud_storage::inventory {
 
@@ -36,5 +37,11 @@ public:
 private:
     ops_t _inv_ops;
 };
+
+inv_ops make_inv_ops(
+  model::cloud_storage_backend backend,
+  cloud_storage_clients::bucket_name bucket,
+  inventory_config_id inventory_id,
+  ss::sstring inventory_prefix);
 
 } // namespace cloud_storage::inventory

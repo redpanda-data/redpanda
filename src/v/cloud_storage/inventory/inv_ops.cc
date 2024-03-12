@@ -75,4 +75,25 @@ ss::future<op_result<report_metadata>> inv_ops::latest_report_metadata(
     });
 }
 
+inv_ops make_inv_ops(
+  model::cloud_storage_backend backend,
+  cloud_storage_clients::bucket_name bucket,
+  inventory_config_id inventory_id,
+  ss::sstring inventory_prefix) {
+    switch (backend) {
+        using enum model::cloud_storage_backend;
+    case aws:
+        return inv_ops{aws_ops{
+          std::move(bucket),
+          std::move(inventory_id),
+          std::move(inventory_prefix)}};
+    case google_s3_compat:
+    case azure:
+    case minio:
+    case unknown:
+        throw std::invalid_argument{
+          fmt::format("inventory API not supported for {}", backend)};
+    }
+}
+
 } // namespace cloud_storage::inventory
