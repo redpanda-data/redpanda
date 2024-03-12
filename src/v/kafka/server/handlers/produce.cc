@@ -354,6 +354,13 @@ static partition_produce_stages produce_topic_partition(
     auto dispatch = std::make_unique<ss::promise<>>();
     auto dispatch_f = dispatch->get_future();
     auto m = octx.rctx.probe().auto_produce_measurement();
+    auto timeout = octx.request.data.timeout_ms;
+    if (timeout < 0ms) {
+        static constexpr std::chrono::milliseconds max_timeout{
+          std::numeric_limits<int32_t>::max()};
+        // negative timeout translates to no timeout
+        timeout = max_timeout;
+    }
     auto f
       = octx.rctx.partition_manager()
           .invoke_on(
@@ -368,7 +375,7 @@ static partition_produce_stages produce_topic_partition(
              bid,
              acks = octx.request.data.acks,
              batch_max_bytes,
-             timeout = octx.request.data.timeout_ms,
+             timeout,
              source_shard = ss::this_shard_id()](
               cluster::partition_manager& mgr) mutable {
                 auto partition = mgr.get(ntp);
