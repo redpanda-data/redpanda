@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <seastar/core/shared_ptr_incomplete.hh>
+
 namespace cluster {
 
 class cluster_recovery_manager;
@@ -30,6 +32,7 @@ class partition_leaders_table;
 class partition_allocator;
 class partition_manager;
 class partition;
+class partition_probe;
 class shard_table;
 class topics_frontend;
 class topic_table;
@@ -97,3 +100,12 @@ class uploader;
 } // namespace cloud_metadata
 
 } // namespace cluster
+
+namespace seastar {
+
+template<>
+struct lw_shared_ptr_deleter<cluster::partition> {
+    static void dispose(cluster::partition* sst);
+};
+
+} // namespace seastar

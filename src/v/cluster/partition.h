@@ -44,7 +44,7 @@ class partition_manager;
 
 /// holds cluster logic that is not raft related
 /// all raft logic is proxied transparently
-class partition {
+class partition : public ss::enable_lw_shared_from_this<partition> {
 public:
     partition(
       consensus_ptr r,

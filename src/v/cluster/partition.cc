@@ -28,6 +28,7 @@
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
 
+#include <seastar/core/shared_ptr_incomplete.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 
@@ -1200,3 +1201,11 @@ std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }
 } // namespace cluster
+
+namespace seastar {
+
+void lw_shared_ptr_deleter<cluster::partition>::dispose(cluster::partition* s) {
+    delete s;
+}
+
+} // namespace seastar
