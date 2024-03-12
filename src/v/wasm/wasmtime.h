@@ -11,7 +11,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "ssx/thread_worker.h"
 #include "wasm/fwd.h"
 
 #include <seastar/core/future.hh>

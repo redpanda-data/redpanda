@@ -17,6 +17,7 @@
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
 #include "utils/human.h"
 #include "utils/type_traits.h"
@@ -1325,6 +1326,7 @@ wasmtime_runtime::wasmtime_runtime(std::unique_ptr<schema_registry> sr)
 }
 
 ss::future<> wasmtime_runtime::start(runtime::config c) {
+    using namespace std::chrono_literals;
     _per_invocation_fuel_amount = (c.cpu.per_invocation_timeout / 1ms)
                                   * millisecond_fuel_amount;
 
