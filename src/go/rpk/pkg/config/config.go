@@ -23,6 +23,7 @@ const (
 	DefaultAdminPort     = 9644
 	DefaultRPCPort       = 33145
 	DefaultListenAddress = "0.0.0.0"
+	LoopbackIP           = "127.0.0.1"
 
 	DefaultBallastFilePath = "/var/lib/redpanda/data/ballast"
 	DefaultBallastFileSize = "1GiB"
