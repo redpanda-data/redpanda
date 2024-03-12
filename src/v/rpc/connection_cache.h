@@ -10,8 +10,6 @@
  */
 
 #pragma once
-#include "base/outcome.h"
-#include "hashing/jump_consistent_hash.h"
 #include "model/metadata.h"
 #include "outcome_future_utils.h"
 #include "rpc/backoff_policy.h"
@@ -28,7 +26,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-#include <chrono>
 #include <unordered_map>
 
 namespace rpc {

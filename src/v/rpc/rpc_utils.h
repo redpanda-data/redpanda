@@ -13,7 +13,6 @@
 
 #include "config/tls_config.h"
 #include "rpc/logger.h"
-#include "rpc/types.h"
 
 namespace rpc {
 
