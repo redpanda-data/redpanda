@@ -193,6 +193,8 @@ private:
     ss::future<> do_delete(const model::ntp&, placement_state&);
 
 private:
+    friend class shard_placement_test_fixture;
+
     // per-shard state
     //
     // node_hash_map for pointer stability
