@@ -35,6 +35,7 @@ from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark, Vali
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.producer_swarm import ProducerSwarm
+from rptest.services.redpanda_cloud import CLOUD_TYPE_FMC
 from rptest.services.redpanda_cloud import CloudTierName, get_config_profile_name, PROVIDER_AWS
 from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
                                       RedpandaService, SISettings,
@@ -807,6 +808,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         cloudv2 API to create/update buckets and its
         properties/policies
         """
+        if self.redpanda.cloud_type == CLOUD_TYPE_FMC:
+            self.logger.warn(
+                'This test is designed for BYOC only, this is FMC')
+            return
+
         # create default topics
         self._create_default_topics()
 
