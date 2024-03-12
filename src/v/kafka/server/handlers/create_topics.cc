@@ -12,9 +12,11 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/timeout.h"
+#include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/quota_manager.h"
@@ -31,6 +33,7 @@
 
 #include <array>
 #include <chrono>
+#include <optional>
 #include <string_view>
 
 namespace kafka {
@@ -86,24 +89,6 @@ using validators = make_validator_types<
   subject_name_strategy_validator,
   replication_factor_must_be_greater_or_equal_to_minimum>;
 
-static std::vector<creatable_topic_configs>
-properties_to_result_configs(config_map_t config_map) {
-    std::vector<creatable_topic_configs> configs;
-    configs.reserve(config_map.size());
-    std::transform(
-      config_map.begin(),
-      config_map.end(),
-      std::back_inserter(configs),
-      [](auto& cfg) {
-          return creatable_topic_configs{
-            .name = cfg.first,
-            .value = {std::move(cfg.second)},
-            .config_source = kafka::describe_configs_source::default_config,
-          };
-      });
-    return configs;
-}
-
 static void
 append_topic_configs(request_context& ctx, create_topics_response& response) {
     for (auto& ct_result : response.data.topics) {
@@ -114,9 +99,8 @@ append_topic_configs(request_context& ctx, create_topics_response& response) {
         auto cfg = ctx.metadata_cache().get_topic_cfg(
           model::topic_namespace_view{model::kafka_namespace, ct_result.name});
         if (cfg) {
-            auto config_map = from_cluster_type(cfg->properties);
-            ct_result.configs = {
-              properties_to_result_configs(std::move(config_map))};
+            ct_result.configs = std::make_optional(
+              make_configs(ctx.metadata_cache(), cfg->properties));
             ct_result.topic_config_error_code = kafka::error_code::none;
         } else {
             // Topic was sucessfully created but metadata request did not
@@ -276,8 +260,8 @@ ss::future<response_ptr> create_topics_handler::handle(
                   // topic creation and the real deal
                   auto default_properties
                     = ctx.metadata_cache().get_default_properties();
-                  result.configs = {properties_to_result_configs(
-                    from_cluster_type(default_properties))};
+                  result.configs = std::make_optional(
+                    make_configs(ctx.metadata_cache(), default_properties));
               }
               return result;
           });
