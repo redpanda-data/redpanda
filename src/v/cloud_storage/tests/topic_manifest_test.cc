@@ -142,8 +142,8 @@ SEASTAR_THREAD_TEST_CASE(manifest_type_topic) {
 }
 
 SEASTAR_THREAD_TEST_CASE(create_topic_manifest_correct_path) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
-    auto path = m.get_manifest_path();
+    auto path = topic_manifest::get_topic_manifest_path(
+      cfg.tp_ns.ns, cfg.tp_ns.tp);
     BOOST_REQUIRE_EQUAL(
       path,
       "50000000/meta/cfg-test-namespace/cfg-test-topic/topic_manifest.json");
@@ -158,7 +158,8 @@ SEASTAR_THREAD_TEST_CASE(update_topic_manifest_correct_path) {
 }
 
 SEASTAR_THREAD_TEST_CASE(construct_serialize_update_same_object) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
+    auto local_ft = features::feature_table{};
+    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -245,33 +246,46 @@ SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
 }
 
 SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
-    auto min_cfg = cfg;
-    min_cfg.properties.retention_bytes = tristate<size_t>(
-      std::numeric_limits<size_t>::min());
-    min_cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
-      std::chrono::milliseconds::min());
-    min_cfg.properties.segment_size = std::make_optional(
-      std::numeric_limits<size_t>::min());
-    topic_manifest m(min_cfg, model::initial_revision_id{0});
-    auto [is, size] = m.serialize().get();
-    iobuf buf;
-    auto os = make_iobuf_ref_output_stream(buf);
-    ss::copy(is, os).get();
+    auto runner = [](features::feature_table const& local_ft) {
+        auto min_cfg = cfg;
+        min_cfg.properties.retention_bytes = tristate<size_t>(
+          std::numeric_limits<size_t>::min());
+        min_cfg.properties.retention_duration
+          = tristate<std::chrono::milliseconds>(
+            std::chrono::milliseconds::min());
+        min_cfg.properties.segment_size = std::make_optional(
+          std::numeric_limits<size_t>::min());
 
-    auto rstr = make_iobuf_input_stream(std::move(buf));
-    topic_manifest restored;
-    restored.update(std::move(rstr)).get();
-    BOOST_CHECK_EQUAL(m.get_revision(), restored.get_revision());
-    auto restored_cfg = restored.get_topic_config().value();
-    // as a safety net, negative values for retention_duration are converted to
-    // disabled tristate (infinite retention)
-    BOOST_CHECK(restored_cfg.properties.retention_duration.is_disabled());
+        topic_manifest m(min_cfg, model::initial_revision_id{0}, local_ft);
+        auto [is, size] = m.serialize().get();
+        iobuf buf;
+        auto os = make_iobuf_ref_output_stream(buf);
+        ss::copy(is, os).get();
 
-    BOOST_CHECK_EQUAL(
-      restored_cfg.properties.retention_bytes,
-      min_cfg.properties.retention_bytes);
-    BOOST_CHECK_EQUAL(
-      restored_cfg.properties.segment_size, min_cfg.properties.segment_size);
+        auto rstr = make_iobuf_input_stream(std::move(buf));
+        topic_manifest restored;
+        restored.update(std::move(rstr)).get();
+        BOOST_CHECK_EQUAL(m.get_revision(), restored.get_revision());
+        auto restored_cfg = restored.get_topic_config().value();
+        // as a safety net, negative values for retention_duration are converted
+        // to disabled tristate (infinite retention)
+        BOOST_CHECK(restored_cfg.properties.retention_duration.is_disabled());
+
+        BOOST_CHECK_EQUAL(
+          restored_cfg.properties.retention_bytes,
+          min_cfg.properties.retention_bytes);
+        BOOST_CHECK_EQUAL(
+          restored_cfg.properties.segment_size,
+          min_cfg.properties.segment_size);
+    };
+    BOOST_TEST_CONTEXT("topic_manifest v1") {
+        runner(features::feature_table{});
+    }
+    BOOST_TEST_CONTEXT("topic_manifest v2") {
+        auto local_ft = features::feature_table{};
+        local_ft.testing_activate_all();
+        runner(local_ft);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
@@ -282,7 +296,8 @@ SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
       std::chrono::milliseconds::max());
     max_cfg.properties.segment_size = std::make_optional(
       std::numeric_limits<size_t>::max());
-    topic_manifest m(max_cfg, model::initial_revision_id{0});
+    auto local_ft = features::feature_table{};
+    topic_manifest m(max_cfg, model::initial_revision_id{0}, local_ft);
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -342,7 +357,8 @@ SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {
 }
 
 SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
+    auto local_ft = features::feature_table{};
+    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
     m.update(make_manifest_stream(full_topic_manifest_json)).get();
     auto [is, size] = m.serialize().get();
     iobuf buf;
@@ -357,7 +373,8 @@ SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
+    auto local_ft = features::feature_table{};
+    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
     m.update(make_manifest_stream(negative_properties_manifest)).get();
     auto tp_cfg = m.get_topic_config();
     BOOST_REQUIRE(tp_cfg.has_value());
@@ -381,7 +398,9 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
     test_cfg.properties.retention_bytes = tristate<size_t>{disable_tristate};
     test_cfg.properties.retention_duration
       = tristate<std::chrono::milliseconds>{disable_tristate};
-    auto m = topic_manifest{test_cfg, model::initial_revision_id{0}};
+
+    auto local_ft = features::feature_table{};
+    auto m = topic_manifest{test_cfg, model::initial_revision_id{0}, local_ft};
 
     auto serialized = m.serialize().get().stream;
     auto buf = iobuf{};
@@ -521,7 +540,11 @@ SEASTAR_THREAD_TEST_CASE(test_v2_new_properties) {
       "fields to `modified_properties` to make sure that the coverage of the "
       "json serialization is complete");
 
-    auto manifest = topic_manifest{test_cfg, model::initial_revision_id{}};
+    auto local_ft = features::feature_table{};
+    local_ft.testing_activate_all();
+    BOOST_CHECK(local_ft.is_active(features::feature::topic_manifest_v2));
+    auto manifest = topic_manifest{
+      test_cfg, model::initial_revision_id{}, local_ft};
     auto serialized = manifest.serialize().get().stream;
     auto buf = iobuf{};
     auto os = make_iobuf_ref_output_stream(buf);

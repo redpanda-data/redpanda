@@ -666,25 +666,19 @@ struct json_projection<cluster::remote_topic_properties> {
 /// Section 4: root serialize/deserialize functions
 
 static void do_serialize(
+  cloud_storage::topic_manifest::version_t version,
   model::initial_revision_id rev_id,
   cluster::topic_configuration const& tc,
   DocumentView& doc) {
     using enum fields;
 
-    doc.write(
-      topic_manifest_version, cloud_storage::topic_manifest::current_version);
+    doc.write(topic_manifest_version, version);
     doc.write(revision_id, rev_id);
 
     doc.write(ns, tc.tp_ns.ns);
     doc.write(topic, tc.tp_ns.tp);
     doc.write(partition_count, tc.partition_count);
     doc.write(replication_factor, tc.replication_factor);
-
-    // first write the current serde version of topic_properties (new in
-    // topic_manifest::cluster_topic_configuration_versions)
-    doc.write(
-      cluster_topic_properties_serde_version,
-      cluster::topic_properties::redpanda_serde_version);
 
     // write the fields in topic_properties
     auto& properties = tc.properties;
@@ -702,8 +696,23 @@ static void do_serialize(
       properties.retention_duration,
       json_projection_retention<std::chrono::milliseconds>{});
 
+    if (
+      version
+      < cloud_storage::topic_manifest::cluster_topic_configuration_version) {
+        // stop serializing fields that might not be decodeable by old redpanda
+        // version. for example. in a mixed-version cluster, write the old
+        // version until it's safe to switch to the new one
+        return;
+    }
+
     // new props introduced after topic_manifest_version:
-    // topic_manifest::cluster_topic_configuration_version first
+    // topic_manifest::cluster_topic_configuration_version
+    // first write the current serde version of topic_properties (new in
+    // topic_manifest::cluster_topic_configuration_versions)
+    doc.write(
+      cluster_topic_properties_serde_version,
+      cluster::topic_properties::redpanda_serde_version);
+
     doc.write(recovery, properties.recovery);
     doc.write(shadow_indexing, properties.shadow_indexing);
     doc.write(read_replica, properties.read_replica);
@@ -761,11 +770,13 @@ static void do_serialize(
 // the default state because it was added after the file was written. In order
 // to do so, this function relies on the cluster_topic_properties_serde_version
 // json field to stop decoding at the appropriate time.
-static auto do_update(DocumentView doc) -> std::
-  tuple<int32_t, model::initial_revision_id, cluster::topic_configuration> {
+static auto do_update(DocumentView doc) -> std::tuple<
+  cloud_storage::topic_manifest::version_t,
+  model::initial_revision_id,
+  cluster::topic_configuration> {
     using enum fields;
 
-    int32_t encoded_manifest_version;
+    cloud_storage::topic_manifest::version_t encoded_manifest_version;
     doc.read(topic_manifest_version, encoded_manifest_version);
 
     if (
@@ -925,9 +936,15 @@ static auto do_update(DocumentView doc) -> std::
 namespace cloud_storage {
 
 topic_manifest::topic_manifest(
-  const cluster::topic_configuration& cfg, model::initial_revision_id rev)
+  const cluster::topic_configuration& cfg,
+  model::initial_revision_id rev,
+  const features::feature_table& features)
   : _topic_config(cfg)
-  , _rev(rev) {}
+  , _rev(rev)
+  , _manifest_version(
+      features.is_active(features::feature::topic_manifest_v2)
+        ? cluster_topic_configuration_version
+        : first_version) {}
 
 topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
@@ -978,7 +995,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     auto doc = json::Document{};
     doc.SetObject();
     auto dv = DocumentView{doc};
-    do_serialize(_rev, _topic_config.value(), dv);
+    do_serialize(_manifest_version, _rev, _topic_config.value(), dv);
 
     auto wrapper = json::OStreamWrapper(out);
     auto writer = json::Writer<json::OStreamWrapper>{wrapper};
