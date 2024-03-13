@@ -983,14 +983,14 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           "[{}] placement must be present if partition is",
           ntp);
         vassert(
-          maybe_placement->local
+          maybe_placement->current
             && partition->get_log_revision_id()
-                 == maybe_placement->local->log_revision
-            && maybe_placement->local->status
+                 == maybe_placement->current->log_revision
+            && maybe_placement->current->status
                  == shard_placement_table::hosted_status::hosted,
           "[{}] unexpected local state: {} (partition log revision: {})",
           ntp,
-          maybe_placement->local,
+          maybe_placement->current,
           partition->get_log_revision_id());
     }
 
@@ -1786,12 +1786,12 @@ ss::future<std::error_code> controller_backend::delete_partition(
           });
     }
 
-    if (!placement || !placement->local) {
+    if (!placement || !placement->current) {
         // nothing to delete
         co_return errc::success;
     }
 
-    auto log_revision = placement->local->log_revision;
+    auto log_revision = placement->current->log_revision;
     if (log_revision > cmd_revision) {
         // Perform an extra revision check to be on the safe side, if the
         // partition has already been re-created with greater revision, do

@@ -42,6 +42,16 @@ public:
     // assignment modification methods must be called on this shard
     static constexpr ss::shard_id assignment_shard_id = 0;
 
+    /// Struct used to express the fact that a partition replica of some ntp is
+    /// expected on this shard.
+    struct shard_local_assignment {
+        model::revision_id log_revision;
+        model::shard_revision_id shard_revision;
+
+        friend std::ostream&
+        operator<<(std::ostream&, const shard_local_assignment&);
+    };
+
     enum class hosted_status {
         /// Cross-shard transfer is in progress, we are the destination
         receiving,
@@ -56,18 +66,21 @@ public:
     struct shard_local_state {
         model::revision_id log_revision;
         hosted_status status;
+        model::shard_revision_id shard_revision;
 
-        static shard_local_state initial(model::revision_id log_revision) {
+        static shard_local_state initial(const shard_local_assignment& as) {
             return shard_local_state{
-              .log_revision = log_revision,
+              .log_revision = as.log_revision,
               .status = hosted_status::hosted,
+              .shard_revision = as.shard_revision,
             };
         }
 
-        static shard_local_state receiving(model::revision_id log_revision) {
+        static shard_local_state receiving(const shard_local_assignment& as) {
             return shard_local_state{
-              .log_revision = log_revision,
+              .log_revision = as.log_revision,
               .status = hosted_status::receiving,
+              .shard_revision = as.shard_revision,
             };
         }
 
@@ -88,15 +101,6 @@ public:
 
     /// A struct holding both current shard-local and target states for an ntp.
     struct placement_state {
-        /// Current shard-local state for this ntp. Will be non-null if
-        /// some kvstore state for this ntp exists on this shard.
-        std::optional<shard_local_state> local;
-        /// Current target shard for this ntp. Will be non-null on the target
-        /// shard itself, as well as shards with non-null local state.
-        std::optional<shard_placement_target> target;
-        /// Revision of the target shard.
-        model::shard_revision_id shard_revision;
-
         /// Based on expected log revision for this ntp on this node
         /// (queried from topic_table) and the placement state, calculate the
         /// required reconciliation action for this NTP on this shard.
@@ -105,14 +109,16 @@ public:
 
         friend std::ostream& operator<<(std::ostream&, const placement_state&);
 
+        placement_state() = default;
+
+        /// Current shard-local state for this ntp. Will be non-null if
+        /// some kvstore state for this ntp exists on this shard.
+        std::optional<shard_local_state> current;
+        /// If non-null, the ntp is expected to exist on this shard.
+        std::optional<shard_local_assignment> assigned;
+
     private:
         friend class shard_placement_table;
-
-        placement_state() = default;
-        placement_state(
-          const shard_placement_target& target, model::shard_revision_id rev)
-          : target(target)
-          , shard_revision(rev) {}
 
         /// If this shard is the initial shard for some incarnation of this
         /// partition on this node, this field will contain the corresponding
@@ -165,9 +171,9 @@ public:
     finish_delete(const model::ntp&, model::revision_id expected_log_rev);
 
 private:
-    void set_target_on_this_shard(
+    ss::future<> set_assigned_on_this_shard(
       const model::ntp&,
-      std::optional<shard_placement_target>,
+      std::optional<model::revision_id> expected_log_revision,
       model::shard_revision_id,
       bool is_initial,
       shard_callback_t);
