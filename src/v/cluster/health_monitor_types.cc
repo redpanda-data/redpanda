@@ -205,7 +205,11 @@ std::ostream& operator<<(std::ostream& o, const node_report_filter& s) {
 
 std::ostream& operator<<(std::ostream& o, const cluster_report_filter& s) {
     fmt::print(
-      o, "{{per_node_filter: {}, nodes: {}}}", s.node_report_filter, s.nodes);
+      o,
+      "{{per_node_filter: {}, nodes: {}, excluded_nodes: {}}}",
+      s.node_report_filter,
+      s.nodes,
+      s.excluded_nodes);
     return o;
 }
 

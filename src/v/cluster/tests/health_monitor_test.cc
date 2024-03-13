@@ -314,6 +314,76 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
     }).get();
 }
 
+FIXTURE_TEST(test_excluding_node, cluster_test_fixture) {
+    auto n1 = create_node_application(model::node_id{0});
+    create_node_application(model::node_id{1});
+    create_node_application(model::node_id{2});
+
+    wait_for_all_members(3s).get();
+    // wait for disk space report to be present
+    tests::cooperative_spin_wait_with_timeout(10s, [&n1] {
+        return n1->controller->get_health_monitor()
+          .local()
+          .get_cluster_health(
+            get_all, cluster::force_refresh::yes, model::no_timeout)
+          .then([](result<cluster::cluster_health_report> res) {
+              if (!res) {
+                  return false;
+              }
+              if (res.value().node_reports.empty()) {
+                  return false;
+              }
+              return true;
+          });
+    }).get();
+
+    static auto filter_template = [] {
+        return cluster::cluster_report_filter{
+          .node_report_filter = cluster::node_report_filter{
+            .include_partitions = cluster::include_partitions_info::no,
+          }};
+    };
+
+    auto f_1 = filter_template();
+    f_1.excluded_nodes.emplace_back(1);
+
+    tests::cooperative_spin_wait_with_timeout(10s, [&] {
+        return n1->controller->get_health_monitor()
+          .local()
+          .get_cluster_health(
+            f_1, cluster::force_refresh::yes, model::no_timeout)
+          .then([](result<cluster::cluster_health_report> report) {
+              return report.has_value()
+                     && report.value().node_reports.size() == 2;
+          });
+    }).get();
+
+    auto get_report = [&](cluster::cluster_report_filter filter) {
+        return n1->controller->get_health_monitor()
+          .local()
+          .get_cluster_health(
+            std::move(filter), cluster::force_refresh::no, model::no_timeout)
+          .then([](result<cluster::cluster_health_report> report) {
+              return report.value();
+          })
+          .get();
+    };
+    auto no_node_0 = filter_template();
+    no_node_0.excluded_nodes.emplace_back(0);
+    auto no_node0_report = get_report(no_node_0);
+
+    BOOST_REQUIRE_EQUAL(no_node0_report.node_states.size(), 2);
+    BOOST_REQUIRE_EQUAL(no_node0_report.node_reports.size(), 2);
+
+    auto it = std::find_if(
+      no_node0_report.node_reports.begin(),
+      no_node0_report.node_reports.end(),
+      [](const cluster::node_health_report& nhr) {
+          return nhr.id == model::node_id(0);
+      });
+    BOOST_REQUIRE(it == no_node0_report.node_reports.end());
+}
+
 FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
     auto n1 = create_node_application(model::node_id{0});
     create_node_application(model::node_id{1});

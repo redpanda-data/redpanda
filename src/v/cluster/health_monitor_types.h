@@ -303,13 +303,15 @@ struct node_report_filter
 struct cluster_report_filter
   : serde::envelope<
       cluster_report_filter,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
     // filtering that will be applied to node reports
     node_report_filter node_report_filter;
     // list of requested nodes, if empty report will contain all nodes
     std::vector<model::node_id> nodes;
+    // list of nodes that will be excluded from the request
+    std::vector<model::node_id> excluded_nodes;
 
     friend std::ostream&
     operator<<(std::ostream&, const cluster_report_filter&);
@@ -318,7 +320,9 @@ struct cluster_report_filter
     operator==(const cluster_report_filter&, const cluster_report_filter&)
       = default;
 
-    auto serde_fields() { return std::tie(node_report_filter, nodes); }
+    auto serde_fields() {
+        return std::tie(node_report_filter, nodes, excluded_nodes);
+    }
 };
 
 using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
