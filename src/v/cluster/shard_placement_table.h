@@ -104,9 +104,10 @@ public:
           : target(target)
           , shard_revision(rev) {}
 
-        /// If this shard is the initial shard for this partition on this node,
-        /// this field will contain the corresponding shard revision.
-        model::shard_revision_id _is_initial_at_revision;
+        /// If this shard is the initial shard for some incarnation of this
+        /// partition on this node, this field will contain the corresponding
+        /// log revision.
+        std::optional<model::revision_id> _is_initial_for;
         /// If x-shard transfer is in progress, will hold the destination. Note
         /// that it is initialized from target but in contrast to target, it
         /// can't change mid-transfer.

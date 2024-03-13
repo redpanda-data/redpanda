@@ -43,11 +43,11 @@ operator<<(std::ostream& o, const shard_placement_table::placement_state& gs) {
     fmt::print(
       o,
       "{{local: {}, target: {}, shard_revision: {}, "
-      "is_initial_at_revision: {}, next: {}}}",
+      "is_initial_for: {}, next: {}}}",
       gs.local,
       gs.target,
       gs.shard_revision,
-      gs._is_initial_at_revision,
+      gs._is_initial_for,
       gs._next);
     return o;
 }
@@ -220,7 +220,7 @@ void shard_placement_table::set_target_on_this_shard(
         state.shard_revision = shard_rev;
         state.target = target;
         if (is_initial) {
-            state._is_initial_at_revision = shard_rev;
+            state._is_initial_for = target->log_revision;
         }
     } else {
         // modify only if already present
@@ -272,9 +272,10 @@ ss::future<std::error_code> shard_placement_table::prepare_create(
     }
 
     if (!state.local) {
-        if (state._is_initial_at_revision == state.shard_revision) {
+        if (state._is_initial_for == state.target->log_revision) {
             state.local = shard_local_state::initial(
               state.target->log_revision);
+            state._is_initial_for = std::nullopt;
         } else {
             // x-shard transfer hasn't started yet, wait for it.
             co_return errc::waiting_for_partition_shutdown;
