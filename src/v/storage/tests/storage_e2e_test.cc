@@ -2485,6 +2485,9 @@ FIXTURE_TEST(read_write_truncate, storage_test_fixture) {
       [&] { return cnt > max; },
       [&log, &cnt] {
           auto offset = log->offsets();
+          if (offset.dirty_offset == model::offset{}) {
+              return ss::now();
+          }
           storage::log_reader_config cfg(
             std::max(model::offset(0), offset.dirty_offset - model::offset(10)),
             cnt % 2 == 0 ? offset.dirty_offset - model::offset(2)
