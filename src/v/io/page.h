@@ -83,6 +83,11 @@ public:
     // NOLINTNEXTLINE(*-non-private-member-variables-in-classes)
     intrusive_list_hook io_queue_hook;
 
+    /**
+     * Release the page data.
+     */
+    void clear();
+
 private:
     static constexpr auto num_page_flags
       = static_cast<std::underlying_type_t<flags>>(flags::num_flags);

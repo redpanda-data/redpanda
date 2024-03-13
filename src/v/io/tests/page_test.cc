@@ -49,6 +49,23 @@ TEST(Page, SetData) {
     EXPECT_EQ(p.data(), d1);
 }
 
+TEST(Page, Clear) {
+    constexpr auto size = 10;
+
+    auto d0 = make_random_data(size).get();
+    io::page p(1, d0.share());
+
+    EXPECT_EQ(p.size(), size);
+    EXPECT_EQ(p.data().size(), size);
+    EXPECT_EQ(p.data(), d0);
+
+    p.clear();
+
+    EXPECT_EQ(p.size(), 10); // page remembers its size
+    EXPECT_EQ(p.data().size(), 0);
+    EXPECT_EQ(p.data(), make_random_data(0).get());
+}
+
 TEST(Page, Flags) {
     io::page p(1, {});
 

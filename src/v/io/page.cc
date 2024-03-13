@@ -28,6 +28,8 @@ const seastar::temporary_buffer<char>& page::data() const noexcept {
     return data_;
 }
 
+void page::clear() { data_ = {}; }
+
 template<typename T>
 auto underlying(T type) {
     return static_cast<std::underlying_type_t<T>>(type);
