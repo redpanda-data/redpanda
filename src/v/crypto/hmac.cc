@@ -18,22 +18,43 @@
 #include <openssl/params.h>
 
 namespace crypto {
+namespace {
+static const auto sha256_params = []() {
+    std::array<OSSL_PARAM, 2> params{
+      OSSL_PARAM_construct_utf8_string(
+        OSSL_MAC_PARAM_DIGEST, const_cast<char*>("SHA256"), 0),
+      OSSL_PARAM_construct_end()};
+    return params;
+}();
+
+static const auto sha512_params = []() {
+    std::array<OSSL_PARAM, 2> params{
+      OSSL_PARAM_construct_utf8_string(
+        OSSL_MAC_PARAM_DIGEST, const_cast<char*>("SHA512"), 0),
+      OSSL_PARAM_construct_end()};
+    return params;
+}();
+
+static const std::array<OSSL_PARAM, 2>& get_param(digest_type type) {
+    switch (type) {
+    case digest_type::SHA256:
+        return sha256_params;
+    case digest_type::SHA512:
+        return sha512_params;
+    default:
+        vassert(false, "NOPE");
+    };
+}
+} // namespace
 class hmac_ctx::impl {
 public:
     impl(digest_type type, bytes_view key) {
-        std::array<OSSL_PARAM, 2> params{
-          OSSL_PARAM_construct_utf8_string(
-            OSSL_MAC_PARAM_DIGEST,
-            // NOLINTNEXTLINE
-            const_cast<char*>(get_digest_str(type)),
-            0),
-          OSSL_PARAM_construct_end()};
         _mac_ctx = internal::EVP_MAC_CTX_ptr(
           EVP_MAC_CTX_new(internal::get_mac()));
         if (
           1
           != EVP_MAC_init(
-            _mac_ctx.get(), key.data(), key.size(), params.data())) {
+            _mac_ctx.get(), key.data(), key.size(), get_param(type).data())) {
             throw internal::ossl_error(
               fmt::format("Failed to initialize HMAC-{}", type));
         }
