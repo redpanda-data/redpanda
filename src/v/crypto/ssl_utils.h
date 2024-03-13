@@ -22,8 +22,6 @@
 #include <openssl/provider.h>
 
 #include <memory>
-#include <stdexcept>
-#include <type_traits>
 
 namespace crypto::internal {
 
