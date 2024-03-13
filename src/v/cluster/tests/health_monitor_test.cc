@@ -10,20 +10,14 @@
 #include "base/outcome.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
-#include "cluster/metadata_cache.h"
 #include "cluster/node/types.h"
-#include "cluster/shard_table.h"
-#include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
 #include "cluster/tests/health_monitor_test_utils.h"
 #include "cluster/types.h"
-#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
-#include "net/unresolved_address.h"
-#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/sstring.hh>
@@ -57,20 +51,28 @@ void check_reports_the_same(
         auto& rr = rhs[i];
         BOOST_TEST_REQUIRE(
           lr.local_state.redpanda_version == rr.local_state.redpanda_version);
-        BOOST_TEST_REQUIRE(std::equal(
-          lr.topics.cbegin(),
-          lr.topics.cend(),
-          rr.topics.cbegin(),
-          rr.topics.cend()));
+        BOOST_REQUIRE_EQUAL(lr.topics.size(), rr.topics.size());
+        for (auto i = 0; i < lr.topics.size(); ++i) {
+            BOOST_REQUIRE_EQUAL(lr.topics[i].tp_ns, rr.topics[i].tp_ns);
+            auto& l_partitions = lr.topics[i].partitions;
+            auto& r_partitions = rr.topics[i].partitions;
+            BOOST_REQUIRE_EQUAL(l_partitions.size(), r_partitions.size());
+            for (auto p = 0; p < l_partitions.size(); ++p) {
+                auto& l_p = l_partitions[p];
+                auto& r_p = r_partitions[p];
+                BOOST_REQUIRE_EQUAL(l_p.id, r_p.id);
+                BOOST_REQUIRE_EQUAL(l_p.leader_id, r_p.leader_id);
+                BOOST_REQUIRE_EQUAL(l_p.term, r_p.term);
+                BOOST_REQUIRE_EQUAL(l_p.revision_id, r_p.revision_id);
+            }
+        }
+
         BOOST_TEST_REQUIRE(
           lr.local_state.disks().size() == rr.local_state.disks().size());
         for (auto i = 0; i < lr.local_state.disks().size(); ++i) {
             BOOST_REQUIRE_EQUAL(
               lr.local_state.disks().at(i).alert,
               rr.local_state.disks().at(i).alert);
-            BOOST_REQUIRE_EQUAL(
-              lr.local_state.disks().at(i).free,
-              rr.local_state.disks().at(i).free);
             BOOST_REQUIRE_EQUAL(
               lr.local_state.disks().at(i).path,
               rr.local_state.disks().at(i).path);

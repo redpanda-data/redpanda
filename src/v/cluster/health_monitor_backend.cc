@@ -189,6 +189,20 @@ void health_monitor_backend::refresh_nodes_status() {
     }
 }
 
+node_state health_monitor_backend::collect_node_state() {
+    node_state ret;
+    ret.id = _raft0->self().id();
+    ret.is_alive = alive::yes;
+    auto node_md = _members.local().get_node_metadata_ref(ret.id);
+    if (!node_md) {
+        ret.membership_state = model::membership_state::removed;
+        // node was removed from the cluster
+        return ret;
+    }
+    ret.membership_state = node_md.value().get().state.get_membership_state();
+    return ret;
+}
+
 chunked_vector<topic_status> filter_topic_status(
   const chunked_vector<topic_status>& topics, const partitions_filter& filter) {
     // empty filter matches all
@@ -335,48 +349,90 @@ ss::future<std::error_code>
 health_monitor_backend::dispatch_refresh_cluster_health_request(
   model::node_id node_id) {
     const auto timeout = model::timeout_clock::now() + max_metadata_age();
-    auto reply = co_await _connections.local()
-                   .with_node_client<controller_client_protocol>(
-                     _raft0->self().id(),
-                     ss::this_shard_id(),
-                     node_id,
-                     max_metadata_age(),
-                     [timeout](controller_client_protocol client) mutable {
-                         get_cluster_health_request req{
-                           .filter = cluster_report_filter{}};
-                         return client.get_cluster_health_report(
-                           std::move(req), rpc::client_opts(timeout));
-                     })
-                   .then(&rpc::get_ctx_data<get_cluster_health_reply>);
+    const auto self = _raft0->self().id();
+    /**
+     * Request remote node cluster health reports
+     */
+    auto request_f
+      = _connections.local()
+          .with_node_client<controller_client_protocol>(
+            self,
+            ss::this_shard_id(),
+            node_id,
+            max_metadata_age(),
+            [self, timeout](controller_client_protocol client) mutable {
+                get_cluster_health_request req{
+                  .filter = cluster_report_filter{.excluded_nodes = {self}}};
+                return client.get_cluster_health_report(
+                  std::move(req), rpc::client_opts(timeout));
+            })
+          .then(&rpc::get_ctx_data<get_cluster_health_reply>);
+    /**
+     * Instead of requesting current node report from the remote node, simply
+     * collect it using local state.
+     */
+    auto collect_f = collect_current_node_health(node_report_filter{});
 
-    if (!reply) {
+    auto results = co_await ss::when_all_succeed(
+      std::move(request_f), std::move(collect_f));
+    auto& remote_reply = std::get<0>(results);
+    auto& current_node_report = std::get<1>(results);
+
+    /**
+     * Handle current node health report first as it is more likely to finish
+     * with success
+     */
+    if (current_node_report.has_error()) {
         vlog(
           clusterlog.warn,
-          "unable to get cluster health metadata from {} - {}",
-          node_id,
-          reply.error().message());
-        co_return reply.error();
+          "unable collect current node report {}",
+          current_node_report.error().message());
+        co_return current_node_report.error();
     }
-
-    if (!reply.value().report) {
-        vlog(
-          clusterlog.warn,
-          "unable to get cluster health metadata from {} - {}",
-          node_id,
-          reply.value().error);
-        co_return make_error_code(reply.value().error);
-    }
-
-    _status.clear();
-    for (auto& n_status : reply.value().report->node_states) {
-        _status.emplace(n_status.id, n_status);
-    }
-    vlog(clusterlog.trace, "Status cache updated from the leader: {}", _status);
 
     storage::disk_space_alert cluster_disk_health
       = storage::disk_space_alert::ok;
-    _reports.clear();
-    for (auto& n_report : reply.value().report->node_reports) {
+
+    node::local_monitor::update_alert(
+      current_node_report.value().local_state.data_disk);
+
+    cluster_disk_health = storage::max_severity(
+      cluster_disk_health,
+      current_node_report.value().local_state.data_disk.alert);
+    /**
+     * Update current node state
+     */
+    _status[self] = collect_node_state();
+    _reports[self] = std::move(current_node_report.value());
+
+    /**
+     * Handle reports coming from the controller node
+     */
+    if (!remote_reply) {
+        vlog(
+          clusterlog.warn,
+          "unable to get cluster health metadata from {} - {}",
+          node_id,
+          remote_reply.error().message());
+        co_return remote_reply.error();
+    }
+
+    if (!remote_reply.value().report) {
+        vlog(
+          clusterlog.warn,
+          "unable to get cluster health metadata from {} - {}",
+          node_id,
+          remote_reply.value().error);
+        co_return make_error_code(remote_reply.value().error);
+    }
+
+    for (auto& n_status : remote_reply.value().report->node_states) {
+        _status[n_status.id] = n_status;
+    }
+
+    vlog(clusterlog.trace, "Status cache updated from the leader: {}", _status);
+
+    for (auto& n_report : remote_reply.value().report->node_reports) {
         const auto id = n_report.id;
 
         // Recompute alert state, in case it was deserialized from an old
@@ -387,12 +443,23 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
         cluster_disk_health = storage::max_severity(
           cluster_disk_health, n_report.local_state.data_disk.alert);
 
-        _reports.emplace(id, std::move(n_report));
+        _reports[id] = std::move(n_report);
     }
+    auto not_in_members_table = [this](const auto& value) {
+        return !_members.local().contains(value.first);
+    };
+    /**
+     * Remove reports from nodes that were removed
+     */
+    absl::erase_if(_reports, not_in_members_table);
+    absl::erase_if(_status, not_in_members_table);
 
-    _bytes_in_cloud_storage = reply.value().report->bytes_in_cloud_storage;
+    _bytes_in_cloud_storage
+      = remote_reply.value().report->bytes_in_cloud_storage;
+
     _reports_disk_health = cluster_disk_health;
     _last_refresh = ss::lowres_clock::now();
+
     co_return make_error_code(errc::success);
 }
 

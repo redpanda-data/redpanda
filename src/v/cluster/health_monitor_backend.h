@@ -137,6 +137,8 @@ private:
 
     void refresh_nodes_status();
 
+    node_state collect_node_state();
+
     result<node_health_report>
       process_node_reply(model::node_id, result<get_node_health_reply>);
 
