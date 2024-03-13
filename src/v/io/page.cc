@@ -10,12 +10,26 @@
  */
 #include "io/page.h"
 
+#include "base/vassert.h"
+
 namespace experimental::io {
 
 page::page(uint64_t offset, seastar::temporary_buffer<char> data)
   : offset_(offset)
   , size_(data.size())
   , data_(std::move(data)) {}
+
+page::page(
+  uint64_t offset,
+  seastar::temporary_buffer<char> data,
+  const class cache_hook& hook)
+  : cache_hook(hook)
+  , offset_(offset)
+  , size_(data.size())
+  , data_(std::move(data)) {
+    vassert(
+      hook.evicted(), "Non-evicted cache hook for page offset {}", offset_);
+}
 
 uint64_t page::offset() const noexcept { return offset_; }
 

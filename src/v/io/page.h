@@ -11,6 +11,7 @@
 #pragma once
 
 #include "container/intrusive_list_helpers.h"
+#include "io/cache.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -29,6 +30,16 @@ public:
      * Construct a page with the given \p offset and \p data.
      */
     page(uint64_t offset, seastar::temporary_buffer<char> data);
+
+    /**
+     * Construct a page with the given \p offset, \p data, and cache entry state
+     * \p hook. The hook is used to transfer cache entry statistics, and
+     * must not currently represent a page stored in the cache.
+     */
+    page(
+      uint64_t offset,
+      seastar::temporary_buffer<char> data,
+      const cache_hook& hook);
 
     page(const page&) = delete;
     page& operator=(const page&) = delete;
@@ -105,6 +116,12 @@ public:
         return !test_flag(flags::faulting) && !test_flag(flags::dirty)
                && use_count() == 1;
     }
+
+    /**
+     * Page cache entry intrusive list hook.
+     */
+    // NOLINTNEXTLINE(*-non-private-member-variables-in-classes)
+    cache_hook cache_hook;
 
 private:
     static constexpr auto num_page_flags
