@@ -12,6 +12,7 @@
 
 #include "container/intrusive_list_helpers.h"
 
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <bitset>
@@ -22,7 +23,7 @@ namespace experimental::io {
 /**
  * A page represents a contiguous region of data in a file.
  */
-class page {
+class page : public seastar::enable_lw_shared_from_this<page> {
 public:
     /**
      * Construct a page with the given \p offset and \p data.
@@ -87,6 +88,23 @@ public:
      * Release the page data.
      */
     void clear();
+
+    /*
+     * Used by the cache to test if this page may be evicted. If true, the cache
+     * is permitted to release the backing memory for this page and remove the
+     * page from the cache.
+     *
+     * use_count(): we maintain the invariant that a page in the cache is always
+     * referenced by an index structure. therefore, if its use_count is 1 then
+     * there are no other active references to the page, and the backing memory
+     * can be released. this property is useful because it bounds the set of
+     * locations where a page must be tested to those where new page references
+     * are obtained from an index.
+     */
+    [[nodiscard]] bool may_evict() const {
+        return !test_flag(flags::faulting) && !test_flag(flags::dirty)
+               && use_count() == 1;
+    }
 
 private:
     static constexpr auto num_page_flags

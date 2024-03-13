@@ -84,3 +84,23 @@ TEST(Page, Flags) {
     EXPECT_FALSE(p.test_flag(io::page::flags::write));
     EXPECT_FALSE(p.test_flag(io::page::flags::read));
 }
+
+TEST(Page, EvictionCheck) {
+    auto p = seastar::make_lw_shared<io::page>(
+      1, seastar::temporary_buffer<char>());
+    EXPECT_TRUE(p->may_evict());
+
+    p->set_flag(io::page::flags::faulting);
+    EXPECT_FALSE(p->may_evict());
+
+    p->clear_flag(io::page::flags::faulting);
+    p->set_flag(io::page::flags::dirty);
+    EXPECT_FALSE(p->may_evict());
+
+    p->clear_flag(io::page::flags::dirty);
+    EXPECT_TRUE(p->may_evict());
+
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+    [[maybe_unused]] auto p2 = p;
+    EXPECT_FALSE(p->may_evict());
+}
