@@ -22,6 +22,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <limits>
+
 namespace {
 // NOLINTNEXTLINE(misc-no-recursion)
 std::optional<bool>
@@ -60,7 +62,9 @@ perturb(json::Value& value, json::Document& doc, std::string& path) {
             }
         }
         const auto orig = v;
-        const int modifier = v == 0 ? 1 : -1;
+        const int modifier = (v == 0 || v == std::numeric_limits<T>::min())
+                               ? 1
+                               : -1;
         v += modifier;
         path = fmt::format("{} = {} ({}/{})", path, v, orig, modifier);
         return v;
