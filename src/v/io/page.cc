@@ -24,6 +24,7 @@ uint64_t page::size() const noexcept { return size_; }
 seastar::temporary_buffer<char>& page::data() noexcept { return data_; }
 
 const seastar::temporary_buffer<char>& page::data() const noexcept {
+    vassert(!test_flag(flags::faulting), "Cannot access faulting page data");
     return data_;
 }
 
