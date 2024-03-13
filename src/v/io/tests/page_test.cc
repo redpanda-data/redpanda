@@ -104,3 +104,25 @@ TEST(Page, EvictionCheck) {
     [[maybe_unused]] auto p2 = p;
     EXPECT_FALSE(p->may_evict());
 }
+
+TEST(Page, Waiters) {
+    io::page::waiter w0;
+    io::page::waiter w1;
+
+    io::page p(1, {});
+    p.add_waiter(w0);
+    p.add_waiter(w1);
+
+    auto f0 = w0.ready.get_future();
+    auto f1 = w1.ready.get_future();
+
+    EXPECT_FALSE(f0.available());
+    EXPECT_FALSE(f1.available());
+
+    p.signal_waiters();
+
+    EXPECT_TRUE(f0.available());
+    EXPECT_TRUE(f1.available());
+    EXPECT_FALSE(f0.failed());
+    EXPECT_FALSE(f1.failed());
+}

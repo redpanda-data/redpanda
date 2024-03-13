@@ -64,4 +64,11 @@ bool page::test_flag(flags flag) const noexcept {
     return flags_.test(underlying(flag));
 }
 
+void page::add_waiter(page::waiter& waiter) { waiters_.push_back(waiter); }
+
+void page::signal_waiters() {
+    waiters_.clear_and_dispose(
+      [](page::waiter* waiter) { waiter->ready.set_value(); });
+}
+
 } // namespace experimental::io

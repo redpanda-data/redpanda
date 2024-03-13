@@ -13,6 +13,7 @@
 #include "container/intrusive_list_helpers.h"
 #include "io/cache.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 
@@ -123,6 +124,24 @@ public:
     // NOLINTNEXTLINE(*-non-private-member-variables-in-classes)
     cache_hook cache_hook;
 
+    struct waiter {
+        intrusive_list_hook waiter;
+        seastar::promise<> ready;
+    };
+
+    /**
+     * Add a waiter to the waiters list.
+     *
+     * This is most commonly used to signal waiters that a page which is
+     * faulting is ready to be read.
+     */
+    void add_waiter(waiter&);
+
+    /**
+     * Signal all waiters.
+     */
+    void signal_waiters();
+
 private:
     static constexpr auto num_page_flags
       = static_cast<std::underlying_type_t<flags>>(flags::num_flags);
@@ -131,6 +150,7 @@ private:
     uint64_t size_;
     seastar::temporary_buffer<char> data_;
     std::bitset<num_page_flags> flags_;
+    intrusive_list<waiter, &waiter::waiter> waiters_;
 };
 
 } // namespace experimental::io
