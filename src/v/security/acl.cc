@@ -17,17 +17,52 @@
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <container/fragmented_vector.h>
 #include <fmt/format.h>
 
 namespace security {
 
 seastar::logger seclog("security");
 
+void acl_entry_set::insert(acl_entry entry) {
+    auto [it, ins] = _entries.insert(std::move(entry));
+    if (const auto& principal = it->principal();
+        ins && principal.type() == principal_type::role) {
+        _role_cache[principal.name_view()] += 1;
+    }
+}
+
+void acl_entry_set::remove_if_role(const acl_principal_base& p) {
+    if (p.type() != principal_type::role) {
+        return;
+    }
+    if (auto it = _role_cache.find(p.name_view()); it != _role_cache.end()) {
+        it->second -= 1;
+        vassert(
+          it->second >= 0,
+          "Role binding count unexpectedly < 0: {}",
+          it->second);
+        if (it->second == 0) {
+            _role_cache.erase(it);
+        }
+    }
+}
+
 std::optional<std::reference_wrapper<const acl_entry>> acl_entry_set::find(
   acl_operation operation,
   const acl_principal_base& principal,
   const acl_host& host,
   acl_permission perm) const {
+    // NOTE(oren): We don't allow wildcard roles, so we can short circuit on a
+    // straight name lookup here. This is advantageous because the common case
+    // for role-based authZ requires several ACL lookups (one for each role to
+    // which an authenticated principal belongs), each requiring linear work in
+    // the length of the target resource ACL set.
+    if (
+      principal.type() == principal_type::role
+      && !_role_cache.contains(principal.name_view())) {
+        return std::nullopt;
+    }
     for (const auto& entry : _entries) {
         if (entry.permission() != perm) {
             continue;
@@ -172,6 +207,10 @@ std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
 
     // deleted binding index of deleted filter that matched
     absl::flat_hash_map<acl_binding, size_t> deleted;
+    // NOTE(oren): deleted bindings are held in this scope, so
+    // non-owning references are safe to use as long as they are
+    // accessed exclusively inside the loop body.
+    chunked_vector<acl_principal_view> maybe_roles;
 
     for (const auto& resources_it : resources) {
         // structured binding in for-range prevents capturing reference to
@@ -188,16 +227,27 @@ std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
         // remove matching entries and track the deleted binding along with the
         // index of the filter that matched the entry.
         it->second.erase_if(
-          [&filters, &resource, &deleted, dry_run](const acl_entry& entry) {
+          [&filters, &resource, &deleted, &maybe_roles, dry_run](
+            const acl_entry& entry) {
               for (const auto& filter : filters) {
                   if (filter.first.entry().matches(entry)) {
                       auto binding = acl_binding(resource, entry);
-                      deleted.emplace(binding, filter.second);
+                      auto [it, _] = deleted.emplace(binding, filter.second);
+                      if (const auto& p = it->first.entry().principal();
+                          !dry_run && p.type() == principal_type::role) {
+                          maybe_roles.emplace_back(p);
+                      }
                       return !dry_run;
                   }
               }
               return false;
           });
+        for (const auto& principal : maybe_roles) {
+            it->second.remove_if_role(principal);
+        }
+        // ensure that elements won't outlive the corresponding bindings
+        // in enclosing scope.
+        maybe_roles.erase_to_end(maybe_roles.begin());
     }
 
     std::vector<std::vector<acl_binding>> res;

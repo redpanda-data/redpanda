@@ -182,7 +182,21 @@ public:
      * Get the principal type
      */
     principal_type type() const override { return _type; }
-    bool wildcard() const { return _name == "*"; }
+    /**
+     * Check whether this is a 'wildcard' principal.
+     *
+     * Note that this is type()-dependent. A principal of type 'role' is
+     * always exempt from wildcard matching.
+     */
+    bool wildcard() const {
+        switch (_type) {
+        case principal_type::user:
+        case principal_type::ephemeral_user:
+            return _name == "*";
+        case principal_type::role:
+            return false;
+        }
+    }
 
     // Needed for ADL serialization
     const ss::sstring& name() const { return _name; }
