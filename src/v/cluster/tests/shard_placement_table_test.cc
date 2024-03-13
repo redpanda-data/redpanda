@@ -44,6 +44,11 @@ struct partition_shards {
     std::optional<ss::shard_id> current_state_on;
     std::optional<ss::shard_id> next_state_on;
     absl::flat_hash_set<ss::shard_id> shards_with_some_state;
+
+    bool empty() const {
+        return !launched_on && !current_state_on && !next_state_on
+               && shards_with_some_state.empty();
+    }
 };
 
 /// This map is instantiated on shard 0 and is used to check invariants during
@@ -459,6 +464,87 @@ public:
     shard_placement_test_fixture()
       : test_dir("test.data." + random_generators::gen_alphanum_string(10)) {}
 
+    ss::future<> quiescent_state_checks() {
+        auto shard2states = co_await spt.map(
+          [](shard_placement_table& spt) { return spt._states; });
+
+        absl::node_hash_map<
+          model::ntp,
+          std::map<ss::shard_id, shard_placement_table::placement_state>>
+          ntp2shard2state;
+        for (size_t s = 0; s < shard2states.size(); ++s) {
+            for (const auto& [ntp, state] : shard2states[s]) {
+                ntp2shard2state[ntp].emplace(s, state);
+            }
+        }
+
+        ASSERT_EQ_CORO(ntp2shard2state.size(), ntpt.local().ntp2meta.size());
+
+        auto& p2shards = partition2shards.local();
+        for (auto it = p2shards.begin(); it != p2shards.end();) {
+            auto it_copy = it++;
+            if (it_copy->second.empty()) {
+                p2shards.erase(it_copy);
+            }
+        }
+
+        ASSERT_EQ_CORO(p2shards.size(), ntpt.local().ntp2meta.size());
+
+        for (const auto& [ntp, meta] : ntpt.local().ntp2meta) {
+            auto states_it = ntp2shard2state.find(ntp);
+            ASSERT_TRUE_CORO(states_it != ntp2shard2state.end())
+              << "ntp: " << ntp;
+            const auto& shard2state = states_it->second;
+
+            auto target_it = spt.local()._ntp2target.find(ntp);
+            ASSERT_TRUE_CORO(target_it != spt.local()._ntp2target.end())
+              << "ntp: " << ntp;
+            const auto& target = target_it->second;
+
+            ASSERT_EQ_CORO(target.log_revision, meta.log_revision)
+              << "ntp: " << ntp;
+
+            ASSERT_TRUE_CORO(shard2state.contains(target.shard))
+              << "ntp: " << ntp << ", target shard: " << target.shard;
+            for (const auto& [s, placement] : shard2state) {
+                if (s == target.shard) {
+                    ASSERT_TRUE_CORO(placement.current)
+                      << "ntp: " << ntp << ", shard: " << s;
+                    ASSERT_EQ_CORO(
+                      placement.current->log_revision, meta.log_revision)
+                      << "ntp: " << ntp << ", shard: " << s;
+                    ASSERT_EQ_CORO(
+                      placement.current->status,
+                      shard_placement_table::hosted_status::hosted)
+                      << "ntp: " << ntp << ", shard: " << s;
+                    ASSERT_TRUE_CORO(placement.assigned)
+                      << "ntp: " << ntp << ", shard: " << s;
+                    ASSERT_EQ_CORO(
+                      placement.assigned->log_revision, meta.log_revision)
+                      << "ntp: " << ntp << ", shard: " << s;
+                } else {
+                    ASSERT_TRUE_CORO(!placement.current)
+                      << "ntp: " << ntp << ", shard: " << s;
+                    ASSERT_TRUE_CORO(!placement.assigned)
+                      << "ntp: " << ntp << ", shard: " << s;
+                }
+            }
+
+            auto shards_it = p2shards.find({ntp, meta.log_revision});
+            ASSERT_TRUE_CORO(shards_it != p2shards.end()) << "ntp: " << ntp;
+            const auto& shards = shards_it->second;
+            ASSERT_EQ_CORO(shards.launched_on, target.shard) << "ntp: " << ntp;
+            ASSERT_EQ_CORO(shards.current_state_on, target.shard)
+              << "ntp: " << ntp;
+            ASSERT_EQ_CORO(shards.next_state_on, std::nullopt)
+              << "ntp: " << ntp;
+            ASSERT_EQ_CORO(
+              shards.shards_with_some_state,
+              absl::flat_hash_set<ss::shard_id>({target.shard}))
+              << "ntp: " << ntp;
+        }
+    }
+
     ss::future<> start() {
         co_await ft.start();
         co_await ft.invoke_on_all(
@@ -533,7 +619,9 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
                     break;
                 }
             }
+
             vlog(clusterlog.info, "reconciled");
+            co_await quiescent_state_checks();
         }
 
         // small set of ntps to ensure frequent overlaps
