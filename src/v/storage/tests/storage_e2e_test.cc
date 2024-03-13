@@ -3432,6 +3432,9 @@ FIXTURE_TEST(issue_8091, storage_test_fixture) {
     auto read = ss::do_until(
       [&] { return cnt > max; },
       [&log, &last_truncate] {
+          if (last_truncate == model::offset{}) {
+              return ss::now();
+          }
           auto offset = log->offsets();
           storage::log_reader_config cfg(
             last_truncate - model::offset(1),
