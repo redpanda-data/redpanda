@@ -146,6 +146,11 @@ ss::future<op_result<void>> aws_ops::create_inventory_configuration(
        .payload = to_xml(cfg)});
 
     if (create_res != upload_result::success) {
+        vlog(
+          cst_log.error,
+          "Failed to create inventory {}: {}",
+          _inventory_config_id(),
+          create_res);
         co_return error_outcome::create_inv_cfg_failed;
     }
 
@@ -173,6 +178,11 @@ ss::future<op_result<bool>> aws_ops::inventory_configuration_exists(
         co_return false;
     }
 
+    vlog(
+      cst_log.error,
+      "Failed to check if inventory {} exists: {}",
+      _inventory_config_id(),
+      dl_res);
     co_return error_outcome::failed_to_check_inv_status;
 }
 
@@ -182,6 +192,10 @@ ss::future<op_result<report_metadata>> aws_ops::fetch_latest_report_metadata(
     try {
         co_return co_await do_fetch_latest_report_metadata(remote, parent_rtc);
     } catch (...) {
+        vlog(
+          cst_log.error,
+          "Failed to fetch latest report metadata: {}",
+          std::current_exception());
         co_return error_outcome::failed;
     }
 }
@@ -241,6 +255,11 @@ ss::future<op_result<report_metadata>> aws_ops::do_fetch_latest_report_metadata(
         // If we failed to check for the checksum existence, instead of probing
         // older reports we bail out and try again later.
         if (result != download_result::success) {
+            vlog(
+              cst_log.error,
+              "Failed to probe checksum object at {}: {}",
+              path_with_datetime.path().native(),
+              result);
             co_return error_outcome::failed;
         }
 
@@ -258,6 +277,10 @@ ss::future<op_result<report_metadata>> aws_ops::do_fetch_latest_report_metadata(
           remote, parent_rtc, manifest_path);
 
         if (report_paths.has_error()) {
+            vlog(
+              cst_log.error,
+              "Failed to fetch metadata: {}",
+              report_paths.error());
             co_return report_paths.error();
         }
 
@@ -278,6 +301,10 @@ ss::future<op_result<report_paths>> aws_ops::fetch_and_parse_metadata(
         co_return co_await do_fetch_and_parse_metadata(
           remote, parent_rtc, metadata_path);
     } catch (...) {
+        vlog(
+          cst_log.error,
+          "Failed to fetch and parse metadata: {}",
+          std::current_exception());
         co_return error_outcome::failed;
     }
 }
@@ -295,6 +322,7 @@ ss::future<op_result<report_paths>> aws_ops::do_fetch_and_parse_metadata(
     });
 
     if (dl_res != download_result::success) {
+        vlog(cst_log.error, "Failed to download manifest JSON: {}", dl_res);
         co_return error_outcome::manifest_download_failed;
     }
 
@@ -315,6 +343,10 @@ op_result<report_paths> aws_ops::parse_report_paths(iobuf json_response) const {
     }
 
     if (!doc.IsObject() || !doc.HasMember("files") || !doc["files"].IsArray()) {
+        vlog(
+          cst_log.error,
+          "Document does not have a files array: {}",
+          maybe_truncate_json(std::move(err_parser)));
         return error_outcome::manifest_files_parse_failed;
     }
 
