@@ -10,18 +10,17 @@
 
 #include "cloud_storage/inventory/aws_ops.h"
 #include "cloud_storage/inventory/inv_ops.h"
-#include "cloud_storage/remote.h"
-
-#include <gmock/gmock.h>
+#include "cloud_storage/inventory/tests/common.h"
 
 namespace cst = cloud_storage;
+namespace csi = cst::inventory;
 namespace t = ::testing;
 
 constexpr auto id = "redpanda-inv-weekly";
 constexpr auto bucket = "test-bucket";
 constexpr auto prefix = "inv-prefix";
-constexpr auto format = cst::inventory::report_format::csv;
-constexpr auto frequency = cst::inventory::report_generation_frequency::daily;
+constexpr auto format = csi::report_format::csv;
+constexpr auto frequency = csi::report_generation_frequency::daily;
 const auto expected_key = fmt::format("?inventory&id={}", id);
 const auto expected_xml_payload = fmt::format(
   R"({header}
@@ -33,20 +32,6 @@ const auto expected_xml_payload = fmt::format(
   fmt::arg("bucket", bucket),
   fmt::arg("schedule", frequency),
   fmt::arg("id", id));
-
-class MockRemote : public cst::cloud_storage_api {
-public:
-    MOCK_METHOD(
-      ss::future<cst::upload_result>,
-      upload_object,
-      (cst::upload_request),
-      (override));
-    MOCK_METHOD(
-      ss::future<cst::download_result>,
-      download_object,
-      (cst::download_request),
-      (override));
-};
 
 std::string iobuf_to_xml(iobuf buf) {
     iobuf_parser p{std::move(buf)};
@@ -65,7 +50,7 @@ validate_create_request(cst::upload_request request) {
 
 template<typename T, typename... Ts>
 void test_create(T t, Ts... args) {
-    MockRemote remote;
+    csi::MockRemote remote;
     EXPECT_CALL(remote, upload_object(t::_))
       .Times(1)
       .WillOnce(t::Invoke(validate_create_request));
@@ -76,23 +61,23 @@ void test_create(T t, Ts... args) {
     const auto result
       = t.create_inventory_configuration(remote, parent, args...).get();
 
-    ASSERT_EQ(result, cst::upload_result::success);
+    EXPECT_TRUE(result.has_value());
 }
 
 TEST(CreateInvCfg, LowLevelApi) {
     test_create(
-      cst::inventory::aws_ops{
+      csi::aws_ops{
         cloud_storage_clients::bucket_name{bucket},
-        cst::inventory::inventory_config_id{id},
+        csi::inventory_config_id{id},
         prefix},
       frequency,
       format);
 }
 
 TEST(CreateInvCfg, HighLevelApi) {
-    test_create(cst::inventory::inv_ops{cst::inventory::aws_ops{
+    test_create(csi::inv_ops{csi::aws_ops{
       cloud_storage_clients::bucket_name{bucket},
-      cst::inventory::inventory_config_id{id},
+      csi::inventory_config_id{id},
       prefix}});
 }
 
@@ -104,7 +89,7 @@ validate_inventory_exists_request(cst::download_request request) {
 }
 
 TEST(InvCfgExists, HighLevelApi) {
-    MockRemote remote;
+    csi::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(1)
       .WillOnce(t::Invoke(validate_inventory_exists_request));
@@ -112,16 +97,19 @@ TEST(InvCfgExists, HighLevelApi) {
     ss::abort_source as;
     retry_chain_node parent{as};
 
-    cst::inventory::inv_ops ops{cst::inventory::aws_ops{
+    csi::inv_ops ops{csi::aws_ops{
       cloud_storage_clients::bucket_name{bucket},
-      cst::inventory::inventory_config_id{id},
+      csi::inventory_config_id{id},
       prefix}};
 
-    ASSERT_TRUE(ops.inventory_configuration_exists(remote, parent).get());
+    const auto exists
+      = ops.inventory_configuration_exists(remote, parent).get();
+    EXPECT_TRUE(exists.has_value());
+    EXPECT_TRUE(exists.value());
 }
 
 TEST(CreateInvCfg, IfExistsDoesNotCreate) {
-    MockRemote remote;
+    csi::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(1)
       .WillOnce(t::Invoke(validate_inventory_exists_request));
@@ -129,18 +117,20 @@ TEST(CreateInvCfg, IfExistsDoesNotCreate) {
     ss::abort_source as;
     retry_chain_node parent{as};
 
-    cst::inventory::inv_ops ops{cst::inventory::aws_ops{
+    csi::inv_ops ops{csi::aws_ops{
       cloud_storage_clients::bucket_name{bucket},
-      cst::inventory::inventory_config_id{id},
+      csi::inventory_config_id{id},
       prefix}};
 
-    ASSERT_EQ(
-      ops.maybe_create_inventory_configuration(remote, parent).get(),
-      cst::inventory::inventory_creation_result::already_exists);
+    const auto maybe_create_res
+      = ops.maybe_create_inventory_configuration(remote, parent).get();
+    EXPECT_TRUE(maybe_create_res.has_value());
+    EXPECT_EQ(
+      maybe_create_res.value(), csi::inventory_creation_result::already_exists);
 }
 
 TEST(CreateInvCfg, IfDoesNotExistCreates) {
-    MockRemote remote;
+    csi::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(1)
       .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
@@ -153,14 +143,15 @@ TEST(CreateInvCfg, IfDoesNotExistCreates) {
     ss::abort_source as;
     retry_chain_node parent{as};
 
-    cst::inventory::inv_ops ops{cst::inventory::aws_ops{
+    csi::inv_ops ops{csi::aws_ops{
       cloud_storage_clients::bucket_name{bucket},
-      cst::inventory::inventory_config_id{id},
+      csi::inventory_config_id{id},
       prefix}};
 
-    ASSERT_EQ(
-      ops.maybe_create_inventory_configuration(remote, parent).get(),
-      cst::inventory::inventory_creation_result::success);
+    const auto create_res
+      = ops.maybe_create_inventory_configuration(remote, parent).get();
+    EXPECT_TRUE(create_res.has_value());
+    EXPECT_EQ(create_res.value(), csi::inventory_creation_result::success);
 }
 
 TEST(CreateInvCfg, CreationRace) {
@@ -169,7 +160,7 @@ TEST(CreateInvCfg, CreationRace) {
     // Then, we try to create and it fails
     // Finally, the config exists
     // The outcome should be `already_exists` and not `failed`
-    MockRemote remote;
+    csi::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(2)
       .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
@@ -185,18 +176,20 @@ TEST(CreateInvCfg, CreationRace) {
     ss::abort_source as;
     retry_chain_node parent{as};
 
-    cst::inventory::inv_ops ops{cst::inventory::aws_ops{
+    csi::inv_ops ops{csi::aws_ops{
       cloud_storage_clients::bucket_name{bucket},
-      cst::inventory::inventory_config_id{id},
+      csi::inventory_config_id{id},
       prefix}};
 
-    ASSERT_EQ(
-      ops.maybe_create_inventory_configuration(remote, parent).get(),
-      cst::inventory::inventory_creation_result::already_exists);
+    const auto create_res
+      = ops.maybe_create_inventory_configuration(remote, parent).get();
+    EXPECT_TRUE(create_res.has_value());
+    EXPECT_EQ(
+      create_res.value(), csi::inventory_creation_result::already_exists);
 }
 
 TEST(CreateInvCfg, FailedToCreate) {
-    MockRemote remote;
+    csi::MockRemote remote;
     EXPECT_CALL(remote, download_object(t::_))
       .Times(2)
       .WillOnce(t::Return(ss::make_ready_future<cst::download_result>(
@@ -212,12 +205,13 @@ TEST(CreateInvCfg, FailedToCreate) {
     ss::abort_source as;
     retry_chain_node parent{as};
 
-    cst::inventory::inv_ops ops{cst::inventory::aws_ops{
+    csi::inv_ops ops{csi::aws_ops{
       cloud_storage_clients::bucket_name{bucket},
-      cst::inventory::inventory_config_id{id},
+      csi::inventory_config_id{id},
       prefix}};
 
-    ASSERT_EQ(
-      ops.maybe_create_inventory_configuration(remote, parent).get(),
-      cst::inventory::inventory_creation_result::failed);
+    const auto create_res
+      = ops.maybe_create_inventory_configuration(remote, parent).get();
+    EXPECT_TRUE(create_res.has_error());
+    EXPECT_EQ(create_res.error(), csi::error_outcome::create_inv_cfg_failed);
 }

@@ -45,6 +45,7 @@ v_cc_library(
     inventory/inv_ops.cc
     inventory/aws_ops.cc
     inventory/types.cc
+    inventory/fetch_inventory_svc.cc
   DEPS
     Seastar::seastar
     v::bytes

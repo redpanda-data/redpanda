@@ -534,6 +534,8 @@ std::ostream& operator<<(std::ostream& os, download_type download) {
         return os << "object";
     case segment_index:
         return os << "segment-index";
+    case inventory_report_manifest:
+        return os << "inventory-report-manifest";
     }
 }
 
@@ -545,6 +547,16 @@ void transfer_details::on_failure(remote_probe& probe) {
 }
 void transfer_details::on_backoff(remote_probe& probe) {
     run_callback(backoff_cb, probe);
+}
+
+std::ostream& operator<<(std::ostream& os, existence_check_type head) {
+    switch (head) {
+        using enum cloud_storage::existence_check_type;
+    case object:
+        return os << "object";
+    case segment:
+        return os << "segment";
+    }
 }
 
 } // namespace cloud_storage
