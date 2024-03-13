@@ -10,6 +10,7 @@
 package profile
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -51,6 +52,8 @@ your configuration in one place.
 	return cmd
 }
 
+// ValidProfiles is a cobra.ValidArgsFunction that returns the names of
+// existing profiles.
 func ValidProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		cfg, err := p.Load(fs)
@@ -70,4 +73,22 @@ func ValidProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string,
 		}
 		return names, cobra.ShellCompDirectiveDefault
 	}
+}
+
+/////////////////////
+// Cloud profile helpers
+/////////////////////
+
+// RpkCloudProfileName is the default profile name used when a user creates a
+// cloud cluster profile with no name, or
+const RpkCloudProfileName = "rpk-cloud"
+
+// ProfileExistsError is returned from CreateFlow if trying to create a profile
+// that already exists.
+type ProfileExistsError struct {
+	Name string
+}
+
+func (e *ProfileExistsError) Error() string {
+	return fmt.Sprintf("profile %q already exists", e.Name)
 }

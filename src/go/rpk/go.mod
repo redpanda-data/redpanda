@@ -1,6 +1,6 @@
 module github.com/redpanda-data/redpanda/src/go/rpk
 
-go 1.20
+go 1.21
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.32.0-20231115204500-e097f827e652.1
@@ -21,13 +21,15 @@ require (
 	github.com/lestrrat-go/jwx v1.2.26
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/lorenzosaino/go-sysctl v0.3.1
+	github.com/mattn/go-isatty v0.0.20
 	github.com/moby/term v0.5.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc5
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_model v0.5.0
-	github.com/prometheus/common v0.44.0
+	github.com/prometheus/client_model v0.6.0
+	github.com/prometheus/common v0.49.0
+	github.com/rs/xid v1.5.0
 	github.com/safchain/ethtool v0.3.0
 	github.com/schollz/progressbar/v3 v3.13.1
 	github.com/sethgrid/pester v1.2.0
@@ -46,8 +48,8 @@ require (
 	go.uber.org/zap v1.26.0
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	golang.org/x/sync v0.5.0
-	golang.org/x/sys v0.16.0
-	golang.org/x/term v0.16.0
+	golang.org/x/sys v0.17.0
+	golang.org/x/term v0.17.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20240125205218-1f4bbc51befe
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240125205218-1f4bbc51befe
 	google.golang.org/grpc v1.61.0
@@ -94,9 +96,7 @@ require (
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
-	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -109,12 +109,12 @@ require (
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.18.0 // indirect
+	golang.org/x/crypto v0.19.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/mod v0.13.0 // indirect
-	golang.org/x/net v0.20.0 // indirect
-	golang.org/x/oauth2 v0.16.0 // indirect
+	golang.org/x/net v0.21.0 // indirect
+	golang.org/x/oauth2 v0.17.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
