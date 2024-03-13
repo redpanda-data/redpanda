@@ -69,7 +69,7 @@ func makeRandomRecord() Record {
 	}
 }
 
-func TestRoundTrip(t *testing.T) {
+func TestRecordRoundTrip(t *testing.T) {
 	r := makeRandomRecord()
 	b := rwbuf.New(0)
 	r.serializePayload(b)
@@ -84,5 +84,19 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(r, output) {
 		t.Fatalf("%#v != %#v", r, output)
+	}
+}
+
+func TestWriteOptionsRoundTrip(t *testing.T) {
+	original := writeOpts{topic: "foobar"}
+	b := rwbuf.New(0)
+	original.serialize(b)
+	got := writeOpts{}
+	err := got.deserialize(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, got) {
+		t.Fatalf("%#v != %#v", original, got)
 	}
 }

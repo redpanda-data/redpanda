@@ -46,16 +46,40 @@ func (e *writeEvent) Record() Record {
 
 type recordWriter struct {
 	outbuf *rwbuf.RWBuf
+	optbuf *rwbuf.RWBuf
 }
 
-func (w *recordWriter) Write(r Record) error {
+func (w *recordWriter) Write(r Record, opts ...WriteOpt) error {
+	// Serialize the record
 	w.outbuf.Reset()
 	r.serializePayload(w.outbuf)
 	b := w.outbuf.ReadAll()
-	// Write the record back out to the broker
-	amt := int(writeRecord(unsafe.Pointer(&b[0]), int32(len(b))))
-	if amt != len(b) {
-		return errors.New("writing record failed with errno: " + strconv.Itoa(amt))
+
+	// Apply write options
+	wo := writeOpts{}
+	for _, opt := range opts {
+		opt.apply(&wo)
+	}
+
+	// Do the write
+	var amt int32
+	if wo.topic == "" {
+		// Directly write the record to the default output topic.
+		amt = writeRecord(unsafe.Pointer(&b[0]), int32(len(b)))
+	} else {
+		// Serialize the options
+		w.optbuf.Reset()
+		wo.serialize(w.optbuf)
+		o := w.optbuf.ReadAll()
+		amt = writeRecordWithOptions(
+			unsafe.Pointer(&b[0]),
+			int32(len(b)),
+			unsafe.Pointer(&o[0]),
+			int32(len(o)),
+		)
+	}
+	if int(amt) != len(b) {
+		return errors.New("writing record failed with errno: " + strconv.Itoa(int(amt)))
 	}
 	return nil
 }
@@ -65,7 +89,7 @@ var (
 	currentHeader batchHeader  = batchHeader{}
 	inbuf         *rwbuf.RWBuf = rwbuf.New(128)
 	e             writeEvent
-	w             recordWriter = recordWriter{rwbuf.New(128)}
+	w             recordWriter = recordWriter{rwbuf.New(128), rwbuf.New(32)}
 )
 
 // run our transformation loop

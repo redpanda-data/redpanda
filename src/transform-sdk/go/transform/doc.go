@@ -13,9 +13,10 @@
 // limitations under the License.
 
 /*
-Package redpanda is the SDK for Redpanda's inline Data Transforms, based on WebAssembly.
+Package transform is the SDK for Redpanda's inline Data Transforms, based on WebAssembly.
 
 This library provides a framework for transforming records written within Redpanda from
-an input to an output topic.
+an input to an output topic. This version of the SDK is compatible with Redpanda 24.1 or
+greater.
 */
 package transform

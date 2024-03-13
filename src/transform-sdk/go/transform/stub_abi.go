@@ -56,3 +56,7 @@ func readNextRecord(
 func writeRecord(buf unsafe.Pointer, len int32) int32 {
 	panic("stub")
 }
+
+func writeRecordWithOptions(data unsafe.Pointer, dataLength int32, opts unsafe.Pointer, optsLength int32) int32 {
+	panic("stub")
+}

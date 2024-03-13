@@ -25,7 +25,7 @@ import (
 
 // An imported function to ensure that the broker supports this ABI version.
 //
-//go:wasmimport redpanda_transform check_abi_version_1
+//go:wasmimport redpanda_transform check_abi_version_2
 func checkAbiVersion()
 
 // readRecordHeader reads all the data from the batch header into memory.
@@ -93,3 +93,27 @@ func readNextRecord(
 //
 //go:wasmimport redpanda_transform write_record
 func writeRecord(data unsafe.Pointer, length int32) int32
+
+// writeRecordWithOptions writes a new record by copying the data buffer.
+//
+// The data buffer here is the same format as `writeRecord`, but additionally it is
+// possible to pass options for the write.
+//
+// At the time of writing the options that are supported are only setting a different
+// output topic. The format for this options object is a series of keys with key specific
+// data.
+//
+// Supported Options:
+//
+//   - key=0x01 - Set output topic.
+//     The value is as follows:
+//     topicNameLength: varint
+//     topicName: byte[]
+//
+//go:wasmimport redpanda_transform write_record_with_options
+func writeRecordWithOptions(
+	data unsafe.Pointer,
+	dataLength int32,
+	opts unsafe.Pointer,
+	optsLength int32,
+) int32

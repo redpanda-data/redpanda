@@ -16,6 +16,7 @@ package transform
 
 import (
 	"encoding/binary"
+	"errors"
 
 	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/internal/rwbuf"
 )
@@ -77,4 +78,22 @@ func (r Record) serializePayload(b *rwbuf.RWBuf) {
 	} else {
 		b.WriteVarint(0)
 	}
+}
+
+// Serialize the output topic option into an options buffer.
+func (o writeOpts) serialize(b *rwbuf.RWBuf) {
+	_ = b.WriteByte(0x01)
+	b.WriteStringWithSize(o.topic)
+}
+
+func (o *writeOpts) deserialize(b *rwbuf.RWBuf) error {
+	k, err := b.ReadByte()
+	if err != nil {
+		return err
+	}
+	if k != 0x01 {
+		return errors.New("unknown options key")
+	}
+	o.topic, err = b.ReadSizedStringCopy()
+	return err
 }
