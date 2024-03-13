@@ -42,6 +42,11 @@ const seastar::temporary_buffer<char>& page::data() const noexcept {
     return data_;
 }
 
+char* page::get_write() noexcept {
+    vassert(!test_flag(flags::faulting), "Cannot access faulting page data");
+    return data_.get_write();
+}
+
 void page::clear() { data_ = {}; }
 
 template<typename T>

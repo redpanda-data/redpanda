@@ -142,6 +142,13 @@ public:
      */
     void signal_waiters();
 
+    /*
+     * Return a write pointer to the page memory.
+     *
+     * The page must not be faulting.
+     */
+    [[nodiscard]] char* get_write() noexcept;
+
 private:
     static constexpr auto num_page_flags
       = static_cast<std::underlying_type_t<flags>>(flags::num_flags);
