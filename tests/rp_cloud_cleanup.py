@@ -98,8 +98,8 @@ class CloudCleanup():
         self.provider = make_provider_client(self.config.provider, self.log,
                                              self.config.region, _keyId,
                                              _secret)
-        self.log.info(f"# Provider {self.config.provider} initialized. Running"
-                      f" as '{self.provider.get_caller_identity()['Arn']}'")
+        #self.log.info(f"# Provider {self.config.provider} initialized. Running"
+        #              f" as '{self.provider.get_caller_identity()['Arn']}'")
         self.utils = CloudClusterUtils(_fake_context, self.log, _keyId,
                                        _secret, self.config.provider,
                                        self.config.api_url, oauth_url_origin,
