@@ -18,6 +18,8 @@
 #include <seastar/core/thread.hh>
 #include <seastar/util/later.hh>
 
+#include <absl/strings/escaping.h>
+
 #include <random>
 #include <span>
 
@@ -198,8 +200,10 @@ testing::AssertionResult EqualInputStreams(
                      "Input 1/2 chunk sizes {} vs {}. data {} vs {}",
                      data1.size(),
                      data2.size(),
-                     std::string_view(data1.get(), len),
-                     std::string_view(data2.get(), len));
+                     absl::CHexEscape(
+                       std::string_view(data1.get(), len).substr(0, 20)),
+                     absl::CHexEscape(
+                       std::string_view(data2.get(), len).substr(0, 20)));
         }
         data1.trim_front(len);
         data2.trim_front(len);
