@@ -29,7 +29,7 @@ pushd /opt/ocsf-server
 # temporary workaround for erlang 26.2.3 arm core dump
 # https://github.com/erlang/otp/issues/8238#issuecomment-1987173291
 if [ $(uname -m) = "aarch64" ]; then
-	MIX_ENV=prod mix archive.install --force github hexpm/hex branch latest
+  MIX_ENV=prod mix archive.install --force github hexpm/hex branch latest
 fi
 
 ./build_server.sh
