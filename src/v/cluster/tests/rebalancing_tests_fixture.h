@@ -94,9 +94,9 @@ public:
         auto md = node_application(source_node)
                     ->controller->get_topics_state()
                     .local()
-                    .get_topic_metadata(model::topic_namespace_view(ntp));
+                    .get_topic_metadata_ref(model::topic_namespace_view(ntp));
 
-        return md->get_assignments().begin()->replicas;
+        return md->get().get_assignments().begin()->replicas;
     }
 
     void create_topic(cluster::topic_configuration cfg) {
@@ -180,7 +180,7 @@ public:
     }
 
     void populate_all_topics_with_data() {
-        auto md = get_local_cache(model::node_id(0)).all_topics_metadata();
+        auto& md = get_local_cache(model::node_id(0)).all_topics_metadata();
         for (auto& [tp_ns, topic_metadata] : md) {
             for (auto& p : topic_metadata.get_assignments()) {
                 model::ntp ntp(tp_ns.ns, tp_ns.tp, p.id);

@@ -80,7 +80,7 @@ constexpr uint64_t max_cluster_capacity() {
 FIXTURE_TEST(
   test_dispatching_happy_path_create, topic_table_updates_dispatcher_fixture) {
     create_topics();
-    auto md = table.local().all_topics_metadata();
+    auto& md = table.local().all_topics_metadata();
 
     BOOST_REQUIRE_EQUAL(md.size(), 3);
 
@@ -123,7 +123,7 @@ FIXTURE_TEST(
         make_tp_ns("test_tp_3"), make_tp_ns("test_tp_3"))))
       .get0();
 
-    auto md = table.local().all_topics_metadata();
+    auto& md = table.local().all_topics_metadata();
     BOOST_REQUIRE_EQUAL(md.size(), 1);
 
     BOOST_REQUIRE_EQUAL(md.contains(make_tp_ns("test_tp_1")), true);
