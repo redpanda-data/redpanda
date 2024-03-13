@@ -9,6 +9,7 @@ on:
       - test-release-pipeline-command
       - test-arm64-command
       - dt-command
+      - microbench-command
 
 jobs:
   run-build:
