@@ -53,7 +53,15 @@ TEST_F_CORO(raft_fixture, test_multi_nodes_cluster_can_elect_leader) {
     });
 }
 
-TEST_F_CORO(raft_fixture, validate_replication) {
+class all_acks_fixture
+  : public raft_fixture
+  , public ::testing::WithParamInterface<consistency_level> {};
+
+class relaxed_acks_fixture
+  : public raft_fixture
+  , public ::testing::WithParamInterface<consistency_level> {};
+
+TEST_P_CORO(all_acks_fixture, validate_replication) {
     co_await create_simple_group(5);
 
     auto leader = co_await wait_for_leader(10s);
@@ -61,12 +69,11 @@ TEST_F_CORO(raft_fixture, validate_replication) {
 
     auto result = co_await leader_node.raft()->replicate(
       make_batches({{"k_1", "v_1"}, {"k_2", "v_2"}, {"k_3", "v_3"}}),
-      replicate_options(consistency_level::quorum_ack));
+      replicate_options(GetParam()));
     ASSERT_TRUE_CORO(result.has_value());
-    auto committed_offset = leader_node.raft()->committed_offset();
 
     // wait for committed offset to propagate
-    co_await wait_for_committed_offset(committed_offset, 5s);
+    co_await wait_for_committed_offset(result.value().last_offset, 5s);
     auto all_batches = co_await leader_node.read_all_data_batches();
 
     ASSERT_EQ_CORO(all_batches.size(), 3);
@@ -74,7 +81,7 @@ TEST_F_CORO(raft_fixture, validate_replication) {
     co_await assert_logs_equal();
 }
 
-TEST_F_CORO(raft_fixture, validate_recovery) {
+TEST_P_CORO(all_acks_fixture, validate_recovery) {
     co_await create_simple_group(5);
     auto leader = co_await wait_for_leader(10s);
 
@@ -87,15 +94,13 @@ TEST_F_CORO(raft_fixture, validate_recovery) {
     // replicate batches
     auto result = co_await leader_node.raft()->replicate(
       make_batches({{"k_1", "v_1"}, {"k_2", "v_2"}, {"k_3", "v_3"}}),
-      replicate_options(consistency_level::quorum_ack));
+      replicate_options(GetParam()));
     ASSERT_TRUE_CORO(result.has_value());
 
     auto& new_n3 = add_node(model::node_id(3), model::revision_id(0));
     co_await new_n3.init_and_start(all_vnodes());
 
-    // wait for committed offset to propagate
-    auto committed_offset = leader_node.raft()->committed_offset();
-    co_await wait_for_committed_offset(committed_offset, 5s);
+    co_await wait_for_committed_offset(result.value().last_offset, 5s);
 
     auto all_batches = co_await leader_node.read_all_data_batches();
 
@@ -140,8 +145,8 @@ TEST_F_CORO(raft_fixture, validate_adding_nodes_to_cluster) {
     co_await assert_logs_equal();
 }
 
-TEST_F_CORO(
-  raft_fixture, validate_committed_offset_advancement_after_log_flush) {
+TEST_P_CORO(
+  relaxed_acks_fixture, validate_committed_offset_advancement_after_log_flush) {
     co_await create_simple_group(3);
 
     // wait for leader
@@ -154,8 +159,7 @@ TEST_F_CORO(
     // advance
     auto committed_offset_before = leader_node.raft()->committed_offset();
     auto result = co_await leader_node.raft()->replicate(
-      make_batches(10, 10, 128),
-      replicate_options(consistency_level::leader_ack));
+      make_batches(10, 10, 128), replicate_options(GetParam()));
 
     ASSERT_TRUE_CORO(result.has_value());
     // wait for batches to be replicated on all of the nodes
@@ -178,8 +182,8 @@ TEST_F_CORO(
     co_await wait_for_committed_offset(result.value().last_offset, 10s);
 }
 
-TEST_F_CORO(
-  raft_fixture, test_last_visible_offset_monitor_relaxed_consistency) {
+TEST_P_CORO(
+  relaxed_acks_fixture, test_last_visible_offset_monitor_relaxed_consistency) {
     // This tests a property of the visible offset monitor that the fetch path
     // relies on to work correctly. Even with relaxed consistency.
 
@@ -194,8 +198,7 @@ TEST_F_CORO(
 
     // replicate some batches with relaxed consistency
     auto result = co_await leader_node.raft()->replicate(
-      make_batches(10, 10, 128),
-      replicate_options(raft::consistency_level::leader_ack));
+      make_batches(10, 10, 128), replicate_options(GetParam()));
 
     ASSERT_TRUE_CORO(result.has_value());
 
@@ -212,8 +215,9 @@ TEST_F_CORO(
  * This is possible as the protocol waits for the majority of nodes to
  * acknowledge receiving the message before making it visible.
  */
-TEST_F_CORO(
-  raft_fixture, validate_relaxed_consistency_visible_offset_advancement) {
+TEST_P_CORO(
+  relaxed_acks_fixture,
+  validate_relaxed_consistency_visible_offset_advancement) {
     co_await create_simple_group(3);
     // wait for leader
     co_await wait_for_leader(10s);
@@ -246,8 +250,7 @@ TEST_F_CORO(
           }
           return raft
             ->replicate(
-              make_batches(10, 10, 128),
-              replicate_options(consistency_level::leader_ack))
+              make_batches(10, 10, 128), replicate_options(GetParam()))
             .then([this](result<replicate_result> result) {
                 if (result.has_error()) {
                     vlog(
@@ -336,3 +339,16 @@ TEST_F_CORO(
         }
     }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+  test_with_all_acks,
+  all_acks_fixture,
+  testing::Values(
+    consistency_level::no_ack,
+    consistency_level::leader_ack,
+    consistency_level::quorum_ack));
+
+INSTANTIATE_TEST_SUITE_P(
+  test_with_relaxed_acks,
+  relaxed_acks_fixture,
+  testing::Values(consistency_level::no_ack, consistency_level::leader_ack));
