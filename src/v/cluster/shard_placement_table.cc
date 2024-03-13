@@ -328,9 +328,20 @@ ss::future<result<ss::shard_id>> shard_placement_table::prepare_transfer(
         auto destination = state.target->shard;
         // check if destination is ready
         auto ec = co_await container().invoke_on(
-          destination, [&ntp, expected_log_rev](shard_placement_table& dest) {
-              auto& dest_state
-                = dest._states.emplace(ntp, placement_state{}).first->second;
+          destination,
+          [&ntp, expected_log_rev, shard_rev = state.shard_revision](
+            shard_placement_table& dest) {
+              auto dest_it = dest._states.find(ntp);
+              if (
+                dest_it == dest._states.end()
+                || dest_it->second.shard_revision < shard_rev) {
+                  // We are in the middle of shard_placement_table update, and
+                  // the destination shard doesn't yet know that it is the
+                  // destination. Wait for the update to finish.
+                  return errc::waiting_for_shard_placement_update;
+              }
+              auto& dest_state = dest_it->second;
+
               if (!dest_state.local) {
                   // at this point we commit to the transfer on the
                   // destination shard
