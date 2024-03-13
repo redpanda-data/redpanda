@@ -178,33 +178,30 @@ TEST_F_CORO(
     co_await wait_for_committed_offset(result.value().last_offset, 10s);
 }
 
-FIXTURE_TEST(
-  test_last_visible_offset_monitor_relaxed_consistency, raft_test_fixture) {
+TEST_F_CORO(
+  raft_fixture, test_last_visible_offset_monitor_relaxed_consistency) {
     // This tests a property of the visible offset monitor that the fetch path
     // relies on to work correctly. Even with relaxed consistency.
-    raft_group gr = raft_group(raft::group_id(0), 3);
-    gr.enable_all();
-    gr.wait_for_leader().get0();
 
-    model::node_id leader_id;
-    for (auto& m : gr.get_members()) {
-        if (m.second.consensus->is_elected_leader()) {
-            leader_id = m.first;
-            break;
-        }
-    }
+    co_await create_simple_group(3);
+    // wait for leader
+    auto leader = co_await wait_for_leader(10s);
+    auto& leader_node = node(leader);
+    auto leader_raft = leader_node.raft();
 
-    auto leader_raft = gr.get_member(leader_id).consensus;
-    auto last_visible = leader_raft->last_visible_index();
-
-    auto offset_change_fut = leader_raft->visible_offset_monitor().wait(
-      model::next_offset(last_visible), model::timeout_clock::now() + 1min, {});
+    auto waiter = leader_raft->visible_offset_monitor().wait(
+      model::offset{50}, model::timeout_clock::now() + 10s, {});
 
     // replicate some batches with relaxed consistency
-    replicate_random_batches(gr, 20, raft::consistency_level::leader_ack)
-      .get0();
+    auto result = co_await leader_node.raft()->replicate(
+      make_batches(10, 10, 128),
+      replicate_options(raft::consistency_level::leader_ack));
 
-    offset_change_fut.get();
+    ASSERT_TRUE_CORO(result.has_value());
+
+    vlog(logger().info, "waiting for offset: {}", result.value().last_offset);
+
+    co_await std::move(waiter);
 };
 
 /**
