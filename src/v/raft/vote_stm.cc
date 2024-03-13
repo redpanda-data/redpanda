@@ -16,6 +16,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "rpc/types.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/timed_out_error.hh>
@@ -37,8 +38,9 @@ std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
     }
     return o << "}";
 }
-vote_stm::vote_stm(consensus* p)
+vote_stm::vote_stm(consensus* p, is_prevote prevote)
   : _ptr(p)
+  , _prevote(prevote)
   , _sem(0, "raft/vote")
   , _ctxlog(_ptr->_ctxlog) {}
 
@@ -48,14 +50,28 @@ vote_stm::~vote_stm() {
       "Must call vote_stm::wait()");
 }
 ss::future<result<vote_reply>> vote_stm::do_dispatch_one(vnode n) {
-    auto tout = _ptr->_jit.base_duration();
-    vlog(_ctxlog.info, "Sending vote request to {} with timeout {}", n, tout);
+    auto tout = _ptr->_jit.base_duration() * 3;
+    vlog(
+      _ctxlog.info,
+      "[pre-vote: {}] sending vote request to {} with timeout of {} ms",
+      _prevote,
+      n,
+      tout / 1ms);
 
     auto r = _req;
-    _ptr->_probe->vote_request_sent();
+    /**
+     * Do not increment vote request probe when pre-voting to keep the same
+     * semantics of metric
+     */
+    if (!_prevote) {
+        _ptr->_probe->vote_request_sent();
+    }
     r.target_node_id = n;
     return _ptr->_client_protocol
-      .vote(n.id(), std::move(r), rpc::client_opts(tout))
+      .vote(
+        n.id(),
+        std::move(r),
+        rpc::client_opts(rpc::timeout_spec::from_now(tout)))
       .then([this, target_node_id = n.id()](result<vote_reply> reply) {
           return _ptr->validate_reply_target_node(
             "vote_request", reply, target_node_id);
@@ -74,24 +90,39 @@ ss::future<> vote_stm::dispatch_one(vnode n) {
               auto voter_reply = _replies.find(n);
               try {
                   auto r = f.get0();
-                  vlog(_ctxlog.info, "vote reply from {} - {}", n, r.value());
-                  _ptr->maybe_update_node_reply_timestamp(n);
+                  if (r.has_value()) {
+                      vlog(
+                        _ctxlog.info,
+                        "[pre-vote: {}] vote reply from {} - {}",
+                        _prevote,
+                        n,
+                        r.value());
+
+                      _ptr->maybe_update_node_reply_timestamp(n);
+                  } else {
+                      vlog(
+                        _ctxlog.info,
+                        "[pre-vote: {}] vote error from {} - {}",
+                        _prevote,
+                        n,
+                        r.error().message());
+                  }
                   voter_reply->second.set_value(r);
               } catch (...) {
+                  vlog(
+                    _ctxlog.info,
+                    "[pre-vote: {}] vote dispatch to node {} error - {}",
+                    _prevote,
+                    n,
+                    std::current_exception());
                   voter_reply->second.set_value(errc::vote_dispatch_error);
               }
               _sem.signal(1);
-              if (!voter_reply->second.value) {
-                  vlog(
-                    _ctxlog.info,
-                    "error voting: {}",
-                    voter_reply->second.value->error());
-              }
           });
     });
 }
 
-ss::future<> vote_stm::vote(bool leadership_transfer) {
+ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
     using skip_vote = ss::bool_class<struct skip_vote_tag>;
     return _ptr->_op_lock
       .with([this, leadership_transfer] {
@@ -109,8 +140,13 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           }
 
           // 5.2.1.2
-          _ptr->_term += model::term_id(1);
-          _ptr->_voted_for = {};
+          /**
+           * Pre-voting doesn't increase the term
+           */
+          if (!_prevote) {
+              _ptr->_term += model::term_id(1);
+              _ptr->_voted_for = {};
+          }
 
           // special case, it may happen that node requesting votes is not a
           // voter, it may happen if it is a learner in previous configuration
@@ -119,6 +155,7 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           // vote is the only method under _op_sem
           _config->for_each_voter(
             [this](vnode id) { _replies.emplace(id, vmeta{}); });
+
           auto lstats = _ptr->_log->offsets();
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
 
@@ -136,29 +173,39 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
       })
       .then([this](skip_vote skip) {
           if (skip) {
-              return ss::make_ready_future<>();
+              return ss::make_ready_future<election_success>(
+                election_success::no);
           }
           return do_vote();
       });
 }
 
-ss::future<> vote_stm::do_vote() {
+ss::future<election_success> vote_stm::do_vote() {
     // dispatch requests to all voters
     _config->for_each_voter([this](vnode id) { (void)dispatch_one(id); });
 
-    return process_replies().then([this]() {
-        return _ptr->_op_lock.get_units().then([this](ssx::semaphore_units u) {
-            return update_vote_state(std::move(u));
-        });
-    });
+    co_await process_replies();
+
+    auto u = co_await _ptr->_op_lock.get_units();
+    co_await update_vote_state(std::move(u));
+
+    co_return election_success(_success);
 }
 
 ss::future<> vote_stm::process_replies() {
     return ss::repeat([this] {
-        // majority votes granted
+        /**
+         * The check if the election is successful is different for prevote, for
+         * prevote phase to be successful it is enough that followers reported
+         * log_ok flag. For the actual election we require that vote is granted.
+         */
         auto majority_granted = _config->majority([this](vnode id) {
-            return _replies.find(id)->second.get_state()
-                   == vmeta::state::vote_granted;
+            const auto state = _replies.find(id)->second.get_state();
+            if (_prevote) {
+                return state == vmeta::state::log_ok
+                       || state == vmeta::state::vote_granted;
+            }
+            return state == vmeta::state::vote_granted;
         });
 
         if (majority_granted) {
@@ -209,7 +256,10 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
             auto term = r.value->value().term;
             if (term > _ptr->_term) {
                 vlog(
-                  _ctxlog.info, "Vote failed - received larger term: {}", term);
+                  _ctxlog.info,
+                  "[pre-vote {}] vote failed - received larger term: {}",
+                  _prevote,
+                  term);
                 _ptr->_term = term;
                 _ptr->_voted_for = {};
                 _ptr->_vstate = consensus::vote_state::follower;
@@ -226,21 +276,31 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
     if (
       _ptr->_vstate != consensus::vote_state::candidate
       || _ptr->_term != term) {
-        vlog(_ctxlog.info, "No longer a candidate, ignoring vote replies");
+        vlog(
+          _ctxlog.info,
+          "[prev-vote {}] no longer a candidate, ignoring vote replies",
+          _prevote);
         co_return;
     }
-
     if (!_success) {
-        vlog(_ctxlog.info, "Vote failed");
+        vlog(_ctxlog.info, "[pre-vote: {}] vote failed", _prevote);
         _ptr->_vstate = consensus::vote_state::follower;
         co_return;
     }
+    /**
+     * Pre-voting process finishes before updating Raft state.
+     */
+    if (_prevote) {
+        co_return;
+    }
+
     const auto only_voter = _config->unique_voter_count() == 1
                             && _config->is_voter(_ptr->self());
     if (!only_voter && _ptr->_node_priority_override == zero_voter_priority) {
         vlog(
           _ctxlog.debug,
-          "Ignoring successful vote. Node priority too low: {}",
+          "[pre-vote: false] Ignoring successful vote. Node priority too low: "
+          "{}",
           _ptr->_node_priority_override.value());
         _ptr->_vstate = consensus::vote_state::follower;
         co_return;
@@ -308,11 +368,20 @@ ss::future<> vote_stm::self_vote() {
     reply.log_ok = true;
     reply.granted = true;
 
-    vlog(_ctxlog.trace, "Voting for self in term {}", _req.term);
-    _ptr->_voted_for = _ptr->_self;
-    return _ptr->write_voted_for({_ptr->_self, _req.term}).then([this, reply] {
-        auto m = _replies.find(_ptr->self());
-        m->second.set_value(reply);
-    });
+    vlog(
+      _ctxlog.trace,
+      "[pre-vote: {}] voting for self in term {}",
+      _prevote,
+      _req.term);
+    /**
+     * If this is the actual vote phase, write voted_for
+     */
+    if (!_prevote) {
+        _ptr->_voted_for = _ptr->_self;
+        co_await _ptr->write_voted_for({_ptr->_self, _req.term});
+    }
+
+    auto m = _replies.find(_ptr->self());
+    m->second.set_value(reply);
 }
 } // namespace raft

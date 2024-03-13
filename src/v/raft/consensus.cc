@@ -26,7 +26,6 @@
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
-#include "raft/prevote_stm.h"
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/rpc_client_protocol.h"
@@ -886,37 +885,36 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
     return skip_vote;
 }
 
-ss::future<bool> consensus::dispatch_prevote(bool leadership_transfer) {
-    auto pvstm_p = std::make_unique<prevote_stm>(this);
-    auto pvstm = pvstm_p.get();
+ss::future<election_success>
+consensus::dispatch_prevote(bool leadership_transfer) {
     if (leadership_transfer) {
-        return ss::make_ready_future<bool>(true);
+        co_return true;
     }
-    return pvstm->prevote(leadership_transfer)
-      .then_wrapped([this, pvstm_p = std::move(pvstm_p), pvstm](
-                      ss::future<bool> prevote_f) mutable {
-          bool ready = false;
-          try {
-              ready = prevote_f.get();
-          } catch (...) {
-              vlog(
-                _ctxlog.warn,
-                "Error returned from prevoting process {}",
-                std::current_exception());
-          }
-          auto f = pvstm->wait().finally([pvstm_p = std::move(pvstm_p)] {});
-          // make sure we wait for all futures when gate is closed
-          if (_bg.is_closed()) {
-              return f.then([ready] { return ready; });
-          }
-          // background
-          ssx::spawn_with_gate(
-            _bg, [pvstm_p = std::move(pvstm_p), f = std::move(f)]() mutable {
-                return std::move(f);
-            });
+    auto pv_stm = std::make_unique<vote_stm>(this, is_prevote::yes);
 
-          return ss::make_ready_future<bool>(ready);
-      });
+    election_success success = election_success::no;
+    try {
+        success = co_await pv_stm->vote(leadership_transfer);
+    } catch (...) {
+        vlog(
+          _ctxlog.warn,
+          "Error returned from prevoting process {}",
+          std::current_exception());
+    }
+
+    // make sure we wait for all futures when gate is closed
+    if (_bg.is_closed()) {
+        co_await pv_stm->wait();
+        co_return success;
+    }
+    // background
+
+    ssx::spawn_with_gate(_bg, [pv_stm = std::move(pv_stm)]() mutable {
+        auto stm = pv_stm.get();
+        return stm->wait().finally([pv_stm = std::move(pv_stm)] {});
+    });
+
+    co_return success;
 }
 
 /// performs no raft-state mutation other than resetting the timer
@@ -969,8 +967,9 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     ssx::background
       = ssx::spawn_with_gate_then(_bg, [this, leadership_transfer] {
             return dispatch_prevote(leadership_transfer)
-              .then([this, leadership_transfer](bool ready) mutable {
-                  if (!ready) {
+              .then([this, leadership_transfer](
+                      election_success prevote_success) mutable {
+                  if (!prevote_success) {
                       return ss::make_ready_future<>();
                   }
                   auto vstm = std::make_unique<vote_stm>(this);
@@ -978,32 +977,36 @@ void consensus::dispatch_vote(bool leadership_transfer) {
 
                   // CRITICAL: vote performs locking on behalf of consensus
                   return p->vote(leadership_transfer)
-                    .then_wrapped([this, p, vstm = std::move(vstm)](
-                                    ss::future<> vote_f) mutable {
-                        try {
-                            vote_f.get();
-                        } catch (const ss::gate_closed_exception&) {
-                            // Shutting down, don't log.
-                        } catch (...) {
-                            vlog(
-                              _ctxlog.warn,
-                              "Error returned from voting process {}",
-                              std::current_exception());
-                        }
-                        auto f = p->wait().finally([vstm = std::move(vstm)] {});
-                        // make sure we wait for all futures when gate is closed
-                        if (_bg.is_closed()) {
-                            return f;
-                        }
-                        // background
-                        ssx::spawn_with_gate(
-                          _bg,
-                          [vstm = std::move(vstm), f = std::move(f)]() mutable {
-                              return std::move(f);
-                          });
+                    .then_wrapped(
+                      [this, p, vstm = std::move(vstm)](
+                        ss::future<election_success> vote_f) mutable {
+                          try {
+                              vote_f.get();
+                          } catch (const ss::gate_closed_exception&) {
+                              // Shutting down, don't log.
+                          } catch (...) {
+                              vlog(
+                                _ctxlog.warn,
+                                "Error returned from voting process {}",
+                                std::current_exception());
+                          }
+                          auto f = p->wait().finally(
+                            [vstm = std::move(vstm)] {});
+                          // make sure we wait for all futures when gate is
+                          // closed
+                          if (_bg.is_closed()) {
+                              return f;
+                          }
+                          // background
+                          ssx::spawn_with_gate(
+                            _bg,
+                            [vstm = std::move(vstm),
+                             f = std::move(f)]() mutable {
+                                return std::move(f);
+                            });
 
-                        return ss::make_ready_future<>();
-                    });
+                          return ss::make_ready_future<>();
+                      });
               })
               .finally([this] { arm_vote_timeout(); });
         }).handle_exception([this](const std::exception_ptr& e) {

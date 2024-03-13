@@ -17,6 +17,7 @@
 #include "ssx/semaphore.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -24,6 +25,7 @@
 #include <vector>
 
 namespace raft {
+using is_prevote = ss::bool_class<struct is_prevote_tag>;
 /// Section 5.2
 /// 1 start election
 /// 1.2 increment term
@@ -36,7 +38,7 @@ namespace raft {
 ///
 class vote_stm {
 public:
-    explicit vote_stm(consensus*);
+    explicit vote_stm(consensus*, is_prevote = is_prevote::no);
     ~vote_stm();
 
     /// sends the vote and mutates consensus pointer internal state
@@ -45,13 +47,28 @@ public:
     /// (2) while processing leadership replies
     /// it _does not_ hold the semaphore for the full vote to allow for
     /// staggering processing/vote interruption
-    ss::future<> vote(bool leadership_transfer);
+    ss::future<election_success> vote(bool leadership_transfer);
     ss::future<> wait();
 
 private:
     struct vmeta {
+        /**
+         * State represents the response from the voter.
+         *
+         * in_progress - request pending, waiting for response
+         *
+         * log_ok - voter log is not longer than candidate log, but vote hasn't
+         * been granted
+         *
+         * vote_granted - vote granted, this implies `log_ok`
+         *
+         * vote_not_granted - voter didn't cast vote on current candidate
+         *
+         * error - vote request error
+         */
         enum class state {
             in_progress,
+            log_ok,
             vote_granted,
             vote_not_granted,
             error,
@@ -67,10 +84,15 @@ private:
                 return state::in_progress;
             }
 
-            // we have value, vote is either granted or not
             if (value->has_value()) {
-                return value->value().granted ? state::vote_granted
-                                              : state::vote_not_granted;
+                if (value->value().granted) {
+                    return state::vote_granted;
+                }
+
+                if (value->value().log_ok) {
+                    return state::log_ok;
+                }
+                return state::vote_not_granted;
             }
             // it is an error
             return state::error;
@@ -80,7 +102,7 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const vmeta&);
 
-    ss::future<> do_vote();
+    ss::future<election_success> do_vote();
     ss::future<> self_vote();
     ss::future<> dispatch_one(vnode);
     ss::future<result<vote_reply>> do_dispatch_one(vnode);
@@ -90,6 +112,7 @@ private:
       replicate_config_as_new_leader(ssx::semaphore_units);
     // args
     consensus* _ptr;
+    is_prevote _prevote = is_prevote::no;
     // make sure to always make a copy; never move() this struct
     vote_request _req;
     bool _success = false;
