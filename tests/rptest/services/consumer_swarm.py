@@ -26,39 +26,28 @@ class ConsumerSwarm(Service):
                  context: TestContext,
                  redpanda,
                  topic: str,
-                 producers: int,
-                 records_per_producer: int,
+                 group: str,
+                 consumers: int,
+                 records_per_consumer: int,
                  log_level="DEBUG",
                  properties={},
-                 timeout_ms: int = 1000,
-                 compression_type: Optional[str] = None,
-                 compressible_payload: Optional[bool] = None,
-                 min_record_size: Optional[int] = None,
-                 max_record_size: Optional[int] = None,
-                 keys: Optional[int] = None,
                  unique_topics: Optional[bool] = False,
                  static_prefix: Optional[bool] = False,
                  unique_groups=False):
         super(ConsumerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
-        self._producers = producers
-        self._records_per_producer = records_per_producer
+        self._group = group
+        self._consumers = consumers
+        self._records_per_consumer = records_per_consumer
         self._log_level = log_level
         self._properties = properties
-        self._timeout_ms = timeout_ms
-        self._compression_type = compression_type
-        self._compressible_payload = compressible_payload
-        self._min_record_size = min_record_size
-        self._max_record_size = max_record_size
-        self._keys = keys
         self._unique_topics = unique_topics
-        self._unique_topics = unique_groups
+        self._unique_groups = unique_groups
         self._static_prefix = static_prefix
         self._node = None
         self._remote_port = 8080
         self._remote_addr = "0.0.0.0"
-        self._unique_groups = unique_groups
 
         if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
             security_config = redpanda.security_config()
@@ -82,26 +71,11 @@ class ConsumerSwarm(Service):
         cmd += f" --brokers {self._redpanda.brokers()}"
         cmd += f" --metrics-address {self._remote_addr}"
         cmd += f" consumers --topic {self._topic}"
-        cmd += f" --count {self._producers}"
-        cmd += f" --messages {self._records_per_producer}"
-        cmd += f" --timeout-ms {self._timeout_ms}"
+        cmd += f" --group {self._group}"
+        cmd += f" --count {self._consumers}"
+        cmd += f" --messages {self._records_per_consumer}"
         for k, v in self._properties.items():
             cmd += f" --properties {k}={v}"
-
-        if self._compressible_payload:
-            cmd += f" --compressible-payload"
-
-        if self._compression_type is not None:
-            cmd += f" --compression-type={self._compression_type}"
-
-        if self._min_record_size is not None:
-            cmd += f" --min-record-size={self._min_record_size}"
-
-        if self._max_record_size is not None:
-            cmd += f" --max-record-size={self._max_record_size}"
-
-        if self._keys is not None:
-            cmd += f" --keys={self._keys}"
 
         if self._unique_topics:
             cmd += " --unique-topics"
