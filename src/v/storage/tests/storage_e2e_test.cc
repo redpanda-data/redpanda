@@ -38,6 +38,7 @@
 #include "utils/to_string.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
@@ -2113,7 +2114,33 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
         futures.push_back(append_with_lock());
     }
 
+    bool run_monitor = true;
+    auto prev_stable_offset = model::offset{};
+    auto prev_committed_offset = model::offset{};
+
+    auto monitor = ss::now().then([&] {
+        return ss::do_until(
+          [&] { return !run_monitor; },
+          [&]() mutable -> auto {
+              if (log->segment_count() == 0) {
+                  return ss::now();
+              }
+              auto stable = log->segments().back()->offsets().stable_offset;
+              BOOST_REQUIRE_LE(prev_stable_offset, stable);
+              prev_stable_offset = stable;
+
+              auto committed
+                = log->segments().back()->offsets().committed_offset;
+              BOOST_REQUIRE_LE(prev_committed_offset, committed);
+              prev_committed_offset = committed;
+
+              return ss::now();
+          });
+    });
+
     ss::when_all_succeed(futures.begin(), futures.end()).get();
+    run_monitor = false;
+    monitor.get();
 }
 
 FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
