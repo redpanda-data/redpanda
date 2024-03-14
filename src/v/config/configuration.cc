@@ -2717,7 +2717,7 @@ configuration::configuration()
       "Time interval between two node status messages. Node status messages "
       "establish liveness status outside of the Raft protocol.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      100ms)
+      1000ms)
   , node_status_reconnect_max_backoff_ms(
       *this,
       "node_status_reconnect_max_backoff_ms",
