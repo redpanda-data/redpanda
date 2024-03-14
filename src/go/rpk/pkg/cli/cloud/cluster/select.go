@@ -41,15 +41,16 @@ the default cloud-dedicated profile, you can use the --profile flag.
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
-			y, err := cfg.ActualRpkYamlOrEmpty()
+			yAct, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load rpk.yaml: %v", err)
+			yAuthVir := cfg.VirtualRpkYaml().CurrentAuth()
 
 			name := "prompt"
 			if len(args) == 1 {
 				name = args[0]
 			}
 
-			err = profile.CreateFlow(cmd.Context(), fs, cfg, y, "", "", name, false, nil, profileName, "")
+			err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, yAuthVir, "", "", name, false, nil, profileName, "")
 			if ee := (*profile.ProfileExistsError)(nil); errors.As(err, &ee) {
 				fmt.Printf(`Unable to automatically create profile %q due to a name conflict with
 an existing self-hosted profile, please rename that profile or use the
