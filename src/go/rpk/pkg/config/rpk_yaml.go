@@ -214,19 +214,6 @@ func (y *RpkYaml) LookupAuth(org, kind string) *RpkCloudAuth {
 	return nil
 }
 
-// LookupAuthByName returns all auths with the given name.
-// There will be multiple matching auths if a person is authenticated
-// to multiple orgs that are named the same.
-func (y *RpkYaml) LookupAuthByName(name string) []*RpkCloudAuth {
-	var matches []*RpkCloudAuth
-	for i := range y.CloudAuths {
-		if y.CloudAuths[i].Name == name {
-			matches = append(matches, &y.CloudAuths[i])
-		}
-	}
-	return matches
-}
-
 // PushNewAuth pushes an auth to the front and sets it as the current auth.
 func (y *RpkYaml) PushNewAuth(a RpkCloudAuth) {
 	y.CloudAuths = append([]RpkCloudAuth{a}, y.CloudAuths...)
@@ -367,7 +354,7 @@ func (a *RpkCloudAuth) HasClientCredentials() bool {
 }
 
 // Equals returns if the two cloud auths are the same, which is true
-// if the name and org ID match (ignoring all other values).
+// if the name matches (the name embeds the org name, ID, and auth kind).
 func (a *RpkCloudAuth) Equals(other *RpkCloudAuth) bool {
 	if a == nil && other == nil {
 		return true
@@ -375,7 +362,7 @@ func (a *RpkCloudAuth) Equals(other *RpkCloudAuth) bool {
 	if a == nil || other == nil {
 		return false
 	}
-	return a.Name == other.Name && a.OrgID == other.OrgID
+	return a.Name == other.Name
 }
 
 // Returns if the raw config is the same as the one in memory.

@@ -118,6 +118,7 @@ Either:
 Or:
     rpk profile create $another_name --your-flags-here
 `, ee.Name)
+				os.Exit(1)
 			}
 			out.MaybeDieErr(err)
 		},
@@ -196,7 +197,7 @@ func CreateFlow(
 		p = &o.Profile
 		if name == "" {
 			name = RpkCloudProfileName
-			if old := yAct.Profile(p.Name); old != nil {
+			if old := yAct.Profile(name); old != nil {
 				if !old.FromCloud {
 					return &ProfileExistsError{name}
 				}
@@ -331,38 +332,25 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 		return PromptCloudClusterProfile(ctx, cl)
 	}
 
-	var clusterID string
+	var (
+		clusterID       string
+		triedNameLookup bool
+		forceNameLookup bool
+	)
+nameLookup:
 	_, err = xid.FromString(clusterIDOrName)
-	if err != nil {
-		_, nss, vcs, cs, err := cl.OrgNamespacesClusters(ctx)
+	if err != nil || forceNameLookup {
+		clusterID, err = clusterNameToID(ctx, cl, clusterIDOrName)
 		if err != nil {
-			return CloudClusterOutputs{}, fmt.Errorf("unable to request organization, namespace, or cluster details: %w", err)
-		}
-		candidates := findNamedCluster(clusterIDOrName, nss, vcs, cs)
-
-		switch len(candidates) {
-		case 0:
-			return CloudClusterOutputs{}, fmt.Errorf("no cluster found with name %q", clusterIDOrName)
-		case 1:
-			for _, nc := range candidates {
-				if nc.IsVCluster {
-					clusterID = nc.VCluster.ID
-				} else {
-					clusterID = nc.Cluster.ID
-				}
-				break
+			if forceNameLookup {
+				// It is possible that an API call failed, but odds are *at this point*
+				// that we can query the API successfully (as we have already done so
+				// multiple times), and the problem is the name does not exist.
+				return CloudClusterOutputs{}, fmt.Errorf("unable to find a cluster ID nor a cluster name for %q", clusterIDOrName)
 			}
-		default:
-			ncs := combineClusterNames(nss, vcs, cs)
-			names := ncs.names()
-
-			idx, err := out.PickIndex(names, "Multiple clusters found with the requested name, please select one:")
-			if err != nil {
-				return CloudClusterOutputs{}, err
-			}
-			clusterID = ncs[idx].clusterID()
-
+			return CloudClusterOutputs{}, err
 		}
+		triedNameLookup = true
 	} else {
 		clusterID = clusterIDOrName
 	}
@@ -371,6 +359,15 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 	if err != nil { // if we fail for a vcluster, we try again for a normal cluster
 		c, err := cl.Cluster(ctx, clusterID)
 		if err != nil {
+			// If the input cluster looks like an xid, we try
+			// parsing it as a cluster ID. If the xid lookup fails,
+			// it is POSSIBLE that the cluster name itself looks
+			// like an xid. We retry from the top forcing a name
+			// lookup; if that also fails, we return early above.
+			if !forceNameLookup && !triedNameLookup {
+				forceNameLookup = true
+				goto nameLookup
+			}
 			return CloudClusterOutputs{}, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
 		}
 		return fromCloudCluster(c), nil
@@ -378,15 +375,50 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 	return fromVirtualCluster(vc), nil
 }
 
+func clusterNameToID(ctx context.Context, cl *cloudapi.Client, name string) (string, error) {
+	_, nss, vcs, cs, err := cl.OrgNamespacesClusters(ctx)
+	if err != nil {
+		return "", fmt.Errorf("unable to request organization, namespace, or cluster details: %w", err)
+	}
+	candidates := findNamedCluster(name, nss, vcs, cs)
+
+	switch len(candidates) {
+	case 0:
+		return "", fmt.Errorf("no cluster found with name %q", name)
+	case 1:
+		for _, nc := range candidates {
+			if nc.IsVCluster {
+				return nc.VCluster.ID, nil
+			} else {
+				return nc.Cluster.ID, nil
+			}
+		}
+		panic("unreachable")
+	default:
+		ncs := combineClusterNames(nss, vcs, cs)
+		names := ncs.names()
+
+		idx, err := out.PickIndex(names, "Multiple clusters found with the requested name, please select one:")
+		if err != nil {
+			return "", err
+		}
+		return ncs[idx].clusterID(), nil
+	}
+}
+
 // Iterates across vcs and cs and returns all clusters that match the given
 // name.
 func findNamedCluster(name string, nss []cloudapi.Namespace, vcs []cloudapi.VirtualCluster, cs []cloudapi.Cluster) map[string]cloudapi.NamespacedCluster {
 	ret := make(map[string]cloudapi.NamespacedCluster)
+	namespaceIDs := make(map[string]cloudapi.Namespace, len(nss))
+	for _, ns := range nss {
+		namespaceIDs[ns.ID] = ns
+	}
 	for _, vc := range vcs {
-		if vc.Name != name {
+		if name != vc.Name && name != fmt.Sprintf("%s/%s", namespaceIDs[vc.NamespaceUUID].Name, vc.Name) {
 			continue
 		}
-		ns := cloudapi.FindNamespace(vc.NamespaceUUID, nss)
+		ns := namespaceIDs[vc.NamespaceUUID]
 		ret[vc.Name] = cloudapi.NamespacedCluster{
 			Namespace:  ns,
 			VCluster:   vc,
@@ -394,10 +426,10 @@ func findNamedCluster(name string, nss []cloudapi.Namespace, vcs []cloudapi.Virt
 		}
 	}
 	for _, c := range cs {
-		if c.Name != name {
+		if name != c.Name && name != fmt.Sprintf("%s/%s", namespaceIDs[c.NamespaceUUID].Name, c.Name) {
 			continue
 		}
-		ns := cloudapi.FindNamespace(c.NamespaceUUID, nss)
+		ns := namespaceIDs[c.NamespaceUUID]
 		ret[c.Name] = cloudapi.NamespacedCluster{
 			Namespace: ns,
 			Cluster:   c,
@@ -608,6 +640,9 @@ func combineClusterNames(nss cloudapi.Namespaces, vcs []cloudapi.VirtualCluster,
 	var vNameAndCs []nameAndCluster
 	for _, vc := range vcs {
 		vc := vc
+		if strings.ToLower(vc.State) != cloudapi.ClusterStateReady {
+			continue
+		}
 		vNameAndCs = append(vNameAndCs, nameAndCluster{
 			name: fmt.Sprintf("%s/%s", nsIDToName[vc.NamespaceUUID], vc.Name),
 			vc:   &vc,

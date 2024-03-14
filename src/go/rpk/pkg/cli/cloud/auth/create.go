@@ -23,7 +23,7 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:  "Create an rpk cloud auth",
 		Hidden: true,
 		Run: func(*cobra.Command, []string) {
-			fmt.Println("'rpk cloud auth create' is deprecated as a no-op; use 'rpk cloud login --new-credentials' instead.")
+			fmt.Println("'rpk cloud auth create' is deprecated as a no-op; use 'rpk cloud login --reload' instead.")
 		},
 	}
 	var slice []string

@@ -87,8 +87,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 	// If this is a new token and we have a cloud profile, we need to
 	// lookup the organization. The SSO flow may have logged into a
 	// different org than the current auth and if so, we need to clear
-	// the current profile. We do this same logic for client credentials
-	// this will be a no-op basically.
+	// the current profile.
 	if pAuthAct := yAct.Profile(yAct.CurrentProfile).ActualAuth(); isNewToken && pAuthAct != nil {
 		org, orgErr := getOrg()
 		if orgErr != nil {
@@ -291,8 +290,6 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 
 		yVir.CurrentCloudAuthOrgID = org.ID
 		yAct.CurrentCloudAuthOrgID = org.ID
-
-		fmt.Println("updating currents, orgID", org.ID, "kind", authKind)
 
 		yVir.CurrentCloudAuthKind = string(authVir.AnyKind())
 		yAct.CurrentCloudAuthKind = string(authVir.AnyKind()) // we use the virtual kind here -- clientID is updated below
