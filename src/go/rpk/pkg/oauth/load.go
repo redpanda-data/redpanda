@@ -93,7 +93,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 		if orgErr != nil {
 			return nil, authVir, false, false, orgErr
 		}
-		if org.ID != pAuthAct.OrgID {
+		if org.ID != pAuthAct.OrgID || pAuthAct.Kind != authKind {
 			clearedProfile = true
 			yAct.CurrentProfile = ""
 			yVir.CurrentProfile = ""
@@ -112,12 +112,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 		if orgErr != nil {
 			return nil, authVir, false, false, orgErr
 		}
-		if org.ID != yAuthAct.OrgID {
-			yAuthVir := yVir.CurrentAuth()
-			// The virtual auth here *should* have the same org and kind.
-			if yAuthAct.OrgID != yAuthVir.OrgID || yAuthAct.Kind != yAuthVir.Kind {
-				panic("params invariant: virtual auth != actual auth")
-			}
+		if org.ID != yAuthAct.OrgID || yAuthAct.Kind != authKind {
 			yAct.CurrentCloudAuthOrgID = ""
 			yVir.CurrentCloudAuthOrgID = ""
 			yAct.CurrentCloudAuthKind = ""
