@@ -202,7 +202,8 @@ func CreateFlow(
 				if !old.FromCloud {
 					return &ProfileExistsError{name}
 				}
-				p = old
+				*old = *p // update
+				p = old   // the values
 				updatingRpkCloudProfile = true
 			}
 		}
@@ -604,7 +605,7 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 	} else {
 		ncs := combineClusterNames(nss, vcs, cs)
 		names := ncs.names()
-		idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to create a profile for?")
+		idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to talk to?")
 		if err != nil {
 			return CloudClusterOutputs{}, err
 		}

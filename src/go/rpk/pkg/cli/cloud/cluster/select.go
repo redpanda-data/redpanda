@@ -21,11 +21,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newSelectCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var profileName string
 
 	cmd := &cobra.Command{
-		Use:   "use [NAME]",
+		Use:   "select [NAME]",
 		Short: "Update your rpk profile to talk to the requested cluster",
 		Long: `Update your rpk profile to talk to the requested cluster.
 
@@ -56,11 +56,11 @@ an existing self-hosted profile, please rename that profile or use the
 --profile flag to explicitly name your new profile.
 
 Either:
-    rpk profile use %[1]q
+    rpk profile select %[1]q
     rpk profile rename-to $something_else
-    rpk cloud cluster use %[2]q
+    rpk cloud cluster select %[2]q
 Or:
-    rpk cloud cluster use %[2]q --profile $another_something
+    rpk cloud cluster select %[2]q --profile $another_something
 `, ee.Name, args[0])
 				os.Exit(1)
 			}

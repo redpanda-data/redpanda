@@ -10,10 +10,13 @@
 package profile
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -91,4 +94,16 @@ type ProfileExistsError struct {
 
 func (e *ProfileExistsError) Error() string {
 	return fmt.Sprintf("profile %q already exists", e.Name)
+}
+
+// MaybeDieExistingName exits if err is non-nil, but if err is
+// ProfileExistsError, this exits with a more detailed message.
+func MaybeDieExistingName(err error) {
+	if ee := (*ProfileExistsError)(nil); errors.As(err, &ee) {
+		fmt.Printf(`Unable to automatically create profile %[1]q due to a name conflict with
+an existing profile, please rename the existing profile.
+`, ee.Name)
+		os.Exit(1)
+	}
+	out.MaybeDieErr(err)
 }

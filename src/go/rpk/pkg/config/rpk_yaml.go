@@ -486,14 +486,14 @@ func MaybePrintAuthSwitchMessage(priorAuth *RpkCloudAuth, currentAuth *RpkCloudA
 		if currentAuth == nil {
 			return
 		}
-		fmt.Println("rpk cloud commands are now talking to organization %q (%s).", currentAuth.Organization, currentAuth.OrgID)
+		fmt.Printf("rpk cloud commands are now talking to organization %q (%s).\n", currentAuth.Organization, currentAuth.OrgID)
 		return
 	}
 	if currentAuth == nil {
-		fmt.Println("rpk cloud commands are no longer talking to organization %q (%s) and are now talking to a self hosted cluster.", priorAuth.Organization, priorAuth.OrgID)
+		fmt.Printf("rpk cloud commands are no longer talking to organization %q (%s) and are now talking to a self hosted cluster.\n", priorAuth.Organization, priorAuth.OrgID)
 		return
 	}
 	if priorAuth.Name != currentAuth.Name {
-		fmt.Println("rpk switched from talking to organization %q (%s) to %q (%s).", priorAuth.Organization, priorAuth.OrgID, currentAuth.Organization, currentAuth.OrgID)
+		fmt.Printf("rpk switched from talking to organization %q (%s) to %q (%s).\n", priorAuth.Organization, priorAuth.OrgID, currentAuth.Organization, currentAuth.OrgID)
 	}
 }
