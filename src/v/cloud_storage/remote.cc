@@ -909,17 +909,17 @@ remote::download_object(cloud_storage::download_request download_request) {
     co_return *result;
 }
 
-ss::future<download_result> remote::segment_exists(
+ss::future<download_result> remote::object_exists(
   const cloud_storage_clients::bucket_name& bucket,
-  const remote_segment_path& segment_path,
-  retry_chain_node& parent) {
+  const cloud_storage_clients::object_key& path,
+  retry_chain_node& parent,
+  existence_check_type object_type) {
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto path = cloud_storage_clients::object_key(segment_path());
     auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
-    vlog(ctxlog.debug, "Check segment {}", path);
+    vlog(ctxlog.debug, "Check {} {}", object_type, path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto resp = co_await lease.client->head_object(
@@ -959,20 +959,33 @@ ss::future<download_result> remote::segment_exists(
     if (!result) {
         vlog(
           ctxlog.warn,
-          "HeadObject from {}, backoff quota exceded, segment at {} "
+          "HeadObject from {}, backoff quota exceded, {} at {} "
           "not available",
           bucket,
+          object_type,
           path);
         result = download_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
-          "HeadObject from {}, {}, segment at {} not available",
+          "HeadObject from {}, {}, {} at {} not available",
           bucket,
           *result,
+          object_type,
           path);
     }
     co_return *result;
+}
+
+ss::future<download_result> remote::segment_exists(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& segment_path,
+  retry_chain_node& parent) {
+    co_return co_await object_exists(
+      bucket,
+      cloud_storage_clients::object_key{segment_path},
+      parent,
+      existence_check_type::segment);
 }
 
 ss::future<upload_result> remote::delete_object(
@@ -1324,7 +1337,7 @@ ss::future<remote::list_result> remote::list_objects(
     // Gathers the items from a series of successful ListObjectsV2 calls
     cloud_storage_clients::client::list_bucket_result list_bucket_result;
 
-    // Keep iterating until the ListObjectsV2 calls has more items to return
+    // Keep iterating while the ListObjectsV2 calls has more items to return
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto res = co_await lease.client->list_objects(
           bucket,

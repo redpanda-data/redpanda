@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "cloud_storage/inventory/types.h"
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
@@ -24,16 +25,39 @@ public:
       inventory_config_id inventory_config_id,
       ss::sstring inventory_prefix);
 
-    ss::future<cloud_storage::upload_result> create_inventory_configuration(
+    ss::future<op_result<void>> create_inventory_configuration(
       cloud_storage::cloud_storage_api&,
       retry_chain_node&,
       report_generation_frequency,
       report_format) override;
 
-    ss::future<bool> inventory_configuration_exists(
+    ss::future<op_result<bool>> inventory_configuration_exists(
       cloud_storage::cloud_storage_api&, retry_chain_node&) override;
 
+    /// Returns metadata for the latest available report for
+    /// inventory configuration assigned to this object
+    ss::future<op_result<report_metadata>> fetch_latest_report_metadata(
+      cloud_storage::cloud_storage_api&,
+      retry_chain_node&) const noexcept override;
+
 private:
+    ss::future<op_result<report_metadata>> do_fetch_latest_report_metadata(
+      cloud_storage::cloud_storage_api&, retry_chain_node&) const;
+
+    /// Fetches the report manifest and parses out report paths from the JSON
+    /// document
+    ss::future<op_result<report_paths>> fetch_and_parse_metadata(
+      cloud_storage::cloud_storage_api& remote,
+      retry_chain_node& parent_rtc,
+      cloud_storage_clients::object_key metadata_path) const noexcept;
+
+    ss::future<op_result<report_paths>> do_fetch_and_parse_metadata(
+      cloud_storage::cloud_storage_api& remote,
+      retry_chain_node& parent_rtc,
+      cloud_storage_clients::object_key metadata_path) const;
+
+    op_result<report_paths> parse_report_paths(iobuf json_response) const;
+
     cloud_storage_clients::bucket_name _bucket;
     inventory_config_id _inventory_config_id;
     cloud_storage_clients::object_key _inventory_key;

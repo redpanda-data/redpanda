@@ -433,12 +433,13 @@ enum class upload_type {
 
 std::ostream& operator<<(std::ostream&, upload_type);
 
-enum class download_type {
-    object,
-    segment_index,
-};
+enum class download_type { object, segment_index, inventory_report_manifest };
 
 std::ostream& operator<<(std::ostream&, download_type);
+
+enum class existence_check_type { object, segment };
+
+std::ostream& operator<<(std::ostream&, existence_check_type);
 
 class remote_probe;
 using probe_callback_t = ss::noncopyable_function<void(remote_probe&)>;
