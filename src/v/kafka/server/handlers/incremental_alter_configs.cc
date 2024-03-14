@@ -463,15 +463,11 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
 
         auto resp
           = co_await ctx.config_frontend()
-              .invoke_on(
-                cluster::config_frontend::version_shard,
-                [req = std::move(req)](cluster::config_frontend& fe) mutable {
-                    return fe.patch(
-                      std::move(req),
-                      model::timeout_clock::now()
-                        + config::shard_local_cfg()
-                            .alter_topic_cfg_timeout_ms());
-                })
+              .local()
+              .patch(
+                std::move(req),
+                model::timeout_clock::now()
+                  + config::shard_local_cfg().alter_topic_cfg_timeout_ms())
               .then([resource](cluster::config_frontend::patch_result pr) {
                   std::error_code& ec = pr.errc;
                   error_code kec = error_code::none;
