@@ -88,7 +88,7 @@ static authorizer make_test_instance(
     return authorizer(allow, std::move(b), *roles.value_or(&_roles));
 }
 
-BOOST_AUTO_TEST_CASE(resource_type_auto) {
+BOOST_AUTO_TEST_CASE(authz_resource_type_auto) {
     BOOST_REQUIRE(
       get_resource_type<model::topic>() == security::resource_type::topic);
     BOOST_REQUIRE(
@@ -107,7 +107,7 @@ BOOST_AUTO_TEST_CASE(resource_type_auto) {
       != get_resource_type<kafka::group_id>());
 }
 
-BOOST_AUTO_TEST_CASE(empty_resource_name) {
+BOOST_AUTO_TEST_CASE(authz_empty_resource_name) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
@@ -143,7 +143,7 @@ BOOST_AUTO_TEST_CASE(empty_resource_name) {
 
 static const model::topic default_topic("topic1");
 
-BOOST_AUTO_TEST_CASE(deny_applies_first) {
+BOOST_AUTO_TEST_CASE(authz_deny_applies_first) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.2.1");
 
@@ -178,7 +178,7 @@ BOOST_AUTO_TEST_CASE(deny_applies_first) {
     BOOST_REQUIRE(!result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(allow_all) {
+BOOST_AUTO_TEST_CASE(authz_allow_all) {
     acl_principal user(principal_type::user, "random");
     acl_host host("192.0.4.4");
 
@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(allow_all) {
     BOOST_REQUIRE(!result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(super_user_allow) {
+BOOST_AUTO_TEST_CASE(authz_super_user_allow) {
     acl_principal user1(principal_type::user, "superuser1");
     acl_principal user2(principal_type::user, "superuser2");
     acl_host host("192.0.4.4");
@@ -311,7 +311,7 @@ BOOST_AUTO_TEST_CASE(super_user_allow) {
     BOOST_REQUIRE(!result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(wildcards) {
+BOOST_AUTO_TEST_CASE(authz_wildcards) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
@@ -382,7 +382,7 @@ BOOST_AUTO_TEST_CASE(wildcards) {
     BOOST_REQUIRE(!result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(no_acls_deny) {
+BOOST_AUTO_TEST_CASE(authz_no_acls_deny) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
@@ -402,7 +402,7 @@ BOOST_AUTO_TEST_CASE(no_acls_deny) {
     BOOST_REQUIRE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(no_acls_allow) {
+BOOST_AUTO_TEST_CASE(authz_no_acls_allow) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
@@ -422,7 +422,7 @@ BOOST_AUTO_TEST_CASE(no_acls_allow) {
     BOOST_REQUIRE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(implied_acls) {
+BOOST_AUTO_TEST_CASE(authz_implied_acls) {
     auto test_allow = [](acl_operation op, std::set<acl_operation> allowed) {
         acl_principal user(principal_type::user, "alice");
         acl_host host("192.168.3.1");
@@ -566,7 +566,7 @@ BOOST_AUTO_TEST_CASE(implied_acls) {
     test_deny(acl_operation::describe_configs, {});
 }
 
-BOOST_AUTO_TEST_CASE(allow_for_all_wildcard_resource) {
+BOOST_AUTO_TEST_CASE(authz_allow_for_all_wildcard_resource) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
@@ -599,7 +599,7 @@ BOOST_AUTO_TEST_CASE(allow_for_all_wildcard_resource) {
     BOOST_REQUIRE(!result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(remove_acl_wildcard_resource) {
+BOOST_AUTO_TEST_CASE(authz_remove_acl_wildcard_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -617,7 +617,7 @@ BOOST_AUTO_TEST_CASE(remove_acl_wildcard_resource) {
     BOOST_REQUIRE(get_acls(auth, wildcard_resource) == expected);
 }
 
-BOOST_AUTO_TEST_CASE(remove_all_acl_wildcard_resource) {
+BOOST_AUTO_TEST_CASE(authz_remove_all_acl_wildcard_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -633,7 +633,7 @@ BOOST_AUTO_TEST_CASE(remove_all_acl_wildcard_resource) {
     BOOST_REQUIRE(get_acls(auth, acl_binding_filter::any()).empty());
 }
 
-BOOST_AUTO_TEST_CASE(allow_for_all_prefixed_resource) {
+BOOST_AUTO_TEST_CASE(authz_allow_for_all_prefixed_resource) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
@@ -666,7 +666,7 @@ BOOST_AUTO_TEST_CASE(allow_for_all_prefixed_resource) {
     BOOST_REQUIRE(!result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(remove_acl_prefixed_resource) {
+BOOST_AUTO_TEST_CASE(authz_remove_acl_prefixed_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -684,7 +684,7 @@ BOOST_AUTO_TEST_CASE(remove_acl_prefixed_resource) {
     BOOST_REQUIRE(get_acls(auth, prefixed_resource) == expected);
 }
 
-BOOST_AUTO_TEST_CASE(remove_all_acl_prefixed_resource) {
+BOOST_AUTO_TEST_CASE(authz_remove_all_acl_prefixed_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -700,7 +700,7 @@ BOOST_AUTO_TEST_CASE(remove_all_acl_prefixed_resource) {
     BOOST_REQUIRE(get_acls(auth, acl_binding_filter::any()).empty());
 }
 
-BOOST_AUTO_TEST_CASE(acls_on_literal_resource) {
+BOOST_AUTO_TEST_CASE(authz_acls_on_literal_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -734,7 +734,7 @@ BOOST_AUTO_TEST_CASE(acls_on_literal_resource) {
     BOOST_REQUIRE(get_acls(auth, prefixed_resource).empty());
 }
 
-BOOST_AUTO_TEST_CASE(acls_on_wildcard_resource) {
+BOOST_AUTO_TEST_CASE(authz_acls_on_wildcard_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -758,7 +758,7 @@ BOOST_AUTO_TEST_CASE(acls_on_wildcard_resource) {
     BOOST_REQUIRE(get_acls(auth, prefixed_resource).empty());
 }
 
-BOOST_AUTO_TEST_CASE(acls_on_prefixed_resource) {
+BOOST_AUTO_TEST_CASE(authz_acls_on_prefixed_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -782,7 +782,7 @@ BOOST_AUTO_TEST_CASE(acls_on_prefixed_resource) {
     BOOST_REQUIRE(get_acls(auth, default_resource).empty());
 }
 
-BOOST_AUTO_TEST_CASE(auth_prefix_resource) {
+BOOST_AUTO_TEST_CASE(authz_auth_prefix_resource) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
@@ -846,7 +846,7 @@ BOOST_AUTO_TEST_CASE(auth_prefix_resource) {
     BOOST_REQUIRE_EQUAL(result.resource_name, default_resource.name());
 }
 
-BOOST_AUTO_TEST_CASE(single_char) {
+BOOST_AUTO_TEST_CASE(authz_single_char) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
@@ -895,7 +895,7 @@ BOOST_AUTO_TEST_CASE(single_char) {
     BOOST_REQUIRE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(get_acls_principal) {
+BOOST_AUTO_TEST_CASE(authz_get_acls_principal) {
     acl_principal user(principal_type::user, "alice");
 
     auto auth = make_test_instance();
@@ -932,7 +932,7 @@ BOOST_AUTO_TEST_CASE(get_acls_principal) {
     BOOST_REQUIRE(get_acls(auth, user).empty());
 }
 
-BOOST_AUTO_TEST_CASE(acl_filter) {
+BOOST_AUTO_TEST_CASE(authz_acl_filter) {
     acl_principal user(principal_type::user, "alice");
 
     resource_pattern resource1(
@@ -1003,7 +1003,7 @@ BOOST_AUTO_TEST_CASE(acl_filter) {
         acl_entry_filter::any()))));
 }
 
-BOOST_AUTO_TEST_CASE(topic_acl) {
+BOOST_AUTO_TEST_CASE(authz_topic_acl) {
     acl_principal user1(principal_type::user, "alice");
     acl_principal user2(principal_type::user, "rob");
     acl_principal user3(principal_type::user, "batman");
@@ -1115,7 +1115,7 @@ BOOST_AUTO_TEST_CASE(topic_acl) {
 
 // a bug had allowed a topic with read permissions (prefix) to authorize a group
 // for read permissions when the topic name was a prefix of the group name
-BOOST_AUTO_TEST_CASE(topic_group_same_name) {
+BOOST_AUTO_TEST_CASE(authz_topic_group_same_name) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
