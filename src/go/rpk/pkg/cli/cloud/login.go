@@ -15,6 +15,7 @@ import (
 	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/profile"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
@@ -24,7 +25,7 @@ import (
 )
 
 func newLoginCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var save, noProfile, noBrowser, forceReload bool
+	var save, noProfile, noBrowser bool
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to the Redpanda cloud",
@@ -37,11 +38,6 @@ this command will login and save your token along with the client ID used to
 request the token.
 
 You may use either SSO or client credentials to log in.
-
-Logging in uses an existing current token if the token is still valid and not
-expired. If you switched organizations in your browser and want to log into the
-new organization, you can use the --reload flag to force a new token to be
-requested.
 
 SSO
 
@@ -73,7 +69,7 @@ token and client ID is always synced.
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			p := y.Profile(y.CurrentProfile)
-			authAct, authVir, clearedProfile, isNewAuth, err := oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()), noBrowser, forceReload, cfg.DevOverrides().CloudAPIURL)
+			authAct, authVir, clearedProfile, _, err := oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()), noBrowser, true, cfg.DevOverrides().CloudAPIURL)
 			if err != nil {
 				fmt.Printf("Unable to login to Redpanda Cloud (%v).\n", err)
 				if e := (*oauth.BadClientTokenError)(nil); errors.As(err, &e) && authVir != nil && authVir.HasClientCredentials() {
@@ -91,64 +87,89 @@ and then re-specify the client credentials next time you log in.`)
 			}
 
 			fmt.Printf("Successfully logged into organization %q (%s) via %s.\n", authAct.Organization, authAct.OrgID, authAct.AnyKind())
-			if !isNewAuth {
-				fmt.Println("If you are trying to authenticate to a different organization, use 'rpk cloud login --reload'.")
-			}
 			fmt.Println()
 
-			// When you have no profile, or you have one that is not selected.
+			// No profile, or you have profiles but none were selected.
+			// * If --no-profile, print a message and exit
+			// * Otherwise, prompt for cloud cluster selection
 			if p == nil || len(y.Profiles) == 0 {
-				fmt.Println(`To create an rpk profile to talk to an existing cloud cluster, use 'rpk cloud cluster use'.
+				if noProfile {
+					fmt.Println(`To create an rpk profile to talk to an existing cloud cluster, use 'rpk cloud cluster select'.
 To learn more about profiles, check 'rpk profile --help'.
 You are not currently in a profile; rpk talks to a localhost:9092 cluster by default.`)
+				} else {
+					fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process, feel free to ctrl+c now.")
+					err = profile.CreateFlow(cmd.Context(), fs, cfg, y, "", "", "prompt", false, nil, "", "")
+					profile.MaybeDieExistingName(err)
+				}
 				return
 			}
 
-			// When you had a profile, but it was cleared due to your browser
-			// having a different org's auth.
+			// User had a profile, but it was cleared due to the browser having
+			// a different org's auth.
+			// * If --no-profile, print a message and exit
+			// * Otherwise, prompt for cloud cluster selection
 			if p != nil && clearedProfile {
 				priorAuth := p.ActualAuth()
-				fmt.Printf(`rpk swapped away from your prior profile %q which authenticated with organization %q (%s).
-
+				fmt.Printf("rpk swapped away from your prior profile %q which was authenticated with organization %q (%s).\n", p.Name, priorAuth.Organization, priorAuth.OrgID)
+				if noProfile {
+					fmt.Printf(`
 To create a new rpk profile for a cluster in this organization, try either:
     rpk profile create --from-cloud
-    rpk cloud cluster use
+    rpk cloud cluster select
 
 rpk will talk to a localhost:9092 cluster until you swap to a different profile.
-`, p.Name, priorAuth.Organization, priorAuth.OrgID)
+`)
+				} else {
+					fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process, feel free to ctrl+c now.")
+					err = profile.CreateFlow(cmd.Context(), fs, cfg, y, "", "", "prompt", false, nil, "", "")
+					profile.MaybeDieExistingName(err)
+				}
 				return
 			}
 
-			// When your current profile is a cloud cluster.
+			// The current profile was auth'd to the current organization.
+			// We tell the status of what org the user is talking to.
 			if p.FromCloud {
 				fmt.Printf("Your current profile %q is talking to your %q cloud cluster.\n", p.Name, p.CloudCluster.FullName())
-				fmt.Println("To switch which cluster you are talking to, use 'rpk cloud cluster use'.")
+				fmt.Println("To switch which cluster you are talking to, use 'rpk cloud cluster select'.")
 				return
 			}
 
-			// When your current profile is pointing at the
-			// localhost cluster from rpk container start.
+			// Below here, the current profile is pointed to a
+			// local container cluster or a self hosted cluster.
+			// We want to create or swap to the cloud profile,
+			// unless the user used --no-profile.
+			if noProfile {
+				// The current profile is seemingly pointing to a container cluster.
+				if p.Name == common.ContainerProfileName {
+					fmt.Printf("Your current profile %q is talking to a localhost 'rpk container' cluster.\n", p.Name)
+					fmt.Println("To talk to a cloud cluster, use 'rpk cloud cluster select'.")
+					return
+				}
+				// The current profile is a self hosted cluster.
+				fmt.Printf("Your current profile %q is talking to a self hosted cluster.\n", p.Name)
+				fmt.Println("To talk to a cloud cluster, use 'rpk cloud cluster select'.")
+				return
+			}
+
 			if p.Name == common.ContainerProfileName {
 				fmt.Printf("Your current profile %q is talking to a localhost 'rpk container' cluster.\n", p.Name)
-				fmt.Println("To talk to a cloud cluster, use 'rpk cloud cluster use'.")
-				return
+			} else {
+				fmt.Printf("Your current profile %q is talking to a self hosted cluster.\n", p.Name)
 			}
+			fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process and keep your current profile, feel free to ctrl+c now.")
 
-			// When your current profile is a self hosted cluster.
-			fmt.Printf("Your current profile %q is talking to a self hosted cluster.\n", p.Name)
-			fmt.Println("To talk to a cloud cluster, use 'rpk cloud cluster use'.")
+			// Prompt and switch.
+			err = profile.CreateFlow(cmd.Context(), fs, cfg, y, "", "", "prompt", false, nil, "", "")
+			profile.MaybeDieExistingName(err)
 		},
 	}
 
 	p.InstallCloudFlags(cmd)
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Opt out of auto-opening authentication URL")
 	cmd.Flags().BoolVar(&save, "save", false, "Save environment or flag specified client ID and client secret to the configuration file")
-	cmd.Flags().BoolVar(&forceReload, "reload", false, "Force a new token to be requested, even if the current token is still valid")
-
-	// Hide the deprecated no-profile flag.
-	// We used to automatically create a profile.
 	cmd.Flags().BoolVar(&noProfile, "no-profile", false, "Skip automatic profile creation and any associated prompts")
-	_ = cmd.Flags().MarkHidden("no-profile")
 
 	return cmd
 }

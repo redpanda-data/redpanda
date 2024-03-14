@@ -27,7 +27,7 @@ between which cluster you are talking to.
 	}
 
 	cmd.AddCommand(
-		newUseCommand(fs, p),
+		newSelectCommand(fs, p),
 	)
 
 	return cmd
