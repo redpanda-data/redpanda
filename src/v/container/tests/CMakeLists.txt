@@ -12,8 +12,9 @@ rp_test(
   GTEST
   BINARY_NAME container_unit
   SOURCES
-    fragmented_vector_test.cc
     contiguous_range_map_test.cc
+    interval_set_test.cc
+    fragmented_vector_test.cc
   LIBRARIES v::gtest_main v::random v::serde
   ARGS "-- -c 1"
 )
