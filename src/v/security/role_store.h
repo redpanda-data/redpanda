@@ -75,6 +75,9 @@ class role_store {
       detail::role_member_eq>;
 
 public:
+    using roles_range
+      = boost::iterator_range<name_view_set_type::const_iterator>;
+
     role_store() noexcept = default;
     role_store(const role_store&) = delete;
     role_store& operator=(const role_store&) = delete;
@@ -110,8 +113,7 @@ public:
     }
 
     template<RoleMember T>
-    boost::iterator_range<name_view_set_type::const_iterator>
-    roles_for_member(const T& user) const {
+    roles_range roles_for_member(const T& user) const {
         if (auto it = _members_store.find(user); it != _members_store.end()) {
             return it->second;
         }
