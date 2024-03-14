@@ -446,7 +446,8 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
             outcome = error_outcome::fail;
         } else if (
           err.code() == s3_error_code::slow_down
-          || err.code() == s3_error_code::internal_error) {
+          || err.code() == s3_error_code::internal_error
+          || err.code() == s3_error_code::request_timeout) {
             // This can happen when we're dealing with high request rate to
             // the manifest's prefix. Backoff algorithm should be applied.
             // In principle only slow_down should occur, but in practice
