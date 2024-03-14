@@ -214,7 +214,10 @@ ss::future<consensus_ptr> partition_manager::manage(
               ntp_cfg, manifest, max_offset);
         }
     }
-    auto log = co_await _storage.log_mgr().manage(std::move(ntp_cfg), group);
+    auto translator_batch_types = raft::offset_translator_batch_types(
+      ntp_cfg.ntp());
+    auto log = co_await _storage.log_mgr().manage(
+      std::move(ntp_cfg), group, std::move(translator_batch_types));
     vlog(
       clusterlog.debug,
       "Log created manage completed, ntp: {}, rev: {}, {} "

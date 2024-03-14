@@ -59,7 +59,8 @@ public:
       log_manager&,
       segment_set,
       kvstore&,
-      ss::sharded<features::feature_table>& feature_table);
+      ss::sharded<features::feature_table>& feature_table,
+      std::vector<model::record_batch_type> translator_batch_types);
     ~disk_log_impl() override;
     disk_log_impl(disk_log_impl&&) noexcept = delete;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;

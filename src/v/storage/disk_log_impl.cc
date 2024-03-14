@@ -110,7 +110,8 @@ disk_log_impl::disk_log_impl(
   log_manager& manager,
   segment_set segs,
   kvstore& kvstore,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  std::vector<model::record_batch_type> translator_batch_types)
   : log(std::move(cfg))
   , _manager(manager)
   , _segment_size_jitter(
@@ -120,7 +121,12 @@ disk_log_impl::disk_log_impl(
   , _feature_table(feature_table)
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs)
-  , _offset_translator({}, group, config().ntp(), _kvstore, resources())
+  , _offset_translator(
+      std::move(translator_batch_types),
+      group,
+      config().ntp(),
+      _kvstore,
+      resources())
   , _probe(std::make_unique<storage::probe>())
   , _max_segment_size(compute_max_segment_size())
   , _readers_cache(std::make_unique<readers_cache>(
@@ -2953,9 +2959,16 @@ ss::shared_ptr<log> make_disk_backed_log(
   log_manager& manager,
   segment_set segs,
   kvstore& kvstore,
-  ss::sharded<features::feature_table>& feature_table) {
+  ss::sharded<features::feature_table>& feature_table,
+  std::vector<model::record_batch_type> translator_batch_types) {
     auto disk_log = ss::make_shared<disk_log_impl>(
-      std::move(cfg), group, manager, std::move(segs), kvstore, feature_table);
+      std::move(cfg),
+      group,
+      manager,
+      std::move(segs),
+      kvstore,
+      feature_table,
+      std::move(translator_batch_types));
     return disk_log;
 }
 

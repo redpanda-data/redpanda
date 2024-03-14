@@ -14,6 +14,7 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "raft/fundamental.h"
@@ -229,7 +230,8 @@ ss::shared_ptr<log> make_disk_backed_log(
   log_manager&,
   segment_set,
   kvstore&,
-  ss::sharded<features::feature_table>& feature_table);
+  ss::sharded<features::feature_table>& feature_table,
+  std::vector<model::record_batch_type> translator_batch_types);
 
 bool deletion_exempt(const model::ntp& ntp);
 

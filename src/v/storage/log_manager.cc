@@ -482,12 +482,15 @@ log_manager::create_cache(with_cache ntp_cache_enabled) {
     return batch_cache_index(_batch_cache);
 }
 
-ss::future<ss::shared_ptr<log>>
-log_manager::manage(ntp_config cfg, raft::group_id group) {
+ss::future<ss::shared_ptr<log>> log_manager::manage(
+  ntp_config cfg,
+  raft::group_id group,
+  std::vector<model::record_batch_type> translator_batch_types) {
     auto gate = _open_gate.hold();
 
     auto units = co_await _resources.get_recovery_units();
-    co_return co_await do_manage(std::move(cfg), group);
+    co_return co_await do_manage(
+      std::move(cfg), group, std::move(translator_batch_types));
 }
 
 ss::future<> log_manager::maybe_clear_kvstore(const ntp_config& cfg) {
@@ -510,8 +513,10 @@ ss::future<> log_manager::maybe_clear_kvstore(const ntp_config& cfg) {
       });
 }
 
-ss::future<ss::shared_ptr<log>>
-log_manager::do_manage(ntp_config cfg, raft::group_id group) {
+ss::future<ss::shared_ptr<log>> log_manager::do_manage(
+  ntp_config cfg,
+  raft::group_id group,
+  std::vector<model::record_batch_type> translator_batch_types) {
     if (_config.base_dir.empty()) {
         throw std::runtime_error(
           "log_manager:: cannot have empty config.base_dir");
@@ -552,8 +557,8 @@ log_manager::do_manage(ntp_config cfg, raft::group_id group) {
       *this,
       std::move(segments),
       _kvstore,
-      _feature_table);
-
+      _feature_table,
+      std::move(translator_batch_types));
     auto [it, success] = _logs.emplace(
       l->config().ntp(), std::make_unique<log_housekeeping_meta>(l));
     _logs_list.push_back(*it->second);
