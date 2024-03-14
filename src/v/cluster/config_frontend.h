@@ -45,11 +45,13 @@ public:
     ss::future<std::error_code>
     set_status(config_status&, model::timeout_clock::time_point);
 
-    void set_next_version(config_version v);
+    ss::future<> set_next_version(config_version v);
 
 private:
     ss::future<patch_result>
     do_patch(config_update_request&&, model::timeout_clock::time_point);
+
+    void do_set_next_version(config_version v);
 
     ss::sharded<controller_stm>& _stm;
     ss::sharded<rpc::connection_cache>& _connections;
