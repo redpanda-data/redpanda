@@ -499,11 +499,12 @@ func CreateProfile(fs afero.Fs, c Client, y *config.RpkYaml) error {
 		},
 	}
 
-	y.CurrentProfile = y.PushProfile(profile)
+	priorAuth, currentAuth := y.PushProfile(profile)
 	err = y.Write(fs)
 	if err != nil {
 		return err
 	}
+	config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 	return nil
 }
 

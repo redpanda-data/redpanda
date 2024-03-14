@@ -134,3 +134,12 @@ func FindNamespace(nsID string, nss Namespaces) Namespace {
 	}
 	return Namespace{}
 }
+
+// NamespaceForID lists all namespaces to find the namespace for the given ID.
+func (cl *Client) NamespaceForID(ctx context.Context, nsid string) (Namespace, error) {
+	nss, err := cl.Namespaces(ctx)
+	if err != nil {
+		return Namespace{}, fmt.Errorf("unable to request namespaces: %w", err)
+	}
+	return FindNamespace(nsid, nss), nil
+}

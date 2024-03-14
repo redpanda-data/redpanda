@@ -44,10 +44,11 @@ func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 			p.Name = to
 			y.CurrentProfile = to
-			y.MoveProfileToFront(p)
+			priorAuth, currentAuth := y.MoveProfileToFront(p)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
 			fmt.Printf("Renamed current profile to %q.\n", to)
+			config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 		},
 	}
 }

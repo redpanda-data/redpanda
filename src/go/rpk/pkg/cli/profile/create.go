@@ -195,6 +195,7 @@ func CreateFlow(
 			return err
 		}
 		p = &o.Profile
+
 		if name == "" {
 			name = RpkCloudProfileName
 			if old := yAct.Profile(name); old != nil {
@@ -275,20 +276,22 @@ func CreateFlow(
 		// * The user's prior profile was NOT the rpk-cloud profile
 		// * We are switching to the existing rpk-cloud profile and updating the values
 		fmt.Printf("Switched to existing %q profile and updated it to talk to cluster %q.\n", RpkCloudProfileName, o.ClusterName)
-		yAct.MoveProfileToFront(p)
-		yAct.CurrentProfile = p.Name
+		priorAuth, currentAuth := yAct.MoveProfileToFront(p)
+		config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 
 	case fromCloud != "" && name == RpkCloudProfileName:
 		// * We are creating a NEW rpk-cloud profile and switching to it
 		fmt.Printf("Created and switched to a new profile %q to talk to cloud cluster %q.\n", RpkCloudProfileName, o.ClusterName)
-		yAct.CurrentProfile = yAct.PushProfile(*p)
+		priorAuth, currentAuth := yAct.PushProfile(*p)
+		config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 
 	default:
 		// * This is not a cloud nor container profile, this is a
 		//   regularly manually created profile, or duplicating an
 		//   existing one. We print standard messaging.
 		fmt.Printf("Created and switched to new profile %q.\n", p.Name)
-		yAct.CurrentProfile = yAct.PushProfile(*p)
+		priorAuth, currentAuth := yAct.PushProfile(*p)
+		config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 	}
 
 	if err := yAct.Write(fs); err != nil {
@@ -329,7 +332,7 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 	cl := cloudapi.NewClient(overrides.CloudAPIURL, a.AuthToken, httpapi.ReqTimeout(10*time.Second))
 
 	if clusterIDOrName == "prompt" {
-		return PromptCloudClusterProfile(ctx, cl)
+		return PromptCloudClusterProfile(ctx, a, cl)
 	}
 
 	var (
@@ -355,6 +358,11 @@ nameLookup:
 		clusterID = clusterIDOrName
 	}
 
+	// When we create a cloud profile, we want the namespace name so that
+	// we can print some nicer looking messages. When we finally know the
+	// cluster ID, we do a final namespace lookup and map the cluster's
+	// namespace UUID to the namespace name.
+
 	vc, err := cl.VirtualCluster(ctx, clusterID)
 	if err != nil { // if we fail for a vcluster, we try again for a normal cluster
 		c, err := cl.Cluster(ctx, clusterID)
@@ -370,9 +378,17 @@ nameLookup:
 			}
 			return CloudClusterOutputs{}, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
 		}
-		return fromCloudCluster(c), nil
+		ns, err := cl.NamespaceForID(ctx, c.NamespaceUUID)
+		if err != nil {
+			return CloudClusterOutputs{}, err
+		}
+		return fromCloudCluster(a, ns, c), nil
 	}
-	return fromVirtualCluster(vc), nil
+	ns, err := cl.NamespaceForID(ctx, vc.NamespaceUUID)
+	if err != nil {
+		return CloudClusterOutputs{}, err
+	}
+	return fromVirtualCluster(a, ns, vc), nil
 }
 
 func clusterNameToID(ctx context.Context, cl *cloudapi.Client, name string) (string, error) {
@@ -440,10 +456,17 @@ func findNamedCluster(name string, nss []cloudapi.Namespace, vcs []cloudapi.Virt
 
 // fromCloudCluster returns an rpk profile from a cloud cluster, as well
 // as if the cluster requires mtls or sasl.
-func fromCloudCluster(c cloudapi.Cluster) CloudClusterOutputs {
+func fromCloudCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, c cloudapi.Cluster) CloudClusterOutputs {
 	p := config.RpkProfile{
 		Name:      c.Name,
 		FromCloud: true,
+		CloudCluster: config.RpkCloudCluster{
+			Namespace:   ns.Name,
+			ClusterID:   c.ID,
+			ClusterName: c.Name,
+			AuthOrgID:   yAuth.OrgID,
+			AuthKind:    string(yAuth.AnyKind()),
+		},
 	}
 	p.KafkaAPI.Brokers = c.Status.Listeners.Kafka.Default.URLs
 	var isMTLS, isSASL bool
@@ -463,7 +486,7 @@ func fromCloudCluster(c cloudapi.Cluster) CloudClusterOutputs {
 	}
 }
 
-func fromVirtualCluster(vc cloudapi.VirtualCluster) CloudClusterOutputs {
+func fromVirtualCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, vc cloudapi.VirtualCluster) CloudClusterOutputs {
 	p := config.RpkProfile{
 		Name:      vc.Name,
 		FromCloud: true,
@@ -477,6 +500,13 @@ func fromVirtualCluster(vc cloudapi.VirtualCluster) CloudClusterOutputs {
 		AdminAPI: config.RpkAdminAPI{
 			Addresses: []string{vc.Status.Listeners.ConsoleURL},
 			TLS:       new(config.TLS),
+		},
+		CloudCluster: config.RpkCloudCluster{
+			Namespace:   ns.Name,
+			ClusterID:   vc.ID,
+			ClusterName: vc.Name,
+			AuthOrgID:   yAuth.OrgID,
+			AuthKind:    string(yAuth.AnyKind()),
 		},
 	}
 
@@ -550,7 +580,7 @@ type CloudClusterOutputs struct {
 // user. If their cloud account has only one cluster, a profile is created for
 // it automatically. This returns ErrNoCloudClusters if the user has no cloud
 // clusters.
-func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (CloudClusterOutputs, error) {
+func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, cl *cloudapi.Client) (CloudClusterOutputs, error) {
 	org, nss, vcs, cs, err := cl.OrgNamespacesClusters(ctx)
 	if err != nil {
 		return CloudClusterOutputs{}, err
@@ -590,13 +620,21 @@ func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (CloudC
 		if err != nil {
 			return CloudClusterOutputs{}, fmt.Errorf("unable to get cluster %q information: %w", c.ID, err)
 		}
-		o = fromCloudCluster(c)
+		ns, err := cl.NamespaceForID(ctx, c.NamespaceUUID)
+		if err != nil {
+			return CloudClusterOutputs{}, err
+		}
+		o = fromCloudCluster(yAuth, ns, c)
 	} else {
 		c, err := cl.VirtualCluster(ctx, selected.vc.ID)
 		if err != nil {
 			return CloudClusterOutputs{}, fmt.Errorf("unable to get cluster %q information: %w", c.ID, err)
 		}
-		o = fromVirtualCluster(c)
+		ns, err := cl.NamespaceForID(ctx, c.NamespaceUUID)
+		if err != nil {
+			return CloudClusterOutputs{}, err
+		}
+		o = fromVirtualCluster(yAuth, ns, c)
 	}
 	o.Profile.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
 	return o, nil

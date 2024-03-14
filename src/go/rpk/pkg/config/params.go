@@ -1177,10 +1177,10 @@ func (c *Config) promptDeleteOldRpkYaml(fs afero.Fs) error {
 	}
 
 	if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
-		return fmt.Errorf("rpk found invalid cloud auths or profiles, but is not running in a terminal, we cannot prompt if it is ok to delete the old auths or profiles")
+		return nil
 	}
 	if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
-		return fmt.Errorf("rpk found invalid cloud auths or profiles, but is not running in a terminal, we cannot prompt if it is ok to delete the old auths or profiles")
+		return nil
 	}
 
 	if len(deleteAuthNames) > 0 {

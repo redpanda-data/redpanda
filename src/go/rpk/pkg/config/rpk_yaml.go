@@ -185,14 +185,23 @@ func (y *RpkYaml) Profile(name string) *RpkProfile {
 	return nil
 }
 
-// PushProfile pushes a profile to the front and returns the profile's name.
-func (y *RpkYaml) PushProfile(p RpkProfile) string {
+// PushProfile pushes a profile to the front, updates the current profile, and
+// returns the prior profile's auth and the current profile's auth.
+func (y *RpkYaml) PushProfile(p RpkProfile) (priorAuth, currentAuth *RpkCloudAuth) {
+	priorAuth = y.CurrentAuth()
 	y.Profiles = append([]RpkProfile{p}, y.Profiles...)
-	return p.Name
+	if p.FromCloud {
+		y.CurrentCloudAuthOrgID = p.CloudCluster.AuthOrgID
+		y.CurrentCloudAuthKind = p.CloudCluster.AuthKind
+	}
+	currentAuth = y.CurrentAuth()
+	y.CurrentProfile = p.Name
+	return priorAuth, currentAuth
 }
 
 // MoveProfileToFront moves the given profile to the front of the list.
-func (y *RpkYaml) MoveProfileToFront(p *RpkProfile) {
+func (y *RpkYaml) MoveProfileToFront(p *RpkProfile) (priorAuth, currentAuth *RpkCloudAuth) {
+	priorAuth = y.CurrentAuth()
 	reordered := []RpkProfile{*p}
 	for i := range y.Profiles {
 		if &y.Profiles[i] == p {
@@ -201,6 +210,15 @@ func (y *RpkYaml) MoveProfileToFront(p *RpkProfile) {
 		reordered = append(reordered, y.Profiles[i])
 	}
 	y.Profiles = reordered
+	y.CurrentProfile = p.Name
+
+	// If this is a cloud profile, we switch the auth as well.
+	if p.FromCloud {
+		y.CurrentCloudAuthOrgID = p.CloudCluster.AuthOrgID
+		y.CurrentCloudAuthKind = p.CloudCluster.AuthKind
+	}
+	currentAuth = y.CurrentAuth()
+	return priorAuth, currentAuth
 }
 
 // LookupAuth returns an RpkCloudAuth based on the org and kind.
@@ -455,4 +473,27 @@ func (g *RpkGlobals) GetCommandTimeout() time.Duration {
 		return 10 * time.Second
 	}
 	return g.CommandTimeout.Duration
+}
+
+//////////
+// MISC //
+//////////
+
+// MaybePrintAuthSwitchMessage prints a message if the prior and current
+// auths are different.
+func MaybePrintAuthSwitchMessage(priorAuth *RpkCloudAuth, currentAuth *RpkCloudAuth) {
+	if priorAuth == nil {
+		if currentAuth == nil {
+			return
+		}
+		fmt.Println("rpk cloud commands are now talking to organization %q (%s).", currentAuth.Organization, currentAuth.OrgID)
+		return
+	}
+	if currentAuth == nil {
+		fmt.Println("rpk cloud commands are no longer talking to organization %q (%s) and are now talking to a self hosted cluster.", priorAuth.Organization, priorAuth.OrgID)
+		return
+	}
+	if priorAuth.Name != currentAuth.Name {
+		fmt.Println("rpk switched from talking to organization %q (%s) to %q (%s).", priorAuth.Organization, priorAuth.OrgID, currentAuth.Organization, currentAuth.OrgID)
+	}
 }
