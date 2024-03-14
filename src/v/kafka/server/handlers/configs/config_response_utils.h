@@ -13,26 +13,41 @@
 
 #include "cluster/types.h"
 #include "kafka/protocol/describe_configs.h"
-#include "kafka/protocol/create_topics.h"
+#include "kafka/protocol/schemata/create_topics_response.h"
+
+#include <iterator>
+#include <optional>
 
 namespace kafka {
 
-void report_topic_config(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+struct config_response {
+    ss::sstring name{};
+    std::optional<ss::sstring> value{};
+    bool read_only{};
+    bool is_default{};
+    kafka::describe_configs_source config_source{-1};
+    bool is_sensitive{};
+    std::vector<describe_configs_synonym> synonyms{};
+    kafka::describe_configs_type config_type{0};
+    std::optional<ss::sstring> documentation{};
+
+    describe_configs_resource_result to_describe_config();
+    creatable_topic_configs to_create_config();
+};
+
+using config_response_container_t = std::vector<config_response>;
+using config_key_t = std::optional<std::vector<ss::sstring>>;
+
+config_response_container_t make_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties,
+  const config_key_t& config_keys,
   bool include_synonyms,
   bool include_documentation);
 
-void report_broker_config(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+config_response_container_t make_broker_configs(
+  const config_key_t& config_keys,
   bool include_synonyms,
   bool include_documentation);
-
-std::vector<creatable_topic_configs> make_configs(
-  const cluster::metadata_cache& metadata_cache,
-  const cluster::topic_properties& topic_config);
 
 } // namespace kafka

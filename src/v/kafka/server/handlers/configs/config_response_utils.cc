@@ -21,7 +21,7 @@
 namespace kafka {
 
 static bool config_property_requested(
-  const std::optional<std::vector<ss::sstring>>& configuration_keys,
+  const config_key_t& configuration_keys,
   const std::string_view property_name) {
     return !configuration_keys.has_value()
            || std::find(
@@ -46,12 +46,12 @@ static void add_config(
 
 template<typename T>
 static void add_config_if_requested(
-  const describe_configs_resource& resource,
+  const config_key_t& configuration_keys,
   describe_configs_result& result,
   std::string_view name,
   T value,
   describe_configs_source source) {
-    if (config_property_requested(resource.configuration_keys, name)) {
+    if (config_property_requested(configuration_keys, name)) {
         add_config(result, name, value, source);
     }
 }
@@ -136,7 +136,7 @@ consteval describe_configs_type property_config_type() {
 
 template<typename T, typename Func>
 static void add_broker_config(
-  describe_configs_result& result,
+  config_response_container_t& result,
   std::string_view name,
   const config::property<T>& property,
   bool include_synonyms,
@@ -173,7 +173,7 @@ static void add_broker_config(
         }
     }
 
-    result.configs.push_back(describe_configs_resource_result{
+    result.push_back(config_response{
       .name = ss::sstring(name),
       .value = describe_f(property.value()),
       .config_source = src,
@@ -185,14 +185,14 @@ static void add_broker_config(
 
 template<typename T, typename Func>
 static void add_broker_config_if_requested(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+  const config_key_t& config_keys,
+  config_response_container_t& result,
   std::string_view name,
   const config::property<T>& property,
   bool include_synonyms,
   std::optional<ss::sstring> documentation,
   Func&& describe_f) {
-    if (config_property_requested(resource.configuration_keys, name)) {
+    if (config_property_requested(config_keys, name)) {
         add_broker_config(
           result,
           name,
@@ -205,7 +205,7 @@ static void add_broker_config_if_requested(
 
 template<typename T, typename Func>
 static void add_topic_config(
-  describe_configs_result& result,
+  config_response_container_t& result,
   std::string_view default_name,
   const T& default_value,
   std::string_view override_name,
@@ -235,7 +235,7 @@ static void add_topic_config(
         });
     }
 
-    result.configs.push_back(describe_configs_resource_result{
+    result.push_back(config_response{
       .name = ss::sstring(override_name),
       .value = describe_f(overrides.value_or(default_value)),
       .config_source = src,
@@ -266,8 +266,8 @@ override_if_not_default(const std::optional<T>& override, const T& def) {
 
 template<typename T, typename Func>
 void add_topic_config_if_requested(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+  const config_key_t& config_keys,
+  config_response_container_t& result,
   std::string_view default_name,
   const T& default_value,
   std::string_view override_name,
@@ -276,7 +276,7 @@ void add_topic_config_if_requested(
   std::optional<ss::sstring> documentation,
   Func&& describe_f,
   bool hide_default_override = false) {
-    if (config_property_requested(resource.configuration_keys, override_name)) {
+    if (config_property_requested(config_keys, override_name)) {
         std::optional<T> overrides_val;
         if (hide_default_override) {
             overrides_val = override_if_not_default(overrides, default_value);
@@ -299,8 +299,8 @@ void add_topic_config_if_requested(
 // Instantiate explicitly for unit testing
 using describe_int_t = decltype(&describe_as_string<int>);
 template void add_topic_config_if_requested<int, describe_int_t>(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+  const config_key_t& config_keys,
+  config_response_container_t& result,
   std::string_view default_name,
   const int& default_value,
   std::string_view override_name,
@@ -320,7 +320,7 @@ static ss::sstring maybe_print_tristate(const tristate<T>& tri) {
 
 template<typename T>
 static void add_topic_config(
-  describe_configs_result& result,
+  config_response_container_t& result,
   std::string_view default_name,
   const std::optional<T>& default_value,
   std::string_view override_name,
@@ -347,15 +347,15 @@ static void add_topic_config(
 
 template<typename T>
 void add_topic_config_if_requested(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+  const config_key_t& config_keys,
+  config_response_container_t& result,
   std::string_view default_name,
   const std::optional<T>& default_value,
   std::string_view override_name,
   const tristate<T>& overrides,
   bool include_synonyms,
   std::optional<ss::sstring> documentation) {
-    if (config_property_requested(resource.configuration_keys, override_name)) {
+    if (config_property_requested(config_keys, override_name)) {
         add_topic_config(
           result,
           default_name,
@@ -369,8 +369,8 @@ void add_topic_config_if_requested(
 
 // Instantiate explicitly for unit testing
 template void add_topic_config_if_requested(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+  const config_key_t& config_keys,
+  config_response_container_t& result,
   std::string_view default_name,
   const std::optional<int>& default_value,
   std::string_view override_name,
@@ -380,14 +380,14 @@ template void add_topic_config_if_requested(
 
 template<typename T, typename Func>
 static void add_topic_config_if_requested(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+  const config_key_t& config_keys,
+  config_response_container_t& result,
   std::string_view override_name,
   const std::optional<T>& overrides,
   bool include_synonyms,
   std::optional<ss::sstring> documentation,
   Func&& describe_f) {
-    if (config_property_requested(resource.configuration_keys, override_name)) {
+    if (config_property_requested(config_keys, override_name)) {
         add_topic_config(
           result,
           override_name,
@@ -440,18 +440,16 @@ static inline std::optional<ss::sstring> maybe_make_documentation(
                                  : std::nullopt;
 }
 
-void report_topic_config(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+config_response_container_t make_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties,
+  const config_key_t& config_keys,
   bool include_synonyms,
   bool include_documentation) {
-    /**
-     * Kafka properties
-     */
+    config_response_container_t result;
+
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       config::shard_local_cfg().log_compression_type.name(),
       metadata_cache.get_default_compression(),
@@ -464,7 +462,7 @@ void report_topic_config(
       &describe_as_string<model::compression>);
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       config::shard_local_cfg().log_cleanup_policy.name(),
       metadata_cache.get_default_cleanup_policy_bitflags(),
@@ -481,7 +479,7 @@ void report_topic_config(
         ? config::shard_local_cfg().compacted_log_segment_size.desc()
         : config::shard_local_cfg().log_segment_size.desc()};
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       topic_properties.is_compacted()
         ? config::shard_local_cfg().compacted_log_segment_size.name()
@@ -496,7 +494,7 @@ void report_topic_config(
       &describe_as_string<size_t>);
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       config::shard_local_cfg().log_retention_ms.name(),
       metadata_cache.get_default_retention_duration(),
@@ -508,7 +506,7 @@ void report_topic_config(
         config::shard_local_cfg().log_retention_ms.desc()));
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       config::shard_local_cfg().retention_bytes.name(),
       metadata_cache.get_default_retention_bytes(),
@@ -520,7 +518,7 @@ void report_topic_config(
         config::shard_local_cfg().retention_bytes.desc()));
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       config::shard_local_cfg().log_message_timestamp_type.name(),
       metadata_cache.get_default_timestamp_type(),
@@ -533,7 +531,7 @@ void report_topic_config(
       &describe_as_string<model::timestamp_type>);
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       config::shard_local_cfg().kafka_batch_max_bytes.name(),
       metadata_cache.get_default_batch_max_bytes(),
@@ -547,7 +545,7 @@ void report_topic_config(
 
     // Shadow indexing properties
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       topic_property_remote_read,
       model::is_fetch_enabled(
@@ -564,7 +562,7 @@ void report_topic_config(
       true);
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       topic_property_remote_write,
       model::is_archival_enabled(
@@ -581,7 +579,7 @@ void report_topic_config(
       true);
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       topic_property_retention_local_target_bytes,
       metadata_cache.get_default_retention_local_target_bytes(),
@@ -593,7 +591,7 @@ void report_topic_config(
         config::shard_local_cfg().retention_local_target_bytes_default.desc()));
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       topic_property_retention_local_target_ms,
       std::make_optional(
@@ -605,8 +603,7 @@ void report_topic_config(
         include_documentation,
         config::shard_local_cfg().retention_local_target_ms_default.desc()));
 
-    if (config_property_requested(
-          resource.configuration_keys, topic_property_remote_delete)) {
+    if (config_property_requested(config_keys, topic_property_remote_delete)) {
         add_topic_config<bool>(
           result,
           topic_property_remote_delete,
@@ -624,7 +621,7 @@ void report_topic_config(
     }
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       topic_property_segment_ms,
       metadata_cache.get_default_segment_ms(),
@@ -644,7 +641,7 @@ void report_topic_config(
     switch (config::shard_local_cfg().enable_schema_id_validation()) {
     case pandaproxy::schema_registry::schema_id_validation_mode::compat: {
         add_topic_config_if_requested(
-          resource,
+          config_keys,
           result,
           topic_property_record_key_schema_id_validation_compat,
           metadata_cache.get_default_record_key_schema_id_validation(),
@@ -656,7 +653,7 @@ void report_topic_config(
           validation_hide_default_override);
 
         add_topic_config_if_requested(
-          resource,
+          config_keys,
           result,
           topic_property_record_key_subject_name_strategy_compat,
           metadata_cache.get_default_record_key_subject_name_strategy(),
@@ -672,7 +669,7 @@ void report_topic_config(
           validation_hide_default_override);
 
         add_topic_config_if_requested(
-          resource,
+          config_keys,
           result,
           topic_property_record_value_schema_id_validation_compat,
           metadata_cache.get_default_record_value_schema_id_validation(),
@@ -684,7 +681,7 @@ void report_topic_config(
           validation_hide_default_override);
 
         add_topic_config_if_requested(
-          resource,
+          config_keys,
           result,
           topic_property_record_value_subject_name_strategy_compat,
           metadata_cache.get_default_record_value_subject_name_strategy(),
@@ -702,7 +699,7 @@ void report_topic_config(
     }
     case pandaproxy::schema_registry::schema_id_validation_mode::redpanda: {
         add_topic_config_if_requested(
-          resource,
+          config_keys,
           result,
           topic_property_record_key_schema_id_validation,
           metadata_cache.get_default_record_key_schema_id_validation(),
@@ -714,7 +711,7 @@ void report_topic_config(
           validation_hide_default_override);
 
         add_topic_config_if_requested(
-          resource,
+          config_keys,
           result,
           topic_property_record_key_subject_name_strategy,
           metadata_cache.get_default_record_key_subject_name_strategy(),
@@ -731,7 +728,7 @@ void report_topic_config(
           validation_hide_default_override);
 
         add_topic_config_if_requested(
-          resource,
+          config_keys,
           result,
           topic_property_record_value_schema_id_validation,
           metadata_cache.get_default_record_value_schema_id_validation(),
@@ -743,7 +740,7 @@ void report_topic_config(
           validation_hide_default_override);
 
         add_topic_config_if_requested(
-          resource,
+          config_keys,
           result,
           topic_property_record_value_subject_name_strategy,
           metadata_cache.get_default_record_value_subject_name_strategy(),
@@ -766,7 +763,7 @@ void report_topic_config(
     }
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       topic_property_initial_retention_local_target_bytes,
       metadata_cache.get_default_initial_retention_local_target_bytes(),
@@ -779,7 +776,7 @@ void report_topic_config(
           .initial_retention_local_target_bytes_default.desc()));
 
     add_topic_config_if_requested(
-      resource,
+      config_keys,
       result,
       topic_property_initial_retention_local_target_ms,
       metadata_cache.get_default_initial_retention_local_target_ms(),
@@ -790,39 +787,18 @@ void report_topic_config(
         include_documentation,
         config::shard_local_cfg()
           .initial_retention_local_target_ms_default.desc()));
+
+    return result;
 }
 
-void report_broker_config(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+config_response_container_t make_broker_configs(
+  const config_key_t& config_keys,
   bool include_synonyms,
   bool include_documentation) {
-    if (!result.resource_name.empty()) {
-        int32_t broker_id = -1;
-        auto res = std::from_chars(
-          result.resource_name.data(),
-          result.resource_name.data() + result.resource_name.size(), // NOLINT
-          broker_id);
-        if (res.ec == std::errc()) {
-            if (broker_id != *config::node().node_id()) {
-                result.error_code = error_code::invalid_request;
-                result.error_message = ssx::sformat(
-                  "Unexpected broker id {} expected {}",
-                  broker_id,
-                  *config::node().node_id());
-                return;
-            }
-        } else {
-            result.error_code = error_code::invalid_request;
-            result.error_message = ssx::sformat(
-              "Broker id must be an integer but received {}",
-              result.resource_name);
-            return;
-        }
-    }
+    config_response_container_t result;
 
     add_broker_config_if_requested(
-      resource,
+      config_keys,
       result,
       "listeners",
       config::node().kafka_api,
@@ -832,7 +808,7 @@ void report_broker_config(
       &kafka_authn_endpoint_format);
 
     add_broker_config_if_requested(
-      resource,
+      config_keys,
       result,
       "advertised.listeners",
       config::node().advertised_kafka_api_property(),
@@ -843,7 +819,7 @@ void report_broker_config(
       &kafka_endpoint_format);
 
     add_broker_config_if_requested(
-      resource,
+      config_keys,
       result,
       "log.segment.bytes",
       config::shard_local_cfg().log_segment_size,
@@ -854,7 +830,7 @@ void report_broker_config(
       &describe_as_string<size_t>);
 
     add_broker_config_if_requested(
-      resource,
+      config_keys,
       result,
       "log.retention.bytes",
       config::shard_local_cfg().retention_bytes,
@@ -867,7 +843,7 @@ void report_broker_config(
       });
 
     add_broker_config_if_requested(
-      resource,
+      config_keys,
       result,
       "log.retention.ms",
       config::shard_local_cfg().log_retention_ms,
@@ -880,7 +856,7 @@ void report_broker_config(
       });
 
     add_broker_config_if_requested(
-      resource,
+      config_keys,
       result,
       "num.partitions",
       config::shard_local_cfg().default_topic_partitions,
@@ -891,7 +867,7 @@ void report_broker_config(
       &describe_as_string<int32_t>);
 
     add_broker_config_if_requested(
-      resource,
+      config_keys,
       result,
       "default.replication.factor",
       config::shard_local_cfg().default_topic_replication,
@@ -902,7 +878,7 @@ void report_broker_config(
       &describe_as_string<int16_t>);
 
     add_broker_config_if_requested(
-      resource,
+      config_keys,
       result,
       "log.dirs",
       config::node().data_directory,
@@ -914,7 +890,7 @@ void report_broker_config(
       });
 
     add_broker_config_if_requested(
-      resource,
+      config_keys,
       result,
       "auto.create.topics.enable",
       config::shard_local_cfg().auto_create_topics_enabled,
@@ -923,29 +899,32 @@ void report_broker_config(
         include_documentation,
         config::shard_local_cfg().auto_create_topics_enabled.desc()),
       &describe_as_string<bool>);
-}
-
-std::vector<creatable_topic_configs> make_configs(
-  const cluster::metadata_cache& metadata_cache,
-  const cluster::topic_properties& topic_config) {
-    describe_configs_resource resource{};
-    describe_configs_result describe_result{};
-
-    report_topic_config(
-      resource, describe_result, metadata_cache, topic_config, false, false);
-
-    std::vector<creatable_topic_configs> result;
-    result.reserve(describe_result.configs.size());
-
-    for (auto& describe_conf : describe_result.configs) {
-        result.push_back(creatable_topic_configs{
-          .name = std::move(describe_conf.name),
-          .value = std::move(describe_conf.value),
-          .config_source = describe_conf.config_source,
-        });
-    }
 
     return result;
 }
+
+describe_configs_resource_result config_response::to_describe_config() {
+    return {
+      .name = name,
+      .value = value,
+      .read_only = read_only,
+      .is_default = is_default,
+      .config_source = config_source,
+      .is_sensitive = is_sensitive,
+      .synonyms = synonyms,
+      .config_type = config_type,
+      .documentation = documentation,
+    };
+};
+
+creatable_topic_configs config_response::to_create_config() {
+    return {
+      .name = name,
+      .value = value,
+      .read_only = read_only,
+      .config_source = config_source,
+      .is_sensitive = is_sensitive,
+    };
+};
 
 } // namespace kafka

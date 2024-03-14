@@ -137,7 +137,7 @@ public:
             BOOST_TEST(topic_res.configs, "empty config response");
             auto cfg_map = config_map(*topic_res.configs);
             const auto default_topic_properties = config_map(
-              kafka::make_configs(
+              kafka::report_topic_configs(
                 app.metadata_cache.local(),
                 app.metadata_cache.local().get_default_properties()));
             BOOST_TEST(
@@ -156,8 +156,8 @@ public:
         auto cfg = app.metadata_cache.local().get_topic_cfg(
           model::topic_namespace_view{model::kafka_namespace, topic_res.name});
         BOOST_TEST(cfg, "missing topic config");
-        auto cfg_map = config_map(
-          kafka::make_configs(app.metadata_cache.local(), cfg->properties));
+        auto cfg_map = config_map(kafka::report_topic_configs(
+          app.metadata_cache.local(), cfg->properties));
         BOOST_TEST(cfg_map == resp_cfgs, "configs didn't match");
         BOOST_CHECK_EQUAL(
           topic_res.topic_config_error_code, kafka::error_code::none);

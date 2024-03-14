@@ -225,4 +225,25 @@ to_cluster_type(const creatable_topic& t) {
     return ret;
 }
 
+static std::vector<kafka::creatable_topic_configs>
+convert_topic_configs(std::vector<kafka::config_response>&& topic_cfgs) {
+    auto configs = std::vector<kafka::creatable_topic_configs>();
+    configs.reserve(topic_cfgs.size());
+
+    for (auto& conf : topic_cfgs) {
+        configs.push_back(conf.to_create_config());
+    }
+
+    return configs;
+}
+
+std::vector<kafka::creatable_topic_configs> report_topic_configs(
+  const cluster::metadata_cache& metadata_cache,
+  const cluster::topic_properties& topic_properties) {
+    auto topic_cfgs = make_topic_configs(
+      metadata_cache, topic_properties, std::nullopt, false, false);
+
+    return convert_topic_configs(std::move(topic_cfgs));
+}
+
 } // namespace kafka
