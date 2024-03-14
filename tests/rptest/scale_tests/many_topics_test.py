@@ -463,7 +463,7 @@ class ManyTopicsTest(RedpandaTest):
 
     def _decommission_node_unsafely(self):
         """
-        Simulates a common failure of a node dying and a new 
+        Simulates a common failure of a node dying and a new
         node being created to replace it.
         """
         # select a node at random from the current broker set to decom.
@@ -1085,7 +1085,7 @@ class ManyTopicsTest(RedpandaTest):
 
         return topic_prefixes, produce_node_topic_count, consume_node_topic_count
 
-    def _lifecycle_test(self, test):
+    def _lifecycle_test_impl(self, test):
         self._start_initial_broker_set()
 
         tsm = TopicScaleProfileManager()
@@ -1156,38 +1156,38 @@ class ManyTopicsTest(RedpandaTest):
 
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_restart_safely(self):
-        self._lifecycle_test(self._restart_safely)
+        self._lifecycle_test_impl(self._restart_safely)
 
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_restart_unsafely(self):
-        self._lifecycle_test(self._restart_unsafely)
+        self._lifecycle_test_impl(self._restart_unsafely)
 
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rolling_restarts(self):
-        self._lifecycle_test(self._rolling_restarts)
+        self._lifecycle_test_impl(self._rolling_restarts)
 
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_node_safely(self):
-        self._lifecycle_test(self._decommission_node_safely)
+        self._lifecycle_test_impl(self._decommission_node_safely)
 
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_node_unsafely(self):
-        self._lifecycle_test(self._decommission_node_unsafely)
+        self._lifecycle_test_impl(self._decommission_node_unsafely)
 
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_block_s3_on_random_node(self):
         self._target_port = 9000
-        self._lifecycle_test(self._isolate_all_nodes)
+        self._lifecycle_test_impl(self._isolate_all_nodes)
 
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_isolate_random_node_from_cluster(self):
         self._target_port = 33145
-        self._lifecycle_test(self._isolate_random_node)
+        self._lifecycle_test_impl(self._isolate_random_node)
 
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_isolate_random_node_from_clients(self):
         self._target_port = 9092
-        self._lifecycle_test(self._isolate_random_node)
+        self._lifecycle_test_impl(self._isolate_random_node)
 
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_many_topics_throughput(self):
