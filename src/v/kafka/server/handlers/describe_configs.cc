@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/describe_configs.h"
 
 #include "cluster/metadata_cache.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/data_directory_path.h"
 #include "config/node_config.h"
@@ -39,6 +40,64 @@
 #include <type_traits>
 
 namespace kafka {
+
+static void report_topic_config(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  const cluster::metadata_cache& metadata_cache,
+  const cluster::topic_properties& topic_properties,
+  bool include_synonyms,
+  bool include_documentation) {
+    auto res = make_topic_configs(
+      metadata_cache,
+      topic_properties,
+      resource.configuration_keys,
+      include_synonyms,
+      include_documentation);
+
+    result.configs.reserve(res.size());
+    for (auto& conf : res) {
+        result.configs.push_back(conf.to_describe_config());
+    }
+}
+
+static void report_broker_config(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  bool include_synonyms,
+  bool include_documentation) {
+    if (!result.resource_name.empty()) {
+        int32_t broker_id = -1;
+        auto res = std::from_chars(
+          result.resource_name.data(),
+          result.resource_name.data() + result.resource_name.size(), // NOLINT
+          broker_id);
+        if (res.ec == std::errc()) {
+            if (broker_id != *config::node().node_id()) {
+                result.error_code = error_code::invalid_request;
+                result.error_message = ssx::sformat(
+                  "Unexpected broker id {} expected {}",
+                  broker_id,
+                  *config::node().node_id());
+                return;
+            }
+        } else {
+            result.error_code = error_code::invalid_request;
+            result.error_message = ssx::sformat(
+              "Broker id must be an integer but received {}",
+              result.resource_name);
+            return;
+        }
+    }
+
+    auto res = make_broker_configs(
+      resource.configuration_keys, include_synonyms, include_documentation);
+
+    result.configs.reserve(res.size());
+    for (auto& conf : res) {
+        result.configs.push_back(conf.to_describe_config());
+    }
+}
 
 template<>
 ss::future<response_ptr> describe_configs_handler::handle(

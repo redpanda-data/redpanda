@@ -19,9 +19,9 @@
 #include <string_view>
 #include <tuple>
 
-std::optional<ss::sstring>
-get_config(const kafka::describe_configs_result& result, std::string_view key) {
-    for (const auto& config : result.configs) {
+std::optional<ss::sstring> get_config(
+  const kafka::config_response_container_t& result, std::string_view key) {
+    for (const auto& config : result) {
         if (config.name == key) {
             return config.value;
         }
@@ -30,8 +30,8 @@ get_config(const kafka::describe_configs_result& result, std::string_view key) {
 }
 
 kafka::describe_configs_source get_config_source(
-  const kafka::describe_configs_result& result, std::string_view key) {
-    for (const auto& config : result.configs) {
+  const kafka::config_response_container_t& result, std::string_view key) {
+    for (const auto& config : result) {
         if (config.name == key) {
             return config.config_source;
         }
@@ -45,11 +45,10 @@ BOOST_AUTO_TEST_CASE(add_topic_config_if_requested_tristate) {
                                     std::optional<int> default_value,
                                     tristate<int> override_value,
                                     std::optional<ss::sstring> expected_value) {
-        describe_configs_resource resource{};
-        describe_configs_result result{};
+        config_response_container_t result;
 
         add_topic_config_if_requested(
-          resource,
+          std::nullopt,
           result,
           "test-global-broker-config-name",
           default_value,
@@ -80,11 +79,10 @@ BOOST_AUTO_TEST_CASE(add_topic_config_if_requested_optional) {
                                     std::optional<int> override_value,
                                     std::optional<ss::sstring> expected_value,
                                     bool hide_default_override) {
-        describe_configs_resource resource{};
-        describe_configs_result result{};
+        config_response_container_t result;
 
         add_topic_config_if_requested(
-          resource,
+          std::nullopt,
           result,
           "test-global-broker-config-name",
           default_value,
@@ -112,11 +110,10 @@ BOOST_AUTO_TEST_CASE(add_topic_config_if_requested_optional_hide_default) {
       [](
         bool hide_default_override,
         kafka::describe_configs_source expected_source) {
-          describe_configs_resource resource{};
-          describe_configs_result result{};
+          config_response_container_t result;
 
           add_topic_config_if_requested(
-            resource,
+            std::nullopt,
             result,
             "test-global-broker-config-name",
             2,

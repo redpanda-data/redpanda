@@ -97,7 +97,7 @@ append_topic_configs(request_context& ctx, create_topics_response& response) {
           model::topic_namespace_view{model::kafka_namespace, ct_result.name});
         if (cfg) {
             ct_result.configs = std::make_optional(
-              make_configs(ctx.metadata_cache(), cfg->properties));
+              report_topic_configs(ctx.metadata_cache(), cfg->properties));
             ct_result.topic_config_error_code = kafka::error_code::none;
         } else {
             // Topic was sucessfully created but metadata request did not
@@ -215,8 +215,8 @@ ss::future<response_ptr> create_topics_handler::handle(
               if (ctx.header().version >= api_version(5)) {
                   auto default_properties
                     = ctx.metadata_cache().get_default_properties();
-                  result.configs = std::make_optional(
-                    make_configs(ctx.metadata_cache(), default_properties));
+                  result.configs = std::make_optional(report_topic_configs(
+                    ctx.metadata_cache(), default_properties));
               }
               return result;
           });

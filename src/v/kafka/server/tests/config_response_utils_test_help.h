@@ -12,6 +12,7 @@
 #pragma once
 
 #include "kafka/protocol/describe_configs.h"
+#include "kafka/server/handlers/configs/config_response_utils.h"
 
 namespace kafka {
 
@@ -20,8 +21,8 @@ ss::sstring describe_as_string(const T& t);
 
 template<typename T, typename Func>
 void add_topic_config_if_requested(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+  const config_key_t& config_keys,
+  config_response_container_t& result,
   std::string_view default_name,
   const T& default_value,
   std::string_view override_name,
@@ -33,8 +34,8 @@ void add_topic_config_if_requested(
 
 template<typename T>
 void add_topic_config_if_requested(
-  const describe_configs_resource& resource,
-  describe_configs_result& result,
+  const config_key_t& config_keys,
+  config_response_container_t& result,
   std::string_view default_name,
   const std::optional<T>& default_value,
   std::string_view override_name,
