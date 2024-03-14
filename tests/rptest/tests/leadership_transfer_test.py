@@ -132,10 +132,25 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
                 total_leaders = sum(1 if t.leader else 0 for t in tps)
                 total_nodes = set(t.leader for t in tps if t.leader)
 
+                self.logger.debug(
+                    f"Topic: {t.name}, total_leaders: {total_leaders}, total_nodes: {len(total_nodes)}"
+                )
+
                 if len(total_nodes) < nodes:
+                    self.logger.debug(
+                        f"Fewer nodes: {len(total_nodes)} than expected: {nodes}"
+                    )
                     return False
 
                 if total_leaders != t.partition_count:
+                    self.logger.debug(
+                        f"Fewer leaders: {total_leaders} than expected: {t.partition_count}"
+                    )
+                    missing_leaders = [
+                        f"{t.topic}/{t.index}" for t in tps if not t.leader
+                    ]
+                    self.logger.debug(
+                        f"partitions without leaders: {missing_leaders}")
                     return False
 
             return True
