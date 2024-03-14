@@ -361,7 +361,7 @@ struct fuzz_checker {
                 for (auto o = batch.base_offset(); o <= batch.last_offset();
                      ++o) {
                     _self._kafka_offsets.push_back(
-                      model::offset{_self._log_offsets.size()});
+                      model::offset(_self._log_offsets.size()));
                     if (
                       batch.header().type
                       == model::record_batch_type::raft_data) {
@@ -486,8 +486,8 @@ struct fuzz_checker {
         }
 
         // check translation for high watermark (first unoccupied offset)
-        model::offset hwm_lo{_kafka_offsets.size()};
-        model::offset hwm_ko{_log_offsets.size()};
+        model::offset hwm_lo(_kafka_offsets.size());
+        model::offset hwm_ko(_log_offsets.size());
         BOOST_TEST_CONTEXT("With log offset: " << hwm_lo) {
             BOOST_REQUIRE_EQUAL(hwm_ko, _tr->state()->from_log_offset(hwm_lo));
         }

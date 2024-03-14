@@ -56,7 +56,7 @@ ss::future<error_outcome> offsets_recovery_manager::recover(
           model::kafka_consumer_offsets_nt, parent_retry.get_deadline());
     }
     for (size_t i = 0; i < snapshot_paths_per_pid.size(); i++) {
-        auto pid = model::partition_id{i};
+        auto pid = model::partition_id(i);
         auto ntp = model::ntp{
           model::kafka_consumer_offsets_nt.ns,
           model::kafka_consumer_offsets_nt.tp,

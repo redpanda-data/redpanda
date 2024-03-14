@@ -41,7 +41,7 @@ public:
     }
 
     ss::future<offsets_upload_reply> offsets_upload(
-      offsets_upload_request req, rpc::streaming_context& ctx) override {
+      offsets_upload_request req, rpc::streaming_context&) override {
         if (!_offsets_upload_router.local_is_initialized()) {
             co_return offsets_upload_reply{.ec = errc::feature_disabled};
         }
@@ -52,7 +52,7 @@ public:
     }
 
     ss::future<offsets_recovery_reply> offsets_recovery(
-      offsets_recovery_request req, rpc::streaming_context& ctx) override {
+      offsets_recovery_request req, rpc::streaming_context&) override {
         if (!_offsets_recovery_router.local_is_initialized()) {
             co_return offsets_recovery_reply{.ec = errc::feature_disabled};
         }

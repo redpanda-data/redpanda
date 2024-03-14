@@ -177,7 +177,7 @@ ss::future<size_t> netcheck::process_netcheck_reply(
   result<rpc::client_context<netcheck_response>> reply,
   run_fiber_opts& fiber_state,
   model::node_id peer,
-  metrics& m) {
+  metrics&) {
     if (!reply) {
         if (
           reply.error() == rpc::errc::client_request_timeout

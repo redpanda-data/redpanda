@@ -635,7 +635,7 @@ private:
 };
 
 FIXTURE_TEST(test_decommission, partition_balancer_sim_fixture) {
-    for (size_t i = 0; i < 4; ++i) {
+    for (model::node_id::type i = 0; i < 4; ++i) {
         add_node(model::node_id{i}, 100_GiB);
     }
     add_topic("mytopic", 100, 3, 100_MiB);
@@ -647,7 +647,7 @@ FIXTURE_TEST(test_decommission, partition_balancer_sim_fixture) {
 }
 
 FIXTURE_TEST(test_two_decommissions, partition_balancer_sim_fixture) {
-    for (size_t i = 0; i < 5; ++i) {
+    for (model::node_id::type i = 0; i < 5; ++i) {
         add_node(model::node_id{i}, 100_GiB);
     }
     add_topic("mytopic", 200, 3, 100_MiB);
@@ -675,7 +675,7 @@ FIXTURE_TEST(test_two_decommissions, partition_balancer_sim_fixture) {
 }
 
 FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
-    for (size_t i = 0; i < 3; ++i) {
+    for (model::node_id::type i = 0; i < 3; ++i) {
         add_node(model::node_id{i}, 1000_GiB, 4);
     }
 
@@ -699,7 +699,7 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
 
 FIXTURE_TEST(
   test_heterogeneous_racks_full_disk, partition_balancer_sim_fixture) {
-    for (size_t i = 0; i < 3; ++i) {
+    for (model::node_id::type i = 0; i < 3; ++i) {
         add_node(
           model::node_id{i},
           1000_GiB,

@@ -429,7 +429,7 @@ ss::future<std::vector<cloud_storage::topic_manifest>>
 topic_recovery_service::filter_existing_topics(
   std::vector<remote_segment_path> items,
   const recovery_request& request,
-  std::optional<model::ns> filter_ns) {
+  std::optional<model::ns>) {
     absl::flat_hash_map<ss::sstring, absl::flat_hash_set<ss::sstring>>
       topic_index;
 

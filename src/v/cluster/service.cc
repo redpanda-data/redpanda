@@ -622,7 +622,7 @@ service::cancel_node_partition_movements(
 
 ss::future<cancel_partition_movements_reply>
 service::do_cancel_all_partition_movements(
-  cancel_all_partition_movements_request req) {
+  cancel_all_partition_movements_request) {
     auto ret
       = co_await _topics_frontend.local().cancel_moving_all_partition_replicas(
         default_move_interruption_timeout + model::timeout_clock::now());

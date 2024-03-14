@@ -260,7 +260,7 @@ template<typename req_t, typename resp_t, typename handler_t>
 requires IsHandler<req_t, resp_t, handler_t>
 ss::future<resp_t>
 leader_router<req_t, resp_t, handler_t>::find_shard_and_process(
-  req_t req, model::ntp ntp, model::timeout_clock::duration timeout) {
+  req_t req, model::ntp ntp, model::timeout_clock::duration) {
     auto holder = ss::gate::holder(_gate);
     auto shard = _shard_table.local().shard_for(ntp);
     if (unlikely(!shard)) {

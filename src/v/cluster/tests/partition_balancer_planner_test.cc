@@ -15,7 +15,7 @@
 static ss::logger logger("partition_balancer_planner");
 
 // a shorthand to avoid spelling out model::node_id
-static model::node_id n(int64_t id) { return model::node_id{id}; };
+static model::node_id n(model::node_id::type id) { return model::node_id{id}; };
 
 using namespace std::chrono_literals;
 
