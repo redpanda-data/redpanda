@@ -53,23 +53,37 @@ TEST_F_CORO(raft_fixture, test_multi_nodes_cluster_can_elect_leader) {
     });
 }
 
+struct test_parameters {
+    consistency_level c_lvl;
+    bool write_caching;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const test_parameters& tp) {
+        return os << "{consistency level: " << tp.c_lvl
+                  << " write_caching: " << tp.write_caching << "}";
+    }
+};
+
 class all_acks_fixture
   : public raft_fixture
-  , public ::testing::WithParamInterface<consistency_level> {};
+  , public ::testing::WithParamInterface<test_parameters> {};
 
 class relaxed_acks_fixture
   : public raft_fixture
-  , public ::testing::WithParamInterface<consistency_level> {};
+  , public ::testing::WithParamInterface<test_parameters> {};
 
 TEST_P_CORO(all_acks_fixture, validate_replication) {
     co_await create_simple_group(5);
+
+    auto params = GetParam();
+    co_await set_write_caching(params.write_caching);
 
     auto leader = co_await wait_for_leader(10s);
     auto& leader_node = node(leader);
 
     auto result = co_await leader_node.raft()->replicate(
       make_batches({{"k_1", "v_1"}, {"k_2", "v_2"}, {"k_3", "v_3"}}),
-      replicate_options(GetParam()));
+      replicate_options(params.c_lvl));
     ASSERT_TRUE_CORO(result.has_value());
 
     // wait for committed offset to propagate
@@ -85,6 +99,9 @@ TEST_P_CORO(all_acks_fixture, validate_recovery) {
     co_await create_simple_group(5);
     auto leader = co_await wait_for_leader(10s);
 
+    auto params = GetParam();
+    co_await set_write_caching(params.write_caching);
+
     // stop one of the nodes
     co_await stop_node(model::node_id(3));
 
@@ -94,7 +111,7 @@ TEST_P_CORO(all_acks_fixture, validate_recovery) {
     // replicate batches
     auto result = co_await leader_node.raft()->replicate(
       make_batches({{"k_1", "v_1"}, {"k_2", "v_2"}, {"k_3", "v_3"}}),
-      replicate_options(GetParam()));
+      replicate_options(params.c_lvl));
     ASSERT_TRUE_CORO(result.has_value());
 
     auto& new_n3 = add_node(model::node_id(3), model::revision_id(0));
@@ -149,6 +166,9 @@ TEST_P_CORO(
   relaxed_acks_fixture, validate_committed_offset_advancement_after_log_flush) {
     co_await create_simple_group(3);
 
+    auto params = GetParam();
+    co_await set_write_caching(params.write_caching);
+
     // wait for leader
     auto leader = co_await wait_for_leader(10s);
     auto& leader_node = node(leader);
@@ -159,7 +179,7 @@ TEST_P_CORO(
     // advance
     auto committed_offset_before = leader_node.raft()->committed_offset();
     auto result = co_await leader_node.raft()->replicate(
-      make_batches(10, 10, 128), replicate_options(GetParam()));
+      make_batches(10, 10, 128), replicate_options(params.c_lvl));
 
     ASSERT_TRUE_CORO(result.has_value());
     // wait for batches to be replicated on all of the nodes
@@ -188,6 +208,8 @@ TEST_P_CORO(
     // relies on to work correctly. Even with relaxed consistency.
 
     co_await create_simple_group(3);
+    auto params = GetParam();
+    co_await set_write_caching(params.write_caching);
     // wait for leader
     auto leader = co_await wait_for_leader(10s);
     auto& leader_node = node(leader);
@@ -198,7 +220,7 @@ TEST_P_CORO(
 
     // replicate some batches with relaxed consistency
     auto result = co_await leader_node.raft()->replicate(
-      make_batches(10, 10, 128), replicate_options(GetParam()));
+      make_batches(10, 10, 128), replicate_options(params.c_lvl));
 
     ASSERT_TRUE_CORO(result.has_value());
 
@@ -221,6 +243,10 @@ TEST_P_CORO(
     co_await create_simple_group(3);
     // wait for leader
     co_await wait_for_leader(10s);
+
+    auto params = GetParam();
+    co_await set_write_caching(params.write_caching);
+
     for (auto& [_, node] : nodes()) {
         node->on_dispatch([](raft::msg_type t) {
             if (
@@ -236,7 +262,7 @@ TEST_P_CORO(
 
     auto produce_fiber = ss::do_until(
       [&stop] { return stop; },
-      [this] {
+      [this, &params] {
           ss::lw_shared_ptr<consensus> raft;
           for (auto& n : nodes()) {
               if (n.second->raft()->is_leader()) {
@@ -250,7 +276,7 @@ TEST_P_CORO(
           }
           return raft
             ->replicate(
-              make_batches(10, 10, 128), replicate_options(GetParam()))
+              make_batches(10, 10, 128), replicate_options(params.c_lvl))
             .then([this](result<replicate_result> result) {
                 if (result.has_error()) {
                     vlog(
@@ -320,9 +346,13 @@ TEST_P_CORO(
 
     co_await ss::sleep(30s);
     stop = true;
+    vlog(logger().info, "Stopped");
     co_await std::move(produce_fiber);
+    vlog(logger().info, "Stopped produce");
     co_await std::move(l_transfer_fiber);
+    vlog(logger().info, "Stopped transfer");
     co_await std::move(validator_fiber);
+    vlog(logger().info, "Stopped validator");
 
     for (auto& n : nodes()) {
         auto r = n.second->raft();
@@ -344,11 +374,20 @@ INSTANTIATE_TEST_SUITE_P(
   test_with_all_acks,
   all_acks_fixture,
   testing::Values(
-    consistency_level::no_ack,
-    consistency_level::leader_ack,
-    consistency_level::quorum_ack));
+    test_parameters{.c_lvl = consistency_level::no_ack, .write_caching = false},
+    test_parameters{
+      .c_lvl = consistency_level::leader_ack, .write_caching = false},
+    test_parameters{
+      .c_lvl = consistency_level::quorum_ack, .write_caching = false},
+    test_parameters{
+      .c_lvl = consistency_level::quorum_ack, .write_caching = true}));
 
 INSTANTIATE_TEST_SUITE_P(
   test_with_relaxed_acks,
   relaxed_acks_fixture,
-  testing::Values(consistency_level::no_ack, consistency_level::leader_ack));
+  testing::Values(
+    test_parameters{.c_lvl = consistency_level::no_ack, .write_caching = false},
+    test_parameters{
+      .c_lvl = consistency_level::leader_ack, .write_caching = false},
+    test_parameters{
+      .c_lvl = consistency_level::quorum_ack, .write_caching = true}));

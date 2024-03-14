@@ -710,6 +710,14 @@ ss::future<> raft_fixture::reset_background_flushing() const {
     notify_replicas_on_config_change();
 }
 
+ss::future<> raft_fixture::set_write_caching(bool value) const {
+    auto mode = value ? model::write_caching_mode::on
+                      : model::write_caching_mode::off;
+    co_await ss::smp::invoke_on_all(
+      [mode]() { config::shard_local_cfg().write_caching.set_value(mode); });
+    notify_replicas_on_config_change();
+}
+
 std::ostream& operator<<(std::ostream& o, msg_type type) {
     switch (type) {
     case msg_type::append_entries:
