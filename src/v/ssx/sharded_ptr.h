@@ -120,7 +120,7 @@ private:
     }
     ss::shard_id _shard;
     std::vector<std::shared_ptr<T>> _state;
-    mutex _mutex;
+    mutex _mutex{"sharded_ptr"};
 };
 
 } // namespace ssx

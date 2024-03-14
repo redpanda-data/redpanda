@@ -382,7 +382,7 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
 
-    mutex _tx_thrashing_lock;
+    mutex _tx_thrashing_lock{"tm_stm::tx_thrashing_lock"};
     prefix_logger _ctx_log;
 
     ss::future<> apply(const model::record_batch& b) final;

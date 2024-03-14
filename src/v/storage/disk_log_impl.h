@@ -315,7 +315,7 @@ private:
     model::offset _start_offset;
     // Used to serialize updates to _start_offset. See the update_start_offset
     // method.
-    mutex _start_offset_lock;
+    mutex _start_offset_lock{"disk_log_impl::start_offset_lock"};
     lock_manager _lock_mngr;
     std::unique_ptr<storage::probe> _probe;
     failure_probes _failure_probes;
@@ -330,7 +330,7 @@ private:
     // repeatedly takes+releases segment read locks, and without this extra
     // coarse grained lock, the compaction can happen in between steps.
     // See https://github.com/redpanda-data/redpanda/issues/7118
-    mutex _segment_rewrite_lock;
+    mutex _segment_rewrite_lock{"segment_rewrite_lock"};
 
     // Bytes written since last time we requested stm snapshot
     ssx::semaphore_units _stm_dirty_bytes_units;
@@ -344,7 +344,7 @@ private:
     // We need to take this irrespective of whether we're actually rolling or
     // not, in order to ensure that writers wait for a background roll to
     // complete if one is ongoing.
-    mutex _segments_rolling_lock;
+    mutex _segments_rolling_lock{"segments_rolling_lock"};
     // This counter is incremented when the log is truncated. It doesn't
     // count logical truncations and can be incremented multiple times.
     size_t _suffix_truncation_indicator{0};

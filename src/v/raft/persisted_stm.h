@@ -257,7 +257,7 @@ private:
 
     ss::future<> do_write_local_snapshot();
 
-    mutex _op_lock;
+    mutex _op_lock{"persisted_stm::op_lock"};
     std::vector<ss::lw_shared_ptr<expiring_promise<bool>>> _sync_waiters;
     ss::condition_variable _on_snapshot_hydrated;
     bool _snapshot_hydrated{false};

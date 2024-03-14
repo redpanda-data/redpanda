@@ -136,7 +136,7 @@ private:
     std::optional<model::record_batch_reader> _batches;
     absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
     absl::flat_hash_map<vnode, consensus::suppress_heartbeats_guard> _hb_guards;
-    mutex _share_mutex;
+    mutex _share_mutex{"replicate_entries_stm::share"};
     ssx::semaphore _dispatch_sem{0, "raft/repl-dispatch"};
     ss::gate _req_bg;
     ctx_log _ctxlog;

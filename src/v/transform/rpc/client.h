@@ -204,7 +204,8 @@ private:
     ss::sharded<local_service>* _local_service;
     ss::abort_source _as;
     ss::gate _gate;
-    mutex _wasm_binary_max_size_updater_mu;
+    mutex _wasm_binary_max_size_updater_mu{
+      "client::wasm_binary_max_size_updater"};
     config::binding<size_t> _max_wasm_binary_size;
 };
 

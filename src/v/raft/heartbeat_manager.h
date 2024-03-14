@@ -219,7 +219,7 @@ private:
     heartbeat_requests_v2 requests_for_range_v2();
     // private members
 
-    mutex _lock;
+    mutex _lock{"heartbeat_manager"};
     clock_type::time_point _hbeat = clock_type::now();
     config::binding<std::chrono::milliseconds> _heartbeat_interval;
     config::binding<std::chrono::milliseconds> _heartbeat_timeout;

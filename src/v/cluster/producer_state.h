@@ -243,7 +243,7 @@ private:
     model::producer_identity _id;
     raft::group_id _group;
     // serializes all the operations on this producer
-    mutex _op_lock;
+    mutex _op_lock{"producer_state::_op_lock"};
     std::reference_wrapper<producer_state_manager> _parent;
 
     requests _requests;

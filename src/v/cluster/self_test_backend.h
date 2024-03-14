@@ -92,7 +92,7 @@ private:
     ss::gate _gate;
     ss::scheduling_group _st_sg;
     bool _cancelling{false};
-    mutex _lock;
+    mutex _lock{"self_test"};
     self_test::diskcheck _disk_test;
     self_test::netcheck _network_test;
 };

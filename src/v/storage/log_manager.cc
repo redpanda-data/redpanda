@@ -712,7 +712,8 @@ ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
     return ss::smp::submit_to(
              0,
              [dir = std::move(dir)]() mutable {
-                 static thread_local mutex fs_lock;
+                 static thread_local mutex fs_lock{
+                   "dispatch_topic_dir_deletion"};
                  return fs_lock.with([dir = std::move(dir)] {
                      return ss::file_exists(dir).then([dir](bool exists) {
                          if (!exists) {

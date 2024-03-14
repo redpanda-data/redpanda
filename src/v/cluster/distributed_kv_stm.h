@@ -441,7 +441,7 @@ private:
     // there is a consistent state. All readers/updaters grab this
     // in read mode and wait until the snapshot operations finish.
     ss::rwlock _snapshot_lock;
-    mutex _repartitioning_lock;
+    mutex _repartitioning_lock{"distributed_kv_stm::repartitioning_lock"};
 };
 
 } // namespace cluster

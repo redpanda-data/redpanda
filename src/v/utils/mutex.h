@@ -34,10 +34,6 @@ public:
     using time_point = typename ss::semaphore::time_point;
     using units = typename ssx::semaphore_units;
 
-    // TODO: stop using this constructor and force usage of explicit names.
-    mutex()
-      : _sem(1, "mutex") {}
-
     explicit mutex(ss::sstring name)
       : _sem(1, std::move(name)) {}
 

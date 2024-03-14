@@ -527,7 +527,7 @@ private:
         auto lock_it = _tx_locks.find(pid);
         if (lock_it == _tx_locks.end()) {
             auto [new_it, _] = _tx_locks.try_emplace(
-              pid, ss::make_lw_shared<mutex>());
+              pid, ss::make_lw_shared<mutex>("get_tx_lock"));
             lock_it = new_it;
         }
         return lock_it->second;

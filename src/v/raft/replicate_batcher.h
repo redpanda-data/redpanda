@@ -162,7 +162,7 @@ private:
     ssx::semaphore _max_batch_size_sem;
     size_t _max_batch_size;
     std::vector<item_ptr> _item_cache;
-    mutex _lock;
+    mutex _lock{"replicate_batcher"};
     ss::gate _bg;
     // If true, a background flush must be pending. Used to coalesce
     // background flush requests, since one flush dequeues all items

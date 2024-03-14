@@ -395,7 +395,7 @@ private:
         /**
          * Mutex is used to control concurrency per virtual connection.
          */
-        mutex _lock;
+        mutex _lock{"virtual_connection_state::lock"};
         ss::lowres_clock::time_point _last_request_timestamp;
     };
 
