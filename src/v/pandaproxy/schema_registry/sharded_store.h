@@ -118,8 +118,9 @@ public:
     get_subject_version_written_at(subject sub, schema_version version);
 
     ///\brief Delete a subject version
-    ss::future<bool>
-    delete_subject_version(subject sub, schema_version version);
+    /// \param force Override checks for soft-delete first.
+    ss::future<bool> delete_subject_version(
+      subject sub, schema_version version, force f = force::no);
 
     ///\brief Get the global compatibility level.
     ss::future<compatibility_level> get_compatibility();
