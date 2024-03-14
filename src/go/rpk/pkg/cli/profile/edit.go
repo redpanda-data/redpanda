@@ -43,12 +43,23 @@ exist, this command creates it and switches to it.
 			name := args[0]
 			p := y.Profile(name)
 			if p == nil {
-				y.CurrentProfile = y.PushProfile(config.RpkProfile{Name: name})
+				priorAuth, currentAuth := y.PushProfile(config.RpkProfile{Name: name})
+				// Defer, so that if we out.Die, we don't print the switch message
+				// (and we want to print this last anyway).
+				defer config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 				p = y.Profile(name)
 			}
 
+			preFromCloud := p.FromCloud
+			preCloudDetails := p.CloudCluster
 			update, err := rpkos.EditTmpYAMLFile(fs, *p)
 			out.MaybeDieErr(err)
+
+			if preFromCloud {
+				if !update.FromCloud || preCloudDetails != update.CloudCluster {
+					out.Die("cannot change a cloud profile to a non-cloud profile, and cannot change cloud cluster details")
+				}
+			}
 
 			// If a user clears the name by accident, we keep the old name.
 			if update.Name == "" {
