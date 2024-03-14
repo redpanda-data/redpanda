@@ -96,6 +96,8 @@ ss::future<> segment::close() {
     co_await do_flush();
     co_await do_close();
 
+    vassert(_inflight.empty(), "Closing segment with inflight writes.");
+
     if (is_tombstone()) {
         auto size = co_await remove_persistent_state();
         vlog(
@@ -514,14 +516,20 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
           b.header())));
     }
     const auto start_physical_offset = _appender->file_byte_offset();
+    const auto expected_end_physical = start_physical_offset
+                                       + b.header().size_bytes;
+
     _generation_id++;
+
+    // inflight index. trimmed on every dma_write in appender
+    _inflight.emplace(expected_end_physical, b.last_offset());
+
     // proxy serialization to segment_appender
     auto write_fut = _appender->append(b).then(
-      [this, &b, start_physical_offset] {
+      [this, &b, start_physical_offset, expected_end_physical] {
           _tracker.dirty_offset = b.last_offset();
           const auto end_physical_offset = _appender->file_byte_offset();
-          const auto expected_end_physical = start_physical_offset
-                                             + b.header().size_bytes;
+
           vassert(
             end_physical_offset == expected_end_physical,
             "size must be deterministic: end_offset:{}, expected:{}, "
@@ -530,8 +538,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
             expected_end_physical,
             b.header(),
             *this);
-          // inflight index. trimmed on every dma_write in appender
-          _inflight.emplace(end_physical_offset, b.last_offset());
+
           // index the write
           _idx.maybe_track(
             b.header(), ss::lowres_system_clock::now(), start_physical_offset);
