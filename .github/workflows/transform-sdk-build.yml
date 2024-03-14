@@ -120,7 +120,6 @@ jobs:
       - name: Run clippy
         working-directory: src/transform-sdk/rust
         run: cargo clippy --all
-      
 
   integration-test-rust:
     name: Integration Test Rust Transform SDK
@@ -145,6 +144,57 @@ jobs:
         working-directory: src/transform-sdk/rust
         env:
           IDENTITY: target/wasm32-wasi/release/examples/identity.wasm
+        run: |
+          chmod +x wasm-integration-test
+          ./wasm-integration-test -test.v
+
+  test-cpp:
+    name: Test C++ Transform SDK
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:40
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Clang
+        run: dnf install -y clang clang-tools-extra libcxx libcxxabi libcxx-devel libcxxabi-devel cmake
+
+      - name: Run tests
+        working-directory: src/transform-sdk/cpp
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake -B build
+          cmake --build build
+          ctest --output-on-failure --test-dir build
+
+      - name: Run clang-tidy
+        working-directory: src/transform-sdk/cpp
+        run: clang-tidy --quiet -p build/compile_commands.json src/transform_sdk.cc
+
+  integration-test-cpp:
+    name: Integration Test C++ Transform SDK
+    needs: [test-cpp, build-integration-tests]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-21
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Build integration tests
+        working-directory: src/transform-sdk/cpp/examples
+        run: cmake -B build && cmake --build build
+      - name: Download integration test suite
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/cpp/examples
+      - name: Run integration tests
+        working-directory: src/transform-sdk/cpp/examples
+        env:
+          IDENTITY: build/identity_transform
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
