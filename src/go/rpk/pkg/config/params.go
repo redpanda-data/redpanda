@@ -365,8 +365,6 @@ var xflags = map[string]xflag{
 			p := y.Profile(y.CurrentProfile)
 			auth := p.VirtualAuth()
 			if auth == nil {
-				// If there is no actual current auth, we the virtual
-				// yaml has a "default" CloudCurrentAuth with no org.
 				auth = y.CurrentAuth()
 			}
 			auth.ClientID = v
