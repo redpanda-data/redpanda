@@ -47,11 +47,10 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			for i := range y.CloudAuths {
 				a := &y.CloudAuths[i]
 				name := a.Name
-				if a.OrgID == y.CurrentCloudAuthOrgID && string(a.AnyKind()) == y.CurrentCloudAuthKind {
+				if a.OrgID == y.CurrentCloudAuthOrgID && a.Kind == y.CurrentCloudAuthKind {
 					name += "*"
 				}
-				kind, _ := a.Kind()
-				tw.Print(name, kind, a.Organization, a.OrgID)
+				tw.Print(name, a.Kind, a.Organization, a.OrgID)
 			}
 		},
 	}

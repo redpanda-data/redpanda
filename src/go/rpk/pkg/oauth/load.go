@@ -52,11 +52,11 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 	if authVir.HasClientCredentials() {
 		zap.L().Sugar().Debug("logging in using client credential flow")
 		tok, isNewToken, err = ClientCredentialFlow(ctx, cl, authVir, forceReload)
-		authKind = string(config.CloudAuthClientCredentials)
+		authKind = config.CloudAuthClientCredentials
 	} else {
 		zap.L().Sugar().Debug("logging in using OAUTH flow")
 		tok, isNewToken, err = DeviceFlow(ctx, cl, authVir, noUI, forceReload)
-		authKind = string(config.CloudAuthSSO)
+		authKind = config.CloudAuthSSO
 	}
 	if err != nil {
 		return nil, authVir, false, false, fmt.Errorf("unable to retrieve a cloud token: %w", err)
@@ -115,7 +115,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 		if org.ID != yAuthAct.OrgID {
 			yAuthVir := yVir.CurrentAuth()
 			// The virtual auth here *should* have the same org and kind.
-			if yAuthAct.OrgID != yAuthVir.OrgID || yAuthAct.AnyKind() != yAuthVir.AnyKind() {
+			if yAuthAct.OrgID != yAuthVir.OrgID || yAuthAct.Kind != yAuthVir.Kind {
 				panic("params invariant: virtual auth != actual auth")
 			}
 			yAct.CurrentCloudAuthOrgID = ""
@@ -249,7 +249,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 				var dropped bool
 				for i := range y.CloudAuths {
 					a := &y.CloudAuths[i]
-					if a.OrgID == org.ID && string(a.AnyKind()) == authKind {
+					if a.OrgID == org.ID && a.Kind == authKind {
 						y.DropAuth(*newAuth)
 						dropped = true
 						break
@@ -263,7 +263,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 				}
 				for i := range y.CloudAuths {
 					a := &y.CloudAuths[i]
-					if a.OrgID == org.ID && string(a.AnyKind()) == authKind {
+					if a.OrgID == org.ID && a.Kind == authKind {
 						*newAuth = a
 						y.MakeAuthCurrent(*newAuth)
 						return
@@ -277,13 +277,16 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 		// We always write the auth name / org / orgID and update the
 		// current auth. This is a no-op if check just above did stuff.
 
+		authVir.Kind = authKind
+		authAct.Kind = authKind
+
 		authVir.Organization = org.Name
 		authAct.Organization = org.Name
 
 		authVir.OrgID = org.ID
 		authAct.OrgID = org.ID
 
-		name := fmt.Sprintf("%s-%s %s", authVir.OrgID, authVir.AnyKind(), authVir.Organization)
+		name := fmt.Sprintf("%s-%s %s", authVir.OrgID, authVir.Kind, authVir.Organization)
 
 		authVir.Name = name
 		authAct.Name = name
@@ -291,8 +294,8 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 		yVir.CurrentCloudAuthOrgID = org.ID
 		yAct.CurrentCloudAuthOrgID = org.ID
 
-		yVir.CurrentCloudAuthKind = string(authVir.AnyKind())
-		yAct.CurrentCloudAuthKind = string(authVir.AnyKind()) // we use the virtual kind here -- clientID is updated below
+		yVir.CurrentCloudAuthKind = authVir.Kind
+		yAct.CurrentCloudAuthKind = authVir.Kind // we use the virtual kind here -- clientID is updated below
 
 	}
 
