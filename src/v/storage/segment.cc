@@ -340,7 +340,7 @@ ss::future<> segment::do_flush() {
         // outstanding flushes once the one executed later in terms of offset
         // finishes we guarantee that all previous flushes finished.
         _tracker.committed_offset = std::max(o, _tracker.committed_offset);
-        _tracker.stable_offset = _tracker.committed_offset;
+        _tracker.stable_offset = std::max(o, _tracker.stable_offset);
         _reader->set_file_size(std::max(fsize, _reader->file_size()));
         clear_cached_disk_usage();
     });
