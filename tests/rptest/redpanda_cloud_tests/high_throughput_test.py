@@ -1305,7 +1305,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                                self.msg_size) as tgen:
             tgen.wait_for_traffic(acked=self.msg_count,
                                   timeout_sec=self.msg_timeout)
-            wait_until(lambda: nodes_report_cloud_segments(self.redpanda, 100),
+            wait_until(lambda: nodes_report_cloud_segments(
+                self.redpanda, 100, self.topic),
                        timeout_sec=600,
                        backoff_sec=5)
             tgen._producer.wait_for_offset_map()
