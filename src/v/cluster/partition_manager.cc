@@ -31,8 +31,6 @@
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/async-clear.h"
-#include "storage/offset_translator.h"
-#include "storage/offset_translator_state.h"
 #include "storage/segment_utils.h"
 #include "storage/snapshot.h"
 #include "utils/retry_chain_node.h"

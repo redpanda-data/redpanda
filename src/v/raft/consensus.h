@@ -37,7 +37,6 @@
 #include "raft/types.h"
 #include "ssx/semaphore.h"
 #include "storage/log.h"
-#include "storage/offset_translator_state.h"
 #include "storage/snapshot.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
@@ -407,11 +406,6 @@ public:
     probe& get_probe() { return *_probe; };
 
     ss::shared_ptr<storage::log> log() { return _log; }
-
-    ss::lw_shared_ptr<const storage::offset_translator_state>
-    get_offset_translator_state() {
-        return _log->get_offset_translator_state();
-    }
 
     /**
      * In our raft implementation heartbeats are sent outside of the consensus

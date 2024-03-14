@@ -80,7 +80,7 @@ admin_server::get_transactions_inner_handler(
     }
     ss::httpd::partition_json::transactions ans;
 
-    auto offset_translator = partition->get_offset_translator_state();
+    auto log = partition->log();
 
     for (auto& [id, tx_info] : transactions.value()) {
         ss::httpd::partition_json::producer_identity pid;
@@ -91,8 +91,7 @@ admin_server::get_transactions_inner_handler(
         new_tx.producer_id = pid;
         new_tx.status = ss::sstring(tx_info.get_status());
 
-        new_tx.lso_bound = offset_translator->from_log_offset(
-          tx_info.lso_bound);
+        new_tx.lso_bound = log->from_log_offset(tx_info.lso_bound);
 
         auto staleness = tx_info.get_staleness();
         // -1 is returned for expired transaction, because how

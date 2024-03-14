@@ -20,7 +20,7 @@
 #include "raft/errc.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/types.h"
-#include "storage/kvstore.h"
+#include "storage/disk_log_impl.h"
 
 #include <seastar/core/future.hh>
 
@@ -279,8 +279,9 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
     }
     raft_state.node = ptr->self().id();
     raft_state.term = ptr->term();
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*ptr->log());
     raft_state.offset_translator_state = fmt::format(
-      "{}", *(ptr->get_offset_translator_state()));
+      "{}", *(disk_log.offset_translator().state()));
     raft_state.group_configuration = fmt::format("{}", ptr->config());
     raft_state.confirmed_term = ptr->confirmed_term();
     raft_state.flushed_offset = ptr->flushed_offset();

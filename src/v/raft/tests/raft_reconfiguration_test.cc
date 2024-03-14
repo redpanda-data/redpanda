@@ -145,16 +145,14 @@ void assert_offset_translator_state_is_consistent(
     std::vector<int64_t> deltas;
     for (model::offset o :
          boost::irange<model::offset>(start_offset, dirty_offset)) {
-        deltas.push_back(first_raft->get_offset_translator_state()->delta(o));
+        deltas.push_back(first_raft->log()->delta(o));
     }
 
     for (auto it = std::next(nodes.begin()); it != nodes.end(); ++it) {
         auto idx = 0;
         for (model::offset o :
              boost::irange<model::offset>(start_offset, dirty_offset)) {
-            ASSERT_EQ(
-              it->second->raft()->get_offset_translator_state()->delta(o),
-              deltas[idx++]);
+            ASSERT_EQ(it->second->raft()->log()->delta(o), deltas[idx++]);
         }
     }
 }

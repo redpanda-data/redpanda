@@ -217,10 +217,9 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
                   return model::offset(0);
               }
               auto log_offset = _partition.high_watermark();
-              auto translator = _partition.get_offset_translator_state();
 
               try {
-                  return translator->from_log_offset(log_offset);
+                  return _partition.log()->from_log_offset(log_offset);
               } catch (std::runtime_error& e) {
                   // Offset translation will throw if nothing was committed
                   // to the partition or if the offset is outside the

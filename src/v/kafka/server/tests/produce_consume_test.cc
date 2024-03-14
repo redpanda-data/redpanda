@@ -1016,8 +1016,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
             [ntp](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
                 auto start_offset = partition->log()->offsets().start_offset;
-                return partition->get_offset_translator_state()
-                  ->from_log_offset(start_offset);
+                return partition->log()->from_log_offset(start_offset);
             })
           .get();
     BOOST_REQUIRE_EQUAL(earliest_kafka_offset, partition_resp.end_offset);
