@@ -108,8 +108,7 @@ You are not currently in a profile; rpk talks to a localhost:9092 cluster by def
 			// having a different org's auth.
 			if p != nil && clearedProfile {
 				priorAuth := p.ActualAuth()
-				fmt.Printf(`rpk swapped away from your prior profile %q because that profile authenticates
-with organization %q (%s).
+				fmt.Printf(`rpk swapped away from your prior profile %q which authenticated with organization %q (%s).
 
 To create a new rpk profile for a cluster in this organization, try either:
     rpk profile create --from-cloud
