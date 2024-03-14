@@ -42,7 +42,12 @@ ss::future<config_frontend::patch_result> config_frontend::patch(
           .errc = errc::no_leader_controller, .version = config_version_unset};
     }
     if (leader == _self) {
-        co_return co_await do_patch(std::move(update), timeout);
+        co_return co_await container().invoke_on(
+          cluster::config_frontend::version_shard,
+          [update{std::move(update)},
+           timeout](cluster::config_frontend& cfg_frontend) mutable {
+              return cfg_frontend.do_patch(std::move(update), timeout);
+          });
     } else {
         auto res = co_await _connections.local()
                      .with_node_client<cluster::controller_client_protocol>(
