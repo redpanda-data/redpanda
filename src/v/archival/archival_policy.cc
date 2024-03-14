@@ -88,7 +88,7 @@ std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
 }
 
 std::ostream& operator<<(std::ostream& os, candidate_creation_error err) {
-    os << "compacted candidate creation error: ";
+    os << "candidate creation error: ";
     switch (err) {
     case candidate_creation_error::no_segments_collected:
         return os << "no segments collected";
