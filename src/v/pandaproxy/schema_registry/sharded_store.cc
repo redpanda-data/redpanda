@@ -477,12 +477,12 @@ sharded_store::get_subject_version_written_at(subject sub, schema_version ver) {
       });
 }
 
-ss::future<bool>
-sharded_store::delete_subject_version(subject sub, schema_version ver) {
+ss::future<bool> sharded_store::delete_subject_version(
+  subject sub, schema_version ver, force force) {
     auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      sub_shard, _smp_opts, [sub{std::move(sub)}, ver](store& s) {
-          return s.delete_subject_version(sub, ver).value();
+      sub_shard, _smp_opts, [sub{std::move(sub)}, ver, force](store& s) {
+          return s.delete_subject_version(sub, ver, force).value();
       });
 }
 
