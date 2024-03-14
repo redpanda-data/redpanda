@@ -135,11 +135,16 @@ ss::future<std::error_code> config_frontend::set_status(
 /**
  * For config_manager to notify the frontend of what the next version
  * number should be.
- *
- * Must be called on version_shard (the shard where writes are
- * serialized to generate version numbers).
  */
-void config_frontend::set_next_version(config_version v) {
+ss::future<> config_frontend::set_next_version(config_version v) {
+    co_return co_await container().invoke_on(
+      cluster::config_frontend::version_shard,
+      [v](cluster::config_frontend& cfg_frontend) mutable {
+          return cfg_frontend.do_set_next_version(v);
+      });
+}
+
+void config_frontend::do_set_next_version(config_version v) {
     vassert(
       ss::this_shard_id() == version_shard, "Must be called on version_shard");
     vlog(clusterlog.trace, "set_next_version: {}", v);
