@@ -369,7 +369,7 @@ namespace {
 
 static constexpr std::string_view community_msg = R"banner(
 
-Welcome to the Redpanda community!
+Welcome to the Bluepanda community!
 
 Documentation: https://docs.redpanda.com - Product documentation site
 GitHub Discussion: https://github.com/redpanda-data/redpanda/discussions - Longer, more involved discussions
