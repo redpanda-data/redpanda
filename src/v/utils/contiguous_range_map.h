@@ -212,6 +212,11 @@ public:
      */
     size_t capacity() const { return _values.size(); }
 
+    /**
+     * Returns true when map has no elements
+     */
+    bool empty() const { return _size == 0; }
+
     iterator begin() { return iter<false>(this, _values.begin()); }
     iterator end() { return iter<false>(this, _values.end()); }
 
