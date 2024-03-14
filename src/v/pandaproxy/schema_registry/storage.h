@@ -1243,7 +1243,7 @@ struct consume_to_store {
             if (!val) {
                 try {
                     co_await _store.delete_subject_version(
-                      key.sub, key.version);
+                      key.sub, key.version, force::yes);
                 } catch (exception& e) {
                     // This is allowed to throw not_found errors.  When we
                     // tombstone all the records referring to a particular

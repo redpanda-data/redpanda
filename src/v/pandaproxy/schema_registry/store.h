@@ -428,16 +428,19 @@ public:
     }
 
     ///\brief Delete a subject version.
-    result<bool>
-    delete_subject_version(const subject& sub, schema_version version) {
+    result<bool> delete_subject_version(
+      const subject& sub, schema_version version, force force = force::no) {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
         auto& versions = sub_it->second.versions;
         auto v_it = BOOST_OUTCOME_TRYX(
           get_version_iter(*sub_it, version, include_deleted::yes));
 
-        // A hard delete should always be preceded by a soft delete
-        if (!(v_it->deleted || sub_it->second.deleted)) {
+        // A hard delete should always be preceded by a soft delete,
+        // however, due to compaction, it's possible that a soft-delete does not
+        // appear on the topic. The topic is still correct, so override the
+        // check if force::yes.
+        if (!force && !(v_it->deleted || sub_it->second.deleted)) {
             return not_deleted(sub, version);
         }
 
