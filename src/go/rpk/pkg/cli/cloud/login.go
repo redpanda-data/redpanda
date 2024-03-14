@@ -86,7 +86,7 @@ and then re-specify the client credentials next time you log in.`)
 				out.MaybeDie(err, "unable to save client ID and client secret: %v", err)
 			}
 
-			fmt.Printf("Successfully logged into organization %q (%s) via %s.\n", authAct.Organization, authAct.OrgID, authAct.AnyKind())
+			fmt.Printf("Successfully logged into organization %q (%s) via %s.\n", authAct.Organization, authAct.OrgID, authAct.Kind)
 			fmt.Println()
 
 			// No profile, or you have profiles but none were selected.

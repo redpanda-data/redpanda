@@ -44,8 +44,7 @@ func defaultVirtualRpkYaml() (RpkYaml, error) {
 	}
 	y.CurrentProfile = y.Profiles[0].Name
 	y.CurrentCloudAuthOrgID = y.CloudAuths[0].OrgID
-	k, _ := y.CloudAuths[0].Kind()
-	y.CurrentCloudAuthKind = string(k)
+	y.CurrentCloudAuthKind = y.CloudAuths[0].Kind
 	return y, nil
 }
 
@@ -162,6 +161,7 @@ type (
 		Name         string `json:"name" yaml:"name"`
 		Organization string `json:"organization,omitempty" yaml:"organization,omitempty"`
 		OrgID        string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
+		Kind         string `json:"kind,omitempty" yaml:"kind,omitempty"`
 		AuthToken    string `json:"auth_token,omitempty" yaml:"auth_token,omitempty"`
 		RefreshToken string `json:"refresh_token,omitempty" yaml:"refresh_token,omitempty"`
 		ClientID     string `json:"client_id,omitempty" yaml:"client_id,omitempty"`
@@ -224,8 +224,7 @@ func (y *RpkYaml) MoveProfileToFront(p *RpkProfile) (priorAuth, currentAuth *Rpk
 // LookupAuth returns an RpkCloudAuth based on the org and kind.
 func (y *RpkYaml) LookupAuth(org, kind string) *RpkCloudAuth {
 	for i, a := range y.CloudAuths {
-		k, _ := a.Kind()
-		if a.OrgID == org && string(k) == kind {
+		if a.OrgID == org && a.Kind == kind {
 			return &y.CloudAuths[i]
 		}
 	}
@@ -236,8 +235,7 @@ func (y *RpkYaml) LookupAuth(org, kind string) *RpkCloudAuth {
 func (y *RpkYaml) PushNewAuth(a RpkCloudAuth) {
 	y.CloudAuths = append([]RpkCloudAuth{a}, y.CloudAuths...)
 	y.CurrentCloudAuthOrgID = a.OrgID
-	k, _ := a.Kind()
-	y.CurrentCloudAuthKind = string(k)
+	y.CurrentCloudAuthKind = a.Kind
 }
 
 // MakeAuthCurrent finds the given auth, moves it to the front, and updates
@@ -258,7 +256,7 @@ func (y *RpkYaml) MakeAuthCurrent(a *RpkCloudAuth) {
 	}
 	y.CloudAuths = reordered
 	y.CurrentCloudAuthOrgID = a.OrgID
-	y.CurrentCloudAuthKind = string(a.AnyKind())
+	y.CurrentCloudAuthKind = a.Kind
 }
 
 // DropAuth removes the given auth from the list of auths. If this was the
@@ -272,7 +270,7 @@ func (y *RpkYaml) DropAuth(a *RpkCloudAuth) {
 		dropped = append(dropped, y.CloudAuths[i])
 	}
 	y.CloudAuths = dropped
-	if y.CurrentCloudAuthOrgID == a.OrgID && y.CurrentCloudAuthKind == string(a.AnyKind()) {
+	if y.CurrentCloudAuthOrgID == a.OrgID && y.CurrentCloudAuthKind == a.Kind {
 		y.CurrentCloudAuthOrgID = ""
 		y.CurrentCloudAuthKind = ""
 	}
@@ -284,32 +282,11 @@ func (y *RpkYaml) CurrentAuth() *RpkCloudAuth {
 	return y.LookupAuth(y.CurrentCloudAuthOrgID, y.CurrentCloudAuthKind)
 }
 
-type CloudAuthKind string
-
 const (
-	CloudAuthUninitialized     CloudAuthKind = "uninitialized"
-	CloudAuthSSO               CloudAuthKind = "sso"
-	CloudAuthClientCredentials CloudAuthKind = "client-credentials"
+	CloudAuthUninitialized     = ""
+	CloudAuthSSO               = "sso"
+	CloudAuthClientCredentials = "client-credentials"
 )
-
-// Kind returns either a known auth kind or "uninitialized".
-func (a *RpkCloudAuth) Kind() (CloudAuthKind, bool) {
-	switch {
-	case a.ClientID != "" && a.ClientSecret != "":
-		return CloudAuthClientCredentials, true
-	case a.ClientID != "":
-		return CloudAuthSSO, true
-	default:
-		return CloudAuthUninitialized, false
-	}
-}
-
-// AnyKind returns the kind, or "uninitialized" if the kind is not known.
-// This is the same as Kind but without a second return.
-func (a *RpkCloudAuth) AnyKind() CloudAuthKind {
-	k, _ := a.Kind()
-	return k
-}
 
 ///////////
 // FUNCS //
@@ -367,8 +344,7 @@ func (p *RpkProfile) VirtualAuth() *RpkCloudAuth {
 
 // HasClientCredentials returns if both ClientID and ClientSecret are empty.
 func (a *RpkCloudAuth) HasClientCredentials() bool {
-	k, _ := a.Kind()
-	return k == CloudAuthClientCredentials
+	return a.Kind == CloudAuthClientCredentials
 }
 
 // Equals returns if the two cloud auths are the same, which is true
@@ -442,7 +418,7 @@ func (c *RpkCloudCluster) HasAuth(a RpkCloudAuth) bool {
 	if c == nil {
 		return false
 	}
-	return c.AuthOrgID == a.OrgID && c.AuthKind == string(a.AnyKind())
+	return c.AuthOrgID == a.OrgID && c.AuthKind == a.Kind
 }
 
 ////////////////

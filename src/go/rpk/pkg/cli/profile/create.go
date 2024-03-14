@@ -466,7 +466,7 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, c cloud
 			ClusterID:   c.ID,
 			ClusterName: c.Name,
 			AuthOrgID:   yAuth.OrgID,
-			AuthKind:    string(yAuth.AnyKind()),
+			AuthKind:    yAuth.Kind,
 		},
 	}
 	p.KafkaAPI.Brokers = c.Status.Listeners.Kafka.Default.URLs
@@ -507,7 +507,7 @@ func fromVirtualCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, vc cl
 			ClusterID:   vc.ID,
 			ClusterName: vc.Name,
 			AuthOrgID:   yAuth.OrgID,
-			AuthKind:    string(yAuth.AnyKind()),
+			AuthKind:    yAuth.Kind,
 		},
 	}
 

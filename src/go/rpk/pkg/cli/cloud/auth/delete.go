@@ -107,7 +107,7 @@ cluster via SASL credentials.
 			err = y.Write(fs)
 			out.MaybeDie(err, "unable to write rpk.yaml: %v", err)
 
-			wasUsing := y.CurrentCloudAuthOrgID == deleted.OrgID && y.CurrentCloudAuthKind == string(deleted.AnyKind())
+			wasUsing := y.CurrentCloudAuthOrgID == deleted.OrgID && y.CurrentCloudAuthKind == deleted.Kind
 
 			fmt.Printf("Deleted cloud auth %q.\n", name)
 			if wasUsing {

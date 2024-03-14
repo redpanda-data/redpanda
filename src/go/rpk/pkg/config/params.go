@@ -362,8 +362,10 @@ var xflags = map[string]xflag{
 		"anystring",
 		xkindCloudAuth,
 		func(v string, y *RpkYaml) error {
-			p := y.Profile(y.CurrentProfile)
-			auth := p.VirtualAuth()
+			var auth *RpkCloudAuth
+			if p := y.Profile(y.CurrentProfile); p != nil {
+				auth = p.VirtualAuth()
+			}
 			if auth == nil {
 				auth = y.CurrentAuth()
 			}
@@ -376,8 +378,10 @@ var xflags = map[string]xflag{
 		"anysecret",
 		xkindCloudAuth,
 		func(v string, y *RpkYaml) error {
-			p := y.Profile(y.CurrentProfile)
-			auth := p.VirtualAuth()
+			var auth *RpkCloudAuth
+			if p := y.Profile(y.CurrentProfile); p != nil {
+				auth = p.VirtualAuth()
+			}
 			if auth == nil {
 				auth = y.CurrentAuth()
 			}
@@ -953,6 +957,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.ensureRpkCloudAuth()           // ensure Virtual rpk.yaml has a current auth
 	c.mergeRedpandaIntoRpk()         // merge redpanda.yaml rpk section back into rpk.yaml KafkaAPI,AdminAPI,Tuners (picks up redpanda.yaml extras sections were empty)
 	p.backcompatFlagsToOverrides()
+	c.addConfigToProfiles()
 	if err := p.processOverrides(c); err != nil { // override rpk.yaml profile from env&flags
 		return nil, err
 	}
@@ -960,7 +965,6 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.addUnsetRedpandaDefaults(false) // merge from Virtual redpanda.yaml redpanda section to rpk section (picks up original redpanda.yaml defaults)
 	c.mergeRedpandaIntoRpk()          // merge from redpanda.yaml rpk section back to rpk.yaml, picks up final redpanda.yaml defaults
 	c.fixSchemePorts()                // strip any scheme, default any missing ports
-	c.addConfigToProfiles()
 	c.parseDevOverrides()
 
 	if !c.rpkYaml.Globals.NoDefaultCluster {
@@ -1278,7 +1282,7 @@ func (c *Config) cleanupBadYaml(fs afero.Fs) error {
 		dupeFirstAuth := make(map[string]struct{})
 		keepAuths := y.CloudAuths[:0]
 		for _, a := range y.CloudAuths {
-			if a.AnyKind() == CloudAuthUninitialized {
+			if a.Kind == CloudAuthUninitialized { // empty string
 				continue
 			}
 			if a.Name == "" || a.Organization == "" || a.OrgID == "" {
@@ -1403,7 +1407,7 @@ func (c *Config) ensureRpkCloudAuth() {
 
 	def := DefaultRpkCloudAuth()
 	dst.CurrentCloudAuthOrgID = def.OrgID
-	dst.CurrentCloudAuthKind = string(CloudAuthUninitialized)
+	dst.CurrentCloudAuthKind = CloudAuthUninitialized
 	auth = dst.CurrentAuth()
 	if auth != nil {
 		return
