@@ -412,14 +412,10 @@ service::config_status(config_status_request&& req, rpc::streaming_context&) {
 
 ss::future<config_update_reply>
 service::config_update(config_update_request&& req, rpc::streaming_context&) {
-    auto patch_result = co_await _config_frontend.invoke_on(
-      config_frontend::version_shard,
-      [req = std::move(req)](config_frontend& fe) mutable {
-          return fe.patch(
-            std::move(req),
-            config::shard_local_cfg().replicate_append_timeout_ms()
-              + model::timeout_clock::now());
-      });
+    auto patch_result = co_await _config_frontend.local().patch(
+      std::move(req),
+      config::shard_local_cfg().replicate_append_timeout_ms()
+        + model::timeout_clock::now());
 
     if (patch_result.errc.category() == error_category()) {
         co_return config_update_reply{
