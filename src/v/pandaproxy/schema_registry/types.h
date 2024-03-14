@@ -32,6 +32,7 @@ using permanent_delete = ss::bool_class<struct delete_tag>;
 using include_deleted = ss::bool_class<struct include_deleted_tag>;
 using is_deleted = ss::bool_class<struct is_deleted_tag>;
 using default_to_global = ss::bool_class<struct default_to_global_tag>;
+using force = ss::bool_class<struct force_tag>;
 
 template<typename E>
 std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
