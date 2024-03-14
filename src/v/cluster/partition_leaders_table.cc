@@ -379,7 +379,7 @@ partition_leaders_table::get_leaders() const {
         for (const auto& [p_id, leader_info] : partition_leaders) {
             leader_info_t info{
               .tp_ns = tp_ns,
-              .pid = p_id,
+              .pid = model::partition_id(p_id),
               .current_leader = leader_info.current_leader,
               .previous_leader = leader_info.previous_leader,
               .last_stable_leader_term = leader_info.last_stable_leader_term,
