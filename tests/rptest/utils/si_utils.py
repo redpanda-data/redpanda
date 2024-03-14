@@ -528,24 +528,43 @@ def get_expected_ntp_restored_size(nodes_segments_report: NodeSegmentsReport,
     return expected_restored_sizes
 
 
-def nodes_report_cloud_segments(redpanda, target_segments):
+def nodes_report_cloud_segments(redpanda, target_segments, topic_name=None):
     """
     Returns true if the nodes in the cluster collectively report having
-    above the given number of segments.
+    above the given number of segments for a specific topic, if provided.
 
+    Args:
+        redpanda: The Redpanda instance.
+        target_segments (int): The target number of segments to check for.
+        topic_name (str, optional): The name of the topic for which to count the segments.
+    
     NOTE: we're explicitly not checking the manifest via cloud client
     because we expect the number of items in our bucket to be quite large,
     and for associated ListObjects calls to take a long time.
     """
     try:
-        num_segments = redpanda.metric_sum(
-            "redpanda_cloud_storage_segments",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        redpanda.logger.info(
+        metrics_endpoint = MetricsEndpoint.PUBLIC_METRICS
+        if topic_name:
+            num_segments = redpanda.metric_sum(
+                "redpanda_cloud_storage_segments",
+                metrics_endpoint=metrics_endpoint,
+                topic=topic_name)
+        else:
+            # Fetch total number of segments without filtering by specific topic
+            num_segments = redpanda.metric_sum(
+                "redpanda_cloud_storage_segments",
+                metrics_endpoint=metrics_endpoint)
+
+        message = (f"Cluster metrics for topic '{topic_name}' report "
+                   f"{num_segments} / {target_segments} cloud segments") \
+            if topic_name else \
             f"Cluster metrics report {num_segments} / {target_segments} cloud segments"
-        )
-    except:
+
+        redpanda.logger.info(message)
+    except Exception as e:
+        redpanda.logger.error(f"Error fetching metrics: {e}")
         return False
+
     return num_segments >= target_segments
 
 
