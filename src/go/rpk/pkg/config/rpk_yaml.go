@@ -342,9 +342,9 @@ func (p *RpkProfile) VirtualAuth() *RpkCloudAuth {
 	return p.c.rpkYaml.LookupAuth(p.CloudCluster.AuthOrgID, p.CloudCluster.AuthKind)
 }
 
-// HasClientCredentials returns if both ClientID and ClientSecret are empty.
+// HasClientCredentials returns if both ClientID and ClientSecret are non-empty.
 func (a *RpkCloudAuth) HasClientCredentials() bool {
-	return a.Kind == CloudAuthClientCredentials
+	return a.ClientID != "" && a.ClientSecret != ""
 }
 
 // Equals returns if the two cloud auths are the same, which is true

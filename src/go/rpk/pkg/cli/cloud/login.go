@@ -65,10 +65,10 @@ token and client ID is always synced.
 		Run: func(cmd *cobra.Command, _ []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			y, err := cfg.ActualRpkYamlOrEmpty()
+			yAct, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
-			p := y.Profile(y.CurrentProfile)
+			p := yAct.Profile(yAct.CurrentProfile)
 			authAct, authVir, clearedProfile, _, err := oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()), noBrowser, true, cfg.DevOverrides().CloudAPIURL)
 			if err != nil {
 				fmt.Printf("Unable to login to Redpanda Cloud (%v).\n", err)
@@ -82,7 +82,7 @@ and then re-specify the client credentials next time you log in.`)
 			}
 			if authVir.HasClientCredentials() && save {
 				authAct.ClientSecret = authVir.ClientSecret
-				err = y.Write(fs)
+				err = yAct.Write(fs)
 				out.MaybeDie(err, "unable to save client ID and client secret: %v", err)
 			}
 
@@ -92,14 +92,14 @@ and then re-specify the client credentials next time you log in.`)
 			// No profile, or you have profiles but none were selected.
 			// * If --no-profile, print a message and exit
 			// * Otherwise, prompt for cloud cluster selection
-			if p == nil || len(y.Profiles) == 0 {
+			if p == nil || len(yAct.Profiles) == 0 {
 				if noProfile {
 					fmt.Println(`To create an rpk profile to talk to an existing cloud cluster, use 'rpk cloud cluster select'.
 To learn more about profiles, check 'rpk profile --help'.
 You are not currently in a profile; rpk talks to a localhost:9092 cluster by default.`)
 				} else {
 					fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process, feel free to ctrl+c now.")
-					err = profile.CreateFlow(cmd.Context(), fs, cfg, y, "", "", "prompt", false, nil, "", "")
+					err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
 					profile.MaybeDieExistingName(err)
 				}
 				return
@@ -122,7 +122,7 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 `)
 				} else {
 					fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process, feel free to ctrl+c now.")
-					err = profile.CreateFlow(cmd.Context(), fs, cfg, y, "", "", "prompt", false, nil, "", "")
+					err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
 					profile.MaybeDieExistingName(err)
 				}
 				return
@@ -161,7 +161,7 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 			fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process and keep your current profile, feel free to ctrl+c now.")
 
 			// Prompt and switch.
-			err = profile.CreateFlow(cmd.Context(), fs, cfg, y, "", "", "prompt", false, nil, "", "")
+			err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
 			profile.MaybeDieExistingName(err)
 		},
 	}

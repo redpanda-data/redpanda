@@ -91,8 +91,9 @@ rpk always switches to the newly created profile.
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
-			y, err := cfg.ActualRpkYamlOrEmpty()
+			yAct, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load rpk.yaml: %v", err)
+			authVir := cfg.VirtualRpkYaml().CurrentAuth()
 
 			var name string
 			if len(args) > 0 {
@@ -105,7 +106,7 @@ rpk always switches to the newly created profile.
 				out.Die("profile name cannot be empty unless using %v or %v", fromCloudFlag, fromContainerFlag)
 			}
 
-			err = CreateFlow(cmd.Context(), fs, cfg, y, fromRedpanda, fromProfile, fromCloud, fromContainer, set, name, description)
+			err = CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, fromRedpanda, fromProfile, fromCloud, fromContainer, set, name, description)
 			if ee := (*ProfileExistsError)(nil); errors.As(err, &ee) {
 				fmt.Printf(`Unable to automatically create profile %q due to a name conflict with
 an existing self-hosted profile, please rename that profile or use a different
@@ -146,6 +147,7 @@ func CreateFlow(
 	fs afero.Fs,
 	cfg *config.Config,
 	yAct *config.RpkYaml,
+	yAuthVir *config.RpkCloudAuth,
 	fromRedpanda string,
 	fromProfile string,
 	fromCloud string,
@@ -190,7 +192,7 @@ func CreateFlow(
 
 	case fromCloud != "":
 		var err error
-		o, err = createCloudProfile(ctx, yAct, cfg, fromCloud)
+		o, err = createCloudProfile(ctx, yAuthVir, cfg, fromCloud)
 		if err != nil {
 			return err
 		}
@@ -315,25 +317,24 @@ func CreateFlow(
 	return nil
 }
 
-func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterIDOrName string) (CloudClusterOutputs, error) {
-	a := y.CurrentAuth()
-	if a == nil {
+func createCloudProfile(ctx context.Context, yAuthVir *config.RpkCloudAuth, cfg *config.Config, clusterIDOrName string) (CloudClusterOutputs, error) {
+	if yAuthVir == nil {
 		return CloudClusterOutputs{}, errors.New("missing current coud auth, please login with 'rpk cloud login'")
 	}
 
 	overrides := cfg.DevOverrides()
 	auth0Cl := auth0.NewClient(overrides)
-	expired, err := oauth.ValidateToken(a.AuthToken, auth0Cl.Audience(), a.ClientID)
+	expired, err := oauth.ValidateToken(yAuthVir.AuthToken, auth0Cl.Audience(), yAuthVir.ClientID)
 	if err != nil {
 		return CloudClusterOutputs{}, err
 	}
 	if expired {
 		return CloudClusterOutputs{}, errors.New("current cloud auth has expired, please re-login with 'rpk cloud login'")
 	}
-	cl := cloudapi.NewClient(overrides.CloudAPIURL, a.AuthToken, httpapi.ReqTimeout(10*time.Second))
+	cl := cloudapi.NewClient(overrides.CloudAPIURL, yAuthVir.AuthToken, httpapi.ReqTimeout(10*time.Second))
 
 	if clusterIDOrName == "prompt" {
-		return PromptCloudClusterProfile(ctx, a, cl)
+		return PromptCloudClusterProfile(ctx, yAuthVir, cl)
 	}
 
 	var (
@@ -383,13 +384,13 @@ nameLookup:
 		if err != nil {
 			return CloudClusterOutputs{}, err
 		}
-		return fromCloudCluster(a, ns, c), nil
+		return fromCloudCluster(yAuthVir, ns, c), nil
 	}
 	ns, err := cl.NamespaceForID(ctx, vc.NamespaceUUID)
 	if err != nil {
 		return CloudClusterOutputs{}, err
 	}
-	return fromVirtualCluster(a, ns, vc), nil
+	return fromVirtualCluster(yAuthVir, ns, vc), nil
 }
 
 func clusterNameToID(ctx context.Context, cl *cloudapi.Client, name string) (string, error) {
