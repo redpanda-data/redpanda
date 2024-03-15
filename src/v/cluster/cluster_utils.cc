@@ -184,6 +184,22 @@ get_allocation_domain(const model::topic_namespace_view tp_ns) {
     return partition_allocation_domains::common;
 }
 
+std::optional<model::revision_id> log_revision_on_node(
+  const topic_table::partition_replicas_view& replicas_view,
+  model::node_id node) {
+    if (contains_node(replicas_view.orig_replicas(), node)) {
+        return replicas_view.revisions().at(node);
+    }
+
+    if (
+      replicas_view.update
+      && contains_node(replicas_view.update->get_target_replicas(), node)) {
+        return replicas_view.update->get_update_revision();
+    }
+
+    return std::nullopt;
+}
+
 std::optional<shard_placement_target> placement_target_on_node(
   const topic_table::partition_replicas_view& replicas_view,
   model::node_id node) {

@@ -288,6 +288,12 @@ find_shard_on_node(const replicas_t& replicas, model::node_id node) {
     return std::nullopt;
 }
 
+/// Calculates expected log revision of a partition with replicas assignment
+/// determined by partition_replicas_view on a particular node (if the partition
+/// is expected to be there)
+std::optional<model::revision_id> log_revision_on_node(
+  const topic_table::partition_replicas_view&, model::node_id);
+
 /// Calculates the partition placement target (i.e. log revision and shard id)
 /// on a particular node of a partition with replicas assignment determined by
 /// partition_replicas_view (including effects of an in-progress or cancelled
