@@ -320,6 +320,19 @@ FIXTURE_TEST(test_mark_clean_empty, batch_cache_test_fixture) {
     index.mark_clean(model::offset(1000));
 }
 
+/// Test marking a single batch as clean to catch any potential off-by-one
+/// errors or incorrect use of `<=` vs `<` comparison operators.
+FIXTURE_TEST(test_mark_clean_min_edge, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
+
+    index.put(make_batch(1, model::offset(10)), is_dirty_entry::yes);
+    index.mark_clean(model::offset(10));
+
+    cache.clear();
+    BOOST_CHECK(index.empty());
+    BOOST_CHECK(cache.empty());
+}
+
 FIXTURE_TEST(test_mark_clean_edge, batch_cache_test_fixture) {
     storage::batch_cache_index index(cache);
 
