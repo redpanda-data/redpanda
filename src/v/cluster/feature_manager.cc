@@ -23,6 +23,7 @@
 #include "model/timeout_clock.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "raft/group_manager.h"
+#include "security/role_store.h"
 
 #include <absl/algorithm/container.h>
 
@@ -39,6 +40,7 @@ feature_manager::feature_manager(
   ss::sharded<health_monitor_backend>& hm_backend,
   ss::sharded<features::feature_table>& table,
   ss::sharded<rpc::connection_cache>& connection_cache,
+  ss::sharded<security::role_store>& role_store,
   raft::group_id raft0_group)
   : _stm(stm)
   , _as(as)
@@ -48,6 +50,7 @@ feature_manager::feature_manager(
   , _hm_backend(hm_backend)
   , _feature_table(table)
   , _connection_cache(connection_cache)
+  , _role_store(role_store)
   , _raft0_group(raft0_group)
   , _barrier_state(
       *config::node().node_id(),
@@ -221,11 +224,15 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
                    != pandaproxy::schema_registry::schema_id_validation_mode::
                      none;
         };
+        auto has_roles = !_role_store.local()
+                            .range([](auto const&) { return true; })
+                            .empty();
         if (
           cfg.audit_enabled || cfg.cloud_storage_enabled
           || cfg.partition_autobalancing_mode
                == model::partition_autobalancing_mode::continuous
-          || has_gssapi() || has_oidc() || has_schma_id_validation()) {
+          || has_gssapi() || has_oidc() || has_schma_id_validation()
+          || has_roles) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(

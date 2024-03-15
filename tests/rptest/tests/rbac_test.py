@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
+
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
@@ -177,3 +179,40 @@ class RBACTelemetryTest(RBACTestBase):
                    timeout_sec=20,
                    backoff_sec=1)
         self.metrics.stop()
+
+
+class RBACLicenseTest(RBACTestBase):
+    LICENSE_CHECK_INTERVAL_SEC = 1
+
+    def __init__(self, test_ctx, **kwargs):
+        super().__init__(test_ctx, **kwargs)
+        self.redpanda.set_environment({
+            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
+            f'{self.LICENSE_CHECK_INTERVAL_SEC}'
+        })
+
+    def _has_license_nag(self):
+        return self.redpanda.search_log_any("Enterprise feature(s).*")
+
+    def _license_nag_is_set(self):
+        return self.redpanda.search_log_all(
+            f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
+        )
+
+    @cluster(num_nodes=1)
+    def test_license_nag(self):
+        wait_until(self._license_nag_is_set,
+                   timeout_sec=30,
+                   err_msg="Failed to set license nag internal")
+
+        self.logger.debug("Ensuring no license nag")
+        time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        assert not self._has_license_nag()
+
+        self.logger.debug("Adding a role")
+        self.superuser_admin.create_role(role=self.role_name0)
+
+        self.logger.debug("Waiting for license nag")
+        wait_until(self._has_license_nag,
+                   timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
+                   err_msg="License nag failed to appear")
