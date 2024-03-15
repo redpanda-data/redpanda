@@ -230,6 +230,10 @@ RUN /ocsf-server && rm /ocsf-server
 
 FROM librdkafka as final
 
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/python-deps /
+RUN /python-deps
+ENV PATH="/opt/.ducktape-venv/bin:$PATH"
+
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/teleport /
 RUN /teleport && \
     rm /teleport && \
