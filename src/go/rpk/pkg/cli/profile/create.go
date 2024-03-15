@@ -195,6 +195,10 @@ func CreateFlow(
 		var err error
 		o, err = createCloudProfile(ctx, yAuthVir, cfg, fromCloud)
 		if err != nil {
+			if err == ErrNoCloudClusters {
+				fmt.Println("Your cloud account has no clusters available to select, avoiding creating a cloud profile.")
+				return nil
+			}
 			return err
 		}
 		p = &o.Profile
@@ -569,9 +573,6 @@ Consume messages from the %[1]s topic as a guide for your next steps:
 `, serverlessHelloTopic)
 }
 
-// ErrNoCloudClusters is returned when the user has no cloud clusters.
-var ErrNoCloudClusters = errors.New("no clusters found")
-
 // CloudClusterOutputs contains outputs from a cloud based profile.
 type CloudClusterOutputs struct {
 	Profile       config.RpkProfile
@@ -603,6 +604,9 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 	// Always prompt, even if there is only one option.
 	ncs := combineClusterNames(nss, vcs, cs)
 	names := ncs.names()
+	if len(names) == 0 {
+		return CloudClusterOutputs{}, ErrNoCloudClusters
+	}
 	idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to talk to?")
 	if err != nil {
 		return CloudClusterOutputs{}, err
