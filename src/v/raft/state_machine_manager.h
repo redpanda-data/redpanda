@@ -175,6 +175,11 @@ private:
         auto serde_fields() { return std::tie(snapshot_map); }
     };
 
+    ss::future<> apply_snapshot_to_stm(
+      ss::lw_shared_ptr<state_machine_entry> stm_entry,
+      const managed_snapshot& snapshot,
+      model::offset last_included_offset);
+
     consensus* _raft;
     ctx_log _log;
     mutex _apply_mutex;
