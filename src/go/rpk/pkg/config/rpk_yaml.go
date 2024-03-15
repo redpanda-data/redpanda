@@ -433,13 +433,13 @@ func (c *RpkCloudCluster) IsServerless() bool {
 
 func (c *RpkCloudCluster) CheckClusterURL() (string, error) {
 	if c == nil {
-		return "", fmt.Errorf("cluster information not present in current profile. Please delete and re-create the current profile with 'rpk profile create --from-cloud'")
+		return "", fmt.Errorf("cluster information not present in current profile; please delete and re-create the current profile with 'rpk profile create --from-cloud'")
 	}
 	if c.ClusterURL == "" {
 		if c.ClusterID != "" {
-			return "", fmt.Errorf("cluster URL not present in profile. Please delete and re-create the current profile with 'rpk profile create <name> --from-cloud=%v'", c.ClusterID)
+			return "", fmt.Errorf("cluster URL not present in profile; please delete and re-create the current profile with 'rpk profile create <name> --from-cloud=%v'", c.ClusterID)
 		}
-		return "", errors.New("cluster URL not present in profile. Please delete and re-create the current profile with 'rpk profile create --from-cloud' and selecting this cluster")
+		return "", errors.New("cluster URL not present in profile; please delete and re-create the current profile with 'rpk profile create --from-cloud' and selecting this cluster")
 	}
 	return c.ClusterURL, nil
 }
