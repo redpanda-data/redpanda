@@ -7,26 +7,28 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package auth
+package cluster
 
 import (
-	"fmt"
-
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:               "edit [NAME]",
-		Short:             "Edit an rpk auth",
-		Args:              cobra.MaximumNArgs(1),
-		Hidden:            true,
-		ValidArgsFunction: validAuths(fs, p),
-		Run: func(*cobra.Command, []string) {
-			fmt.Println("edit is deprecated, rpk now fully manages auth fields.")
-		},
+		Use:   "cluster",
+		Short: "Manage rpk cloud clusters",
+		Long: `Manage rpk cloud clusters.
+
+This command allows you to manage cloud clusters, as well as easily switch
+between which cluster you are talking to.
+`,
 	}
+
+	cmd.AddCommand(
+		newSelectCommand(fs, p),
+	)
+
 	return cmd
 }

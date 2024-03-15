@@ -10,9 +10,13 @@
 package profile
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -51,6 +55,8 @@ your configuration in one place.
 	return cmd
 }
 
+// ValidProfiles is a cobra.ValidArgsFunction that returns the names of
+// existing profiles.
 func ValidProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		cfg, err := p.Load(fs)
@@ -70,4 +76,34 @@ func ValidProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string,
 		}
 		return names, cobra.ShellCompDirectiveDefault
 	}
+}
+
+/////////////////////
+// Cloud profile helpers
+/////////////////////
+
+// RpkCloudProfileName is the default profile name used when a user creates a
+// cloud cluster profile with no name, or
+const RpkCloudProfileName = "rpk-cloud"
+
+// ProfileExistsError is returned from CreateFlow if trying to create a profile
+// that already exists.
+type ProfileExistsError struct {
+	Name string
+}
+
+func (e *ProfileExistsError) Error() string {
+	return fmt.Sprintf("profile %q already exists", e.Name)
+}
+
+// MaybeDieExistingName exits if err is non-nil, but if err is
+// ProfileExistsError, this exits with a more detailed message.
+func MaybeDieExistingName(err error) {
+	if ee := (*ProfileExistsError)(nil); errors.As(err, &ee) {
+		fmt.Printf(`Unable to automatically create profile %[1]q due to a name conflict with
+an existing profile, please rename the existing profile.
+`, ee.Name)
+		os.Exit(1)
+	}
+	out.MaybeDieErr(err)
 }

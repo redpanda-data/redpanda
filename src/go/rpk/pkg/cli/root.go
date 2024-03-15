@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -75,7 +76,14 @@ func Execute() {
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	}
 	pf := root.PersistentFlags()
-	pf.StringVar(&p.ConfigFlag, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
+
+	searchLocal, _ := os.UserConfigDir()
+	if searchLocal == "" {
+		searchLocal = "~/.config"
+	}
+	searchLocal = filepath.Join(searchLocal, "rpk", "rpk.yaml")
+
+	pf.StringVar(&p.ConfigFlag, "config", "", fmt.Sprintf("Redpanda or rpk config file; default search paths are %q, $PWD/redpanda.yaml, and /etc/redpanda/redpanda.yaml", searchLocal))
 	pf.StringVar(&p.Profile, "profile", "", "rpk profile to use")
 	pf.StringArrayVarP(&p.FlagOverrides, "config-opt", "X", nil, "Override rpk configuration settings; '-X help' for detail or '-X list' for terser detail")
 	pf.BoolVarP(&p.DebugLogs, "verbose", "v", false, "Enable verbose logging")

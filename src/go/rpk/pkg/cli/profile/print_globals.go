@@ -26,7 +26,7 @@ func newPrintGlobalsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:  cobra.ExactArgs(0),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			y := cfg.VirtualRpkYaml()
 			m, err := yaml.Marshal(y.Globals)

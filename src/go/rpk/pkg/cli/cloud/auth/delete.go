@@ -11,6 +11,7 @@ package auth
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -19,20 +20,24 @@ import (
 )
 
 func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "delete [NAME]",
 		Short: "Delete an rpk cloud auth",
 		Long: `Delete an rpk cloud auth.
 
 Deleting a cloud auth removes it from the rpk.yaml file. If the deleted
 auth was the current auth, rpk will use a default SSO auth the next time
-you try to login and, if the login is successful, will safe that auth.
+you try to login and save that auth.
+
+If you delete an auth that is used by profiles, affected profiles have
+their auth cleared and you will only be able to access the profile's
+cluster via SASL credentials.
 `,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: validAuths(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			y, ok := cfg.ActualRpkYaml()
 			if !ok {
@@ -40,38 +45,80 @@ you try to login and, if the login is successful, will safe that auth.
 			}
 
 			name := args[0]
-			wasUsing, err := deleteAuth(fs, y, name)
-			out.MaybeDieErr(err)
+
+			nameMatches := findName(y, name)
+			if len(nameMatches) == 0 {
+				out.Die("cloud auth %q does not exist", name)
+			}
+
+			// We could have deleted multiple if there is a bug in
+			// the logic or if the file is corrupted somehow; we do
+			// exact name match and should prevent creation of
+			// duplicates. But, if we delete multiple, that's ok;
+			// we just print information about the first.
+			keep := y.CloudAuths[:0]
+			var deleted config.RpkCloudAuth
+			for i := range y.CloudAuths {
+				a := y.CloudAuths[i]
+				if _, ok := nameMatches[i]; ok {
+					deleted = a
+				} else {
+					keep = append(keep, a)
+				}
+			}
+			y.CloudAuths = keep
+
+			// Gather all profiles containing this auth and
+			// prompt confirm if the user is ok with deleting
+			// auth attached to profiles.
+			attachedProfiles := make(map[int]struct{})
+			for i, p := range y.Profiles {
+				if p.CloudCluster.HasAuth(deleted) {
+					attachedProfiles[i] = struct{}{}
+				}
+			}
+
+			if len(attachedProfiles) > 0 {
+				names := make([]string, 0, len(attachedProfiles))
+				for i := range attachedProfiles {
+					names = append(names, y.Profiles[i].Name)
+				}
+				sort.Strings(names)
+				fmt.Println("The following profiles are currently using this cloud auth:")
+				for _, name := range names {
+					fmt.Printf("  %s\n", name)
+				}
+				fmt.Println("Deleting this auth will mean the profiles no longer can talk to the cloud.")
+				fmt.Println("The profiles will only be able to talk to the cluster via SASL credentials,")
+				fmt.Println("which you must set in the profile manually via 'rpk profile edit'.")
+				c, err := out.Confirm("Do you still want to delete this auth and remove it from the affected profiles?")
+				out.MaybeDie(err, "unable to confirm deletion: %v", err)
+				if !c {
+					fmt.Println("Deletion canceled.")
+					return
+				}
+				for i := range attachedProfiles {
+					p := &y.Profiles[i]
+					p.FromCloud = false
+					p.CloudCluster.AuthOrgID = ""
+					p.CloudCluster.AuthKind = ""
+				}
+			}
+
+			err = y.Write(fs)
+			out.MaybeDie(err, "unable to write rpk.yaml: %v", err)
+
+			wasUsing := y.CurrentCloudAuthOrgID == deleted.OrgID && y.CurrentCloudAuthKind == deleted.Kind
+
 			fmt.Printf("Deleted cloud auth %q.\n", name)
 			if wasUsing {
-				fmt.Println("The current profile was using this cloud auth.\nYou may need to reauthenticate before the current profile can be used again.")
+				fmt.Print(`This was the current auth selected.
+
+You may need to reauthenticate with 'rpk cloud login' or swap to a different
+profile that uses different auth using cloud API commands again.
+`)
 			}
 		},
 	}
-}
-
-func deleteAuth(
-	fs afero.Fs,
-	y *config.RpkYaml,
-	name string,
-) (wasUsing bool, err error) {
-	idx := -1
-	for i, a := range y.CloudAuths {
-		if a.Name == name {
-			idx = i
-			break
-		}
-	}
-	if idx == -1 {
-		return false, fmt.Errorf("cloud auth %q does not exist", name)
-	}
-	y.CloudAuths = append(y.CloudAuths[:idx], y.CloudAuths[idx+1:]...)
-	ca := y.Auth(y.CurrentCloudAuth)
-	if wasUsing = ca != nil && ca.Name == name; wasUsing {
-		y.CurrentCloudAuth = ""
-	}
-	if err := y.Write(fs); err != nil {
-		return false, fmt.Errorf("unable to write rpk file: %v", err)
-	}
-	return wasUsing, nil
+	return cmd
 }

@@ -35,8 +35,8 @@ the cluster leader handles the request.
 			}
 
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-			out.CheckExitCloudAdmin(p)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			config.CheckExitCloudAdmin(p)
 
 			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)

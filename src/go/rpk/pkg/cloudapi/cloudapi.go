@@ -11,7 +11,11 @@
 package cloudapi
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 )
@@ -55,3 +59,87 @@ type NameIDs []NameID
 
 // Sort allows for sorting before returning from API requests.
 func (nids NameIDs) Sort() { sort.Slice(nids, func(i, j int) bool { return nids[i].Less(nids[j]) }) }
+
+// OrgNamespacesClusters is a helper function to concurrently query many APIs
+// at once. Any non-nil error result is returned, as well as an errors.Joined
+// error.
+func (cl *Client) OrgNamespacesClusters(ctx context.Context) (Organization, Namespaces, VirtualClusters, Clusters, error) {
+	var (
+		org    Organization
+		orgErr error
+		nss    Namespaces
+		nsErr  error
+		vcs    VirtualClusters
+		vcErr  error
+		cs     Clusters
+		cErr   error
+
+		wg sync.WaitGroup
+	)
+	ctx, cancel := context.WithCancel(ctx)
+
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		org, orgErr = cl.Organization(ctx)
+		if orgErr != nil {
+			orgErr = fmt.Errorf("organization query failure: %w", orgErr)
+			cancel()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		nss, nsErr = cl.Namespaces(ctx)
+		if nsErr != nil {
+			nsErr = fmt.Errorf("namespace query failure: %w", nsErr)
+			cancel()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		vcs, vcErr = cl.VirtualClusters(ctx)
+		if vcErr != nil {
+			vcErr = fmt.Errorf("virtual cluster query failure: %w", vcErr)
+			cancel()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		cs, cErr = cl.Clusters(ctx)
+		if cErr != nil {
+			cErr = fmt.Errorf("cluster query failure: %w", cErr)
+			cancel()
+		}
+	}()
+	wg.Wait()
+
+	err := errors.Join(orgErr, nsErr, vcErr, cErr)
+	return org, nss, vcs, cs, err
+}
+
+// NamespacedCluster ties a cluster or vcluster to its namespace.
+type NamespacedCluster struct {
+	Namespace  Namespace
+	Cluster    Cluster
+	VCluster   VirtualCluster
+	IsVCluster bool
+}
+
+// FindNamespace finds a namespace by its ID, if it exists.
+func FindNamespace(nsID string, nss Namespaces) Namespace {
+	for _, ns := range nss {
+		if ns.ID == nsID {
+			return ns
+		}
+	}
+	return Namespace{}
+}
+
+// NamespaceForID lists all namespaces to find the namespace for the given ID.
+func (cl *Client) NamespaceForID(ctx context.Context, nsid string) (Namespace, error) {
+	nss, err := cl.Namespaces(ctx)
+	if err != nil {
+		return Namespace{}, fmt.Errorf("unable to request namespaces: %w", err)
+	}
+	return FindNamespace(nsid, nss), nil
+}

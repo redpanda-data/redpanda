@@ -30,7 +30,7 @@ func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDieErr(common.WrapIfConnErr(err))
 
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			y, ok := cfg.ActualRpkYaml()
 			var withProfile bool

@@ -39,7 +39,7 @@ format 'set key value' if you intend to only set one key.
 		ValidArgsFunction: validSetGlobalArgs,
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			// Other set commands are `set key value`, if people
 			// use that older form by force of habit, we support

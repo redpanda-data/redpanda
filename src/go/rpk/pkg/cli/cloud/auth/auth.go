@@ -64,3 +64,13 @@ func validAuths(fs afero.Fs, p *config.Params) func(*cobra.Command, []string, st
 		return names, cobra.ShellCompDirectiveDefault
 	}
 }
+
+func findName(y *config.RpkYaml, name string) map[int]struct{} {
+	nameMatches := make(map[int]struct{})
+	for i, a := range y.CloudAuths {
+		if a.Name == name {
+			nameMatches[i] = struct{}{}
+		}
+	}
+	return nameMatches
+}

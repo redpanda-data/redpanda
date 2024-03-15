@@ -21,6 +21,7 @@ import (
 
 func newLogoutCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var clear bool
+	var all bool
 	cmd := &cobra.Command{
 		Use:   "logout",
 		Short: "Log out from Redpanda cloud",
@@ -29,6 +30,9 @@ func newLogoutCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 This command deletes your cloud auth token. If you want to log out entirely and
 switch to a different organization, you can use the --clear-credentials flag to
 additionally clear your client ID and client secret.
+
+You can use the --all flag to log out of all organizations you may be logged
+into.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -36,31 +40,50 @@ additionally clear your client ID and client secret.
 				out.Die("detected rpk is running with sudo; please execute this command without sudo to avoid saving the cloud configuration as a root owned file")
 			}
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			y, ok := cfg.ActualRpkYaml()
 			if !ok {
 				fmt.Println("You are not logged in.")
 				return
 			}
-			a := y.Auth(y.CurrentCloudAuth)
-			if a == nil || a.AuthToken == "" && !clear {
-				fmt.Println("You are not logged in.")
-				return
+			if !all {
+				a := y.CurrentAuth()
+				if a == nil || a.AuthToken == "" && !clear {
+					fmt.Println("You are not logged in.")
+					return
+				}
 			}
-			if clear {
-				a.ClientID = ""
-				a.ClientSecret = ""
-				a.AuthToken = ""
+
+			do := func(a *config.RpkCloudAuth) {
+				if clear {
+					a.ClientID = ""
+					a.ClientSecret = ""
+					a.AuthToken = ""
+				} else {
+					a.AuthToken = ""
+				}
+			}
+
+			if all {
+				for i := range y.CloudAuths {
+					do(&y.CloudAuths[i])
+				}
 			} else {
-				a.AuthToken = ""
+				do(y.CurrentAuth())
 			}
+
 			err = y.Write(fs)
 			out.MaybeDie(err, "unable to save the cloud configuration :%v", err)
-			fmt.Println("You are now logged out.")
+			if all {
+				fmt.Println("You are now logged out of all organizations you were logged into.")
+			} else {
+				fmt.Println("You are now logged out.")
+			}
 		},
 	}
 
 	cmd.Flags().BoolVarP(&clear, "clear-credentials", "c", false, "Clear the client ID and client secret in addition to the auth token")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "Log out of all organizations you may be logged into, rather than just the current auth's organization")
 	return cmd
 }

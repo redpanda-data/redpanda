@@ -38,7 +38,7 @@ hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still
 running.`,
 		Run: func(_ *cobra.Command, args []string) {
 			y, err := p.LoadVirtualRedpandaYaml(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			err = executeStop(fs, y, timeout)
 			out.MaybeDieErr(err)
