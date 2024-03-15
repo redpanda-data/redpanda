@@ -87,9 +87,9 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
 
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
-			// We do not out.CheckExitCloudAdmin here, because
+			// We do not config.CheckExitCloudAdmin here, because
 			// capturing a debug *can* have access sometimes (k8s).
 			var (
 				p           = cfg.VirtualProfile()

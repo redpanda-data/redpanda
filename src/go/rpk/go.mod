@@ -23,6 +23,7 @@ require (
 	github.com/lestrrat-go/jwx v1.2.28
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/lorenzosaino/go-sysctl v0.3.1
+	github.com/mattn/go-isatty v0.0.20
 	github.com/moby/term v0.5.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
@@ -30,6 +31,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_model v0.6.0
 	github.com/prometheus/common v0.49.0
+	github.com/rs/xid v1.5.0
 	github.com/safchain/ethtool v0.3.0
 	github.com/schollz/progressbar/v3 v3.14.2
 	github.com/sethgrid/pester v1.2.0
@@ -98,7 +100,6 @@ require (
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect

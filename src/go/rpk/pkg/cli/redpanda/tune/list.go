@@ -50,7 +50,7 @@ You may use 'rpk redpanda config set' to enable or disable a tuner.
 		Args: cobra.ExactArgs(0),
 		Run: func(*cobra.Command, []string) {
 			y, err := p.LoadVirtualRedpandaYaml(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			// Using cpu mask and timeout defaults since we are not executing
 			// any tuner.

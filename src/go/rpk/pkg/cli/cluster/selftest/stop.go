@@ -33,8 +33,8 @@ success when all jobs have been stopped or reports errors if broker timeouts hav
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-			out.CheckExitCloudAdmin(p)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			config.CheckExitCloudAdmin(p)
 
 			// Create new HTTP client for communication w/ admin server
 			cl, err := adminapi.NewClient(fs, p)

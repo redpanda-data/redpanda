@@ -76,7 +76,7 @@ You may also use <key>=<value> notation for setting configuration properties:
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			var key, value string
 			if len(args) == 1 && strings.Contains(args[0], "=") {
@@ -133,7 +133,7 @@ you must use the --self flag to specify which ip redpanda should listen on.
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			y := cfg.ActualRedpandaYamlOrDefaults() // we modify fields in the raw file without writing env / flag overrides
 
 			seeds, err := parseSeedIPs(ips)

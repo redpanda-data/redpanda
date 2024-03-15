@@ -52,7 +52,7 @@ the cleanup.policy=compact config option set.
 
 		Run: func(cmd *cobra.Command, topics []string) {
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			cl, err := kafka.NewFranzClient(fs, p)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)

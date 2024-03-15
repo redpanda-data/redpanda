@@ -723,12 +723,24 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `,
-			expVirtualRpk: `version: 2
+			expVirtualRpk: `version: 3
+globals:
+    prompt: ""
+    no_default_cluster: false
+    command_timeout: 0s
+    dial_timeout: 0s
+    request_timeout_overhead: 0s
+    retry_timeout: 0s
+    fetch_max_wait: 0s
+    kafka_protocol_request_client_id: ""
 current_profile: default
-current_cloud_auth: default
+current_cloud_auth_org_id: default-org-no-id
+current_cloud_auth_kind: ""
 profiles:
     - name: default
       description: Default rpk profile
+      prompt: ""
+      from_cloud: false
       kafka_api:
         brokers:
             - 127.0.0.1:9092
@@ -740,7 +752,9 @@ profiles:
             - 127.0.0.1:8081
 cloud_auth:
     - name: default
-      description: Default rpk cloud auth
+      organization: Default organization
+      org_id: default-org-no-id
+      kind: ""
 `,
 		},
 
@@ -801,12 +815,24 @@ rpk:
     tune_disk_write_cache: true
     tune_disk_irq: true
 `,
-			expVirtualRpk: `version: 2
+			expVirtualRpk: `version: 3
+globals:
+    prompt: ""
+    no_default_cluster: false
+    command_timeout: 0s
+    dial_timeout: 0s
+    request_timeout_overhead: 0s
+    retry_timeout: 0s
+    fetch_max_wait: 0s
+    kafka_protocol_request_client_id: ""
 current_profile: default
-current_cloud_auth: default
+current_cloud_auth_org_id: default-org-no-id
+current_cloud_auth_kind: ""
 profiles:
     - name: default
       description: Default rpk profile
+      prompt: ""
+      from_cloud: false
       kafka_api:
         brokers:
             - 0.0.0.3:9092
@@ -818,7 +844,9 @@ profiles:
             - 127.0.0.1:8081
 cloud_auth:
     - name: default
-      description: Default rpk cloud auth
+      organization: Default organization
+      org_id: default-org-no-id
+      kind: ""
 `,
 		},
 
@@ -829,21 +857,36 @@ cloud_auth:
 		// * admin api is defaulted, using kafka broker ip
 		{
 			name: "rpk.yaml exists",
-			rpkYaml: `version: 2
+			rpkYaml: `version: 3
+globals:
+    prompt: ""
+    no_default_cluster: false
+    command_timeout: 0s
+    dial_timeout: 0s
+    request_timeout_overhead: 0s
+    retry_timeout: 0s
+    fetch_max_wait: 0s
+    kafka_protocol_request_client_id: ""
 current_profile: foo
-current_cloud_auth: fizz
+current_cloud_auth_org_id: fizz-org-id
+current_cloud_auth_kind: sso
 profiles:
     - name: foo
       description: descriptosphere
+      prompt: ""
+      from_cloud: false
       kafka_api:
         brokers:
             - 0.0.0.3
+      admin_api: {}
       schema_registry:
         addresses:
             - 0.0.0.2
 cloud_auth:
     - name: fizz
-      description: fizzy
+      organization: fizzy
+      org_id: fizz-org-id
+      kind: sso
 `,
 
 			expVirtualRedpanda: `redpanda:
@@ -871,12 +914,24 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `,
-			expVirtualRpk: `version: 2
+			expVirtualRpk: `version: 3
+globals:
+    prompt: ""
+    no_default_cluster: false
+    command_timeout: 0s
+    dial_timeout: 0s
+    request_timeout_overhead: 0s
+    retry_timeout: 0s
+    fetch_max_wait: 0s
+    kafka_protocol_request_client_id: ""
 current_profile: foo
-current_cloud_auth: fizz
+current_cloud_auth_org_id: fizz-org-id
+current_cloud_auth_kind: sso
 profiles:
     - name: foo
       description: descriptosphere
+      prompt: ""
+      from_cloud: false
       kafka_api:
         brokers:
             - 0.0.0.3:9092
@@ -888,7 +943,9 @@ profiles:
             - 0.0.0.2:8081
 cloud_auth:
     - name: fizz
-      description: fizzy
+      organization: fizzy
+      org_id: fizz-org-id
+      kind: sso
 `,
 		},
 
@@ -918,15 +975,30 @@ rpk:
     tune_disk_write_cache: true
     tune_disk_irq: true
 `,
-			rpkYaml: `version: 2
+			rpkYaml: `version: 3
+globals:
+    prompt: ""
+    no_default_cluster: false
+    command_timeout: 0s
+    dial_timeout: 0s
+    request_timeout_overhead: 0s
+    retry_timeout: 0s
+    fetch_max_wait: 0s
+    kafka_protocol_request_client_id: ""
 current_profile: foo
-current_cloud_auth: default
+current_cloud_auth_org_id: ""
+current_cloud_auth_kind: ""
 profiles:
     - name: foo
       description: descriptosphere
+      prompt: ""
+      from_cloud: false
       kafka_api:
         brokers:
             - 128.0.0.4
+      admin_api: {}
+      schema_registry: {}
+cloud_auth: []
 `,
 
 			expVirtualRedpanda: `redpanda:
@@ -953,12 +1025,24 @@ rpk:
     tune_disk_irq: true
 `,
 
-			expVirtualRpk: `version: 2
+			expVirtualRpk: `version: 3
+globals:
+    prompt: ""
+    no_default_cluster: false
+    command_timeout: 0s
+    dial_timeout: 0s
+    request_timeout_overhead: 0s
+    retry_timeout: 0s
+    fetch_max_wait: 0s
+    kafka_protocol_request_client_id: ""
 current_profile: foo
-current_cloud_auth: default
+current_cloud_auth_org_id: default-org-no-id
+current_cloud_auth_kind: ""
 profiles:
     - name: foo
       description: descriptosphere
+      prompt: ""
+      from_cloud: false
       kafka_api:
         brokers:
             - 128.0.0.4:9092
@@ -970,7 +1054,9 @@ profiles:
             - 127.0.0.1:8081
 cloud_auth:
     - name: default
-      description: Default rpk cloud auth
+      organization: Default organization
+      org_id: default-org-no-id
+      kind: ""
 `,
 		},
 
@@ -1077,8 +1163,10 @@ func TestXSetExamples(t *testing.T) {
 			delete(m, x)
 
 			xf := xflags[x]
-			y, _ := defaultVirtualRpkYaml()
-			if err := xf.parse(xf.testExample, &y); err != nil {
+			fs := afero.NewMemMapFs()
+			cfg, _ := new(Params).Load(fs)
+			y := cfg.VirtualRpkYaml()
+			if err := xf.parse(xf.testExample, y); err != nil {
 				t.Errorf("unable to parse test example for xflag %s: %v", x, err)
 			}
 			yamlPath := yamlPaths[i]

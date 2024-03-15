@@ -47,7 +47,7 @@ partitions section. By default, the summary and configs sections are printed.
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, topicArg []string) {
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			cl, err := kafka.NewFranzClient(fs, p)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)

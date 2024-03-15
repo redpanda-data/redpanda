@@ -33,9 +33,9 @@ exist, this command creates it and switches to it.
 		ValidArgsFunction: ValidProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			y, err := cfg.ActualRpkYamlOrEmpty()
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			if len(args) == 0 {
 				args = append(args, y.CurrentProfile)
@@ -43,12 +43,23 @@ exist, this command creates it and switches to it.
 			name := args[0]
 			p := y.Profile(name)
 			if p == nil {
-				y.CurrentProfile = y.PushProfile(config.RpkProfile{Name: name})
+				priorAuth, currentAuth := y.PushProfile(config.RpkProfile{Name: name})
+				// Defer, so that if we out.Die, we don't print the switch message
+				// (and we want to print this last anyway).
+				defer config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 				p = y.Profile(name)
 			}
 
+			preFromCloud := p.FromCloud
+			preCloudDetails := p.CloudCluster
 			update, err := rpkos.EditTmpYAMLFile(fs, *p)
 			out.MaybeDieErr(err)
+
+			if preFromCloud {
+				if !update.FromCloud || preCloudDetails != update.CloudCluster {
+					out.Die("cannot change a cloud profile to a non-cloud profile, and cannot change cloud cluster details; please create and edit a new profile")
+				}
+			}
 
 			// If a user clears the name by accident, we keep the old name.
 			if update.Name == "" {

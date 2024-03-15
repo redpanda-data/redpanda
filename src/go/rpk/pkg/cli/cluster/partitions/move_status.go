@@ -38,8 +38,8 @@ func newPartitionMovementsStatusCommand(fs afero.Fs, p *config.Params) *cobra.Co
 		Long:  helpListMovement,
 		Run: func(cmd *cobra.Command, topics []string) {
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-			out.CheckExitCloudAdmin(p)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			config.CheckExitCloudAdmin(p)
 
 			// If partition(s) is specified but no topic(s) is specified, exit.
 			if len(topics) <= 0 && len(partitions) > 0 {

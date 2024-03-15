@@ -31,9 +31,12 @@ func listCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Exit(h)
 			}
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-			authToken, err := oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()), false)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			priorProfile := cfg.ActualProfile()
+			_, authVir, clearedProfile, _, err := oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()), false, false, cfg.DevOverrides().CloudAPIURL)
 			out.MaybeDie(err, "unable to authenticate with Redpanda Cloud: %v", err)
+			oauth.MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
+			authToken := authVir.AuthToken
 			cl, err := publicapi.NewClientSet(cmd.Context(), cfg.DevOverrides().PublicAPIURL, authToken)
 			out.MaybeDie(err, "unable to create the public api client: %v", err)
 

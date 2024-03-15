@@ -10,6 +10,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -28,11 +29,13 @@ import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/term"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
 	rpknet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 )
 
 const (
@@ -82,7 +85,7 @@ const (
 	xkindGlobal           // configuration for rpk.yaml globals
 )
 
-const currentRpkYAMLVersion = 2
+const currentRpkYAMLVersion = 3
 
 type xflag struct {
 	path        string
@@ -359,7 +362,13 @@ var xflags = map[string]xflag{
 		"anystring",
 		xkindCloudAuth,
 		func(v string, y *RpkYaml) error {
-			auth := y.Auth(y.CurrentCloudAuth)
+			var auth *RpkCloudAuth
+			if p := y.Profile(y.CurrentProfile); p != nil {
+				auth = p.VirtualAuth()
+			}
+			if auth == nil {
+				auth = y.CurrentAuth()
+			}
 			auth.ClientID = v
 			return nil
 		},
@@ -369,7 +378,13 @@ var xflags = map[string]xflag{
 		"anysecret",
 		xkindCloudAuth,
 		func(v string, y *RpkYaml) error {
-			auth := y.Auth(y.CurrentCloudAuth)
+			var auth *RpkCloudAuth
+			if p := y.Profile(y.CurrentProfile); p != nil {
+				auth = p.VirtualAuth()
+			}
+			if auth == nil {
+				auth = y.CurrentAuth()
+			}
 			auth.ClientSecret = v
 			return nil
 		},
@@ -628,8 +643,8 @@ registry.hosts=localhost:8081,rp.example.com:8081
 
 registry.tls.enabled=false
   A boolean that enables rpk to speak TLS to your broker's schema registry API
-  listeners. You can use this if you have well known certificates setup on your 
-  schema registry API. If you use mTLS, specifying mTLS certificate filepaths 
+  listeners. You can use this if you have well known certificates setup on your
+  schema registry API. If you use mTLS, specifying mTLS certificate filepaths
   automatically opts into TLS enabled.
 
 registry.tls.insecure_skip_verify=false
@@ -637,8 +652,8 @@ registry.tls.insecure_skip_verify=false
 
 registry.tls.ca=/path/to/ca.pem
   A filepath to a PEM encoded CA certificate file to talk to your broker's
-  schema registry API listeners with mTLS. You may also need this if your 
-  listeners are using a certificate by a well known authority that is not yet 
+  schema registry API listeners with mTLS. You may also need this if your
+  listeners are using a certificate by a well known authority that is not yet
   bundled on your operating system.
 
 registry.tls.cert=/path/to/cert.pem
@@ -651,9 +666,13 @@ registry.tls.key=/path/to/key.pem
 
 cloud.client_id=somestring
   An oauth client ID to use for authenticating with the Redpanda Cloud API.
+  Overrides the client ID in the current profile if it is for a cloud cluster,
+  otherwise overrides the default cloud auth client ID.
 
 cloud.client_secret=somelongerstring
   An oauth client secret to use for authenticating with the Redpanda Cloud API.
+  Overrides the client secret in the current profile if it is for a cloud
+  cluster, otherwise overrides the default cloud auth client secret.
 
 globals.prompt="%n"
   A format string to use for the default prompt; see 'rpk profile prompt' for
@@ -917,9 +936,6 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		}()
 	}
 
-	if err := p.backcompatOldCloudYaml(fs); err != nil {
-		return nil, err
-	}
 	if err := p.readRpkConfig(fs, c); err != nil {
 		return nil, err
 	}
@@ -927,12 +943,21 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		return nil, err
 	}
 
+	if err := c.promptDeleteOldRpkYaml(fs); err != nil { // delete auths with no org/orgID, and profiles with no auth
+		return nil, err
+	}
+	if err := c.cleanupBadYaml(fs); err != nil {
+		return nil, err
+	}
+	c.ensureVirtualHasDefaults() // cleanupBadYaml deletes our defaults, this is an easier fix than trying to do it "right"
+
 	c.mergeRpkIntoRedpanda(true)     // merge actual rpk.yaml KafkaAPI,AdminAPI,Tuners into redpanda.yaml rpk section
 	c.addUnsetRedpandaDefaults(true) // merge from actual redpanda.yaml redpanda section to rpk section
 	c.ensureRpkProfile()             // ensure Virtual rpk.yaml has a loaded profile
 	c.ensureRpkCloudAuth()           // ensure Virtual rpk.yaml has a current auth
 	c.mergeRedpandaIntoRpk()         // merge redpanda.yaml rpk section back into rpk.yaml KafkaAPI,AdminAPI,Tuners (picks up redpanda.yaml extras sections were empty)
 	p.backcompatFlagsToOverrides()
+	c.addConfigToProfiles()
 	if err := p.processOverrides(c); err != nil { // override rpk.yaml profile from env&flags
 		return nil, err
 	}
@@ -940,7 +965,6 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.addUnsetRedpandaDefaults(false) // merge from Virtual redpanda.yaml redpanda section to rpk section (picks up original redpanda.yaml defaults)
 	c.mergeRedpandaIntoRpk()          // merge from redpanda.yaml rpk section back to rpk.yaml, picks up final redpanda.yaml defaults
 	c.fixSchemePorts()                // strip any scheme, default any missing ports
-	c.addConfigToProfiles()
 	c.parseDevOverrides()
 
 	if !c.rpkYaml.Globals.NoDefaultCluster {
@@ -1035,86 +1059,6 @@ func readFile(fs afero.Fs, path string) (string, []byte, error) {
 		return abs, nil, err
 	}
 	return abs, file, err
-}
-
-func (*Params) backcompatOldCloudYaml(fs afero.Fs) error {
-	def, err := DefaultRpkYamlPath()
-	if err != nil {
-		//nolint:nilerr // This error only happens if the user unset $HOME, and
-		// if they do that, we will avoid failing / avoid backcompat here.
-		return nil
-	}
-
-	// Read and parse the old file. If it does not exist, that's great.
-	oldPath := filepath.Join(filepath.Dir(def), "__cloud.yaml")
-	_, raw, err := readFile(fs, oldPath)
-	if err != nil {
-		if errors.Is(err, afero.ErrFileNotFound) {
-			return nil
-		}
-		return fmt.Errorf("unable to backcompat __cloud.yaml file: %v", err)
-	}
-	var old struct {
-		ClientID     string `yaml:"client_id"`
-		ClientSecret string `yaml:"client_secret"`
-		AuthToken    string `yaml:"auth_token"`
-	}
-	if err := yaml.Unmarshal(raw, &old); err != nil {
-		return fmt.Errorf("unable to yaml decode %s: %v", oldPath, err)
-	}
-
-	// For the rpk.yaml, if it does not exist, we will create it.
-	// We only support the default path, not any --config override.
-	// We do not want to migrate into some custom path.
-	_, rawRpkYaml, err := readFile(fs, def)
-	if err != nil && !errors.Is(err, afero.ErrFileNotFound) {
-		return fmt.Errorf("unable to read %s: %v", def, err)
-	}
-	var rpkYaml RpkYaml
-	if errors.Is(err, afero.ErrFileNotFound) {
-		rpkYaml = emptyVirtualRpkYaml()
-	} else {
-		if err := yaml.Unmarshal(rawRpkYaml, &rpkYaml); err != nil {
-			return fmt.Errorf("unable to yaml decode %s: %v", def, err)
-		}
-		if rpkYaml.Version < 1 {
-			return fmt.Errorf("%s is not in the expected rpk.yaml format", def)
-		} else if rpkYaml.Version < currentRpkYAMLVersion {
-			rpkYaml.Version = currentRpkYAMLVersion
-		} else if rpkYaml.Version > currentRpkYAMLVersion {
-			return fmt.Errorf("%s is using a newer rpk.yaml format than we understand, please upgrade rpk", def)
-		}
-	}
-	rpkYaml.fileLocation = def
-
-	var exists bool
-	for _, a := range rpkYaml.CloudAuths {
-		if a.ClientID == old.ClientID && a.ClientSecret == old.ClientSecret {
-			exists = true
-			break
-		}
-	}
-	if !exists {
-		a := RpkCloudAuth{
-			Name:         "for_byoc",
-			Description:  "Client ID and Secret for BYOC",
-			ClientID:     old.ClientID,
-			ClientSecret: old.ClientSecret,
-			AuthToken:    old.AuthToken,
-		}
-		rpkYaml.PushAuth(a)
-		if rpkYaml.CurrentCloudAuth == "" {
-			rpkYaml.CurrentCloudAuth = a.Name
-		}
-		if err := rpkYaml.Write(fs); err != nil {
-			return fmt.Errorf("unable to migrate %s to %s: %v", oldPath, def, err)
-		}
-	}
-	// If we fail at removing the old file, that's ok. We will try again
-	// the next time this command runs.
-	fs.Remove(oldPath)
-
-	return nil
 }
 
 func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
@@ -1212,6 +1156,202 @@ func (p *Params) readRedpandaConfig(fs afero.Fs, c *Config) error {
 	return nil
 }
 
+func (c *Config) promptDeleteOldRpkYaml(fs afero.Fs) error {
+	if !c.rpkYamlExists {
+		return nil
+	}
+	var deleteAuthNames []string
+	var deleteProfileNames []string
+	for _, a := range c.rpkYamlActual.CloudAuths {
+		if a.Organization == "" || a.OrgID == "" {
+			deleteAuthNames = append(deleteAuthNames, a.Name)
+			continue
+		}
+	}
+	for _, p := range c.rpkYamlActual.Profiles {
+		cc := &p.CloudCluster
+		if p.FromCloud && c.rpkYamlActual.LookupAuth(cc.AuthOrgID, cc.AuthKind) == nil {
+			deleteProfileNames = append(deleteProfileNames, p.Name)
+			continue
+		}
+	}
+
+	if len(deleteAuthNames) == 0 && len(deleteProfileNames) == 0 {
+		return nil
+	}
+
+	if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+		return nil
+	}
+	if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
+		return nil
+	}
+
+	if len(deleteAuthNames) > 0 {
+		fmt.Print(`rpk has found cloud authentications that are missing their organization or
+organization ID fields. Either you previously logged into the cloud via an old
+rpk, or the underlying rpk.yaml file was manually modified to remove these
+fields.
+
+rpk needs to remove these auths, meaning you will need to log in again via
+'rpk cloud login'.
+
+Affected auths:
+`)
+		for _, name := range deleteAuthNames {
+			fmt.Printf("  %s\n", name)
+		}
+		fmt.Println()
+	}
+	if len(deleteProfileNames) > 0 {
+		fmt.Print(`rpk has found cloud profiles that do not have an attached authentication name.
+Either you previously logged into the cloud via an old rpk, or the underlying
+rpk.yaml file was manually modified to remove fields.
+
+rpk needs to remove these profiles, meaning you will need to create them again via
+'rpk profile create --from-cluster'.
+
+Affected profiles:
+`)
+		for _, name := range deleteProfileNames {
+			fmt.Printf("  %s\n", name)
+		}
+		fmt.Println()
+	}
+	confirm, err := out.Confirm("Confirm deletion of auths or profiles?")
+	if err != nil {
+		return fmt.Errorf("unable to confirm deletion: %w", err)
+	}
+	if !confirm {
+		return fmt.Errorf("deletion of old auths or profiles rejected, please use an older rpk")
+	}
+
+	delAuths := make(map[string]struct{})
+	for _, name := range deleteAuthNames {
+		delAuths[name] = struct{}{}
+	}
+	delProfiles := make(map[string]struct{})
+	for _, name := range deleteProfileNames {
+		delProfiles[name] = struct{}{}
+	}
+
+	for _, y := range []*RpkYaml{&c.rpkYaml, &c.rpkYamlActual} {
+		keepAuths := y.CloudAuths[:0]
+		for _, a := range y.CloudAuths {
+			if _, ok := delAuths[a.Name]; ok {
+				continue
+			}
+			keepAuths = append(keepAuths, a)
+		}
+		y.CloudAuths = keepAuths
+		keepProfiles := y.Profiles[:0]
+		for _, p := range y.Profiles {
+			if _, ok := delProfiles[p.Name]; ok {
+				continue
+			}
+			keepProfiles = append(keepProfiles, p)
+		}
+		y.Profiles = keepProfiles
+	}
+	if err := c.rpkYamlActual.Write(fs); err != nil {
+		return fmt.Errorf("unable to write rpk.yaml: %w", err)
+	}
+	return nil
+}
+
+func (c *Config) cleanupBadYaml(fs afero.Fs) error {
+	if !c.rpkYamlExists {
+		return nil
+	}
+
+	both := func(fn func(y *RpkYaml)) {
+		fn(&c.rpkYamlActual)
+		fn(&c.rpkYaml)
+	}
+
+	// We
+	// * Delete duplicate auths
+	// * Delete duplicate profiles
+	// * Delete any auth that is kind == uninitialized
+	// * Delete any auth that is missing any of name,org,orgID
+	// * Clear the current profile if the referred profile does not exist
+	// * Clear the current auth if the referred auth does not exist
+	// * For all profiles, clear CloudCluster.Auth{OrgID,Kind} if the referred auth does not exist
+	jActBefore, _ := yaml.Marshal(c.rpkYamlActual)
+	both(func(y *RpkYaml) {
+		dupeFirstAuth := make(map[string]struct{})
+		keepAuths := y.CloudAuths[:0]
+		for _, a := range y.CloudAuths {
+			if a.Kind == CloudAuthUninitialized { // empty string
+				continue
+			}
+			if a.Name == "" || a.Organization == "" || a.OrgID == "" {
+				continue
+			}
+			if _, ok := dupeFirstAuth[a.Name]; ok {
+				continue
+			}
+			dupeFirstAuth[a.Name] = struct{}{}
+			keepAuths = append(keepAuths, a)
+		}
+		y.CloudAuths = keepAuths
+
+		dupeFirstProfile := make(map[string]struct{})
+		keepProfiles := y.Profiles[:0]
+		for _, p := range y.Profiles {
+			if _, ok := dupeFirstProfile[p.Name]; ok {
+				continue
+			}
+			if y.LookupAuth(p.CloudCluster.AuthOrgID, p.CloudCluster.AuthKind) == nil {
+				p.CloudCluster.AuthOrgID = ""
+				p.CloudCluster.AuthKind = ""
+			}
+			dupeFirstProfile[p.Name] = struct{}{}
+			keepProfiles = append(keepProfiles, p)
+		}
+		y.Profiles = keepProfiles
+
+		if y.Profile(y.CurrentProfile) == nil {
+			y.CurrentProfile = ""
+		}
+		if y.CurrentAuth() == nil {
+			y.CurrentCloudAuthOrgID = ""
+			y.CurrentCloudAuthKind = ""
+		}
+	})
+	jActAfter, _ := yaml.Marshal(c.rpkYamlActual)
+	if !bytes.Equal(jActBefore, jActAfter) {
+		if err := c.rpkYamlActual.Write(fs); err != nil {
+			return fmt.Errorf("unable to write rpk.yaml: %w", err)
+		}
+	}
+	return nil
+}
+
+// We take a lazy approach with deleting bad yaml, which also deletes
+// defaults from the virtual yaml. We add them back here. We could be
+// smarter and avoiding deleting virtual defaults to begin with, but
+// well, this is easy.
+func (c *Config) ensureVirtualHasDefaults() {
+	y := &c.rpkYaml
+	def, _ := defaultVirtualRpkYaml() // must succeed, succeeded previously
+	if len(y.CloudAuths) == 0 {
+		y.CloudAuths = def.CloudAuths
+	}
+	if y.CurrentCloudAuthOrgID == "" {
+		y.CurrentCloudAuthOrgID = def.CurrentCloudAuthOrgID
+	}
+	if y.CurrentCloudAuthKind == "" {
+		y.CurrentCloudAuthKind = def.CurrentCloudAuthKind
+	}
+	if len(y.Profiles) == 0 {
+		y.Profiles = def.Profiles
+	}
+	if y.CurrentProfile == "" {
+		y.CurrentProfile = def.CurrentProfile
+	}
+}
+
 // We merge rpk.yaml files into our Virtual redpanda.yaml rpk section,
 // only if the rpk section contains relevant bits of information.
 //
@@ -1255,20 +1395,24 @@ func (c *Config) ensureRpkProfile() {
 }
 
 // This function ensures a current auth exists in the Virtual rpk.yaml.
+// This does not touch an auth that is pointed to by the current profile.
+// Users of virtual auth are expected to first check the profile auth, then
+// check the default auth.
 func (c *Config) ensureRpkCloudAuth() {
 	dst := &c.rpkYaml
-	auth := dst.Auth(dst.CurrentCloudAuth)
+	auth := dst.CurrentAuth()
 	if auth != nil {
 		return
 	}
 
 	def := DefaultRpkCloudAuth()
-	dst.CurrentCloudAuth = def.Name
-	auth = dst.Auth(dst.CurrentCloudAuth)
+	dst.CurrentCloudAuthOrgID = def.OrgID
+	dst.CurrentCloudAuthKind = CloudAuthUninitialized
+	auth = dst.CurrentAuth()
 	if auth != nil {
 		return
 	}
-	dst.PushAuth(def)
+	dst.PushNewAuth(def)
 }
 
 func (c *Config) ensureBrokerAddrs() {

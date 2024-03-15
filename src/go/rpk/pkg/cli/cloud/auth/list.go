@@ -26,9 +26,9 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:    cobra.ExactArgs(0),
 		Run: func(*cobra.Command, []string) {
 			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
-			tw := out.NewTable("name", "kind", "description")
+			tw := out.NewTable("name", "kind", "organization", "organization-id")
 			defer tw.Flush()
 
 			y, ok := cfg.ActualRpkYaml()
@@ -37,21 +37,20 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			sort.Slice(y.CloudAuths, func(i, j int) bool {
-				return y.CloudAuths[i].Name < y.CloudAuths[j].Name
+				// First by organization name, then by org ID, then by name.
+				l, r := y.CloudAuths[i], y.CloudAuths[j]
+				return l.Organization < r.Organization ||
+					(l.Organization == r.Organization && (l.OrgID < r.OrgID ||
+						(l.OrgID == r.OrgID && l.Name < r.Name)))
 			})
 
-			var current *string
-			if ca := y.Auth(y.CurrentCloudAuth); ca != nil {
-				current = &ca.Name
-			}
 			for i := range y.CloudAuths {
 				a := &y.CloudAuths[i]
 				name := a.Name
-				if current != nil && name == *current {
+				if a.OrgID == y.CurrentCloudAuthOrgID && a.Kind == y.CurrentCloudAuthKind {
 					name += "*"
 				}
-				kind, _ := a.Kind()
-				tw.Print(name, kind, a.Description)
+				tw.Print(name, a.Kind, a.Organization, a.OrgID)
 			}
 		},
 	}

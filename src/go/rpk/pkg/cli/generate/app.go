@@ -88,7 +88,7 @@ func newAppCmd(fs afero.Fs, p *config.Params) *cobra.Command {
 		Long:  appHelpText,
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			isInteractive := langFlag == "" // The rest of the flags are optional.
 			if !isInteractive {

@@ -59,66 +59,81 @@ type (
 // ClientCredentialFlow follows the OAuth 2.0 client credential authentication
 // flow. First it validates whether the configuration already have a valid
 // token.
-func ClientCredentialFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth) (Token, error) {
+func ClientCredentialFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth, forceReload bool) (Token, bool, error) {
 	// We only validate the token if we have the client ID, if one of them is
 	// not present we just start the login flow again.
-	if auth.AuthToken != "" && auth.ClientID != "" {
+	if auth.AuthToken != "" && auth.ClientID != "" && !forceReload {
 		expired, err := ValidateToken(auth.AuthToken, cl.Audience(), auth.ClientID)
 		if err != nil {
-			return Token{}, fmt.Errorf("unable to validate your authorization token: %v", err)
+			return Token{}, false, fmt.Errorf("unable to validate your authorization token: %v", err)
 		}
 		if !expired {
-			zap.L().Sugar().Debug("using existing authorization token")
-			return Token{AccessToken: auth.AuthToken}, nil
+			fmt.Println("Your existing auth token is still valid, avoiding re-authentication.")
+			return Token{AccessToken: auth.AuthToken}, false, nil
 		}
-		zap.L().Sugar().Debug("authorization token expired. Requesting a new one")
-
+		fmt.Println("Your existing authorization token has expired.")
 	}
-	return cl.Token(ctx, auth.ClientID, auth.ClientSecret)
+	zap.L().Sugar().Debug("Requesting a new authorization token with your client credentials.")
+	t, err := cl.Token(ctx, auth.ClientID, auth.ClientSecret)
+	if err == nil {
+		zap.L().Sugar().Debug("Successfully retrieved a new authorization token.")
+	}
+	return t, true, err
 }
 
 // DeviceFlow follows the OAuth 2.0 device authentication flow. First it
 // validates whether the configuration already have a valid token.
-func DeviceFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth, noUI bool) (Token, error) {
+//
+// This returns the token and if the token is new (or false if the token
+// was still valid).
+func DeviceFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth, noUI, forceReload bool) (Token, bool, error) {
 	// We only validate the token if we have the client ID, if one of them is
 	// not present we just start the login flow again.
-	if auth.AuthToken != "" && auth.ClientID != "" {
+	if auth.AuthToken != "" && auth.ClientID != "" && !forceReload {
 		expired, err := ValidateToken(auth.AuthToken, cl.Audience(), auth.ClientID)
 		if err != nil {
-			return Token{}, fmt.Errorf("unable to validate your authorization token: %v", err)
+			return Token{}, false, fmt.Errorf("unable to validate your authorization token: %v", err)
 		}
 		if !expired {
-			zap.L().Sugar().Debug("using existing authorization token")
-			return Token{AccessToken: auth.AuthToken}, nil
+			fmt.Println("Your existing auth token is still valid, avoiding re-authentication.")
+			return Token{AccessToken: auth.AuthToken}, false, nil
 		}
-		zap.L().Sugar().Debug("authorization token expired. Requesting a new one")
+		fmt.Println("Your existing authorization token has expired.")
 	}
 
+	zap.L().Sugar().Debug("Requesting a new authorization token.")
 	dcode, err := cl.DeviceCode(ctx)
 	if err != nil {
-		return Token{}, fmt.Errorf("unable to request the device authorization: %w", err)
+		return Token{}, false, fmt.Errorf("unable to request the device authorization: %w", err)
 	}
 	if !isURL(dcode.VerificationURLComplete) {
-		return Token{}, fmt.Errorf("authorization server returned an invalid URL: %s; please contact Redpanda support", dcode.VerificationURLComplete)
+		return Token{}, false, fmt.Errorf("authorization server returned an invalid URL: %s; please contact Redpanda support", dcode.VerificationURLComplete)
 	}
 
 	if noUI {
-		fmt.Printf("For authentication, go to %q and log in.\n", dcode.VerificationURLComplete)
+		fmt.Printf("Please proceed to the following URL to login:\n\n    %q\n\n", dcode.VerificationURLComplete)
 	} else {
-		fmt.Printf("Opening your browser for authentication, if does not open automatically, please open %q and proceed to login.\n", dcode.VerificationURLComplete)
+		fmt.Printf(`Opening your browser for authentication.
+If does not open automatically, please proceed to the following URL to login:
+
+    %s
+
+`, dcode.VerificationURLComplete)
 		err = cl.URLOpener(dcode.VerificationURLComplete)
 		if err != nil {
-			return Token{}, fmt.Errorf("unable to open the web browser: %v; you may login using 'rpk cloud login --no-browser'", err)
+			return Token{}, false, fmt.Errorf("unable to open the web browser: %v; you may login using 'rpk cloud login --no-browser'", err)
 		}
 	}
 
 	token, err := waitForDeviceToken(ctx, cl, dcode)
 	if err != nil {
-		return Token{}, err
+		return Token{}, false, err
+	} else {
+		zap.L().Sugar().Debug("Successfully retrieved a new authorization token.")
 	}
 
 	auth.ClientID = cl.AuthClientID() // if everything succeeded, save the clientID to the one used to generate the token
-	return token, nil
+	return token, true, nil
 }
 
 func waitForDeviceToken(ctx context.Context, cl Client, dcode DeviceCode) (Token, error) {
