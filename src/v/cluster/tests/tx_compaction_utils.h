@@ -171,10 +171,11 @@ public:
             auto type = batch.header().type;
             BOOST_REQUIRE_NE(type, model::record_batch_type::tx_prepare);
             if (batch.header().attrs.is_transactional()) {
+                if (batch.header().attrs.is_control()) {
+                    continue;
+                }
                 model::producer_identity pid{
                   batch.header().producer_id, batch.header().producer_epoch};
-                // no control (commit/abort) batches.
-                BOOST_REQUIRE(!batch.header().attrs.is_control());
                 BOOST_REQUIRE_EQUAL(type, model::record_batch_type::raft_data);
                 BOOST_REQUIRE(_committed_pids.contains(pid));
                 BOOST_REQUIRE(!_aborted_pids.contains(pid));

@@ -212,6 +212,11 @@ struct clean_segment_value
 };
 
 inline bool is_compactible(const model::record_batch_header& h) {
+    if (h.attrs.is_control()) {
+        // Keep control batches to ensure we maintain transaction boundaries.
+        // They should be rare.
+        return false;
+    }
     static const auto filtered_types = model::offset_translator_batch_types();
     auto n = std::count(filtered_types.begin(), filtered_types.end(), h.type);
     return n == 0;
