@@ -94,15 +94,8 @@ class ManyPartitionsTest(PreallocNodesTest):
                 "leader_balancer_idle_timeout": self.LEADER_BALANCER_PERIOD_MS,
                 "leader_balancer_mute_timeout": self.LEADER_BALANCER_PERIOD_MS,
 
-                # TODO: ensure that the system works well _without_ these non-default
-                # properties, or if they are necessary and we choose not to make them
-                # the defaults, then that they are reflected properly in cloud config profiles
-                'reclaim_batch_cache_min_free': 256000000,
-                'storage_read_buffer_size': 32768,
-                'storage_read_readahead_count': 2,
                 'disable_metrics': True,
                 'disable_public_metrics': False,
-                'append_chunk_size': 32768,
                 'kafka_rpc_server_tcp_recv_buf': 131072,
                 'kafka_rpc_server_tcp_send_buf': 131072,
                 'kafka_rpc_server_stream_recv_buf': 32768,
