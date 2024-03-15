@@ -110,12 +110,6 @@ class LeadershipTransferTest(RedpandaTest):
 
 
 class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
-    topics = (
-        TopicSpec(partition_count=61, replication_factor=3),
-        TopicSpec(partition_count=151, replication_factor=3),
-        TopicSpec(partition_count=263, replication_factor=3),
-    )
-
     def __init__(self, test_context):
         extra_rp_conf = dict(leader_balancer_idle_timeout=20000,
                              leader_balancer_mode="random_hill_climbing")
@@ -123,6 +117,13 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
         super(MultiTopicAutomaticLeadershipBalancingTest,
               self).__init__(test_context=test_context,
                              extra_rp_conf=extra_rp_conf)
+        self.topics = [
+            TopicSpec(partition_count=61, replication_factor=3),
+            TopicSpec(partition_count=151, replication_factor=3),
+        ]
+        if not self.debug_mode:
+            self.topics.append(
+                TopicSpec(partition_count=263, replication_factor=3))
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_topic_aware_rebalance(self):
