@@ -9,6 +9,7 @@ import (
 
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"go.uber.org/zap"
 )
 
 type (
@@ -72,10 +73,10 @@ func ClientCredentialFlow(ctx context.Context, cl Client, auth *config.RpkCloudA
 		}
 		fmt.Println("Your existing authorization token has expired.")
 	}
-	fmt.Println("Requesting a new authorization token with your client credentials.")
+	zap.L().Sugar().Debug("Requesting a new authorization token with your client credentials.")
 	t, err := cl.Token(ctx, auth.ClientID, auth.ClientSecret)
 	if err == nil {
-		fmt.Println("Successfully retrieved a new authorization token.")
+		zap.L().Sugar().Debug("Successfully retrieved a new authorization token.")
 	}
 	return t, true, err
 }
@@ -100,7 +101,7 @@ func DeviceFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth, noUI,
 		fmt.Println("Your existing authorization token has expired.")
 	}
 
-	fmt.Println("Requesting a new authorization token.")
+	zap.L().Sugar().Debug("Requesting a new authorization token.")
 	dcode, err := cl.DeviceCode(ctx)
 	if err != nil {
 		return Token{}, false, fmt.Errorf("unable to request the device authorization: %w", err)
@@ -128,7 +129,7 @@ If does not open automatically, please proceed to the following URL to login:
 	if err != nil {
 		return Token{}, false, err
 	} else {
-		fmt.Println("Successfully retrieved a new authorization token.")
+		zap.L().Sugar().Debug("Successfully retrieved a new authorization token.")
 	}
 
 	auth.ClientID = cl.AuthClientID() // if everything succeeded, save the clientID to the one used to generate the token

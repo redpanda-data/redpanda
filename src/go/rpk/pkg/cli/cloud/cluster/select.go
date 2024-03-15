@@ -25,8 +25,9 @@ func newSelectCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var profileName string
 
 	cmd := &cobra.Command{
-		Use:   "select [NAME]",
-		Short: "Update your rpk profile to talk to the requested cluster",
+		Use:     "select [NAME]",
+		Aliases: []string{"use"},
+		Short:   "Update your rpk profile to talk to the requested cluster",
 		Long: `Update your rpk profile to talk to the requested cluster.
 
 This command is essentially an alias for the following command:
