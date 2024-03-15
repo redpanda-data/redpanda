@@ -137,7 +137,7 @@ type (
 		Description  string               `json:"description" yaml:"description"`
 		Prompt       string               `json:"prompt" yaml:"prompt"`
 		FromCloud    bool                 `json:"from_cloud" yaml:"from_cloud"`
-		CloudCluster RpkCloudCluster      `json:"cloud_cluster" yaml:"cloud_cluster"`
+		CloudCluster RpkCloudCluster      `json:"cloud_cluster,omitempty" yaml:"cloud_cluster,omitempty"`
 		KafkaAPI     RpkKafkaAPI          `json:"kafka_api" yaml:"kafka_api"`
 		AdminAPI     RpkAdminAPI          `json:"admin_api" yaml:"admin_api"`
 		SR           RpkSchemaRegistryAPI `json:"schema_registry" yaml:"schema_registry"`

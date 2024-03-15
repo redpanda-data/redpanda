@@ -741,12 +741,6 @@ profiles:
       description: Default rpk profile
       prompt: ""
       from_cloud: false
-      cloud_cluster:
-        namespace: ""
-        cluster_id: ""
-        cluster_name: ""
-        auth_org_id: ""
-        auth_kind: ""
       kafka_api:
         brokers:
             - 127.0.0.1:9092
@@ -839,12 +833,6 @@ profiles:
       description: Default rpk profile
       prompt: ""
       from_cloud: false
-      cloud_cluster:
-        namespace: ""
-        cluster_id: ""
-        cluster_name: ""
-        auth_org_id: ""
-        auth_kind: ""
       kafka_api:
         brokers:
             - 0.0.0.3:9092
@@ -887,12 +875,6 @@ profiles:
       description: descriptosphere
       prompt: ""
       from_cloud: false
-      cloud_cluster:
-        namespace: ""
-        cluster_id: ""
-        cluster_name: ""
-        auth_org_id: ""
-        auth_kind: ""
       kafka_api:
         brokers:
             - 0.0.0.3
@@ -950,12 +932,6 @@ profiles:
       description: descriptosphere
       prompt: ""
       from_cloud: false
-      cloud_cluster:
-        namespace: ""
-        cluster_id: ""
-        cluster_name: ""
-        auth_org_id: ""
-        auth_kind: ""
       kafka_api:
         brokers:
             - 0.0.0.3:9092
@@ -1017,12 +993,6 @@ profiles:
       description: descriptosphere
       prompt: ""
       from_cloud: false
-      cloud_cluster:
-        namespace: ""
-        cluster_id: ""
-        cluster_name: ""
-        auth_org_id: ""
-        auth_kind: ""
       kafka_api:
         brokers:
             - 128.0.0.4
@@ -1073,12 +1043,6 @@ profiles:
       description: descriptosphere
       prompt: ""
       from_cloud: false
-      cloud_cluster:
-        namespace: ""
-        cluster_id: ""
-        cluster_name: ""
-        auth_org_id: ""
-        auth_kind: ""
       kafka_api:
         brokers:
             - 128.0.0.4:9092
