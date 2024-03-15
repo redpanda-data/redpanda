@@ -11,6 +11,10 @@
 
 #include "crypto/crypto.h"
 
+#include "crypto/types.h"
+#include "internal.h"
+
+#include <absl/container/node_hash_map.h>
 namespace crypto {
 std::ostream& operator<<(std::ostream& os, digest_type type) {
     switch (type) {
@@ -40,4 +44,38 @@ std::ostream& operator<<(std::ostream& os, format_type type) {
         return os << "DER";
     }
 }
+
+namespace internal {
+EVP_MD* get_md(digest_type type) {
+    // Map of pre-fetched MD pointers.  This replaces the older way of getting
+    // a digest pointer via something like `EVP_sha256()`.  The old way is
+    // slower compared to pre-fetching the algorithm.
+    static thread_local absl::node_hash_map<digest_type, EVP_MD_ptr> md_map;
+    auto it = md_map.find(type);
+    if (it == md_map.end()) {
+        auto alg = fmt::to_string(type);
+        auto md_ptr = EVP_MD_fetch(nullptr, alg.c_str(), "?provider=fips");
+        if (!md_ptr) {
+            throw ossl_error(fmt::format("Failed to fetch algorithm {}", alg));
+        }
+        auto res = md_map.insert_or_assign(type, EVP_MD_ptr(md_ptr));
+        vassert(
+          res.second, "Failed to insert/create the fetched algorithm {}", alg);
+        return md_ptr;
+    }
+
+    return it->second.get();
+}
+
+EVP_MAC* get_mac() {
+    static thread_local EVP_MAC_ptr mac;
+    if (!mac) {
+        mac = EVP_MAC_ptr(EVP_MAC_fetch(nullptr, "HMAC", "?provider=fips"));
+        if (!mac) {
+            throw ossl_error("Failed to fetch HMAC algorithm");
+        }
+    }
+    return mac.get();
+}
+} // namespace internal
 } // namespace crypto

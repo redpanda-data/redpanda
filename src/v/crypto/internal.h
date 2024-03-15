@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/bytes.h"
+#include "ssl_utils.h"
 
 namespace crypto::internal {
 inline bytes_view string_view_to_bytes_view(std::string_view v) {
@@ -24,4 +25,7 @@ inline bytes_span<> char_span_to_bytes_span(std::span<char> v) {
     // NOLINTNEXTLINE: allow reinterpret_cast
     return {reinterpret_cast<bytes_span<>::value_type*>(v.data()), v.size()};
 }
+
+EVP_MD* get_md(digest_type type);
+EVP_MAC* get_mac();
 } // namespace crypto::internal
