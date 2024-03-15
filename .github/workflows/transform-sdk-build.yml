@@ -89,6 +89,7 @@ jobs:
         run: |
           tinygo build -scheduler=none -target=wasi -o identity.wasm ./identity
           tinygo build -scheduler=none -target=wasi -o identity_logging.wasm ./identity_logging
+          tinygo build -scheduler=none -target=wasi -o tee.wasm ./tee
       - name: Download integration test suite
         uses: actions/download-artifact@v4
         with:
@@ -99,7 +100,7 @@ jobs:
         env:
           IDENTITY: identity.wasm
           LOGGING: identity_logging.wasm
-          TEE: "@UNIMPLEMENTED@"
+          TEE: tee.wasm
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
