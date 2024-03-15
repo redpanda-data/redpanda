@@ -15,11 +15,11 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/types.h"
+#include "container/contiguous_range_map.h"
 #include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "ssx/async_algorithm.h"
-#include "utils/expiring_promise.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/abort_source.hh>
@@ -31,7 +31,6 @@
 
 #include <cstdint>
 #include <optional>
-#include <utility>
 
 namespace cluster {
 
@@ -113,7 +112,7 @@ public:
                    */
                   throw_if_modified(version_snapshot);
                   f(tp_ns,
-                    p.first,
+                    model::partition_id(p.first),
                     p.second.current_leader,
                     p.second.update_term);
               });
@@ -196,7 +195,8 @@ private:
         model::revision_id partition_revision;
     };
 
-    using partition_leaders = absl::btree_map<model::partition_id, leader_meta>;
+    using partition_leaders
+      = contiguous_range_map<model::partition_id::type, leader_meta>;
     using topics_t = absl::node_hash_map<
       model::topic_namespace,
       partition_leaders,
