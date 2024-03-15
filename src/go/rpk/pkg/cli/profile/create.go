@@ -591,27 +591,14 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 		return CloudClusterOutputs{}, ErrNoCloudClusters
 	}
 
-	// If there is just 1 cluster/virtual-cluster we go ahead and select that.
-	var selected nameAndCluster
-	if len(cs) == 1 && len(vcs) == 0 {
-		selected = nameAndCluster{
-			name: fmt.Sprintf("%s/%s", cloudapi.FindNamespace(cs[0].NamespaceUUID, nss), cs[0].Name),
-			c:    &cs[0],
-		}
-	} else if len(vcs) == 1 && len(cs) == 0 {
-		selected = nameAndCluster{
-			name: fmt.Sprintf("%s/%s", cloudapi.FindNamespace(vcs[0].NamespaceUUID, nss), vcs[0].Name),
-			vc:   &vcs[0],
-		}
-	} else {
-		ncs := combineClusterNames(nss, vcs, cs)
-		names := ncs.names()
-		idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to talk to?")
-		if err != nil {
-			return CloudClusterOutputs{}, err
-		}
-		selected = ncs[idx]
+	// Always prompt, even if there is only one option.
+	ncs := combineClusterNames(nss, vcs, cs)
+	names := ncs.names()
+	idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to talk to?")
+	if err != nil {
+		return CloudClusterOutputs{}, err
 	}
+	selected := ncs[idx]
 
 	var o CloudClusterOutputs
 	// We have a cluster selected, but the list response does not return
