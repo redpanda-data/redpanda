@@ -457,6 +457,8 @@ private:
 
     ss::future<ss::json::json_return_type>
     create_role_handler(std::unique_ptr<ss::http::request> req);
+    ss::future<ss::json::json_return_type>
+    list_roles_handler(std::unique_ptr<ss::http::request> req);
 
     ss::future<ss::json::json_return_type>
     update_role_members_handler(std::unique_ptr<ss::http::request> req);

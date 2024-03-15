@@ -331,10 +331,9 @@ void admin_server::register_security_routes() {
 
     register_route<superuser>(
       ss::httpd::security_json::list_roles,
-      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+      [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
-          ss::httpd::security_json::roles_list body;
-          co_return ss::json::json_return_type(body);
+          return list_roles_handler(std::move(req));
       });
 
     register_route<superuser>(
@@ -746,4 +745,42 @@ admin_server::update_role_members_handler(
 
     co_await throw_on_error(*req, err, model::controller_ntp);
     co_return ss::json::json_return_type(j_res);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::list_roles_handler(std::unique_ptr<ss::http::request> req) {
+    auto filter = req->get_query_param("filter");
+    auto user = req->get_query_param("principal");
+    auto principal_type = req->get_query_param("principal_type");
+
+    if (!principal_type.empty() && principal_type != "User") {
+        throw_role_exception(
+          role_errc::malformed_def,
+          fmt::format(
+            "Role membership reserved for user principals, got {{{}}}",
+            principal_type));
+    }
+
+    auto pred = [&filter, &user](const auto& role_entry) {
+        auto name_prefix_matches = filter.empty()
+                                   || security::role_store::name_prefix_filter(
+                                     role_entry, filter);
+        auto role_has_user = user.empty()
+                             || security::role_store::has_member(
+                               role_entry,
+                               security::role_member{
+                                 security::role_member_type::user, user});
+        return name_prefix_matches && role_has_user;
+    };
+
+    auto roles = _controller->get_role_store().local().range(pred);
+
+    ss::httpd::security_json::roles_list j_res{};
+    for (const auto& role_name : roles) {
+        ss::httpd::security_json::role_description j_desc;
+        j_desc.name = ss::sstring{role_name};
+        j_res.roles.push(j_desc);
+    }
+
+    return ss::make_ready_future<ss::json::json_return_type>(j_res);
 }
