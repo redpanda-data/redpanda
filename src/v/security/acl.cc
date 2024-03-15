@@ -91,7 +91,7 @@ bool acl_matches::empty() const {
         return false;
     }
     return std::all_of(
-      prefixes.cbegin(), prefixes.cend(), [](const entry_set_ref& e) {
+      prefixes.begin(), prefixes.end(), [](const entry_set_ref& e) {
           return e.acl_entry_set.get().empty();
       });
 }
@@ -148,24 +148,8 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
         literals = {it->first, it->second};
     }
 
-    /*
-     * the acls are sorted within (resource-type, pattern-type) bounds by name
-     * in reverse order so longer names (prefixes) appear first.
-     */
-    std::vector<acl_matches::entry_set_ref> prefixes;
-    {
-        auto it = _acls.lower_bound(
-          resource_pattern(resource, name, pattern_type::prefixed));
-
-        auto end = _acls.upper_bound(resource_pattern(
-          resource, name.substr(0, 1), pattern_type::prefixed));
-
-        for (; it != end; ++it) {
-            if (std::string_view(name).starts_with(it->first.name())) {
-                prefixes.emplace_back(it->first, it->second);
-            }
-        }
-    }
+    auto prefixes = get_prefix_view<acl_matches::entry_set_ref>(
+      _acls, resource, name);
 
     return acl_matches(wildcards, literals, std::move(prefixes));
 }
