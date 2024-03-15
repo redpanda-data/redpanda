@@ -1030,41 +1030,48 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
       ntp,
       placement);
 
-    // Cleanup obsolete revisions that should not exist on this node. This is
-    // typically done after the replicas update is finished.
+    std::optional<model::revision_id> expected_log_revision
+      = log_revision_on_node(replicas_view, _self);
 
-    auto local_delete = [&]() {
+    switch (placement.get_reconciliation_action(expected_log_revision)) {
+    case shard_placement_table::reconciliation_action::remove: {
+        // Cleanup obsolete revisions that should not exist on this node. This
+        // is typically done after the replicas update is finished.
         rs.set_cur_operation(
           replicas_view.last_update_finished_revision(),
           partition_operation_type::finish_update,
           replicas_view.assignment);
-        return delete_partition(
+        auto ec = co_await delete_partition(
           ntp,
           placement,
           replicas_view.last_update_finished_revision(),
           partition_removal_mode::local_only);
-    };
-
-    if (!placement.target) {
-        auto ec = co_await local_delete();
-        if (ec) {
-            co_return ec;
-        }
-        co_return ss::stop_iteration::yes;
-    }
-
-    // After this point placement.target is non-null and partition is expected
-    // to exist on this node.
-
-    if (
-      placement.local
-      && placement.local->log_revision < placement.target->log_revision) {
-        // We have a partition with obsolete log revision, delete it as well.
-        auto ec = co_await local_delete();
         if (ec) {
             co_return ec;
         }
         co_return ss::stop_iteration::no;
+    }
+    case shard_placement_table::reconciliation_action::wait_for_target_update:
+        co_return errc::waiting_for_shard_placement_update;
+    case shard_placement_table::reconciliation_action::transfer: {
+        rs.set_cur_operation(
+          replicas_view.last_cmd_revision(),
+          partition_operation_type::reset,
+          replicas_view.assignment);
+        auto ec = co_await transfer_partition(
+          ntp,
+          group_id,
+          expected_log_revision.value(),
+          placement.shard_revision);
+        if (ec) {
+            co_return ec;
+        }
+        co_return ss::stop_iteration::no;
+    }
+    case shard_placement_table::reconciliation_action::create:
+        // After this point the partition object is expected to exist on current
+        // shard, it will be created below.
+        break;
     }
 
     // Shut down disabled partitions
@@ -1081,25 +1088,6 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         }
         co_return ss::stop_iteration::yes;
     }
-
-    if (placement.local && !placement.expected_on_this_shard()) {
-        rs.set_cur_operation(
-          replicas_view.last_cmd_revision(),
-          partition_operation_type::reset,
-          replicas_view.assignment);
-        auto ec = co_await transfer_partition(
-          ntp,
-          group_id,
-          placement.local->log_revision,
-          placement.shard_revision);
-        if (ec) {
-            co_return ec;
-        }
-        co_return ss::stop_iteration::yes;
-    }
-
-    // After this point the partition object is expected to exist on current
-    // shard, create it if needed.
 
     if (!partition) {
         rs.set_cur_operation(
@@ -1136,7 +1124,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         auto ec = co_await create_partition(
           ntp,
           group_id,
-          placement.target.value().log_revision,
+          expected_log_revision.value(),
           placement.shard_revision,
           std::move(initial_replicas));
         if (ec) {

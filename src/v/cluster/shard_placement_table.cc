@@ -38,6 +38,27 @@ std::ostream& operator<<(
     return o;
 }
 
+shard_placement_table::reconciliation_action
+shard_placement_table::placement_state::get_reconciliation_action(
+  std::optional<model::revision_id> expected_log_revision) const {
+    if (!expected_log_revision) {
+        return reconciliation_action::remove;
+    }
+    if (!target) {
+        return reconciliation_action::remove;
+    }
+    if (local && local->log_revision < expected_log_revision) {
+        return reconciliation_action::remove;
+    }
+    if (target->log_revision != expected_log_revision) {
+        return reconciliation_action::wait_for_target_update;
+    }
+    if (_next || target->shard != ss::this_shard_id()) {
+        return reconciliation_action::transfer;
+    }
+    return reconciliation_action::create;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const shard_placement_table::placement_state& gs) {
     fmt::print(

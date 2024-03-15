@@ -75,6 +75,17 @@ public:
         operator<<(std::ostream&, const shard_local_state&);
     };
 
+    enum class reconciliation_action {
+        /// Partition must be removed from this node
+        remove,
+        /// Partition must be transferred to other shard
+        transfer,
+        /// Wait until target catches up with topic_table
+        wait_for_target_update,
+        /// Partition must be created on this shard
+        create,
+    };
+
     /// A struct holding both current shard-local and target states for an ntp.
     struct placement_state {
         /// Current shard-local state for this ntp. Will be non-null if
@@ -86,12 +97,11 @@ public:
         /// Revision of the target shard.
         model::shard_revision_id shard_revision;
 
-        // invariant: if local is nullopt, then expected_on_this_shard() is true
-        // (there is no point in keeping an item that has no local state as well
-        // as is not expected on this shard)
-        bool expected_on_this_shard() const {
-            return !_next && target && target->shard == ss::this_shard_id();
-        }
+        /// Based on expected log revision for this ntp on this node
+        /// (queried from topic_table) and the placement state, calculate the
+        /// required reconciliation action for this NTP on this shard.
+        reconciliation_action get_reconciliation_action(
+          std::optional<model::revision_id> expected_log_revision) const;
 
         friend std::ostream& operator<<(std::ostream&, const placement_state&);
 
