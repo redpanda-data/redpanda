@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 
 from kafka import KafkaAdminClient
-from kafka.errors import NoBrokersAvailable
+from kafka.errors import NoBrokersAvailable, BrokerNotAvailableError
 from kafka.admin import NewTopic
 
 
@@ -295,20 +295,26 @@ def main(args):
                 num_replicas=args.num_replicas)
 
             data = {'topics': topics, 'timings': timings}
-        except NoBrokersAvailable as e:
+        except (NoBrokersAvailable, BrokerNotAvailableError) as e:
             data = {'error': f"{e.__str__()} for '{args.brokers}'"}
         except Exception as e:
             import traceback
             # If timeout happens, it will go here
             # and be reported and handled like a normal error
-            data = {
-                'error':
-                ''.join(traceback.format_exception(type(e), e,
-                                                   e.__traceback__))
-            }
+            exc_fmt = traceback.format_exception(type(e), e, e.__traceback__)
+            trimmed = []
+            # Trim long traceback lines here
+            for line in exc_fmt:
+                _size = len(line)
+                # Traceback lines actually trippled: "File ...\n Code hint\nMarker"
+                # This is why 512 would work better
+                if len(line) > 512:
+                    trimmed += [line[:256] + f"...({_size} chars)"]
+                else:
+                    trimmed += [line]
+            data = {'error': ''.join(trimmed)}
         finally:
             write_json(sys.stdout, data)
-
     else:
         data = {
             'error':
