@@ -269,7 +269,7 @@ func CreateFlow(
 		// * We are creating a profile for a cloud cluster
 		// * The user's prior profile was the rpk-cloud profile
 		// * We are updating the values of the existing current profile
-		fmt.Printf("Updated profile %q to talk to cloud cluster %q.\n", RpkCloudProfileName, o.ClusterName)
+		fmt.Printf("Updated profile %q to talk to cloud cluster %q.\n", RpkCloudProfileName, o.FullName())
 		if yAct.CurrentProfile != RpkCloudProfileName {
 			panic("invalid invariant: prior profile should have been the rpk-cloud profile")
 		}
@@ -278,13 +278,13 @@ func CreateFlow(
 		// * We are creating a profile for a cloud cluster
 		// * The user's prior profile was NOT the rpk-cloud profile
 		// * We are switching to the existing rpk-cloud profile and updating the values
-		fmt.Printf("Switched to existing %q profile and updated it to talk to cluster %q.\n", RpkCloudProfileName, o.ClusterName)
+		fmt.Printf("Switched to existing %q profile and updated it to talk to cluster %q.\n", RpkCloudProfileName, o.FullName())
 		priorAuth, currentAuth := yAct.MoveProfileToFront(p)
 		config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 
 	case fromCloud != "" && name == RpkCloudProfileName:
 		// * We are creating a NEW rpk-cloud profile and switching to it
-		fmt.Printf("Created and switched to a new profile %q to talk to cloud cluster %q.\n", RpkCloudProfileName, o.ClusterName)
+		fmt.Printf("Created and switched to a new profile %q to talk to cloud cluster %q.\n", RpkCloudProfileName, o.FullName())
 		priorAuth, currentAuth := yAct.PushProfile(*p)
 		config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 
@@ -480,11 +480,12 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, c cloud
 		isSASL = l[0].SASL != nil
 	}
 	return CloudClusterOutputs{
-		Profile:     p,
-		ClusterName: c.Name,
-		ClusterID:   c.ID,
-		MessageMTLS: isMTLS,
-		MessageSASL: isSASL,
+		Profile:       p,
+		NamespaceName: ns.Name,
+		ClusterName:   c.Name,
+		ClusterID:     c.ID,
+		MessageMTLS:   isMTLS,
+		MessageSASL:   isSASL,
 	}
 }
 
@@ -513,11 +514,12 @@ func fromVirtualCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, vc cl
 	}
 
 	return CloudClusterOutputs{
-		Profile:     p,
-		ClusterName: vc.Name,
-		ClusterID:   vc.ID,
-		MessageMTLS: false, // we do not need to print any required message; we generate the config in full
-		MessageSASL: false, // same
+		Profile:       p,
+		NamespaceName: ns.Name,
+		ClusterName:   vc.Name,
+		ClusterID:     vc.ID,
+		MessageMTLS:   false, // we do not need to print any required message; we generate the config in full
+		MessageSASL:   false, // same
 	}
 }
 
@@ -571,11 +573,17 @@ var ErrNoCloudClusters = errors.New("no clusters found")
 
 // CloudClusterOutputs contains outputs from a cloud based profile.
 type CloudClusterOutputs struct {
-	Profile     config.RpkProfile
-	ClusterID   string
-	ClusterName string
-	MessageMTLS bool
-	MessageSASL bool
+	Profile       config.RpkProfile
+	NamespaceName string
+	ClusterID     string
+	ClusterName   string
+	MessageMTLS   bool
+	MessageSASL   bool
+}
+
+// Duplicates RpkCloudProfile.FullName (easier for now).
+func (o CloudClusterOutputs) FullName() string {
+	return fmt.Sprintf("%s/%s", o.NamespaceName, o.ClusterName)
 }
 
 // PromptCloudClusterProfile returns a profile for the cluster selected by the
