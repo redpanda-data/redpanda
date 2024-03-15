@@ -57,7 +57,7 @@ exist, this command creates it and switches to it.
 
 			if preFromCloud {
 				if !update.FromCloud || preCloudDetails != update.CloudCluster {
-					out.Die("cannot change a cloud profile to a non-cloud profile, and cannot change cloud cluster details")
+					out.Die("cannot change a cloud profile to a non-cloud profile, and cannot change cloud cluster details; please create and edit a new profile")
 				}
 			}
 

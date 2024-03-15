@@ -161,7 +161,7 @@ func CreateFlow(
 	}
 
 	var (
-		p *config.RpkProfile
+		p = new(config.RpkProfile) // if we do not use any `--from-flag`, we create a default empty profile
 		o CloudClusterOutputs
 
 		priorProfile = yAct.Profile(yAct.CurrentProfile)

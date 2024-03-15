@@ -22,11 +22,11 @@ func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:               "edit [NAME]",
 		Short:             "Edit an rpk auth",
 		Args:              cobra.MaximumNArgs(1),
+		Hidden:            true,
 		ValidArgsFunction: validAuths(fs, p),
 		Run: func(*cobra.Command, []string) {
 			fmt.Println("edit is deprecated, rpk now fully manages auth fields.")
 		},
 	}
-	cmd.Flags().StringVarP(new(string), "org", "o", "", "The organization of the cloud auth to edit")
 	return cmd
 }
