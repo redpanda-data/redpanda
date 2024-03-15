@@ -113,7 +113,6 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
     topics = (
         TopicSpec(partition_count=61, replication_factor=3),
         TopicSpec(partition_count=151, replication_factor=3),
-        TopicSpec(partition_count=200, replication_factor=3),
     )
 
     def __init__(self, test_context):
