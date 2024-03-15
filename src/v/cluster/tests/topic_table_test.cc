@@ -22,7 +22,7 @@ using namespace std::chrono_literals;
 
 FIXTURE_TEST(test_happy_path_create, topic_table_fixture) {
     create_topics();
-    auto md = table.local().all_topics_metadata();
+    auto& md = table.local().all_topics_metadata();
 
     BOOST_REQUIRE_EQUAL(md.size(), 3);
 
@@ -60,7 +60,7 @@ FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
         model::offset(0))
       .get0();
 
-    auto md = table.local().all_topics_metadata();
+    auto& md = table.local().all_topics_metadata();
     BOOST_REQUIRE_EQUAL(md.size(), 1);
     BOOST_REQUIRE(md.contains(make_tp_ns("test_tp_1")));
 

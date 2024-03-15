@@ -63,6 +63,7 @@ rp_test(
   BINARY_NAME utils_gunit
   SOURCES
     fragmented_vector_test.cc
+    contiguous_range_map_test.cc
   LIBRARIES v::utils v::gtest_main
   LABELS utils
 )
@@ -73,4 +74,14 @@ rp_test(
   SOURCES seastar_histogram_bench.cc
   LIBRARIES Seastar::seastar_perf_testing v::utils
   LABELS utils
+)
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME container
+  SOURCES 
+    map_bench.cc
+  LIBRARIES 
+    Seastar::seastar_perf_testing
+    v::seastar_testing_main
 )
