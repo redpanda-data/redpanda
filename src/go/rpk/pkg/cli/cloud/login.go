@@ -131,8 +131,10 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 			// The current profile was auth'd to the current organization.
 			// We tell the status of what org the user is talking to.
 			if p.FromCloud {
-				fmt.Printf("You are talking to a cloud cluster %q (rpk profile name: %q) ", p.CloudCluster.FullName(), p.Name)
-				fmt.Println("To switch which cluster you are talking to, use 'rpk cloud cluster select'.")
+				fmt.Printf("You are talking to a cloud cluster %q (rpk profile name: %q)\n", p.CloudCluster.FullName(), p.Name)
+				fmt.Println("Select a different cluster to talk to (or ctrl+c to keep the current cluster)?")
+				err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
+				profile.MaybeDieExistingName(err)
 				return
 			}
 
