@@ -1162,6 +1162,14 @@ func (c *Config) promptDeleteOldRpkYaml(fs afero.Fs) error {
 	}
 	var deleteAuthNames []string
 	var deleteProfileNames []string
+	containsAuth := func(name string) bool {
+		for _, delName := range deleteAuthNames {
+			if delName == name {
+				return true
+			}
+		}
+		return false
+	}
 	for _, a := range c.rpkYamlActual.CloudAuths {
 		if a.Organization == "" || a.OrgID == "" {
 			deleteAuthNames = append(deleteAuthNames, a.Name)
@@ -1170,7 +1178,11 @@ func (c *Config) promptDeleteOldRpkYaml(fs afero.Fs) error {
 	}
 	for _, p := range c.rpkYamlActual.Profiles {
 		cc := &p.CloudCluster
-		if p.FromCloud && c.rpkYamlActual.LookupAuth(cc.AuthOrgID, cc.AuthKind) == nil {
+		if !p.FromCloud {
+			continue
+		}
+		a := c.rpkYamlActual.LookupAuth(cc.AuthOrgID, cc.AuthKind)
+		if a == nil || containsAuth(a.Name) {
 			deleteProfileNames = append(deleteProfileNames, p.Name)
 			continue
 		}
