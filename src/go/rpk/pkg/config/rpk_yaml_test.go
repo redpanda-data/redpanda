@@ -29,7 +29,7 @@ func TestRpkYamlVersion(t *testing.T) {
 	)
 
 	if shastr != v3sha {
-		t.Errorf("rpk.yaml type shape has changed (got sha %s != exp %s, if fields were reordered, update the valid v1 sha, otherwise bump the rpk.yaml version number", shastr, v3sha)
+		t.Errorf("rpk.yaml type shape has changed (got sha %s != exp %s, if fields were reordered, update the valid v3 sha, otherwise bump the rpk.yaml version number", shastr, v3sha)
 		t.Errorf("current shape:\n%s\n", s)
 	}
 }

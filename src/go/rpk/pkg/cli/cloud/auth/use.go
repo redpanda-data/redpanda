@@ -71,7 +71,7 @@ profile is kept.
 			out.MaybeDie(err, "unable to write rpk.yaml: %v", err)
 
 			if profileCleared {
-				fmt.Printf("Clearing the current profile %q which is using the auth that is being swapped swapped from.\n", priorProfile)
+				fmt.Printf("Clearing the current profile %q which is using the auth that is being swapped from.\n", priorProfile)
 			}
 			fmt.Printf("Set current cloud auth to %q.\n", name)
 		},

@@ -21,7 +21,7 @@ import (
 
 func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete [NAME] --org [ORG]",
+		Use:   "delete [NAME]",
 		Short: "Delete an rpk cloud auth",
 		Long: `Delete an rpk cloud auth.
 
@@ -53,9 +53,9 @@ cluster via SASL credentials.
 
 			// We could have deleted multiple if there is a bug in
 			// the logic or if the file is corrupted somehow; we do
-			// exact name and org match and should prevent creation
-			// of duplicates. But, if we delete multiple, that's
-			// ok; we just print information about the first.
+			// exact name match and should prevent creation of
+			// duplicates. But, if we delete multiple, that's ok;
+			// we just print information about the first.
 			keep := y.CloudAuths[:0]
 			var deleted config.RpkCloudAuth
 			for i := range y.CloudAuths {
@@ -99,6 +99,7 @@ cluster via SASL credentials.
 				}
 				for i := range attachedProfiles {
 					p := &y.Profiles[i]
+					p.FromCloud = false
 					p.CloudCluster.AuthOrgID = ""
 					p.CloudCluster.AuthKind = ""
 				}
