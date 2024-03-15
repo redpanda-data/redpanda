@@ -121,7 +121,7 @@ To create a new rpk profile for a cluster in this organization, try either:
 rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 `)
 				} else {
-					fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process, feel free to ctrl+c now.")
+					fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process, you can ctrl+c now.")
 					err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
 					profile.MaybeDieExistingName(err)
 				}
