@@ -171,12 +171,13 @@ public:
           0, last_applied_offset(), serde::to_iobuf(state));
     };
 
-    static void
+    static std::optional<kv_operation>
     apply_to_state(const model::record_batch& batch, kv_state& state) {
         if (batch.header().type != model::record_batch_type::raft_data) {
-            return;
+            return std::nullopt;
         }
-        batch.for_each_record([&state](model::record r) {
+        kv_operation last_op;
+        batch.for_each_record([&state, &last_op](model::record r) {
             auto op = serde::from_iobuf<kv_operation>(r.value().copy());
             /**
              * Here we check if validation pre replication is correct.
@@ -206,11 +207,16 @@ public:
                     state.remove(op.key);
                 }
             }
+            last_op = op;
         });
+        return last_op;
     }
 
     ss::future<> apply(const model::record_batch& batch) override {
-        apply_to_state(batch, state);
+        auto last_op = apply_to_state(batch, state);
+        if (last_op) {
+            last_operation = std::move(*last_op);
+        }
         co_return;
     }
 
@@ -265,7 +271,36 @@ public:
     }
 
     kv_state state;
+    kv_operation last_operation;
     raft_node_instance& raft_node;
+};
+
+class other_persisted_kv : public persisted_kv {
+public:
+    static constexpr std::string_view name = "other_persited_kv_stm";
+    explicit other_persisted_kv(raft_node_instance& rn)
+      : persisted_kv(rn) {}
+    ss::future<> apply_raft_snapshot(const iobuf& buffer) override {
+        if (buffer.empty()) {
+            co_return;
+        }
+        state = serde::from_iobuf<kv_state>(buffer.copy());
+        co_return;
+    };
+    /**
+     * This STM doesn't execute the full apply logic from the base persisted_kv
+     * as it is going to be started without the full data in the snapshot, hence
+     * the validation would fail.
+     */
+    ss::future<> apply(const model::record_batch& batch) override {
+        if (batch.header().type != model::record_batch_type::raft_data) {
+            co_return;
+        }
+        batch.for_each_record([this](model::record r) {
+            last_operation = serde::from_iobuf<kv_operation>(r.value().copy());
+        });
+        co_return;
+    }
 };
 
 struct persisted_stm_test_fixture : state_machine_fixture {
@@ -547,5 +582,72 @@ TEST_F_CORO(persisted_stm_test_fixture, test_raft_and_local_snapshot) {
 
     for (const auto& [_, stm] : node_stms) {
         ASSERT_EQ_CORO(stm->state, expected);
+    }
+}
+/**
+ * Tests the scenario in which an STM is added to the partition after it was
+ * already alive and Raft snapshot was taken on the partition.
+ *
+ * The snapshot doesn't contain data for the newly created stm, however the stm
+ * next offset should still be updated to make it possible for the STM to catch
+ * up.
+ */
+TEST_F_CORO(persisted_stm_test_fixture, test_adding_state_machine) {
+    co_await initialize_state_machines();
+    kv_state expected;
+    auto ops = random_operations(2000);
+    for (auto batch : ops) {
+        co_await apply_operations(expected, std::move(batch));
+    }
+    co_await wait_for_apply();
+    for (const auto& [_, stm] : node_stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+    }
+
+    // take local snapshot on every node
+    co_await take_local_snapshot_on_every_node();
+    // update state
+    auto ops_phase_two = random_operations(50);
+    for (auto batch : ops_phase_two) {
+        co_await apply_operations(expected, std::move(batch));
+    }
+
+    co_await wait_for_apply();
+    for (const auto& [_, stm] : node_stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+    }
+
+    // take Raft snapshot on every node, there are two possibilities here either
+    // a snapshot will be taken at offset preceding current local snapshot or
+    // the one following local snapshot.
+    co_await take_raft_snapshot_all_nodes();
+
+    auto committed = node(model::node_id(0)).raft()->committed_offset();
+
+    absl::flat_hash_map<model::node_id, ss::sstring> data_directories;
+    for (auto& [id, node] : nodes()) {
+        data_directories[id] = node->raft()->log()->config().base_directory();
+    }
+
+    for (auto& [id, data_dir] : data_directories) {
+        co_await stop_node(id);
+        add_node(id, model::revision_id(0), std::move(data_dir));
+    }
+    ss::shared_ptr<other_persisted_kv> other_stm;
+    for (auto& [_, node] : nodes()) {
+        co_await node->initialise(all_vnodes());
+        raft::state_machine_manager_builder builder;
+        auto stm = builder.create_stm<persisted_kv>(*node);
+        other_stm = builder.create_stm<other_persisted_kv>(*node);
+        co_await node->start(std::move(builder));
+        node_stms.emplace(node->get_vnode(), std::move(stm));
+    }
+
+    co_await wait_for_committed_offset(committed, 30s);
+    co_await wait_for_apply();
+
+    for (const auto& [_, stm] : node_stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+        ASSERT_EQ_CORO(stm->last_operation, other_stm->last_operation);
     }
 }

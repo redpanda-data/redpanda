@@ -251,11 +251,11 @@ ss::future<> state_machine_manager::do_apply_raft_snapshot(
           _log.debug,
           "applying empty snapshot at offset: {} for backward "
           "compatibility",
-          metadata.last_included_index);
+          last_offset);
         co_await ss::coroutine::parallel_for_each(
-          _machines, [metadata, last_offset](auto& pair) {
+          _machines, [last_offset](auto& pair) {
               auto stm = pair.second->stm;
-              if (stm->last_applied_offset() >= metadata.last_included_index) {
+              if (stm->last_applied_offset() >= last_offset) {
                   return ss::now();
               }
               return stm->apply_raft_snapshot(iobuf{}).then([stm, last_offset] {
@@ -269,25 +269,35 @@ ss::future<> state_machine_manager::do_apply_raft_snapshot(
         auto snap = co_await serde::read_async<managed_snapshot>(parser);
 
         co_await ss::coroutine::parallel_for_each(
-          snap.snapshot_map,
-          [this, metadata, last_offset](auto& snapshot_pair) {
-              auto it = _machines.find(snapshot_pair.first);
-              if (
-                it == _machines.end()
-                || it->second->stm->last_applied_offset()
-                     >= metadata.last_included_index) {
-                  return ss::now();
-              }
-
-              return it->second->stm
-                ->apply_raft_snapshot(std::move(snapshot_pair.second))
-                .then([stm = it->second->stm, last_offset] {
-                    stm->set_next(
-                      std::max(model::next_offset(last_offset), stm->next()));
-                });
+          _machines,
+          [this, snap = std::move(snap), last_offset](
+            state_machines_t::value_type& stm_pair) mutable {
+              return apply_snapshot_to_stm(stm_pair.second, snap, last_offset);
           });
     }
     _next = model::next_offset(metadata.last_included_index);
+}
+
+ss::future<> state_machine_manager::apply_snapshot_to_stm(
+  ss::lw_shared_ptr<state_machine_entry> stm_entry,
+  const managed_snapshot& snapshot,
+  model::offset last_offset) {
+    auto it = snapshot.snapshot_map.find(stm_entry->name);
+
+    if (stm_entry->stm->last_applied_offset() < last_offset) {
+        if (it != snapshot.snapshot_map.end()) {
+            co_await stm_entry->stm->apply_raft_snapshot(it->second);
+        } else {
+            /**
+             * In order to hold the stm contract we need to call the
+             * apply_raft_snapshot with empty data
+             */
+            co_await stm_entry->stm->apply_raft_snapshot(iobuf{});
+        }
+    }
+
+    stm_entry->stm->set_next(
+      std::max(model::next_offset(last_offset), stm_entry->stm->next()));
 }
 
 ss::future<> state_machine_manager::apply() {
