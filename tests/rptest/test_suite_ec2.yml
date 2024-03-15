@@ -9,3 +9,4 @@ ec2:
     - tests/librdkafka_test.py # normally disabled
     - tests/e2e_iam_role_test.py # use static credentials
     - tests/consumer_group_recovery_tool_test.py # use script available in dockerfile
+    - scale_tests/many_topics_test.py # Exclude until https://github.com/redpanda-data/redpanda/issues/16818 fixed
