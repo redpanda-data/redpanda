@@ -35,6 +35,7 @@
 #include "net/unresolved_address.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
+#include "security/role_store.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
@@ -110,6 +111,7 @@ metrics_reporter::metrics_reporter(
   ss::sharded<health_monitor_frontend>& health_monitor,
   ss::sharded<config_frontend>& config_frontend,
   ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<security::role_store>& role_store,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
   , _cluster_info(controller_stm.local().get_metrics_reporter_cluster_info())
@@ -119,6 +121,7 @@ metrics_reporter::metrics_reporter(
   , _health_monitor(health_monitor)
   , _config_frontend(config_frontend)
   , _feature_table(feature_table)
+  , _role_store(role_store)
   , _as(as)
   , _logger(logger, "metrics-reporter") {}
 
@@ -251,6 +254,9 @@ metrics_reporter::build_metrics_snapshot() {
 
     snapshot.has_oidc = config::oidc_is_enabled_kafka()
                         || config::oidc_is_enabled_http();
+
+    snapshot.has_rbac
+      = !_role_store.local().range([](auto const&) { return true; }).empty();
 
     auto env_value = std::getenv("REDPANDA_ENVIRONMENT");
     if (env_value) {
@@ -512,6 +518,9 @@ void rjson_serialize(
 
     w.Key("has_oidc");
     w.Bool(snapshot.has_oidc);
+
+    w.Key("has_rbac");
+    w.Bool(snapshot.has_rbac);
 
     w.Key("config");
     config::shard_local_cfg().to_json_for_metrics(w);

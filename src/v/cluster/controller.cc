@@ -624,6 +624,7 @@ ss::future<> controller::start(
             std::ref(_hm_frontend),
             std::ref(_config_frontend),
             std::ref(_feature_table),
+            std::ref(_roles),
             std::ref(_as));
       })
       .then([this] {
