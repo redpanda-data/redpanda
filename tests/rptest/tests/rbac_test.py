@@ -11,15 +11,19 @@ import time
 
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
+import json
 
+from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin, RoleUpdate, RoleErrorCode, RoleError, RolesList
+from rptest.services.admin import (Admin, RoleMemberList, RoleUpdate,
+                                   RoleErrorCode, RoleError, RolesList,
+                                   RoleMemberUpdateResponse, RoleMember)
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.admin_api_auth_test import create_user_and_wait
 from rptest.tests.metrics_reporter_test import MetricsReporterServer
-from rptest.util import expect_exception, expect_http_error
+from rptest.util import expect_exception, expect_http_error, wait_until_result
 
 ALICE = SaslCredentials("alice", "itsMeH0nest", "SCRAM-SHA-256")
 
@@ -69,15 +73,13 @@ class RBACTest(RBACTestBase):
                                                  self.role_name1))
 
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role_members(role=self.role_name1,
-                                                     add=[ALICE.username])
+            self.superuser_admin.update_role(role=self.role_name0,
+                                             update=RoleUpdate(
+                                                 self.role_name1))
 
         res = self.superuser_admin.list_roles(filter='ba',
                                               principal=ALICE.username)
         assert len(RolesList.from_response(res)) == 0, "Unexpected roles"
-
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.list_role_members(role=self.role_name1)
 
         res = self.superuser_admin.list_user_roles()
         assert len(RolesList.from_response(res)) == 0, "Unexpected user roles"
@@ -103,8 +105,11 @@ class RBACTest(RBACTestBase):
                                         update=RoleUpdate(self.role_name1))
 
         with expect_http_error(403):
-            self.user_admin.update_role_members(role=self.role_name1,
-                                                add=[ALICE.username])
+            self.user_admin.update_role_members(
+                role=self.role_name1,
+                add=[
+                    RoleMember(RoleMember.PrincipalType.USER, ALICE.username)
+                ])
 
         with expect_http_error(403):
             self.user_admin.list_role_members(role=self.role_name1)
@@ -148,6 +153,233 @@ class RBACTest(RBACTestBase):
 
             with expect_http_error(400):
                 self.superuser_admin.create_role(role=invalid_rolename)
+
+    @cluster(num_nodes=3)
+    def test_members_endpoint(self):
+        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
+        bob = RoleMember(RoleMember.PrincipalType.USER, 'bob')
+
+        self.logger.debug(
+            "Test that update_role_members can create the role as a side effect"
+        )
+        res = self.superuser_admin.update_role_members(role=self.role_name0,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, "Expected 200 (OK)"
+        member_update = RoleMemberUpdateResponse.from_response(res)
+        assert member_update.role == self.role_name0, f"Incorrect role name: {member_update.role}"
+        assert member_update.created, "Expected created flag to be set"
+        assert len(member_update.added
+                   ) == 1, f"Incorrect 'added' result: {member_update.added}"
+        assert len(
+            member_update.removed
+        ) == 0, f"Incorrect 'removed' result: {member_update.removed}"
+        assert alice in member_update.added, f"Incorrect member added: {member_update.added[0]}"
+
+        def try_get_members(role):
+            try:
+                res = self.superuser_admin.list_role_members(role=role)
+                return True, res
+            except:
+                return False, None
+
+        self.logger.debug("And check that we can query the role we created")
+        res = wait_until_result(lambda: try_get_members(self.role_name0),
+                                timeout_sec=5,
+                                backoff_sec=1)
+        assert res is not None, f"Failed to get members for newly created role"
+
+        assert res.status_code == 200, "Expected 200 (OK)"
+        members = RoleMemberList.from_response(res)
+        assert len(members) == 1, f"Unexpected members list: {members}"
+        assert alice in members, f"Missing expected member, got: {members}"
+
+        self.logger.debug("Now add a new member to the role")
+        res = self.superuser_admin.update_role_members(role=self.role_name0,
+                                                       add=[bob],
+                                                       create=False)
+
+        assert res.status_code == 200, "Expected 200 (OK)"
+        member_update = RoleMemberUpdateResponse.from_response(res)
+        assert len(member_update.added
+                   ) == 1, f"Incorrect 'added' result: {member_update.added}"
+        assert len(
+            member_update.removed
+        ) == 0, f"Incorrect 'removed' result: {member_update.removed}"
+        assert bob in member_update.added
+
+        def until_members(role,
+                          expected: list[RoleMember] = [],
+                          excluded: list[RoleMember] = []):
+            try:
+                res = self.superuser_admin.list_role_members(role=role)
+                assert res.status_code == 200, "Expected 200 (OK)"
+                members = RoleMemberList.from_response(res)
+                exp = all(m in members for m in expected)
+                excl = not any(m in members for m in excluded)
+                return exp and excl, members
+            except:
+                return False, None
+
+        self.logger.debug(
+            "And verify that the members list eventually reflects that change")
+        members = wait_until_result(
+            lambda: until_members(self.role_name0, expected=[alice, bob]),
+            timeout_sec=5,
+            backoff_sec=1)
+
+        assert members is not None, "Failed to get members"
+        for m in [bob, alice]:
+            assert m in members, f"Missing member {m}, got: {members}"
+
+        self.logger.debug("Remove a member from the role")
+        res = self.superuser_admin.update_role_members(role=self.role_name0,
+                                                       remove=[alice])
+        assert res.status_code == 200, "Expected 200 (OK)"
+        member_update = RoleMemberUpdateResponse.from_response(res)
+
+        assert len(
+            member_update.removed
+        ) == 1, f"Incorrect 'removed' result: {member_update.removed}"
+        assert len(member_update.added
+                   ) == 0, f"Incorrect 'added' result: {member_update.added}"
+        assert alice in member_update.removed, f"Expected {alice} to be removed, got {member_update.removed}"
+
+        self.logger.debug(
+            "And verify that the members list eventually reflects the removal")
+        members = wait_until_result(lambda: until_members(
+            self.role_name0, expected=[bob], excluded=[alice]),
+                                    timeout_sec=5,
+                                    backoff_sec=1)
+
+        assert members is not None
+        assert len(members) == 1, f"Unexpected member: {members}"
+        assert alice not in members, f"Unexpected member {alice}, got: {members}"
+
+        self.logger.debug(
+            "Test update idempotency - no-op update should succeed")
+        res = self.superuser_admin.update_role_members(role=self.role_name0,
+                                                       add=[bob])
+        assert res.status_code == 200, "Expected 200 (OK)"
+        member_update = RoleMemberUpdateResponse.from_response(res)
+        assert len(member_update.added
+                   ) == 0, f"Unexpectedly added members: {member_update.added}"
+        assert len(
+            member_update.removed
+        ) == 0, f"Unexpectedly removed members: {member_update.removed}"
+
+        self.logger.debug(
+            "Check that the create flag works even when add/remove lists are empty"
+        )
+        res = self.superuser_admin.update_role_members(role=self.role_name1,
+                                                       create=True)
+        assert res.status_code == 200, "Expected 200 (OK)"  # TODO(oren): should be 201??
+        member_update = RoleMemberUpdateResponse.from_response(res)
+        assert len(member_update.added
+                   ) == 0, f"Unexpectedly added members: {member_update.added}"
+        assert len(
+            member_update.removed
+        ) == 0, f"Unexpectedly removed members: {member_update.removed}"
+        assert member_update.created, "Expected created flag to be set"
+
+    @cluster(num_nodes=3)
+    def test_members_endpoint_errors(self):
+        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
+        bob = RoleMember(RoleMember.PrincipalType.USER, 'bob')
+
+        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
+            self.superuser_admin.list_role_members(role=self.role_name0)
+
+        self.logger.debug(
+            "ROLE_NOT_FOUND whether create flag is defaulted or explicitly set false"
+        )
+        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
+            self.superuser_admin.update_role_members(role=self.role_name0,
+                                                     add=[alice])
+
+        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
+            self.superuser_admin.update_role_members(role=self.role_name0,
+                                                     add=[alice],
+                                                     create=False)
+
+        self.logger.debug(
+            "MEMBER_LIST_CONFLICT even if the role doesn't exist")
+        with expect_role_error(RoleErrorCode.MEMBER_LIST_CONFLICT):
+            self.superuser_admin.update_role_members(role=self.role_name0,
+                                                     add=[alice],
+                                                     remove=[alice],
+                                                     create=True)
+
+        self.logger.debug("Check that errored update has no effect")
+        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
+            self.superuser_admin.list_role_members(role=self.role_name0)
+
+        self.logger.debug("POST body must be a JSON object")
+        with expect_role_error(RoleErrorCode.MALFORMED_DEF):
+            self.superuser_admin._request(
+                "post",
+                f"security/roles/{self.role_name0}/members",
+                data='["json list not an object"]')
+
+        self.superuser_admin.update_role_members(role=self.role_name0,
+                                                 create=True)
+
+        def role_exists(role):
+            try:
+                self.superuser_admin.list_role_members(role=role)
+                return True
+            except:
+                return False
+
+        wait_until(lambda: role_exists(self.role_name0),
+                   timeout_sec=5,
+                   backoff_sec=1)
+
+        self.logger.debug("Role members must be JSON objects")
+        with expect_role_error(RoleErrorCode.MALFORMED_DEF):
+            self.superuser_admin._request(
+                "post",
+                f"security/roles/{self.role_name0}/members",
+                data=json.dumps({'add': ["foo"]}))
+
+        self.logger.debug("Role members must have name field")
+        with expect_role_error(RoleErrorCode.MALFORMED_DEF):
+            self.superuser_admin._request(
+                "post",
+                f"security/roles/{self.role_name0}/members",
+                data=json.dumps({'add': [{}]}))
+
+        self.logger.debug("Role members must have principal_type field")
+        with expect_role_error(RoleErrorCode.MALFORMED_DEF):
+            self.superuser_admin._request(
+                "post",
+                f"security/roles/{self.role_name0}/members",
+                data=json.dumps({'add': [{
+                    'name': 'foo',
+                }]}))
+
+        self.logger.debug("principal_type field must be 'User'")
+        with expect_role_error(RoleErrorCode.MALFORMED_DEF):
+            self.superuser_admin._request(
+                "post",
+                f"security/roles/{self.role_name0}/members",
+                data=json.dumps(
+                    {'add': [{
+                        'name': 'foo',
+                        'principal_type': 'user',
+                    }]}))
+
+        self.logger.debug("A valid raw request")
+        res = self.superuser_admin._request(
+            "post",
+            f"security/roles/{self.role_name0}/members",
+            data=json.dumps(
+                {'add': [{
+                    'name': 'foo',
+                    'principal_type': 'User',
+                }]}))
+
+        assert res.status_code == 200, f"Request unexpectedly failed with status {res.status_code}"
 
 
 class RBACTelemetryTest(RBACTestBase):
