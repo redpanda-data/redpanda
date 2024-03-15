@@ -49,6 +49,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 		isNewToken bool
 		authKind   string
 	)
+
 	if authVir.HasClientCredentials() {
 		zap.L().Sugar().Debug("logging in using client credential flow")
 		tok, isNewToken, err = ClientCredentialFlow(ctx, cl, authVir, forceReload)
@@ -76,6 +77,15 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 				return org, orgErr
 			}
 			orgOnce = true
+
+			if cloudAPIURL == "" {
+				zap.L().Sugar().Debug("returning fake organization because cloudAPIURL is empty")
+				return cloudapi.Organization{cloudapi.NameID{
+					ID:   "no-url-org-id",
+					Name: "no-url-org",
+				}}, nil
+			}
+
 			org, orgErr = cloudapi.NewClient(cloudAPIURL, tok.AccessToken, httpapi.ReqTimeout(10*time.Second)).Organization(ctx)
 			if orgErr != nil {
 				return org, fmt.Errorf("unable to retrieve the organization for this token: %w", orgErr)

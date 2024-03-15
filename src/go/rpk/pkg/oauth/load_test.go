@@ -21,6 +21,7 @@ func TestLoadFlow(t *testing.T) {
 		mDevice      func(ctx context.Context) (DeviceCode, error)
 		mDeviceToken func(ctx context.Context, deviceCode string) (Token, error)
 		exp          string
+		expKind      string
 		expErr       bool
 	}{
 		{
@@ -30,7 +31,8 @@ func TestLoadFlow(t *testing.T) {
 			mToken: func(_ context.Context, _, _ string) (Token, error) {
 				return Token{AccessToken: "success-credential"}, nil
 			},
-			exp: "success-credential",
+			exp:     "success-credential",
+			expKind: config.CloudAuthClientCredentials,
 		},
 		{
 			name:         "get token with device flow",
@@ -41,7 +43,8 @@ func TestLoadFlow(t *testing.T) {
 			mDeviceToken: func(context.Context, string) (Token, error) {
 				return Token{AccessToken: "success-device"}, nil
 			},
-			exp: "success-device",
+			exp:     "success-device",
+			expKind: config.CloudAuthSSO,
 		},
 		{
 			name:         "choose client credentials over device if credentials are provided",
@@ -56,7 +59,8 @@ func TestLoadFlow(t *testing.T) {
 			mDeviceToken: func(context.Context, string) (Token, error) {
 				return Token{}, errors.New("unexpected device token call")
 			},
-			exp: "success-credential",
+			exp:     "success-credential",
+			expKind: config.CloudAuthClientCredentials,
 		},
 		{
 			name:     "errs if a provider err",
@@ -87,7 +91,7 @@ func TestLoadFlow(t *testing.T) {
 			}
 			cfg, err := p.Load(fs)
 			require.NoError(t, err)
-			gotToken, err := LoadFlow(context.Background(), fs, cfg, &m, false)
+			authVir, _, _, _, err := LoadFlow(context.Background(), fs, cfg, &m, false, false, "")
 			if tt.expErr {
 				require.Error(t, err)
 				return
@@ -95,23 +99,41 @@ func TestLoadFlow(t *testing.T) {
 			require.NoError(t, err)
 
 			// Assert that we got the right token.
-			require.Equal(t, tt.exp, gotToken)
+			require.Equal(t, tt.exp, authVir.AuthToken)
 
 			// Now check if it got written to disk.
 			y := cfg.VirtualRpkYaml()
 			file, err := afero.ReadFile(fs, y.FileLocation())
 			require.NoError(t, err)
-			expFile := fmt.Sprintf(`version: 2
-current_profile: ""
-current_cloud_auth: default
-cloud_auth:
-    - name: default
-      description: Default rpk cloud auth
-      auth_token: %s`, gotToken)
+			var hasClientID bool
 			if tt.clientID != "" || tt.authClientID != "" {
 				if tt.authClientID != "" {
 					tt.clientID = tt.authClientID
 				}
+				hasClientID = true
+			}
+
+			expFile := fmt.Sprintf(`version: 3
+globals:
+    prompt: ""
+    no_default_cluster: false
+    command_timeout: 0s
+    dial_timeout: 0s
+    request_timeout_overhead: 0s
+    retry_timeout: 0s
+    fetch_max_wait: 0s
+    kafka_protocol_request_client_id: ""
+current_profile: ""
+current_cloud_auth_org_id: no-url-org-id
+current_cloud_auth_kind: %[1]s
+profiles: []
+cloud_auth:
+    - name: no-url-org-id-%[1]s no-url-org
+      organization: no-url-org
+      org_id: no-url-org-id
+      kind: %[1]s
+      auth_token: %[2]s`, tt.expKind, authVir.AuthToken)
+			if hasClientID {
 				expFile += fmt.Sprintf(`
       client_id: %s`, tt.clientID)
 			}
