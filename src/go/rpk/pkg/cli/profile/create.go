@@ -59,7 +59,8 @@ using --from-cloud or --from-rpk-container.
 * You can use --from-profile to generate a profile from an existing profile or
   from from a profile in a yaml file. First, the filename is checked, then an
   existing profile name is checked. The special value "current" creates a new
-  profile from the existing profile.
+  profile from the existing profile with any active environment variables or
+  flags applied.
 
 * You can use --from-cloud to generate a profile from an existing cloud cluster
   id. Note that you must be logged in with 'rpk cloud login' first. The special
