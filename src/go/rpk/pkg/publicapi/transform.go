@@ -87,14 +87,11 @@ func (tsc *transformServiceClient) DeployTransform(ctx context.Context, r Deploy
 	if err != nil {
 		return fmt.Errorf("unable to create form file: %v", err)
 	}
-	data, err := io.ReadAll(r.WasmBinary)
+	_, err = io.Copy(wasmPart, r.WasmBinary)
 	if err != nil {
-		return fmt.Errorf("unable to read file: %v", err)
+		return fmt.Errorf("unable to copy wasm binary: %v", err)
 	}
-	_, err = wasmPart.Write(data)
-	if err != nil {
-		return fmt.Errorf("unable to write file to multiform body: %v", err)
-	}
+
 	err = writer.Close()
 	if err != nil {
 		return fmt.Errorf("unable to close form writer: %v", err)

@@ -65,6 +65,7 @@ The --var flag can be repeated to specify multiple variables like so:
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			config.CheckExitServerlessAdmin(p)
 
 			cfg := fc.ToProjectConfig()
 

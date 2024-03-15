@@ -77,6 +77,7 @@ The --detailed flag (-d) opts in to printing extra per-processor information.
 
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			config.CheckExitServerlessAdmin(p)
 
 			var l []adminapi.TransformMetadata
 			if p.FromCloud && !p.CloudCluster.IsServerless() {
