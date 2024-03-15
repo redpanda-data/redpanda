@@ -13,6 +13,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var inTests bool
+
 // LoadFlow loads or creates a config at default path, and validates and
 // refreshes or creates an auth token using the given authentication provider.
 //
@@ -78,7 +80,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 			}
 			orgOnce = true
 
-			if cloudAPIURL == "" {
+			if inTests {
 				zap.L().Sugar().Debug("returning fake organization because cloudAPIURL is empty")
 				return cloudapi.Organization{cloudapi.NameID{
 					ID:   "no-url-org-id",

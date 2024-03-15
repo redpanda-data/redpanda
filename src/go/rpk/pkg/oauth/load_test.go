@@ -11,6 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	inTests = true
+}
+
 func TestLoadFlow(t *testing.T) {
 	tests := []struct {
 		name         string
