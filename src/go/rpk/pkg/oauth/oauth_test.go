@@ -134,7 +134,7 @@ func TestClientCredentialFlow(t *testing.T) {
 				audience:  tt.audience,
 				mockToken: tt.mToken,
 			}
-			got, err := ClientCredentialFlow(context.Background(), cl, tt.auth)
+			got, _, err := ClientCredentialFlow(context.Background(), cl, tt.auth, false)
 			if tt.expErr {
 				require.Error(t, err)
 				return
@@ -242,7 +242,7 @@ func TestDeviceFlow(t *testing.T) {
 				mockDeviceToken: tt.mDevToken,
 				mockDevice:      tt.mDevice,
 			}
-			got, err := DeviceFlow(context.Background(), &cl, tt.auth, false)
+			got, _, err := DeviceFlow(context.Background(), &cl, tt.auth, false, false)
 			if tt.expErr {
 				require.Error(t, err)
 				return

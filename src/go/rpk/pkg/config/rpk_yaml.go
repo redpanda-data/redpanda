@@ -38,7 +38,7 @@ func defaultVirtualRpkYaml() (RpkYaml, error) {
 	path, _ := DefaultRpkYamlPath() // if err is non-nil, we fail in Write
 	y := RpkYaml{
 		fileLocation: path,
-		Version:      2,
+		Version:      3,
 		Profiles:     []RpkProfile{DefaultRpkProfile()},
 		CloudAuths:   []RpkCloudAuth{DefaultRpkCloudAuth()},
 	}
@@ -69,7 +69,7 @@ func DefaultRpkCloudAuth() RpkCloudAuth {
 
 func emptyVirtualRpkYaml() RpkYaml {
 	return RpkYaml{
-		Version: 2,
+		Version: 3,
 	}
 }
 
@@ -88,13 +88,13 @@ type (
 		// upgrade rpk".
 		Version int `json:"version" yaml:"version"`
 
-		Globals RpkGlobals `json:"globals,omitempty" yaml:"globals,omitempty"`
+		Globals RpkGlobals `json:"globals" yaml:"globals"`
 
 		CurrentProfile        string         `json:"current_profile" yaml:"current_profile"`
 		CurrentCloudAuthOrgID string         `json:"current_cloud_auth_org_id" yaml:"current_cloud_auth_org_id"`
 		CurrentCloudAuthKind  string         `json:"current_cloud_auth_kind" yaml:"current_cloud_auth_kind"`
-		Profiles              []RpkProfile   `json:"profiles,omitempty" yaml:"profiles,omitempty"`
-		CloudAuths            []RpkCloudAuth `json:"cloud_auth,omitempty" yaml:"cloud_auth,omitempty"`
+		Profiles              []RpkProfile   `json:"profiles" yaml:"profiles"`
+		CloudAuths            []RpkCloudAuth `json:"cloud_auth" yaml:"cloud_auth"`
 	}
 
 	RpkGlobals struct {
@@ -134,13 +134,13 @@ type (
 
 	RpkProfile struct {
 		Name         string               `json:"name" yaml:"name"`
-		Description  string               `json:"description,omitempty" yaml:"description,omitempty"`
-		Prompt       string               `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-		FromCloud    bool                 `json:"from_cloud,omitempty" yaml:"from_cloud,omitempty"`
-		CloudCluster RpkCloudCluster      `json:"cloud_cluster,omitempty" yaml:"cloud_cluster,omitempty"`
-		KafkaAPI     RpkKafkaAPI          `json:"kafka_api,omitempty" yaml:"kafka_api,omitempty"`
-		AdminAPI     RpkAdminAPI          `json:"admin_api,omitempty" yaml:"admin_api,omitempty"`
-		SR           RpkSchemaRegistryAPI `json:"schema_registry,omitempty" yaml:"schema_registry,omitempty"`
+		Description  string               `json:"description" yaml:"description"`
+		Prompt       string               `json:"prompt" yaml:"prompt"`
+		FromCloud    bool                 `json:"from_cloud" yaml:"from_cloud"`
+		CloudCluster RpkCloudCluster      `json:"cloud_cluster" yaml:"cloud_cluster"`
+		KafkaAPI     RpkKafkaAPI          `json:"kafka_api" yaml:"kafka_api"`
+		AdminAPI     RpkAdminAPI          `json:"admin_api" yaml:"admin_api"`
+		SR           RpkSchemaRegistryAPI `json:"schema_registry" yaml:"schema_registry"`
 
 		// We stash the config struct itself so that we can provide
 		// the logger / dev overrides.
@@ -159,9 +159,9 @@ type (
 	// per org ID in case a person wants to use client credentials and SSO.
 	RpkCloudAuth struct {
 		Name         string `json:"name" yaml:"name"`
-		Organization string `json:"organization,omitempty" yaml:"organization,omitempty"`
-		OrgID        string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
-		Kind         string `json:"kind,omitempty" yaml:"kind,omitempty"`
+		Organization string `json:"organization" yaml:"organization"`
+		OrgID        string `json:"org_id" yaml:"org_id"`
+		Kind         string `json:"kind" yaml:"kind"`
 		AuthToken    string `json:"auth_token,omitempty" yaml:"auth_token,omitempty"`
 		RefreshToken string `json:"refresh_token,omitempty" yaml:"refresh_token,omitempty"`
 		ClientID     string `json:"client_id,omitempty" yaml:"client_id,omitempty"`
