@@ -82,6 +82,10 @@ func ValidProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string,
 // Cloud profile helpers
 /////////////////////
 
+// ErrNoCloudClusters is returned from from CreateFlow or
+// PromptCloudClusterProfile if there are no cloud clusters available.
+var ErrNoCloudClusters = errors.New("no cloud clusters available")
+
 // RpkCloudProfileName is the default profile name used when a user creates a
 // cloud cluster profile with no name, or
 const RpkCloudProfileName = "rpk-cloud"

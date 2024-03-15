@@ -59,7 +59,8 @@ using --from-cloud or --from-rpk-container.
 * You can use --from-profile to generate a profile from an existing profile or
   from from a profile in a yaml file. First, the filename is checked, then an
   existing profile name is checked. The special value "current" creates a new
-  profile from the existing profile.
+  profile from the existing profile with any active environment variables or
+  flags applied.
 
 * You can use --from-cloud to generate a profile from an existing cloud cluster
   id. Note that you must be logged in with 'rpk cloud login' first. The special
@@ -194,6 +195,10 @@ func CreateFlow(
 		var err error
 		o, err = createCloudProfile(ctx, yAuthVir, cfg, fromCloud)
 		if err != nil {
+			if err == ErrNoCloudClusters {
+				fmt.Println("Your cloud account has no clusters available to select, avoiding creating a cloud profile.")
+				return nil
+			}
 			return err
 		}
 		p = &o.Profile
@@ -269,7 +274,7 @@ func CreateFlow(
 		// * We are creating a profile for a cloud cluster
 		// * The user's prior profile was the rpk-cloud profile
 		// * We are updating the values of the existing current profile
-		fmt.Printf("Updated profile %q to talk to cloud cluster %q.\n", RpkCloudProfileName, o.ClusterName)
+		fmt.Printf("Updated profile %q to talk to cloud cluster %q.\n", RpkCloudProfileName, o.FullName())
 		if yAct.CurrentProfile != RpkCloudProfileName {
 			panic("invalid invariant: prior profile should have been the rpk-cloud profile")
 		}
@@ -278,13 +283,13 @@ func CreateFlow(
 		// * We are creating a profile for a cloud cluster
 		// * The user's prior profile was NOT the rpk-cloud profile
 		// * We are switching to the existing rpk-cloud profile and updating the values
-		fmt.Printf("Switched to existing %q profile and updated it to talk to cluster %q.\n", RpkCloudProfileName, o.ClusterName)
+		fmt.Printf("Switched to existing %q profile and updated it to talk to cluster %q.\n", RpkCloudProfileName, o.FullName())
 		priorAuth, currentAuth := yAct.MoveProfileToFront(p)
 		config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 
 	case fromCloud != "" && name == RpkCloudProfileName:
 		// * We are creating a NEW rpk-cloud profile and switching to it
-		fmt.Printf("Created and switched to a new profile %q to talk to cloud cluster %q.\n", RpkCloudProfileName, o.ClusterName)
+		fmt.Printf("Created and switched to a new profile %q to talk to cloud cluster %q.\n", RpkCloudProfileName, o.FullName())
 		priorAuth, currentAuth := yAct.PushProfile(*p)
 		config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 
@@ -480,11 +485,12 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, c cloud
 		isSASL = l[0].SASL != nil
 	}
 	return CloudClusterOutputs{
-		Profile:     p,
-		ClusterName: c.Name,
-		ClusterID:   c.ID,
-		MessageMTLS: isMTLS,
-		MessageSASL: isSASL,
+		Profile:       p,
+		NamespaceName: ns.Name,
+		ClusterName:   c.Name,
+		ClusterID:     c.ID,
+		MessageMTLS:   isMTLS,
+		MessageSASL:   isSASL,
 	}
 }
 
@@ -513,11 +519,12 @@ func fromVirtualCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, vc cl
 	}
 
 	return CloudClusterOutputs{
-		Profile:     p,
-		ClusterName: vc.Name,
-		ClusterID:   vc.ID,
-		MessageMTLS: false, // we do not need to print any required message; we generate the config in full
-		MessageSASL: false, // same
+		Profile:       p,
+		NamespaceName: ns.Name,
+		ClusterName:   vc.Name,
+		ClusterID:     vc.ID,
+		MessageMTLS:   false, // we do not need to print any required message; we generate the config in full
+		MessageSASL:   false, // same
 	}
 }
 
@@ -566,16 +573,19 @@ Consume messages from the %[1]s topic as a guide for your next steps:
 `, serverlessHelloTopic)
 }
 
-// ErrNoCloudClusters is returned when the user has no cloud clusters.
-var ErrNoCloudClusters = errors.New("no clusters found")
-
 // CloudClusterOutputs contains outputs from a cloud based profile.
 type CloudClusterOutputs struct {
-	Profile     config.RpkProfile
-	ClusterID   string
-	ClusterName string
-	MessageMTLS bool
-	MessageSASL bool
+	Profile       config.RpkProfile
+	NamespaceName string
+	ClusterID     string
+	ClusterName   string
+	MessageMTLS   bool
+	MessageSASL   bool
+}
+
+// Duplicates RpkCloudProfile.FullName (easier for now).
+func (o CloudClusterOutputs) FullName() string {
+	return fmt.Sprintf("%s/%s", o.NamespaceName, o.ClusterName)
 }
 
 // PromptCloudClusterProfile returns a profile for the cluster selected by the
@@ -591,27 +601,17 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 		return CloudClusterOutputs{}, ErrNoCloudClusters
 	}
 
-	// If there is just 1 cluster/virtual-cluster we go ahead and select that.
-	var selected nameAndCluster
-	if len(cs) == 1 && len(vcs) == 0 {
-		selected = nameAndCluster{
-			name: fmt.Sprintf("%s/%s", cloudapi.FindNamespace(cs[0].NamespaceUUID, nss), cs[0].Name),
-			c:    &cs[0],
-		}
-	} else if len(vcs) == 1 && len(cs) == 0 {
-		selected = nameAndCluster{
-			name: fmt.Sprintf("%s/%s", cloudapi.FindNamespace(vcs[0].NamespaceUUID, nss), vcs[0].Name),
-			vc:   &vcs[0],
-		}
-	} else {
-		ncs := combineClusterNames(nss, vcs, cs)
-		names := ncs.names()
-		idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to talk to?")
-		if err != nil {
-			return CloudClusterOutputs{}, err
-		}
-		selected = ncs[idx]
+	// Always prompt, even if there is only one option.
+	ncs := combineClusterNames(nss, vcs, cs)
+	names := ncs.names()
+	if len(names) == 0 {
+		return CloudClusterOutputs{}, ErrNoCloudClusters
 	}
+	idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to talk to?")
+	if err != nil {
+		return CloudClusterOutputs{}, err
+	}
+	selected := ncs[idx]
 
 	var o CloudClusterOutputs
 	// We have a cluster selected, but the list response does not return
