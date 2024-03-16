@@ -82,7 +82,10 @@ inline void
 rjson_serialize(Writer<OStreamWrapper>& w, const ::otel_log_event& ev) {
     w.StartObject();
     w.Key("body");
+    w.StartObject();
+    w.Key("stringValue");
     w.String(ev.message.data(), ev.message.size());
+    w.EndObject();
     w.Key("timeUnixNano");
     w.Uint64(ev.ts);
     w.Key("severityNumber");

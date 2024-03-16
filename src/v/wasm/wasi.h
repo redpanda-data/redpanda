@@ -248,29 +248,6 @@ struct iovec_t {
 using environ_map_t = absl::flat_hash_map<ss::sstring, ss::sstring>;
 
 /**
- * A converter from stdout/stderr in WASI into stderr on the broker.
- */
-class log_writer {
-public:
-    static log_writer make_for_stderr(wasm::logger*);
-    static log_writer make_for_stdout(wasm::logger*);
-    // Writes this string to the logger, adding a prefix
-    //
-    // Does not make a copy of the string, so leftovers must be flushed
-    uint32_t write(std::string_view);
-    // Flush remaining logs
-    uint32_t flush();
-
-private:
-    explicit log_writer(bool is_guest_stdout, wasm::logger*);
-
-    bool _is_guest_stdout;
-
-    wasm::logger* _logger;
-    std::vector<std::string_view> _buffer;
-};
-
-/**
  * Implementation of the wasi preview1 which is a snapshot of the wasi spec from
  * 2020.
  */
@@ -355,8 +332,7 @@ private:
     unix_millis _monotonic_time{0};
     std::vector<ss::sstring> _args;
     std::vector<ss::sstring> _environ;
-    log_writer _stdout_log_writer;
-    log_writer _stderr_log_writer;
+    wasm::logger* _logger;
 };
 
 } // namespace wasm::wasi

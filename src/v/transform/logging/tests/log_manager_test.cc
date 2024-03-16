@@ -296,17 +296,6 @@ TEST_F(TransformLogManagerTest, MessageTruncation) {
     enqueue_log(ss::sstring(line_max * 2, 'x'));
     advance_clock();
     EXPECT_EQ(last_log_msg().length(), line_max);
-
-    // test that truncation occurs _after_ control char escaping
-    ss::sstring in_msg(line_max, char{0x7f});
-    auto escaped = absl::CHexEscape(in_msg);
-    EXPECT_GT(escaped.length(), line_max);
-
-    enqueue_log(in_msg);
-    advance_clock();
-    auto msg = last_log_msg();
-    EXPECT_EQ(msg.length(), line_max);
-    EXPECT_EQ(msg, escaped.substr(0, line_max));
 }
 
 TEST_F(TransformLogManagerTest, IllegalMessages) {
@@ -328,12 +317,9 @@ TEST_F(TransformLogManagerTest, IllegalMessages) {
       model::transform_name_view{name()},
       control_char_msg.data());
 
-    // control char message is properly escaped
+    // control char message is dropped
     advance_clock();
-    EXPECT_EQ(logs().size(), 1);
-
-    auto msg = testing::get_message_body(logs().front().copy());
-    EXPECT_EQ(msg, absl::CHexEscape(control_char_msg.data()));
+    EXPECT_EQ(logs().size(), 0);
 }
 
 TEST_F(TransformLogManagerTest, ConfigTuning) {
