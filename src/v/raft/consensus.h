@@ -548,11 +548,15 @@ private:
      * Hydrate the consensus state with the data from the snapshot
      */
     ss::future<> hydrate_snapshot();
-    ss::future<> do_hydrate_snapshot(storage::snapshot_reader&);
+
+    void load_from_metadata(const snapshot_metadata&);
+    ss::future<std::optional<snapshot_metadata>> read_snapshot_metadata();
 
     /**
      * Truncates the log up the last offset stored in the snapshot
      */
+    std::optional<model::offset_delta>
+    delta_for_truncation(const snapshot_metadata& metadata);
     ss::future<> truncate_to_latest_snapshot();
     ss::future<install_snapshot_reply>
       finish_snapshot(install_snapshot_request, install_snapshot_reply);

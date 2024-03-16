@@ -2153,18 +2153,46 @@ consensus::install_snapshot(install_snapshot_request&& r) {
 ss::future<> consensus::hydrate_snapshot() {
     // Read snapshot, reset state machine using snapshot contents (and load
     // snapshot’s cluster configuration) (§7.8)
-    return _snapshot_mgr.open_snapshot().then(
-      [this](std::optional<storage::snapshot_reader> reader) {
-          // no snapshot do nothing
-          if (!reader) {
-              return ss::now();
-          }
-          return ss::do_with(
-            std::move(*reader), [this](storage::snapshot_reader& reader) {
-                return do_hydrate_snapshot(reader).finally(
-                  [&reader] { return reader.close(); });
-            });
-      });
+    auto metadata = co_await read_snapshot_metadata();
+    if (!metadata.has_value()) {
+        co_return;
+    }
+    load_from_metadata(metadata.value());
+    co_await _configuration_manager.add(
+      _last_snapshot_index, std::move(metadata->latest_configuration));
+    _probe->configuration_update();
+    auto delta = delta_for_truncation(metadata.value());
+    if (delta.has_value()) {
+        co_await _offset_translator.prefix_truncate_reset(
+            _last_snapshot_index, *delta);
+        co_await truncate_to_latest_snapshot();
+    }
+    _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
+}
+
+std::optional<model::offset_delta>
+consensus::delta_for_truncation(const snapshot_metadata& metadata) {
+    if (
+      _keep_snapshotted_log
+      && _log->offsets().dirty_offset >= _last_snapshot_index) {
+        // skip prefix truncating if we want to preserve the log (e.g. for the
+        // controller partition), but only if there is no gap between old end
+        // offset and new start offset, otherwise we must still advance the log
+        // start offset by prefix-truncating.
+        return std::nullopt;
+    }
+    auto delta = metadata.log_start_delta;
+    if (delta < offset_translator_delta(0)) {
+        delta = offset_translator_delta(
+          _configuration_manager.offset_delta(_last_snapshot_index));
+        vlog(
+          _ctxlog.warn,
+          "received snapshot without delta field in metadata, "
+          "falling back to delta obtained from configuration "
+          "manager: {}",
+          delta);
+    }
+    return model::offset_delta{delta};
 }
 
 ss::future<> consensus::truncate_to_latest_snapshot() {
@@ -2191,71 +2219,53 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
       });
 }
 
-ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
-    return reader.read_metadata()
-      .then([this](iobuf buf) {
-          auto parser = iobuf_parser(std::move(buf));
-          auto metadata = reflection::adl<snapshot_metadata>{}.from(parser);
-          vassert(
-            metadata.last_included_index >= _last_snapshot_index,
-            "Tried to load stale snapshot. Loaded snapshot last "
-            "index {}, current snapshot last index {}",
-            metadata.last_included_index,
-            _last_snapshot_index);
+ss::future<std::optional<snapshot_metadata>>
+consensus::read_snapshot_metadata() {
+    std::optional<raft::snapshot_metadata> metadata;
+    auto snapshot_reader = co_await _snapshot_mgr.open_snapshot();
+    if (!snapshot_reader.has_value()) {
+        co_return std::nullopt;
+    }
+    std::exception_ptr eptr;
+    try {
+        auto buf = co_await snapshot_reader->read_metadata();
+        auto parser = iobuf_parser(std::move(buf));
+        metadata = reflection::adl<raft::snapshot_metadata>{}.from(parser);
+    } catch (...) {
+        eptr = std::current_exception();
+    }
+    co_await snapshot_reader->close();
+    if (eptr) {
+        rethrow_exception(eptr);
+    }
+    co_return metadata;
+}
 
-          vlog(
-            _ctxlog.info,
-            "hydrating snapshot with last included index: {}",
-            metadata.last_included_index);
+void consensus::load_from_metadata(const raft::snapshot_metadata& metadata) {
+    vassert(
+      metadata.last_included_index >= _last_snapshot_index,
+      "Tried to load stale snapshot. Loaded snapshot last "
+      "index {}, current snapshot last index {}",
+      metadata.last_included_index,
+      _last_snapshot_index);
+    vlog(
+      _ctxlog.info,
+      "hydrating snapshot with last included index: {}",
+      metadata.last_included_index);
 
-          _last_snapshot_index = metadata.last_included_index;
-          _last_snapshot_term = metadata.last_included_term;
+    _last_snapshot_index = metadata.last_included_index;
+    _last_snapshot_term = metadata.last_included_term;
 
-          // TODO: add applying snapshot content to state machine
-          auto prev_commit_index = _commit_index;
-          _commit_index = std::max(_last_snapshot_index, _commit_index);
-          maybe_update_last_visible_index(_commit_index);
-          if (prev_commit_index != _commit_index) {
-              _commit_index_updated.broadcast();
-              _event_manager.notify_commit_index();
-          }
+    // TODO: add applying snapshot content to state machine
+    auto prev_commit_index = _commit_index;
+    _commit_index = std::max(_last_snapshot_index, _commit_index);
+    maybe_update_last_visible_index(_commit_index);
+    if (prev_commit_index != _commit_index) {
+        _commit_index_updated.broadcast();
+        _event_manager.notify_commit_index();
+    }
 
-          update_follower_stats(metadata.latest_configuration);
-          return _configuration_manager
-            .add(_last_snapshot_index, std::move(metadata.latest_configuration))
-            .then([this, delta = metadata.log_start_delta]() mutable {
-                _probe->configuration_update();
-
-                if (delta < offset_translator_delta(0)) {
-                    delta = offset_translator_delta(
-                      _configuration_manager.offset_delta(
-                        _last_snapshot_index));
-                    vlog(
-                      _ctxlog.warn,
-                      "received snapshot without delta field in metadata, "
-                      "falling back to delta obtained from configuration "
-                      "manager: {}",
-                      delta);
-                }
-                return _offset_translator.prefix_truncate_reset(
-                  _last_snapshot_index, delta);
-            })
-            .then([this] {
-                if (
-                  _keep_snapshotted_log
-                  && _log->offsets().dirty_offset >= _last_snapshot_index) {
-                    // skip prefix truncating if we want to preserve the log
-                    // (e.g. for the controller partition), but only if there is
-                    // no gap between old end offset and new start offset,
-                    // otherwise we must still advance the log start offset by
-                    // prefix-truncating.
-                    return ss::now();
-                }
-                return truncate_to_latest_snapshot();
-            });
-      })
-      .then([this] { return _snapshot_mgr.get_snapshot_size(); })
-      .then([this](uint64_t size) { _snapshot_size = size; });
+    update_follower_stats(metadata.latest_configuration);
 }
 
 ss::future<install_snapshot_reply>
