@@ -102,12 +102,17 @@ struct abs_credentials {
     private_key_str shared_key;
 };
 
+std::ostream& operator<<(std::ostream& os, const abs_credentials& ac);
+
 std::ostream& operator<<(std::ostream& os, const aws_credentials& ac);
 
 using credentials
   = std::variant<aws_credentials, gcp_credentials, abs_credentials>;
 
-std::ostream& operator<<(std::ostream& os, const credentials& c);
+// tmp trick to ensure that we are not calling into infinite recursion if
+// there is a new credential but no operator<<
+template<std::same_as<credentials> Cred>
+std::ostream& operator<<(std::ostream& os, Cred const& c);
 
 using api_response_parse_result = std::variant<
   malformed_api_response_error,

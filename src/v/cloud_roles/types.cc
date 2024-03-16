@@ -59,8 +59,12 @@ std::ostream& operator<<(std::ostream& os, const aws_credentials& ac) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const credentials& c) {
-    ss::visit(c, [&os](auto creds) { os << creds; });
+std::ostream& operator<<(std::ostream& os, const abs_credentials& ac) {
+    fmt::print(
+      os,
+      "abs_credentials{{storage_account: **{}**, shared_key: **{}**}}",
+      ac.storage_account().size(),
+      ac.shared_key().size());
     return os;
 }
 
@@ -69,6 +73,16 @@ operator<<(std::ostream& os, const api_response_parse_error& err) {
     fmt::print(os, "api_response_parse_error{{reason:{}}}", err.reason);
     return os;
 }
+
+// tmp trick to ensure that we are not calling into infinite recursion if
+// there is a new credential but no operator<<
+template<std::same_as<credentials> Cred>
+std::ostream& operator<<(std::ostream& os, Cred const& c) {
+    ss::visit(c, [&os](auto const& creds) { os << creds; });
+    return os;
+}
+
+template std::ostream& operator<<(std::ostream& os, credentials const& c);
 
 bool is_retryable(const std::system_error& ec) {
     auto code = ec.code();
