@@ -18,6 +18,9 @@ class authorizer;
 class credential_store;
 class ephemeral_credential_store;
 class role_store;
+class role;
+class role_member;
+class role_member_view;
 
 namespace oidc {
 

@@ -10,6 +10,10 @@
 
 #include "security/role.h"
 
+#include "security/role_store.h"
+
+#include <ranges>
+
 namespace security {
 
 namespace {
@@ -68,6 +72,39 @@ security::acl_principal role::to_principal(std::string_view role_name) {
 security::acl_principal_view
 role::to_principal_view(std::string_view role_name) {
     return {security::principal_type::role, role_name};
+}
+
+std::optional<role> role_store::get(const role_name& name) const {
+    if (!_roles.contains(name)) {
+        return std::nullopt;
+    }
+    auto member_rng = _members_store
+                      | std::views::filter(
+                        [&name](const members_store_type::value_type& e) {
+                            return e.second.contains(role_name_view{name});
+                        })
+                      | std::views::keys;
+    return role{{member_rng.begin(), member_rng.end()}};
+}
+
+bool role_store::remove(const role_name& name) {
+    absl::c_for_each(
+      _members_store, [&name](members_store_type::value_type& e) {
+          e.second.erase(role_name_view{name});
+      });
+    return _roles.erase(name) > 0;
+}
+
+auto role_store::range(std::function<bool(const role_accessor&)>&& pred) const
+  -> range_query_container_type {
+    auto rng = _roles | std::views::transform([this](const auto& e) {
+                   return std::make_pair(
+                     role_name_view{e}, [this]() -> const members_store_type& {
+                         return _members_store;
+                     });
+               })
+               | std::views::filter(std::move(pred)) | std::views::keys;
+    return {rng.begin(), rng.end()};
 }
 
 } // namespace security
