@@ -80,4 +80,11 @@ SEASTAR_THREAD_TEST_CASE(
         BOOST_REQUIRE_EQUAL(
           "apply_aws_credentials", ssx::sformat("{}", applier));
     }
+
+    {
+        cloud_roles::abs_oauth_credentials akc{};
+        auto applier = cloud_roles::make_credentials_applier(std::move(akc));
+        BOOST_REQUIRE_EQUAL(
+          "apply_abs_oauth_credentials", ssx::sformat("{}", applier));
+    }
 }

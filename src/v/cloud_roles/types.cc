@@ -68,6 +68,14 @@ std::ostream& operator<<(std::ostream& os, const abs_credentials& ac) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, const abs_oauth_credentials& ac) {
+    fmt::print(
+      os,
+      "abs_oauth_credentials{{oauth_token:**{}**}}",
+      ac.oauth_token().size());
+    return os;
+}
+
 std::ostream&
 operator<<(std::ostream& os, const api_response_parse_error& err) {
     fmt::print(os, "api_response_parse_error{{reason:{}}}", err.reason);

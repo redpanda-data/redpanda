@@ -72,3 +72,33 @@ BOOST_AUTO_TEST_CASE(test_aws_headers) {
           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     }
 }
+
+BOOST_AUTO_TEST_CASE(test_credentials_print) {
+    // check implementation of operator<< credentials for recursion bugs
+    auto oss = std::ostringstream{};
+    oss << cloud_roles::credentials{cloud_roles::abs_credentials{}};
+}
+
+BOOST_AUTO_TEST_CASE(test_azure_oauth_headers) {
+    auto applier = cloud_roles::make_credentials_applier(
+      cloud_roles::abs_oauth_credentials{
+        .oauth_token = cloud_roles::oauth_token_str{"a-token"}});
+
+    {
+        bh::request_header<> h{};
+        applier.add_auth(h);
+        BOOST_REQUIRE_EQUAL(h.at("Authorization"), "Bearer a-token");
+        BOOST_REQUIRE_EQUAL(
+          h.at("x-ms-version"), cloud_roles::azure_storage_api_version);
+    }
+
+    applier.reset_creds(cloud_roles::abs_oauth_credentials{
+      .oauth_token = cloud_roles::oauth_token_str{"second-token"}});
+    {
+        bh::request_header<> h{};
+        applier.add_auth(h);
+        BOOST_REQUIRE_EQUAL(h.at("Authorization"), "Bearer second-token");
+        BOOST_REQUIRE_EQUAL(
+          h.at("x-ms-version"), cloud_roles::azure_storage_api_version);
+    }
+}

@@ -1,7 +1,10 @@
 v_cc_library(
     NAME cloud_roles
+    HDRS
+    apply_abs_oauth_credentials.h
     SRCS
     apply_abs_credentials.cc
+    apply_abs_oauth_credentials.cc
     apply_aws_credentials.cc
     apply_credentials.cc
     apply_gcp_credentials.cc
