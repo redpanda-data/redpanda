@@ -1647,10 +1647,13 @@ configuration::configuration()
        .example = "config_file",
        .visibility = visibility::user},
       model::cloud_credentials_source::config_file,
-      {model::cloud_credentials_source::config_file,
-       model::cloud_credentials_source::aws_instance_metadata,
-       model::cloud_credentials_source::sts,
-       model::cloud_credentials_source::gcp_instance_metadata})
+      {
+        model::cloud_credentials_source::config_file,
+        model::cloud_credentials_source::aws_instance_metadata,
+        model::cloud_credentials_source::sts,
+        model::cloud_credentials_source::gcp_instance_metadata,
+        model::cloud_credentials_source::azure_aks_oidc_federation,
+      })
   , cloud_storage_roles_operation_timeout_ms(
       *this,
       "cloud_storage_roles_operation_timeout_ms",

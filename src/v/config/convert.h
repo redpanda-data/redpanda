@@ -228,8 +228,12 @@ template<>
 struct convert<model::cloud_credentials_source> {
     using type = model::cloud_credentials_source;
 
-    static constexpr std::array<const char*, 4> acceptable_values{
-      "config_file", "aws_instance_metadata", "gcp_instance_metadata", "sts"};
+    static constexpr auto acceptable_values = std::to_array(
+      {"config_file",
+       "aws_instance_metadata",
+       "gcp_instance_metadata",
+       "sts",
+       "azure_aks_oidc_federation"});
 
     static Node encode(const type& rhs) {
         Node node;
@@ -245,6 +249,9 @@ struct convert<model::cloud_credentials_source> {
             break;
         case model::cloud_credentials_source::gcp_instance_metadata:
             node = "gcp_instance_metadata";
+            break;
+        case model::cloud_credentials_source::azure_aks_oidc_federation:
+            node = "azure_aks_oidc_federation";
             break;
         }
         return node;
@@ -268,7 +275,10 @@ struct convert<model::cloud_credentials_source> {
                 .match(
                   "gcp_instance_metadata",
                   model::cloud_credentials_source::gcp_instance_metadata)
-                .match("sts", model::cloud_credentials_source::sts);
+                .match("sts", model::cloud_credentials_source::sts)
+                .match(
+                  "azure_aks_oidc_federation",
+                  model::cloud_credentials_source::azure_aks_oidc_federation);
 
         return true;
     }
