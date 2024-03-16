@@ -1574,26 +1574,17 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
         // Create an implementation of refresh_credentials based on the setting
         // cloud_credentials_source.
         try {
-            auto region_name = std::visit(
-              [](const auto& cfg) {
-                  using cfg_type = std::decay_t<decltype(cfg)>;
-                  if constexpr (std::is_same_v<
-                                  cloud_storage_clients::s3_configuration,
-                                  cfg_type>) {
-                      return cloud_roles::aws_region_name{cfg.region};
-                  } else if constexpr (std::is_same_v<
-                                         cloud_storage_clients::
-                                           abs_configuration,
-                                         cfg_type>) {
-                      vassert(false, "Attempt to create refresh creds for ABS");
-                      return cloud_roles::aws_region_name{};
-                  } else {
-                      static_assert(
-                        always_false_v<cfg_type>, "Unknown client type");
-                      return cloud_roles::aws_region_name{};
-                  }
+            auto region_name = ss::visit(
+              _client_conf,
+              [](cloud_storage_clients::s3_configuration const& cfg) {
+                  // S3 needs a region name to compose requests, this extracts
+                  // it from s3_configuration
+                  return cloud_roles::aws_region_name{cfg.region};
               },
-              _client_conf);
+              [](cloud_storage_clients::abs_configuration const&) {
+                  vassert(false, "Attempt to create refresh creds for ABS");
+                  return cloud_roles::aws_region_name{};
+              });
             _refresh_credentials.emplace(cloud_roles::make_refresh_credentials(
               _cloud_credentials_source,
               _as,
