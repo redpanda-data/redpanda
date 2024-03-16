@@ -10,10 +10,11 @@
  */
 
 #pragma once
+#include "config/broker_endpoint.h"
 #include "config/config_store.h"
+#include "config/endpoint_tls_config.h"
 #include "config/property.h"
 #include "config/rest_authn_endpoint.h"
-#include "config/tls_config.h"
 #include "model/metadata.h"
 
 #include <seastar/net/inet_address.hh>

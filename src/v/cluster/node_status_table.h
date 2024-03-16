@@ -15,6 +15,8 @@
 #include "model/metadata.h"
 #include "rpc/types.h"
 
+#include <absl/container/flat_hash_map.h>
+
 namespace cluster {
 
 struct node_status {

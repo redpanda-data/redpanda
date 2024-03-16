@@ -10,20 +10,16 @@
 
 #include "pandaproxy/schema_registry/validation.h"
 
-#include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
-#include "cluster/controller.h"
 #include "cluster/partition_probe.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/avro.h"
-#include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/schema_id_cache.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
@@ -33,7 +29,6 @@
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/schema_registry/validation_metrics.h"
 #include "storage/parser_utils.h"
-#include "utils/vint.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>

@@ -11,6 +11,7 @@
 
 #include "base/likely.h"
 #include "base/vlog.h"
+#include "bytes/iostream.h"
 #include "config/configuration.h"
 #include "config/property.h"
 #include "model/fundamental.h"

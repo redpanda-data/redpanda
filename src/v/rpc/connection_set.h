@@ -12,17 +12,13 @@
 #pragma once
 
 #include "base/outcome.h"
-#include "config/configuration.h"
 #include "config/tls_config.h"
-#include "hashing/jump_consistent_hash.h"
 #include "model/metadata.h"
 #include "outcome_future_utils.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/errc.h"
-#include "rpc/logger.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>

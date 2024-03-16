@@ -18,8 +18,6 @@
 
 #include <fmt/format.h>
 
-#include <type_traits>
-
 namespace pandaproxy::schema_registry {
 
 class error_info {

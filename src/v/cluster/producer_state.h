@@ -15,7 +15,6 @@
 #include "container/intrusive_list_helpers.h"
 #include "model/record.h"
 #include "utils/mutex.h"
-#include "utils/rwlock.h"
 
 #include <seastar/core/shared_future.hh>
 #include <seastar/util/defer.hh>

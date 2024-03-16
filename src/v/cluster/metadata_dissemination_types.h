@@ -10,13 +10,10 @@
  */
 
 #pragma once
-#include "bytes/iobuf_parser.h"
 #include "container/fragmented_vector.h"
-#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "reflection/adl.h"
-#include "serde/serde.h"
+#include "serde/envelope.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/util/bool_class.hh>
@@ -24,7 +21,7 @@
 #include <fmt/ostream.h>
 
 #include <algorithm>
-#include <ostream>
+#include <iosfwd>
 
 namespace cluster {
 

@@ -10,10 +10,8 @@
  */
 #include "base/seastarx.h"
 #include "cluster/commands.h"
-#include "cluster/partition_leaders_table.h"
+#include "cluster/fwd.h"
 #include "cluster/plugin_table.h"
-#include "cluster/topic_table.h"
-#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"

@@ -11,6 +11,8 @@
 
 #include "cluster/self_test_rpc_types.h"
 
+#include "random/generators.h"
+
 #include <seastar/core/coroutine.hh>
 
 namespace cluster {

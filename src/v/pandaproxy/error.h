@@ -12,7 +12,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "kafka/protocol/errors.h"
 
 #include <seastar/http/reply.hh>
 

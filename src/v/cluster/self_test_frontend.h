@@ -10,12 +10,9 @@
  */
 
 #pragma once
-#include "cluster/errc.h"
 #include "cluster/fwd.h"
-#include "cluster/members_table.h"
 #include "cluster/self_test_rpc_service.h"
 #include "cluster/self_test_rpc_types.h"
-#include "config/node_config.h"
 #include "rpc/connection_cache.h"
 #include "rpc/fwd.h"
 

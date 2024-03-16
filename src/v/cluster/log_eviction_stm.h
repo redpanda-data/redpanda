@@ -13,13 +13,10 @@
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cluster/state_machine_registry.h"
-#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "raft/fwd.h"
 #include "raft/persisted_stm.h"
 #include "storage/kvstore.h"
-#include "storage/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>

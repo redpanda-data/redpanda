@@ -12,13 +12,11 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "kafka/client/client_fetch_batch_reader.h"
-#include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/storage.h"
-#include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>

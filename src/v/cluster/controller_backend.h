@@ -33,8 +33,7 @@
 #include <absl/container/node_hash_map.h>
 
 #include <cstdint>
-#include <deque>
-#include <ostream>
+#include <iosfwd>
 
 namespace cluster {
 

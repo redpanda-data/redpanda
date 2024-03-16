@@ -19,10 +19,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
-#include "cloud_storage_clients/client.h"
 #include "cluster/fwd.h"
-#include "cluster/partition.h"
-#include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -319,9 +316,7 @@ public:
     /// it will resume uploads.
     void complete_transfer_leadership();
 
-    const storage::ntp_config& ntp_config() const {
-        return _parent.log()->config();
-    }
+    const storage::ntp_config& ntp_config() const;
 
     /// If we have a projected manifest clean offset, then flush it to
     /// the persistent stm clean offset.

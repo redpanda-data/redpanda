@@ -12,9 +12,8 @@
 #pragma once
 #include "base/outcome.h"
 #include "model/metadata.h"
-#include "model/timeout_clock.h"
-#include "raft/errc.h"
 #include "raft/heartbeats.h"
+#include "raft/types.h"
 #include "rpc/types.h"
 
 #include <seastar/core/shared_ptr.hh>

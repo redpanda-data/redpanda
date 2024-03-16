@@ -27,8 +27,6 @@
 #include <seastar/core/smp.hh>
 #include <seastar/net/socket_defs.hh>
 
-#include <vector>
-
 namespace cluster {
 class controller;
 }

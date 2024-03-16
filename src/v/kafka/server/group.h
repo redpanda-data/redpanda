@@ -12,23 +12,21 @@
 #pragma once
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
-#include "cluster/logger.h"
-#include "cluster/partition.h"
 #include "cluster/simple_batch_builder.h"
-#include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_utils.h"
+#include "cluster/types.h"
 #include "container/fragmented_vector.h"
+#include "features/feature_table.h"
 #include "kafka/group_probe.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/server/group_metadata.h"
-#include "kafka/server/logger.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
-#include "model/namespace.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "raft/replicate.h"
 #include "utils/mutex.h"
 #include "utils/rwlock.h"
 
@@ -223,6 +221,8 @@ public:
       ss::sharded<features::feature_table>&,
       group_metadata_serializer,
       enable_group_metrics);
+
+    ~group() noexcept;
 
     /// Get the group id.
     const kafka::group_id& id() const { return _id; }

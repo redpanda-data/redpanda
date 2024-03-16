@@ -11,6 +11,7 @@
 #pragma once
 #include "raft/consensus.h"
 #include "raft/fwd.h"
+#include "raft/state_machine_manager.h"
 #include "storage/ntp_config.h"
 
 namespace cluster {

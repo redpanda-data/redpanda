@@ -12,6 +12,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_snapshot.h"
+#include "cluster/logger.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/partition_allocator.h"

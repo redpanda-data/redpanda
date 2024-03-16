@@ -9,10 +9,10 @@
 
 #include "configuration.h"
 
-#include "base/units.h"
 #include "config/base_property.h"
-#include "config/configuration.h"
+#include "config/broker_endpoint.h"
 #include "config/endpoint_tls_config.h"
+#include "config/rest_authn_endpoint.h"
 #include "model/metadata.h"
 
 #include <chrono>

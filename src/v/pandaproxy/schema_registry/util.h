@@ -11,22 +11,16 @@
 
 #pragma once
 
-#include "base/likely.h"
 #include "base/seastarx.h"
 #include "json/document.h"
-#include "json/json.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "ssx/semaphore.h"
 
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <rapidjson/error/en.h>
-
-#include <exception>
-#include <utility>
 
 namespace pandaproxy::schema_registry {
 

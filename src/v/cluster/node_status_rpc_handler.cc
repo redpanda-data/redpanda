@@ -1,5 +1,7 @@
 #include "cluster/node_status_rpc_handler.h"
 
+#include "cluster/node_status_backend.h"
+
 namespace cluster {
 
 node_status_rpc_handler::node_status_rpc_handler(

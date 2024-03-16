@@ -11,7 +11,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"

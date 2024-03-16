@@ -13,7 +13,6 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/shard_table.h"
-#include "features/feature_table.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -25,15 +24,11 @@
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
-#include "kafka/types.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
-
-#include <exception>
-#include <type_traits>
 
 namespace kafka {
 

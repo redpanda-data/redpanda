@@ -11,7 +11,6 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "cluster/types.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

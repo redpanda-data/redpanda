@@ -28,6 +28,7 @@
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
 
+#include <seastar/core/shared_ptr_incomplete.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 
@@ -379,6 +380,8 @@ kafka_stages partition::replicate_in_stages(
     return kafka_stages(
       std::move(res.request_enqueued), std::move(replicate_finished));
 }
+
+raft::group_id partition::group() const { return _raft->group(); }
 
 ss::future<> partition::start(state_machine_registry& stm_registry) {
     const auto& ntp = _raft->ntp();
@@ -920,7 +923,7 @@ ss::future<> partition::serialize_json_manifest_to_output_stream(
 }
 
 ss::future<std::error_code>
-partition::transfer_leadership(transfer_leadership_request req) {
+partition::transfer_leadership(raft::transfer_leadership_request req) {
     auto target = req.target;
 
     vlog(
@@ -1200,3 +1203,11 @@ std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }
 } // namespace cluster
+
+namespace seastar {
+
+void lw_shared_ptr_deleter<cluster::partition>::dispose(cluster::partition* s) {
+    delete s;
+}
+
+} // namespace seastar

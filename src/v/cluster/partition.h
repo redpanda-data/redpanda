@@ -14,7 +14,6 @@
 #include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/archival_metadata_stm.h"
-#include "cluster/distributed_kv_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/log_eviction_stm.h"
@@ -22,18 +21,14 @@
 #include "cluster/rm_stm.h"
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
-#include "config/configuration.h"
-#include "config/property.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
-#include "raft/consensus.h"
-#include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
-#include "raft/types.h"
+#include "raft/replicate.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 
@@ -44,7 +39,7 @@ class partition_manager;
 
 /// holds cluster logic that is not raft related
 /// all raft logic is proxied transparently
-class partition {
+class partition : public ss::enable_lw_shared_from_this<partition> {
 public:
     partition(
       consensus_ptr r,
@@ -58,7 +53,7 @@ public:
 
     ~partition();
 
-    raft::group_id group() const { return _raft->group(); }
+    raft::group_id group() const;
     ss::future<> start(state_machine_registry&);
     ss::future<> stop();
 
@@ -221,7 +216,7 @@ public:
     }
 
     ss::future<std::error_code>
-      transfer_leadership(transfer_leadership_request);
+      transfer_leadership(raft::transfer_leadership_request);
 
     ss::future<std::error_code> update_replica_set(
       std::vector<raft::broker_revision> brokers,

@@ -11,6 +11,7 @@
 #include "cluster/cloud_storage_size_reducer.h"
 
 #include "cluster/controller_service.h"
+#include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 

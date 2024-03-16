@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "cluster/partition.h"
 #include "cluster/types.h"
 
 #include <absl/container/flat_hash_map.h>

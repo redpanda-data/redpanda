@@ -16,15 +16,11 @@
 #include "cluster/types.h"
 #include "container/contiguous_range_map.h"
 #include "model/fundamental.h"
-#include "model/limits.h"
 #include "model/metadata.h"
-#include "utils/expiring_promise.h"
 #include "utils/stable_iterator_adaptor.h"
 
-#include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
-#include <span>
 #include <type_traits>
 
 namespace cluster {
@@ -103,7 +99,8 @@ public:
           model::revision_id initial_revision,
           model::revision_id current_revision)
           : _msg(ssx::sformat(
-            "Topic table was modified by concurrent fiber. (initial_revision: "
+            "Topic table was modified by concurrent fiber. "
+            "(initial_revision: "
             "{}, current_revision: {}) ",
             initial_revision,
             current_revision)) {}

@@ -24,6 +24,7 @@
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 #include "wasm/api.h"
+#include "wasm/schema_registry.h"
 #include "wasm/tests/wasm_fixture.h"
 #include "wasm/tests/wasm_logger.h"
 #include "wasm/wasmtime.h"

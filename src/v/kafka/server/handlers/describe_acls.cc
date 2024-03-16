@@ -10,6 +10,7 @@
  */
 #include "kafka/server/handlers/describe_acls.h"
 
+#include "cluster/security_frontend.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/request_context.h"

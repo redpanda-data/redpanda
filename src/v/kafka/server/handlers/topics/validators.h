@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"

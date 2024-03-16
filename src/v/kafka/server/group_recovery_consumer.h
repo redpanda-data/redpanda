@@ -12,7 +12,6 @@
 
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_stm.h"
-#include "kafka/types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>

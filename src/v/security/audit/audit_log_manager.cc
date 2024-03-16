@@ -12,6 +12,7 @@
 
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
+#include "cluster/security_frontend.h"
 #include "config/configuration.h"
 #include "kafka/client/client.h"
 #include "kafka/client/config_utils.h"

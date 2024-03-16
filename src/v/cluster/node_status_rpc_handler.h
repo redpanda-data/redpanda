@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cluster/node_status_backend.h"
+#include "cluster/fwd.h"
 #include "cluster/node_status_rpc_service.h"
 #include "cluster/node_status_rpc_types.h"
 

@@ -12,15 +12,9 @@
 #pragma once
 
 #include "model/metadata.h"
-#include "outcome_future_utils.h"
 #include "raft/consensus_client_protocol.h"
-#include "raft/errc.h"
-#include "raft/raftgen_service.h"
 #include "raft/types.h"
 #include "rpc/fwd.h"
-#include "rpc/transport.h"
-
-#include <system_error>
 
 namespace raft {
 

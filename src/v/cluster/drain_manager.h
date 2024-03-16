@@ -12,7 +12,7 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "reflection/adl.h"
-#include "serde/serde.h"
+#include "serde/envelope.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/abort_source.hh>

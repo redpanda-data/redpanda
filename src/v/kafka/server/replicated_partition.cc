@@ -11,7 +11,7 @@
 #include "kafka/server/replicated_partition.h"
 
 #include "cloud_storage/types.h"
-#include "cluster/errc.h"
+#include "cluster/partition.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/logger.h"
@@ -36,6 +36,126 @@ replicated_partition::replicated_partition(
   , _translator(_partition->get_offset_translator_state()) {
     vassert(
       _translator, "ntp {}: offset translator must be initialized", p->ntp());
+}
+
+const model::ntp& replicated_partition::ntp() const {
+    return _partition->ntp();
+}
+
+ss::future<result<model::offset, error_code>>
+replicated_partition::sync_effective_start(
+  model::timeout_clock::duration timeout) {
+    auto synced_start_offset_override
+      = co_await _partition->sync_kafka_start_offset_override(timeout);
+    if (synced_start_offset_override.has_failure()) {
+        auto err = synced_start_offset_override.error();
+        auto error_code = error_code::unknown_server_error;
+        if (err.category() == cluster::error_category()) {
+            switch (cluster::errc(err.value())) {
+                /**
+                 * In the case of timeout and shutting down errors return
+                 * not_leader_for_partition error to force clients retry.
+                 */
+            case cluster::errc::shutting_down:
+            case cluster::errc::not_leader:
+            case cluster::errc::timeout:
+                error_code = error_code::not_leader_for_partition;
+                break;
+            default:
+                error_code = error_code::unknown_server_error;
+            }
+        }
+        co_return error_code;
+    }
+    co_return kafka_start_offset_with_override(
+      synced_start_offset_override.value());
+}
+
+model::offset replicated_partition::start_offset() const {
+    const auto start_offset_override
+      = _partition->kafka_start_offset_override();
+    if (!start_offset_override.has_value()) {
+        return partition_kafka_start_offset();
+    }
+    return kafka_start_offset_with_override(start_offset_override.value());
+}
+
+model::offset replicated_partition::high_watermark() const {
+    if (_partition->is_read_replica_mode_enabled()) {
+        if (_partition->cloud_data_available()) {
+            return _partition->next_cloud_offset();
+        } else {
+            return model::offset(0);
+        }
+    }
+    return _translator->from_log_offset(_partition->high_watermark());
+}
+/**
+ * According to Kafka protocol semantics a log_end_offset is an offset that
+ * is assigned to the next record produced to a log
+ */
+model::offset replicated_partition::log_end_offset() const {
+    if (_partition->is_read_replica_mode_enabled()) {
+        if (_partition->cloud_data_available()) {
+            return model::next_offset(_partition->next_cloud_offset());
+        } else {
+            return model::offset(0);
+        }
+    }
+    /**
+     * If a local log is empty we return start offset as this is the offset
+     * assigned to the next batch produced to the log.
+     */
+    if (_partition->dirty_offset() < _partition->raft_start_offset()) {
+        return _translator->from_log_offset(_partition->raft_start_offset());
+    }
+    /**
+     * By default we return a dirty_offset + 1
+     */
+    return model::next_offset(
+      _translator->from_log_offset(_partition->dirty_offset()));
+}
+
+model::offset replicated_partition::leader_high_watermark() const {
+    if (_partition->is_read_replica_mode_enabled()) {
+        return high_watermark();
+    }
+    return _translator->from_log_offset(_partition->leader_high_watermark());
+}
+
+checked<model::offset, error_code>
+replicated_partition::last_stable_offset() const {
+    if (_partition->is_read_replica_mode_enabled()) {
+        if (_partition->cloud_data_available()) {
+            // There is no difference between HWM and LO in this mode
+            return _partition->next_cloud_offset();
+        } else {
+            return model::offset(0);
+        }
+    }
+    auto maybe_lso = _partition->last_stable_offset();
+    if (maybe_lso == model::invalid_lso) {
+        return error_code::offset_not_available;
+    }
+    return _translator->from_log_offset(maybe_lso);
+}
+
+bool replicated_partition::is_leader() const { return _partition->is_leader(); }
+
+ss::future<std::error_code> replicated_partition::linearizable_barrier() {
+    auto r = co_await _partition->linearizable_barrier();
+    if (r) {
+        co_return raft::errc::success;
+    }
+    co_return r.error();
+}
+
+cluster::partition_probe& replicated_partition::probe() {
+    return _partition->probe();
+}
+
+kafka::leader_epoch replicated_partition::leader_epoch() const {
+    return leader_epoch_from_term(_partition->raft()->confirmed_term());
 }
 
 // TODO: use previous translation speed up lookup
@@ -327,6 +447,44 @@ raft::replicate_stages replicated_partition::replicate(
             raft::replicate_result{model::offset(r.value().last_offset())});
       });
     return out;
+}
+
+model::offset replicated_partition::partition_kafka_start_offset() const {
+    if (
+      _partition->is_read_replica_mode_enabled()
+      && _partition->cloud_data_available()) {
+        // Always assume remote read in this case.
+        return _partition->start_cloud_offset();
+    }
+
+    auto local_kafka_start_offset = _translator->from_log_offset(
+      _partition->raft_start_offset());
+    if (
+      _partition->is_remote_fetch_enabled()
+      && _partition->cloud_data_available()
+      && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
+        return _partition->start_cloud_offset();
+    }
+    return local_kafka_start_offset;
+}
+
+model::offset replicated_partition::kafka_start_offset_with_override(
+  model::offset start_kafka_offset_override) const {
+    if (start_kafka_offset_override == model::offset{}) {
+        return partition_kafka_start_offset();
+    }
+    if (_partition->is_read_replica_mode_enabled()) {
+        // The start override may fall ahead of the HWM since read replicas
+        // compute HWM based on uploaded segments, and the override may
+        // appear in the manifest before uploading corresponding segments.
+        // Clamp down to the HWM.
+        const auto hwm = high_watermark();
+        if (hwm <= start_kafka_offset_override) {
+            return hwm;
+        }
+    }
+    return std::max(
+      partition_kafka_start_offset(), start_kafka_offset_override);
 }
 
 ss::future<std::optional<model::offset>>

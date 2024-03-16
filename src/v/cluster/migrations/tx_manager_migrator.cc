@@ -270,7 +270,6 @@ tx_manager_migrator::tx_manager_migrator(
   : _topics_frontend(topics_frontend)
   , _controller_api(controller_api)
   , _topics(topics)
-  , _partition_manager(partition_manager)
   , _read_router(
       partition_manager,
       shard_table,

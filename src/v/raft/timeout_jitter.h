@@ -12,7 +12,7 @@
 #pragma once
 
 #include "config/property.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "random/simple_time_jitter.h"
 
 namespace raft {

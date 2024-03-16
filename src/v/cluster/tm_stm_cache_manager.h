@@ -12,14 +12,11 @@
 #pragma once
 
 #include "cluster/tm_stm_cache.h"
-#include "kafka/server/coordinator_ntp_mapper.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/flat_hash_map.h>
-
-#include <optional>
 
 namespace cluster {
 

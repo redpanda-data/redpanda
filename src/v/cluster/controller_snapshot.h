@@ -12,14 +12,10 @@
 #pragma once
 
 #include "cluster/cluster_recovery_state.h"
-#include "cluster/config_manager.h"
 #include "cluster/types.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table_snapshot.h"
-#include "security/scram_credential.h"
-#include "security/types.h"
 #include "serde/envelope.h"
-#include "serde/serde.h"
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>

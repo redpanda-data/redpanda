@@ -1,4 +1,5 @@
 #include "raft/mutex_buffer.h"
+#include "ssx/sformat.h"
 #include "test_utils/fixture.h"
 #include "utils/mutex.h"
 

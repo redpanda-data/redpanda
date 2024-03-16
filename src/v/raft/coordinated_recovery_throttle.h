@@ -11,9 +11,9 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "config/configuration.h"
+#include "config/property.h"
 #include "metrics/metrics.h"
-#include "utils/token_bucket.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/sharded.hh>
 

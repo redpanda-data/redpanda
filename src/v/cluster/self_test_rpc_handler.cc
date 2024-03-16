@@ -11,6 +11,8 @@
 
 #include "cluster/self_test_rpc_handler.h"
 
+#include "cluster/self_test_backend.h"
+
 namespace cluster {
 
 self_test_rpc_handler::self_test_rpc_handler(

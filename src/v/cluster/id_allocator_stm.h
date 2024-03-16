@@ -13,14 +13,11 @@
 
 #include "cluster/fwd.h"
 #include "cluster/state_machine_registry.h"
-#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/errc.h"
-#include "raft/logger.h"
 #include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
-#include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 
 #include <absl/container/flat_hash_map.h>

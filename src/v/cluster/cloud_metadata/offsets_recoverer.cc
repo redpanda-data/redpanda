@@ -15,11 +15,11 @@
 #include "cloud_storage/remote_file.h"
 #include "cluster/cloud_metadata/offsets_lookup_batcher.h"
 #include "cluster/cloud_metadata/offsets_recovery_rpc_types.h"
+#include "cluster/logger.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/group_manager.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "model/record_batch_reader.h"
 #include "rpc/connection_cache.h"
 
 #include <seastar/core/lowres_clock.hh>

@@ -11,7 +11,6 @@
 
 #pragma once
 #include "cluster/fwd.h"
-#include "cluster/rm_group_proxy.h"
 #include "cluster/tx_gateway_service.h"
 
 #include <seastar/core/sharded.hh>

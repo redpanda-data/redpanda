@@ -11,15 +11,15 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "cluster/members_table.h"
-#include "cluster/node_status_rpc_service.h"
+#include "cluster/fwd.h"
+#include "cluster/node_status_rpc_types.h"
 #include "cluster/node_status_table.h"
+#include "cluster/types.h"
 #include "config/property.h"
-#include "features/feature_table.h"
+#include "features/fwd.h"
 #include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "rpc/connection_set.h"
-#include "rpc/types.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/condition-variable.hh>

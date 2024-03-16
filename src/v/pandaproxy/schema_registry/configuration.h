@@ -11,10 +11,8 @@
 
 #pragma once
 #include "config/config_store.h"
-#include "config/configuration.h"
+#include "config/endpoint_tls_config.h"
 #include "config/rest_authn_endpoint.h"
-#include "config/tls_config.h"
-#include "model/metadata.h"
 
 namespace pandaproxy::schema_registry {
 

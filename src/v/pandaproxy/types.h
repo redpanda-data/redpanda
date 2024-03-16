@@ -11,14 +11,10 @@
 
 #pragma once
 #include "kafka/client/client.h"
-#include "kafka/protocol/errors.h"
-#include "model/timestamp.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
-
-#include <chrono>
 
 namespace pandaproxy {
 

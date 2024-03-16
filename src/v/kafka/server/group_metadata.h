@@ -17,7 +17,6 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "reflection/adl.h"
 #include "utils/named_type.h"
 
 #include <seastar/util/noncopyable_function.hh>

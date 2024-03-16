@@ -13,13 +13,11 @@
 
 #include "base/seastarx.h"
 #include "config/property.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "ssx/semaphore.h"
 #include "storage/node.h"
 
 #include <seastar/core/sharded.hh>
-
-#include <iostream>
 
 namespace cloud_storage {
 class cache;

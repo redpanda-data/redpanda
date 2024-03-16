@@ -10,15 +10,10 @@
  */
 #pragma once
 
-#include "cloud_storage/topic_manifest.h"
 #include "cluster/cluster_recovery_table.h"
-#include "cluster/security_frontend.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
-#include "config/config_store.h"
 #include "features/feature_table.h"
-#include "model/fundamental.h"
-#include "security/acl_store.h"
 #include "security/credential_store.h"
 
 #include <absl/container/flat_hash_map.h>

@@ -10,12 +10,10 @@
  */
 #pragma once
 
-#include "cluster/metadata_cache.h"
-#include "cluster/types.h"
+#include "cluster/fwd.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "random/generators.h"
 
 #include <seastar/core/sharded.hh>
 

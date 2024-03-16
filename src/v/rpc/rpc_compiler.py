@@ -26,6 +26,7 @@ RPC_TEMPLATE = """
 
 #include "config/configuration.h"
 #include "metrics/metrics.h"
+#include "raft/types.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "rpc/parse_utils.h"
@@ -54,6 +55,9 @@ RPC_TEMPLATE = """
 #include <cstdint>
 
 namespace {{namespace}} {
+
+using transfer_leadership_request = raft::transfer_leadership_request;
+using transfer_leadership_reply = raft::transfer_leadership_reply;
 
 template<typename Codec>
 class {{service_name}}_service_base : public ::rpc::service {

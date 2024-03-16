@@ -13,7 +13,6 @@
 
 #include "model/record.h"
 #include "raft/group_configuration.h"
-#include "utils/to_string.h"
 
 #include <fmt/format.h>
 

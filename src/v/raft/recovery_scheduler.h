@@ -14,15 +14,12 @@
 #include "container/intrusive_list_helpers.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
-#include "model/namespace.h"
-#include "raft/logger.h"
+#include "raft/fwd.h"
 #include "seastar/core/gate.hh"
 #include "seastar/core/lowres_clock.hh"
 #include "seastar/core/timer.hh"
 
 #include <fmt/core.h>
-
-#include <vector>
 
 namespace raft {
 

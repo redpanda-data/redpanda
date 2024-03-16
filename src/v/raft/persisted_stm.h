@@ -11,22 +11,17 @@
 
 #pragma once
 
-#include "config/configuration.h"
 #include "container/fragmented_vector.h"
-#include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "raft/consensus.h"
-#include "raft/errc.h"
-#include "raft/logger.h"
-#include "raft/state_machine.h"
 #include "raft/state_machine_base.h"
-#include "raft/types.h"
 #include "storage/snapshot.h"
 #include "storage/types.h"
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
+
+#include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
 

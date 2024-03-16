@@ -13,11 +13,7 @@
 
 #include "base/seastarx.h"
 #include "kafka/protocol/produce.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "raft/types.h"
-#include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/circular_buffer.hh>

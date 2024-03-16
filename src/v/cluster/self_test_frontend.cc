@@ -13,6 +13,7 @@
 
 #include "base/vlog.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/self_test/netcheck.h"
 #include "cluster/self_test_backend.h"
 #include "ssx/future-util.h"

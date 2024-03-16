@@ -21,8 +21,6 @@
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/scheduling.hh>
 
-#include <filesystem>
-
 namespace archival {
 
 using cloud_storage::connection_limit;

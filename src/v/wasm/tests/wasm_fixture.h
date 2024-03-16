@@ -15,10 +15,8 @@
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "serde/rw/rw.h"
-#include "serde/rw/scalar.h"
-#include "test_utils/test.h"
+#include "storage/record_batch_builder.h"
 #include "wasm/api.h"
-#include "wasm/schema_registry.h"
 #include "wasm/transform_probe.h"
 
 #include <gtest/gtest.h>

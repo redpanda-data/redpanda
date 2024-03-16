@@ -564,7 +564,7 @@ private:
         timequery(storage::timequery_config) final {
             throw std::runtime_error("unimplemented");
         }
-        ss::future<std::vector<cluster::rm_stm::tx_range>> aborted_transactions(
+        ss::future<std::vector<model::tx_range>> aborted_transactions(
           model::offset,
           model::offset,
           ss::lw_shared_ptr<const storage::offset_translator_state>) final {

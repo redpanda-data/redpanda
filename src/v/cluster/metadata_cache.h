@@ -21,7 +21,6 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
-#include "utils/expiring_promise.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>

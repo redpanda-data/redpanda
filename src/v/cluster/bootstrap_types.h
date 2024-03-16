@@ -10,9 +10,9 @@
 
 #include "cluster/types.h"
 #include "model/fundamental.h"
-#include "serde/serde.h"
+#include "serde/envelope.h"
 
-#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 #include <vector>
 

@@ -11,8 +11,6 @@
 
 #include "bytes/bytes.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "test_utils/fixture.h"
-#include "test_utils/test.h"
 #include "wasm/errc.h"
 #include "wasm/tests/wasm_fixture.h"
 
@@ -27,6 +25,8 @@
 #include <avro/Stream.hh>
 #include <avro/ValidSchema.hh>
 #include <gtest/gtest.h>
+
+using namespace std::chrono_literals;
 
 TEST_F(WasmTestFixture, IdentityFunction) {
     load_wasm("identity.wasm");

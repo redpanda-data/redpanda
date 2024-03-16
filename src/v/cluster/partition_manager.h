@@ -23,11 +23,8 @@
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
-#include "raft/consensus_client_protocol.h"
 #include "raft/group_manager.h"
-#include "raft/heartbeat_manager.h"
 #include "storage/api.h"
-#include "utils/named_type.h"
 
 #include <absl/container/flat_hash_map.h>
 

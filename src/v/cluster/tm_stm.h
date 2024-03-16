@@ -16,24 +16,14 @@
 #include "cluster/state_machine_registry.h"
 #include "cluster/tm_stm_cache.h"
 #include "cluster/tx_hash_ranges.h"
-#include "config/configuration.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"
-#include "kafka/protocol/errors.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
-#include "model/namespace.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "raft/consensus.h"
-#include "raft/errc.h"
-#include "raft/logger.h"
+#include "raft/fwd.h"
 #include "raft/persisted_stm.h"
-#include "raft/state_machine.h"
-#include "raft/types.h"
 #include "storage/ntp_config.h"
-#include "storage/snapshot.h"
-#include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>
@@ -41,7 +31,6 @@
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
 
-#include <compare>
 #include <cstdint>
 #include <string_view>
 

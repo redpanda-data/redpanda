@@ -12,6 +12,7 @@
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
 #include "cluster/plugin_frontend.h"
+#include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

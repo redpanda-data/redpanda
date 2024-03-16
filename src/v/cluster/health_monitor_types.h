@@ -13,18 +13,14 @@
 #include "cluster/drain_manager.h"
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
-#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "reflection/adl.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/chunked_fifo.hh>
 
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
-
-#include <chrono>
 
 namespace cluster {
 

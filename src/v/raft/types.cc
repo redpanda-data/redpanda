@@ -787,6 +787,13 @@ std::ostream& operator<<(std::ostream& o, const append_entries_request& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const transfer_leadership_request& r) {
+    fmt::print(
+      o, "group {} target {} timeout {}", r.group, r.target, r.timeout);
+    return o;
+}
+
 } // namespace raft
 
 namespace reflection {

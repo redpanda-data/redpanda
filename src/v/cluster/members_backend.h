@@ -6,7 +6,6 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/consensus.h"
 
 #include <seastar/core/condition-variable.hh>
 
@@ -14,8 +13,7 @@
 #include <absl/container/node_hash_set.h>
 
 #include <chrono>
-#include <limits>
-#include <ostream>
+#include <iosfwd>
 namespace cluster {
 
 class members_backend {

@@ -24,6 +24,7 @@
 #include "cluster/tm_stm_cache.h"
 #include "cluster/tm_stm_cache_manager.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_coordinator_mapper.h"
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_gateway_service.h"
 #include "cluster/tx_helpers.h"

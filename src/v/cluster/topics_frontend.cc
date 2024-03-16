@@ -23,6 +23,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
+#include "cluster/remote_topic_configuration_source.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/shard_table.h"

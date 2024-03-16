@@ -12,6 +12,7 @@
 
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cluster_recovery_state.h"
+#include "cluster/commands.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"

@@ -13,7 +13,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
-#include "features/feature_table.h"
+#include "features/fwd.h"
 #include "rpc/fwd.h"
 #include "rpc/types.h"
 

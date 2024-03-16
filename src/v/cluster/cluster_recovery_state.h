@@ -14,7 +14,6 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
-#include "serde/serde.h"
 
 #include <seastar/util/bool_class.hh>
 

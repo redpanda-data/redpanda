@@ -12,7 +12,6 @@
 
 #include "base/outcome.h"
 #include "base/seastarx.h"
-#include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "features/fwd.h"
 #include "model/metadata.h"

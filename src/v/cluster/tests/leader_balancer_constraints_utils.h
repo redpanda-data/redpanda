@@ -16,9 +16,8 @@
 #include "cluster/scheduling/leader_balancer_constraints.h"
 #include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
-#include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 
 #include <algorithm>
 #include <iterator>

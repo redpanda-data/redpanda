@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "bytes/bytes.h"
 #include "storage/kvstore.h"
 
 #include <seastar/core/sharded.hh>

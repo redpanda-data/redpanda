@@ -15,9 +15,9 @@
 #include "cluster/node/local_monitor.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
-#include "raft/consensus.h"
 #include "rpc/fwd.h"
 #include "ssx/semaphore.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
@@ -26,7 +26,6 @@
 #include <absl/container/node_hash_map.h>
 
 #include <chrono>
-#include <memory>
 #include <vector>
 namespace cluster {
 

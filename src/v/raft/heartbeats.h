@@ -13,9 +13,9 @@
 
 #include "bytes/iobuf.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "serde/envelope.h"
-#include "serde/serde.h"
+#include "serde/rw/rw.h"
 #include "utils/delta_for.h"
 
 #include <seastar/core/chunked_fifo.hh>

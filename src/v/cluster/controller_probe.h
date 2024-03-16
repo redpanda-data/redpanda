@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "metrics/metrics.h"

@@ -17,7 +17,6 @@
 #include "rpc/transport.h"
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
-#include "ssx/sformat.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>

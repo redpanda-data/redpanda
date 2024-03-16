@@ -28,7 +28,6 @@
 #include "raft/group_configuration.h"
 #include "raft/heartbeats.h"
 #include "raft/logger.h"
-#include "raft/mutex_buffer.h"
 #include "raft/offset_translator.h"
 #include "raft/probe.h"
 #include "raft/recovery_memory_quota.h"
