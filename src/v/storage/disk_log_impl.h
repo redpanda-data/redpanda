@@ -111,6 +111,10 @@ public:
     size_t segment_count() const final { return _segs.size(); }
     bool is_new_log() const final;
     offset_stats offsets() const final;
+    ss::lw_shared_ptr<const storage::offset_translator_state>
+    get_offset_translator_state() const final {
+        return _offset_translator.state();
+    }
     raft::offset_translator& offset_translator() { return _offset_translator; }
     model::offset_delta delta(model::offset) const final;
     model::offset from_log_offset(model::offset) const final;
@@ -126,6 +130,9 @@ public:
     // Must be called while _segments_rolling_lock is held.
     ss::future<> maybe_roll_unlocked(
       model::term_id, model::offset next_offset, ss::io_priority_class);
+
+    // Kicks off a background flush of offset translator state to the kvstore.
+    void bg_checkpoint_offset_translator();
 
     ss::future<> force_roll(ss::io_priority_class) override;
 

@@ -167,6 +167,7 @@ ss::future<> disk_log_impl::remove() {
         permanent_delete.emplace_back(
           remove_segment_permanently(s, "disk_log_impl::remove()"));
     }
+    co_await _offset_translator.remove_persistent_state();
 
     co_await _readers_cache->stop()
       .then([this, permanent_delete = std::move(permanent_delete)]() mutable {
@@ -1656,6 +1657,12 @@ size_t disk_log_impl::bytes_left_before_roll() const {
     return max - fo;
 }
 
+void disk_log_impl::bg_checkpoint_offset_translator() {
+    ssx::spawn_with_gate(_compaction_housekeeping_gate, [this] {
+        return _offset_translator.maybe_checkpoint();
+    });
+}
+
 ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
     auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
     auto t = term();
@@ -2494,7 +2501,7 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
 
 ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
     vassert(!_closed, "truncate_prefix() on closed log - {}", *this);
-    return _failure_probes.truncate_prefix().then([this, cfg]() mutable {
+    co_await _failure_probes.truncate_prefix().then([this, cfg]() mutable {
         // dispatch the actual truncation
         return do_truncate_prefix(cfg)
           .then([this] {
@@ -2509,6 +2516,11 @@ ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
           })
           .discard_result();
     });
+    // We truncate the segments before truncating offset translator to wait for
+    // readers that started reading from the start of the log before we advanced
+    // the start offset and thus can still need offset translation info.
+    co_await _offset_translator.prefix_truncate(
+      model::prev_offset(cfg.start_offset), cfg.force_truncate_delta);
 }
 
 ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
@@ -2570,7 +2582,15 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
 
 ss::future<> disk_log_impl::truncate(truncate_config cfg) {
     vassert(!_closed, "truncate() on closed log - {}", *this);
-    return _failure_probes.truncate().then([this, cfg]() mutable {
+    // We are truncating the offset translator before truncating the log
+    // because if saving offset translator state fails (e.g. because of a
+    // crash), we can retry and eventually log and offset translator will
+    // become consistent. OTOH if log truncation were first and saving offset
+    // translator state failed, we wouldn't retry and log and offset translator
+    // could diverge.
+    co_await _offset_translator.truncate(cfg.base_offset);
+
+    co_await _failure_probes.truncate().then([this, cfg]() mutable {
         // Before truncation, erase any claim about a particular segment being
         // clean: this may refer to a segment we are about to delete, or it
         // may refer to a segment that we will modify the indices+data for: on

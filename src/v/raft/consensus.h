@@ -34,9 +34,10 @@
 #include "raft/replicate_batcher.h"
 #include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
+#include "raft/types.h"
 #include "ssx/semaphore.h"
 #include "storage/log.h"
-#include "storage/offset_translator.h"
+#include "storage/offset_translator_state.h"
 #include "storage/snapshot.h"
 #include "utils/mutex.h"
 
@@ -408,7 +409,7 @@ public:
 
     ss::lw_shared_ptr<const storage::offset_translator_state>
     get_offset_translator_state() {
-        return _offset_translator.state();
+        return _log->get_offset_translator_state();
     }
 
     /**
@@ -557,7 +558,8 @@ private:
      */
     std::optional<model::offset_delta>
     delta_for_truncation(const snapshot_metadata& metadata);
-    ss::future<> truncate_to_latest_snapshot();
+    ss::future<> truncate_to_latest_snapshot(
+      std::optional<model::offset_delta> force_truncate_delta = std::nullopt);
     ss::future<install_snapshot_reply>
       finish_snapshot(install_snapshot_request, install_snapshot_reply);
 
@@ -769,7 +771,6 @@ private:
     raft::group_id _group;
     timeout_jitter _jit;
     ss::shared_ptr<storage::log> _log;
-    offset_translator _offset_translator;
     scheduling_config _scheduling;
     config::binding<std::chrono::milliseconds> _disk_timeout;
     consensus_client_protocol _client_protocol;
