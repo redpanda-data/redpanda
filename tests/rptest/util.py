@@ -10,7 +10,7 @@
 import os
 import pprint
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Any
 
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
@@ -53,7 +53,7 @@ class Scale:
         return self._scale == Scale.RELEASE
 
 
-def wait_until_result(condition, *args, **kwargs):
+def wait_until_result(condition, *args, **kwargs) -> Any:
     """
     a near drop-in replacement for ducktape's wait_util except that when
     the condition passes a result from the condition is passed back to the

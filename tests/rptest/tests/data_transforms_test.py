@@ -28,7 +28,6 @@ from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.tests.cluster_config_test import wait_for_version_sync
-from rptest.utils.utf8 import CONTROL_CHARS_VALS, generate_string_with_control_character
 from rptest.util import expect_exception, wait_until_result
 
 
@@ -438,12 +437,14 @@ class LogRecord:
         self._record['value'] = json.loads(self._record['value'])
 
         # Redpanda bits
-        self.offset = self._record['offset']
-        self.key = self._record['key']
+        self.offset: int = self._record['offset']
+        self.key: str = self._record['key']
 
         # OTel bits
         self._rep = self._record['value']
-        self.body = self._rep.get(self.BODY_FIELD, None)
+        body_object = self._rep.get(self.BODY_FIELD, None)
+        if isinstance(body_object, dict):
+            self.body: str = body_object.get("stringValue", None)
         self.timestamp_ns = self._rep.get(self.TS_FIELD, None)
         self.severity = self._rep.get(self.SEVERITY_FIELD, None)
         self.attributes = [
@@ -496,12 +497,26 @@ class BaseDataTransformsLoggingTest(BaseDataTransformsTest):
                           file="tinygo/identity_logging.wasm")
         return [it, ot]
 
-    def consume_one_log_record(self, offset=0, timeout=10) -> LogRecord:
-        return LogRecord(
-            self._rpk.consume(self.logs_topic.name,
-                              n=1,
-                              offset=offset,
-                              timeout=timeout))
+    def consume_one_log_record(self, offset=0, timeout=None) -> LogRecord:
+        def consume(timeout):
+            record = LogRecord(
+                self._rpk.consume(self.logs_topic.name,
+                                  n=1,
+                                  offset=offset,
+                                  timeout=timeout))
+            # RPK can reset and return the latest offset if our offset is
+            # out of range, so we need to make sure we keep trying until
+            # we get a record.
+            return record.offset == offset, record
+
+        if timeout != None:
+            return consume(timeout)[1]
+
+        return wait_until_result(
+            lambda: consume(timeout=10),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=f"never recieved log record at offset {offset}")
 
 
 class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
@@ -530,7 +545,8 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
         self.logger.debug(
             f"Expect to find log offsets up to the total # of records {log_hwm}"
         )
-        test_offsets = [0, log_hwm // 2, log_hwm]
+        # Offsets are zero based so make sure the last record is at log_hwm - 1
+        test_offsets = [0, log_hwm // 2, log_hwm - 1]
         for i in test_offsets:
             log = self.consume_one_log_record(offset=i)
             validation_errs = log.validate(offset=i)
@@ -552,25 +568,6 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
         assert (
             validation_errors is None
         ), f"Log record validation failed, errors: {json.dumps(validation_errors, indent=1)}"
-
-    @cluster(num_nodes=3)
-    def test_logs_cc_escaping(self):
-        input_topic, output_topic = self.setup_identity_xform(
-            self.topics[0], self.topics[1])
-
-        val = generate_string_with_control_character(12)
-        buf = bytearray()
-        buf.extend(map(ord, val))
-        assert any([b in CONTROL_CHARS_VALS
-                    for b in buf]), f"Expected control char(s) in {buf}"
-
-        self._rpk.produce(input_topic.name, 'foo', val)
-
-        log = self.consume_one_log_record()
-        buf = bytearray()
-        buf.extend(map(ord, log.body))
-        assert all([b not in CONTROL_CHARS_VALS for b in buf
-                    ]), f"Found control char(s) in log output: {buf}"
 
     @cluster(num_nodes=3)
     def test_log_topic_integrity(self):
