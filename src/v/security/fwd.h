@@ -14,6 +14,7 @@
 namespace security {
 
 class acl_store;
+class acl_matches;
 class authorizer;
 class credential_store;
 class ephemeral_credential_store;

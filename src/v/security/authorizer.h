@@ -15,7 +15,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "security/acl.h"
-#include "security/acl_store.h"
+#include "security/acl_entry_set.h"
 #include "security/fwd.h"
 #include "security/logger.h"
 #include "security/types.h"
@@ -146,7 +146,7 @@ struct auth_result {
       security::acl_operation operation,
       const T& resource,
       bool authorized,
-      const acl_matches::acl_match& match) {
+      const security::acl_match& match) {
         return {
           .authorized = authorized,
           .resource_pattern = match.resource,
@@ -166,7 +166,7 @@ struct auth_result {
       security::acl_operation operation,
       const T& resource,
       bool authorized,
-      const acl_matches::acl_match& match) {
+      const security::acl_match& match) {
         return {
           .authorized = authorized,
           .resource_pattern = match.resource,
@@ -185,7 +185,7 @@ struct auth_result {
       security::acl_host host,
       security::acl_operation operation,
       const T& resource,
-      const std::optional<acl_matches::acl_match>& match) {
+      const std::optional<security::acl_match>& match) {
         return {
           .authorized = match.has_value(),
           .empty_matches = !match.has_value(),
@@ -219,51 +219,32 @@ public:
     using allow_empty_matches = ss::bool_class<struct allow_empty_matches_type>;
 
     authorizer() = delete;
+    ~authorizer();
 
     authorizer(
       config::binding<std::vector<ss::sstring>> superusers,
-      const role_store* roles)
-      : authorizer(allow_empty_matches::no, std::move(superusers), roles) {}
+      const role_store* roles);
 
     authorizer(
       allow_empty_matches allow,
       config::binding<std::vector<ss::sstring>> superusers,
-      const role_store* roles)
-      : _superusers_conf(std::move(superusers))
-      , _allow_empty_matches(allow)
-      , _role_store(roles) {
-        update_superusers();
-        _superusers_conf.watch([this]() { update_superusers(); });
-    }
+      const role_store* roles);
 
     /*
      * Add ACL bindings to the authorizer.
      */
-    void add_bindings(const std::vector<acl_binding>& bindings) {
-        if (unlikely(
-              seclog.is_shard_zero()
-              && seclog.is_enabled(ss::log_level::debug))) {
-            for (const auto& binding : bindings) {
-                vlog(seclog.debug, "Adding ACL binding: {}", binding);
-            }
-        }
-        _store.add_bindings(bindings);
-    }
+    void add_bindings(const std::vector<acl_binding>& bindings);
 
     /*
      * Remove ACL bindings that match the filter(s).
      */
     std::vector<std::vector<acl_binding>> remove_bindings(
-      const std::vector<acl_binding_filter>& filters, bool dry_run = false) {
-        return _store.remove_bindings(filters, dry_run);
-    }
+      const std::vector<acl_binding_filter>& filters, bool dry_run = false);
 
     /*
      * Retrieve ACL bindings that match the filter.
      */
-    std::vector<acl_binding> acls(const acl_binding_filter& filter) const {
-        return _store.acls(filter);
-    }
+    std::vector<acl_binding> acls(const acl_binding_filter& filter) const;
 
     /*
      * Authorize an operation on a resource. The type of resource is deduced by
@@ -276,64 +257,23 @@ public:
       const acl_principal& principal,
       const acl_host& host) const;
 
-    ss::future<fragmented_vector<acl_binding>> all_bindings() const {
-        return _store.all_bindings();
-    }
+    ss::future<fragmented_vector<acl_binding>> all_bindings() const;
+    ss::future<> reset_bindings(const fragmented_vector<acl_binding>& bindings);
 
-    ss::future<>
-    reset_bindings(const fragmented_vector<acl_binding>& bindings) {
-        return _store.reset_bindings(bindings);
-    }
-
-    acl_store& store() { return _store; }
+    acl_store& store() &;
+    const acl_store& store() const&;
 
 private:
     /*
      * Compute whether the specified operation is allowed based on the implied
      * operations.
      */
-    std::optional<acl_matches::acl_match> acl_any_implied_ops_allowed(
+    std::optional<security::acl_match> acl_any_implied_ops_allowed(
       const acl_matches& acls,
       const acl_principal_base& principal,
       const acl_host& host,
-      const acl_operation operation) const {
-        auto check_op = [&acls, &principal, &host](
-                          auto begin,
-                          auto end) -> std::optional<acl_matches::acl_match> {
-            for (; begin != end; ++begin) {
-                if (auto entry = acls.find(
-                      *begin, principal, host, acl_permission::allow);
-                    entry.has_value()) {
-                    return entry;
-                }
-            }
-
-            return {};
-        };
-
-        switch (operation) {
-        case acl_operation::describe: {
-            static constexpr std::array ops = {
-              acl_operation::describe,
-              acl_operation::read,
-              acl_operation::write,
-              acl_operation::remove,
-              acl_operation::alter,
-            };
-            return check_op(ops.begin(), ops.end());
-        }
-        case acl_operation::describe_configs: {
-            static constexpr std::array ops = {
-              acl_operation::describe_configs,
-              acl_operation::alter_configs,
-            };
-            return check_op(ops.begin(), ops.end());
-        }
-        default:
-            return acls.find(operation, principal, host, acl_permission::allow);
-        }
-    }
-    acl_store _store;
+      const acl_operation operation) const;
+    std::unique_ptr<acl_store> _store;
 
     // The list of superusers is stored twice: once as a vector in the
     // configuration subsystem, then again has a set here for fast lookups.

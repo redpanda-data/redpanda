@@ -96,7 +96,7 @@ bool acl_matches::empty() const {
       });
 }
 
-std::optional<acl_matches::acl_match> acl_matches::find(
+std::optional<security::acl_match> acl_matches::find(
   acl_operation operation,
   const acl_principal_base& principal,
   const acl_host& host,
