@@ -18,20 +18,18 @@ node_config::node_config() noexcept
   : developer_mode(
     *this,
     "developer_mode",
-    "Skips most of the checks performed at startup, not recomended for "
-    "production use",
+    "Flag to enable developer mode, which skips most of the checks performed at startup. Not recommended for production use."
     {.visibility = visibility::tunable},
     false)
   , data_directory(
       *this,
       "data_directory",
-      "Place where redpanda will keep the data",
+      "Path to the directory for storing Redpanda's streaming data files.",
       {.required = required::yes, .visibility = visibility::user})
   , node_id(
       *this,
       "node_id",
-      "Unique id identifying a node in the cluster. If missing, a unique id "
-      "will be assigned for this node when it joins the cluster",
+      "A number that uniquely identifies the broker within the cluster. If `null` (the default value), Redpanda automatically assigns an ID. If set, it must be non-negative value. "
       {.visibility = visibility::user},
       std::nullopt,
       [](std::optional<model::node_id> id) -> std::optional<ss::sstring> {
@@ -43,7 +41,7 @@ node_config::node_config() noexcept
   , rack(
       *this,
       "rack",
-      "Rack identifier",
+      "A label that identifies a failure zone. Apply the same label to all brokers in the same failure zone. When enable_rack_awareness is set to `true` at the cluster level, the system uses the rack labels to spread partition replicas across different failure zones.",
       {.visibility = visibility::user},
       std::nullopt)
   , seed_servers(
@@ -66,31 +64,26 @@ node_config::node_config() noexcept
   , empty_seed_starts_cluster(
       *this,
       "empty_seed_starts_cluster",
-      "If true, an empty seed_servers list will denote that this node should "
-      "form a cluster. At most one node in the cluster should be configured "
-      "configured with an empty seed_servers list. If no such configured node "
-      "exists, or if configured to false, all nodes denoted by the "
-      "seed_servers list must be identical among those nodes' configurations, "
-      "and those nodes will form the initial cluster.",
+      "Controls how a new cluster is formed. This property must have the same value in all brokers in a cluster. If `true`, an empty seed_servers list denotes that this broker should form a cluster. At most, one broker in the cluster should be configured with an empty seed_servers list. If no such configured broker exists, or if configured to be `false`, then all brokers denoted by the seed_servers list must be identical in their configurations, and those brokers form the initial cluster. "
       {.visibility = visibility::user},
       true)
   , rpc_server(
       *this,
       "rpc_server",
-      "IpAddress and port for RPC server",
+      "IP address and port for the Remote Procedure Call (RPC) server.",
       {.visibility = visibility::user},
       net::unresolved_address("127.0.0.1", 33145))
   , rpc_server_tls(
       *this,
       "rpc_server_tls",
-      "TLS configuration for RPC server",
+      "TLS configuration for the RPC server.",
       {.visibility = visibility::user},
       tls_config(),
       tls_config::validate)
   , kafka_api(
       *this,
       "kafka_api",
-      "Address and port of an interface to listen for Kafka API requests",
+      "IP address and port of the Kafka API endpoint that handles requests.",
       {.visibility = visibility::user},
       {config::broker_authn_endpoint{
         .address = net::unresolved_address("127.0.0.1", 9092),
@@ -98,24 +91,27 @@ node_config::node_config() noexcept
   , kafka_api_tls(
       *this,
       "kafka_api_tls",
-      "TLS configuration for Kafka API endpoint",
+      "Transport Layer Security (TLS) configuration for the Kafka API endpoint.",
       {.visibility = visibility::user},
       {},
       endpoint_tls_config::validate_many)
   , admin(
       *this,
       "admin",
-      "Address and port of admin server",
+      "IP address and port of the admin server.",
       {.visibility = visibility::user},
       {model::broker_endpoint(net::unresolved_address("127.0.0.1", 9644))})
   , admin_api_tls(
       *this,
       "admin_api_tls",
-      "TLS configuration for admin HTTP server",
+      "TLS configuration for the Admin API.",
       {.visibility = visibility::user},
       {},
       endpoint_tls_config::validate_many)
-  , coproc_supervisor_server(*this, "coproc_supervisor_server")
+  , coproc_supervisor_server(
+      *this, 
+      "coproc_supervisor_server",
+      "IP address and port for supervisor service.")
   , emergency_disable_data_transforms(
       *this,
       "emergency_disable_data_transforms",
@@ -126,24 +122,28 @@ node_config::node_config() noexcept
   , admin_api_doc_dir(
       *this,
       "admin_api_doc_dir",
-      "Admin API doc directory",
+      "Path to the admin API documentation directory.",
       {.visibility = visibility::user},
       "/usr/share/redpanda/admin-api-doc")
-  , dashboard_dir(*this, "dashboard_dir")
+  , dashboard_dir(
+      *this,
+      "dashboard_dir",
+      "Path to the directory where the HTTP dashboard is located.")
   , cloud_storage_cache_directory(
       *this,
       "cloud_storage_cache_directory",
-      "Directory for archival cache. Should be present when "
-      "`cloud_storage_enabled` is present",
+      "The directory where the cache archive is stored. This property is mandatory when cloud_storage_enabled is set to `true`."
       {.visibility = visibility::user},
       std::nullopt)
   , enable_central_config(*this, "enable_central_config")
   , crash_loop_limit(
       *this,
       "crash_loop_limit",
-      "Maximum consecutive crashes (unclean shutdowns) allowed after which "
-      "operator intervention is needed to startup the broker. Limit is not "
-      "enforced in developer mode.",
+      "A limit on the number of consecutive times a broker can crash within one hour before its crash-tracking logic is reset. This limit prevents a broker from getting stuck in an infinite cycle of crashes. If `null`, the property is disabled and no limit is applied. The crash-tracking logic is reset (to zero consecutive crashes) by any of the following conditions:
+       The broker shuts down cleanly.
+       One hour passes since the last crash.
+       The broker configuration file, `redpanda.yaml`, is updated.
+       The `startup_log` file in the broker's data_directory is manually deleted."
       {.visibility = visibility::user},
       5)
   , upgrade_override_checks(
