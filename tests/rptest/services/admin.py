@@ -132,8 +132,14 @@ class RolesList:
     def __init__(self, roles: list[RoleDescription]):
         self.roles = roles
 
+    def __getitem__(self, i) -> RoleDescription:
+        return self.roles[i]
+
     def __len__(self):
         return len(self.roles)
+
+    def __str__(self):
+        return json.dumps(self.roles)
 
     @classmethod
     def from_json(cls, body: bytes):
@@ -983,8 +989,11 @@ class Admin:
         return self._request("get", "security/users", node=node,
                              params=params).json()
 
-    def list_user_roles(self):
-        return self._request("get", f"security/users/roles")
+    def list_user_roles(self, filter: Optional[str] = None):
+        params = {}
+        if filter is not None:
+            params['filter'] = filter
+        return self._request("get", f"security/users/roles", params=params)
 
     def create_role(self, role: str):
         return self._request("post", "security/roles", json=dict(role=role))
