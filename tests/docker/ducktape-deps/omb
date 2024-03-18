@@ -2,5 +2,5 @@
 set -e
 git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git
 cd /opt/openmessaging-benchmark
-git reset --hard 8411e4a17f9fe190591389bf9b17c515f144a393
+git reset --hard 50aba841760313fdd86586f0e74484d1721513e4
 mvn clean package -DskipTests
