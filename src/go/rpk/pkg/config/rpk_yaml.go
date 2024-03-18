@@ -200,22 +200,23 @@ func (y *RpkYaml) PushProfile(p RpkProfile) (priorAuth, currentAuth *RpkCloudAut
 }
 
 // MoveProfileToFront moves the given profile to the front of the list.
-func (y *RpkYaml) MoveProfileToFront(p *RpkProfile) (priorAuth, currentAuth *RpkCloudAuth) {
+func (y *RpkYaml) MoveProfileToFront(p **RpkProfile) (priorAuth, currentAuth *RpkCloudAuth) {
 	priorAuth = y.CurrentAuth()
-	reordered := []RpkProfile{*p}
+	reordered := []RpkProfile{**p}
 	for i := range y.Profiles {
-		if &y.Profiles[i] == p {
+		if &y.Profiles[i] == *p {
 			continue
 		}
 		reordered = append(reordered, y.Profiles[i])
 	}
 	y.Profiles = reordered
-	y.CurrentProfile = p.Name
+	*p = &reordered[0]
+	y.CurrentProfile = (*p).Name
 
 	// If this is a cloud profile, we switch the auth as well.
-	if p.FromCloud {
-		y.CurrentCloudAuthOrgID = p.CloudCluster.AuthOrgID
-		y.CurrentCloudAuthKind = p.CloudCluster.AuthKind
+	if (*p).FromCloud {
+		y.CurrentCloudAuthOrgID = (*p).CloudCluster.AuthOrgID
+		y.CurrentCloudAuthKind = (*p).CloudCluster.AuthKind
 	}
 	currentAuth = y.CurrentAuth()
 	return priorAuth, currentAuth
