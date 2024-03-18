@@ -151,7 +151,7 @@ public:
     /// Returns nullopt if not in read replica mode
     std::optional<ss::lowres_clock::time_point> get_last_sync_time() const;
 
-    /// Download manifest from pre-defined S3 locatnewion
+    /// Download manifest from pre-defined S3 location
     ///
     /// \return future that returns true if the manifest was found in S3
     ss::future<std::pair<
