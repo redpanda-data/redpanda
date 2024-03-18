@@ -1807,6 +1807,55 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         node_count = self.config_profile['nodes_count']
         assert self._min_brokers <= node_count, f'Not enough brokers: test needs {self._min_brokers} but cluster has {node_count}'
 
+    def format_pod_status(self, pods):
+        statuses_list = [(p['metadata']['name'], p['status']['phase'])
+                         for p in pods]
+        if len(statuses_list) < 1:
+            return "none"
+        else:
+            return ", ".join([f"{n}: {s}" for n, s in statuses_list])
+
+    def get_redpanda_pods_filtered(self, status):
+        return [
+            p for p in self.get_redpanda_pods()
+            if p['status']['phase'].lower() == status
+        ]
+
+    def get_redpanda_pods_presorted(self):
+        """Method gets all pods and separates them into active and inactive
+        
+        return: active_pods, inactive_pods, unknown lists
+        """
+        # Pod lifecycle is: Pending, Running, Succeeded, Failed, Unknown
+        active_phases = ['running']
+        inactive_phases = ['pending', 'succeeded', 'failed']
+
+        all_pods = self.get_redpanda_pods()
+        # Sort pods into bins
+        active_rp_pods = []
+        inactive_rp_pods = []
+        unknown_rp_pods = []
+        for pod in all_pods:
+            _status = pod['status']['phase'].lower()
+            if _status in active_phases:
+                active_rp_pods.append(pod)
+            elif _status in inactive_phases:
+                inactive_rp_pods.append(pod)
+            else:
+                # Phase unknown and others
+                unknown_rp_pods.append(pod)
+
+        # Log pod names and statuses
+        # Example: Current Redpanda pods: rp-cnplksdb0t6f2b421c20-0: Running, rp-cnplksdb0t6f2b421c20-1: Running, rp-cnplksdb0t6f2b421c20-2: Running'
+        self.logger.debug("Active RP cluster pods: "
+                          f"{self.format_pod_status(active_rp_pods)}")
+        self.logger.debug("Inactive RP cluster pods: "
+                          f"{self.format_pod_status(inactive_rp_pods)}")
+        self.logger.debug("Other RP cluster pods: "
+                          f"{self.format_pod_status(unknown_rp_pods)}")
+
+        return active_rp_pods, inactive_rp_pods, unknown_rp_pods
+
     def get_redpanda_pods(self):
         """Get the current list of redpanda pods as k8s API objects."""
         pods = json.loads(
@@ -2115,8 +2164,12 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             raise CorruptedClusterError(uh_reason)
 
         expected_nodes = int(self.config_profile['nodes_count'])
-        redpanda_pods = len(self.get_redpanda_pods())
-        assert expected_nodes == redpanda_pods, f'Expected {expected_nodes} per tier definition but there were only {redpanda_pods} pods'
+        active, _, _ = self.get_redpanda_pods_presorted()
+        failed = self.get_redpanda_pods_filtered('failed')
+        active_count = len(active)
+        failed_count = len(failed)
+        assert expected_nodes == active_count, f'Expected {expected_nodes} per tier definition but found {active_count} active pods'
+        assert failed_count == 0, f'Expected no failed pods, found {failed_count}'
 
         brokers = self._cloud_cluster.get_brokers()
         broker_count = len(brokers)
