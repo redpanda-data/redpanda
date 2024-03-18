@@ -38,6 +38,14 @@ get_status(http::client::response_stream_ref& resp);
 
 json::Document parse_json_response(iobuf resp);
 
+using validate_and_parse_res = std::variant<
+  json::Document,
+  malformed_api_response_error,
+  api_response_parse_error>;
+/// performs parsing and validation of the response with a json schema v4
+validate_and_parse_res
+parse_json_response_and_validate(std::string_view schema, iobuf resp);
+
 std::chrono::system_clock::time_point parse_timestamp(std::string_view sv);
 
 ss::sstring uri_encode(const ss::sstring& input, bool encode_slash);

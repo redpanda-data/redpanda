@@ -17,6 +17,21 @@ rp_test(
 rp_test(
     UNIT_TEST
     BINARY_NAME
+        schema_parsing_test
+    SOURCES
+        schema_parsing_tests.cc
+    DEFINITIONS BOOST_TEST_DYN_LINK
+    LIBRARIES
+    v::seastar_testing_main
+    Boost::unit_test_framework
+    v::cloud_roles
+    ARGS "-- -c 1"
+    LABELS cloud_roles
+)
+
+rp_test(
+    UNIT_TEST
+    BINARY_NAME
     test_cloud_roles
     SOURCES
     role_client_tests.cc
