@@ -222,7 +222,10 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
             });
         }
 
-        ss::future<> finally() noexcept final { return _underlying->finally(); }
+        ss::future<> finally() noexcept final {
+            co_await _underlying->finally();
+            co_await impl::finally();
+        }
 
     private:
         std::unique_ptr<model::record_batch_reader::impl> _underlying;
