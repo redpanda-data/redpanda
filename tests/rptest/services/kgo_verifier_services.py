@@ -42,7 +42,8 @@ class KgoVerifierService(Service):
                  trace_logs,
                  username=None,
                  password=None,
-                 enable_tls=False):
+                 enable_tls=False,
+                 acks=-1):
         self.use_custom_node = custom_node is not None
 
         # We should pass num_nodes to allocate for our service in BackgroundThreadService,
@@ -70,6 +71,7 @@ class KgoVerifierService(Service):
         self._username = username
         self._password = password
         self._enable_tls = enable_tls
+        self._acks = acks
 
         # if testing redpanda cloud, override with default test super user/pass
         if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
@@ -530,11 +532,12 @@ class KgoVerifierProducer(KgoVerifierService):
                  username=None,
                  password=None,
                  enable_tls=False,
-                 msgs_per_producer_id=None):
+                 msgs_per_producer_id=None,
+                 acks=None):
         super(KgoVerifierProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node,
                              debug_logs, trace_logs, username, password,
-                             enable_tls)
+                             enable_tls, acks)
         self._msg_count = msg_count
         self._status = ProduceStatus()
         self._batch_max_bytes = batch_max_bytes
@@ -602,7 +605,7 @@ class KgoVerifierProducer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --msg_size {self._msg_size} --produce_msgs {self._msg_count} --rand_read_msgs 0 --seq_read=0 --client-name {self.who_am_i()}"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --msg_size {self._msg_size} --produce_msgs {self._msg_count} --rand_read_msgs 0 --seq_read=0 --client-name {self.who_am_i()} --acks {self._acks}"
 
         if self._username is not None:
             cmd = cmd + f' --username {self._username}'
@@ -660,11 +663,12 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
             producer: Optional[KgoVerifierProducer] = None,
             username: Optional[str] = None,
             password: Optional[str] = None,
-            enable_tls: Optional[bool] = False):
+            enable_tls: Optional[bool] = False,
+            acks=-1):
         super(KgoVerifierSeqConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes,
                              debug_logs, trace_logs, username, password,
-                             enable_tls)
+                             enable_tls, acks)
         self._max_msgs = max_msgs
         self._max_throughput_mb = max_throughput_mb
         self._status = ConsumerStatus()
@@ -680,7 +684,7 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
             self.clean_node(node)
 
         loop = "--loop" if self._loop else ""
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 {loop} --client-name {self.who_am_i()}"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 {loop} --client-name {self.who_am_i()} --acks {self._acks}"
         if self._username is not None:
             cmd = cmd + f' --username {self._username}'
         if self._password is not None:
@@ -740,9 +744,10 @@ class KgoVerifierRandomConsumer(KgoVerifierService):
                  trace_logs=False,
                  username=None,
                  password=None,
-                 enable_tls=False):
+                 enable_tls=False,
+                 acks=-1):
         super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
-                         trace_logs, username, password, enable_tls)
+                         trace_logs, username, password, enable_tls, acks)
         self._rand_read_msgs = rand_read_msgs
         self._parallel = parallel
         self._status = ConsumerStatus()
@@ -755,7 +760,7 @@ class KgoVerifierRandomConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop --client-name {self.who_am_i()}"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop --client-name {self.who_am_i()} --acks {self._acks}"
         if self._username is not None:
             cmd = cmd + f' --username {self._username}'
         if self._password is not None:
@@ -784,9 +789,10 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
                  trace_logs=False,
                  username=None,
                  password=None,
-                 enable_tls=False):
+                 enable_tls=False,
+                 acks=-1):
         super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
-                         trace_logs, username, password, enable_tls)
+                         trace_logs, username, password, enable_tls, acks)
 
         self._readers = readers
         self._loop = loop
@@ -802,7 +808,7 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers} --client-name {self.who_am_i()}"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers} --client-name {self.who_am_i()} --acks {self._acks}"
         if self._username is not None:
             cmd = cmd + f' --username {self._username}'
         if self._password is not None:

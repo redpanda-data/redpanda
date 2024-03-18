@@ -195,7 +195,8 @@ class FollowerFetchingTest(PreallocNodesTest):
                     assert follower_fetched == 0
 
     @cluster(num_nodes=5)
-    def test_with_leadership_transfers(self):
+    @matrix(acks=[-1, 1])
+    def test_with_leadership_transfers(self, acks):
         """
         Test consuming from a single node while leadership is randomly transfered.
         """
@@ -221,7 +222,8 @@ class FollowerFetchingTest(PreallocNodesTest):
             msg_size=512,
             # some large number to get produce load till the end of test
             msg_count=2**30,
-            rate_limit_bps=2**20)
+            rate_limit_bps=2**20,
+            acks=acks)
         producer.start()
 
         # consume from the same rack as node 0
