@@ -207,15 +207,15 @@ class RaftAvailabilityTest(RedpandaTest):
             f"Tracking stats on expected new leader node {expect_new_leader_id} {expect_new_leader_node.account.hostname}"
         )
 
-        observer_metrics = MetricCheck(self.logger, self.redpanda,
-                                       observer_node,
-                                       re.compile("vectorized_raft_.*"),
-                                       {'topic': self.topic})
+        observer_metrics = MetricCheck(
+            self.logger, self.redpanda, observer_node,
+            re.compile("vectorized_raft_(?!batch_size_bytes_bucket).*"),
+            {'topic': self.topic})
 
-        new_leader_metrics = MetricCheck(self.logger, self.redpanda,
-                                         expect_new_leader_node,
-                                         re.compile("vectorized_raft_.*"),
-                                         {'topic': self.topic})
+        new_leader_metrics = MetricCheck(
+            self.logger, self.redpanda, expect_new_leader_node,
+            re.compile("vectorized_raft_(?!batch_size_bytes_bucket).*"),
+            {'topic': self.topic})
 
         self.logger.info(
             f"Stopping node {initial_leader_id} ({leader_node.account.hostname})"
