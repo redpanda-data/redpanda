@@ -302,6 +302,7 @@ model::cloud_storage_backend infer_backend_from_configuration(
           cloud_storage_credentials_source);
         return model::cloud_storage_backend::google_s3_compat;
     case model::cloud_credentials_source::azure_aks_oidc_federation:
+    case model::cloud_credentials_source::azure_vm_instance_metadata:
         vlog(
           client_config_log.info,
           "cloud_storage_backend derived from cloud_credentials_source {} "

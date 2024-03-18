@@ -233,7 +233,8 @@ struct convert<model::cloud_credentials_source> {
        "aws_instance_metadata",
        "gcp_instance_metadata",
        "sts",
-       "azure_aks_oidc_federation"});
+       "azure_aks_oidc_federation",
+       "azure_vm_instance_metadata"});
 
     static Node encode(const type& rhs) {
         Node node;
@@ -252,6 +253,9 @@ struct convert<model::cloud_credentials_source> {
             break;
         case model::cloud_credentials_source::azure_aks_oidc_federation:
             node = "azure_aks_oidc_federation";
+            break;
+        case model::cloud_credentials_source::azure_vm_instance_metadata:
+            node = "azure_vm_instance_metadata";
             break;
         }
         return node;
@@ -278,7 +282,10 @@ struct convert<model::cloud_credentials_source> {
                 .match("sts", model::cloud_credentials_source::sts)
                 .match(
                   "azure_aks_oidc_federation",
-                  model::cloud_credentials_source::azure_aks_oidc_federation);
+                  model::cloud_credentials_source::azure_aks_oidc_federation)
+                .match(
+                  "azure_vm_instance_metadata",
+                  model::cloud_credentials_source::azure_vm_instance_metadata);
 
         return true;
     }

@@ -2,6 +2,7 @@ v_cc_library(
     NAME cloud_roles
     HDRS
     azure_aks_refresh_impl.h
+    azure_vm_refresh_impl.h
     apply_abs_oauth_credentials.h
     SRCS
     apply_abs_credentials.cc
@@ -13,6 +14,7 @@ v_cc_library(
     aws_sts_refresh_impl.cc
     gcp_refresh_impl.cc
     azure_aks_refresh_impl.cc
+    azure_vm_refresh_impl.cc
     probe.cc
     refresh_credentials.cc
     request_response_helpers.cc

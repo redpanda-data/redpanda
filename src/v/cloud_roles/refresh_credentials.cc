@@ -14,6 +14,7 @@
 #include "cloud_roles/aws_refresh_impl.h"
 #include "cloud_roles/aws_sts_refresh_impl.h"
 #include "cloud_roles/azure_aks_refresh_impl.h"
+#include "cloud_roles/azure_vm_refresh_impl.h"
 #include "cloud_roles/gcp_refresh_impl.h"
 #include "cloud_roles/logger.h"
 #include "config/configuration.h"
@@ -407,6 +408,13 @@ refresh_credentials make_refresh_credentials(
           retry_params);
     case model::cloud_credentials_source::azure_aks_oidc_federation:
         return make_refresh_credentials<azure_aks_refresh_impl>(
+          as,
+          std::move(creds_update_cb),
+          std::move(region),
+          std::move(endpoint),
+          retry_params);
+    case model::cloud_credentials_source::azure_vm_instance_metadata:
+        return make_refresh_credentials<azure_vm_refresh_impl>(
           as,
           std::move(creds_update_cb),
           std::move(region),

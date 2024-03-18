@@ -15,6 +15,7 @@
 #include "http/tests/http_imposter.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 #include "test_utils/tee_log.h"
 
 #include <seastar/core/file.hh>
@@ -795,4 +796,88 @@ FIXTURE_TEST(test_abs_aks_credentials_missing_fields, fixture) {
       last_req.get().content.contains(ssx::sformat("client_id={}", client_id)));
 
     BOOST_CHECK(!maybe_credentials.has_value());
+}
+
+FIXTURE_TEST(test_abs_vm_credentials, fixture) {
+    /// check a successful credential refresh: provide a short lived token,
+    /// check that the endpoint is called in a timely fashion multiple times
+
+    constexpr static auto client_id = std::string_view{"a_client_id"};
+    constexpr static auto token_value = std::string_view{"a_token"};
+    constexpr static auto endpoint = "/metadata/identity/oauth2/token";
+    // setup config
+    auto s_cfg = scoped_config{};
+    s_cfg.get("cloud_storage_azure_managed_identity_id")
+      .set_value(std::optional<ss::sstring>{client_id});
+
+    // prepare response for a short lived token
+    when()
+      .request(endpoint)
+      .with_method(ss::httpd::GET)
+      .then_reply_with(ssx::sformat(
+        R"json(
+{{
+  "token_type": "Bearer",
+  "expires_in": "5",
+  "access_token": "{}",
+  "refresh_token": "",
+  "expires_on": "X",
+  "not_before": "X",
+  "resource": "https://storage.azure.com/"
+}}
+      )json",
+        token_value));
+    listen();
+
+    // save resulting credentials here
+    auto maybe_credentials = std::optional<cloud_roles::credentials>{};
+    auto cred_requests = 0;
+
+    // start refresh process
+    auto as = ss::abort_source{};
+    auto refresh = cloud_roles::make_refresh_credentials(
+      model::cloud_credentials_source::azure_vm_instance_metadata,
+      as,
+      [&](cloud_roles::credentials in) {
+          maybe_credentials = in;
+          ++cred_requests;
+          return ss::now();
+      },
+      cloud_roles::aws_region_name{""},
+      address());
+    refresh.start();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+    auto _ = ss::defer([&] {
+        fmt::print(
+          "has_call({}): {}, get requests:\n",
+          endpoint,
+          has_call(endpoint, true));
+        for (auto& u : get_requests()) {
+            fmt::print("{} {} {}\n", u.method, u.url, u.content);
+        }
+    });
+    auto run_check_once = [&] {
+        // a check waits for the endpoint to be called, for credentials to be
+        // produced and that calls/credentials conforms to expectations
+        tests::cooperative_spin_wait_with_timeout(15s, [&] {
+            return has_call(endpoint, true) && maybe_credentials.has_value();
+        }).get();
+        auto last_req = get_latest_request(endpoint, true).value();
+
+        BOOST_CHECK(last_req.get().header("Metadata").value().contains("true"));
+        BOOST_CHECK(
+          last_req.get().url.contains(ssx::sformat("client_id={}", client_id)));
+
+        BOOST_CHECK(maybe_credentials.has_value());
+        auto azure_vm_creds = std::get<cloud_roles::abs_oauth_credentials>(
+          maybe_credentials.value());
+        BOOST_CHECK_EQUAL(azure_vm_creds.oauth_token(), token_value);
+        maybe_credentials.reset();
+        reset_http_call_state();
+    };
+
+    // check that the endpoint is called multiple times
+    run_check_once();
+    run_check_once();
+    BOOST_CHECK(cred_requests >= 2);
 }
