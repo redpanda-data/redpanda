@@ -14,6 +14,8 @@ from kafka import KafkaAdminClient
 from kafka.errors import NoBrokersAvailable, BrokerNotAvailableError
 from kafka.admin import NewTopic
 
+AVOIDED_SEQUENCES = ['SEGV']
+
 
 def setup_logger():
     handler = logging.StreamHandler()
@@ -134,6 +136,9 @@ class TopicSwarm():
                     item['topic_errors'] = (_errors[1][idx], _errors[2][idx])
             return topic_item_list
 
+        def _avoidable_char_sequences(new_name):
+            return any([cseq in new_name for cseq in AVOIDED_SEQUENCES])
+
         workers = 32
         # Proceed with topic name generation
         if self.skip_topic_names_randomization:
@@ -170,7 +175,8 @@ class TopicSwarm():
                 new_name = self.generate_topic_name(topic_name_prefix,
                                                     topic_name_length)
                 retries = 19
-                while new_name in topic_names:
+                while new_name in topic_names or \
+                        _avoidable_char_sequences(new_name):
                     new_name = self.generate_topic_name(
                         topic_name_prefix, topic_name_length)
                     retries -= 1
