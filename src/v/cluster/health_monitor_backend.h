@@ -89,15 +89,14 @@ private:
      */
     struct abortable_refresh_request
       : ss::enable_lw_shared_from_this<abortable_refresh_request> {
-        abortable_refresh_request(
-          model::node_id, ss::gate::holder, ssx::semaphore_units);
+        abortable_refresh_request(ss::gate::holder, ssx::semaphore_units);
 
         ss::future<std::error_code>
           abortable_await(ss::future<std::error_code>);
         void abort();
 
         bool finished = false;
-        model::node_id leader_id;
+
         ss::gate::holder holder;
         ssx::semaphore_units units;
         ss::promise<std::error_code> done;
@@ -109,12 +108,9 @@ private:
         alive is_alive = alive::no;
     };
 
-    using status_cache_t = absl::node_hash_map<model::node_id, node_state>;
+    using status_cache_t = absl::node_hash_map<model::node_id, reply_status>;
     using report_cache_t
       = absl::node_hash_map<model::node_id, node_health_report>;
-
-    using last_reply_cache_t
-      = absl::node_hash_map<model::node_id, reply_status>;
 
     void tick();
     ss::future<std::error_code> collect_cluster_health();
@@ -123,8 +119,6 @@ private:
     ss::future<std::error_code> maybe_refresh_cluster_health(
       force_refresh, model::timeout_clock::time_point);
     ss::future<std::error_code> refresh_cluster_health_cache(force_refresh);
-    ss::future<std::error_code>
-      dispatch_refresh_cluster_health_request(model::node_id);
 
     cluster_health_report build_cluster_report(const cluster_report_filter&);
 
@@ -134,16 +128,11 @@ private:
     ss::future<chunked_vector<topic_status>>
       collect_topic_status(partitions_filter);
 
-    void refresh_nodes_status();
-
     result<node_health_report>
       process_node_reply(model::node_id, result<get_node_health_reply>);
 
     std::chrono::milliseconds max_metadata_age();
     void abort_current_refresh();
-
-    void on_leadership_changed(
-      raft::group_id, model::term_id, std::optional<model::node_id>);
 
     /**
      * @brief Stucture holding the aggregated results of partition status.
@@ -186,13 +175,11 @@ private:
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
-    cluster::notification_id_type _leadership_notification_handle;
 
     status_cache_t _status;
     report_cache_t _reports;
     storage::disk_space_alert _reports_disk_health
       = storage::disk_space_alert::ok;
-    last_reply_cache_t _last_replies;
     std::optional<size_t> _bytes_in_cloud_storage;
 
     ss::gate _gate;
