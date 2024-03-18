@@ -359,8 +359,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "record_value_subject_name_strategy_compat: {}, "
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, "
-      "mpx_virtual_cluster_id: {}, ",
-      "write_caching: {}, ",
+      "mpx_virtual_cluster_id: {}, "
+      "write_caching: {}, "
       "flush_ms: {}, "
       "flush_bytes: {}}}",
       properties.compression,
