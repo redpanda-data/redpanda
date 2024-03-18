@@ -71,7 +71,8 @@ health_monitor_backend::health_monitor_backend(
   , _feature_table(feature_table)
   , _partition_leaders_table(partition_leaders_table)
   , _topic_table(topic_table)
-  , _local_monitor(local_monitor) {}
+  , _local_monitor(local_monitor)
+  , _self(_raft0->self().id()) {}
 
 cluster::notification_id_type
 health_monitor_backend::register_node_callback(health_node_cb_t cb) {
@@ -358,7 +359,7 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
     const auto timeout = model::timeout_clock::now() + max_metadata_age();
     return _connections.local()
       .with_node_client<controller_client_protocol>(
-        _raft0->self().id(),
+        _self,
         ss::this_shard_id(),
         id,
         max_metadata_age(),
@@ -435,7 +436,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     auto ids = _members.local().node_ids();
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
-          if (id == _raft0->self().id()) {
+          if (id == _self) {
               return collect_current_node_health(node_report_filter{});
           }
           return collect_remote_node_health(id);
@@ -518,7 +519,7 @@ ss::future<result<node_health_report>>
 health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     vlog(clusterlog.debug, "collecting health report with filter: {}", filter);
     node_health_report ret;
-    ret.id = _raft0->self().id();
+    ret.id = _self;
 
     ret.local_state = _local_monitor.local().get_state_cached();
     ret.local_state.logical_version
@@ -651,7 +652,7 @@ std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
 ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
 health_monitor_backend::get_node_drain_status(
   model::node_id node_id, model::timeout_clock::time_point deadline) {
-    if (node_id == _raft0->self().id()) {
+    if (node_id == _self) {
         // Fast path: if we are asked for our own drain status, give fresh
         // data instead of spending time reloading health status which might
         // be outdated.
@@ -740,7 +741,7 @@ health_monitor_backend::get_cluster_health_overview(
 
     for (auto& [id, _] : brokers) {
         ret.all_nodes.push_back(id);
-        if (id != _raft0->self().id()) {
+        if (id != _self) {
             auto it = _status.find(id);
             if (it == _status.end() || !it->second.is_alive) {
                 ret.nodes_down.push_back(id);
