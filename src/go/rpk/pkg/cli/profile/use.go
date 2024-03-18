@@ -38,7 +38,7 @@ func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if p == nil {
 				out.Die("profile %q does not exist", name)
 			}
-			priorAuth, currentAuth := y.MoveProfileToFront(p)
+			priorAuth, currentAuth := y.MoveProfileToFront(&p)
 
 			err = y.Write(fs)
 			out.MaybeDieErr(err)

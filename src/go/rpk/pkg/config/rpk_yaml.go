@@ -200,22 +200,23 @@ func (y *RpkYaml) PushProfile(p RpkProfile) (priorAuth, currentAuth *RpkCloudAut
 }
 
 // MoveProfileToFront moves the given profile to the front of the list.
-func (y *RpkYaml) MoveProfileToFront(p *RpkProfile) (priorAuth, currentAuth *RpkCloudAuth) {
+func (y *RpkYaml) MoveProfileToFront(p **RpkProfile) (priorAuth, currentAuth *RpkCloudAuth) {
 	priorAuth = y.CurrentAuth()
-	reordered := []RpkProfile{*p}
+	reordered := []RpkProfile{**p}
 	for i := range y.Profiles {
-		if &y.Profiles[i] == p {
+		if &y.Profiles[i] == *p {
 			continue
 		}
 		reordered = append(reordered, y.Profiles[i])
 	}
 	y.Profiles = reordered
-	y.CurrentProfile = p.Name
+	*p = &reordered[0]
+	y.CurrentProfile = (*p).Name
 
 	// If this is a cloud profile, we switch the auth as well.
-	if p.FromCloud {
-		y.CurrentCloudAuthOrgID = p.CloudCluster.AuthOrgID
-		y.CurrentCloudAuthKind = p.CloudCluster.AuthKind
+	if (*p).FromCloud {
+		y.CurrentCloudAuthOrgID = (*p).CloudCluster.AuthOrgID
+		y.CurrentCloudAuthKind = (*p).CloudCluster.AuthKind
 	}
 	currentAuth = y.CurrentAuth()
 	return priorAuth, currentAuth
@@ -241,11 +242,12 @@ func (y *RpkYaml) PushNewAuth(a RpkCloudAuth) {
 // MakeAuthCurrent finds the given auth, moves it to the front, and updates
 // the current cloud auth fields. This pointer must exist, if it does not,
 // this function panics.
-func (y *RpkYaml) MakeAuthCurrent(a *RpkCloudAuth) {
-	reordered := []RpkCloudAuth{*a}
+// This updates *a to point to the new address of the auth.
+func (y *RpkYaml) MakeAuthCurrent(a **RpkCloudAuth) {
+	reordered := []RpkCloudAuth{**a}
 	var found bool
 	for i := range y.CloudAuths {
-		if &y.CloudAuths[i] == a {
+		if &y.CloudAuths[i] == *a {
 			found = true
 			continue
 		}
@@ -254,9 +256,10 @@ func (y *RpkYaml) MakeAuthCurrent(a *RpkCloudAuth) {
 	if !found {
 		panic("MakeAuthCurrent called with an auth that does not exist")
 	}
+	*a = &reordered[0]
 	y.CloudAuths = reordered
-	y.CurrentCloudAuthOrgID = a.OrgID
-	y.CurrentCloudAuthKind = a.Kind
+	y.CurrentCloudAuthOrgID = (*a).OrgID
+	y.CurrentCloudAuthKind = (*a).Kind
 }
 
 // DropAuth removes the given auth from the list of auths. If this was the
