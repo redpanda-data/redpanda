@@ -19,7 +19,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.admin import (Admin, RoleMemberList, RoleUpdate,
                                    RoleErrorCode, RoleError, RolesList,
                                    RoleDescription, RoleMemberUpdateResponse,
-                                   RoleMember)
+                                   RoleMember, Role)
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -246,6 +246,48 @@ class RBACTest(RBACTestBase):
                     principal=bob.name,
                     principal_type="User",
                     expected_roles=[role_two])
+
+    @cluster(num_nodes=3)
+    def test_get_role(self):
+        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
+
+        self.logger.debug("Test that get_role rejects an unknown role")
+        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
+            self.superuser_admin.get_role(role=self.role_name0)
+
+        self.logger.debug("Test that get_role succeeds with an existing role")
+        self._create_and_wait_for_role(role=self.role_name1)
+
+        def get_role_succeeds(role_name: str,
+                              expected_members: list[str] = []):
+            try:
+                res = self.superuser_admin.get_role(role=role_name)
+                role = Role.from_response(res)
+
+                return role.name == role_name and \
+                    len(role.members) == len(expected_members) and \
+                    all(member in role.members for member in expected_members)
+            except HTTPError as e:
+                assert RoleError.from_http_error(e).code == RoleErrorCode.ROLE_NOT_FOUND, \
+                    f"Unexpected error while waiting for get_role to succeed: {e}"
+                return False
+
+        wait_until(lambda: get_role_succeeds(self.role_name1),
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="Get role hasn't succeeded in time")
+
+        self.logger.debug(
+            "Test that get_role succeeds with an existing role that has members"
+        )
+        self.superuser_admin.update_role_members(role=self.role_name1,
+                                                 add=[alice])
+
+        wait_until(lambda: get_role_succeeds(self.role_name1,
+                                             expected_members=[alice]),
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="Get role hasn't succeeded in time")
 
     @cluster(num_nodes=3)
     def test_members_endpoint(self):
