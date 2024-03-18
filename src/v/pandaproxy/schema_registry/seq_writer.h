@@ -69,27 +69,22 @@ private:
 
     void advance_offset_inner(model::offset offset);
 
-    ss::future<std::optional<schema_id>> do_write_subject_version(
-      subject_schema schema, model::offset write_at, seq_writer& seq);
+    ss::future<std::optional<schema_id>>
+    do_write_subject_version(subject_schema schema, model::offset write_at);
 
     ss::future<std::optional<bool>> do_write_config(
       std::optional<subject> sub,
       compatibility_level compat,
-      model::offset write_at,
-      seq_writer& seq);
+      model::offset write_at);
 
     ss::future<std::optional<bool>>
     do_delete_config(subject sub, model::offset write_at, seq_writer& seq);
 
     ss::future<std::optional<bool>> do_delete_subject_version(
-      subject sub,
-      schema_version version,
-      model::offset write_at,
-      seq_writer& seq);
+      subject sub, schema_version version, model::offset write_at);
 
     ss::future<std::optional<std::vector<schema_version>>>
-    do_delete_subject_impermanent(
-      subject sub, model::offset write_at, seq_writer& seq);
+    do_delete_subject_impermanent(subject sub, model::offset write_at);
 
     ss::future<std::vector<schema_version>> delete_subject_permanent_inner(
       subject sub, std::optional<schema_version> version);
@@ -102,6 +97,7 @@ private:
     auto sequenced_write(F f) {
         auto base_backoff = _jitter.next_duration();
         auto remote = [base_backoff, f](seq_writer& seq) {
+            vassert(shard == ss::this_shard_id(), "This must run on shard 0");
             if (auto waiters = seq._write_sem.waiters(); waiters != 0) {
                 vlog(
                   plog.trace,
@@ -145,6 +141,7 @@ private:
     ss::future<
       outcome::outcome<invoke_result_t, std::error_code, std::exception_ptr>>
     sequenced_write_inner(F f) {
+        vassert(shard == ss::this_shard_id(), "This must run on shard 0");
         // If we run concurrently with them, redundant replays to the store
         // will be safely dropped based on offset.
         co_await read_sync();
@@ -173,6 +170,7 @@ private:
 
     // Global (Shard 0) State
     // ======================
+    static constexpr ss::shard_id shard{0};
 
     /// Serialize wait_for operations, to avoid issuing
     /// gratuitous number of reads to the topic on concurrent GETs.
