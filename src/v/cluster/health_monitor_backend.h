@@ -186,6 +186,7 @@ private:
     ss::gate _gate;
     mutex _refresh_mutex;
     ss::sharded<node::local_monitor>& _local_monitor;
+    model::node_id _self;
 
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>
       _node_callbacks;
