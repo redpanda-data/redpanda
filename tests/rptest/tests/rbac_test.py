@@ -104,8 +104,7 @@ class RBACTest(RBACTestBase):
         res = self.superuser_admin.list_user_roles()
         assert len(RolesList.from_response(res)) == 0, "Unexpected user roles"
 
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.delete_role(role=self.role_name1)
+        self.superuser_admin.delete_role(role=self.role_name1)
 
     @cluster(num_nodes=3)
     def test_regular_user_access(self):
@@ -353,6 +352,24 @@ class RBACTest(RBACTestBase):
         with expect_role_error(RoleErrorCode.ROLE_NAME_CONFLICT):
             self.superuser_admin.update_role(
                 role=self.role_name1, update=RoleUpdate(role=self.role_name2))
+
+    @cluster(num_nodes=3)
+    def test_delete_role(self):
+        self.logger.debug("Test that delete_role succeeds with existing role")
+        self._create_and_wait_for_role(role=self.role_name0)
+
+        res = self.superuser_admin.delete_role(role=self.role_name0)
+        assert res.status_code == 200, f"Unexpected HTTP status code: {res.status_code}"
+
+        wait_until(lambda: not self._role_exists(self.role_name0),
+                   timeout_sec=5,
+                   backoff_sec=0.5)
+
+        self.logger.debug(
+            "Test that delete_role succeeds with non-existing role for idempotency"
+        )
+        self.superuser_admin.delete_role(role=self.role_name0)
+        assert res.status_code == 204, f"Unexpected HTTP status code: {res.status_code}"
 
     @cluster(num_nodes=3)
     def test_members_endpoint(self):
