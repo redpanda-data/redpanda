@@ -284,7 +284,7 @@ func CreateFlow(
 		// * The user's prior profile was NOT the rpk-cloud profile
 		// * We are switching to the existing rpk-cloud profile and updating the values
 		fmt.Printf("Switched to existing %q profile and updated it to talk to cluster %q.\n", RpkCloudProfileName, o.FullName())
-		priorAuth, currentAuth := yAct.MoveProfileToFront(p)
+		priorAuth, currentAuth := yAct.MoveProfileToFront(&p)
 		config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
 
 	case fromCloud != "" && name == RpkCloudProfileName:
