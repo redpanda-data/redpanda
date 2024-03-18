@@ -1104,6 +1104,7 @@ func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
 		return fmt.Errorf("%s is using a newer rpk.yaml format than we understand, please upgrade rpk", def)
 	}
 	yaml.Unmarshal(file, &c.rpkYamlActual)
+	c.rpkYamlActual.Version = c.rpkYaml.Version
 
 	if p.Profile != "" {
 		if c.rpkYaml.Profile(p.Profile) == nil {
