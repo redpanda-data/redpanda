@@ -24,6 +24,7 @@ class MachineTypeName(str, Enum):
     N2D_STANDARD_2 = 'n2d-standard-2'
     N2D_STANDARD_4 = 'n2d-standard-4'
     N2D_STANDARD_16 = 'n2d-standard-16'
+    N2D_STANDARD_32 = 'n2d-standard-32'
 
     @classmethod
     def list(cls):
@@ -77,6 +78,8 @@ MachineTypeConfigs = {
     MachineTypeConfig(num_shards=3, memory=16 * GiB),
     MachineTypeName.N2D_STANDARD_16:
     MachineTypeConfig(num_shards=15, memory=64 * GiB),
+    MachineTypeName.N2D_STANDARD_32:
+    MachineTypeConfig(num_shards=31, memory=128 * GiB),
 }
 
 
