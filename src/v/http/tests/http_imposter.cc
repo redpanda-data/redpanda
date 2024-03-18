@@ -43,9 +43,18 @@ http_imposter_fixture::get_requests() const {
     return _requests;
 }
 
+static ss::sstring remove_query_params(std::string_view url) {
+    return ss::sstring{url.substr(0, url.find('?'))};
+}
+
 std::optional<std::reference_wrapper<const http_test_utils::request_info>>
-http_imposter_fixture::get_latest_request(const ss::sstring& url) const {
-    auto i = _targets.upper_bound(url);
+http_imposter_fixture::get_latest_request(
+  const ss::sstring& url, bool ignore_url_params) const {
+    auto i = std::ranges::upper_bound(
+      _targets, url, std::less<>{}, [=](auto const& url_ri) {
+          return ignore_url_params ? remove_query_params(url_ri.first)
+                                   : url_ri.first;
+      });
     if (i == _targets.begin()) {
         return std::nullopt;
     } else {
@@ -69,12 +78,6 @@ void http_imposter_fixture::listen() {
     _server.set_routes([this](ss::httpd::routes& r) { set_routes(r); }).get();
     _server.listen(_server_addr).get();
     vlog(http_imposter_log.trace, "HTTP imposter {} started", _id);
-}
-
-static ss::sstring remove_query_params(std::string_view url) {
-    auto q_pos = url.find('?');
-    return q_pos == std::string_view::npos ? ss::sstring{url.data(), url.size()}
-                                           : ss::sstring{url.substr(0, q_pos)};
 }
 
 void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
@@ -156,12 +159,15 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
     r.add_default_handler(_handler.get());
 }
 
-bool http_imposter_fixture::has_call(std::string_view url) const {
-    return std::find_if(
-             _requests.cbegin(),
-             _requests.cend(),
-             [&url](const auto& r) { return r.url == url; })
-           != _requests.cend();
+bool http_imposter_fixture::has_call(
+  std::string_view url, bool ignore_params) const {
+    return std::ranges::find_if(
+             _requests,
+             [&](http_test_utils::request_info const& ri) {
+                 return url
+                        == (ignore_params ? remove_query_params(ri.url) : ri.url);
+             })
+           != _requests.end();
 }
 
 void http_imposter_fixture::fail_request_if(

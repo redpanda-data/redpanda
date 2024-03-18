@@ -57,7 +57,8 @@ public:
 
     /// Get the latest request to a particular URL
     std::optional<std::reference_wrapper<const http_test_utils::request_info>>
-    get_latest_request(const ss::sstring& url) const;
+    get_latest_request(
+      const ss::sstring& url, bool ignore_url_params = false) const;
 
     /// Get the number of requests to a particular URL
     size_t get_request_count(const ss::sstring& url) const;
@@ -73,7 +74,7 @@ public:
     ///     .then_return("bar");
     http_test_utils::registered_urls& when() { return _urls; }
 
-    bool has_call(std::string_view url) const;
+    bool has_call(std::string_view url, bool ignore_url_params = false) const;
 
     /// Enables requests with a specific condition to fail. The failing
     /// request is also added to the set of calls stored by fixture.
