@@ -137,7 +137,7 @@ To print the schema, use the '--print-schema' flag.
 	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema file to check existence of, must be .avro or .proto; subject required")
 	cmd.Flags().StringVar(&schemaType, "type", "", fmt.Sprintf("Schema type of the file used to lookup (%v); overrides schema file extension", strings.Join(supportedTypes, ",")))
 	cmd.Flags().BoolVar(&deleted, "deleted", false, "If true, also return deleted schemas")
-	cmd.Flags().BoolVar(&printSchema, "print-schema", false, "If true, print the schema JSON")
+	cmd.Flags().BoolVar(&printSchema, "print-schema", false, "Prints the schema in JSON format")
 
 	cmd.RegisterFlagCompletionFunc("type", validTypes())
 	return cmd
