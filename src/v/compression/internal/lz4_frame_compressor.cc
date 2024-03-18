@@ -145,6 +145,16 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
         output_cursor += code;
     }
 
+    if (const auto sz_for_compress_end = LZ4F_compressBound(0, &prefs);
+        output_sz - output_cursor < sz_for_compress_end) {
+        obuf.trim(output_cursor);
+        ret.append(std::move(obuf));
+        obuf = ss::temporary_buffer<char>(sz_for_compress_end);
+        output = obuf.get_write();
+        output_sz = obuf.size();
+        output_cursor = 0;
+    }
+
     code = LZ4F_compressEnd(
       ctx, output + output_cursor, output_sz - output_cursor, nullptr);
     check_lz4_error("lz4f_compressend:{}", code);
