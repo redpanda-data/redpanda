@@ -22,6 +22,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "raft/group_manager.h"
 #include "random/generators.h"
 #include "utils/stable_iterator_adaptor.h"
 
@@ -46,6 +47,7 @@ partition_balancer_backend::partition_balancer_backend(
   ss::sharded<partition_allocator>& partition_allocator,
   ss::sharded<topics_frontend>& topics_frontend,
   ss::sharded<members_frontend>& members_frontend,
+  ss::sharded<raft::group_manager>& raft_group_mgr,
   config::binding<model::partition_autobalancing_mode>&& mode,
   config::binding<std::chrono::seconds>&& availability_timeout,
   config::binding<unsigned>&& max_disk_usage_percent,
@@ -64,6 +66,7 @@ partition_balancer_backend::partition_balancer_backend(
   , _partition_allocator(partition_allocator.local())
   , _topics_frontend(topics_frontend.local())
   , _members_frontend(members_frontend.local())
+  , _raft_group_manager(raft_group_mgr.local())
   , _mode(std::move(mode))
   , _availability_timeout(std::move(availability_timeout))
   , _max_disk_usage_percent(std::move(max_disk_usage_percent))
@@ -94,6 +97,19 @@ void partition_balancer_backend::start() {
           on_health_monitor_update(report, old_report);
       });
     maybe_rearm_timer();
+    _leadership_change_updates
+      = _raft_group_manager.register_leadership_notification(
+        [this](
+          raft::group_id group,
+          model::term_id,
+          std::optional<model::node_id> leader_id) {
+            if (
+              group == _raft0->group() && leader_id
+              && *leader_id == _raft0->self().id() && _raft0->is_leader()) {
+                // do we need a delay here?
+                maybe_rearm_timer(true);
+            }
+        });
     vlog(clusterlog.info, "partition balancer started");
 }
 
@@ -286,6 +302,8 @@ ss::future<> partition_balancer_backend::stop() {
     _state.topics().unregister_lw_notification(_topic_table_updates);
     _state.members().unregister_members_updated_notification(_member_updates);
     _health_monitor.unregister_node_callback(_health_monitor_updates);
+    _raft_group_manager.unregister_leadership_notification(
+      _leadership_change_updates);
     _timer.cancel();
     _lock.broken();
     if (_tick_in_progress) {
