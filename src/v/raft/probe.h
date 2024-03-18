@@ -32,7 +32,9 @@ public:
 
     void vote_request_sent() { ++_vote_requests_sent; }
 
-    void replicate_requests_ack_all() { ++_replicate_requests_ack_all; }
+    void replicate_requests_ack_all_with_flush() {
+        ++_replicate_requests_ack_all_with_flush;
+    }
     void replicate_requests_ack_leader() { ++_replicate_requests_ack_leader; }
     void replicate_requests_ack_none() { ++_replicate_requests_ack_none; }
     void replicate_done() { ++_replicate_requests_done; }
@@ -68,7 +70,7 @@ private:
     uint64_t _vote_requests = 0;
     uint64_t _append_requests = 0;
     uint64_t _vote_requests_sent = 0;
-    uint64_t _replicate_requests_ack_all = 0;
+    uint64_t _replicate_requests_ack_all_with_flush = 0;
     uint64_t _replicate_requests_ack_leader = 0;
     uint64_t _replicate_requests_ack_none = 0;
     uint64_t _replicate_requests_done = 0;

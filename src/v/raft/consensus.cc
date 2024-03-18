@@ -843,7 +843,7 @@ replicate_stages consensus::do_replicate(
         _probe->replicate_requests_ack_leader();
         break;
     case consistency_level::quorum_ack:
-        _probe->replicate_requests_ack_all();
+        _probe->replicate_requests_ack_all_with_flush();
         break;
     }
 
