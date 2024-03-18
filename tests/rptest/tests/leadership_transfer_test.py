@@ -110,12 +110,6 @@ class LeadershipTransferTest(RedpandaTest):
 
 
 class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
-    topics = (
-        TopicSpec(partition_count=61, replication_factor=3),
-        TopicSpec(partition_count=151, replication_factor=3),
-        TopicSpec(partition_count=263, replication_factor=3),
-    )
-
     def __init__(self, test_context):
         extra_rp_conf = dict(leader_balancer_idle_timeout=20000,
                              leader_balancer_mode="random_hill_climbing")
@@ -123,6 +117,13 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
         super(MultiTopicAutomaticLeadershipBalancingTest,
               self).__init__(test_context=test_context,
                              extra_rp_conf=extra_rp_conf)
+        self.topics = [
+            TopicSpec(partition_count=61, replication_factor=3),
+            TopicSpec(partition_count=151, replication_factor=3),
+        ]
+        if not self.debug_mode:
+            self.topics.append(
+                TopicSpec(partition_count=263, replication_factor=3))
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_topic_aware_rebalance(self):
@@ -132,10 +133,25 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
                 total_leaders = sum(1 if t.leader else 0 for t in tps)
                 total_nodes = set(t.leader for t in tps if t.leader)
 
+                self.logger.debug(
+                    f"Topic: {t.name}, total_leaders: {total_leaders}, total_nodes: {len(total_nodes)}"
+                )
+
                 if len(total_nodes) < nodes:
+                    self.logger.debug(
+                        f"Fewer nodes: {len(total_nodes)} than expected: {nodes}"
+                    )
                     return False
 
                 if total_leaders != t.partition_count:
+                    self.logger.debug(
+                        f"Fewer leaders: {total_leaders} than expected: {t.partition_count}"
+                    )
+                    missing_leaders = [
+                        f"{t.topic}/{t.index}" for t in tps if not t.leader
+                    ]
+                    self.logger.debug(
+                        f"partitions without leaders: {missing_leaders}")
                     return False
 
             return True
