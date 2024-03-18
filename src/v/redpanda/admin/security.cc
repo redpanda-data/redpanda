@@ -19,6 +19,7 @@
 #include "security/credential_store.h"
 #include "security/oidc_authenticator.h"
 #include "security/oidc_service.h"
+#include "security/role_store.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "security/scram_credential.h"
@@ -26,6 +27,8 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/http/exception.hh>
 #include <seastar/http/url.hh>
+
+#include <optional>
 
 namespace {
 
@@ -154,10 +157,15 @@ void rjson_serialize(
 } // namespace json
 
 namespace {
-std::string role_errc_to_json(role_errc e) {
+std::string
+role_errc_to_json(role_errc e, std::optional<std::string_view> msg) {
     ss::httpd::security_json::rbac_error_body body;
     body.code = static_cast<int>(e);
-    body.message = fmt::format("{}", e);
+    if (msg.has_value()) {
+        body.message = fmt::format("{}: {}", e, msg.value());
+    } else {
+        body.message = fmt::format("{}", e);
+    }
 
     json::StringBuffer sb;
     json::Writer<json::StringBuffer> writer(sb);
@@ -166,9 +174,10 @@ std::string role_errc_to_json(role_errc e) {
     return {sb.GetString(), sb.GetSize()};
 }
 
-void throw_role_exception(role_errc ec) {
+void throw_role_exception(
+  role_errc ec, std::optional<std::string_view> msg = std::nullopt) {
     throw ss::httpd::base_exception(
-      role_errc_to_json(ec), role_errc_to_status(ec));
+      role_errc_to_json(ec, msg), role_errc_to_status(ec));
 }
 
 } // namespace
@@ -251,10 +260,9 @@ void admin_server::register_security_routes() {
 
     register_route<superuser>(
       ss::httpd::security_json::create_role,
-      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+      [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
-          throw_role_exception(role_errc::malformed_def);
-          co_return ss::json::json_return_type(ss::json::json_void());
+          return create_role_handler(std::move(req));
       });
 
     register_route<superuser>(
@@ -475,4 +483,55 @@ admin_server::oidc_revoke_handler(std::unique_ptr<ss::http::request>) {
         return ks.revoke_credentials(security::oidc::sasl_authenticator::name);
     });
     co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::create_role_handler(std::unique_ptr<ss::http::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        // In order that we can do a reliably ordered validation of
+        // the request (and drop no-op requests), run on controller leader;
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
+    auto doc = co_await parse_json_body(req.get());
+
+    if (!doc.IsObject()) {
+        vlog(adminlog.debug, "Request body is not a JSON object");
+        throw_role_exception(
+          role_errc::malformed_def, "Request body is not a JSON object");
+    }
+
+    if (!doc.HasMember("role") || !doc["role"].IsString()) {
+        vlog(adminlog.debug, "String 'role' missing from request body");
+        throw_role_exception(
+          role_errc::malformed_def, "Missing string field 'role'");
+    }
+
+    auto role_name = security::role_name{doc["role"].GetString()};
+    validate_no_control(role_name(), string_conversion_exception{role_name()});
+
+    if (!security::validate_scram_username(role_name())) {
+        throw_role_exception(role_errc::invalid_name);
+    }
+
+    ss::httpd::security_json::role_definition j_res;
+    j_res.role = role_name();
+
+    security::role role{};
+    auto err
+      = co_await _controller->get_security_frontend().local().create_role(
+        role_name, role, model::timeout_clock::now() + 5s);
+
+    if (err == cluster::errc::role_exists) {
+        // Idempotency: if the empty role already exists,
+        // suppress the role_exists error and return success.
+        if (_controller->get_role_store().local().get(role_name) == role) {
+            co_return ss::json::json_return_type(j_res);
+        } else {
+            throw_role_exception(role_errc::role_already_exists);
+        }
+    }
+
+    co_await throw_on_error(*req, err, model::controller_ntp);
+    co_return ss::json::json_return_type(j_res);
 }

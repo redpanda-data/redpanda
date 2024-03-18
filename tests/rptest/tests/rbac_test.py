@@ -28,6 +28,8 @@ def expect_role_error(status_code: RoleErrorCode):
 class RBACTest(RedpandaTest):
     password = "password"
     algorithm = "SCRAM-SHA-256"
+    role_name0 = 'foo'
+    role_name1 = 'bar'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -49,25 +51,19 @@ class RBACTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_superuser_access(self):
         # a superuser may access the RBAC API
-
-        role_name0 = 'foo'
-        role_name1 = 'bar'
-
         res = self.superuser_admin.list_roles()
         assert len(RolesList.from_response(res)) == 0, "Unexpected roles"
 
-        with expect_role_error(RoleErrorCode.MALFORMED_DEF):
-            self.superuser_admin.create_role(role=role_name0)
+        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
+            self.superuser_admin.get_role(role=self.role_name0)
 
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.get_role(role=role_name0)
+            self.superuser_admin.update_role(role=self.role_name0,
+                                             update=RoleUpdate(
+                                                 self.role_name1))
 
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role(role=role_name0,
-                                             update=RoleUpdate(role_name1))
-
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role_members(role=role_name1,
+            self.superuser_admin.update_role_members(role=self.role_name1,
                                                      add=[ALICE.username])
 
         res = self.superuser_admin.list_roles(filter='ba',
@@ -75,44 +71,74 @@ class RBACTest(RedpandaTest):
         assert len(RolesList.from_response(res)) == 0, "Unexpected roles"
 
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.list_role_members(role=role_name1)
+            self.superuser_admin.list_role_members(role=self.role_name1)
 
         res = self.superuser_admin.list_user_roles()
         assert len(RolesList.from_response(res)) == 0, "Unexpected user roles"
 
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.delete_role(role=role_name1)
+            self.superuser_admin.delete_role(role=self.role_name1)
 
     @cluster(num_nodes=3)
     def test_regular_user_access(self):
         # a regular user may NOT access the RBAC API
 
-        role_name0 = 'foo'
-        role_name1 = 'bar'
-
         with expect_http_error(403):
             self.user_admin.list_roles()
 
         with expect_http_error(403):
-            self.user_admin.create_role(role=role_name0)
+            self.user_admin.create_role(role=self.role_name0)
 
         with expect_http_error(403):
-            self.user_admin.get_role(role=role_name0)
+            self.user_admin.get_role(role=self.role_name0)
 
         with expect_http_error(403):
-            self.user_admin.update_role(role=role_name0,
-                                        update=RoleUpdate(role_name1))
+            self.user_admin.update_role(role=self.role_name0,
+                                        update=RoleUpdate(self.role_name1))
 
         with expect_http_error(403):
-            self.user_admin.update_role_members(role=role_name1,
+            self.user_admin.update_role_members(role=self.role_name1,
                                                 add=[ALICE.username])
 
         with expect_http_error(403):
-            self.user_admin.list_role_members(role=role_name1)
+            self.user_admin.list_role_members(role=self.role_name1)
 
         res = self.user_admin.list_user_roles()
         assert len(
             RolesList.from_response(res)) == 0, "Unexpected roles for user"
 
         with expect_http_error(403):
-            self.user_admin.delete_role(role=role_name1)
+            self.user_admin.delete_role(role=self.role_name1)
+
+    @cluster(num_nodes=3)
+    def test_create_role(self):
+        res = self.superuser_admin.create_role(role=self.role_name0)
+        created_role = res.json()['role']
+        assert created_role == self.role_name0, f"Incorrect create role response: {res.json()}"
+
+        # Also verify idempotency
+        res = self.superuser_admin.create_role(role=self.role_name0)
+        created_role = res.json()['role']
+        assert created_role == self.role_name0, f"Incorrect create role response: {res.json()}"
+
+    @cluster(num_nodes=3)
+    def test_invalid_create_role(self):
+        with expect_http_error(400):
+            self.superuser_admin._request("post", "security/roles")
+
+        with expect_role_error(RoleErrorCode.MALFORMED_DEF):
+            self.superuser_admin._request("post",
+                                          "security/roles",
+                                          data='["json list not object"]')
+
+        with expect_role_error(RoleErrorCode.MALFORMED_DEF):
+            self.superuser_admin._request("post",
+                                          "security/roles",
+                                          json=dict())
+
+        # Two ordinals (corresponding to ',' and '=') are explicitly excluded from role names
+        for ordinal in [0x2c, 0x3d]:
+            invalid_rolename = f"john{chr(ordinal)}doe"
+
+            with expect_http_error(400):
+                self.superuser_admin.create_role(role=invalid_rolename)

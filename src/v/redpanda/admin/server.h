@@ -453,6 +453,9 @@ private:
     ss::future<ss::json::json_return_type>
     oidc_revoke_handler(std::unique_ptr<ss::http::request> req);
 
+    ss::future<ss::json::json_return_type>
+    create_role_handler(std::unique_ptr<ss::http::request> req);
+
     /// Kafka routes
     ss::future<ss::json::json_return_type>
       kafka_transfer_leadership_handler(std::unique_ptr<ss::http::request>);
