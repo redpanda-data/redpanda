@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::varint;
-
-use crate::varint::{Decoded, VarintDecodeError};
 use redpanda_transform_sdk_types::{BorrowedHeader, BorrowedRecord};
+use redpanda_transform_sdk_varint::{DecodeError, Decoded};
+extern crate redpanda_transform_sdk_varint as varint;
 
 type KeyValuePair<'a> = (Option<&'a [u8]>, Option<&'a [u8]>);
 
-fn read_kv(payload: &[u8]) -> Result<Decoded<KeyValuePair>, VarintDecodeError> {
+fn read_kv(payload: &[u8]) -> Result<Decoded<KeyValuePair>, DecodeError> {
     let key = varint::read_sized_buffer(payload)?;
     let payload = &payload[key.read..];
     let value = varint::read_sized_buffer(payload)?;
@@ -29,17 +28,13 @@ fn read_kv(payload: &[u8]) -> Result<Decoded<KeyValuePair>, VarintDecodeError> {
     })
 }
 
-fn read_header_from_payload(
-    payload: &[u8],
-) -> Result<Decoded<BorrowedHeader<'_>>, VarintDecodeError> {
+fn read_header_from_payload(payload: &[u8]) -> Result<Decoded<BorrowedHeader<'_>>, DecodeError> {
     read_kv(payload).map(|result| {
         result.map(|(key, value)| BorrowedHeader::new(key.unwrap_or("".as_bytes()), value))
     })
 }
 
-pub(crate) fn read_record_from_payload(
-    payload: &[u8],
-) -> Result<BorrowedRecord<'_>, VarintDecodeError> {
+pub(crate) fn read_record_from_payload(payload: &[u8]) -> Result<BorrowedRecord<'_>, DecodeError> {
     let kv = read_kv(payload)?;
     let mut payload = &payload[kv.read..];
     let header_count_result = varint::read(payload)?;

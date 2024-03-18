@@ -12,6 +12,7 @@ categories.workspace = true
 
 [dependencies]
 redpanda-transform-sdk-types = { path = "../core-types", version = "=0.0.0-dev" }
+redpanda-transform-sdk-varint = { path = "../varint", version = "=0.0.0-dev" }
 
 [dev-dependencies]
 quickcheck = { workspace = true }

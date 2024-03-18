@@ -1,0 +1,15 @@
+[package]
+name = "redpanda-transform-sdk-sr-types"
+description = "Types for redpanda-transform-sdk-sr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+redpanda-transform-sdk-varint = { path = "../varint", version = "=0.0.0-dev" }

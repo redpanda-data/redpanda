@@ -15,8 +15,8 @@
 use core::fmt;
 use std::error::Error;
 
-#[derive(Debug)]
-pub(crate) enum VarintDecodeError {
+#[derive(Debug, PartialEq, Eq)]
+pub enum DecodeError {
     Overflow,
     ShortRead,
     ShortReadBuffer {
@@ -25,14 +25,14 @@ pub(crate) enum VarintDecodeError {
     },
 }
 
-impl Error for VarintDecodeError {}
+impl Error for DecodeError {}
 
-impl fmt::Display for VarintDecodeError {
+impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            VarintDecodeError::Overflow => write!(f, "decoded varint would overflow i64::MAX"),
-            VarintDecodeError::ShortRead => write!(f, "short read when decoding varint"),
-            VarintDecodeError::ShortReadBuffer {
+            DecodeError::Overflow => write!(f, "decoded varint would overflow i64::MAX"),
+            DecodeError::ShortRead => write!(f, "short read when decoding varint"),
+            DecodeError::ShortReadBuffer {
                 buf_size,
                 payload_remaining,
             } => write!(
@@ -44,10 +44,10 @@ impl fmt::Display for VarintDecodeError {
     }
 }
 
-type Result<T> = std::result::Result<T, VarintDecodeError>;
+pub type Result<T> = std::result::Result<T, DecodeError>;
 
 #[derive(PartialEq, Eq)]
-pub(crate) struct Decoded<T> {
+pub struct Decoded<T> {
     pub value: T,
     pub read: usize,
 }
@@ -61,7 +61,8 @@ impl<T> Decoded<T> {
     }
 }
 
-const MAX_LENGTH: usize = 10;
+// The maximum encoded size of an i64
+pub const MAX_LENGTH: usize = 10;
 
 fn zigzag_encode(x: i64) -> u64 {
     ((x << 1) ^ (x >> 63)) as u64
@@ -76,7 +77,7 @@ fn read_unsigned(payload: &[u8]) -> Result<Decoded<u64>> {
     let mut shift = 0;
     for (i, b) in payload.iter().enumerate() {
         if i >= MAX_LENGTH {
-            return Err(VarintDecodeError::Overflow);
+            return Err(DecodeError::Overflow);
         }
         decoded |= ((b & 0x7F) as u64) << shift;
         if b & 0x80 == 0 {
@@ -87,14 +88,14 @@ fn read_unsigned(payload: &[u8]) -> Result<Decoded<u64>> {
         }
         shift += 7;
     }
-    Err(VarintDecodeError::ShortRead)
+    Err(DecodeError::ShortRead)
 }
 
-pub(crate) fn read(payload: &[u8]) -> Result<Decoded<i64>> {
+pub fn read(payload: &[u8]) -> Result<Decoded<i64>> {
     read_unsigned(payload).map(|r| r.map(zigzag_decode))
 }
 
-pub(crate) fn read_sized_buffer(payload: &[u8]) -> Result<Decoded<Option<&[u8]>>> {
+pub fn read_sized_buffer(payload: &[u8]) -> Result<Decoded<Option<&[u8]>>> {
     let result = read(payload)?;
     if result.value < 0 {
         return Ok(result.map(|_| None));
@@ -102,7 +103,7 @@ pub(crate) fn read_sized_buffer(payload: &[u8]) -> Result<Decoded<Option<&[u8]>>
     let payload = &payload[result.read..];
     let buf_size = result.value as usize;
     if buf_size > payload.len() {
-        return Err(VarintDecodeError::ShortReadBuffer {
+        return Err(DecodeError::ShortReadBuffer {
             buf_size,
             payload_remaining: payload.len(),
         });
@@ -122,11 +123,11 @@ fn write_unsigned(payload: &mut Vec<u8>, mut v: u64) {
     payload.push(v as u8);
 }
 
-pub(crate) fn write(payload: &mut Vec<u8>, v: i64) {
+pub fn write(payload: &mut Vec<u8>, v: i64) {
     write_unsigned(payload, zigzag_encode(v))
 }
 
-pub(crate) fn write_sized_buffer(payload: &mut Vec<u8>, buf: Option<&[u8]>) {
+pub fn write_sized_buffer(payload: &mut Vec<u8>, buf: Option<&[u8]>) {
     match buf {
         Some(b) => {
             write(payload, b.len() as i64);
@@ -142,6 +143,8 @@ mod tests {
         read, read_sized_buffer, read_unsigned, write, write_sized_buffer, write_unsigned,
         zigzag_decode, zigzag_encode,
     };
+
+    use quickcheck::quickcheck;
 
     quickcheck! {
         fn zigzag(n: i64) -> bool {
