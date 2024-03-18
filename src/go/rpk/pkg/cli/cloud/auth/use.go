@@ -66,7 +66,7 @@ profile is kept.
 				}
 			}
 
-			y.MakeAuthCurrent(a)
+			y.MakeAuthCurrent(&a)
 			err = y.Write(fs)
 			out.MaybeDie(err, "unable to write rpk.yaml: %v", err)
 

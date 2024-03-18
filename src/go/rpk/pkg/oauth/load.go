@@ -174,7 +174,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 		// This is case 1 or 2, the logic is identical. We start with
 		// some case 2 logic: we know the auth actually exists, so we
 		// enforce it is the current rpk.yaml auth.
-		yAct.MakeAuthCurrent(pAuthAct)
+		yAct.MakeAuthCurrent(&pAuthAct)
 
 		// Case 1 and 2: we check some invariants and then ensure the
 		// virtual rpk.yaml also has the same current auth.
@@ -185,7 +185,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 		if !pAuthVir.Equals(pAuthAct) {
 			panic("params invariant: internal virtual auth name/org != actual name/org")
 		}
-		yVir.MakeAuthCurrent(pAuthVir)
+		yVir.MakeAuthCurrent(&pAuthVir)
 
 		// Finally, set authAct and authVir so they can be updated below.
 		authAct = pAuthAct
@@ -272,7 +272,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 					a := &y.CloudAuths[i]
 					if a.OrgID == org.ID && a.Kind == authKind {
 						*newAuth = a
-						y.MakeAuthCurrent(*newAuth)
+						y.MakeAuthCurrent(newAuth)
 						return
 					}
 				}

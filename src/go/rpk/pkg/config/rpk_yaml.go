@@ -241,11 +241,12 @@ func (y *RpkYaml) PushNewAuth(a RpkCloudAuth) {
 // MakeAuthCurrent finds the given auth, moves it to the front, and updates
 // the current cloud auth fields. This pointer must exist, if it does not,
 // this function panics.
-func (y *RpkYaml) MakeAuthCurrent(a *RpkCloudAuth) {
-	reordered := []RpkCloudAuth{*a}
+// This updates *a to point to the new address of the auth.
+func (y *RpkYaml) MakeAuthCurrent(a **RpkCloudAuth) {
+	reordered := []RpkCloudAuth{**a}
 	var found bool
 	for i := range y.CloudAuths {
-		if &y.CloudAuths[i] == a {
+		if &y.CloudAuths[i] == *a {
 			found = true
 			continue
 		}
@@ -254,9 +255,10 @@ func (y *RpkYaml) MakeAuthCurrent(a *RpkCloudAuth) {
 	if !found {
 		panic("MakeAuthCurrent called with an auth that does not exist")
 	}
+	*a = &reordered[0]
 	y.CloudAuths = reordered
-	y.CurrentCloudAuthOrgID = a.OrgID
-	y.CurrentCloudAuthKind = a.Kind
+	y.CurrentCloudAuthOrgID = (*a).OrgID
+	y.CurrentCloudAuthKind = (*a).Kind
 }
 
 // DropAuth removes the given auth from the list of auths. If this was the
