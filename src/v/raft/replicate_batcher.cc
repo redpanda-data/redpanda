@@ -216,6 +216,7 @@ ss::future<> replicate_batcher::flush(
         ssx::semaphore_units item_memory_units(_max_batch_size_sem, 0);
         auto force_flush_requested = false;
         auto has_quorum_ack_requests = false;
+        size_t total_batch_size = 0;
 
         for (auto& n : item_cache) {
             if (unlikely(n->ready())) {
@@ -232,6 +233,7 @@ ss::future<> replicate_batcher::flush(
                   = has_quorum_ack_requests
                     || (n->get_consistency_level() == consistency_level::quorum_ack);
                 for (auto& b : batches) {
+                    total_batch_size += b.size_bytes();
                     b.set_term(term);
                     data.push_back(std::move(b));
                 }
@@ -271,6 +273,7 @@ ss::future<> replicate_batcher::flush(
         // we will release memory semaphore as soon as append entry
         // requests will be dispatched
         units.push_back(std::move(item_memory_units));
+        _ptr->_probe->add_batch(total_batch_size);
         co_await do_flush(
           std::move(notifications),
           std::move(req),

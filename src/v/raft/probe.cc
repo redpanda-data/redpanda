@@ -162,6 +162,14 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _full_heartbeat_requests; },
           sm::description("Number of full heartbeats sent by the leader"),
           labels),
+        sm::make_histogram(
+          "batch_size_bytes",
+          [this] {
+              return _batcher_batch_size_bytes.internal_histogram_logform();
+          },
+          sm::description(
+            "Batch size (in bytes) accumulated in the replicate batcher."),
+          labels),
       },
       {},
       {sm::shard_label, sm::label("partition")});

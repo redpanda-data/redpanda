@@ -12,6 +12,7 @@
 #pragma once
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -64,6 +65,10 @@ public:
     void full_heartbeat() { ++_full_heartbeat_requests; }
     void lw_heartbeat() { ++_lw_heartbeat_requests; }
 
+    void add_batch(size_t batch_size) {
+        _batcher_batch_size_bytes.record(batch_size);
+    }
+
     void clear() {
         _metrics.clear();
         _public_metrics.clear();
@@ -89,6 +94,7 @@ private:
     uint64_t _recovery_request_error = 0;
     uint64_t _full_heartbeat_requests = 0;
     uint64_t _lw_heartbeat_requests = 0;
+    log_hist_internal _batcher_batch_size_bytes;
 
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
