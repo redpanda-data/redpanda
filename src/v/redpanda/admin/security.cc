@@ -24,9 +24,11 @@
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "security/scram_credential.h"
+#include "security/types.h"
 
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/http/exception.hh>
+#include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
 
 #include <optional>
@@ -258,6 +260,16 @@ parse_json_members_list(const json::Document& doc, std::string_view key) {
     return {result.begin(), result.end()};
 }
 
+security::role_name parse_role_name(const ss::http::request& req) {
+    ss::sstring role_v;
+    if (!admin::path_decode(req.param["role"], role_v)) {
+        vlog(adminlog.debug, "Invalid parameter 'role' got {}", role_v);
+        throw ss::httpd::bad_param_exception{fmt::format(
+          "Invalid parameter 'role' got {{{}}}", req.param["role"])};
+    }
+    return security::role_name(role_v);
+}
+
 } // namespace
 
 void admin_server::register_security_routes() {
@@ -345,10 +357,9 @@ void admin_server::register_security_routes() {
 
     register_route<superuser>(
       ss::httpd::security_json::get_role,
-      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+      [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
-          throw_role_exception(role_errc::role_not_found);
-          co_return ss::json::json_return_type(ss::json::json_void());
+          return get_role_handler(std::move(req));
       });
 
     register_route<superuser>(
@@ -371,16 +382,7 @@ void admin_server::register_security_routes() {
       ss::httpd::security_json::list_role_members,
       [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
-          ss::sstring role_v;
-          if (!admin::path_decode(req->param["role"], role_v)) {
-              vlog(
-                adminlog.debug,
-                "Invalid parameter 'role' got {{{}}}",
-                req->param["role"]);
-              throw_role_exception(role_errc::invalid_name);
-          }
-
-          auto role_name = security::role_name{std::move(role_v)};
+          auto role_name = parse_role_name(*req);
           auto role = _controller->get_role_store().local().get(role_name);
           if (!role.has_value()) {
               vlog(adminlog.debug, "Role '{}' does not exist", role_name);
@@ -783,4 +785,21 @@ admin_server::list_roles_handler(std::unique_ptr<ss::http::request> req) {
     }
 
     return ss::make_ready_future<ss::json::json_return_type>(j_res);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::get_role_handler(std::unique_ptr<ss::http::request> req) {
+    auto role_name = parse_role_name(*req);
+    auto role = _controller->get_role_store().local().get(role_name);
+    if (!role.has_value()) {
+        vlog(adminlog.debug, "Role '{}' does not exist", role_name);
+        throw_role_exception(role_errc::role_not_found);
+    }
+
+    ss::httpd::security_json::role j_res;
+    j_res.name = role_name();
+    for (const auto& member : role.value().members()) {
+        j_res.members.push(role_member_to_json(member));
+    }
+    co_return ss::json::json_return_type(j_res);
 }
