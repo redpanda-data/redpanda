@@ -843,7 +843,12 @@ replicate_stages consensus::do_replicate(
         _probe->replicate_requests_ack_leader();
         break;
     case consistency_level::quorum_ack:
-        _probe->replicate_requests_ack_all_with_flush();
+        auto flush = opts.force_flush() || !_write_caching_enabled;
+        if (flush) {
+            _probe->replicate_requests_ack_all_with_flush();
+        } else {
+            _probe->replicate_requests_ack_all_without_flush();
+        }
         break;
     }
 
