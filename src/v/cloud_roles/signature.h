@@ -178,8 +178,6 @@ template<class Fn>
 time_source::time_source(Fn&& fn, int)
   : _gettime_fn(std::forward<Fn>(fn)) {}
 
-ss::sstring uri_encode(const ss::sstring& input, bool encode_slash);
-
 ss::sstring redact_headers_from_string(const std::string_view original);
 
 } // namespace cloud_roles

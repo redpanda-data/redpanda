@@ -40,4 +40,6 @@ json::Document parse_json_response(iobuf resp);
 
 std::chrono::system_clock::time_point parse_timestamp(std::string_view sv);
 
+ss::sstring uri_encode(const ss::sstring& input, bool encode_slash);
+
 } // namespace cloud_roles
