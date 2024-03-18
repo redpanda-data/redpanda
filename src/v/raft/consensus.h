@@ -284,7 +284,7 @@ public:
     model::offset committed_offset() const { return _commit_index; }
     model::offset flushed_offset() const { return _flushed_offset; }
     model::offset last_quorum_replicated_index() const {
-        return _last_quorum_replicated_index;
+        return _last_quorum_replicated_index_with_flush;
     }
     model::offset majority_replicated_index() const {
         return _majority_replicated_index;
@@ -359,7 +359,11 @@ public:
         return _received_snapshot_index;
     }
     size_t received_snapshot_bytes() const { return _received_snapshot_bytes; }
-    bool has_pending_flushes() const { return _not_flushed_bytes > 0; }
+    bool has_pending_flushes() const { return _pending_flush_bytes > 0; }
+    std::chrono::milliseconds time_since_last_flush() const {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          clock_type::now() - _last_flush_time);
+    }
 
     model::offset start_offset() const {
         return model::next_offset(_last_snapshot_index);
@@ -507,11 +511,6 @@ public:
     get_follower_recovery_state() const {
         return _follower_recovery_state;
     }
-    /**
-     * Flushes underlying log only if there are more not flushed bytes than the
-     * requested threshold.
-     */
-    ss::future<> maybe_flush_log(size_t threshold_bytes);
 
     inline void maybe_update_leader(vnode request_node);
 
@@ -519,8 +518,8 @@ public:
     void notify_config_update();
 
     bool write_caching_enabled() const { return _write_caching_enabled; }
-    size_t flush_bytes() const { return _flush_bytes; }
-    std::chrono::milliseconds flush_ms() const { return _flush_ms; }
+    size_t flush_bytes() const { return _max_pending_flush_bytes; }
+    std::chrono::milliseconds flush_ms() const { return _max_flush_delay_ms; }
 
 private:
     friend replicate_entries_stm;
@@ -653,6 +652,7 @@ private:
 
     void maybe_update_last_visible_index(model::offset);
     void maybe_update_majority_replicated_index();
+    void do_update_majority_replicated_index(model::offset new_value);
 
     voter_priority next_target_priority();
     voter_priority get_node_priority(vnode) const;
@@ -771,6 +771,9 @@ private:
         return _features.is_active(features::feature::raft_config_serde);
     }
 
+    ss::future<> maybe_flush_log();
+    ss::future<> background_flusher();
+
     // args
     vnode _self;
     raft::group_id _group;
@@ -822,7 +825,8 @@ private:
     follower_stats _fstats;
 
     replicate_batcher _batcher;
-    size_t _not_flushed_bytes{0};
+    size_t _pending_flush_bytes{0};
+    clock_type::time_point _last_flush_time;
 
     /// used to wait for background ops before shutting down
     ss::gate _bg;
@@ -841,6 +845,7 @@ private:
     std::unique_ptr<probe> _probe;
     ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
+    ss::condition_variable _majority_replicated_index_updated;
 
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
@@ -870,14 +875,15 @@ private:
     size_t _received_snapshot_bytes = 0;
 
     /**
-     * We keep an idex of the most recent entry replicated with quorum
-     * consistency level to make sure that all requests replicated with quorum
-     * consistency level will not be visible before they are committed by
-     * majority.
+     * We keep an index of the most recent entry replicated with quorum
+     * consistency level and flush to ensure they are not visible until
+     * they are raft committed (flushed on a majority). This ensures that
+     * writes with lower ack levels following the above writes do not
+     * mistakenly make them visible before they are raft committed.
      */
-    model::offset _last_quorum_replicated_index;
+    model::offset _last_quorum_replicated_index_with_flush;
     model::offset _last_leader_visible_offset;
-    consistency_level _last_write_consistency_level;
+    flush_after_append _last_write_flushed;
     offset_monitor _consumable_offset_monitor;
     ss::condition_variable _follower_reply;
     append_entries_buffer _append_requests_buffer;
@@ -892,10 +898,14 @@ private:
     // write caching configurations
     // cached locally so we don't reconcile them for every request. They are
     // updated lazily via notify_config_update()
-    // todo(bharathv): add jitter
+    using flush_jitter_t
+      = simple_time_jitter<clock_type, std::chrono::milliseconds>;
+    static constexpr std::chrono::milliseconds flush_ms_jitter{5};
     bool _write_caching_enabled;
-    size_t _flush_bytes;
-    std::chrono::milliseconds _flush_ms;
+    size_t _max_pending_flush_bytes;
+    std::chrono::milliseconds _max_flush_delay_ms;
+
+    ss::condition_variable _background_flusher;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

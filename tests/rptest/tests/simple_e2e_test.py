@@ -16,6 +16,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import SISettings
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.mode_checks import skip_debug_mode
+from ducktape.mark import parametrize
 
 
 class SimpleEndToEndTest(EndToEndTest):
@@ -84,7 +85,9 @@ class SimpleEndToEndTest(EndToEndTest):
 
     @skip_debug_mode
     @cluster(num_nodes=6)
-    def test_leader_acks(self):
+    @parametrize(write_caching=True)
+    @parametrize(write_caching=False)
+    def test_relaxed_acks(self, write_caching):
         ev = threading.Event()
 
         def inject_failures():
@@ -98,6 +101,7 @@ class SimpleEndToEndTest(EndToEndTest):
                                 node=node))
                 time.sleep(5)
 
+        (acks, wc_conf) = (-1, "on") if write_caching else (1, "off")
         # use small segment size to enable log eviction
         self.start_redpanda(num_nodes=3,
                             si_settings=SISettings(
@@ -110,12 +114,16 @@ class SimpleEndToEndTest(EndToEndTest):
                                 5242880,
                                 "default_topic_replications":
                                 3,
+                                "write_caching":
+                                wc_conf,
                                 "raft_replica_max_pending_flush_bytes":
                                 1024 * 1024 * 1024 * 1024,
-                                "raft_flush_timer_interval_ms":
+                                "raft_replica_max_flush_delay_ms":
                                 3000000
                             })
 
+        self.redpanda.logger.debug(
+            f"Using configuration: acks: {acks}, write_caching: {wc_conf}")
         spec = TopicSpec(name="verify-leader-ack",
                          partition_count=16,
                          replication_factor=3)
@@ -123,7 +131,7 @@ class SimpleEndToEndTest(EndToEndTest):
 
         self.topic = spec.name
 
-        self.start_producer(2, throughput=10000, acks=1)
+        self.start_producer(2, throughput=10000, acks=acks)
 
         self.start_consumer(1)
         self.await_startup()

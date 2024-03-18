@@ -455,6 +455,11 @@ public:
 
     ss::logger& logger() { return _logger; }
 
+    void notify_replicas_on_config_change() const;
+    ss::future<> disable_background_flushing() const;
+    ss::future<> reset_background_flushing() const;
+    ss::future<> set_write_caching(bool) const;
+
 private:
     void validate_leaders();
 

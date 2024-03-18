@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
@@ -19,15 +20,17 @@ class PeriodicFlushWithRelaxedConsistencyTest(EndToEndTest):
     def test_changing_periodic_flush_threshold(self):
 
         self.start_redpanda(num_nodes=3)
-        # set raft_max_not_flushed_bytes to high value
-        self.redpanda.set_cluster_config(
-            {"raft_replica_max_pending_flush_bytes": 10 * (1024 * 1024)})
 
         # create topic with single partition
         spec = TopicSpec(partition_count=1, replication_factor=3)
         self.client().create_topic(spec)
 
         self.topic = spec.name
+
+        rpk = RpkTool(self.redpanda)
+        # Disable background flushing
+        rpk.alter_topic_config(self.topic, "flush.bytes", 10 * (1024 * 1024))
+        rpk.alter_topic_config(self.topic, "flush.ms", 60 * 60 * 1000)
 
         self.start_producer(1, throughput=1000, acks=1)
         self.start_consumer()
@@ -38,8 +41,8 @@ class PeriodicFlushWithRelaxedConsistencyTest(EndToEndTest):
             timeout_sec=60,
             backoff_sec=1,
             err_msg=f"Producer didn't end producing {msg_count} messages")
-        # wait for at least 15000 records to be consumed
 
+        # wait for at least 15000 records to be consumed
         self.producer.stop()
         self.run_validation(min_records=msg_count,
                             producer_timeout_sec=300,
@@ -55,14 +58,13 @@ class PeriodicFlushWithRelaxedConsistencyTest(EndToEndTest):
             for r in p_state['replicas']
         ]), "With ACKS=1, committed offset should not be advanced immediately"
 
-        self.redpanda.set_cluster_config(
-            {"raft_replica_max_pending_flush_bytes": 1})
+        # Enable timer based flush
+        rpk.alter_topic_config(self.topic, "flush.ms", 100)
 
         def committed_offset_advanced():
             p_state = admin.get_partition_state(namespace='kafka',
                                                 topic=self.topic,
                                                 partition=0)
-
             return all([
                 r['committed_offset'] == r['dirty_offset']
                 for r in p_state['replicas']

@@ -382,14 +382,13 @@ configuration::configuration()
       "requested",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       256_KiB)
-  // todo (bharathv): deprecate raft_flush_timer_interval_ms in favor of
-  // raft_replica_max_flush_delay_ms
   , raft_flush_timer_interval_ms(
       *this,
       "raft_flush_timer_interval_ms",
       "Interval of checking partition against the "
-      "`raft_replica_max_pending_flush_bytes`",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      "`raft_replica_max_pending_flush_bytes`, deprecated started 24.1, use "
+      "raft_replica_max_flush_delay_ms instead ",
+      {.visibility = visibility::deprecated},
       100ms)
   , raft_replica_max_flush_delay_ms(
       *this,

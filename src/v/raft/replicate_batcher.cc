@@ -31,17 +31,12 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
 replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term,
   model::record_batch_reader r,
-  consistency_level consistency_lvl,
-  std::optional<std::chrono::milliseconds> timeout) {
+  replicate_options opts) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
 
     auto f = cache_and_wait_for_result(
-      std::move(enqueued),
-      expected_term,
-      std::move(r),
-      consistency_lvl,
-      timeout);
+      std::move(enqueued), expected_term, std::move(r), opts);
     return {std::move(enqueued_f), std::move(f)};
 }
 
@@ -50,13 +45,11 @@ replicate_batcher::cache_and_wait_for_result(
   ss::promise<> enqueued,
   std::optional<model::term_id> expected_term,
   model::record_batch_reader r,
-  consistency_level consistency_lvl,
-  std::optional<std::chrono::milliseconds> timeout) {
+  replicate_options opts) {
     item_ptr item;
     try {
         auto holder = _bg.hold();
-        item = co_await do_cache(
-          expected_term, std::move(r), consistency_lvl, timeout);
+        item = co_await do_cache(expected_term, std::move(r), opts);
 
         // now request is already enqueued, we can release first
         // stage future
@@ -116,11 +109,11 @@ ss::future<> replicate_batcher::stop() {
 ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
   std::optional<model::term_id> expected_term,
   model::record_batch_reader r,
-  consistency_level consistency_lvl,
-  std::optional<std::chrono::milliseconds> timeout) {
+  replicate_options opts) {
     auto batches = co_await model::consume_reader_to_memory(
       std::move(r),
-      timeout ? model::timeout_clock::now() + *timeout : model::no_timeout);
+      opts.timeout ? model::timeout_clock::now() + opts.timeout.value()
+                   : model::no_timeout);
 
     size_t bytes = std::accumulate(
       batches.cbegin(),
@@ -130,7 +123,7 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
           return sum + b.size_bytes();
       });
     co_return co_await do_cache_with_backpressure(
-      expected_term, std::move(batches), bytes, consistency_lvl, timeout);
+      expected_term, std::move(batches), bytes, opts);
 }
 
 ss::future<replicate_batcher::item_ptr>
@@ -138,8 +131,7 @@ replicate_batcher::do_cache_with_backpressure(
   std::optional<model::term_id> expected_term,
   ss::circular_buffer<model::record_batch> batches,
   size_t bytes,
-  consistency_level consistency_lvl,
-  std::optional<std::chrono::milliseconds> timeout) {
+  replicate_options opts) {
     /**
      * Produce a message larger than the internal raft batch accumulator
      * (default 1Mb) the semaphore can't be acquired. Closing
@@ -153,11 +145,11 @@ replicate_batcher::do_cache_with_backpressure(
      * them to be able to continue.
      */
     ssx::semaphore_units u;
-    if (timeout) {
+    if (opts.timeout) {
         u = co_await ss::get_units(
           _max_batch_size_sem,
           std::min(bytes, _max_batch_size),
-          ssx::semaphore::clock::now() + *timeout);
+          ssx::semaphore::clock::now() + opts.timeout.value());
     } else {
         u = co_await ss::get_units(
           _max_batch_size_sem, std::min(bytes, _max_batch_size));
@@ -175,12 +167,7 @@ replicate_batcher::do_cache_with_backpressure(
         }
     }
     auto i = ss::make_lw_shared<item>(
-      record_count,
-      std::move(data),
-      std::move(u),
-      expected_term,
-      consistency_lvl,
-      timeout);
+      record_count, std::move(data), std::move(u), expected_term, opts);
 
     _item_cache.emplace_back(i);
     co_return i;
@@ -227,18 +214,23 @@ ss::future<> replicate_batcher::flush(
         ss::circular_buffer<model::record_batch> data;
         std::vector<item_ptr> notifications;
         ssx::semaphore_units item_memory_units(_max_batch_size_sem, 0);
-        auto needs_flush = flush_after_append::no;
+        auto force_flush_requested = false;
+        auto has_quorum_ack_requests = false;
 
         for (auto& n : item_cache) {
+            if (unlikely(n->ready())) {
+                continue;
+            }
             if (
               !n->get_expected_term().has_value()
               || n->get_expected_term().value() == term) {
                 auto [batches, units] = n->release_data();
                 item_memory_units.adopt(std::move(units));
-                if (
-                  n->get_consistency_level() == consistency_level::quorum_ack) {
-                    needs_flush = flush_after_append::yes;
-                }
+                force_flush_requested = force_flush_requested
+                                        || n->force_flush_requested();
+                has_quorum_ack_requests
+                  = has_quorum_ack_requests
+                    || (n->get_consistency_level() == consistency_level::quorum_ack);
                 for (auto& b : batches) {
                     b.set_term(term);
                     data.push_back(std::move(b));
@@ -251,6 +243,19 @@ ss::future<> replicate_batcher::flush(
 
         if (notifications.empty()) {
             co_return;
+        }
+
+        auto needs_flush = flush_after_append::no;
+        auto write_caching_enabled = _ptr->write_caching_enabled();
+        // We flush in the following cases
+        // 1. an explicit force flush was requested by one of the items. eg:
+        // transactions
+        // 2. there is atleast one quorum ack request *and* write caching is
+        // disabled.
+        if (
+          force_flush_requested
+          || (has_quorum_ack_requests && !write_caching_enabled)) {
+            needs_flush = flush_after_append::yes;
         }
 
         auto seqs = _ptr->next_followers_request_seq();
@@ -316,7 +321,6 @@ ss::future<> replicate_batcher::do_flush(
   append_entries_request req,
   std::vector<ssx::semaphore_units> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
-    auto needs_flush = req.is_flush_required();
     _ptr->_probe->replicate_batch_flushed();
     auto stm = ss::make_lw_shared<replicate_entries_stm>(
       _ptr, std::move(req), std::move(seqs));
@@ -343,7 +347,7 @@ ss::future<> replicate_batcher::do_flush(
          * NOTE: this happens in background since we do not want to block
          * replicate batcher
          */
-        if (leader_result && needs_flush) {
+        if (leader_result) {
             (void)stm->wait_for_majority()
               .then([holder = std::move(holder),
                      notifications = std::move(notifications)](

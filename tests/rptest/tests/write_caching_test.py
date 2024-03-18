@@ -66,6 +66,10 @@ class WriteCachingPropertiesTest(RedpandaTest):
         replicas = partition_state["replicas"]
         assert len(replicas) == 3
 
+        def validate_flush_ms(val: int) -> bool:
+            # account for jitter
+            return flush_ms - 5 <= val <= flush_ms + 5
+
         for replica in replicas:
             raft_state = replica["raft_state"]
             assert self.WRITE_CACHING_DEBUG_KEY in raft_state.keys(
@@ -74,8 +78,8 @@ class WriteCachingPropertiesTest(RedpandaTest):
             assert self.FLUSH_BYTES_DEBUG_KEY in raft_state.keys(), raft_state
 
             replica_check = raft_state[self.WRITE_CACHING_DEBUG_KEY] == bool(
-                write_caching) and raft_state[
-                    self.FLUSH_MS_DEBUG_KEY] == flush_ms and raft_state[
+                write_caching) and validate_flush_ms(
+                    raft_state[self.FLUSH_MS_DEBUG_KEY]) and raft_state[
                         self.FLUSH_BYTES_DEBUG_KEY] == flush_bytes
 
             if not replica_check:

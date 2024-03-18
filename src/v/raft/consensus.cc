@@ -148,8 +148,9 @@ consensus::consensus(
   , _keep_snapshotted_log(should_keep_snapshotted_log)
   , _append_requests_buffer(*this, 256)
   , _write_caching_enabled(log_config().write_caching())
-  , _flush_bytes(log_config().flush_bytes())
-  , _flush_ms(log_config().flush_ms()) {
+  , _max_pending_flush_bytes(log_config().flush_bytes())
+  , _max_flush_delay_ms(flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
+                          .next_duration()) {
     setup_metrics();
     setup_public_metrics();
     update_follower_stats(_configuration_manager.get_latest());
@@ -157,6 +158,7 @@ consensus::consensus(
         maybe_step_down();
         dispatch_vote(false);
     });
+    ssx::spawn_with_gate(_bg, [this] { return background_flusher(); });
 }
 
 void consensus::setup_metrics() {
@@ -262,6 +264,7 @@ void consensus::shutdown_input() {
         _vote_timeout.cancel();
         _as.request_abort();
         _commit_index_updated.broken();
+        _majority_replicated_index_updated.broken();
         _follower_reply.broken();
     }
 }
@@ -280,6 +283,7 @@ ss::future<> consensus::stop() {
     co_await _batcher.stop();
 
     _op_lock.broken();
+    _background_flusher.broken();
     co_await _bg.close();
 
     // close writer if we have to
@@ -845,7 +849,7 @@ replicate_stages consensus::do_replicate(
     }
 
     return wrap_stages_with_gate(
-      _bg, _batcher.replicate(expected_term, std::move(rdr), opts.consistency));
+      _bg, _batcher.replicate(expected_term, std::move(rdr), opts));
 }
 
 ss::future<model::record_batch_reader>
@@ -2033,8 +2037,9 @@ consensus::do_append_entries(append_entries_request&& r) {
                 truncate_at, _scheduling.default_iopc));
           })
           .then([this, truncate_at] {
-              _last_quorum_replicated_index = std::min(
-                model::prev_offset(truncate_at), _last_quorum_replicated_index);
+              _last_quorum_replicated_index_with_flush = std::min(
+                model::prev_offset(truncate_at),
+                _last_quorum_replicated_index_with_flush);
               // update flushed offset since truncation may happen to already
               // flushed entries
               _flushed_offset = std::min(
@@ -2613,13 +2618,15 @@ append_entries_reply consensus::make_append_entries_reply(
 
 ss::future<consensus::flushed> consensus::flush_log() {
     if (!has_pending_flushes()) {
+        _last_flush_time = clock_type::now();
         co_return flushed::no;
     }
     auto flushed_up_to = _log->offsets().dirty_offset;
     const auto prior_truncations = _log->get_log_truncation_counter();
     _probe->log_flushed();
-    _not_flushed_bytes = 0;
+    _pending_flush_bytes = 0;
     co_await _log->flush();
+    _last_flush_time = clock_type::now();
     const auto lstats = _log->offsets();
     /**
      * log flush may be interleaved with trucation, hence we need to check
@@ -2693,6 +2700,7 @@ ss::future<storage::append_result> consensus::disk_append(
       .then([this, should_update_last_quorum_idx](
               std::tuple<ret_t, std::vector<offset_configuration>> t) {
           auto& [ret, configurations] = t;
+          _pending_flush_bytes += ret.byte_size;
           if (should_update_last_quorum_idx) {
               /**
                * We have to update last quorum replicated index before we
@@ -2700,9 +2708,13 @@ ss::future<storage::append_result> consensus::disk_append(
                * to deceide if follower flush is required basing on last quorum
                * replicated index.
                */
-              _last_quorum_replicated_index = ret.last_offset;
+              _last_quorum_replicated_index_with_flush = ret.last_offset;
+          } else {
+              // Here are are appending entries without a flush, signal the
+              // flusher incase we hit the thresholds, particularly unflushed
+              // bytes.
+              _background_flusher.signal();
           }
-          _not_flushed_bytes += ret.byte_size;
           // TODO
           // if we rolled a log segment. write current configuration
           // for speedy recovery in the background
@@ -2956,7 +2968,7 @@ consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
         _event_manager.notify_commit_index();
         // if we successfully acknowledged all quorum writes we can make pending
         // relaxed consistency requests visible
-        if (_commit_index >= _last_quorum_replicated_index) {
+        if (_commit_index >= _last_quorum_replicated_index_with_flush) {
             maybe_update_last_visible_index(_majority_replicated_index);
         } else {
             // still have to wait for some quorum consistency requests to be
@@ -3473,12 +3485,20 @@ ss::future<> consensus::remove_persistent_state() {
 void consensus::maybe_update_last_visible_index(model::offset offset) {
     _visibility_upper_bound_index = std::max(
       _visibility_upper_bound_index, offset);
-    _majority_replicated_index = std::max(_majority_replicated_index, offset);
+    do_update_majority_replicated_index(offset);
     if (is_elected_leader()) {
         _last_leader_visible_offset = std::max(
           _last_leader_visible_offset, last_visible_index());
     }
     _consumable_offset_monitor.notify(last_visible_index());
+}
+
+void consensus::do_update_majority_replicated_index(model::offset offset) {
+    auto previous_majority_replicated_index = _majority_replicated_index;
+    _majority_replicated_index = std::max(_majority_replicated_index, offset);
+    if (previous_majority_replicated_index != _majority_replicated_index) {
+        _majority_replicated_index_updated.broadcast();
+    }
 }
 
 void consensus::maybe_update_majority_replicated_index() {
@@ -3493,9 +3513,7 @@ void consensus::maybe_update_majority_replicated_index() {
         }
         return model::offset{};
     });
-    _majority_replicated_index = std::max(
-      _majority_replicated_index, majority_match);
-
+    do_update_majority_replicated_index(majority_match);
     _last_leader_visible_offset = std::max(
       _last_leader_visible_offset, last_visible_index());
     _consumable_offset_monitor.notify(last_visible_index());
@@ -3863,11 +3881,13 @@ void consensus::upsert_recovery_state(
     }
 }
 
-ss::future<> consensus::maybe_flush_log(size_t threshold_bytes) {
+ss::future<> consensus::maybe_flush_log() {
     // if there is nothing to do exit without grabbing an op_lock, this check is
     // sloppy as we data can be in flight but it is ok since next check will
     // detect it and flush log.
-    if (_not_flushed_bytes < threshold_bytes) {
+    if (
+      _pending_flush_bytes < _max_pending_flush_bytes
+      && time_since_last_flush() < _max_flush_delay_ms) {
         co_return;
     }
     try {
@@ -3897,8 +3917,30 @@ std::optional<model::offset> consensus::get_learner_start_offset() const {
 
 void consensus::notify_config_update() {
     _write_caching_enabled = log_config().write_caching();
-    _flush_bytes = log_config().flush_bytes();
-    _flush_ms = log_config().flush_ms();
+    _max_pending_flush_bytes = log_config().flush_bytes();
+    _max_flush_delay_ms
+      = flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
+          .next_duration();
+    // let the flusher know that the tunables have changed, this may result
+    // in an extra flush but that should be ok since this this is a rare
+    // operation.
+    _background_flusher.signal();
+}
+
+ss::future<> consensus::background_flusher() {
+    while (!_bg.is_closed()) {
+        try {
+            co_await _background_flusher.wait(log_config().flush_ms());
+        } catch (const ss::condition_variable_timed_out&) {
+        }
+        co_await maybe_flush_log().handle_exception(
+          [this](const std::exception_ptr& ex) {
+              vlog(
+                _ctxlog.warn,
+                "Ignoring exception from background flush: {}",
+                ex);
+          });
+    }
 }
 
 } // namespace raft

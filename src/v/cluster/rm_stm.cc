@@ -42,8 +42,113 @@
 namespace cluster {
 using namespace std::chrono_literals;
 
-static ss::sstring abort_idx_name(model::offset first, model::offset last) {
+namespace {
+ss::sstring abort_idx_name(model::offset first, model::offset last) {
     return fmt::format("abort.idx.{}.{}", first, last);
+}
+
+model::record_batch make_tx_control_batch(
+  model::producer_identity pid, model::control_record_type crt) {
+    iobuf key;
+    kafka::protocol::encoder kw(key);
+    kw.write(model::current_control_record_version());
+    kw.write(static_cast<int16_t>(crt));
+
+    iobuf value;
+    kafka::protocol::encoder vw(value);
+    vw.write(static_cast<int16_t>(0));
+    vw.write(static_cast<int32_t>(0));
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    builder.set_producer_identity(pid.id, pid.epoch);
+    builder.set_control_type();
+    builder.set_transactional_type();
+    builder.add_raw_kw(
+      std::move(key), std::move(value), std::vector<model::record_header>());
+
+    return std::move(builder).build();
+}
+
+model::control_record_type parse_control_batch(const model::record_batch& b) {
+    const auto& hdr = b.header();
+
+    vassert(
+      hdr.type == model::record_batch_type::raft_data,
+      "expect data batch type got {}",
+      hdr.type);
+    vassert(hdr.attrs.is_control(), "expect control attrs got {}", hdr.attrs);
+    vassert(
+      b.record_count() == 1, "control batch must contain a single record");
+
+    auto r = b.copy_records();
+    auto& record = *r.begin();
+    auto key = record.release_key();
+    kafka::protocol::decoder key_reader(std::move(key));
+    auto version = model::control_record_version(key_reader.read_int16());
+    vassert(
+      version == model::current_control_record_version,
+      "unknown control record version");
+    return model::control_record_type(key_reader.read_int16());
+}
+
+raft::replicate_options make_replicate_options() {
+    auto opts = raft::replicate_options(raft::consistency_level::quorum_ack);
+    opts.set_force_flush();
+    return opts;
+}
+
+} // namespace
+
+fence_batch_data read_fence_batch(model::record_batch&& b) {
+    const auto& hdr = b.header();
+    auto bid = model::batch_identity::from(hdr);
+
+    vassert(
+      b.record_count() == 1,
+      "model::record_batch_type::tx_fence batch must contain a single record");
+    auto r = b.copy_records();
+    auto& record = *r.begin();
+    auto val_buf = record.release_value();
+
+    iobuf_parser val_reader(std::move(val_buf));
+    auto version = reflection::adl<int8_t>{}.from(val_reader);
+    vassert(
+      version <= rm_stm::fence_control_record_version,
+      "unknown fence record version: {} expected: {}",
+      version,
+      rm_stm::fence_control_record_version);
+
+    std::optional<model::tx_seq> tx_seq{};
+    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
+    if (version >= rm_stm::fence_control_record_v1_version) {
+        tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
+        transaction_timeout_ms
+          = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
+    }
+    model::partition_id tm{model::legacy_tm_ntp.tp.partition};
+    if (version >= rm_stm::fence_control_record_version) {
+        tm = reflection::adl<model::partition_id>{}.from(val_reader);
+    }
+
+    auto key_buf = record.release_key();
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
+      key_reader);
+    vassert(
+      hdr.type == batch_type,
+      "broken model::record_batch_type::tx_fence batch. expected batch type {} "
+      "got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
+    vassert(
+      p_id == bid.pid.id,
+      "broken model::record_batch_type::tx_fence batch. expected pid {} got: "
+      "{}",
+      bid.pid.id,
+      p_id);
+    return fence_batch_data{bid, tx_seq, transaction_timeout_ms, tm};
 }
 
 model::record_batch make_fence_batch_v1(
@@ -98,101 +203,15 @@ model::record_batch make_fence_batch_v2(
     return std::move(builder).build();
 }
 
-fence_batch_data read_fence_batch(model::record_batch&& b) {
-    const auto& hdr = b.header();
-    auto bid = model::batch_identity::from(hdr);
-
-    vassert(
-      b.record_count() == 1,
-      "model::record_batch_type::tx_fence batch must contain a single record");
-    auto r = b.copy_records();
-    auto& record = *r.begin();
-    auto val_buf = record.release_value();
-
-    iobuf_parser val_reader(std::move(val_buf));
-    auto version = reflection::adl<int8_t>{}.from(val_reader);
-    vassert(
-      version <= rm_stm::fence_control_record_version,
-      "unknown fence record version: {} expected: {}",
-      version,
-      rm_stm::fence_control_record_version);
-
-    std::optional<model::tx_seq> tx_seq{};
-    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
-    if (version >= rm_stm::fence_control_record_v1_version) {
-        tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
-        transaction_timeout_ms
-          = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
+model::record_batch rm_stm::make_fence_batch(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::partition_id tm) {
+    if (is_transaction_partitioning()) {
+        return make_fence_batch_v2(pid, tx_seq, transaction_timeout_ms, tm);
     }
-    model::partition_id tm{model::legacy_tm_ntp.tp.partition};
-    if (version >= rm_stm::fence_control_record_version) {
-        tm = reflection::adl<model::partition_id>{}.from(val_reader);
-    }
-
-    auto key_buf = record.release_key();
-    iobuf_parser key_reader(std::move(key_buf));
-    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
-      key_reader);
-    vassert(
-      hdr.type == batch_type,
-      "broken model::record_batch_type::tx_fence batch. expected batch type {} "
-      "got: {}",
-      hdr.type,
-      batch_type);
-    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
-    vassert(
-      p_id == bid.pid.id,
-      "broken model::record_batch_type::tx_fence batch. expected pid {} got: "
-      "{}",
-      bid.pid.id,
-      p_id);
-    return fence_batch_data{bid, tx_seq, transaction_timeout_ms, tm};
-}
-
-static model::record_batch make_tx_control_batch(
-  model::producer_identity pid, model::control_record_type crt) {
-    iobuf key;
-    kafka::protocol::encoder kw(key);
-    kw.write(model::current_control_record_version());
-    kw.write(static_cast<int16_t>(crt));
-
-    iobuf value;
-    kafka::protocol::encoder vw(value);
-    vw.write(static_cast<int16_t>(0));
-    vw.write(static_cast<int32_t>(0));
-
-    storage::record_batch_builder builder(
-      model::record_batch_type::raft_data, model::offset(0));
-    builder.set_producer_identity(pid.id, pid.epoch);
-    builder.set_control_type();
-    builder.set_transactional_type();
-    builder.add_raw_kw(
-      std::move(key), std::move(value), std::vector<model::record_header>());
-
-    return std::move(builder).build();
-}
-
-static model::control_record_type
-parse_control_batch(const model::record_batch& b) {
-    const auto& hdr = b.header();
-
-    vassert(
-      hdr.type == model::record_batch_type::raft_data,
-      "expect data batch type got {}",
-      hdr.type);
-    vassert(hdr.attrs.is_control(), "expect control attrs got {}", hdr.attrs);
-    vassert(
-      b.record_count() == 1, "control batch must contain a single record");
-
-    auto r = b.copy_records();
-    auto& record = *r.begin();
-    auto key = record.release_key();
-    kafka::protocol::decoder key_reader(std::move(key));
-    auto version = model::control_record_version(key_reader.read_int16());
-    vassert(
-      version == model::current_control_record_version,
-      "unknown control record version");
-    return model::control_record_type(key_reader.read_int16());
+    return make_fence_batch_v1(pid, tx_seq, transaction_timeout_ms);
 }
 
 model::control_record_type
@@ -340,17 +359,6 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
       });
 }
 
-model::record_batch rm_stm::make_fence_batch(
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms,
-  model::partition_id tm) {
-    if (is_transaction_partitioning()) {
-        return make_fence_batch_v2(pid, tx_seq, transaction_timeout_ms, tm);
-    }
-    return make_fence_batch_v1(pid, tx_seq, transaction_timeout_ms);
-}
-
 ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
@@ -473,9 +481,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
 
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _raft->replicate(
-      synced_term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
+      synced_term, std::move(reader), make_replicate_options());
 
     if (!r) {
         vlog(
@@ -615,9 +621,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
       pid, model::control_record_type::tx_commit);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _raft->replicate(
-      synced_term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
+      synced_term, std::move(reader), make_replicate_options());
 
     if (!r) {
         vlog(
@@ -769,9 +773,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
       pid, model::control_record_type::tx_abort);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _raft->replicate(
-      synced_term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
+      synced_term, std::move(reader), make_replicate_options());
 
     if (!r) {
         vlog(
@@ -1042,9 +1044,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
     expiration_it->second.is_expiration_requested = false;
 
     auto r = co_await _raft->replicate(
-      synced_term,
-      std::move(rdr),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
+      synced_term, std::move(rdr), make_replicate_options());
     if (!r) {
         vlog(
           _ctx_log.info,
@@ -1493,9 +1493,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(batch));
                 auto cr = co_await _raft->replicate(
-                  synced_term,
-                  std::move(reader),
-                  raft::replicate_options(raft::consistency_level::quorum_ack));
+                  synced_term, std::move(reader), make_replicate_options());
                 if (!cr) {
                     vlog(
                       _ctx_log.warn,
@@ -1535,9 +1533,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(batch));
                 auto cr = co_await _raft->replicate(
-                  synced_term,
-                  std::move(reader),
-                  raft::replicate_options(raft::consistency_level::quorum_ack));
+                  synced_term, std::move(reader), make_replicate_options());
                 if (!cr) {
                     vlog(
                       _ctx_log.warn,
@@ -1592,9 +1588,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
 
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
         auto cr = co_await _raft->replicate(
-          _insync_term,
-          std::move(reader),
-          raft::replicate_options(raft::consistency_level::quorum_ack));
+          _insync_term, std::move(reader), make_replicate_options());
 
         if (!cr) {
             vlog(

@@ -816,12 +816,15 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     _last_replicate = last_replicate{
       .term = current_term, .result = replication_promise.get_shared_future()};
 
+    auto opts = raft::replicate_options(raft::consistency_level::quorum_ack);
+    opts.set_force_flush();
+
     auto fut
       = _raft
           ->replicate(
             current_term,
             model::make_memory_record_batch_reader(std::move(batch)),
-            raft::replicate_options{raft::consistency_level::quorum_ack})
+            opts)
           .then_wrapped(
             [replication_promise = std::move(replication_promise)](
               auto f) mutable -> ss::future<result<raft::replicate_result>> {

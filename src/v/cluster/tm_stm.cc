@@ -90,6 +90,14 @@ model::record_batch do_serialize_tx(T tx) {
 
 } // namespace
 
+ss::future<result<raft::replicate_result>>
+tm_stm::replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
+    auto opts = raft::replicate_options{raft::consistency_level::quorum_ack};
+    opts.set_force_flush();
+    return _raft->replicate(
+      term, model::make_memory_record_batch_reader(std::move(batch)), opts);
+}
+
 model::record_batch tm_stm::serialize_tx(tm_transaction tx) {
     if (use_new_tx_version()) {
         return do_serialize_tx(tx);

@@ -294,10 +294,12 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
   model::record_batch batch,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    auto opts = raft::replicate_options(raft::consistency_level::quorum_ack);
+    opts.set_force_flush();
     auto fut = _raft->replicate(
       _raft->term(),
       model::make_memory_record_batch_reader(std::move(batch)),
-      raft::replicate_options{raft::consistency_level::quorum_ack});
+      opts);
 
     /// Execute the replicate command bound by timeout and cancellable via
     /// abort_source mechanism

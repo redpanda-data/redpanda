@@ -125,6 +125,10 @@ private:
 
     result<replicate_result> build_replicate_result() const;
 
+    ss::future<result<replicate_result>> wait_for_majority_flush();
+
+    ss::future<result<replicate_result>> wait_for_majority_no_flush();
+
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
     protocol_metadata _meta;
