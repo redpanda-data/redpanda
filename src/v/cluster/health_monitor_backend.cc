@@ -540,36 +540,14 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
 }
 namespace {
 
-struct ntp_leader {
-    model::term_id term;
-    std::optional<model::node_id> leader_id;
-    model::revision_id revision_id;
-};
-
 struct ntp_report {
-    model::ntp ntp;
-    ntp_leader leader;
-    size_t size_bytes;
-    std::optional<uint8_t> under_replicated_replicas;
-    size_t reclaimable_size_bytes;
-    ss::shard_id shard;
+    model::topic_namespace tp_ns;
+    partition_status status;
 };
 
-partition_status to_partition_status(const ntp_report& ntpr) {
-    return partition_status{
-      .id = ntpr.ntp.tp.partition,
-      .term = ntpr.leader.term,
-      .leader_id = ntpr.leader.leader_id,
-      .revision_id = ntpr.leader.revision_id,
-      .size_bytes = ntpr.size_bytes,
-      .under_replicated_replicas = ntpr.under_replicated_replicas,
-      .reclaimable_size_bytes = ntpr.reclaimable_size_bytes,
-      .shard = ntpr.shard};
-}
-
-ss::chunked_fifo<ntp_report> collect_shard_local_reports(
+chunked_vector<ntp_report> collect_shard_local_reports(
   partition_manager& pm, const partitions_filter& filters) {
-    ss::chunked_fifo<ntp_report> reports;
+    chunked_vector<ntp_report> reports;
     // empty filter, collect all
     if (filters.namespaces.empty()) {
         reports.reserve(pm.partitions().size());
@@ -578,34 +556,41 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
           pm.partitions().end(),
           std::back_inserter(reports),
           [](auto& p) {
-              return ntp_report{
-                .ntp = p.first,
-                .leader = ntp_leader{
-                  .term = p.second->term(),
-                  .leader_id = p.second->get_leader_id(),
-                  .revision_id = p.second->get_revision_id(),
-                },
-                .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
-                .under_replicated_replicas = p.second->get_under_replicated(),
-                .reclaimable_size_bytes = p.second->reclaimable_size_bytes(),
-                .shard = ss::this_shard_id(),
+              return ntp_report {
+                  .tp_ns = model::topic_namespace(p.first.ns, p.first.tp.topic),
+                  .status = partition_status{
+                    .id = p.first.tp.partition,
+                    .term = p.second->term(),
+                    .leader_id = p.second->get_leader_id(),
+                    .revision_id = p.second->get_revision_id(),
+                    .size_bytes = p.second->size_bytes()
+                                  + p.second->non_log_disk_size_bytes(),
+                    .under_replicated_replicas
+                    = p.second->get_under_replicated(),
+                    .reclaimable_size_bytes
+                    = p.second->reclaimable_size_bytes(),
+                    .shard = ss::this_shard_id(),
+                  },
               };
           });
     } else {
         for (const auto& [ntp, partition] : pm.partitions()) {
             if (filters.matches(ntp)) {
                 reports.push_back(ntp_report{
-                .ntp = ntp,
-                .leader = ntp_leader{
-                  .term = partition->term(),
-                  .leader_id = partition->get_leader_id(),
-                  .revision_id = partition->get_revision_id(),
-                },
-                .size_bytes = partition->size_bytes() + partition->non_log_disk_size_bytes(),
-                .under_replicated_replicas = partition->get_under_replicated(),
-                .reclaimable_size_bytes = partition->reclaimable_size_bytes(),
-                .shard = ss::this_shard_id(),
-                });
+                  .tp_ns = model::topic_namespace(ntp.ns, ntp.tp.topic),
+                  .status = partition_status{
+                    .id = ntp.tp.partition,
+                    .term = partition->term(),
+                    .leader_id = partition->get_leader_id(),
+                    .revision_id = partition->get_revision_id(),
+                    .size_bytes = partition->size_bytes()
+                                  + partition->non_log_disk_size_bytes(),
+                    .under_replicated_replicas
+                    = partition->get_under_replicated(),
+                    .reclaimable_size_bytes
+                    = partition->reclaimable_size_bytes(),
+                    .shard = ss::this_shard_id(),
+                  }});
             }
         }
     }
@@ -617,12 +602,9 @@ using reports_acc_t
   = absl::node_hash_map<model::topic_namespace, partition_statuses_t>;
 
 reports_acc_t reduce_reports_map(
-  reports_acc_t acc, ss::chunked_fifo<ntp_report> current_reports) {
+  reports_acc_t acc, chunked_vector<ntp_report> current_reports) {
     for (auto& ntpr : current_reports) {
-        model::topic_namespace tp_ns(
-          std::move(ntpr.ntp.ns), std::move(ntpr.ntp.tp.topic));
-
-        acc[tp_ns].push_back(to_partition_status(ntpr));
+        acc[ntpr.tp_ns].push_back(ntpr.status);
     }
     return acc;
 }
