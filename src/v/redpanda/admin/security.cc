@@ -396,10 +396,9 @@ void admin_server::register_security_routes() {
 
     register_route<superuser>(
       ss::httpd::security_json::delete_role,
-      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+      [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
-          throw_role_exception(role_errc::role_not_found);
-          co_return ss::json::json_return_type(ss::json::json_void());
+          return delete_role_handler(std::move(req));
       });
 
     register_route<superuser>(
@@ -841,4 +840,27 @@ admin_server::update_role_handler(std::unique_ptr<ss::http::request> req) {
     ss::httpd::security_json::role_definition j_res;
     j_res.role = to_role_name();
     co_return ss::json::json_return_type(j_res);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::delete_role_handler(std::unique_ptr<ss::http::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        // In order that we can do a reliably ordered validation of
+        // the request (and drop no-op requests), run on controller leader;
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
+    auto role_name = parse_role_name(*req);
+
+    auto err
+      = co_await _controller->get_security_frontend().local().delete_role(
+        role_name, model::timeout_clock::now() + 5s);
+    if (err == cluster::errc::role_does_not_exist) {
+        // Idempotency: removing a non-existent user is successful.
+        vlog(
+          adminlog.debug, "Role '{}' already gone during deletion", role_name);
+        co_return ss::json::json_return_type(ss::json::json_void{});
+    }
+    co_await throw_on_error(*req, err, model::controller_ntp);
+    co_return ss::json::json_return_type(ss::json::json_void{});
 }
