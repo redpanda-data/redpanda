@@ -377,17 +377,17 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
 result<node_health_report>
 map_reply_result(result<get_node_health_reply> reply) {
     if (!reply) {
-        return result<node_health_report>(reply.error());
+        return {reply.error()};
     }
     if (!reply.value().report.has_value()) {
-        return result<node_health_report>(reply.value().error);
+        return {reply.value().error};
     }
-    return result<node_health_report>(std::move(*reply.value().report));
+    return {std::move(*reply.value().report)};
 }
 
 result<node_health_report> health_monitor_backend::process_node_reply(
   model::node_id id, result<get_node_health_reply> reply) {
-    auto res = map_reply_result(reply);
+    auto res = map_reply_result(std::move(reply));
     auto [status_it, _] = _status.try_emplace(id);
     if (!res) {
         vlog(
@@ -407,7 +407,7 @@ result<node_health_report> health_monitor_backend::process_node_reply(
               res.error().message());
             status_it->second.is_alive = alive::no;
         }
-        return result<node_health_report>(reply.error());
+        return res.error();
     }
 
     // TODO serialize storage_space_alert, instead of recomputing here.
