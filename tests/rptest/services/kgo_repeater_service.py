@@ -339,6 +339,12 @@ class KgoRepeaterService(Service):
             for worker_status in node_status:
                 yield worker_status
 
+    def total_errors(self):
+        """
+        :return integer total number of observed errors
+        """
+        return sum([int(wst['errors']) for wst in self._get_status_reports()])
+
     def total_messages(self):
         """
         :return: 2-tuple of produced, consumed

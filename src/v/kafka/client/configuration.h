@@ -37,6 +37,7 @@ struct configuration final : public config::config_store {
     config::property<ss::sstring> produce_compression_type;
     config::property<std::chrono::milliseconds> produce_shutdown_delay;
     config::property<int16_t> produce_ack_level;
+    config::property<size_t> produce_partition_agnostic_retries;
     config::property<std::chrono::milliseconds> consumer_request_timeout;
     config::bounded_property<int32_t> consumer_request_min_bytes;
     config::bounded_property<int32_t> consumer_request_max_bytes;
