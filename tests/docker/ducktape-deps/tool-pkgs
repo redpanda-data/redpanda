@@ -26,6 +26,7 @@ apt-get install -qq \
   sudo \
   llvm \
   python3-pip \
+  python3-venv \
   libzstd-dev \
   pkg-config \
   faketime
