@@ -10,6 +10,7 @@
 
 #include "cluster/partition_balancer_backend.h"
 
+#include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"

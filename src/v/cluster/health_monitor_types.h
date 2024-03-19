@@ -24,6 +24,7 @@
 
 namespace cluster {
 
+static constexpr ss::shard_id health_monitor_backend_shard = 0;
 /**
  * Health reports
  */

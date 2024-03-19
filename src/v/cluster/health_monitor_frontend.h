@@ -10,7 +10,6 @@
  */
 #pragma once
 #include "cluster/fwd.h"
-#include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_types.h"
 #include "controller_stm.h"
 #include "model/metadata.h"
@@ -18,8 +17,6 @@
 #include "storage/types.h"
 
 #include <seastar/core/sharded.hh>
-
-#include <utility>
 
 namespace cluster {
 
@@ -89,7 +86,7 @@ private:
     template<typename Func>
     auto dispatch_to_backend(Func&& f) {
         return _backend.invoke_on(
-          health_monitor_backend::shard, std::forward<Func>(f));
+          health_monitor_backend_shard, std::forward<Func>(f));
     }
 
     ss::sharded<health_monitor_backend>& _backend;
