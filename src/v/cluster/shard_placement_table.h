@@ -120,9 +120,15 @@ public:
     private:
         friend class shard_placement_table;
 
+        /// If placement_state is in the _states map, then is_empty() is false.
+        bool is_empty() const {
+            return !current && !_is_initial_for && !assigned;
+        }
+
         /// If this shard is the initial shard for some incarnation of this
         /// partition on this node, this field will contain the corresponding
-        /// log revision.
+        /// log revision. Invariant: if both _is_initial_for and current
+        /// are present, _is_initial_for > current.log_revision
         std::optional<model::revision_id> _is_initial_for;
         /// If x-shard transfer is in progress, will hold the destination. Note
         /// that it is initialized from target but in contrast to target, it
@@ -168,15 +174,21 @@ public:
       const model::ntp&, model::revision_id expected_log_rev);
 
     ss::future<std::error_code>
+    prepare_delete(const model::ntp&, model::revision_id cmd_revision);
+
+    ss::future<>
     finish_delete(const model::ntp&, model::revision_id expected_log_rev);
 
 private:
     ss::future<> set_assigned_on_this_shard(
       const model::ntp&,
-      std::optional<model::revision_id> expected_log_revision,
+      model::revision_id target_log_revision,
       model::shard_revision_id,
       bool is_initial,
       shard_callback_t);
+
+    ss::future<> remove_assigned_on_this_shard(
+      const model::ntp&, model::shard_revision_id, shard_callback_t);
 
     ss::future<> do_delete(const model::ntp&, placement_state&);
 
