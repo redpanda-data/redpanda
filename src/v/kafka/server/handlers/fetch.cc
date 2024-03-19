@@ -147,7 +147,12 @@ static ss::future<read_result> read_from_partition(
     co_await std::move(rdr.reader).release()->finally();
 
     if (e) {
-        std::rethrow_exception(e);
+        vlog(
+          klog.info,
+          "exception while reading topic_partition: {} exception: {}",
+          part.ntp().tp,
+          e);
+        co_return read_result(error_code::kafka_storage_error, start_o, hw);
     }
 
     if (foreign_read) {
