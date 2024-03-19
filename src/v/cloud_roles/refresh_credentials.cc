@@ -239,10 +239,6 @@ refresh_credentials::impl::calculate_sleep_duration(uint32_t expiry_sec) const {
 
 std::chrono::milliseconds refresh_credentials::impl::calculate_sleep_duration(
   std::chrono::system_clock::time_point expires_at) const {
-    vlog(
-      clrl_log.trace,
-      "calculating sleep duration for credential expiry at: {}",
-      expires_at.time_since_epoch());
     auto now = std::chrono::system_clock::now();
     auto diff = std::chrono::duration_cast<std::chrono::seconds>(
                   expires_at - now)
