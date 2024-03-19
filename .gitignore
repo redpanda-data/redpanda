@@ -192,6 +192,8 @@ venv.bak/
 
 # default data dir for dev-cluster.py script
 /tools/data
+# If you run dev-cluster.py from the repo root
+/data
 
 # mypy
 .mypy_cache/
