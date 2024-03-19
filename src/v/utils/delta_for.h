@@ -258,6 +258,10 @@ struct deltafor_stream_pos_t
     /// Number of rows before the next row
     uint32_t num_rows;
 
+    friend bool
+    operator==(const deltafor_stream_pos_t&, const deltafor_stream_pos_t&)
+      = default;
+
     auto serde_fields() { return std::tie(initial, offset, num_rows); }
 };
 
@@ -992,6 +996,9 @@ public:
         return tmp;
     }
 
+    friend bool operator==(const deltafor_frame&, const deltafor_frame&)
+      = default;
+
 private:
     template<class PredT>
     const_iterator pred_search(value_t value) const {
@@ -1454,6 +1461,10 @@ public:
         }
         return tmp;
     }
+
+    friend bool
+    operator==(const deltafor_column_impl&, const deltafor_column_impl&)
+      = default;
 
 protected:
     auto get_frame_iterator_by_element_index(size_t ix) const {
