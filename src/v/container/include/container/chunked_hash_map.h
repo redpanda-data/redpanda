@@ -10,8 +10,32 @@
  */
 #pragma once
 
+#include <absl/hash/hash.h>
 #include <ankerl/unordered_dense.h>
 #include <container/fragmented_vector.h>
+
+#include <type_traits>
+
+namespace detail {
+
+template<typename T>
+concept has_absl_hash = requires(T val) {
+    { AbslHashValue(std::declval<absl::HashState>(), val) };
+};
+
+/// Wrapper around absl::Hash that disables the extra hash mixing in
+/// unordered_dense
+template<typename T>
+struct avalanching_absl_hash {
+    // absl always hash mixes itself so no need to do it again
+    using is_avalanching = void;
+
+    auto operator()(const T& x) const noexcept -> uint64_t {
+        return absl::Hash<T>()(x);
+    }
+};
+
+} // namespace detail
 
 /**
  * @brief A hash map that uses a chunked vector as the underlying storage.
@@ -22,13 +46,21 @@
  *
  * NB: References and iterators are not stable across insertions and deletions.
  *
+ * Both std::hash and abseil's AbslHashValue are supported. We dispatch to the
+ * latter if available. Given AbslHashValue also supports std::hash we could
+ * also unconditionally dispatch to it. However, absl's hash mixing seems more
+ * extensive (and hence less performant) so we only do that when needed.
+ *
  * For more info please see
  * https://github.com/martinus/unordered_dense/?tab=readme-ov-file#1-overview
  */
 template<
   typename Key,
   typename Value,
-  typename Hash = ankerl::unordered_dense::hash<Key>,
+  typename Hash = std::conditional_t<
+    detail::has_absl_hash<Key>,
+    detail::avalanching_absl_hash<Key>,
+    ankerl::unordered_dense::hash<Key>>,
   typename EqualTo = std::equal_to<Key>>
 using chunked_hash_map = ankerl::unordered_dense::segmented_map<
   Key,
