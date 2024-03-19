@@ -1987,14 +1987,12 @@ consensus::do_append_entries(append_entries_request&& r) {
             _follower_recovery_state.reset();
         }
 
-        return f.then([this, reply, request_metadata] {
-            return maybe_update_follower_commit_idx(
-                     model::offset(request_metadata.commit_index))
-              .then([this, reply]() mutable {
-                  reply.last_flushed_log_index = _flushed_offset;
-                  reply.result = reply_result::success;
-                  return reply;
-              });
+        return f.then([this, reply, request_metadata]() mutable {
+            maybe_update_follower_commit_idx(
+              model::offset(request_metadata.commit_index));
+            reply.last_flushed_log_index = _flushed_offset;
+            reply.result = reply_result::success;
+            return reply;
         });
     }
 
@@ -2087,37 +2085,36 @@ consensus::do_append_entries(append_entries_request&& r) {
               offsets_ret ofs) {
           auto last_visible = std::min(ofs.last_offset, m.last_visible_index);
           maybe_update_last_visible_index(last_visible);
+
           _last_leader_visible_offset = std::max(
             m.last_visible_index, _last_leader_visible_offset);
           _confirmed_term = _term;
-          return maybe_update_follower_commit_idx(model::offset(m.commit_index))
-            .then([this, m, ofs, target] {
-                if (_follower_recovery_state) {
-                    _follower_recovery_state->update_progress(
-                      ofs.last_offset,
-                      std::max(m.dirty_offset, ofs.last_offset));
 
-                    if (m.dirty_offset == m.prev_log_index) {
-                        // Normal (non-recovery, non-heartbeat) append_entries
-                        // request means that recovery is over.
-                        vlog(
-                          _ctxlog.debug,
-                          "exiting follower_recovery_state, leader meta: {} "
-                          "(our offset: {})",
-                          m,
-                          ofs.last_offset);
-                        _follower_recovery_state.reset();
-                    }
-                    // m.dirty_offset can be bogus here if we are talking to
-                    // a pre-23.3 redpanda. In this case we can't reliably
-                    // distinguish between recovery and normal append_entries
-                    // and will exit recovery only via heartbeats (which is okay
-                    // but can inflate the number of recovering partitions
-                    // statistic a bit).
-                }
+          maybe_update_follower_commit_idx(model::offset(m.commit_index));
 
-                return make_append_entries_reply(target, ofs);
-            });
+          if (_follower_recovery_state) {
+              _follower_recovery_state->update_progress(
+                ofs.last_offset, std::max(m.dirty_offset, ofs.last_offset));
+
+              if (m.dirty_offset == m.prev_log_index) {
+                  // Normal (non-recovery, non-heartbeat) append_entries
+                  // request means that recovery is over.
+                  vlog(
+                    _ctxlog.debug,
+                    "exiting follower_recovery_state, leader meta: {} "
+                    "(our offset: {})",
+                    m,
+                    ofs.last_offset);
+                  _follower_recovery_state.reset();
+              }
+              // m.dirty_offset can be bogus here if we are talking to
+              // a pre-23.3 redpanda. In this case we can't reliably
+              // distinguish between recovery and normal append_entries
+              // and will exit recovery only via heartbeats (which is okay
+              // but can inflate the number of recovering partitions
+              // statistic a bit).
+          }
+          return make_append_entries_reply(target, ofs);
       })
       .handle_exception([this, reply](const std::exception_ptr& e) mutable {
           vlog(
@@ -2975,8 +2972,9 @@ consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
     }
     return ss::now();
 }
-ss::future<>
-consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
+
+void consensus::maybe_update_follower_commit_idx(
+  model::offset request_commit_idx) {
     // Raft paper:
     //
     // If leaderCommit > commitIndex, set commitIndex =
@@ -2991,7 +2989,6 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
             _event_manager.notify_commit_index();
         }
     }
-    return ss::make_ready_future<>();
 }
 
 void consensus::update_follower_stats(const group_configuration& cfg) {

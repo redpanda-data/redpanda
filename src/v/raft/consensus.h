@@ -603,7 +603,7 @@ private:
     ss::future<std::error_code>
     replicate_configuration(ssx::semaphore_units u, group_configuration);
 
-    ss::future<> maybe_update_follower_commit_idx(model::offset);
+    void maybe_update_follower_commit_idx(model::offset);
 
     void arm_vote_timeout();
     void update_node_append_timestamp(vnode);
