@@ -72,6 +72,10 @@ class relaxed_acks_fixture
   : public raft_fixture
   , public ::testing::WithParamInterface<test_parameters> {};
 
+class quorum_acks_fixture
+  : public raft_fixture
+  , public ::testing::WithParamInterface<test_parameters> {};
+
 TEST_P_CORO(all_acks_fixture, validate_replication) {
     co_await create_simple_group(5);
 
@@ -370,6 +374,53 @@ TEST_P_CORO(
     }
 }
 
+/**
+ * Ensures that the produce request can correctly detect truncation
+ * and make progress rather than being blocked forever waiting for
+ * the offsets to appear.
+ */
+TEST_P_CORO(quorum_acks_fixture, test_progress_on_truncation) {
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto params = GetParam();
+    co_await set_write_caching(params.write_caching);
+
+    // inject delay into append entries requests from the leader to
+    // open up a window for leadership change and a subsequent
+    // truncation.
+    for (auto& [id, node] : nodes()) {
+        if (id == leader_id) {
+            node->on_dispatch([](raft::msg_type t) {
+                if (
+                  t == raft::msg_type::append_entries
+                  || t == raft::msg_type::vote) {
+                    return ss::sleep(5s);
+                }
+                return ss::now();
+            });
+        }
+    }
+
+    auto leader_raft = nodes().at(leader_id)->raft();
+    ASSERT_TRUE_CORO(leader_raft->is_leader());
+
+    // Append a big-ish batch, spanning multiple offsets,
+    // this is delayed in append entries due to sleep injection.
+    // the sleep also triggers a leadership change due to
+    // hb supression in that window.
+    auto produce_f = leader_raft->replicate(
+      make_batches(10, 10, 128), replicate_options(params.c_lvl));
+
+    // This should never timeout if the truncation detection works
+    // as expected.
+    auto result = co_await ss::with_timeout(
+      model::timeout_clock::now() + 10s, std::move(produce_f));
+
+    ASSERT_TRUE_CORO(!leader_raft->is_leader());
+    ASSERT_TRUE_CORO(result.has_error());
+    ASSERT_EQ_CORO(result.error(), raft::errc::replicated_entry_truncated);
+}
+
 INSTANTIATE_TEST_SUITE_P(
   test_with_all_acks,
   all_acks_fixture,
@@ -389,5 +440,14 @@ INSTANTIATE_TEST_SUITE_P(
     test_parameters{.c_lvl = consistency_level::no_ack, .write_caching = false},
     test_parameters{
       .c_lvl = consistency_level::leader_ack, .write_caching = false},
+    test_parameters{
+      .c_lvl = consistency_level::quorum_ack, .write_caching = true}));
+
+INSTANTIATE_TEST_SUITE_P(
+  test_with_quorum_acks,
+  quorum_acks_fixture,
+  testing::Values(
+    test_parameters{
+      .c_lvl = consistency_level::quorum_ack, .write_caching = false},
     test_parameters{
       .c_lvl = consistency_level::quorum_ack, .write_caching = true}));
