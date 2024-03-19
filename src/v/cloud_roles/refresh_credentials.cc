@@ -226,13 +226,6 @@ refresh_credentials::impl::calculate_sleep_duration(uint32_t expiry_sec) const {
     int sleep = std::floor(expiry_sec * sleep_from_expiry_multiplier);
     vlog(
       clrl_log.trace, "sleep duration adjusted with buffer: {} seconds", sleep);
-    if (sleep < 0) {
-        vlog(
-          clrl_log.warn,
-          "negative sleep duration changed from {} to 10 seconds",
-          sleep);
-        sleep = 10;
-    }
     return std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::seconds{sleep});
 }
@@ -243,6 +236,13 @@ std::chrono::milliseconds refresh_credentials::impl::calculate_sleep_duration(
     auto diff = std::chrono::duration_cast<std::chrono::seconds>(
                   expires_at - now)
                   .count();
+    if (diff < 0) {
+        vlog(
+          clrl_log.warn,
+          "negative sleep duration changed from {} to 10 seconds",
+          diff);
+        diff = 10;
+    }
     vlog(
       clrl_log.trace,
       "calculating sleep duration for credential expiry at: {}, now: {}, diff "
