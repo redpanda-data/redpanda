@@ -1845,11 +1845,9 @@ admin_server::patch_cluster_config_handler(
       update.upsert.size(),
       update.remove.size());
 
-    auto patch_result = co_await _controller->get_config_frontend().invoke_on(
-      cluster::config_frontend::version_shard,
-      [update = std::move(update)](cluster::config_frontend& fe) mutable {
-          return fe.patch(std::move(update), model::timeout_clock::now() + 5s);
-      });
+    auto patch_result
+      = co_await _controller->get_config_frontend().local().patch(
+        std::move(update), model::timeout_clock::now() + 5s);
 
     co_await throw_on_error(*req, patch_result.errc, model::controller_ntp);
 
