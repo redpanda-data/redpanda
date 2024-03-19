@@ -21,16 +21,13 @@
 #include "cluster/partition_manager.h"
 #include "cluster/partition_probe.h"
 #include "config/configuration.h"
-#include "config/node_config.h"
 #include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/fwd.h"
-#include "random/generators.h"
 #include "rpc/connection_cache.h"
 #include "storage/types.h"
-#include "version.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/coroutine.hh>
@@ -74,16 +71,8 @@ health_monitor_backend::health_monitor_backend(
   , _feature_table(feature_table)
   , _partition_leaders_table(partition_leaders_table)
   , _topic_table(topic_table)
-  , _local_monitor(local_monitor) {
-    _leadership_notification_handle
-      = _raft_manager.local().register_leadership_notification(
-        [this](
-          raft::group_id group,
-          model::term_id term,
-          std::optional<model::node_id> leader_id) {
-            on_leadership_changed(group, term, leader_id);
-        });
-}
+  , _local_monitor(local_monitor)
+  , _self(_raft0->self().id()) {}
 
 cluster::notification_id_type
 health_monitor_backend::register_node_callback(health_node_cb_t cb) {
@@ -115,8 +104,6 @@ void health_monitor_backend::unregister_node_callback(
 
 ss::future<> health_monitor_backend::stop() {
     vlog(clusterlog.info, "Stopping Health Monitor Backend...");
-    _raft_manager.local().unregister_leadership_notification(
-      _leadership_notification_handle);
 
     auto f = _gate.close();
     _refresh_mutex.broken();
@@ -132,17 +119,17 @@ cluster_health_report health_monitor_backend::build_cluster_report(
   const cluster_report_filter& filter) {
     std::vector<node_health_report> reports;
     std::vector<node_state> statuses;
-    // refreshing node status is not expensive on leader, we can refresh it
-    // every time
-    if (_raft0->is_elected_leader()) {
-        refresh_nodes_status();
-    }
 
     auto nodes = filter.nodes.empty() ? _members.local().node_ids()
                                       : filter.nodes;
     reports.reserve(nodes.size());
     statuses.reserve(nodes.size());
     for (const auto& node_id : nodes) {
+        auto node_metadata = _members.local().get_node_metadata_ref(node_id);
+        if (!node_metadata) {
+            continue;
+        }
+
         auto r = build_node_report(node_id, filter.node_report_filter);
         if (r) {
             reports.push_back(std::move(r.value()));
@@ -150,7 +137,12 @@ cluster_health_report health_monitor_backend::build_cluster_report(
 
         auto it = _status.find(node_id);
         if (it != _status.end()) {
-            statuses.push_back(it->second);
+            statuses.push_back(node_state{
+              .id = node_id,
+              .membership_state
+              = node_metadata->get().state.get_membership_state(),
+              .is_alive = it->second.is_alive,
+            });
         }
     }
 
@@ -159,28 +151,6 @@ cluster_health_report health_monitor_backend::build_cluster_report(
       .node_states = std::move(statuses),
       .node_reports = std::move(reports),
       .bytes_in_cloud_storage = _bytes_in_cloud_storage};
-}
-
-void health_monitor_backend::refresh_nodes_status() {
-    // remove all nodes not longer present in members collection
-    absl::erase_if(
-      _status, [this](auto& e) { return !_members.local().contains(e.first); });
-
-    for (auto& [id, nm] : _members.local().nodes()) {
-        node_state status;
-        status.id = id;
-        status.membership_state = nm.state.get_membership_state();
-
-        // current node is always alive
-        if (id == _raft0->self().id()) {
-            status.is_alive = alive::yes;
-        }
-        auto res = _raft0->get_follower_metrics(id);
-        if (res) {
-            status.is_alive = alive(res.value().is_live);
-        }
-        _status.insert_or_assign(id, status);
-    }
 }
 
 chunked_vector<topic_status> filter_topic_status(
@@ -243,9 +213,8 @@ void health_monitor_backend::abortable_refresh_request::abort() {
 }
 
 health_monitor_backend::abortable_refresh_request::abortable_refresh_request(
-  model::node_id leader_id, ss::gate::holder holder, ssx::semaphore_units u)
-  : leader_id(leader_id)
-  , holder(std::move(holder))
+  ss::gate::holder holder, ssx::semaphore_units u)
+  : holder(std::move(holder))
   , units(std::move(u)) {}
 
 ss::future<std::error_code>
@@ -275,29 +244,11 @@ health_monitor_backend::abortable_refresh_request::abortable_await(
 ss::future<std::error_code>
 health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     auto holder = _gate.hold();
-    auto leader_id = _raft0->get_leader_id();
-
-    // leadership change, abort old refresh request
-    if (_refresh_request && leader_id != _refresh_request->leader_id) {
-        abort_current_refresh();
-    }
 
     auto units = co_await _refresh_mutex.get_units();
-    // refresh leader_id after acquiring mutex
-    leader_id = _raft0->get_leader_id();
 
-    // recheck if the leader exists, since this might have changed
-    // while we were waiting
-    if (!leader_id) {
-        vlog(
-          clusterlog.info,
-          "unable to refresh health metadata, no leader controller");
-        co_return errc::no_leader_controller;
-    }
-
-    // check under semaphore if we need to force refresh, otherwise we will just
-    // skip refresh request since current state is 'fresh enough' i.e. not older
-    // than max metadata age
+    // just skip refresh request since current state is 'fresh enough' i.e.
+    // not older than max metadata age
     auto now = model::timeout_clock::now();
     if (!force && now - _last_refresh < max_metadata_age()) {
         vlog(
@@ -307,95 +258,18 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
         co_return errc::success;
     }
 
-    vlog(
-      clusterlog.debug,
-      "refreshing health cache, leader id: {} self: {}",
-      leader_id,
-      _raft0->self().id());
+    vlog(clusterlog.debug, "refreshing health cache");
 
     _refresh_request = ss::make_lw_shared<abortable_refresh_request>(
-      *leader_id, std::move(holder), std ::move(units));
+      std::move(holder), std ::move(units));
 
-    // we either collect the cluster health reports while on raft0 leader or ask
-    // current leader for cluster health
-    auto f = leader_id == _raft0->self().id()
-               ? collect_cluster_health()
-               : dispatch_refresh_cluster_health_request(*leader_id);
-
-    co_return co_await _refresh_request->abortable_await(std::move(f));
-}
-
-ss::future<std::error_code>
-health_monitor_backend::dispatch_refresh_cluster_health_request(
-  model::node_id node_id) {
-    const auto timeout = model::timeout_clock::now() + max_metadata_age();
-    auto reply = co_await _connections.local()
-                   .with_node_client<controller_client_protocol>(
-                     _raft0->self().id(),
-                     ss::this_shard_id(),
-                     node_id,
-                     max_metadata_age(),
-                     [timeout](controller_client_protocol client) mutable {
-                         get_cluster_health_request req{
-                           .filter = cluster_report_filter{}};
-                         return client.get_cluster_health_report(
-                           std::move(req), rpc::client_opts(timeout));
-                     })
-                   .then(&rpc::get_ctx_data<get_cluster_health_reply>);
-
-    if (!reply) {
-        vlog(
-          clusterlog.warn,
-          "unable to get cluster health metadata from {} - {}",
-          node_id,
-          reply.error().message());
-        co_return reply.error();
-    }
-
-    if (!reply.value().report) {
-        vlog(
-          clusterlog.warn,
-          "unable to get cluster health metadata from {} - {}",
-          node_id,
-          reply.value().error);
-        co_return make_error_code(reply.value().error);
-    }
-
-    _status.clear();
-    for (auto& n_status : reply.value().report->node_states) {
-        _status.emplace(n_status.id, n_status);
-    }
-    vlog(clusterlog.trace, "Status cache updated from the leader: {}", _status);
-
-    storage::disk_space_alert cluster_disk_health
-      = storage::disk_space_alert::ok;
-    _reports.clear();
-    for (auto& n_report : reply.value().report->node_reports) {
-        const auto id = n_report.id;
-
-        // Recompute alert state, in case it was deserialized from an old
-        // node that didn't include alert state in the serialized storage::disk.
-        node::local_monitor::update_alert(n_report.local_state.data_disk);
-
-        // Update cached cluster-level disk health: non-raft0-leader nodes
-        cluster_disk_health = storage::max_severity(
-          cluster_disk_health, n_report.local_state.data_disk.alert);
-
-        _reports.emplace(id, std::move(n_report));
-    }
-
-    _bytes_in_cloud_storage = reply.value().report->bytes_in_cloud_storage;
-    _reports_disk_health = cluster_disk_health;
-    _last_refresh = ss::lowres_clock::now();
-    co_return make_error_code(errc::success);
+    co_return co_await _refresh_request->abortable_await(
+      collect_cluster_health());
 }
 
 void health_monitor_backend::abort_current_refresh() {
     if (_refresh_request) {
-        vlog(
-          clusterlog.debug,
-          "aborting current refresh request to {}",
-          _refresh_request->leader_id);
+        vlog(clusterlog.debug, "aborting current refresh request");
         _refresh_request->abort();
     }
 }
@@ -403,18 +277,6 @@ void health_monitor_backend::abort_current_refresh() {
 bool health_monitor_backend::contains_node_health_report(
   model::node_id id) const {
     return _reports.contains(id);
-}
-
-void health_monitor_backend::on_leadership_changed(
-  raft::group_id group, model::term_id, std::optional<model::node_id>) {
-    // we are only interested in raft0 leadership notifications
-    if (_raft0->group() != group) {
-        return;
-    }
-    // controller leadership changed, abort refresh request to current leader,
-    // as it may be not available,  and allow subsequent calls to be dispatched
-    // to new leader
-    abort_current_refresh();
 }
 
 ss::future<result<cluster_health_report>>
@@ -497,7 +359,7 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
     const auto timeout = model::timeout_clock::now() + max_metadata_age();
     return _connections.local()
       .with_node_client<controller_client_protocol>(
-        _raft0->self().id(),
+        _self,
         ss::this_shard_id(),
         id,
         max_metadata_age(),
@@ -515,19 +377,18 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
 result<node_health_report>
 map_reply_result(result<get_node_health_reply> reply) {
     if (!reply) {
-        return result<node_health_report>(reply.error());
+        return {reply.error()};
     }
     if (!reply.value().report.has_value()) {
-        return result<node_health_report>(reply.value().error);
+        return {reply.value().error};
     }
-    return result<node_health_report>(std::move(*reply.value().report));
+    return {std::move(*reply.value().report)};
 }
 
 result<node_health_report> health_monitor_backend::process_node_reply(
   model::node_id id, result<get_node_health_reply> reply) {
-    auto [it, _] = _last_replies.try_emplace(id);
-
-    auto res = map_reply_result(reply);
+    auto res = map_reply_result(std::move(reply));
+    auto [status_it, _] = _status.try_emplace(id);
     if (!res) {
         vlog(
           clusterlog.trace,
@@ -537,29 +398,31 @@ result<node_health_report> health_monitor_backend::process_node_reply(
         /**
          * log only once node state transition from alive to down
          */
-        if (it->second.is_alive) {
+        if (status_it->second.is_alive) {
             vlog(
               clusterlog.warn,
               "unable to get node health report from {} - {}, marking node as "
               "down",
               id,
               res.error().message());
+            status_it->second.is_alive = alive::no;
         }
-        return result<node_health_report>(reply.error());
+        return res.error();
     }
 
     // TODO serialize storage_space_alert, instead of recomputing here.
     auto& s = res.value().local_state;
     node::local_monitor::update_alert(s.data_disk);
-
-    it->second.last_reply_timestamp = ss::lowres_clock::now();
-    if (!it->second.is_alive && clusterlog.is_enabled(ss::log_level::info)) {
+    if (
+      !status_it->second.is_alive
+      && clusterlog.is_enabled(ss::log_level::info)) {
         vlog(
           clusterlog.info,
           "received node {} health report, marking node as up",
           id);
     }
-    it->second.is_alive = alive::yes;
+    status_it->second.last_reply_timestamp = ss::lowres_clock::now();
+    status_it->second.is_alive = alive::yes;
 
     return res;
 }
@@ -573,7 +436,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     auto ids = _members.local().node_ids();
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
-          if (id == _raft0->self().id()) {
+          if (id == _self) {
               return collect_current_node_health(node_report_filter{});
           }
           return collect_remote_node_health(id);
@@ -639,6 +502,15 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
         }
     }
 
+    auto not_in_members_table = [this](const auto& value) {
+        return !_members.local().contains(value.first);
+    };
+    /**
+     * Remove reports from nodes that were removed
+     */
+    absl::erase_if(_reports, not_in_members_table);
+    absl::erase_if(_status, not_in_members_table);
+
     _last_refresh = ss::lowres_clock::now();
     co_return errc::success;
 }
@@ -647,7 +519,7 @@ ss::future<result<node_health_report>>
 health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     vlog(clusterlog.debug, "collecting health report with filter: {}", filter);
     node_health_report ret;
-    ret.id = _raft0->self().id();
+    ret.id = _self;
 
     ret.local_state = _local_monitor.local().get_state_cached();
     ret.local_state.logical_version
@@ -660,41 +532,22 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
         ret.topics = co_await collect_topic_status(
           std::move(filter.ntp_filters));
     }
+    auto [it, _] = _status.try_emplace(ret.id);
+    it->second.is_alive = alive::yes;
+    it->second.last_reply_timestamp = ss::lowres_clock::now();
 
     co_return ret;
 }
 namespace {
 
-struct ntp_leader {
-    model::term_id term;
-    std::optional<model::node_id> leader_id;
-    model::revision_id revision_id;
-};
-
 struct ntp_report {
-    model::ntp ntp;
-    ntp_leader leader;
-    size_t size_bytes;
-    std::optional<uint8_t> under_replicated_replicas;
-    size_t reclaimable_size_bytes;
-    ss::shard_id shard;
+    model::topic_namespace tp_ns;
+    partition_status status;
 };
 
-partition_status to_partition_status(const ntp_report& ntpr) {
-    return partition_status{
-      .id = ntpr.ntp.tp.partition,
-      .term = ntpr.leader.term,
-      .leader_id = ntpr.leader.leader_id,
-      .revision_id = ntpr.leader.revision_id,
-      .size_bytes = ntpr.size_bytes,
-      .under_replicated_replicas = ntpr.under_replicated_replicas,
-      .reclaimable_size_bytes = ntpr.reclaimable_size_bytes,
-      .shard = ntpr.shard};
-}
-
-ss::chunked_fifo<ntp_report> collect_shard_local_reports(
+chunked_vector<ntp_report> collect_shard_local_reports(
   partition_manager& pm, const partitions_filter& filters) {
-    ss::chunked_fifo<ntp_report> reports;
+    chunked_vector<ntp_report> reports;
     // empty filter, collect all
     if (filters.namespaces.empty()) {
         reports.reserve(pm.partitions().size());
@@ -703,34 +556,41 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
           pm.partitions().end(),
           std::back_inserter(reports),
           [](auto& p) {
-              return ntp_report{
-                .ntp = p.first,
-                .leader = ntp_leader{
-                  .term = p.second->term(),
-                  .leader_id = p.second->get_leader_id(),
-                  .revision_id = p.second->get_revision_id(),
-                },
-                .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
-                .under_replicated_replicas = p.second->get_under_replicated(),
-                .reclaimable_size_bytes = p.second->reclaimable_size_bytes(),
-                .shard = ss::this_shard_id(),
+              return ntp_report {
+                  .tp_ns = model::topic_namespace(p.first.ns, p.first.tp.topic),
+                  .status = partition_status{
+                    .id = p.first.tp.partition,
+                    .term = p.second->term(),
+                    .leader_id = p.second->get_leader_id(),
+                    .revision_id = p.second->get_revision_id(),
+                    .size_bytes = p.second->size_bytes()
+                                  + p.second->non_log_disk_size_bytes(),
+                    .under_replicated_replicas
+                    = p.second->get_under_replicated(),
+                    .reclaimable_size_bytes
+                    = p.second->reclaimable_size_bytes(),
+                    .shard = ss::this_shard_id(),
+                  },
               };
           });
     } else {
         for (const auto& [ntp, partition] : pm.partitions()) {
             if (filters.matches(ntp)) {
                 reports.push_back(ntp_report{
-                .ntp = ntp,
-                .leader = ntp_leader{
-                  .term = partition->term(),
-                  .leader_id = partition->get_leader_id(),
-                  .revision_id = partition->get_revision_id(),
-                },
-                .size_bytes = partition->size_bytes() + partition->non_log_disk_size_bytes(),
-                .under_replicated_replicas = partition->get_under_replicated(),
-                .reclaimable_size_bytes = partition->reclaimable_size_bytes(),
-                .shard = ss::this_shard_id(),
-                });
+                  .tp_ns = model::topic_namespace(ntp.ns, ntp.tp.topic),
+                  .status = partition_status{
+                    .id = ntp.tp.partition,
+                    .term = partition->term(),
+                    .leader_id = partition->get_leader_id(),
+                    .revision_id = partition->get_revision_id(),
+                    .size_bytes = partition->size_bytes()
+                                  + partition->non_log_disk_size_bytes(),
+                    .under_replicated_replicas
+                    = partition->get_under_replicated(),
+                    .reclaimable_size_bytes
+                    = partition->reclaimable_size_bytes(),
+                    .shard = ss::this_shard_id(),
+                  }});
             }
         }
     }
@@ -742,12 +602,9 @@ using reports_acc_t
   = absl::node_hash_map<model::topic_namespace, partition_statuses_t>;
 
 reports_acc_t reduce_reports_map(
-  reports_acc_t acc, ss::chunked_fifo<ntp_report> current_reports) {
+  reports_acc_t acc, chunked_vector<ntp_report> current_reports) {
     for (auto& ntpr : current_reports) {
-        model::topic_namespace tp_ns(
-          std::move(ntpr.ntp.ns), std::move(ntpr.ntp.tp.topic));
-
-        acc[tp_ns].push_back(to_partition_status(ntpr));
+        acc[ntpr.tp_ns].push_back(ntpr.status);
     }
     return acc;
 }
@@ -777,7 +634,7 @@ std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
 ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
 health_monitor_backend::get_node_drain_status(
   model::node_id node_id, model::timeout_clock::time_point deadline) {
-    if (node_id == _raft0->self().id()) {
+    if (node_id == _self) {
         // Fast path: if we are asked for our own drain status, give fresh
         // data instead of spending time reloading health status which might
         // be outdated.
@@ -866,7 +723,7 @@ health_monitor_backend::get_cluster_health_overview(
 
     for (auto& [id, _] : brokers) {
         ret.all_nodes.push_back(id);
-        if (id != _raft0->self().id()) {
+        if (id != _self) {
             auto it = _status.find(id);
             if (it == _status.end() || !it->second.is_alive) {
                 ret.nodes_down.push_back(id);
