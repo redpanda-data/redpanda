@@ -28,6 +28,8 @@ static storage::batch_cache::reclaim_options opts = {
   .max_size = 4 << 20,
   .min_free_memory = 1};
 
+using is_dirty_entry = storage::batch_cache::is_dirty_entry;
+
 model::record_batch make_batch(size_t size) {
     static model::offset base_offset{0};
     iobuf value;
@@ -77,7 +79,7 @@ FIXTURE_TEST(reclaim, fixture) {
     for (auto i = 0; i < (pages_until_reclaim / 2); i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
-        cache_entries.push_back(cache.put(index, batch));
+        cache_entries.push_back(cache.put(index, batch, is_dirty_entry::no));
     }
 
     // cache uses an async reclaimer. give it a chance to run
@@ -96,7 +98,7 @@ FIXTURE_TEST(reclaim, fixture) {
     for (auto i = 0; i < pages_until_reclaim; i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
-        auto e = cache.put(index, std::move(batch));
+        auto e = cache.put(index, std::move(batch), is_dirty_entry::no);
         BOOST_REQUIRE((bool)e.range());
         cache_entries.emplace_back(std::move(e));
     }

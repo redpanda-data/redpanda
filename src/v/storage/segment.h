@@ -165,7 +165,8 @@ public:
       std::optional<model::timestamp> first_ts,
       size_t max_bytes,
       bool skip_lru_promote);
-    void cache_put(const model::record_batch& batch);
+    void cache_put(
+      const model::record_batch& batch, batch_cache::is_dirty_entry dirty);
 
     ss::future<ss::rwlock::holder> read_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
@@ -427,9 +428,10 @@ inline batch_cache_index::read_result segment::cache_get(
       .next_batch = offset,
     };
 }
-inline void segment::cache_put(const model::record_batch& batch) {
+inline void segment::cache_put(
+  const model::record_batch& batch, batch_cache::is_dirty_entry dirty) {
     if (likely(bool(_cache))) {
-        _cache->put(batch);
+        _cache->put(batch, dirty);
     }
 }
 inline ss::future<ss::rwlock::holder>

@@ -14,6 +14,7 @@
 #include "compression/compression.h"
 #include "config/configuration.h"
 #include "ssx/future-util.h"
+#include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/file_sanitizer.h"
 #include "storage/fs_utils.h"
@@ -546,8 +547,17 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
             .base_offset = b.base_offset(),
             .last_offset = b.last_offset(),
             .byte_size = (size_t)b.size_bytes()};
+
           // cache always copies the batch
-          cache_put(b);
+          cache_put(
+            b,
+            // It may happen that this continuation may run after the stable
+            // offset has been advances and the cache was already marked as
+            // clean up to or beyond the offset of the batch we are writing. In
+            // that case, the batch entry should be considered clean.
+            _tracker.stable_offset < b.last_offset()
+              ? batch_cache::is_dirty_entry::yes
+              : batch_cache::is_dirty_entry::no);
           return ret;
       });
     auto index_fut = compaction_index_batch(b);
@@ -648,7 +658,17 @@ void segment::advance_stable_offset(size_t filepos) {
     }
 
     _reader->set_file_size(it->first);
+
+    // Maintain `stable_offset <= dirty_offset` invariant.
+    // `advance_stable_offset` may be called before the continuation attached to
+    // the `segment_appender::append` where we are advancing the dirty offset.
     _tracker.stable_offset = it->second;
+    _tracker.dirty_offset = std::max(_tracker.dirty_offset, it->second);
+
+    if (_cache) {
+        _cache->mark_clean(_tracker.stable_offset);
+    }
+
     _inflight.erase(_inflight.begin(), std::next(it));
 
     // after data gets flushed out of the appender recheck on disk size

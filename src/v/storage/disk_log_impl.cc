@@ -2581,6 +2581,7 @@ ss::future<> disk_log_impl::do_truncate(
     }
 
     co_await last->flush();
+
     /**
      * We look for the offset preceding the the requested truncation offset.
      *
