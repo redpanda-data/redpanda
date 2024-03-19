@@ -2533,7 +2533,7 @@ FIXTURE_TEST(read_write_truncate, storage_test_fixture) {
       [&] { return cnt > max; },
       [&log, &log_mutex] {
           auto offset = log->offsets();
-          if (offset.dirty_offset <= model::offset(0)) {
+          if (offset.dirty_offset == model::offset{}) {
               return ss::now();
           }
           return log_mutex.with([&log] {
@@ -2628,7 +2628,7 @@ FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
           [&] { return done; },
           [&log, &log_mutex] {
               auto offset = log->offsets();
-              if (offset.dirty_offset <= model::offset(0)) {
+              if (offset.dirty_offset == model::offset{}) {
                   return ss::now();
               }
               return log_mutex.with([&log] {
@@ -3467,7 +3467,7 @@ FIXTURE_TEST(issue_8091, storage_test_fixture) {
       [&] { return cnt > max; },
       [&log, &log_mutex, &last_truncate] {
           auto offset = log->offsets();
-          if (offset.dirty_offset <= model::offset(0)) {
+          if (offset.dirty_offset == model::offset{}) {
               return ss::now();
           }
           return log_mutex
