@@ -1786,13 +1786,23 @@ ss::future<std::error_code> controller_backend::delete_partition(
           });
     }
 
-    if (!placement || !placement->current) {
+    if (!placement) {
+        // nothing to delete
+        co_return errc::success;
+    }
+
+    auto ec = co_await _shard_placement.prepare_delete(ntp, cmd_revision);
+    if (ec) {
+        co_return ec;
+    }
+
+    if (!placement->current) {
         // nothing to delete
         co_return errc::success;
     }
 
     auto log_revision = placement->current->log_revision;
-    if (log_revision > cmd_revision) {
+    if (log_revision >= cmd_revision) {
         // Perform an extra revision check to be on the safe side, if the
         // partition has already been re-created with greater revision, do
         // nothing.
@@ -1805,7 +1815,10 @@ ss::future<std::error_code> controller_backend::delete_partition(
         co_await _partition_manager.local().remove(ntp, mode);
     }
 
-    co_return co_await _shard_placement.finish_delete(ntp, log_revision);
+    // TODO: delete kvstore state even when there is no partition object
+
+    co_await _shard_placement.finish_delete(ntp, log_revision);
+    co_return errc::success;
 }
 
 bool controller_backend::should_skip(const model::ntp& ntp) const {
