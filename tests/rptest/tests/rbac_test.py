@@ -7,6 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
+
+from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
 from rptest.clients.rpk import RpkTool
@@ -15,6 +18,7 @@ from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.admin_api_auth_test import create_user_and_wait
+from rptest.tests.metrics_reporter_test import MetricsReporterServer
 from rptest.util import expect_exception, expect_http_error
 
 ALICE = SaslCredentials("alice", "itsMeH0nest", "SCRAM-SHA-256")
@@ -25,7 +29,7 @@ def expect_role_error(status_code: RoleErrorCode):
         HTTPError, lambda e: RoleError.from_http_error(e).code == status_code)
 
 
-class RBACTest(RedpandaTest):
+class RBACTestBase(RedpandaTest):
     password = "password"
     algorithm = "SCRAM-SHA-256"
     role_name0 = 'foo'
@@ -48,6 +52,8 @@ class RBACTest(RedpandaTest):
 
         self.redpanda.set_cluster_config({'admin_api_require_auth': True})
 
+
+class RBACTest(RBACTestBase):
     @cluster(num_nodes=3)
     def test_superuser_access(self):
         # a superuser may access the RBAC API
@@ -142,3 +148,71 @@ class RBACTest(RedpandaTest):
 
             with expect_http_error(400):
                 self.superuser_admin.create_role(role=invalid_rolename)
+
+
+class RBACTelemetryTest(RBACTestBase):
+    def __init__(self, test_ctx, **kwargs):
+        self.metrics = MetricsReporterServer(test_ctx)
+        super().__init__(test_ctx,
+                         extra_rp_conf={**self.metrics.rp_conf()},
+                         **kwargs)
+
+    def setUp(self):
+        self.metrics.start()
+        super().setUp()
+
+    @cluster(num_nodes=2)
+    def test_telemetry(self):
+        def wait_for_new_report():
+            report_count = len(self.metrics.requests())
+            wait_until(lambda: len(self.metrics.requests()) > report_count,
+                       timeout_sec=20,
+                       backoff_sec=1)
+            self.logger.debug(f'New report: {self.metrics.reports()[-1]}')
+            return self.metrics.reports()[-1]
+
+        assert wait_for_new_report()['has_rbac'] is False
+
+        self.superuser_admin.create_role(role=self.role_name0)
+
+        wait_until(lambda: wait_for_new_report()['has_rbac'] is True,
+                   timeout_sec=20,
+                   backoff_sec=1)
+        self.metrics.stop()
+
+
+class RBACLicenseTest(RBACTestBase):
+    LICENSE_CHECK_INTERVAL_SEC = 1
+
+    def __init__(self, test_ctx, **kwargs):
+        super().__init__(test_ctx, **kwargs)
+        self.redpanda.set_environment({
+            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
+            f'{self.LICENSE_CHECK_INTERVAL_SEC}'
+        })
+
+    def _has_license_nag(self):
+        return self.redpanda.search_log_any("Enterprise feature(s).*")
+
+    def _license_nag_is_set(self):
+        return self.redpanda.search_log_all(
+            f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
+        )
+
+    @cluster(num_nodes=1)
+    def test_license_nag(self):
+        wait_until(self._license_nag_is_set,
+                   timeout_sec=30,
+                   err_msg="Failed to set license nag internal")
+
+        self.logger.debug("Ensuring no license nag")
+        time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        assert not self._has_license_nag()
+
+        self.logger.debug("Adding a role")
+        self.superuser_admin.create_role(role=self.role_name0)
+
+        self.logger.debug("Waiting for license nag")
+        wait_until(self._has_license_nag,
+                   timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
+                   err_msg="License nag failed to appear")

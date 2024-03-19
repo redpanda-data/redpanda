@@ -15,6 +15,7 @@
 #include "cluster/feature_barrier.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "security/fwd.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -62,6 +63,7 @@ public:
       ss::sharded<health_monitor_backend>& hm_backend,
       ss::sharded<features::feature_table>& table,
       ss::sharded<rpc::connection_cache>& connection_cache,
+      ss::sharded<security::role_store>& role_store,
       raft::group_id raft0_group);
 
     /**
@@ -148,6 +150,7 @@ private:
     ss::sharded<health_monitor_backend>& _hm_backend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<rpc::connection_cache>& _connection_cache;
+    ss::sharded<security::role_store>& _role_store;
     raft::group_id _raft0_group;
 
     version_map _updates;

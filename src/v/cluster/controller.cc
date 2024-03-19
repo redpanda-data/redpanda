@@ -550,6 +550,7 @@ ss::future<> controller::start(
             std::ref(_hm_backend),
             std::ref(_feature_table),
             std::ref(_connections),
+            std::ref(_roles),
             _raft0->group());
       })
       .then([this] {
@@ -624,6 +625,7 @@ ss::future<> controller::start(
             std::ref(_hm_frontend),
             std::ref(_config_frontend),
             std::ref(_feature_table),
+            std::ref(_roles),
             std::ref(_as));
       })
       .then([this] {

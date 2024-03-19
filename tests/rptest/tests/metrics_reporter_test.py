@@ -22,27 +22,49 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.http_server import HttpServer
 
 
+class MetricsReporterServer:
+    def __init__(self, test_ctx):
+        self.http = HttpServer(test_ctx)
+
+    def start(self):
+        self.http.start()
+
+    def stop(self):
+        self.http.stop()
+
+    def rp_conf(self):
+        return {
+            # report every two seconds
+            "metrics_reporter_tick_interval": 2000,
+            "metrics_reporter_report_interval": 1000,
+            "enable_metrics_reporter": True,
+            "metrics_reporter_url": f"{self.http.url}/metrics",
+        }
+
+    def requests(self):
+        return self.http.requests
+
+    def reports(self):
+        return [json.loads(r['body']) for r in self.requests()]
+
+
 class MetricsReporterTest(RedpandaTest):
     def __init__(self, test_ctx, num_brokers):
         self._ctx = test_ctx
-        self.http = HttpServer(self._ctx)
-        super(MetricsReporterTest, self).__init__(
-            test_context=test_ctx,
-            num_brokers=num_brokers,
-            extra_rp_conf={
-                "health_monitor_max_metadata_age": 1000,
-                # report every two seconds
-                "metrics_reporter_tick_interval": 2000,
-                "metrics_reporter_report_interval": 1000,
-                "enable_metrics_reporter": True,
-                "metrics_reporter_url": f"{self.http.url}/metrics",
-                "retention_bytes": 20000,
-            })
+        self.metrics = MetricsReporterServer(self._ctx)
+        super(MetricsReporterTest,
+              self).__init__(test_context=test_ctx,
+                             num_brokers=num_brokers,
+                             extra_rp_conf={
+                                 "health_monitor_max_metadata_age": 1000,
+                                 "retention_bytes": 20000,
+                                 **self.metrics.rp_conf(),
+                             })
         self.redpanda.set_environment({"REDPANDA_ENVIRONMENT": "test"})
 
     def setUp(self):
         # Start HTTP server before redpanda
-        self.http.start()
+        self.metrics.start()
         self.redpanda.start()
 
     def _test_redpanda_metrics_reporting(self):
@@ -77,8 +99,8 @@ class MetricsReporterTest(RedpandaTest):
         )
 
         def _state_up_to_date():
-            if self.http.requests:
-                r = json.loads(self.http.requests[-1]['body'])
+            if self.metrics.requests():
+                r = self.metrics.reports()[-1]
                 self.logger.info(f"Latest request: {r}")
                 return r['topic_count'] == total_topics
             else:
@@ -86,8 +108,8 @@ class MetricsReporterTest(RedpandaTest):
             return False
 
         wait_until(_state_up_to_date, 20, backoff_sec=1)
-        self.http.stop()
-        metadata = [json.loads(r['body']) for r in self.http.requests]
+        self.metrics.stop()
+        metadata = self.metrics.reports()
         for m in metadata:
             self.redpanda.logger.info(m)
 
@@ -129,13 +151,13 @@ class MetricsReporterTest(RedpandaTest):
         for n in self.redpanda.nodes:
             self.redpanda.stop_node(n)
 
-        pre_restart_requests = len(self.http.requests)
+        pre_restart_requests = len(self.metrics.requests())
 
-        self.http.start()
+        self.metrics.start()
         for n in self.redpanda.nodes:
             self.redpanda.start_node(n)
 
-        wait_until(lambda: len(self.http.requests) > pre_restart_requests,
+        wait_until(lambda: len(self.metrics.requests()) > pre_restart_requests,
                    timeout_sec=20,
                    backoff_sec=1)
         self.redpanda.logger.info("Checking metadata after restart")

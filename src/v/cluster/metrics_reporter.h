@@ -16,6 +16,7 @@
 #include "features/fwd.h"
 #include "http/client.h"
 #include "model/metadata.h"
+#include "security/fwd.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/abort_source.hh>
@@ -71,6 +72,7 @@ public:
         std::vector<node_metrics> nodes;
         bool has_kafka_gssapi;
         bool has_oidc;
+        bool has_rbac;
 
         static constexpr int64_t max_size_for_rp_env = 80;
         ss::sstring redpanda_environment;
@@ -86,6 +88,7 @@ public:
       ss::sharded<health_monitor_frontend>&,
       ss::sharded<config_frontend>&,
       ss::sharded<features::feature_table>&,
+      ss::sharded<security::role_store>& role_store,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -108,6 +111,7 @@ private:
     ss::sharded<health_monitor_frontend>& _health_monitor;
     ss::sharded<config_frontend>& _config_frontend;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<security::role_store>& _role_store;
     ss::sharded<ss::abort_source>& _as;
     prefix_logger _logger;
     ss::timer<> _tick_timer;
