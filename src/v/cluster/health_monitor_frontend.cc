@@ -10,6 +10,7 @@
  */
 #include "cluster/health_monitor_frontend.h"
 
+#include "cluster/health_monitor_backend.h"
 #include "cluster/logger.h"
 #include "config/property.h"
 #include "model/timeout_clock.h"
