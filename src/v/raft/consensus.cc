@@ -3487,6 +3487,11 @@ void consensus::maybe_update_last_visible_index(model::offset offset) {
 }
 
 void consensus::do_update_majority_replicated_index(model::offset offset) {
+    vlog(
+      _ctxlog.trace,
+      "update majority_replicated_index, new offset: {}, current: {}",
+      offset,
+      _majority_replicated_index);
     auto previous_majority_replicated_index = _majority_replicated_index;
     _majority_replicated_index = std::max(_majority_replicated_index, offset);
     if (previous_majority_replicated_index != _majority_replicated_index) {
