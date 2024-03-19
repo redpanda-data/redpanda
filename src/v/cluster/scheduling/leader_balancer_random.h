@@ -16,12 +16,9 @@
 #include "model/metadata.h"
 #include "raft/types.h"
 #include "random/generators.h"
+#include "utils/chunked_hash_map.h"
 #include "utils/fragmented_vector.h"
 #include "vassert.h"
-
-#include <absl/container/btree_map.h>
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/node_hash_map.h>
 
 #include <cmath>
 #include <cstddef>
@@ -34,7 +31,8 @@
 namespace cluster::leader_balancer_types {
 
 /*
- * Given a `shard_index` this class will generate every possible reassignment.
+ * Given a `shard_index` this class will generate every possible
+ * reassignment.
  */
 class random_reassignments {
 public:
@@ -98,7 +96,7 @@ private:
         raft::group_id group_id;
         model::broker_shard broker_shard;
     };
-    absl::node_hash_map<raft::group_id, model::broker_shard> _current_leaders;
+    chunked_hash_map<raft::group_id, model::broker_shard> _current_leaders;
 
     using replicas_t = fragmented_vector<replica>;
     replicas_t _replicas;
