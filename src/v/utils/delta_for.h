@@ -511,7 +511,7 @@ private:
                         = decom[Is].second;
                       for (auto& e : input) {
                           end_iter = serialize_little_endian<bytes_to_save>(
-                            std::make_unsigned_t<TVal>(e)
+                            static_cast<uint64_t>(e)
                               >> shift_of_to_save_section,
                             end_iter);
                       }
@@ -629,7 +629,7 @@ private:
                           auto tmp = std::make_unsigned_t<TVal>{};
                           end_it = deserialize_little_endian<bytes_to_restore>(
                             end_it, tmp);
-                          e |= tmp << shift_of_restored;
+                          e |= static_cast<uint64_t>(tmp) << shift_of_restored;
                       }
                   }(),
                   ...);
