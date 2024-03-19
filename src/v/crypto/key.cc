@@ -13,9 +13,9 @@
 
 #include "crypto/crypto.h"
 #include "crypto/exceptions.h"
-#include "crypto/internal.h"
-#include "crypto/ssl_utils.h"
 #include "crypto/types.h"
+#include "internal.h"
+#include "ssl_utils.h"
 
 #include <absl/container/flat_hash_set.h>
 #include <openssl/bio.h>

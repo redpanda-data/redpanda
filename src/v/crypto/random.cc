@@ -10,8 +10,8 @@
  */
 
 #include "crypto/crypto.h"
-#include "crypto/ssl_utils.h"
 #include "internal.h"
+#include "ssl_utils.h"
 
 #include <openssl/rand.h>
 
