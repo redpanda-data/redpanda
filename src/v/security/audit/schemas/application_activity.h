@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "hashing/utils.h"
+#include "hashing/combine.h"
 #include "security/audit/schemas/hashing_utils.h"
 #include "security/audit/schemas/schemas.h"
 #include "security/audit/schemas/types.h"

@@ -10,7 +10,7 @@
 
 #include "security/audit/schemas/hashing_utils.h"
 
-#include "hashing/utils.h"
+#include "hashing/combine.h"
 #include "security/acl.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
