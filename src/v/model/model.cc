@@ -481,24 +481,6 @@ std::ostream& operator<<(std::ostream& o, const batch_identity& bid) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, fetch_read_strategy s) {
-    o << fetch_read_strategy_to_string(s);
-    return o;
-}
-
-std::istream& operator>>(std::istream& i, fetch_read_strategy& strat) {
-    ss::sstring s;
-    i >> s;
-    strat = string_switch<fetch_read_strategy>(s)
-              .match(
-                fetch_read_strategy_to_string(fetch_read_strategy::polling),
-                fetch_read_strategy::polling)
-              .match(
-                fetch_read_strategy_to_string(fetch_read_strategy::non_polling),
-                fetch_read_strategy::non_polling);
-    return i;
-}
-
 std::ostream& operator<<(std::ostream& o, write_caching_mode mode) {
     o << write_caching_mode_to_string(mode);
     return o;
