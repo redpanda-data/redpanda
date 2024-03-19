@@ -253,16 +253,16 @@ errno_t preview1_module::fd_write(
     if (fd == 1 || fd == 2) {
         uint32_t amt = 0;
         auto level = fd == 1 ? ss::log_level::info : ss::log_level::warn;
-        if (iovecs.size() == 1) {
+        auto as_string_view = [mem, &amt](iovec_t vec) {
             ffi::array<uint8_t> data = mem->translate_array<uint8_t>(
-              iovecs.front().buf_addr, iovecs.front().buf_len);
-            _logger->log(level, ffi::array_as_string_view(data));
+              vec.buf_addr, vec.buf_len);
+            amt += static_cast<uint32_t>(data.size());
+            return ffi::array_as_string_view(data);
+        };
+        if (iovecs.size() == 1) {
+            // Prevent the allocation in the common case of a single buffer.
+            _logger->log(level, as_string_view(iovecs.front()));
         } else {
-            auto as_string_view = [mem](iovec_t vec) {
-                ffi::array<uint8_t> data = mem->translate_array<uint8_t>(
-                  vec.buf_addr, vec.buf_len);
-                return ffi::array_as_string_view(data);
-            };
             auto joined = absl::StrJoin(
               iovecs | std::views::transform(as_string_view), "");
             _logger->log(level, joined);
