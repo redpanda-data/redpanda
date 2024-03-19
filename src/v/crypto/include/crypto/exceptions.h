@@ -16,7 +16,7 @@
 
 namespace crypto {
 /// Base exception for all cryptographic errors
-class exception : std::runtime_error {
+class exception : public std::runtime_error {
 public:
     explicit exception(const std::string& msg)
       : std::runtime_error{msg} {}
