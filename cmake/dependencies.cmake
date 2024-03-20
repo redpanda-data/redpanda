@@ -106,6 +106,10 @@ fetch_dep(hdrhistogram
   REPO https://github.com/HdrHistogram/HdrHistogram_c
   TAG 0.11.5)
 
+fetch_dep(llamacpp
+  REPO https://github.com/ggerganov/llama.cpp
+  TAG b2471)
+
 list(APPEND WASMTIME_USER_CARGO_BUILD_OPTIONS --no-default-features)
 list(APPEND WASMTIME_USER_CARGO_BUILD_OPTIONS --features=async)
 list(APPEND WASMTIME_USER_CARGO_BUILD_OPTIONS --features=addr2line)
@@ -136,7 +140,8 @@ FetchContent_MakeAvailable(
     wasmtime
     hdrhistogram
     ada
-    unordered_dense)
+    unordered_dense
+    llamacpp)
 
 add_library(Crc32c::crc32c ALIAS crc32c)
 add_library(aklomp::base64 ALIAS base64)
