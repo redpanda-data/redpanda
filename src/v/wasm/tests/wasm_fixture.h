@@ -61,6 +61,8 @@ public:
     std::vector<pandaproxy::schema_registry::subject_schema>
     registered_schemas() const;
 
+    std::vector<ss::sstring> log_lines() const { return _log_lines; }
+
 private:
     std::unique_ptr<wasm::runtime> _runtime;
     ss::shared_ptr<wasm::factory> _factory;
@@ -68,4 +70,5 @@ private:
     std::unique_ptr<wasm::transform_probe> _probe;
     fake_schema_registry* _sr;
     model::transform_metadata _meta;
+    std::vector<ss::sstring> _log_lines;
 };
