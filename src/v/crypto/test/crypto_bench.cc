@@ -191,13 +191,11 @@ private:
     }
 };
 
-#ifndef PERF_FIPS_MODE
 PERF_TEST_F(openssl_perf, md5_1k) {
     return test_body(1024, [](const ss::sstring& buffer) {
         return crypto::digest(crypto::digest_type::MD5, buffer);
     });
 }
-#endif
 
 PERF_TEST_F(openssl_perf, sha256_1k) {
     return test_body(1024, [](const ss::sstring& buffer) {

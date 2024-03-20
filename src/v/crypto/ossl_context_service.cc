@@ -46,7 +46,9 @@ using OSSL_PROVIDER_ptr = internal::handle<OSSL_PROVIDER, [](OSSL_PROVIDER* p) {
 }>;
 
 struct initialize_return {
-    OSSL_PROVIDER_ptr crypto_provider;
+    // Only loaded when in FIPS mode
+    OSSL_PROVIDER_ptr fips_provider;
+    OSSL_PROVIDER_ptr default_provider;
     OSSL_PROVIDER_ptr base_provider;
 };
 
@@ -79,15 +81,18 @@ initialize_result<initialize_return> initialize_openssl(
         }
     }
 
-    auto provider_name = fips_mode ? "fips" : "default";
-    lg.debug("Crypto provider: {}", provider_name);
+    OSSL_PROVIDER_ptr fips_provider{nullptr};
+    if (fips_mode) {
+        fips_provider.reset(OSSL_PROVIDER_load(ctx, "fips"));
+        if (!fips_provider) {
+            return make_ssl_error_response("Failed to load 'fips' provider");
+        }
+    }
 
-    auto crypto_provider = OSSL_PROVIDER_ptr(
-      OSSL_PROVIDER_load(ctx, provider_name));
-
-    if (!crypto_provider) {
-        return make_ssl_error_response(
-          fmt::format("Failed to load '{}' provider", provider_name));
+    auto default_provider = OSSL_PROVIDER_ptr(
+      OSSL_PROVIDER_load(ctx, "default"));
+    if (!default_provider) {
+        return make_ssl_error_response("Failed to load 'default' provider");
     }
 
     auto base_provider = OSSL_PROVIDER_ptr(OSSL_PROVIDER_load(ctx, "base"));
@@ -96,6 +101,8 @@ initialize_result<initialize_return> initialize_openssl(
     }
 
     if (fips_mode) {
+        // This ensures that by default, the contexts will fetch implementations
+        // from the FIPS provider rather than the default provider
         if (!EVP_set_default_properties(ctx, "fips=yes")) {
             return make_ssl_error_response(
               "Failed to set default properties to 'fips=yes'");
@@ -108,7 +115,10 @@ initialize_result<initialize_return> initialize_openssl(
         return make_ssl_error_response("Failed to initialize OpenSSL");
     }
 
-    return {std::move(crypto_provider), std::move(base_provider)};
+    return {
+      std::move(fips_provider),
+      std::move(default_provider),
+      std::move(base_provider)};
 }
 
 struct initialize_thread_return {
@@ -223,14 +233,17 @@ public:
             throw exception(init_resp.assume_error());
         }
 
-        _crypto_provider = std::move(init_resp.assume_value().crypto_provider);
+        _fips_provider = std::move(init_resp.assume_value().fips_provider);
+        _default_provider = std::move(
+          init_resp.assume_value().default_provider);
         _base_provider = std::move(init_resp.assume_value().base_provider);
     }
 
     ss::future<> stop() {
         lg.trace("Stopping service...");
         _base_provider.reset();
-        _crypto_provider.reset();
+        _default_provider.reset();
+        _fips_provider.reset();
         if (_old_context != nullptr) {
             auto replaced_context = OSSL_LIB_CTX_set0_default(_old_context);
             lg.debug(
@@ -249,7 +262,8 @@ public:
 
         if (ss::this_shard_id() == 0) {
             _initialize_thread_worker_holder.init_ret.base_provider.reset();
-            _initialize_thread_worker_holder.init_ret.crypto_provider.reset();
+            _initialize_thread_worker_holder.init_ret.default_provider.reset();
+            _initialize_thread_worker_holder.init_ret.fips_provider.reset();
             co_await _thread_worker.submit([this] {
                 return finalize_worker_thread(
                   _initialize_thread_worker_holder.orig_ctx);
@@ -269,9 +283,12 @@ private:
     // Only relevant on shard0 - holds the null provider on the global default
     // context
     OSSL_PROVIDER_ptr _defctxnull{nullptr};
-    // Loaded provider on shard local context that provides cryptographic
-    // support.  Could be default or FIPS
-    OSSL_PROVIDER_ptr _crypto_provider{nullptr};
+    // Loaded only when Redpanda starts in FIPS mode
+    OSSL_PROVIDER_ptr _fips_provider{nullptr};
+    // Default cryptographic provider that's always loaded.  When in FIPS mode,
+    // this will provide the ability to use MD5 for certain checksum
+    // operations as by default the FIPS provider will be used
+    OSSL_PROVIDER_ptr _default_provider{nullptr};
     // Base provider that provides support for non cryptographic operations.
     // Always present regardless of FIPS or non-FIPS mode
     OSSL_PROVIDER_ptr _base_provider{nullptr};

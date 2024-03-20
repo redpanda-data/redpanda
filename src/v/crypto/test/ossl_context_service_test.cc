@@ -139,18 +139,9 @@ TEST_P_CORO(ossl_context_test_framework_param, validate_global_default) {
 }
 
 TEST_P_CORO(ossl_context_test_framework_param, digests) {
-    // TODO: Support MD5 using default provider
-    // TODO: Perform alg fetching in cryptolib
-    auto& param = GetParam();
-    if (param.fips_mode) {
-        EXPECT_THROW(
-          crypto::digest(crypto::digest_type::MD5, md5_test_val),
-          crypto::exception);
-    } else {
-        EXPECT_NO_THROW(EXPECT_EQ(
-          md5_expected_val,
-          crypto::digest(crypto::digest_type::MD5, md5_test_val)));
-    }
+    EXPECT_NO_THROW(EXPECT_EQ(
+      md5_expected_val,
+      crypto::digest(crypto::digest_type::MD5, md5_test_val)));
     EXPECT_NO_THROW(EXPECT_EQ(
       sha256_expected_val,
       crypto::digest(crypto::digest_type::SHA256, sha256_test_val)));
