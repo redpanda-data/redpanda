@@ -7,10 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "archival/archival_metadata_stm.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
-#include "cluster/archival_metadata_stm.h"
 #include "model/record.h"
 #include "raft/tests/raft_fixture.h"
 #include "test_utils/test.h"

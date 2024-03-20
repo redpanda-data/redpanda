@@ -11,6 +11,7 @@
 #include "archival/ntp_archiver_service.h"
 
 #include "archival/adjacent_segment_merger.h"
+#include "archival/archival_metadata_stm.h"
 #include "archival/archival_policy.h"
 #include "archival/logger.h"
 #include "archival/retention_calculator.h"
@@ -28,7 +29,6 @@
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
-#include "cluster/archival_metadata_stm.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "container/fragmented_vector.h"

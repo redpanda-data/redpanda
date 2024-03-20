@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/archival_metadata_stm.h"
+#include "archival/archival_metadata_stm.h"
 
 #include "base/vlog.h"
 #include "bytes/iobuf.h"

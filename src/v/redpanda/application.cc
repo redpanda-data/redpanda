@@ -9,7 +9,7 @@
 
 #include "redpanda/application.h"
 
-#include "archival/fwd.h"
+#include "archival/archiver_manager.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/purger.h"
 #include "archival/upload_controller.h"
@@ -1405,12 +1405,12 @@ void application::wire_up_redpanda_services(
           .get();
 
         construct_service(
-          _archival_upload_housekeeping,
+          archival_upload_housekeeping,
           std::ref(cloud_storage_api),
           ss::sharded_parameter(
             [sg = sched_groups.archival_upload()] { return sg; }))
           .get();
-        _archival_upload_housekeeping
+        archival_upload_housekeeping
           .invoke_on_all(&archival::upload_housekeeping_service::start)
           .get();
 
@@ -1459,7 +1459,7 @@ void application::wire_up_redpanda_services(
             }
         }),
       std::ref(feature_table),
-      std::ref(_archival_upload_housekeeping),
+      std::ref(archival_upload_housekeeping),
       ss::sharded_parameter([] {
           return config::shard_local_cfg()
             .partition_manager_shutdown_watchdog_timeout.bind();
@@ -1533,19 +1533,52 @@ void application::wire_up_redpanda_services(
 
         _archival_purger
           .invoke_on_all(
-            [&housekeeping = _archival_upload_housekeeping](
+            [&housekeeping = archival_upload_housekeeping](
               archival::purger& s) { housekeeping.local().register_jobs({s}); })
           .get();
 
         _deferred.emplace_back([this] {
             _archival_purger
-              .invoke_on_all([&housekeeping = _archival_upload_housekeeping,
+              .invoke_on_all([&housekeeping = archival_upload_housekeeping,
                               this](archival::purger& s) {
                   vlog(_log.debug, "Deregistering purger housekeeping jobs");
                   housekeeping.local().deregister_jobs({s});
               })
               .get();
         });
+    }
+
+    vlog(
+      _log.info,
+      "Archiver service setup, cloud_storage_enabled: {}, "
+      "legacy_upload_mode_enabled: {}",
+      archival_storage_enabled(),
+      config::shard_local_cfg().cloud_storage_disable_archiver_manager.value());
+    if (
+      archival_storage_enabled()
+      && !config::shard_local_cfg()
+            .cloud_storage_disable_archiver_manager.value()) {
+        construct_service(
+          archiver_manager,
+          node_id,
+          std::ref(partition_manager),
+          std::ref(raft_group_manager),
+          std::ref(cloud_storage_api),
+          std::ref(shadow_index_cache),
+          std::ref(archival_upload_housekeeping),
+          ss::sharded_parameter(
+            [sg = sched_groups.archival_upload(),
+             p = archival_priority(),
+             enabled = archival_storage_enabled()]()
+              -> ss::lw_shared_ptr<const archival::configuration> {
+                if (enabled) {
+                    return ss::make_lw_shared<const archival::configuration>(
+                      archival::get_archival_service_config(sg, p));
+                } else {
+                    return nullptr;
+                }
+            }))
+          .get();
     }
 
     construct_single_service_sharded(
@@ -2569,6 +2602,11 @@ void application::start_runtime_services(
         producer_id_recovery_manager,
         std::move(offsets_recovery_requestor))
       .get0();
+
+    if (archiver_manager.local_is_initialized()) {
+        archiver_manager.invoke_on_all(&archival::archiver_manager::start)
+          .get();
+    }
 
     // FIXME: in first patch explain why this is started after the
     // controller so the broker set will be available. Then next patch fix.

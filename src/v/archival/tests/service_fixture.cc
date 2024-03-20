@@ -10,6 +10,7 @@
 
 #include "archival/tests/service_fixture.h"
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/types.h"
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
@@ -17,7 +18,6 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage_clients/configuration.h"
-#include "cluster/archival_metadata_stm.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
 #include "model/tests/random_batch.h"

@@ -11,9 +11,10 @@
 
 #pragma once
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
-#include "cluster/archival_metadata_stm.h"
+#include "cluster/distributed_kv_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/log_eviction_stm.h"
@@ -56,6 +57,16 @@ public:
     raft::group_id group() const;
     ss::future<> start(state_machine_registry&);
     ss::future<> stop();
+
+    /// This method exposes reset mutex for the external subsystem
+    ///
+    /// The method is supposed to be used by the archiver_service.
+    /// Archiver service needs a mechanism to postpone partition shutdown
+    /// until the 'ntp_archiver' is stopping. Without this the 'ntp_archiver'
+    /// may access stopped/disposed partition.
+    std::optional<ssx::semaphore_units> get_archiver_reset_units() {
+        return ss::try_get_units(_archiver_reset_mutex, 1);
+    };
 
     bool should_construct_archiver();
     /// Part of constructor that we may sometimes need to do again
@@ -475,6 +486,13 @@ public:
     //
     // Returns a failed future if unsuccessful.
     ss::future<> unsafe_reset_remote_partition_manifest_from_cloud(bool force);
+
+    // Expose async_manifest_view
+    //
+    // The instance is used by the read path and also by the write path to
+    // perform housekeeping.
+    ss::shared_ptr<cloud_storage::async_manifest_view>
+    get_cloud_storage_manifest_view();
 
 private:
     ss::future<>

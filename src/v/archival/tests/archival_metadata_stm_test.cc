@@ -7,10 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "archival/archival_metadata_stm.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
-#include "cluster/archival_metadata_stm.h"
 #include "cluster/errc.h"
 #include "features/feature_table.h"
 #include "http/tests/http_imposter.h"
