@@ -752,26 +752,25 @@ public:
     shard_placement_test_fixture()
       : test_dir("test.data." + random_generators::gen_alphanum_string(10)) {}
 
-    ss::future<> quiescent_state_checks() {
+    using ntp2shard2state_t = absl::node_hash_map<
+      model::ntp,
+      std::map<ss::shard_id, shard_placement_table::placement_state>>;
+
+    ss::future<ntp2shard2state_t> get_ntp2shard2state() const {
         auto shard2states = co_await spt->map(
           [](shard_placement_table& spt) { return spt._states; });
 
-        absl::node_hash_map<
-          model::ntp,
-          std::map<ss::shard_id, shard_placement_table::placement_state>>
-          ntp2shard2state;
+        ntp2shard2state_t ntp2shard2state;
         for (size_t s = 0; s < shard2states.size(); ++s) {
             for (const auto& [ntp, state] : shard2states[s]) {
                 ntp2shard2state[ntp].emplace(s, state);
             }
         }
 
-        assert_key_sets_equal(
-          ntp2shard2state,
-          "spt placement state map",
-          ntpt.local().ntp2meta,
-          "ntp2meta map");
+        co_return ntp2shard2state;
+    }
 
+    void clean_ntp2shards() {
         auto& ntp2shards = _ntp2shards.local();
         for (auto it = ntp2shards.begin(); it != ntp2shards.end();) {
             auto it_copy = it++;
@@ -788,7 +787,18 @@ public:
                 ntp2shards.erase(it_copy);
             }
         }
+    }
 
+    ss::future<> quiescent_state_checks() {
+        auto ntp2shard2state = co_await get_ntp2shard2state();
+        assert_key_sets_equal(
+          ntp2shard2state,
+          "spt placement state map",
+          ntpt.local().ntp2meta,
+          "ntp2meta map");
+
+        clean_ntp2shards();
+        const auto& ntp2shards = _ntp2shards.local();
         assert_key_sets_equal(
           ntp2shards,
           "reference ntp state map",
@@ -853,7 +863,7 @@ public:
             ASSERT_EQ_CORO(shards.rev2shards.size(), 1) << "ntp: " << ntp;
             auto p_shards_it = shards.rev2shards.find(meta.log_revision);
             ASSERT_TRUE_CORO(p_shards_it != shards.rev2shards.end())
-              << "ntp: " << ntp;
+              << "ntp: " << ntp << ", log_revision: " << meta.log_revision;
             const auto& p_shards = p_shards_it->second;
             ASSERT_EQ_CORO(p_shards.launched_on, target.shard)
               << "ntp: " << ntp;
@@ -861,6 +871,65 @@ public:
               << "ntp: " << ntp;
             ASSERT_EQ_CORO(p_shards.next_state_on, std::nullopt)
               << "ntp: " << ntp;
+        }
+    }
+
+    ss::future<> check_spt_recovery() {
+        clean_ntp2shards();
+        const auto& ntp2shards = _ntp2shards.local();
+        auto ntp2shard2state = co_await get_ntp2shard2state();
+        assert_key_sets_equal(
+          ntp2shards,
+          "reference ntp state map",
+          ntp2shard2state,
+          "spt placement state map");
+
+        for (const auto& [ntp, expected] : ntp2shards) {
+            auto states_it = ntp2shard2state.find(ntp);
+            ASSERT_TRUE_CORO(states_it != ntp2shard2state.end())
+              << "ntp: " << ntp;
+            const auto& shard2state = states_it->second;
+
+            // check main target map
+            auto entry_it = spt->local()._ntp2entry.find(ntp);
+            if (expected.target) {
+                ASSERT_TRUE_CORO(entry_it != spt->local()._ntp2entry.end())
+                  << "ntp: " << ntp;
+                ASSERT_EQ_CORO(entry_it->second->target, expected.target)
+                  << "ntp: " << ntp;
+                ASSERT_TRUE_CORO(entry_it->second->mtx.ready())
+                  << "ntp: " << ntp;
+            } else {
+                ASSERT_TRUE_CORO(entry_it == spt->local()._ntp2entry.end())
+                  << "ntp: " << ntp;
+            }
+
+            // check assigned markers
+            if (expected.target) {
+                ASSERT_TRUE_CORO(shard2state.contains(expected.target->shard));
+            }
+            for (const auto& [s, placement] : shard2state) {
+                if (expected.target && s == expected.target->shard) {
+                    ASSERT_TRUE_CORO(placement.assigned)
+                      << "ntp: " << ntp << ", shard: " << s;
+                    ASSERT_EQ_CORO(
+                      placement.assigned->log_revision,
+                      expected.target->log_revision)
+                      << "ntp: " << ntp << ", shard: " << s;
+                } else {
+                    ASSERT_TRUE_CORO(!placement.assigned)
+                      << "ntp: " << ntp << ", shard: " << s;
+                }
+            }
+
+            // check that all shards with state are known in the placement map.
+            for (ss::shard_id s : expected.shards_with_some_state) {
+                auto state_it = shard2state.find(s);
+                ASSERT_TRUE_CORO(state_it != shard2state.end())
+                  << "ntp: " << ntp << ", shard: " << s;
+                ASSERT_TRUE_CORO(state_it->second.current)
+                  << "ntp: " << ntp << ", shard: " << s;
+            }
         }
     }
 
@@ -947,6 +1016,8 @@ public:
                 }
             }
         }
+
+        co_await check_spt_recovery();
 
         rb = std::make_unique<decltype(rb)::element_type>();
         co_await rb->start(
