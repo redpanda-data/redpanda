@@ -13,6 +13,7 @@
 #include "archival/adjacent_segment_merger.h"
 #include "archival/archival_metadata_stm.h"
 #include "archival/archival_policy.h"
+#include "archival/arrow_writer.h"
 #include "archival/logger.h"
 #include "archival/retention_calculator.h"
 #include "archival/scrubber.h"
@@ -1153,6 +1154,12 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
+
+    co_await datalake::write_parquet(
+      std::filesystem::path(path),
+      _parent.log(),
+      candidate.starting_offset,
+      candidate.final_offset);
 
     auto lazy_abort_source = cloud_storage::lazy_abort_source{
       [this]() { return upload_should_abort(); },
