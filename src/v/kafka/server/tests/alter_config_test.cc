@@ -331,13 +331,13 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_topic_describe_configs_requested_properties, alter_config_test_fixture) {
     wait_for_controller_leadership().get();
+
+    cluster::config_update_request r{
+      .upsert = {{"enable_schema_id_validation", "compat"}}};
     app.controller->get_config_frontend()
-      .invoke_on_all([](cluster::config_frontend& cfg_frontend) {
-          cluster::config_update_request r{
-            .upsert = {{"enable_schema_id_validation", "compat"}}};
-          return cfg_frontend.patch(r, model::timeout_clock::now() + 1s)
-            .discard_result();
-      })
+      .local()
+      .patch(r, model::timeout_clock::now() + 1s)
+      .discard_result()
       .get();
 
     model::topic test_tp{"topic-1"};

@@ -167,7 +167,7 @@ ss::future<> config_manager::do_bootstrap() {
       });
 
     // Version of the first write
-    _frontend.local().set_next_version(config_version{1});
+    co_await _frontend.local().set_next_version(config_version{1});
 
     try {
         auto patch_result = co_await _frontend.local().patch(
@@ -206,7 +206,8 @@ ss::future<> config_manager::start() {
           clusterlog.trace,
           "Starting config_manager... (seen version {})",
           _seen_version);
-        _frontend.local().set_next_version(_seen_version + config_version{1});
+        co_await _frontend.local().set_next_version(
+          _seen_version + config_version{1});
     }
 
     vlog(clusterlog.trace, "Starting reconcile_status...");
@@ -227,7 +228,7 @@ ss::future<> config_manager::start() {
             _reconcile_wait.signal();
         });
 
-    return ss::now();
+    co_return co_await ss::now();
 }
 void config_manager::handle_cluster_members_update(
   model::node_id id, model::membership_state new_state) {
@@ -891,7 +892,8 @@ config_manager::apply_delta(cluster_config_delta_cmd&& cmd_in) {
     vassert(
       ss::this_shard_id() == config_frontend::version_shard,
       "Must be called on frontend version_shard");
-    _frontend.local().set_next_version(_seen_version + config_version{1});
+    co_await _frontend.local().set_next_version(
+      _seen_version + config_version{1});
 
     const cluster_config_delta_cmd_data& data = cmd.value;
     vlog(
