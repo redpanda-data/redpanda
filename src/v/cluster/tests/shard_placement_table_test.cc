@@ -465,7 +465,7 @@ public:
       : test_dir("test.data." + random_generators::gen_alphanum_string(10)) {}
 
     ss::future<> quiescent_state_checks() {
-        auto shard2states = co_await spt.map(
+        auto shard2states = co_await spt->map(
           [](shard_placement_table& spt) { return spt._states; });
 
         absl::node_hash_map<
@@ -496,8 +496,8 @@ public:
               << "ntp: " << ntp;
             const auto& shard2state = states_it->second;
 
-            auto target_it = spt.local()._ntp2target.find(ntp);
-            ASSERT_TRUE_CORO(target_it != spt.local()._ntp2target.end())
+            auto target_it = spt->local()._ntp2target.find(ntp);
+            ASSERT_TRUE_CORO(target_it != spt->local()._ntp2target.end())
               << "ntp: " << ntp;
             const auto& target = target_it->second;
 
@@ -549,12 +549,46 @@ public:
         co_await ft.start();
         co_await ft.invoke_on_all(
           [](features::feature_table& ft) { ft.testing_activate_all(); });
-
         co_await ntpt.start();
-
+        co_await partition2shards.start_single();
         co_await sr.start();
 
-        co_await kvs.start(
+        co_await restart_node();
+    }
+
+    ss::future<> stop() {
+        if (rb) {
+            co_await rb->stop();
+        }
+        if (spt) {
+            co_await spt->stop();
+        }
+        if (kvs) {
+            co_await kvs->stop();
+        }
+        co_await sr.stop();
+        co_await partition2shards.stop();
+        co_await ntpt.stop();
+        co_await ft.stop();
+    }
+
+    ss::future<> restart_node() {
+        if (rb) {
+            co_await rb->stop();
+        }
+        if (spt) {
+            co_await spt->stop();
+        }
+        if (kvs) {
+            co_await kvs->stop();
+        }
+
+        for (auto& [ntp, shards] : partition2shards.local()) {
+            shards.launched_on = std::nullopt;
+        }
+
+        kvs = std::make_unique<decltype(kvs)::element_type>();
+        co_await kvs->start(
           storage::kvstore_config(
             1_MiB,
             config::mock_binding(10ms),
@@ -562,28 +596,23 @@ public:
             storage::make_sanitized_file_config()),
           ss::sharded_parameter([this] { return std::ref(sr.local()); }),
           std::ref(ft));
-        co_await kvs.invoke_on_all(
+        co_await kvs->invoke_on_all(
           [](storage::kvstore& kvs) { return kvs.start(); });
 
-        co_await spt.start(
-          ss::sharded_parameter([this] { return std::ref(kvs.local()); }));
+        spt = std::make_unique<decltype(spt)::element_type>();
+        co_await spt->start(
+          ss::sharded_parameter([this] { return std::ref(kvs->local()); }));
+        chunked_vector<model::ntp> partitions;
+        for (const auto& [ntp, _] : ntpt.local().ntp2meta) {
+            partitions.push_back(ntp);
+        }
+        co_await spt->local().initialize(partitions);
 
-        co_await partition2shards.start_single();
-
-        co_await rb.start(
-          std::ref(ntpt), std::ref(spt), std::ref(partition2shards));
-        co_await rb.invoke_on_all(
+        rb = std::make_unique<decltype(rb)::element_type>();
+        co_await rb->start(
+          std::ref(ntpt), std::ref(*spt), std::ref(partition2shards));
+        co_await rb->invoke_on_all(
           [](reconciliation_backend& rb) { return rb.start(); });
-    }
-
-    ss::future<> stop() {
-        co_await rb.stop();
-        co_await partition2shards.stop();
-        co_await spt.stop();
-        co_await kvs.stop();
-        co_await sr.stop();
-        co_await ntpt.stop();
-        co_await ft.stop();
     }
 
     ss::future<> TearDownAsync() override {
@@ -595,11 +624,11 @@ public:
     ss::sstring test_dir;
     ss::sharded<features::feature_table> ft;
     ss::sharded<ntp_table> ntpt;
-    ss::sharded<storage::storage_resources> sr;
-    ss::sharded<storage::kvstore> kvs;
-    ss::sharded<shard_placement_table> spt;
     ss::sharded<partition2shards_t> partition2shards; // only on shard 0
-    ss::sharded<reconciliation_backend> rb;
+    ss::sharded<storage::storage_resources> sr;
+    std::unique_ptr<ss::sharded<storage::kvstore>> kvs;
+    std::unique_ptr<ss::sharded<shard_placement_table>> spt;
+    std::unique_ptr<ss::sharded<reconciliation_backend>> rb;
 };
 
 TEST_F_CORO(shard_placement_test_fixture, StressTest) {
@@ -614,7 +643,7 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             vlog(clusterlog.info, "waiting for reconciliation");
             for (size_t i = 0;; ++i) {
                 ASSERT_TRUE_CORO(i < 50) << "taking too long to reconcile";
-                if (!co_await rb.local().is_reconciled()) {
+                if (!co_await rb->local().is_reconciled()) {
                     co_await ss::sleep(100ms);
                 } else {
                     break;
@@ -623,6 +652,12 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
 
             vlog(clusterlog.info, "reconciled");
             co_await quiescent_state_checks();
+
+            if (random_generators::get_int(10) == 0) {
+                vlog(clusterlog.info, "restarting");
+                co_await restart_node();
+                vlog(clusterlog.info, "restarted");
+            }
         }
 
         // small set of ntps to ensure frequent overlaps
@@ -685,12 +720,12 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             }
         }
 
-        co_await spt.local().set_target(
+        co_await spt->local().set_target(
           ntp,
           target,
           cur_shard_revision++,
           [this](const model::ntp& ntp, model::shard_revision_id rev) {
-              rb.local().notify_reconciliation(ntp, rev);
+              rb->local().notify_reconciliation(ntp, rev);
           });
     }
 
