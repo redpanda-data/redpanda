@@ -23,6 +23,7 @@ from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
+from rptest.archival.abs_client import ABSClient
 from rptest.archival.s3_client import S3Client
 from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -58,22 +59,24 @@ class BaseCase:
     - after_restart_validation (if restart_needed is True)
     Template method can remove all initial state from the cluster and
     restart the nodes if initial_restart_needed is true. This process is
-    needed for thests that depend on revision numbers. With initial cleanup
+    needed for tests that depend on revision numbers. With initial cleanup
     we can guarantee that the initial topic revisions will be the same if we
     will create them in the same order.
     The class variable 'topics' contains list of topics that need to be created
     (it's used by some validations and default create_initial_topics implementation).
     It is usually shadowed by the instance variable with the same name.
     The instance variable expected_recovered_topics contains the list of topics
-    that have to be recovered. It's needed to distinguish betweeen the recovered
+    that have to be recovered. It's needed to distinguish between the recovered
     topics and topics that created to align revision ids. By default it's equal
     to topics.
     """
     topics: Sequence[TopicSpec] = []
 
-    def __init__(self, redpanda: RedpandaService, s3_client: S3Client,
-                 kafka_tools: KafkaCliTools, rpk_client: RpkTool, s3_bucket,
-                 logger, rpk_producer_maker: Callable):
+    def __init__(self, redpanda: RedpandaService,
+                 s3_client: S3Client | ABSClient | None,
+                 kafka_tools: KafkaCliTools, rpk_client: RpkTool,
+                 s3_bucket: str, logger, rpk_producer_maker: Callable):
+        assert s3_client is not None  # precondition for type-checking purposes
         self._redpanda = redpanda
         self._kafka_tools = kafka_tools
         self._s3 = s3_client
@@ -377,7 +380,7 @@ class MissingTopicManifest(BaseCase):
     """Check the case where the topic manifest doesn't exist.
     We can't download any data but we should create an empty topic and add an error
     message to the log.
-    We need to craete an empty topic because it emables the following mitigation for
+    We need to create an empty topic because it enables the following mitigation for
     the situation when only the topic manifest is missing. The user might just delete
     the topic if the high watermark is 0 after the recovery and restore it second time.
     If the segments are missing from the bucket this won't do any harm but if only the
@@ -511,7 +514,7 @@ class MissingPartition(BaseCase):
 
 class MissingSegment(BaseCase):
     """Restore topic with missing segment in one of the partitions.
-    Should work just fine and valiate.
+    Should work just fine and validate.
     Note: that test removes segment with base offset 0 to ensure that
     the high watermark of the partition will have expected value after
     the recovery.
@@ -1018,6 +1021,7 @@ class TopicRecoveryTest(RedpandaTest):
                                  log_segment_size=default_log_segment_size,
                                  fast_uploads=True)
 
+        assert si_settings.cloud_storage_bucket is not None, "Cloud storage bucket not set"
         self.s3_bucket = si_settings.cloud_storage_bucket
 
         dedicated_nodes = test_context.globals.get(
