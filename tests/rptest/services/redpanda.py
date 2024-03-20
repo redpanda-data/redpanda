@@ -1823,7 +1823,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def get_redpanda_pods_presorted(self):
         """Method gets all pods and separates them into active and inactive
-        
+
         return: active_pods, inactive_pods, unknown lists
         """
         # Pod lifecycle is: Pending, Running, Succeeded, Failed, Unknown
@@ -4815,21 +4815,6 @@ def make_redpanda_cloud_service(context: TestContext,
     assert cloud_config, "Trying to create a cloud test, but no cloud_cluster section found in config"
 
     config_profile_name = get_config_profile_name(cloud_config)
-
-    if config_profile_name == CloudTierName.DOCKER:
-        # TODO: Bake the docker config into a higher layer that will
-        # automatically load these settings upon call to make_rp_service
-
-        # this whole local hack is likely no longer working, but for now pretend by casting
-        return cast(
-            RedpandaServiceCloud,
-            RedpandaService(context,
-                            num_brokers=3,
-                            extra_rp_conf={
-                                'log_segment_size': 128 * 2**20,
-                                'cloud_storage_cache_size': 20 * 2**30,
-                                'kafka_connections_max': 100,
-                            }))
 
     return RedpandaServiceCloud(context,
                                 config_profile_name=config_profile_name,
