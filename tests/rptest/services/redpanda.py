@@ -1103,6 +1103,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
     DEFAULT_NODE_READY_TIMEOUT_SEC = 20
+    NODE_READY_TIMEOUT_MIN_SEC_KEY = "node_ready_timeout_min_sec"
     DEFAULT_CLOUD_STORAGE_SCRUB_TIMEOUT_SEC = 60
     DEDICATED_NODE_KEY = "dedicated_nodes"
     RAISE_ON_ERRORS_KEY = "raise_on_error"
@@ -2259,6 +2260,12 @@ class RedpandaService(RedpandaServiceBase):
 
         if node_ready_timeout_s is None:
             node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
+        # apply min timeout rule. some tests may override this with larger
+        # timeouts, so take the maximum.
+        node_ready_timeout_min_s = self._context.globals.get(
+            self.NODE_READY_TIMEOUT_MIN_SEC_KEY, node_ready_timeout_s)
+        node_ready_timeout_s = max(node_ready_timeout_s,
+                                   node_ready_timeout_min_s)
         self.node_ready_timeout_s = node_ready_timeout_s
 
         if cloud_storage_scrub_timeout_s is None:
