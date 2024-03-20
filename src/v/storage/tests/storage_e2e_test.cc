@@ -2644,6 +2644,9 @@ FIXTURE_TEST(read_write_truncate, storage_test_fixture) {
       [&] { return cnt > max; },
       [&log, &cnt] {
           auto offset = log->offsets();
+          if (offset.dirty_offset == model::offset{}) {
+              return ss::now();
+          }
           storage::log_reader_config cfg(
             std::max(model::offset(0), offset.dirty_offset - model::offset(10)),
             cnt % 2 == 0 ? offset.dirty_offset - model::offset(2)
@@ -2674,7 +2677,7 @@ FIXTURE_TEST(read_write_truncate, storage_test_fixture) {
       [&] { return cnt > max; },
       [&log, &log_mutex] {
           auto offset = log->offsets();
-          if (offset.dirty_offset <= model::offset(0)) {
+          if (offset.dirty_offset == model::offset{}) {
               return ss::now();
           }
           return log_mutex.with([&log] {
@@ -2769,7 +2772,7 @@ FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
           [&] { return done; },
           [&log, &log_mutex] {
               auto offset = log->offsets();
-              if (offset.dirty_offset <= model::offset(0)) {
+              if (offset.dirty_offset == model::offset{}) {
                   return ss::now();
               }
               return log_mutex.with([&log] {
@@ -3573,6 +3576,9 @@ FIXTURE_TEST(issue_8091, storage_test_fixture) {
     auto read = ss::do_until(
       [&] { return cnt > max; },
       [&log, &last_truncate] {
+          if (last_truncate == model::offset{}) {
+              return ss::now();
+          }
           auto offset = log->offsets();
           storage::log_reader_config cfg(
             last_truncate - model::offset(1),
@@ -3605,7 +3611,7 @@ FIXTURE_TEST(issue_8091, storage_test_fixture) {
       [&] { return cnt > max; },
       [&log, &log_mutex, &last_truncate] {
           auto offset = log->offsets();
-          if (offset.dirty_offset <= model::offset(0)) {
+          if (offset.dirty_offset == model::offset{}) {
               return ss::now();
           }
           return log_mutex

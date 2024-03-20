@@ -36,7 +36,7 @@ static constexpr std::string_view override_address = "RP_SI_CREDS_API_ADDRESS";
 /// Multiplier to derive sleep duration from expiry time. Leaves 0.1 * expiry
 /// seconds as buffer to make API calls. For default expiry of 1 hour, this
 /// results in a fetch after 54 minutes.
-constexpr float sleep_from_expiry_multiplier = 0.9;
+constexpr double sleep_from_expiry_multiplier = 0.9;
 constexpr std::chrono::milliseconds max_retry_interval_ms{300000};
 
 refresh_credentials::refresh_credentials(
@@ -223,30 +223,27 @@ std::chrono::milliseconds
 refresh_credentials::impl::calculate_sleep_duration(uint32_t expiry_sec) const {
     vlog(
       clrl_log.trace, "calculating sleep duration from {} seconds", expiry_sec);
-    int sleep = std::floor(expiry_sec * sleep_from_expiry_multiplier);
+    auto sleep = static_cast<uint32_t>(
+      std::floor(expiry_sec * sleep_from_expiry_multiplier));
     vlog(
       clrl_log.trace, "sleep duration adjusted with buffer: {} seconds", sleep);
-    if (sleep < 0) {
-        vlog(
-          clrl_log.warn,
-          "negative sleep duration changed from {} to 10 seconds",
-          sleep);
-        sleep = 10;
-    }
     return std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::seconds{sleep});
 }
 
 std::chrono::milliseconds refresh_credentials::impl::calculate_sleep_duration(
   std::chrono::system_clock::time_point expires_at) const {
-    vlog(
-      clrl_log.trace,
-      "calculating sleep duration for credential expiry at: {}",
-      expires_at.time_since_epoch());
     auto now = std::chrono::system_clock::now();
     auto diff = std::chrono::duration_cast<std::chrono::seconds>(
                   expires_at - now)
                   .count();
+    if (diff < 0) {
+        vlog(
+          clrl_log.warn,
+          "negative sleep duration changed from {} to 10 seconds",
+          diff);
+        diff = 10;
+    }
     vlog(
       clrl_log.trace,
       "calculating sleep duration for credential expiry at: {}, now: {}, diff "
