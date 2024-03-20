@@ -197,6 +197,19 @@ rp_test(
 )
 
 rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME health_monitor_types_test
+  SOURCES
+    health_monitor_types_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::cluster
+  ARGS "-- -c 1"
+  LABELS cluster
+)
+
+rp_test(
   BENCHMARK_TEST
   BINARY_NAME health_monitor
   SOURCES health_monitor_bench.cc
