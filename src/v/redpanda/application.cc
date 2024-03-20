@@ -73,6 +73,7 @@
 #include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
 #include "config/seed_server.h"
+#include "crypto/ossl_context_service.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
@@ -1278,8 +1279,6 @@ void application::wire_up_redpanda_services(
         resources::available_memory::local().register_metrics();
     }).get();
 
-    construct_single_service(thread_worker);
-
     // cluster
     syschecks::systemd_message("Initializing connection cache").get();
     construct_service(
@@ -2048,6 +2047,22 @@ void application::trigger_abort_source() {
       .get();
 }
 
+void application::wire_up_and_start_crypto_services() {
+    construct_single_service(thread_worker);
+    thread_worker->start({.name = "worker"}).get();
+    // config file and module path are not necessary when not
+    // running in FIPS mode
+    construct_service(
+      ossl_context_service,
+      std::ref(*thread_worker),
+      ss::sstring{},
+      ss::sstring{},
+      crypto::is_fips_mode::no)
+      .get();
+    ossl_context_service.invoke_on_all(&crypto::ossl_context_service::start)
+      .get();
+}
+
 void application::wire_up_bootstrap_services() {
     // Wire up local storage.
     ss::smp::invoke_on_all([] {
@@ -2301,6 +2316,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     construct_service(_as).get();
 
     // Bootstrap services.
+    wire_up_and_start_crypto_services();
     wire_up_bootstrap_services();
     start_bootstrap_services();
 
@@ -2492,8 +2508,6 @@ void application::start_runtime_services(
                 _rpc.local().set_use_service_unavailable();
             });
       });
-
-    thread_worker->start({.name = "worker"}).get();
 
     // single instance
     node_status_backend.invoke_on_all(&cluster::node_status_backend::start)
