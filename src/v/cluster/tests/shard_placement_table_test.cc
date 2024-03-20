@@ -620,8 +620,14 @@ public:
       , _rb(rb) {}
 
     ss::future<> start() {
-        // TODO: bootstrap _shard_placement. We don't need it for now because we
-        // don't restart in this test yet.
+        for (const auto& [ntp, meta] : _ntpt.ntp2meta) {
+            auto maybe_target = _shard_placement.get_target(ntp);
+            if (
+              !maybe_target
+              || maybe_target->log_revision != meta.log_revision) {
+                assign_eventually(ntp);
+            }
+        }
 
         ssx::background = assign_fiber();
         co_return;
@@ -630,6 +636,13 @@ public:
     ss::future<> stop() {
         _wakeup_event.set();
         return _gate.close();
+    }
+
+    void enable_persistence_eventually() {
+        if (!_enable_persistence) {
+            _enable_persistence = true;
+            _wakeup_event.set();
+        }
     }
 
     void assign_eventually(const model::ntp& ntp) {
@@ -650,6 +663,10 @@ private:
             co_await _wakeup_event.wait(1s);
             if (_gate.is_closed()) {
                 co_return;
+            }
+
+            if (_enable_persistence) {
+                co_await _shard_placement.enable_persistence();
             }
 
             auto to_assign = std::exchange(_to_assign, {});
@@ -696,6 +713,7 @@ private:
     ntp2shards_t& _ntp2shards;
     ss::sharded<reconciliation_backend>& _rb;
 
+    bool _enable_persistence = false;
     chunked_hash_set<model::ntp> _to_assign;
     bool _in_progress = false;
     ssx::event _wakeup_event{"shard_assigner"};
@@ -710,7 +728,7 @@ public:
       : test_dir("test.data." + random_generators::gen_alphanum_string(10)) {}
 
     ss::future<> quiescent_state_checks() {
-        auto shard2states = co_await spt.map(
+        auto shard2states = co_await spt->map(
           [](shard_placement_table& spt) { return spt._states; });
 
         absl::node_hash_map<
@@ -750,8 +768,8 @@ public:
               << "ntp: " << ntp;
             const auto& shard2state = states_it->second;
 
-            auto entry_it = spt.local()._ntp2entry.find(ntp);
-            ASSERT_TRUE_CORO(entry_it != spt.local()._ntp2entry.end())
+            auto entry_it = spt->local()._ntp2entry.find(ntp);
+            ASSERT_TRUE_CORO(entry_it != spt->local()._ntp2entry.end())
               << "ntp: " << ntp;
             ASSERT_TRUE_CORO(entry_it->second->target) << "ntp: " << ntp;
             ASSERT_TRUE_CORO(entry_it->second->mtx.ready()) << "ntp: " << ntp;
@@ -817,14 +835,55 @@ public:
         co_await ft.start();
         co_await ft.invoke_on_all(
           [](features::feature_table& ft) { ft.testing_activate_all(); });
-
         co_await ntpt.start();
-
         co_await _ntp2shards.start_single();
-
         co_await sr.start();
 
-        co_await kvs.start(
+        co_await restart_node(true);
+    }
+
+    ss::future<> stop() {
+        if (_shard_assigner) {
+            co_await _shard_assigner->stop();
+        }
+        if (rb) {
+            co_await rb->stop();
+        }
+        if (spt) {
+            co_await spt->stop();
+        }
+        if (kvs) {
+            co_await kvs->stop();
+        }
+        co_await sr.stop();
+        co_await _ntp2shards.stop();
+        co_await ntpt.stop();
+        co_await ft.stop();
+    }
+
+    ss::future<> restart_node(bool first_start) {
+        if (_shard_assigner) {
+            co_await _shard_assigner->stop();
+        }
+        if (rb) {
+            co_await rb->stop();
+        }
+        if (spt) {
+            co_await spt->stop();
+        }
+        if (kvs) {
+            co_await kvs->stop();
+        }
+
+        for (auto& [ntp, shards] : _ntp2shards.local()) {
+            for (auto& [lr, p_shards] : shards.rev2shards) {
+                // "stop" mock partitions
+                p_shards.launched_on = std::nullopt;
+            }
+        }
+
+        kvs = std::make_unique<decltype(kvs)::element_type>();
+        co_await kvs->start(
           storage::kvstore_config(
             1_MiB,
             config::mock_binding(10ms),
@@ -832,33 +891,40 @@ public:
             storage::make_sanitized_file_config()),
           ss::sharded_parameter([this] { return std::ref(sr.local()); }),
           std::ref(ft));
-        co_await kvs.invoke_on_all(
+        co_await kvs->invoke_on_all(
           [](storage::kvstore& kvs) { return kvs.start(); });
 
-        co_await spt.start(
-          ss::sharded_parameter([this] { return std::ref(kvs.local()); }));
+        spt = std::make_unique<decltype(spt)::element_type>();
+        co_await spt->start(
+          ss::sharded_parameter([this] { return std::ref(kvs->local()); }));
 
-        co_await rb.start(std::ref(ntpt), std::ref(spt), std::ref(_ntp2shards));
+        if (!first_start) {
+            chunked_hash_map<raft::group_id, model::ntp> local_group2ntp;
+            for (const auto& [ntp, meta] : ntpt.local().ntp2meta) {
+                local_group2ntp.emplace(meta.group, ntp);
+            }
+            co_await spt->local().initialize_from_kvstore(local_group2ntp);
+
+            for (auto& [ntp, shards] : _ntp2shards.local()) {
+                if (
+                  shards.target
+                  && !local_group2ntp.contains(shards.target->group)) {
+                    // clear obsolete targets
+                    shards.target = std::nullopt;
+                }
+            }
+        }
+
+        rb = std::make_unique<decltype(rb)::element_type>();
+        co_await rb->start(
+          std::ref(ntpt), std::ref(*spt), std::ref(_ntp2shards));
 
         _shard_assigner = std::make_unique<shard_assigner>(
-          ntpt, spt, _ntp2shards, rb);
+          ntpt, *spt, _ntp2shards, *rb);
         co_await _shard_assigner->start();
 
-        co_await rb.invoke_on_all(
+        co_await rb->invoke_on_all(
           [](reconciliation_backend& rb) { return rb.start(); });
-    }
-
-    ss::future<> stop() {
-        if (_shard_assigner) {
-            co_await _shard_assigner->stop();
-        }
-        co_await rb.stop();
-        co_await spt.stop();
-        co_await kvs.stop();
-        co_await sr.stop();
-        co_await _ntp2shards.stop();
-        co_await ntpt.stop();
-        co_await ft.stop();
     }
 
     ss::future<> TearDownAsync() override {
@@ -872,9 +938,9 @@ public:
     ss::sharded<ntp_table> ntpt;
     ss::sharded<ntp2shards_t> _ntp2shards; // only on shard 0
     ss::sharded<storage::storage_resources> sr;
-    ss::sharded<storage::kvstore> kvs;
-    ss::sharded<shard_placement_table> spt;
-    ss::sharded<reconciliation_backend> rb;
+    std::unique_ptr<ss::sharded<storage::kvstore>> kvs;
+    std::unique_ptr<ss::sharded<shard_placement_table>> spt;
+    std::unique_ptr<ss::sharded<reconciliation_backend>> rb;
     std::unique_ptr<shard_assigner> _shard_assigner;
 };
 
@@ -885,13 +951,20 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
 
     co_await start();
 
+    // enable persistence midway through the test
+    size_t enable_persistence_at = random_generators::get_int(4'000, 6'000);
+
     for (size_t i = 0; i < 10'000; ++i) {
+        if (i == enable_persistence_at) {
+            _shard_assigner->enable_persistence_eventually();
+        }
+
         if (random_generators::get_int(15) == 0) {
             vlog(logger.info, "waiting for reconciliation");
             for (size_t i = 0;; ++i) {
                 ASSERT_TRUE_CORO(i < 50) << "taking too long to reconcile";
                 if (!(_shard_assigner->is_reconciled()
-                      && co_await rb.local().is_reconciled())) {
+                      && co_await rb->local().is_reconciled())) {
                     co_await ss::sleep(100ms);
                 } else {
                     break;
@@ -900,6 +973,16 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
 
             vlog(logger.info, "reconciled");
             co_await quiescent_state_checks();
+            continue;
+        }
+
+        if (
+          spt->local().is_persistence_enabled()
+          && random_generators::get_int(50) == 0) {
+            vlog(logger.info, "restarting");
+            co_await restart_node(false);
+            vlog(logger.info, "restarted");
+            continue;
         }
 
         // small set of ntps to ensure frequent overlaps
