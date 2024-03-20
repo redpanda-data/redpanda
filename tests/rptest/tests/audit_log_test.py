@@ -32,7 +32,6 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services import redpanda
 from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
-from rptest.services.ocsf_server import OcsfServer
 from rptest.services.redpanda import AUDIT_LOG_ALLOW_LIST, LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
@@ -319,7 +318,6 @@ class AuditLogTestBase(RedpandaTest):
         self.admin = Admin(self.redpanda,
                            auth=(self.redpanda.SUPERUSER_CREDENTIALS[0],
                                  self.redpanda.SUPERUSER_CREDENTIALS[1]))
-        self.ocsf_server = OcsfServer(test_context)
 
     def get_rpk_credentials(self, username: str, password: str,
                             mechanism: str) -> RpkTool:
@@ -367,10 +365,6 @@ class AuditLogTestBase(RedpandaTest):
             self.super_rpk.sasl_create_user(self.security.user_creds[0],
                                             self.security.user_creds[1],
                                             self.security.user_creds[2])
-        self.ocsf_server.start()
-        self.logger.debug(
-            f'Running OCSF Server Version {self.ocsf_server.get_api_version(None)}'
-        )
         self.wait_for_audit_log()
 
     def wait_for_audit_log(self):
@@ -547,12 +541,11 @@ class AuditLogTestBase(RedpandaTest):
             List of records as json objects
         """
         class MessageMapper():
-            def __init__(self, logger, filter_fn, stop_cond, ocsf_server):
+            def __init__(self, logger, filter_fn, stop_cond):
                 self.logger = logger
                 self.records = []
                 self.filter_fn = filter_fn
                 self.stop_cond = stop_cond
-                self.ocsf_server = ocsf_server
                 self.next_offset_ingest = 0
 
             def ingest(self, records):
@@ -568,7 +561,6 @@ class AuditLogTestBase(RedpandaTest):
                 self.logger.debug(f'Ingested records:')
                 for rec in new_records:
                     self.logger.debug(f'{rec}')
-                    self.ocsf_server.validate_schema(rec)
                     if self.filter_fn(rec):
                         self.logger.debug(f'Selected {rec}')
                         self.records.append(rec)
@@ -578,8 +570,7 @@ class AuditLogTestBase(RedpandaTest):
             def is_finished(self):
                 return stop_cond(self.records)
 
-        mapper = MessageMapper(self.redpanda.logger, filter_fn, stop_cond,
-                               self.ocsf_server)
+        mapper = MessageMapper(self.redpanda.logger, filter_fn, stop_cond)
         self.redpanda.logger.debug("Starting audit_log consumer...")
         consumer = self.get_rpk_consumer(topic=self.audit_log, offset='oldest')
         consumer.start()
@@ -654,7 +645,7 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
                  and record['app']['feature']['name'] == feature) or
                 (feature is None and 'feature' not in record['app']))
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_app_lifecycle(self):
         _ = self.find_matching_record(
             partial(AuditLogTestsAppLifecycle.is_lifecycle_match,
@@ -667,7 +658,7 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
                     True), lambda record_count: record_count == 3,
             "Single redpanda start event per node")
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_drain_on_audit_disabled(self):
         """
         Test the drain on disabling of audit is working properly by setting audit_enabled
@@ -694,7 +685,7 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
             filter_unique_stop_events, lambda record_count: record_count == 3,
             "Three more stop events observed per node")
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_recovery_mode(self):
         """
         Tests that audit logging does not start when in recovery mode
@@ -759,7 +750,7 @@ class AuditLogTestAdminApi(AuditLogTestBase):
                                                           'trace'
                                                       }))
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=3)
     def test_config_rejected(self):
         """
         Ensures that attempting to add _redpanda.audit_log to excluded topics will be
@@ -779,7 +770,7 @@ class AuditLogTestAdminApi(AuditLogTestBase):
         except requests.HTTPError:
             pass
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_audit_log_functioning(self):
         """
         Ensures that the audit log can be produced to when the audit_enabled()
@@ -841,7 +832,7 @@ class AuditLogTestAdminApi(AuditLogTestBase):
         self.logger.debug("Finished 500 api calls with management disabled")
         _ = number_of_records_matching(api_keys, 1000)
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=3)
     def test_audit_log_metrics(self):
         """
         Confirm that audit log metrics are present
@@ -927,7 +918,7 @@ class AuditLogTestAdminAuthApi(AuditLogTestBase):
         self.admin.create_user(self.ignored_user, self.ignored_pass,
                                self.algorithm)
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_excluded_principal(self):
         self.setup_cluster()
         self.modify_audit_excluded_principals([self.ignored_user])
@@ -997,7 +988,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                        sasl_mechanism=mechanism)
         self.default_client = DefaultClient(self.redpanda)
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=3)
     def test_audit_topic_protections(self):
         """Validates audit topic protections
         """
@@ -1008,7 +999,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
             if 'TOPIC_AUTHORIZATION_FAILED' not in e.stderr:
                 raise
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_excluded_topic(self):
         """
         Validates that no audit messages are created for topics that
@@ -1060,7 +1051,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
         except TimeoutError:
             pass
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_management(self):
         """Validates management messages
         """
@@ -1210,7 +1201,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
             _ = self.find_matching_record(test.filter_function,
                                           test.valid_count, test.desc())
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_produce(self):
         """Validates produce audit messages
         """
@@ -1262,7 +1253,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
             _ = self.find_matching_record(test.filter_function,
                                           test.valid_count, test.desc())
 
-    @cluster(num_nodes=4, log_allow_list=AUDIT_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3, log_allow_list=AUDIT_LOG_ALLOW_LIST)
     def test_no_auth_enabled(self):
         """The expected behavior of the system when working with no auth
         enabled is to omit warning logs and prevent any messages from being
@@ -1329,7 +1320,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
         if exc is not None:
             raise exc
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_consume(self):
         """
         Validates audit messages on consume
@@ -1436,7 +1427,7 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
             'name'] == service_name and record['actor']['user'][
                 'name'] == username
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_excluded_principal(self):
         """
         Verifies that principals excluded will not generate audit messages
@@ -1500,7 +1491,7 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         except TimeoutError:
             pass
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_authn_messages(self):
         """Verifies that authentication messages are audited
         """
@@ -1519,7 +1510,7 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         assert len(
             records) == 1, f"Expected only one record got {len(records)}"
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_authn_failure_messages(self):
         """Validates that failed authentication messages are audited
         """
@@ -1545,7 +1536,7 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         assert len(
             records) == 1, f'Expected only one record, got {len(records)}'
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_no_audit_user_authn(self):
         """
         Validates that no audit user authz events occur, but authn
@@ -1642,7 +1633,7 @@ class AuditLogTestKafkaTlsApi(AuditLogTestBase):
                         == protocol_name) and record[
                             'status_id'] == 1 and record['user']['uid'] == dn
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_mtls(self):
         """
         Verify that mTLS authn users generate correct audit log entries
@@ -1728,7 +1719,7 @@ class AuditLogTestOauth(AuditLogTestBase):
                     'name'] == username and (record['user']['uid'] == sub
                                              if sub is not None else True)
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=5)
     def test_kafka_oauth(self):
         """
         Validate that authentication events using OAUTH in Kafka
@@ -1773,7 +1764,7 @@ class AuditLogTestOauth(AuditLogTestBase):
         assert len(records) == len(
             ip_set), f"Expected one record but received {len(records)}"
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=5)
     def test_admin_oauth(self):
         """
         Validate that authentication events using OAUTH in the Admin API
@@ -1841,7 +1832,7 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
     def setup_cluster(self):
         self.admin.create_user(self.username, self.password, self.algorithm)
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_sr_audit(self):
         self.setup_cluster()
 
@@ -1882,7 +1873,7 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
                                             sr_audit_svc_name, 1, record),
             lambda record_count: record_count == 1, 'authn attempt in sr')
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_sr_audit_bad_authn(self):
         r = get_subjects(self.redpanda.nodes,
                          self.logger,

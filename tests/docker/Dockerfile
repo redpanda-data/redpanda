@@ -222,12 +222,6 @@ RUN /tinygo-wasi-transforms && \
 
 #################################
 
-FROM base as ocsf
-COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/ocsf-server /
-RUN /ocsf-server && rm /ocsf-server
-
-#################################
-
 FROM librdkafka as final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/python-deps /
@@ -311,8 +305,6 @@ COPY --from=kgo-verifier /opt/kgo-verifier /opt/kgo-verifier
 COPY --from=byoc-mock /opt/redpanda-tests/go/byoc-mock/.rpk.managed-byoc /root/.local/bin/.rpk.managed-byoc
 COPY --from=keycloak /opt/keycloak/ /opt/keycloak/
 COPY --from=wasi-transforms /opt/transforms/ /opt/transforms/
-COPY --from=ocsf /opt/ocsf-schema/ /opt/ocsf-schema/
-COPY --from=ocsf /opt/ocsf-server/ /opt/ocsf-server/
 COPY --from=flink /opt/flink/ /opt/flink/
 
 RUN ldconfig
