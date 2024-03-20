@@ -31,6 +31,7 @@
 #include <seastar/http/exception.hh>
 #include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
+#include <seastar/json/json_elements.hh>
 
 #include <optional>
 #include <sstream>
@@ -295,6 +296,18 @@ security::role_name parse_role_definition(const json::Document& doc) {
     return role_name;
 }
 
+template<class T>
+requires std::is_base_of_v<ss::json::jsonable, std::remove_cvref_t<T>>
+inline std::unique_ptr<ss::http::reply> make_json_response(
+  std::unique_ptr<ss::http::reply> rep,
+  ss::http::reply::status_type status,
+  T&& body) {
+    rep->set_status(status);
+    rep->write_body(
+      "json", ss::json::formatter::to_json(std::forward<T>(body)));
+    return rep;
+}
+
 } // namespace
 
 void admin_server::register_security_routes() {
@@ -375,10 +388,9 @@ void admin_server::register_security_routes() {
 
     register_route<superuser>(
       ss::httpd::security_json::create_role,
-      [this](std::unique_ptr<ss::http::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          return create_role_handler(std::move(req));
-      });
+      request_handler_fn{[this](auto req, auto reply) {
+          return create_role_handler(std::move(req), std::move(reply));
+      }});
 
     register_route<superuser>(
       ss::httpd::security_json::get_role,
@@ -396,10 +408,9 @@ void admin_server::register_security_routes() {
 
     register_route<superuser>(
       ss::httpd::security_json::delete_role,
-      [this](std::unique_ptr<ss::http::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          return delete_role_handler(std::move(req));
-      });
+      request_handler_fn{[this](auto req, auto reply) {
+          return delete_role_handler(std::move(req), std::move(reply));
+      }});
 
     register_route<superuser>(
       ss::httpd::security_json::list_role_members,
@@ -628,8 +639,9 @@ ss::future<ss::json::json_return_type> admin_server::list_user_roles_handler(
     co_return ss::json::json_return_type(body);
 }
 
-ss::future<ss::json::json_return_type>
-admin_server::create_role_handler(std::unique_ptr<ss::http::request> req) {
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::create_role_handler(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
@@ -650,13 +662,15 @@ admin_server::create_role_handler(std::unique_ptr<ss::http::request> req) {
         // Idempotency: if the empty role already exists,
         // suppress the role_exists error and return success.
         if (_controller->get_role_store().local().get(role_name) == role) {
-            co_return ss::json::json_return_type(j_res);
+            co_return make_json_response(
+              std::move(rep), ss::http::reply::status_type::created, j_res);
         } else {
             throw_role_exception(role_errc::role_already_exists);
         }
     }
     co_await throw_on_error(*req, err, model::controller_ntp);
-    co_return ss::json::json_return_type(j_res);
+    co_return make_json_response(
+      std::move(rep), ss::http::reply::status_type::created, j_res);
 }
 
 ss::future<ss::json::json_return_type>
@@ -842,8 +856,9 @@ admin_server::update_role_handler(std::unique_ptr<ss::http::request> req) {
     co_return ss::json::json_return_type(j_res);
 }
 
-ss::future<ss::json::json_return_type>
-admin_server::delete_role_handler(std::unique_ptr<ss::http::request> req) {
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_role_handler(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
@@ -859,8 +874,14 @@ admin_server::delete_role_handler(std::unique_ptr<ss::http::request> req) {
         // Idempotency: removing a non-existent user is successful.
         vlog(
           adminlog.debug, "Role '{}' already gone during deletion", role_name);
-        co_return ss::json::json_return_type(ss::json::json_void{});
+        co_return make_json_response(
+          std::move(rep),
+          ss::http::reply::status_type::no_content,
+          ss::json::json_void{});
     }
     co_await throw_on_error(*req, err, model::controller_ntp);
-    co_return ss::json::json_return_type(ss::json::json_void{});
+    co_return make_json_response(
+      std::move(rep),
+      ss::http::reply::status_type::no_content,
+      seastar::json::json_void{});
 }

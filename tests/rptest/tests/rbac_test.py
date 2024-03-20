@@ -141,6 +141,7 @@ class RBACTest(RBACTestBase):
         self.logger.debug("Test that simple create_role succeeds")
         res = self.superuser_admin.create_role(role=self.role_name0)
         created_role = res.json()['role']
+        assert res.status_code == 201, f"Unexpected HTTP status code: {res.status_code}"
         assert created_role == self.role_name0, f"Incorrect create role response: {res.json()}"
 
         wait_until(lambda: self._set_of_user_roles() == {self.role_name0},
@@ -359,7 +360,7 @@ class RBACTest(RBACTestBase):
         self._create_and_wait_for_role(role=self.role_name0)
 
         res = self.superuser_admin.delete_role(role=self.role_name0)
-        assert res.status_code == 200, f"Unexpected HTTP status code: {res.status_code}"
+        assert res.status_code == 204, f"Unexpected HTTP status code: {res.status_code}"
 
         wait_until(lambda: not self._role_exists(self.role_name0),
                    timeout_sec=5,

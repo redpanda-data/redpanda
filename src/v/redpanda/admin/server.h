@@ -455,16 +455,18 @@ private:
     ss::future<ss::json::json_return_type> list_user_roles_handler(
       std::unique_ptr<ss::http::request>, request_auth_result);
 
-    ss::future<ss::json::json_return_type>
-    create_role_handler(std::unique_ptr<ss::http::request> req);
+    ss::future<std::unique_ptr<ss::http::reply>> create_role_handler(
+      std::unique_ptr<ss::http::request> req,
+      std::unique_ptr<ss::http::reply> rep);
     ss::future<ss::json::json_return_type>
     list_roles_handler(std::unique_ptr<ss::http::request> req);
     ss::future<ss::json::json_return_type>
     get_role_handler(std::unique_ptr<ss::http::request> req);
     ss::future<ss::json::json_return_type>
     update_role_handler(std::unique_ptr<ss::http::request> req);
-    ss::future<ss::json::json_return_type>
-    delete_role_handler(std::unique_ptr<ss::http::request> req);
+    ss::future<std::unique_ptr<ss::http::reply>> delete_role_handler(
+      std::unique_ptr<ss::http::request> req,
+      std::unique_ptr<ss::http::reply> rep);
 
     ss::future<ss::json::json_return_type>
     update_role_members_handler(std::unique_ptr<ss::http::request> req);
