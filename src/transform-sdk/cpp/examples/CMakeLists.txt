@@ -34,3 +34,12 @@ target_link_libraries(
   Redpanda::transform_sdk
 )
 
+
+add_executable(
+  identity_logging_transform
+  identity_logging.cc
+)
+target_link_libraries(
+  identity_logging_transform
+  Redpanda::transform_sdk
+)

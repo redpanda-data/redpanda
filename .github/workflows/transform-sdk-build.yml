@@ -88,6 +88,7 @@ jobs:
         working-directory: src/transform-sdk/go/transform/internal/testdata
         run: |
           tinygo build -scheduler=none -target=wasi -o identity.wasm ./identity
+          tinygo build -scheduler=none -target=wasi -o identity_logging.wasm ./identity_logging
       - name: Download integration test suite
         uses: actions/download-artifact@v4
         with:
@@ -97,6 +98,7 @@ jobs:
         working-directory: src/transform-sdk/go/transform/internal/testdata
         env:
           IDENTITY: identity.wasm
+          LOGGING: identity_logging.wasm
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
@@ -134,7 +136,10 @@ jobs:
           rustup target add wasm32-wasi
       - name: Build integration tests
         working-directory: src/transform-sdk/rust
-        run: cargo build --target=wasm32-wasi --release --example=identity
+        run: |
+          cargo build --target=wasm32-wasi --release \
+            --example=identity \
+            --example=identity_logging
       - name: Download integration test suite
         uses: actions/download-artifact@v4
         with:
@@ -144,6 +149,7 @@ jobs:
         working-directory: src/transform-sdk/rust
         env:
           IDENTITY: target/wasm32-wasi/release/examples/identity.wasm
+          LOGGING: target/wasm32-wasi/release/examples/identity_logging.wasm
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
@@ -195,6 +201,7 @@ jobs:
         working-directory: src/transform-sdk/cpp/examples
         env:
           IDENTITY: build/identity_transform
+          LOGGING: build/identity_logging_transform
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
