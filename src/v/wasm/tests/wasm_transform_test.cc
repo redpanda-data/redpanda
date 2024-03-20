@@ -11,6 +11,7 @@
 
 #include "bytes/bytes.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "serde/rw/rw.h"
 #include "wasm/errc.h"
 #include "wasm/tests/wasm_fixture.h"
 
@@ -24,6 +25,7 @@
 #include <avro/Specific.hh>
 #include <avro/Stream.hh>
 #include <avro/ValidSchema.hh>
+#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
 using namespace std::chrono_literals;
@@ -115,4 +117,17 @@ TEST_F(WasmTestFixture, CpuIsLimited) {
       [&stalled] { stalled = true; });
     EXPECT_THROW(execute_command("loop", 0), wasm::wasm_exception);
     EXPECT_FALSE(stalled);
+}
+
+using ::testing::ElementsAre;
+
+TEST_F(WasmTestFixture, LogsAreEmitted) {
+    load_wasm("dynamic.wasm");
+    ss::sstring msg = "foobar";
+    auto value = execute_command("print", msg);
+    auto bytes = iobuf_to_bytes(value);
+    ss::sstring expected;
+    // NOLINTNEXTLINE(*-reinterpret-cast)
+    expected.append(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    EXPECT_THAT(log_lines(), ElementsAre(expected));
 }
