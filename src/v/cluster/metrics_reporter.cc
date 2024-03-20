@@ -359,7 +359,7 @@ ss::future<> metrics_reporter::propagate_cluster_id() {
         co_return;
     }
 
-    auto result = co_await _config_frontend.local().do_patch(
+    auto result = co_await _config_frontend.local().patch(
       config_update_request{.upsert = {{"cluster_id", _cluster_info.uuid}}},
       model::timeout_clock::now() + 5s);
     if (result.errc) {

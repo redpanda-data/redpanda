@@ -323,7 +323,7 @@ FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] { return raft0->is_leader(); });
     auto result = app.controller->get_config_frontend()
                     .local()
-                    .do_patch(
+                    .patch(
                       cluster::config_update_request{
                         .upsert = {{"cluster_id", "foo"}}},
                       model::timeout_clock::now() + 5s)
@@ -361,7 +361,7 @@ FIXTURE_TEST(
     // Now do something to trigger another controller snapshot.
     auto result = app.controller->get_config_frontend()
                     .local()
-                    .do_patch(
+                    .patch(
                       cluster::config_update_request{
                         .upsert = {{"cluster_id", "foo"}}},
                       model::timeout_clock::now() + 5s)
