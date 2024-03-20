@@ -4,8 +4,9 @@
 # readability-magic-numbers: duplicate
 # cppcoreguidelines-pointer-arithmetic: quality of life improvement
 # misc-non-private-member-variables-in-classes: quality of life improvement
+# misc-include-cleaner: the check has many false positives and is noisy
 ---
 Checks:
-'-readability-function-cognitive-complexity,-readability-identifier-length,-cppcoreguidelines-avoid-magic-numbers,-readability-magic-numbers,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-misc-non-private-member-variables-in-classes'
+'-readability-function-cognitive-complexity,-readability-identifier-length,-cppcoreguidelines-avoid-magic-numbers,-readability-magic-numbers,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-misc-non-private-member-variables-in-classes,-misc-include-cleaner'
 InheritParentConfig: true
 ...

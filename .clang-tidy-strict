@@ -1,8 +1,9 @@
 # altera-*, fuschia-*, llvmlibc-*: project specific checks
 # llvm-header-guard: in redpanda we normally to use `#pragma once`
 # modernize-use-trailing-return-type: arbitrary style choice
+# misc-include-cleaner: the check has many false positives and is noisy
 ---
-Checks: '*,-altera-*,-fuchsia-*,-llvmlibc-*,-llvm-header-guard,-modernize-use-trailing-return-type'
+Checks: '*,-altera-*,-fuchsia-*,-llvmlibc-*,-llvm-header-guard,-modernize-use-trailing-return-type,-misc-include-cleaner'
 WarningsAsErrors: false
 CheckOptions:
   - key:             readability-identifier-length.IgnoredVariableNames
