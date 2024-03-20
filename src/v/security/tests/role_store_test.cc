@@ -37,8 +37,8 @@ BOOST_AUTO_TEST_CASE(role_test) {
     }
 
     auto rep = fmt::format("{}", rol);
-    BOOST_CHECK(rep.find("{user}:{member0}") != std::string::npos);
-    BOOST_CHECK(rep.find("{user}:{member1}") != std::string::npos);
+    BOOST_CHECK(rep.find("{User}:{member0}") != std::string::npos);
+    BOOST_CHECK(rep.find("{User}:{member1}") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(role_store_test) {

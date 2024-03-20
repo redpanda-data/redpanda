@@ -177,7 +177,7 @@
                 "in": "query",
                 "required": false,
                 "type": "string",
-                "enum": ["user"]
+                "enum": ["User"]
 
             }
         ],
@@ -400,6 +400,13 @@
                 "in": "path",
                 "required": true,
                 "type": "string"
+            },
+            {
+                "name": "create",
+                "description": "Creates a role with name {role} if not found",
+                "in": "query",
+                "required": false,
+                "type": "bool"
             },
             {
                 "name": "role_member_update",

@@ -147,6 +147,85 @@ class RolesList:
         return cls.from_json(rsp.content)
 
 
+class RoleMember(NamedTuple):
+    class PrincipalType(str, Enum):
+        USER = 'User'
+
+    principal_type: PrincipalType
+    name: str
+
+
+class RoleMemberList:
+    members: list[RoleMember]
+
+    def __init__(self, mems: list[dict] = []):
+        self.members = [RoleMember(**m) for m in mems]
+
+    def __getitem__(self, i) -> RoleMember:
+        return self.members[i]
+
+    def __len__(self):
+        return len(self.members)
+
+    def __str__(self):
+        return str(self.members)
+
+    @classmethod
+    def from_json(cls, body: bytes):
+        d = json.loads(body)
+        for k in d:
+            assert k == 'members', f"Unexpected key {k}"
+        return cls(d['members'])
+
+    # TODO(oren): factor this out to a base class maybe
+    @classmethod
+    def from_response(cls, rsp: Response):
+        return cls.from_json(rsp.content)
+
+
+class RoleMemberUpdateResponse:
+    role: str
+    added: RoleMemberList
+    removed: RoleMemberList
+    created: bool
+
+    def __init__(self,
+                 role: str,
+                 added: RoleMemberList = RoleMemberList(),
+                 removed: RoleMemberList = RoleMemberList(),
+                 created: bool = False):
+        self.role = role
+        self.added = added
+        self.removed = removed
+        self.created = created
+
+    def __str__(self):
+        return json.dumps({
+            'role': self.role,
+            'added': [a for a in self.added],
+            'removed': [r for r in self.removed],
+            'created': self.created
+        })
+
+    @classmethod
+    def from_json(cls, body: bytes):
+        d = json.loads(body)
+        expected_keys = set(['role', 'added', 'removed', 'created'])
+        assert all(k in expected_keys
+                   for k in d), f"Unexpected key(s): {d.keys()}"
+        assert 'role' in d, "Expected 'role' key"
+        role = d['role']
+        kwargs = {}
+        kwargs['added'] = RoleMemberList(d.get('added', []))
+        kwargs['removed'] = RoleMemberList(d.get('removed', []))
+        kwargs['created'] = d.get('created', False)
+        return cls(role, **kwargs)
+
+    @classmethod
+    def from_response(cls, rsp: Response):
+        return cls.from_json(rsp.content)
+
+
 class Admin:
     """
     Wrapper for Redpanda admin REST API.
@@ -388,6 +467,7 @@ class Admin:
                  verb: str,
                  path: str,
                  node: MaybeNode = None,
+                 params: Optional[dict] = None,
                  **kwargs: Any):
         if node is None and self._default_node is not None:
             # We were constructed with an explicit default node: use that one
@@ -410,10 +490,12 @@ class Admin:
         fallback_nodes = self.redpanda.nodes
         fallback_nodes = list(filter(lambda n: n != node, fallback_nodes))
 
+        params_e = f"?{urllib.parse.urlencode(params)}" if params is not None else ""
+
         # On connection errors, retry until we run out of alternative nodes to try
         # (fall through on first successful request)
         while True:
-            url = self._url(node, path)
+            url = self._url(node, path + params_e)
             self.redpanda.logger.debug(f"Dispatching {verb} {url}")
             try:
                 r = self._session.request(verb, url, **kwargs)
@@ -926,22 +1008,25 @@ class Admin:
             params['filter'] = filter
         if principal is not None:
             params['principal'] = principal
-        return self._request(
-            "get", "security/roles?" + urllib.parse.urlencode(params))
+        return self._request("get", "security/roles", params=params)
 
     def update_role_members(self,
                             role: str,
-                            add: Optional[list] = [],
-                            remove: Optional[list] = []):
-        if add is not None:
-            add = [{"name": n, "principal_type": "User"} for n in add]
+                            add: Optional[list[RoleMember]] = [],
+                            remove: Optional[list[RoleMember]] = [],
+                            create: Optional[bool] = None):
 
-        if remove is not None:
-            remove = [{"name": n, "principal_type": "User"} for n in remove]
+        to_add = [m._asdict() for m in add] if add is not None else []
+        to_remove = [m._asdict() for m in remove] if remove is not None else []
+
+        params = {}
+        if create is not None:
+            params['create'] = create
 
         return self._request("post",
                              f"security/roles/{role}/members",
-                             json=dict(add=add, remove=remove))
+                             params=params,
+                             json=dict(add=to_add, remove=to_remove))
 
     def list_role_members(self, role: str):
         return self._request("get", f"security/roles/{role}/members")

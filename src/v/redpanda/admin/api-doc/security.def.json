@@ -48,7 +48,7 @@
         "principal_type": {
             "type": "string",
             "enum": [
-                "user"
+                "User"
             ]
         }
     }

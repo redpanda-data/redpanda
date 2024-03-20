@@ -14,7 +14,7 @@ namespace security {
 std::ostream& operator<<(std::ostream& os, role_member_type t) {
     switch (t) {
     case role_member_type::user:
-        return os << "user";
+        return os << "User";
     }
     __builtin_unreachable();
 }
