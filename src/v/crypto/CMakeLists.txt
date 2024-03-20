@@ -21,4 +21,4 @@ v_cc_library(
       OpenSSL::SSL
 )
 
-add_subdirectory(test)
+add_subdirectory(tests)
