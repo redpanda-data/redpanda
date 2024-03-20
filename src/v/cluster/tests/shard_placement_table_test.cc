@@ -37,25 +37,43 @@ struct ntp_table {
     model::revision_id revision;
 };
 
-using partition_key = std::pair<model::ntp, model::revision_id>;
+/// ntp2shards map is instantiated on shard 0 and is used to check invariants
+/// during reconciliation.
+///
+/// ntp_shards struct is keyed by ntp and holds expected target shard, as well
+/// as a set of all shards that have mock "shard-local kvstore state" (this
+/// state is virtual and we don't really write it into the actual kvstore). This
+/// set is then checked to verify that we don't leave any garbage behind when we
+/// move partitions around.
+///
+/// partition_shards struct is keyed by {ntp, log_revision} pair (although
+/// unlikely in practice, presence of several ntp instances with different log
+/// revisions is possible on different shards) and used to check the following
+/// invariants:
+/// * At any given time only the partition is "launched" on max one shard
+/// * OR there is max one xshard transfer in progress
 
 struct partition_shards {
     std::optional<ss::shard_id> launched_on;
     std::optional<ss::shard_id> current_state_on;
     std::optional<ss::shard_id> next_state_on;
-    absl::flat_hash_set<ss::shard_id> shards_with_some_state;
 
     bool empty() const {
-        return !launched_on && !current_state_on && !next_state_on
-               && shards_with_some_state.empty();
+        return !launched_on && !current_state_on && !next_state_on;
     }
 };
 
-/// This map is instantiated on shard 0 and is used to check invariants during
-/// reconciliation:
-/// * At any given time only the partition is "launched" on max one shard
-/// * OR there is max one xshard transfer in progress
-using partition2shards_t = absl::flat_hash_map<partition_key, partition_shards>;
+struct ntp_shards {
+    absl::flat_hash_set<ss::shard_id> shards_with_some_state;
+    std::optional<shard_placement_target> target;
+    absl::flat_hash_map<model::revision_id, partition_shards> rev2shards;
+
+    bool empty() const {
+        return shards_with_some_state.empty() && !target && rev2shards.empty();
+    }
+};
+
+using ntp2shards_t = absl::flat_hash_map<model::ntp, ntp_shards>;
 
 /// simplified version of controller_backend driving shard_placement_table
 /// reconciliation
@@ -65,10 +83,10 @@ public:
     explicit reconciliation_backend(
       ss::sharded<ntp_table>& ntpt,
       ss::sharded<shard_placement_table>& spt,
-      ss::sharded<partition2shards_t>& partition2shards)
+      ss::sharded<ntp2shards_t>& ntp2shards)
       : _ntpt(ntpt.local())
       , _shard_placement(spt.local())
-      , _partition2shards(partition2shards) {}
+      , _ntp2shards(ntp2shards) {}
 
     ss::future<> stop() {
         for (auto& [_, rs] : _states) {
@@ -233,7 +251,9 @@ private:
             co_return errc::waiting_for_shard_placement_update;
         case shard_placement_table::reconciliation_action::transfer: {
             auto ec = co_await transfer_partition(
-              ntp, expected_log_revision.value());
+              ntp,
+              expected_log_revision.value(),
+              placement.current.has_value());
             if (ec) {
                 co_return ec;
             }
@@ -242,7 +262,9 @@ private:
         case shard_placement_table::reconciliation_action::create: {
             if (!_launched.contains(ntp)) {
                 auto ec = co_await create_partition(
-                  ntp, expected_log_revision.value());
+                  ntp,
+                  expected_log_revision.value(),
+                  placement.current.has_value());
                 if (ec) {
                     co_return ec;
                 }
@@ -252,8 +274,10 @@ private:
         }
     }
 
-    ss::future<std::error_code>
-    create_partition(const model::ntp& ntp, model::revision_id log_revision) {
+    ss::future<std::error_code> create_partition(
+      const model::ntp& ntp,
+      model::revision_id log_revision,
+      bool state_expected) {
         auto ec = co_await _shard_placement.prepare_create(ntp, log_revision);
         vlog(clusterlog.trace, "[{}] creating partition: {}", ntp, ec);
         if (ec) {
@@ -263,32 +287,47 @@ private:
         _launched.insert(ntp);
         co_await ss::sleep(1ms * random_generators::get_int(30));
 
-        co_await _partition2shards.invoke_on(
+        co_await _ntp2shards.invoke_on(
           0,
-          [ntp, log_revision, shard = ss::this_shard_id()](
-            partition2shards_t& p2shards) {
-              auto& shards = p2shards[{ntp, log_revision}];
-              shards.shards_with_some_state.insert(shard);
+          [ntp, log_revision, state_expected, shard = ss::this_shard_id()](
+            ntp2shards_t& ntp2shards) {
+              auto& shards = ntp2shards[ntp];
+              auto& p_shards = shards.rev2shards[log_revision];
+
               vassert(
-                !shards.current_state_on || shards.current_state_on == shard,
+                (!state_expected && !p_shards.current_state_on)
+                  || (state_expected && p_shards.current_state_on == shard),
                 "[{}] unexpected current: {} (starting on: {})",
                 ntp,
-                shards.current_state_on,
+                p_shards.current_state_on,
                 shard);
+
+              bool inserted
+                = shards.shards_with_some_state.insert(shard).second;
+              if (!state_expected) {
+                  vassert(
+                    inserted,
+                    "[{}] unexpected set contents, shard: {}, current: {}",
+                    ntp,
+                    shard,
+                    p_shards.current_state_on);
+              }
+              p_shards.current_state_on = shard;
+
               vassert(
-                !shards.next_state_on,
+                !p_shards.next_state_on,
                 "[{}] unexpected next: {} (starting on: {})",
                 ntp,
-                shards.next_state_on,
+                p_shards.next_state_on,
                 shard);
+
               vassert(
-                !shards.launched_on,
+                !p_shards.launched_on,
                 "[{}] unexpected launched: {} (starting on: {})",
                 ntp,
-                shards.launched_on,
+                p_shards.launched_on,
                 shard);
-              shards.current_state_on = shard;
-              shards.launched_on = shard;
+              p_shards.launched_on = shard;
           });
 
         co_return errc::success;
@@ -314,28 +353,60 @@ private:
             co_return errc::success;
         }
 
-        _launched.erase(ntp);
+        bool launched_expected = _launched.erase(ntp);
         co_await ss::sleep(1ms * random_generators::get_int(30));
 
-        co_await _partition2shards.invoke_on(
+        co_await _ntp2shards.invoke_on(
           0,
           [ntp,
            log_revision = placement.current.value().log_revision,
-           shard = ss::this_shard_id()](partition2shards_t& p2shards) {
-              auto& shards = p2shards[{ntp, log_revision}];
+           shard = ss::this_shard_id(),
+           launched_expected](ntp2shards_t& ntp2shards) {
+              auto& shards = ntp2shards[ntp];
+
+              bool erased = shards.shards_with_some_state.erase(shard);
+              if (launched_expected) {
+                  vassert(
+                    erased,
+                    "[{}] unexpected set contents (deleting on: {})",
+                    ntp,
+                    shard);
+              }
+
+              auto& p_shards = shards.rev2shards[log_revision];
+
               vassert(
-                shards.shards_with_some_state.erase(shard),
-                "[{}] expected shard {} to be in set",
+                (launched_expected && p_shards.launched_on == shard)
+                  || (!launched_expected && !p_shards.launched_on),
+                "[{}] unexpected launched: {} (shard: {}, expected: {})",
                 ntp,
-                shard);
-              if (shards.launched_on == shard) {
-                  shards.launched_on = std::nullopt;
+                p_shards.launched_on,
+                shard,
+                launched_expected);
+              p_shards.launched_on = std::nullopt;
+
+              if (launched_expected) {
+                  vassert(
+                    p_shards.current_state_on == shard,
+                    "[{}] unexpected current: {} (deleting on: {})",
+                    ntp,
+                    p_shards.current_state_on,
+                    shard);
               }
-              if (shards.current_state_on == shard) {
-                  shards.current_state_on = std::nullopt;
+              if (p_shards.current_state_on == shard) {
+                  p_shards.current_state_on = std::nullopt;
               }
-              if (shards.next_state_on == shard) {
-                  shards.next_state_on = std::nullopt;
+
+              if (launched_expected) {
+                  vassert(
+                    !p_shards.next_state_on,
+                    "[{}] unexpected next: {} (deleting on: {})",
+                    ntp,
+                    p_shards.next_state_on,
+                    shard);
+              }
+              if (p_shards.next_state_on == shard) {
+                  p_shards.next_state_on = std::nullopt;
               }
           });
 
@@ -344,8 +415,10 @@ private:
         co_return ec;
     }
 
-    ss::future<std::error_code>
-    transfer_partition(const model::ntp& ntp, model::revision_id log_revision) {
+    ss::future<std::error_code> transfer_partition(
+      const model::ntp& ntp,
+      model::revision_id log_revision,
+      bool state_expected) {
         auto maybe_dest = co_await _shard_placement.prepare_transfer(
           ntp, log_revision);
         if (maybe_dest.has_error()) {
@@ -364,41 +437,68 @@ private:
           maybe_dest.value());
         ss::shard_id destination = maybe_dest.value();
 
-        _launched.erase(ntp);
+        bool launched_expected = _launched.erase(ntp);
 
-        co_await _partition2shards.invoke_on(
+        co_await _ntp2shards.invoke_on(
           0,
-          [ntp, log_revision, source = ss::this_shard_id(), destination](
-            partition2shards_t& p2shards) {
-              auto& shards = p2shards[{ntp, log_revision}];
-              shards.shards_with_some_state.insert(destination);
+          [ntp,
+           log_revision,
+           source = ss::this_shard_id(),
+           destination,
+           launched_expected,
+           state_expected](ntp2shards_t& ntp2shards) {
+              auto& shards = ntp2shards[ntp];
+              auto& p_shards = shards.rev2shards[log_revision];
+
               vassert(
-                !shards.launched_on || shards.launched_on == source,
-                "[{}] unexpected launched: {} (transferring from: {})",
+                (launched_expected && p_shards.launched_on == source)
+                  || (!launched_expected && !p_shards.launched_on),
+                "[{}] unexpected launched: {} (transferring from: {}, "
+                "expected: {})",
                 ntp,
-                shards.launched_on,
-                source);
-              shards.launched_on = std::nullopt;
+                p_shards.launched_on,
+                source,
+                launched_expected);
+              p_shards.launched_on = std::nullopt;
+
               vassert(
-                !shards.current_state_on || shards.current_state_on == source,
-                "[{}] unexpected current: {} (transferring from: {})",
+                (state_expected && p_shards.current_state_on == source)
+                  || (!state_expected && !p_shards.current_state_on),
+                "[{}] unexpected current: {} (transferring from: {}, "
+                "expected: {})",
                 ntp,
-                shards.current_state_on,
-                source);
+                p_shards.current_state_on,
+                source,
+                state_expected);
+
+              if (!state_expected) {
+                  vassert(
+                    !shards.shards_with_some_state.contains(source),
+                    "[{}] unexpected set contents, source: {}",
+                    ntp,
+                    source);
+              }
+
               vassert(
-                !shards.next_state_on,
+                !p_shards.next_state_on,
                 "[{}] unexpected next: {} (transferring from: {})",
                 ntp,
-                shards.next_state_on,
+                p_shards.next_state_on,
                 source);
-              shards.next_state_on = destination;
+
+              vassert(
+                shards.shards_with_some_state.insert(destination).second,
+                "[{}] unexpected set contents, destination: {}",
+                ntp,
+                destination);
+              p_shards.next_state_on = destination;
           });
 
         co_await ss::sleep(1ms * random_generators::get_int(30));
 
-        co_await _partition2shards.invoke_on(
-          0, [ntp, log_revision, destination](partition2shards_t& p2shards) {
-              auto& shards = p2shards[{ntp, log_revision}];
+        co_await _ntp2shards.invoke_on(
+          0, [ntp, log_revision, destination](ntp2shards_t& ntp2shards) {
+              auto& shards = ntp2shards[ntp].rev2shards[log_revision];
               vassert(
                 !shards.launched_on,
                 "[{}] unexpected launched: {} (transferring to: {})",
@@ -427,12 +527,19 @@ private:
                 });
           });
 
-        co_await _partition2shards.invoke_on(
+        co_await _ntp2shards.invoke_on(
           0,
-          [ntp, log_revision, shard = ss::this_shard_id()](
-            partition2shards_t& p2shards) {
-              auto& shards = p2shards[{ntp, log_revision}];
-              shards.shards_with_some_state.erase(shard);
+          [ntp, shard = ss::this_shard_id(), state_expected](
+            ntp2shards_t& ntp2shards) {
+              auto& ntp_shards = ntp2shards[ntp];
+              bool erased = ntp_shards.shards_with_some_state.erase(shard);
+              if (!state_expected) {
+                  vassert(
+                    !erased,
+                    "[{}] unexpected set contents, source: {}",
+                    ntp,
+                    shard);
+              }
           });
 
         co_await _shard_placement.finish_transfer_on_source(ntp, log_revision);
@@ -443,7 +550,7 @@ private:
 private:
     ntp_table& _ntpt;
     shard_placement_table& _shard_placement;
-    ss::sharded<partition2shards_t>& _partition2shards;
+    ss::sharded<ntp2shards_t>& _ntp2shards;
 
     absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
       _states;
@@ -480,15 +587,24 @@ public:
 
         ASSERT_EQ_CORO(ntp2shard2state.size(), ntpt.local().ntp2meta.size());
 
-        auto& p2shards = partition2shards.local();
-        for (auto it = p2shards.begin(); it != p2shards.end();) {
+        auto& ntp2shards = _ntp2shards.local();
+        for (auto it = ntp2shards.begin(); it != ntp2shards.end();) {
             auto it_copy = it++;
+
+            auto& rev2shards = it_copy->second.rev2shards;
+            for (auto p_it = rev2shards.begin(); p_it != rev2shards.end();) {
+                auto p_it_copy = p_it++;
+                if (p_it_copy->second.empty()) {
+                    rev2shards.erase(p_it_copy);
+                }
+            }
+
             if (it_copy->second.empty()) {
-                p2shards.erase(it_copy);
+                ntp2shards.erase(it_copy);
             }
         }
 
-        ASSERT_EQ_CORO(p2shards.size(), ntpt.local().ntp2meta.size());
+        ASSERT_EQ_CORO(ntp2shards.size(), ntpt.local().ntp2meta.size());
 
         for (const auto& [ntp, meta] : ntpt.local().ntp2meta) {
             auto states_it = ntp2shard2state.find(ntp);
@@ -500,8 +616,20 @@ public:
             ASSERT_TRUE_CORO(target_it != spt.local()._ntp2target.end())
               << "ntp: " << ntp;
             const auto& target = target_it->second;
-
             ASSERT_EQ_CORO(target.log_revision, meta.log_revision)
+              << "ntp: " << ntp;
+
+            auto shards_it = ntp2shards.find(ntp);
+            ASSERT_TRUE_CORO(shards_it != ntp2shards.end()) << "ntp: " << ntp;
+            const auto& shards = shards_it->second;
+            ASSERT_TRUE_CORO(shards.target) << "ntp: " << ntp;
+            ASSERT_EQ_CORO(shards.target->log_revision, meta.log_revision)
+              << "ntp: " << ntp;
+            ASSERT_EQ_CORO(shards.target->shard, target.shard)
+              << "ntp: " << ntp;
+            ASSERT_EQ_CORO(
+              shards.shards_with_some_state,
+              absl::flat_hash_set<ss::shard_id>({target.shard}))
               << "ntp: " << ntp;
 
             ASSERT_TRUE_CORO(shard2state.contains(target.shard))
@@ -530,17 +658,16 @@ public:
                 }
             }
 
-            auto shards_it = p2shards.find({ntp, meta.log_revision});
-            ASSERT_TRUE_CORO(shards_it != p2shards.end()) << "ntp: " << ntp;
-            const auto& shards = shards_it->second;
-            ASSERT_EQ_CORO(shards.launched_on, target.shard) << "ntp: " << ntp;
-            ASSERT_EQ_CORO(shards.current_state_on, target.shard)
+            ASSERT_EQ_CORO(shards.rev2shards.size(), 1) << "ntp: " << ntp;
+            auto p_shards_it = shards.rev2shards.find(meta.log_revision);
+            ASSERT_TRUE_CORO(p_shards_it != shards.rev2shards.end())
               << "ntp: " << ntp;
-            ASSERT_EQ_CORO(shards.next_state_on, std::nullopt)
+            const auto& p_shards = p_shards_it->second;
+            ASSERT_EQ_CORO(p_shards.launched_on, target.shard)
               << "ntp: " << ntp;
-            ASSERT_EQ_CORO(
-              shards.shards_with_some_state,
-              absl::flat_hash_set<ss::shard_id>({target.shard}))
+            ASSERT_EQ_CORO(p_shards.current_state_on, target.shard)
+              << "ntp: " << ntp;
+            ASSERT_EQ_CORO(p_shards.next_state_on, std::nullopt)
               << "ntp: " << ntp;
         }
     }
@@ -551,6 +678,8 @@ public:
           [](features::feature_table& ft) { ft.testing_activate_all(); });
 
         co_await ntpt.start();
+
+        co_await _ntp2shards.start_single();
 
         co_await sr.start();
 
@@ -567,20 +696,17 @@ public:
 
         co_await spt.start();
 
-        co_await partition2shards.start_single();
-
-        co_await rb.start(
-          std::ref(ntpt), std::ref(spt), std::ref(partition2shards));
+        co_await rb.start(std::ref(ntpt), std::ref(spt), std::ref(_ntp2shards));
         co_await rb.invoke_on_all(
           [](reconciliation_backend& rb) { return rb.start(); });
     }
 
     ss::future<> stop() {
         co_await rb.stop();
-        co_await partition2shards.stop();
         co_await spt.stop();
         co_await kvs.stop();
         co_await sr.stop();
+        co_await _ntp2shards.stop();
         co_await ntpt.stop();
         co_await ft.stop();
     }
@@ -594,10 +720,10 @@ public:
     ss::sstring test_dir;
     ss::sharded<features::feature_table> ft;
     ss::sharded<ntp_table> ntpt;
+    ss::sharded<ntp2shards_t> _ntp2shards; // only on shard 0
     ss::sharded<storage::storage_resources> sr;
     ss::sharded<storage::kvstore> kvs;
     ss::sharded<shard_placement_table> spt;
-    ss::sharded<partition2shards_t> partition2shards; // only on shard 0
     ss::sharded<reconciliation_backend> rb;
 };
 
@@ -683,6 +809,8 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
                 break;
             }
         }
+
+        _ntp2shards.local()[ntp].target = target;
 
         co_await spt.local().set_target(
           ntp,
