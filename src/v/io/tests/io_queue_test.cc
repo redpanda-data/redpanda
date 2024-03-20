@@ -81,7 +81,8 @@ struct queue_tester {
             while (!stop_) {
                 try {
                     queue.open().get();
-                } catch (...) {
+                } catch (const std::exception& ex) {
+                    std::ignore = ex;
                 }
                 sleep_ms(10, 50);
                 if (queue.opened()) {
@@ -116,7 +117,8 @@ TEST_P(IOQueueTest, WriteRead) {
 
     try {
         seastar::remove_file(qt.queue.path().string()).get();
-    } catch (...) {
+    } catch (const std::exception& ex) {
+        std::ignore = ex;
     }
 }
 
