@@ -15,7 +15,7 @@
 #include "crypto/crypto.h"
 #include "crypto/exceptions.h"
 #include "crypto/ossl_context_service.h"
-#include "crypto/test/test_values.h"
+#include "crypto/tests/test_values.h"
 #include "crypto/types.h"
 #include "ossl_context_service_test_base.h"
 #include "ssx/thread_worker.h"
