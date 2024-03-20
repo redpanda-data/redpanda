@@ -1035,6 +1035,12 @@ class TopicRecoveryTest(RedpandaTest):
             *args,
             si_settings=si_settings,
             environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
+            # ensure that only the light check of manifest existence is performed
+            extra_rp_conf={
+                'cloud_storage_recovery_topic_validation_mode':
+                'check_manifest_existence',
+                'cloud_storage_recovery_topic_force_override_cfg': 'false',
+            },
             **kwargs)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
