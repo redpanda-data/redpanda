@@ -15,6 +15,7 @@
 #include "cluster/node/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "utils/delta_for.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -214,6 +215,417 @@ struct node_health_report
 
     friend bool
     operator==(const node_health_report& a, const node_health_report& b);
+};
+
+/**
+ * Frame size used in partition_status_cstore
+ */
+static constexpr size_t frame_size = 2048;
+
+/**
+ * Values in partition status columns are not sorted hence we need to use XOR
+ * based encoding
+ */
+template<typename T>
+using unsorted_col_t = deltafor_column<T, ::details::delta_xor, frame_size>;
+
+/**
+ * Tuple of partition_cstore iterators.
+ */
+using partition_cstore_iterators_t = std::tuple<
+  unsorted_col_t<int32_t>::lw_const_iterator,
+  unsorted_col_t<int64_t>::lw_const_iterator,
+  unsorted_col_t<int64_t>::lw_const_iterator,
+  unsorted_col_t<int64_t>::lw_const_iterator,
+  unsorted_col_t<uint64_t>::lw_const_iterator,
+  unsorted_col_t<uint8_t>::lw_const_iterator,
+  unsorted_col_t<uint64_t>::lw_const_iterator,
+  unsorted_col_t<uint32_t>::lw_const_iterator>;
+
+/**
+ * An iterator materializing columnar data in partition status.
+ * Materialization is lazy and only done when iterator is dereferenced.
+ */
+class partition_status_materializing_iterator
+  : public boost::iterator_facade<
+      partition_status_materializing_iterator,
+      const partition_status,
+      boost::iterators::forward_traversal_tag> {
+public:
+    partition_status_materializing_iterator() = default;
+
+    partition_status_materializing_iterator(
+      const partition_status_materializing_iterator& other)
+      = default;
+
+    partition_status_materializing_iterator&
+    operator=(const partition_status_materializing_iterator& other)
+      = default;
+
+    partition_status_materializing_iterator(
+      partition_status_materializing_iterator&&) noexcept
+      = default;
+
+    partition_status_materializing_iterator&
+    operator=(partition_status_materializing_iterator&&) noexcept
+      = default;
+
+    explicit partition_status_materializing_iterator(
+      partition_cstore_iterators_t);
+
+    ~partition_status_materializing_iterator() = default;
+
+    size_t index() const { return std::get<0>(_iterators).index(); }
+
+    bool is_end() const { return std::get<0>(_iterators).is_end(); }
+
+private:
+    friend class boost::iterator_core_access;
+
+    const partition_status& dereference() const;
+    void increment();
+    bool equal(const partition_status_materializing_iterator& other) const;
+
+    template<size_t idx, typename T>
+    T get_as() const {
+        return T(*std::get<idx>(_iterators));
+    }
+
+    partition_cstore_iterators_t _iterators;
+    mutable std::optional<partition_status> _current;
+};
+/**
+ * Columnar store of partition statues, the store compresses all values in a
+ * form of delta_for columns. Each column is responsible for storing values of
+ * a single field fo partition_status structure. Partition status can be
+ * retrieved by using the iterator which materializes the `partition_status`when
+ * dereferenced.
+ */
+class partition_statuses_cstore
+  : public serde::envelope<
+      partition_statuses_cstore,
+      serde::version<0>,
+      serde::compat_version<0>> {
+private:
+    enum column_idx {
+        id,
+        term,
+        leader,
+        revision_id,
+        size_bytes,
+        under_replicated_replicas,
+        reclaimable_size_bytes,
+        shard,
+    };
+    auto columns() const {
+        return std::tie(
+          _id,
+          _term,
+          _leader,
+          _revision_id,
+          _size_bytes,
+          _under_replicated_replicas,
+          _reclaimable_size_bytes,
+          _shard);
+    }
+
+    auto columns() {
+        return std::tie(
+          _id,
+          _term,
+          _leader,
+          _revision_id,
+          _size_bytes,
+          _under_replicated_replicas,
+          _reclaimable_size_bytes,
+          _shard);
+    }
+
+public:
+    partition_statuses_cstore() = default;
+
+    partition_statuses_cstore(partition_statuses_cstore&&) noexcept = default;
+    partition_statuses_cstore& operator=(partition_statuses_cstore&&) noexcept
+      = default;
+    partition_statuses_cstore& operator=(const partition_statuses_cstore&)
+      = delete;
+    partition_statuses_cstore(const partition_statuses_cstore&) = delete;
+    ~partition_statuses_cstore() = default;
+
+    auto serde_fields() {
+        return std::tie(
+          _id,
+          _term,
+          _leader,
+          _revision_id,
+          _size_bytes,
+          _under_replicated_replicas,
+          _reclaimable_size_bytes,
+          _shard,
+          _size);
+    }
+
+    partition_status_materializing_iterator begin() const;
+    partition_status_materializing_iterator end() const;
+
+    /**
+     * Return number of stored partition statues
+     */
+    size_t size() const { return _size; }
+
+    bool empty() const { return _size == 0; }
+
+    /**
+     * Appends partition status to the container.
+     */
+    void push_back(const partition_status&);
+
+    partition_statuses_cstore copy() const;
+
+    friend bool operator==(
+      const partition_statuses_cstore&, const partition_statuses_cstore&)
+      = default;
+
+private:
+    friend partition_status_materializing_iterator;
+
+    partition_cstore_iterators_t internal_begin() const {
+        return std::apply(
+          [](auto&&... col) {
+              return partition_cstore_iterators_t(col.lw_begin()...);
+          },
+          columns());
+    }
+
+    partition_cstore_iterators_t internal_end() const {
+        return std::apply(
+          [](auto&&... col) {
+              return partition_cstore_iterators_t(col.lw_end()...);
+          },
+          columns());
+    }
+
+    unsorted_col_t<int32_t> _id;
+    unsorted_col_t<int64_t> _term;
+    unsorted_col_t<int64_t> _leader;
+    unsorted_col_t<int64_t> _revision_id;
+    unsorted_col_t<uint64_t> _size_bytes;
+    unsorted_col_t<uint8_t> _under_replicated_replicas;
+    unsorted_col_t<uint64_t> _reclaimable_size_bytes;
+    unsorted_col_t<uint32_t> _shard;
+    size_t _size{0};
+};
+
+/**
+ * Class representing a range in partition_statues_cstore.
+ *
+ * The range is used to represent a partition statues that belongs to particular
+ * topic.
+ */
+class partition_statuses_cstore_range {
+public:
+    partition_statuses_cstore_range(
+      size_t size,
+      partition_status_materializing_iterator begin,
+      partition_status_materializing_iterator end)
+      : _size(size)
+      , _begin(std::move(begin))
+      , _end(std::move(end)) {}
+
+    const partition_status_materializing_iterator& begin() const {
+        return _begin;
+    }
+
+    const partition_status_materializing_iterator& end() const { return _end; }
+
+    size_t size() const { return _size; }
+
+private:
+    size_t _size;
+    partition_status_materializing_iterator _begin;
+    partition_status_materializing_iterator _end;
+};
+namespace details {
+/**
+ * Class used to represent topic and position of its partition statues in
+ * partition status columnar store.
+ */
+struct topic_range
+  : serde::envelope<topic_range, serde::version<0>, serde::compat_version<0>> {
+    topic_range() = default;
+
+    topic_range(model::topic tp, size_t ns_idx, size_t partition_count);
+
+    model::topic tp;
+    size_t namespace_index{0};
+    size_t partition_count{0};
+
+    auto serde_fields() {
+        return std::tie(tp, namespace_index, partition_count);
+    }
+
+    friend bool operator==(const topic_range&, const topic_range&) = default;
+};
+
+} // namespace details
+
+/**
+ * Simple helper struct that is materialized when topic state iterator is
+ * dereferenced. The topic state iterator is an iterator facade that allows to
+ * iterate over individual topics and their partition statues.
+ */
+struct topic_status_view {
+    topic_status_view(
+      const model::ns&,
+      const model::topic&,
+      size_t partition_count,
+      partition_status_materializing_iterator begin,
+      partition_status_materializing_iterator end);
+
+    model::topic_namespace_view tp_ns;
+    partition_statuses_cstore_range partitions;
+
+    friend std::ostream& operator<<(std::ostream&, const topic_status_view&);
+};
+
+class topics_store;
+using topic_ranges_t = chunked_vector<details::topic_range>;
+/**
+ * Iterator to iterate over the topic store. This iterate constructs a view into
+ * the topic store. The view contains topic namespace and partition statutes
+ * range that is valid for the current topic.
+ */
+class topics_store_iterator
+  : public boost::iterator_facade<
+      topics_store_iterator,
+      const topic_status_view,
+      boost::iterators::forward_traversal_tag> {
+public:
+    topics_store_iterator(
+      topic_ranges_t::const_iterator topic_it,
+      partition_status_materializing_iterator partitions_it,
+      const topics_store* parent);
+
+    size_t index() const;
+
+    bool is_end() const;
+
+private:
+    friend class boost::iterator_core_access;
+
+    const topic_status_view& dereference() const;
+    void increment();
+    bool equal(const topics_store_iterator& other) const;
+
+    mutable std::optional<topic_status_view> _current_value;
+    topic_ranges_t::const_iterator _topic_it;
+    mutable partition_status_materializing_iterator _partition_it;
+    mutable std::optional<partition_status_materializing_iterator>
+      _partition_it_next;
+    const topics_store* _parent;
+};
+
+/**
+ * Central part of columnar health report. The topic store compress all topic
+ * partition statuses in a partition_status_cstore. It creates a helper data
+ * structure to maintain a projection of topic specific partition status ranges
+ * in the columnar store. Additionally each topic name is stored without the
+ * namespace instead we keep an index into the namespace vector where all
+ * namespaces are stored.
+ */
+class topics_store
+  : public serde::
+      envelope<topics_store, serde::version<0>, serde::compat_version<0>> {
+public:
+    topics_store() = default;
+
+    topics_store(topics_store&&) noexcept = default;
+    topics_store& operator=(topics_store&&) noexcept = default;
+    topics_store& operator=(const topics_store&) = delete;
+    topics_store(const topics_store&) = delete;
+    ~topics_store() = default;
+
+    void append(
+      model::topic_namespace tp_ns,
+      const chunked_vector<partition_status>& statuses);
+
+    topics_store_iterator begin() const {
+        return {_topics.begin(), _partitions.begin(), this};
+    }
+
+    topics_store_iterator end() const {
+        return {_topics.end(), _partitions.end(), this};
+    }
+
+    auto serde_fields() { return std::tie(_namespaces, _topics, _partitions); }
+
+    size_t size() const { return _topics.size(); }
+
+    topics_store copy() const;
+
+private:
+    friend topics_store_iterator;
+
+    const model::ns& ns(size_t idx) const { return _namespaces[idx]; }
+
+    friend bool operator==(const topics_store&, const topics_store&) = default;
+
+    size_t namespace_idx(const model::ns& ns) {
+        auto it = std::find(_namespaces.begin(), _namespaces.end(), ns);
+        if (it == _namespaces.end()) {
+            _namespaces.push_back(ns);
+            it = std::prev(_namespaces.end());
+        }
+        return std::distance(_namespaces.begin(), it);
+    }
+
+    std::vector<model::ns> _namespaces;
+    chunked_vector<details::topic_range> _topics;
+    partition_statuses_cstore _partitions;
+};
+
+/**
+ * Health report that uses columnar representation of topic partition statuses.
+ */
+struct columnar_node_health_report
+  : public serde::envelope<
+      columnar_node_health_report,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    columnar_node_health_report() = default;
+    columnar_node_health_report(columnar_node_health_report&&) noexcept
+      = default;
+    columnar_node_health_report&
+    operator=(columnar_node_health_report&&) noexcept
+      = default;
+    columnar_node_health_report& operator=(const columnar_node_health_report&)
+      = delete;
+    columnar_node_health_report(const columnar_node_health_report&) = delete;
+    ~columnar_node_health_report() = default;
+
+    model::node_id id;
+    node::local_state local_state;
+    topics_store topics;
+    std::optional<drain_manager::drain_status> drain_status;
+
+    /**
+     * Materializes columnar representation into the legacy map based health
+     * report.
+     */
+    node_health_report materialize_legacy_report() const;
+
+    columnar_node_health_report copy() const;
+
+    friend bool operator==(
+      const columnar_node_health_report&, const columnar_node_health_report&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(id, local_state, topics, drain_status);
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const columnar_node_health_report&);
 };
 
 struct cluster_health_report
