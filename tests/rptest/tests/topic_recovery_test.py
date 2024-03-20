@@ -1012,6 +1012,49 @@ class AdminApiBasedRestore(FastCheck):
             assert not item.key.startswith('recovery_state/kafka')
 
 
+class ManyPartitionsCase(BaseCase):
+    """
+    Specific case to test recovery of a higher number of partitions.
+    Ensure that the system is stable under the increased load.
+    """
+    def __init__(self, redpanda, s3_client, kafka_tools, rpk_client, s3_bucket,
+                 logger, rpk_producer_maker, num_topics: int,
+                 num_partitions_per_topic: int, check_mode: str):
+        super().__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                         s3_bucket, logger, rpk_producer_maker)
+
+        self.num_topics = num_topics
+        self.num_partitions_per_topic = num_partitions_per_topic
+        self.check_mode = check_mode
+        self.topics = [
+            TopicSpec(name=f"panda-topic-{i}",
+                      partition_count=num_partitions_per_topic,
+                      replication_factor=3) for i in range(num_topics)
+        ]
+        self.expected_recovered_topics = self.topics
+
+    def generate_baseline(self):
+        """Produce enough data to trigger uploads to S3/minio"""
+        for topic in self.topics:
+            producer = self._rpk_producer_maker(topic=topic.name,
+                                                msg_count=10000,
+                                                msg_size=1024)
+            producer.start()
+            producer.wait()
+            producer.free()
+
+        quiesce_uploads(self._redpanda, [topic.name for topic in self.topics],
+                        400)
+
+    def restore_redpanda(self, baseline, controller_checksums):
+        # set check mode, start recovery of topics
+        self._redpanda.set_cluster_config(
+            values={
+                'cloud_storage_recovery_topic_validation_mode': self.check_mode
+            })
+        return super().restore_redpanda(baseline, controller_checksums)
+
+
 class TopicRecoveryTest(RedpandaTest):
     def __init__(self, test_context: TestContext, *args, **kwargs):
         si_settings = SISettings(test_context,
@@ -1577,4 +1620,26 @@ class TopicRecoveryTest(RedpandaTest):
                                                  self.kafka_tools, self.rpk,
                                                  self.s3_bucket, self.logger,
                                                  self.rpk_producer_maker)
+        self.do_run(test_case)
+
+    @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            check_mode=[
+                'check_manifest_existence',
+                'check_manifest_and_segment_metadata', 'no_check'
+            ])
+    def test_many_partitions(self, cloud_storage_type, check_mode):
+        """
+        Stress the recovery checks system with a non trivial number of partitions to check
+        """
+        test_case = ManyPartitionsCase(self.redpanda,
+                                       self.cloud_storage_client,
+                                       self.kafka_tools,
+                                       self.rpk,
+                                       self.s3_bucket,
+                                       self.logger,
+                                       self.rpk_producer_maker,
+                                       num_topics=5,
+                                       num_partitions_per_topic=20,
+                                       check_mode=check_mode)
         self.do_run(test_case)
