@@ -15,7 +15,7 @@ from requests.exceptions import HTTPError
 import json
 
 from ducktape.utils.util import wait_until
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import (Admin, RoleMemberList, RoleUpdate,
                                    RoleErrorCode, RoleError, RolesList,
                                    RoleDescription, RoleMemberUpdateResponse,
@@ -738,3 +738,134 @@ class RBACLicenseTest(RBACTestBase):
         wait_until(self._has_license_nag,
                    timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
                    err_msg="License nag failed to appear")
+
+
+class RBACEndToEndTest(RBACTestBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.security = SecurityConfig()
+        self.security.enable_sasl = True
+        self.security.kafka_enable_authorization = True
+        self.security.endpoint_authn_method = 'sasl'
+        self.security.require_client_auth = True
+
+        self.su_rpk = RpkTool(self.redpanda,
+                              username=self.superuser.username,
+                              password=self.superuser.password,
+                              sasl_mechanism=self.superuser.algorithm)
+        self.alice_rpk = RpkTool(self.redpanda,
+                                 username=ALICE.username,
+                                 password=ALICE.password,
+                                 sasl_mechanism=ALICE.algorithm)
+
+        self.topic0 = 'some-topic'
+        self.topic1 = 'other-topic'
+
+    def setUp(self):
+        self.redpanda.set_security_settings(self.security)
+        super().setUp()
+
+    def role_for_user(self, role: str, user: RoleMember):
+        res = self.superuser_admin.list_role_members(role=role)
+        return user in RoleMemberList.from_response(res)
+
+    def has_topics(self, client: RpkTool):
+        tps = client.list_topics()
+        return list(tps)
+
+    @cluster(num_nodes=3)
+    def test_rbac(self):
+        alice = RoleMember.User('alice')
+
+        self.logger.debug(
+            f"Create a couple of roles, one with {alice} and one without")
+
+        res = self.superuser_admin.update_role_members(role=self.role_name0,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to create role"
+        res = self.superuser_admin.update_role_members(role=self.role_name1,
+                                                       add=[],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to create role"
+
+        wait_until(lambda: self.role_for_user(self.role_name0, alice),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        self.su_rpk.create_topic(self.topic0)
+        self.su_rpk.create_topic(self.topic1)
+
+        self.logger.debug(
+            "Since No permissions have been added to either role, expect authZ failed"
+        )
+        with expect_exception(RpkException,
+                              lambda e: 'AUTHORIZATION_FAILED' in str(e)):
+            self.alice_rpk.produce(self.topic0, 'foo', 'bar')
+
+        self.logger.debug("Now add topic access rights for user")
+        self.su_rpk.sasl_allow_principal(f"RedpandaRole:{self.role_name0}",
+                                         ['all'], 'topic', '*')
+
+        self.logger.debug(
+            "And a deny ACL to the role which is NOT assigned to the user")
+        self.su_rpk.sasl_deny_principal(f"RedpandaRole:{self.role_name1}",
+                                        ['read'], 'topic', self.topic1)
+
+        topics = wait_until_result(lambda: self.has_topics(self.alice_rpk),
+                                   timeout_sec=10,
+                                   backoff_sec=1,
+                                   retry_on_exc=True)
+
+        assert self.topic0 in topics
+        assert self.topic1 in topics
+
+        self.logger.debug("Confirm that the user can produce to both topics")
+
+        self.alice_rpk.produce(self.topic0, 'foo', 'bar')
+        self.alice_rpk.produce(self.topic1, 'baz', 'qux')
+
+        self.logger.debug("Confirm that the user can consume both topics")
+
+        rec = json.loads(self.alice_rpk.consume(self.topic0, n=1))
+        assert rec['topic'] == self.topic0, f"Unexpected topic {rec['topic']}"
+        assert rec['key'] == 'foo', f"Unexpected key {rec['key']}"
+        assert rec['value'] == 'bar', f"Unexpected value {rec['value']}"
+
+        rec = json.loads(self.alice_rpk.consume(self.topic1, n=1))
+        assert rec['topic'] == self.topic1, f"Unexpected topic {rec['topic']}"
+        assert rec['key'] == 'baz', f"Unexpected key {rec['key']}"
+        assert rec['value'] == 'qux', f"Unexpected value {rec['value']}"
+
+        self.logger.debug(
+            "Now add user to the role with the deny ACL and confirm change in access"
+        )
+
+        res = self.superuser_admin.update_role_members(role=self.role_name1,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to update role"
+
+        wait_until(lambda: self.role_for_user(self.role_name1, alice),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        wait_until(lambda: "DENY" in self.su_rpk.acl_list(),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        with expect_exception(RpkException,
+                              lambda e: 'AUTHORIZATION_FAILED' in str(e)):
+            self.alice_rpk.consume(self.topic1, n=1)
+
+        self.logger.debug(
+            "And finally confirm that the user retains read rights on the other topic"
+        )
+
+        rec = json.loads(self.alice_rpk.consume(self.topic0, n=1))
+        assert rec['topic'] == self.topic0, f"Unexpected topic {rec['topic']}"
+        assert rec['key'] == 'foo', f"Unexpected key {rec['key']}"
+        assert rec['value'] == 'bar', f"Unexpected value {rec['value']}"
