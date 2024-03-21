@@ -9,12 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
-#include "raft/offset_translator.h"
+#include "storage/offset_translator.h"
 
 #include "base/vlog.h"
-#include "raft/logger.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
+#include "storage/logger.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -394,7 +394,7 @@ ss::future<> offset_translator::move_persistent_state(
     };
     using state_ptr = std::unique_ptr<ot_state>;
     vlog(
-      raftlog.debug,
+      storage::stlog.debug,
       "moving group {} offset translator state from {} to {}",
       group,
       source_shard,

@@ -28,7 +28,6 @@
 #include "raft/group_configuration.h"
 #include "raft/heartbeats.h"
 #include "raft/logger.h"
-#include "raft/offset_translator.h"
 #include "raft/probe.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
@@ -36,8 +35,8 @@
 #include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
 #include "ssx/semaphore.h"
-#include "storage/fwd.h"
 #include "storage/log.h"
+#include "storage/offset_translator.h"
 #include "storage/snapshot.h"
 #include "utils/mutex.h"
 

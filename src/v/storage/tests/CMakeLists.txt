@@ -52,6 +52,15 @@ rp_test(
         ARGS "-- -c 1"
 )
 
+rp_test(
+  UNIT_TEST
+  BINARY_NAME test_offset_translator
+  SOURCES offset_translator_tests.cc
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
+  LABELS kafka
+  ARGS "-- -c 8"
+)
+
 # Putting this first, last, or in the middle of the other single thread tests
 # results in:
 # runtime error: member access within null pointer of type

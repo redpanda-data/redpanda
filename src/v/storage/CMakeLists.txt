@@ -35,6 +35,7 @@ v_cc_library(
     backlog_controller.cc
     compaction_controller.cc
     offset_to_filepos.cc
+    offset_translator.cc
     fs_utils.cc
     file_sanitizer_types.cc
     api.cc

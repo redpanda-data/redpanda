@@ -9,12 +9,13 @@
 
 #include "bytes/random.h"
 #include "model/fundamental.h"
-#include "raft/offset_translator.h"
+#include "raft/types.h"
 #include "random/generators.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
+#include "storage/offset_translator.h"
 #include "storage/record_batch_builder.h"
 #include "test_utils/fixture.h"
 

@@ -35,3 +35,8 @@ struct log_reader_config;
 struct timequery_config;
 
 } // namespace storage
+
+// TODO: a subsequent commit will move this into the storage namespace.
+namespace raft {
+class offset_translator;
+} // namespace raft
