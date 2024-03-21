@@ -470,6 +470,7 @@ override_member_container = {
     'offset_fetch_response_partition': 'small_fragment_vector',
     'creatable_topic': 'chunked_vector',
     'creatable_topic_configs': 'chunked_vector',
+    'describe_configs_resource_result': 'chunked_vector',
 }
 
 
