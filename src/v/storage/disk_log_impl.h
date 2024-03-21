@@ -116,7 +116,7 @@ public:
         return _offset_translator.state();
     }
     raft::offset_translator& offset_translator() { return _offset_translator; }
-    model::offset_delta delta(model::offset) const final;
+    model::offset_delta offset_delta(model::offset) const final;
     model::offset from_log_offset(model::offset) const final;
     model::offset to_log_offset(model::offset) const final;
     model::offset find_last_term_start_offset() const final;

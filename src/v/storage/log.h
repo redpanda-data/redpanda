@@ -100,7 +100,7 @@ public:
     virtual ss::future<std::optional<timequery_result>>
       timequery(timequery_config) = 0;
 
-    // Prefer to use delta() or from/to_log_offset().
+    // Prefer to use offset_delta() or from/to_log_offset().
     // TODO: remove direct access to the translator state and instead rely on
     // the translation/delta interface.
     virtual ss::lw_shared_ptr<const storage::offset_translator_state>
@@ -108,7 +108,7 @@ public:
 
     // Returns the offset delta for a given offset. This can be used for
     // example to translate a Raft offset to a data offset.
-    virtual model::offset_delta delta(model::offset) const = 0;
+    virtual model::offset_delta offset_delta(model::offset) const = 0;
 
     // Translate the given log offset into a data offset.
     virtual model::offset from_log_offset(model::offset) const = 0;

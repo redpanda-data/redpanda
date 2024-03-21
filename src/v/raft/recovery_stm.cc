@@ -490,7 +490,7 @@ recovery_stm::take_on_demand_snapshot(model::offset last_included_offset) {
       .last_included_term = *term,
       .latest_configuration = std::move(*cfg),
       .log_start_delta = offset_translator_delta(
-        _ptr->log()->delta(model::next_offset(last_included_offset))),
+        _ptr->log()->offset_delta(model::next_offset(last_included_offset))),
     };
 
     co_await writer.write_metadata(reflection::to_iobuf(std::move(metadata)));

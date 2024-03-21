@@ -2462,7 +2462,7 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
       .latest_configuration = *config,
       .cluster_time = clock_type::time_point::min(),
       .log_start_delta = offset_translator_delta(
-        _log->delta(model::next_offset(last_included_index))()),
+        _log->offset_delta(model::next_offset(last_included_index))()),
     };
 
     return details::persist_snapshot(

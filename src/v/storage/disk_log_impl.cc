@@ -1425,7 +1425,7 @@ bool disk_log_impl::is_new_log() const {
            && os.start_offset == not_initialized;
 }
 
-model::offset_delta disk_log_impl::delta(model::offset o) const {
+model::offset_delta disk_log_impl::offset_delta(model::offset o) const {
     return model::offset_delta{_offset_translator.state()->delta(o)};
 }
 

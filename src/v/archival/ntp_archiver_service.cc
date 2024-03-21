@@ -1471,7 +1471,7 @@ ntp_archiver::do_schedule_single_upload(
     auto base = upload.starting_offset;
     auto log = _parent.log();
     auto delta = base - model::offset_cast(log->from_log_offset(base));
-    auto delta_offset_next = log->delta(
+    auto delta_offset_next = log->offset_delta(
       model::next_offset(upload.final_offset));
 
     // The upload is successful only if the segment, and tx_range are
@@ -2927,7 +2927,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
     auto base = upload.starting_offset;
     auto log = _parent.log();
     auto delta = base - model::offset_cast(log->from_log_offset(base));
-    auto delta_offset_next = log->delta(
+    auto delta_offset_next = log->offset_delta(
       model::next_offset(upload.final_offset));
     auto archiver_term = _start_term;
 
