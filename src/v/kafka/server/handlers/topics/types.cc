@@ -230,7 +230,7 @@ to_cluster_type(const creatable_topic& t) {
 }
 
 static std::vector<kafka::creatable_topic_configs>
-convert_topic_configs(std::vector<kafka::config_response>&& topic_cfgs) {
+convert_topic_configs(config_response_container_t&& topic_cfgs) {
     auto configs = std::vector<kafka::creatable_topic_configs>();
     configs.reserve(topic_cfgs.size());
 
