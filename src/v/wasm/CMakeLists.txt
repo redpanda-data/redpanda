@@ -13,12 +13,14 @@ v_cc_library(
     cache.cc
     allocator.cc
     engine_probe.cc
+    ai_module.cc
   DEPS
     wasmtime
     v::wasm_parser
     v::storage
     v::model
     v::pandaproxy_schema_registry
+    v::ai
     Seastar::seastar
 )
 

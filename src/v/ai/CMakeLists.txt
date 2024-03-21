@@ -4,5 +4,8 @@ v_cc_library(
     service.cc
   DEPS
     Seastar::seastar
+    absl::strings
     llama
-  )
+)
+
+add_subdirectory(tests)

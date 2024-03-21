@@ -14,10 +14,44 @@
 
 #include <redpanda/transform_sdk.h>
 
-int main() {
-    // This is an example of copying records from one location to another.
-    redpanda::on_record_written(
-      [](redpanda::write_event event, redpanda::record_writer* writer) {
-          return writer->write(event.record);
-      });
+#include <array>
+#include <cstdint>
+
+#ifdef __wasi__
+#define WASM_IMPORT(mod, name)                                                 \
+    __attribute__((import_module(#mod), import_name(#name)))
+#else
+#define WASM_IMPORT(mod, name)
+#endif
+
+extern "C" {
+WASM_IMPORT(redpanda_ai, generate_text)
+int32_t redpanda_ai_generate_text(
+  const uint8_t* prompt_data,
+  size_t prompt_len,
+  size_t max_tokens,
+  const uint8_t* generated_output,
+  size_t generated_output_len);
 }
+
+namespace rp {
+using namespace redpanda;
+} // namespace rp
+
+std::error_code
+generate_transform(const rp::write_event& event, rp::record_writer* writer) {
+    rp::bytes_view value = event.record.value.value_or(rp::bytes_view());
+    static constexpr size_t max_output_size = 2048;
+    static constexpr size_t max_tokens = 100;
+    std::array<uint8_t, max_output_size> output;
+    size_t generated_amount = redpanda_ai_generate_text(
+      value.data(), value.size(), max_tokens, output.data(), output.size());
+    return writer->write({
+      .key = event.record.key,
+      .value = std::make_optional<rp::bytes_view>(
+        output.data(), generated_amount),
+      .headers = event.record.headers,
+    });
+}
+
+int main() { rp::on_record_written(generate_transform); }

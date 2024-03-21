@@ -13,13 +13,16 @@
 #include "base/vlog.h"
 #include "llama.h"
 #include "ssx/thread_worker.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/thread_impl.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
+#include <seastar/util/log.hh>
 
-#include <common/common.h>
+#include <absl/strings/ascii.h>
 
 #include <ggml.h>
 #include <limits>
@@ -45,6 +48,8 @@ namespace llama {
 
 using large_language_model = handle<llama_model, llama_free_model>;
 using context = handle<llama_context, llama_free>;
+using token = named_type<llama_token, struct token_tag>;
+using pos = named_type<llama_pos, struct pos_tag>;
 
 large_language_model load_model(const std::filesystem::path& model_file) {
     llama_model_params model_params = llama_model_default_params();
@@ -57,6 +62,9 @@ large_language_model load_model(const std::filesystem::path& model_file) {
         // TODO: Return false to stop loading via abort source.
         return true;
     };
+    model_params.use_mmap = true;   // How the model is loaded
+    model_params.use_mlock = false; // Force the model to stay in RAM
+    // TODO: Evaluate the rest of the parameters
     large_language_model model{
       llama_load_model_from_file(model_file.native().c_str(), model_params)};
     if (!model) {
@@ -69,10 +77,11 @@ large_language_model load_model(const std::filesystem::path& model_file) {
 context initialize_context(llama_model* model) {
     llama_context_params ctx_params = llama_context_default_params();
 
-    ctx_params.seed = -1;            // Use RNG
-    ctx_params.n_ctx = 0;            // Use the model's context window
-    ctx_params.n_threads = 1;        // TODO: Determine number of threads to use
-    ctx_params.n_threads_batch = -1; // use n_threads
+    ctx_params.seed = -1; // Use RNG
+    ctx_params.n_ctx = 0; // Use the model's context window
+    ctx_params.n_threads = std::thread::hardware_concurrency();
+    ctx_params.n_threads_batch = ctx_params.n_threads; // use n_threads
+    // TODO: Figure out the other parameters here.
     context ctx{llama_new_context_with_model(model, ctx_params)};
     if (!ctx) {
         throw std::runtime_error("unable to initialize model context");
@@ -80,7 +89,7 @@ context initialize_context(llama_model* model) {
     return ctx;
 }
 
-std::vector<llama_token>
+std::vector<token>
 tokenize(const llama_model* model, const ss::sstring& prompt) {
     constexpr bool add_bos = true;
     constexpr bool add_special = false;
@@ -88,13 +97,15 @@ tokenize(const llama_model* model, const ss::sstring& prompt) {
     if (add_bos) {
         ++max_tokens;
     }
-    std::vector<llama_token> result;
+    std::vector<token> result;
+    static_assert(
+      sizeof(token) == sizeof(llama_token), "needed for casts below");
     result.reserve(max_tokens);
     int32_t n_tokens = llama_tokenize(
       model,
       prompt.data(),
       int32_t(prompt.size()),
-      result.data(),
+      reinterpret_cast<llama_token*>(result.data()), // NOLINT
       int32_t(result.size()),
       add_bos,
       add_special);
@@ -104,7 +115,7 @@ tokenize(const llama_model* model, const ss::sstring& prompt) {
           model,
           prompt.data(),
           int32_t(prompt.size()),
-          result.data(),
+          reinterpret_cast<llama_token*>(result.data()), // NOLINT
           int32_t(result.size()),
           add_bos,
           add_special);
@@ -120,18 +131,18 @@ tokenize(const llama_model* model, const ss::sstring& prompt) {
 };
 
 void append_decoded_token(
-  const llama_model* model, llama_token token, ss::sstring* output) {
+  const llama_model* model, token id, ss::sstring* output) {
     static constexpr size_t decoded_guess_size = 8;
     std::array<char, decoded_guess_size> decoded; // NOLINT
     int32_t result = llama_token_to_piece(
-      model, token, decoded.data(), decoded.size());
+      model, id, decoded.data(), decoded.size());
     if (result >= 0) {
         output->append(decoded.data(), result);
         return;
     }
     ss::sstring decoded_str(ss::sstring::initialized_later(), -result);
     int32_t resized = llama_token_to_piece(
-      model, token, decoded_str.data(), int32_t(decoded_str.size()));
+      model, id, decoded_str.data(), int32_t(decoded_str.size()));
     vassert(
       resized == -result,
       "expected string of length {} when decoding, but got {}",
@@ -139,6 +150,52 @@ void append_decoded_token(
       resized);
     output->append(decoded_str.data(), decoded_str.size());
 }
+
+class batch {
+public:
+    batch(int32_t n_tokens, int32_t embd, int32_t n_seq_max)
+      : _underlying(llama_batch_init(n_tokens, embd, n_seq_max))
+      , _max_tokens(n_tokens) {}
+    batch(const batch&) = delete;
+    batch& operator=(const batch&) = delete;
+    batch(batch&&) = delete;
+    batch& operator=(batch&&) = delete;
+    ~batch() { llama_batch_free(_underlying); }
+
+    void add(
+      token id,
+      pos pos,
+      const std::vector<llama_seq_id>& seq_ids,
+      bool logits) {
+#ifndef NDEBUG
+        vassert(pos >= 0 && pos < _max_tokens, "out of bounds!");
+#endif
+        // NOLINTBEGIN(*-pointer-arithmetic)
+        _underlying.token[_underlying.n_tokens] = id;
+        _underlying.pos[_underlying.n_tokens] = pos;
+        _underlying.n_seq_id[_underlying.n_tokens] = static_cast<int32_t>(
+          seq_ids.size());
+        for (size_t i = 0; i < seq_ids.size(); ++i) {
+            _underlying.seq_id[_underlying.n_tokens][i] = seq_ids[i];
+        }
+        _underlying.logits[_underlying.n_tokens] = logits ? 1 : 0;
+
+        _underlying.n_tokens++;
+        // NOLINTEND(*-pointer-arithmetic)
+    }
+    int32_t n_tokens() const { return _underlying.n_tokens; }
+    void compute_logits(pos pos) {
+        // NOLINTBEGIN(*-pointer-arithmetic)
+        _underlying.logits[pos] = true;
+        // NOLINTEND(*-pointer-arithmetic)
+    }
+    void clear() { _underlying.n_tokens = 0; }
+    const llama_batch& raw() const { return _underlying; }
+
+private:
+    llama_batch _underlying;
+    int32_t _max_tokens;
+};
 
 } // namespace llama
 } // namespace
@@ -151,6 +208,8 @@ public:
 
     ss::sstring generate_text(
       const ss::sstring& prompt, service::generate_text_options opts) {
+        llama_kv_cache_clear(_ctx.get());
+
         auto tokens = llama::tokenize(_llm.get(), prompt);
         auto n_ctx = int32_t(llama_n_ctx(_ctx.get()));
         const int32_t output_len = opts.max_tokens;
@@ -164,25 +223,23 @@ public:
               n_kv_req));
         }
         constexpr size_t batch_n_tokens = 512;
-        llama_batch batch = llama_batch_init(
-          batch_n_tokens, /*embd=*/0, /*n_seq_max=*/1);
-        auto batch_cleanup = ss::defer([&batch] { llama_batch_free(batch); });
+        llama::batch batch(batch_n_tokens, /*embd=*/0, /*n_seq_max=*/1);
 
         // Add initial prompt
         std::vector seq_ids = {0};
         for (size_t i = 0; i < tokens.size(); ++i) {
-            llama_batch_add(
-              batch, tokens[i], llama_pos(i), seq_ids, /*logits=*/false);
+            batch.add(
+              tokens[i], llama::pos(int32_t(i)), seq_ids, /*logits=*/false);
         }
         // Output logits only for the last token of the prompt
-        batch.logits[batch.n_tokens - 1] = true; // NOLINT
-        int32_t decode_result = llama_decode(_ctx.get(), batch);
+        batch.compute_logits(llama::pos(batch.n_tokens() - 1));
+        int32_t decode_result = llama_decode(_ctx.get(), batch.raw());
         if (decode_result != 0) {
             throw std::runtime_error(
               ss::format("failure to decode tokens: {}", decode_result));
         }
 
-        int32_t n_cur = batch.n_tokens;
+        int32_t n_cur = batch.n_tokens();
 
         auto n_vocab = llama_n_vocab(_llm.get());
         std::vector<llama_token_data> candidates;
@@ -193,18 +250,18 @@ public:
         // The main loop to generate new tokens
         while (n_cur <= output_len) {
             std::span<float> logits(
-              llama_get_logits_ith(_ctx.get(), batch.n_tokens - 1), n_vocab);
+              llama_get_logits_ith(_ctx.get(), batch.n_tokens() - 1), n_vocab);
+            candidates.clear();
             for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
-                candidates.emplace_back(
-                  llama_token_data{token_id, logits[token_id], 0.0f});
+                candidates.emplace_back(token_id, logits[token_id], 0.0f);
             }
             llama_token_data_array candidates_p = {
               .data = candidates.data(),
               .size = candidates.size(),
               .sorted = false,
             };
-            llama_token new_token_id = llama_sample_token_greedy(
-              _ctx.get(), &candidates_p);
+            auto new_token_id = llama::token(
+              llama_sample_token_greedy(_ctx.get(), &candidates_p));
             if (
               new_token_id == llama_token_eos(_llm.get())
               || n_cur == output_len) {
@@ -213,11 +270,14 @@ public:
 
             llama::append_decoded_token(_llm.get(), new_token_id, &output);
 
-            llama_batch_clear(batch);
-            llama_batch_add(
-              batch, new_token_id, n_cur, seq_ids, /*logits=*/true);
-
-            decode_result = llama_decode(_ctx.get(), batch);
+            batch.clear();
+            batch.add(
+              new_token_id,
+              llama::pos(n_cur),
+              seq_ids,
+              /*logits=*/true);
+            ++n_cur;
+            decode_result = llama_decode(_ctx.get(), batch.raw());
             if (decode_result != 0) {
                 throw std::runtime_error(
                   ss::format("failure to decode tokens: {}", decode_result));
@@ -253,6 +313,26 @@ ss::future<> service::start(config cfg) {
         //            started on
         // - numactl: use the CPU map provided my numactl
         llama_numa_init(GGML_NUMA_STRATEGY_ISOLATE);
+        llama_log_set(
+          [](ggml_log_level level, const char* msg, void* /*user_data*/) {
+              ss::log_level lvl = ss::log_level::error;
+              switch (level) {
+              case GGML_LOG_LEVEL_ERROR:
+                  lvl = ss::log_level::error;
+                  break;
+              case GGML_LOG_LEVEL_WARN:
+                  lvl = ss::log_level::warn;
+                  break;
+              case GGML_LOG_LEVEL_INFO:
+                  lvl = ss::log_level::info;
+                  break;
+              case GGML_LOG_LEVEL_DEBUG:
+                  lvl = ss::log_level::debug;
+                  break;
+              }
+              vlogl(ai_logger, lvl, "{}", absl::StripAsciiWhitespace(msg));
+          },
+          /*user_data=*/nullptr);
         auto llm = llama::load_model(cfg.model_file);
         auto ctx = llama::initialize_context(llm.get());
         return std::make_unique<model>(std::move(llm), std::move(ctx));

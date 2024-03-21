@@ -106,6 +106,7 @@ fetch_dep(hdrhistogram
   REPO https://github.com/HdrHistogram/HdrHistogram_c
   TAG 0.11.5)
 
+set(LLAMA_CUBLAS ON)
 fetch_dep(llamacpp
   REPO https://github.com/ggerganov/llama.cpp
   TAG b2471)

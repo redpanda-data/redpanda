@@ -25,7 +25,7 @@ class model;
 // A service for interacting with an AI model.
 //
 // Currently we only support LLMs that have the same architecture as Llama.
-class service : ss::peering_sharded_service<service> {
+class service : public ss::peering_sharded_service<service> {
 public:
     service() noexcept;
     service(const service&) = delete;

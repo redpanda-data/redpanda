@@ -10,6 +10,8 @@
  */
 #include "wasmtime.h"
 
+#include "ai/service.h"
+#include "ai_module.h"
 #include "allocator.h"
 #include "base/vassert.h"
 #include "engine_probe.h"
@@ -67,8 +69,8 @@ namespace wasm::wasmtime {
 
 namespace {
 
-// Our guidelines recommend allocating max 128KB at once. Since we also need to
-// allocate a guard page, allocate 128KB-4KB of usable stack space.
+// Our guidelines recommend allocating max 128KB at once. Since we also need
+// to allocate a guard page, allocate 128KB-4KB of usable stack space.
 constexpr size_t vm_stack_size = 124_KiB;
 // The WebAssembly code gets at half the stack space for it's own work.
 constexpr size_t max_vm_guest_stack_usage = 64_KiB;
@@ -86,13 +88,14 @@ constexpr uint64_t millisecond_fuel_amount = 2'000'000;
 // The reserved memory for an instance of a WebAssembly VM.
 //
 // The wasmtime memory APIs don't allow us to pass information into an
-// allocation request, so we use a thread local variable as a side channel to
-// pass the allocated memory to wasmtime when we instantiate a module.
+// allocation request, so we use a thread local variable as a side channel
+// to pass the allocated memory to wasmtime when we instantiate a module.
 //
-// We need this side channel because allocating memory is async, due to the case
-// when memory is large enough we deallocate asynchronously. This variable is
-// only set for a synchronous period where we pass the memory from where it was
-// allocated into where wasmtime grabs host provided memory.
+// We need this side channel because allocating memory is async, due to the
+// case when memory is large enough we deallocate asynchronously. This
+// variable is only set for a synchronous period where we pass the memory
+// from where it was allocated into where wasmtime grabs host provided
+// memory.
 //
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static thread_local std::optional<heap_memory> prereserved_memory;
@@ -165,6 +168,8 @@ public:
 
     size_t per_invocation_fuel_amount() const;
 
+    ai::service* ai_service() { return &_ai_service.local(); }
+
 private:
     void register_metrics();
 
@@ -190,6 +195,7 @@ private:
       heap_allocator::request, wasmtime_linear_memory_t* memory_ret);
 
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
+    ss::sharded<ai::service> _ai_service;
     std::unique_ptr<schema_registry> _sr;
     ssx::singleton_thread_worker _alien_thread;
     ss::sharded<wasm::heap_allocator> _heap_allocator;
@@ -426,12 +432,12 @@ memory_limits lookup_memory_limits(const wasmtime_module_t* mod) {
 
 /**
  * Preinitialized instances only need a store to be plugged in and start
- * running. All compilation including any trampolines for host functions have
- * already been compiled in and no other code generation/compilation needs to
- * happen.
+ * running. All compilation including any trampolines for host functions
+ * have already been compiled in and no other code generation/compilation
+ * needs to happen.
  *
- * Creating instances from this is as fast as allocating the memory needed and
- * running any startup functions for the module.
+ * Creating instances from this is as fast as allocating the memory needed
+ * and running any startup functions for the module.
  */
 class preinitialized_instance {
 public:
@@ -487,7 +493,8 @@ public:
       , _sr_module(sr)
       , _wasi_module(
           {_meta.name()}, make_environment_vars(_meta), _logger.get())
-      , _transform_module(&_wasi_module) {}
+      , _transform_module(&_wasi_module)
+      , _ai_module(runtime->ai_service()) {}
     wasmtime_engine(const wasmtime_engine&) = delete;
     wasmtime_engine& operator=(const wasmtime_engine&) = delete;
     wasmtime_engine(wasmtime_engine&&) = delete;
@@ -507,12 +514,13 @@ public:
         _transform_module.stop(std::make_exception_ptr(
           wasm_exception("vm was shutdown", errc::engine_shutdown)));
         co_await std::move(main);
-        // Deleting the store invalidates the instance and actually frees the
-        // memory for the underlying instance.
+        // Deleting the store invalidates the instance and actually frees
+        // the memory for the underlying instance.
         _store = nullptr;
         vassert(
           !_pending_host_function,
-          "pending host functions should be awaited upon before stopping the "
+          "pending host functions should be awaited upon before stopping "
+          "the "
           "engine");
         _probe.report_max_memory(0);
         _probe.report_memory_usage(0);
@@ -547,6 +555,8 @@ public:
             return &_transform_module;
         } else if constexpr (std::is_same_v<T, schema_registry_module>) {
             return &_sr_module;
+        } else if constexpr (std::is_same_v<T, ai_module>) {
+            return &_ai_module;
         } else {
             static_assert(
               utils::unsupported_type<T>::value, "unsupported module");
@@ -597,15 +607,16 @@ private:
      */
     ss::future<>
     execute(handle<wasmtime_call_future_t, wasmtime_call_future_delete> fut) {
-        // Poll the call future to completion, yielding to the scheduler when
-        // the future yields.
+        // Poll the call future to completion, yielding to the scheduler
+        // when the future yields.
         auto start = ss::steady_clock_type::now();
-        // Disable profiling backtraces inside the VM - at the time of writing
-        // backtraces lead to segfaults causing deadlock in Seastar's signal
-        // handlers.
+        // Disable profiling backtraces inside the VM - at the time of
+        // writing backtraces lead to segfaults causing deadlock in
+        // Seastar's signal handlers.
         auto _ = ss::internal::scoped_disable_profile_temporarily();
         while (!wasmtime_call_future_poll(fut.get())) {
-            // Re-enable stacktraces before we yield control to the scheduler.
+            // Re-enable stacktraces before we yield control to the
+            // scheduler.
             ss::internal::profiler_drop_stacktraces(false);
             auto end = ss::steady_clock_type::now();
             _probe.increment_cpu_time(end - start);
@@ -625,13 +636,13 @@ private:
 
     ss::future<> create_instance() {
         // The underlying "data" for this store is our engine, which is what
-        // allows our host functions to access the actual module for that host
-        // function.
+        // allows our host functions to access the actual module for that
+        // host function.
         handle<wasmtime_store_t, wasmtime_store_delete> store{
           wasmtime_store_new(
             _runtime->engine(), /*data=*/this, /*finalizer=*/nullptr)};
-        // Tables are backed by a vector holding pointers, so ensure the maximum
-        // allocation is under our recommended limit.
+        // Tables are backed by a vector holding pointers, so ensure the
+        // maximum allocation is under our recommended limit.
         constexpr size_t table_element_size = sizeof(void*);
         constexpr size_t max_table_elements = 128_KiB / table_element_size;
         // We only ever create a single instance within this store, and we
@@ -658,8 +669,8 @@ private:
 
         auto requested = _preinitialized->mem_limits();
 
-        // Wait for memory to be available if the allocator is currently freeing
-        // memory.
+        // Wait for memory to be available if the allocator is currently
+        // freeing memory.
         auto memory = co_await _runtime->heap_allocator()->allocate({
           .minimum = requested.minimum,
           .maximum = std::min(requested.maximum, max_memory_size),
@@ -668,14 +679,15 @@ private:
         if (!memory) {
             throw wasm_exception(
               ss::format(
-                "unable to allocate memory within requested bounds: [{}, {}]",
+                "unable to allocate memory within requested bounds: [{}, "
+                "{}]",
                 requested.minimum,
                 requested.maximum),
               errc::engine_creation_failure);
         }
 
-        // Assign our allocated memory to thread local storage so we can bypass
-        // it into the allocator for the VM
+        // Assign our allocated memory to thread local storage so we can
+        // bypass it into the allocator for the VM
         prereserved_memory = std::move(memory);
 
         // The wasm spec has a feature that a module can specify a startup
@@ -696,14 +708,16 @@ private:
                 trap_out,
                 error_out)};
 
-            // The first poll of the call future is what allocates memory/stack
-            // so we need to do that before we assert that it was used.
+            // The first poll of the call future is what allocates
+            // memory/stack so we need to do that before we assert that it
+            // was used.
             ss::future<> ready = execute(std::move(fut));
 
             if (prereserved_memory) {
                 vlog(
                   wasm_log.error,
-                  "did not use prereserved memory when instantiating wasm vm");
+                  "did not use prereserved memory when instantiating wasm "
+                  "vm");
                 _runtime->heap_allocator()->deallocate(
                   std::exchange(prereserved_memory, std::nullopt).value(), 0);
             }
@@ -711,11 +725,12 @@ private:
             co_await std::move(ready);
         }
 
-        // Now that the call future has returned as completed, we can assume the
-        // out pointers have been set, we need to check them for errors.
+        // Now that the call future has returned as completed, we can assume
+        // the out pointers have been set, we need to check them for errors.
         check_error(error.get());
         check_trap(trap.get());
-        // initialization success (_instance is valid to use with this store)
+        // initialization success (_instance is valid to use with this
+        // store)
         _store = std::move(store);
     }
 
@@ -747,10 +762,10 @@ private:
             co_await execute(std::move(fut));
         }
 
-        // Now that the call future has returned as completed, we can assume the
-        // out pointers have been set, we need to check them for errors.
-        // Any results have been written to results and it's on the caller to
-        // check.
+        // Now that the call future has returned as completed, we can assume
+        // the out pointers have been set, we need to check them for errors.
+        // Any results have been written to results and it's on the caller
+        // to check.
         check_error(error.get());
         check_trap(trap.get());
     }
@@ -774,13 +789,13 @@ private:
             co_await call_host_func(ctx, &start.of.func, {}, {});
         } catch (...) {
             ex = std::current_exception();
-            // In the stop method, _main_task is exchanged for a ready future,
-            // this means that're shutting down and we expect the VM to be
-            // shutdown, so prevent the log spam in this case.
+            // In the stop method, _main_task is exchanged for a ready
+            // future, this means that're shutting down and we expect the VM
+            // to be shutdown, so prevent the log spam in this case.
             //
             // In reality it'd be better if we could plumb some custom data
-            // through the wasm runtime host errors for this. But we can't do
-            // that at the moment.
+            // through the wasm runtime host errors for this. But we can't
+            // do that at the moment.
             if (!_main_task.available()) {
                 vlog(wasm_log.warn, "wasm vm failed: {}", ex);
             }
@@ -848,6 +863,7 @@ private:
     schema_registry_module _sr_module;
     wasi::preview1_module _wasi_module;
     transform_module _transform_module;
+    ai_module _ai_module;
 
     // The following state is only valid if there is a non-null store.
     handle<wasmtime_store_t, wasmtime_store_delete> _store;
@@ -878,8 +894,8 @@ template<
 struct host_function<module_func> {
 public:
     /**
-     * Register a host function such that it can be invoked from the Wasmtime
-     * VM.
+     * Register a host function such that it can be invoked from the
+     * Wasmtime VM.
      */
     static void reg(
       wasmtime_linker_t* linker,
@@ -957,7 +973,8 @@ public:
 
 private:
     /**
-     * All the boilerplate setup needed to invoke a host function from the VM.
+     * All the boilerplate setup needed to invoke a host function from the
+     * VM.
      *
      * Extracts the memory module, and handles exceptions from our host
      * functions.
@@ -1003,10 +1020,10 @@ private:
         auto* engine = static_cast<wasmtime_engine*>(
           wasmtime_context_get_data(context));
         auto* host_module = engine->get_module<Module>();
-        // Keep this alive during the course of the host call incase it's used
-        // as a parameter to a host function, they'll expect it's alive the
-        // entire call. We'll move the ownership of this function into the host
-        // future continuation.
+        // Keep this alive during the course of the host call incase it's
+        // used as a parameter to a host function, they'll expect it's alive
+        // the entire call. We'll move the ownership of this function into
+        // the host future continuation.
         auto mem = std::make_unique<memory>(context);
         wasm_trap_t* trap = extract_memory(caller, mem.get());
         if (trap != nullptr) {
@@ -1019,9 +1036,9 @@ private:
         ss::future<> host_future_result = do_invoke_async_host_fn(
           host_module, mem.get(), {args, nargs}, {results, nresults});
 
-        // It's possible for the async function to be inlined in this fiber and
-        // have completed synchronously, in that case we don't need to register
-        // this future and can return that it's completed.
+        // It's possible for the async function to be inlined in this fiber
+        // and have completed synchronously, in that case we don't need to
+        // register this future and can return that it's completed.
         if (host_future_result.available()) {
             if (host_future_result.failed()) {
                 *trap_ret = make_trap(host_future_result.get_exception());
@@ -1111,8 +1128,8 @@ private:
     }
 
     /**
-     * Our ABI contract expects a "memory" export from the module that we can
-     * use to access the VM's memory space.
+     * Our ABI contract expects a "memory" export from the module that we
+     * can use to access the VM's memory space.
      */
     static wasm_trap_t* extract_memory(wasmtime_caller_t* caller, memory* mem) {
         constexpr std::string_view memory_export_name = "memory";
@@ -1152,10 +1169,12 @@ private:
         // stack space left.
         std::ptrdiff_t stack_left = (&dummy_stack_var) - bounds->bottom;
         void* stack_ptr = ::alloca(stack_left - max_host_function_stack_usage);
-        // Prevent the alloca from being optimized away by logging the result.
+        // Prevent the alloca from being optimized away by logging the
+        // result.
         vlog(
           wasm_log.trace,
-          "alloca-ing {}, stack left: {}, alloca address: {}, stack bounds: {}",
+          "alloca-ing {}, stack left: {}, alloca address: {}, stack "
+          "bounds: {}",
           human::bytes(stack_left - max_host_function_stack_usage),
           human::bytes(stack_left),
           stack_ptr,
@@ -1195,10 +1214,12 @@ private:
         // stack space left.
         std::ptrdiff_t stack_left = (&dummy_stack_var) - bounds->bottom;
         void* stack_ptr = ::alloca(stack_left - max_host_function_stack_usage);
-        // Prevent the alloca from being optimized away by logging the result.
+        // Prevent the alloca from being optimized away by logging the
+        // result.
         vlog(
           wasm_log.trace,
-          "alloca-ing {}, stack left: {}, alloca address: {}, stack bounds: {}",
+          "alloca-ing {}, stack left: {}, alloca address: {}, stack "
+          "bounds: {}",
           human::bytes(stack_left - max_host_function_stack_usage),
           human::bytes(stack_left),
           stack_ptr,
@@ -1295,6 +1316,15 @@ void register_sr_module(
 #undef REG_HOST_FN
 }
 
+void register_ai_module(
+  wasmtime_linker_t* linker, const strict_stack_config& ssc) {
+    // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define REG_HOST_FN(name)                                                      \
+    host_function<&ai_module::name>::reg(linker, #name, ssc)
+    REG_HOST_FN(generate_text);
+#undef REG_HOST_FN
+}
+
 class wasmtime_engine_factory : public factory {
 public:
     wasmtime_engine_factory(
@@ -1359,9 +1389,9 @@ wasmtime_runtime::wasmtime_runtime(std::unique_ptr<schema_registry> sr)
     // exceptions to grab a lock in libgcc and deadlock the Redpanda
     // process.
     wasmtime_config_native_unwind_info_set(config, false);
-    // Copy on write memory is only used when memory is `mmap`ed and cannot be
-    // used with custom allocators, so let's just disable the generation of the
-    // COW images since we don't use them.
+    // Copy on write memory is only used when memory is `mmap`ed and cannot
+    // be used with custom allocators, so let's just disable the generation
+    // of the COW images since we don't use them.
     wasmtime_config_memory_init_cow_set(config, false);
 
     wasmtime_memory_creator_t memory_creator = {
@@ -1436,6 +1466,14 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
     });
     co_await _engine_probe_cache.start();
     register_metrics();
+
+    co_await _ai_service.start();
+    co_await _ai_service.invoke_on_all([](ai::service& s) {
+        return s.start({
+          .model_file
+          = "/home/rockwood/code/llama.cpp/models/llama-2-7b.Q4_K_M.gguf",
+        });
+    });
 }
 
 void wasmtime_runtime::register_metrics() {
@@ -1453,6 +1491,7 @@ void wasmtime_runtime::register_metrics() {
 }
 
 ss::future<> wasmtime_runtime::stop() {
+    co_await _ai_service.stop();
     _public_metrics.clear();
     co_await _engine_probe_cache.stop();
     co_await _alien_thread.stop();
@@ -1494,6 +1533,7 @@ ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
           register_transform_module(linker.get(), ssc);
           register_sr_module(linker.get(), ssc);
           register_wasi_module(linker.get(), ssc);
+          register_ai_module(linker.get(), ssc);
 
           error.reset(wasmtime_linker_instantiate_pre(
             linker.get(),
@@ -1547,6 +1587,7 @@ wasmtime_error_t* wasmtime_runtime::allocate_stack_memory(
         stack_memory underlying;
         wasm::stack_allocator* allocator;
     };
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     memory_ret->env = new vm_stack{
       .underlying = std::move(stack),
       .allocator = &_stack_allocator.local(),
@@ -1600,7 +1641,8 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
     }
     if (memory->size < req.minimum || memory->size > req.maximum) {
         auto msg = ss::format(
-          "allocated memory (size={}) was not within requested bounds: [{}, "
+          "allocated memory (size={}) was not within requested bounds: "
+          "[{}, "
           "{}]",
           memory->size,
           req.minimum,
@@ -1676,8 +1718,8 @@ bool is_transform_abi_check_fn(const parser::module_import& mod_import) {
     });
 }
 
-// Schema registry is optional, so only check that the function is not using an
-// unsupported version.
+// Schema registry is optional, so only check that the function is not using
+// an unsupported version.
 bool is_invalid_sr_abi_check_fn(const parser::module_import& mod_import) {
     if (mod_import.module_name != schema_registry_module::name) {
         return false;
