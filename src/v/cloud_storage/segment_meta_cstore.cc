@@ -1118,10 +1118,15 @@ segment_meta_cstore::operator=(segment_meta_cstore&&) noexcept
   = default;
 
 bool segment_meta_cstore::operator==(segment_meta_cstore const& oth) const {
-    // this overload of std::equal in clang stdlib works with const_iterator
-    // because it does not perform a copy of the iterator
-    return size() == oth.size()
-           && std::equal(begin(), end(), oth.begin(), std::equal_to{});
+    if (size() != oth.size()) {
+        return false;
+    }
+    for (auto lhs = begin(), rhs = oth.begin(); lhs != end(); ++lhs, ++rhs) {
+        if (*lhs != *rhs) {
+            return false;
+        }
+    }
+    return true;
 }
 
 segment_meta_cstore::const_iterator segment_meta_cstore::begin() const {
