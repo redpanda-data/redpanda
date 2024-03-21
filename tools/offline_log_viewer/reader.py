@@ -3,6 +3,7 @@ from enum import Enum
 import struct
 import collections
 from io import BufferedReader, BytesIO
+from typing import Any, Callable
 
 SERDE_ENVELOPE_FORMAT = "<BBI"
 SERDE_ENVELOPE_SIZE = struct.calcsize(SERDE_ENVELOPE_FORMAT)
@@ -92,7 +93,7 @@ class Reader:
         len = self.read_int32()
         return self.stream.read(len)
 
-    def read_optional(self, type_read):
+    def read_optional(self, type_read: Callable[['Reader'], Any]):
         present = self.read_int8()
         if present == 0:
             return None
@@ -111,7 +112,10 @@ class Reader:
             ret.append(type_read(self))
         return ret
 
-    def read_envelope(self, type_read=None, max_version=0):
+    def read_envelope(self,
+                      type_read: Callable[['Reader', int], dict[str, Any]]
+                      | None = None,
+                      max_version=0):
         header = self.read_bytes(SERDE_ENVELOPE_SIZE)
         envelope = SerdeEnvelope(*struct.unpack(SERDE_ENVELOPE_FORMAT, header))
         if type_read is not None:
@@ -131,7 +135,7 @@ class Reader:
                 }
         return envelope
 
-    def read_serde_vector(self, type_read):
+    def read_serde_vector(self, type_read: Callable[['Reader'], Any]):
         sz = self.read_uint32()
         ret = []
         for i in range(0, sz):
@@ -171,7 +175,8 @@ class Reader:
     def remaining(self):
         return len(self.stream.raw.getbuffer()) - self.stream.tell()
 
-    def read_serde_map(self, k_reader, v_reader):
+    def read_serde_map(self, k_reader: Callable[['Reader'], Any],
+                       v_reader: Callable[['Reader'], Any]):
         ret = {}
         for _ in range(self.read_uint32()):
             key = k_reader(self)
