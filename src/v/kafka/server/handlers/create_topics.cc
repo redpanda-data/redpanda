@@ -194,7 +194,7 @@ ss::future<response_ptr> create_topics_handler::handle(
             append_topic_configs(ctx, err_resp);
         }
 
-        co_return co_await ctx.respond(err_resp);
+        co_return co_await ctx.respond(std::move(err_resp));
     }
 
     // fill in defaults if necessary
@@ -318,7 +318,7 @@ ss::future<response_ptr> create_topics_handler::handle(
         append_topic_configs(ctx, response);
     }
 
-    co_return co_await ctx.respond(response);
+    co_return co_await ctx.respond(std::move(response));
 }
 
 } // namespace kafka
