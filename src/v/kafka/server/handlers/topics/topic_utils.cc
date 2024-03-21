@@ -24,7 +24,7 @@ namespace kafka {
 
 void append_cluster_results(
   const std::vector<cluster::topic_result>& cluster_results,
-  std::vector<creatable_topic_result>& kafka_results) {
+  chunked_vector<creatable_topic_result>& kafka_results) {
     std::transform(
       cluster_results.begin(),
       cluster_results.end(),
