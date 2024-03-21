@@ -10,11 +10,12 @@
 #include "raft/recovery_scheduler.h"
 
 #include "base/vassert.h"
+#include "cluster/types.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus.h"
 #include "raft/types.h"
-#include "seastar/core/coroutine.hh"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/metrics.hh>
 
 namespace raft {

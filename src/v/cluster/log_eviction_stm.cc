@@ -10,6 +10,7 @@
 #include "cluster/log_eviction_stm.h"
 
 #include "bytes/iostream.h"
+#include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/prefix_truncate_record.h"
 #include "model/fundamental.h"

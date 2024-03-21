@@ -11,7 +11,9 @@
 
 #pragma once
 
-#include "cluster/types.h"
+#include "cluster/version.h"
+
+#include <cstdint>
 
 namespace features {
 

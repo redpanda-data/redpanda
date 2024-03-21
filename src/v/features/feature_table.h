@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "cluster/types.h"
 #include "features/feature_state.h"
 #include "security/license.h"
 #include "storage/record_batch_builder.h"
@@ -26,6 +25,7 @@ namespace cluster {
 class feature_backend;
 class feature_manager;
 class bootstrap_backend;
+struct feature_update_action;
 } // namespace cluster
 
 namespace features {

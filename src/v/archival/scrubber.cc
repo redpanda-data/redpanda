@@ -12,6 +12,7 @@
 
 #include "archival/logger.h"
 #include "archival/ntp_archiver_service.h"
+#include "cluster/errc.h"
 
 namespace archival {
 
