@@ -10,6 +10,7 @@ import io
 import json
 import os
 import pprint
+import random
 import re
 import time
 from collections import defaultdict, deque
@@ -1063,6 +1064,166 @@ class ManyPartitionsCase(BaseCase):
         return super().restore_redpanda(baseline, controller_checksums)
 
 
+class CheckMode():
+    # set only cluster properties
+    only_cluster = 'only_cluster'
+    # set only topic properties
+    only_topic = 'only_topic'
+    # set only topic property "recovery.checks.depth"
+    only_topic_shorthand = 'only_topic_shorthand'
+    # set cluster to no_check and topic properties for a check
+    topic_winning_over_cluster = 'topic_winning_over_cluster'
+    # set cluster to no_check and topic properties for a check, but only "recovery.checks.depth"
+    topic_winning_over_cluster_shorthand = 'topic_winning_over_cluster_shorthand'
+    # set cluster properties to override and topic properties
+    cluster_winning_over_topic = 'cluster_winning_over_topic'
+
+
+class PreventRecoveryOfDamagedPartitionsCase(BaseCase):
+    """
+    Damage a partition by removing some of the newest segments,
+    and check that the whole partition is prevented from recovering
+    recovery_check_mode dictates the operation of this test.
+    """
+    def __init__(self, redpanda, s3_client, kafka_tools, rpk_client, s3_bucket,
+                 logger, rpk_producer_maker, recovery_check_mode: str):
+        super().__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                         s3_bucket, logger, rpk_producer_maker)
+
+        # this topic will not be damaged
+        self.recoverable_topic = TopicSpec(name="panda-topic-recovery-ok",
+                                           partition_count=1,
+                                           replication_factor=3)
+        # this topic will be damaged by removing a segment
+        self.unrecoverable_topic = TopicSpec(
+            name="panda-topic-recovery-NOT-OK",
+            partition_count=1,
+            replication_factor=1)
+
+        # base class will create the topics via this
+        self.topics = [self.unrecoverable_topic, self.recoverable_topic]
+        # and will verify recovery of this list
+        self.expected_recovered_topics = [self.recoverable_topic]
+
+        # this dictate how the recovery checks are performed
+        self.recovery_check_mode = recovery_check_mode
+
+    def generate_baseline(self):
+        """Produce enough data to trigger uploads to S3/minio"""
+        for topic in self.topics:
+            producer = self._rpk_producer_maker(topic=topic.name,
+                                                msg_count=10000,
+                                                msg_size=1024)
+            producer.start()
+            producer.wait()
+            producer.free()
+
+        quiesce_uploads(self._redpanda, [topic.name for topic in self.topics],
+                        300)
+
+    def _delete(self, key):
+        """delete a segment"""
+        self._deleted_segment_size = self._s3.get_object_meta(
+            self._bucket, key).content_length
+        self.logger.info(
+            f"deleting segment file {key} of size {self._deleted_segment_size}"
+        )
+        self._s3.delete_object(self._bucket, key, True)
+
+    def _find_and_remove_newest_segments(self, topic: TopicSpec, skip: int):
+        """Find and remove a segment from a partition of topic. skip is the number of newest segment to skip before selecting the victim"""
+
+        # list all segments in cloud storage
+        all_segs = {
+            key: parse_s3_segment_path(key)
+            for key in self._list_objects() if key.endswith(".log.1")
+        }
+
+        # filter topics for topic.name/partition
+        partition = 0
+        segs_for_topic_partition: dict[int, str] = {
+            comps.base_offset: obj_key
+            for obj_key, comps in all_segs.items()
+            if comps.ntpr.topic == topic.name
+            and comps.ntpr.partition == partition
+        }
+
+        # sort in descending order by base offset, skip the first #skip elements, pick the first as the victim
+        victim = sorted(segs_for_topic_partition.items(),
+                        reverse=True)[skip:skip + 1]
+        assert len(
+            victim
+        ) > 0, f"no segment found for {topic.name}/{partition} at depth {skip}. total size {len(segs_for_topic_partition)}"
+
+        self.logger.info(f"victim={victim[0]} for {topic.name}/{partition}")
+
+        self._delete(victim[0][1])
+
+    def validate_cluster(self, baseline, restored):
+        """Check that self unrecoverable_topic is not present"""
+        assert len(
+            list(self._rpk.describe_topic(self.unrecoverable_topic.name))
+        ) == 0, f"topic {self.unrecoverable_topic.name} is present"
+
+    def restore_redpanda(self, baseline, controller_checksums):
+
+        # skip 4 segments before deleting one. validation_depth=10 should fail the recovery
+        self._find_and_remove_newest_segments(self.unrecoverable_topic, skip=4)
+
+        # set a check-mode that will stops if segments are not found in remote storage, use self.recovery_check_mode to select how.
+
+        if self.recovery_check_mode == CheckMode.only_cluster or self.recovery_check_mode == CheckMode.cluster_winning_over_topic:
+            # set recovery checks in cluster, use force_override_cfg if the cluster has to win
+            self._redpanda.set_cluster_config(
+                values={
+                    'cloud_storage_recovery_topic_validation_mode':
+                    'check_manifest_and_segment_metadata',
+                    'cloud_storage_recovery_topic_validation_depth':
+                    '10',
+                    'cloud_storage_recovery_topic_force_override_cfg':
+                    'true' if self.recovery_check_mode ==
+                    CheckMode.cluster_winning_over_topic else 'false',
+                })
+        elif self.recovery_check_mode == CheckMode.topic_winning_over_cluster:
+            # set cluster recovery check that would make the unrecoverable topic pass validation, so that we are sure that the topic cfg is taking precedence
+            self._redpanda.set_cluster_config(
+                values={
+                    'cloud_storage_recovery_topic_validation_mode': 'no_check'
+                })
+
+        # add topic properties to drive recovery if needed
+        overrides = None
+        if self.recovery_check_mode == CheckMode.topic_winning_over_cluster or self.recovery_check_mode == CheckMode.only_topic:
+            # recovery checks
+            overrides = {
+                'recovery.checks.mode': 'check_manifest_and_segment_metadata',
+                'recovery.checks.depth': '10'
+            }
+        elif self.recovery_check_mode == CheckMode.topic_winning_over_cluster_shorthand or self.recovery_check_mode == CheckMode.only_topic_shorthand:
+            # recovery checks, shorthand
+            overrides = {'recovery.checks.depth': '10'}
+        elif self.recovery_check_mode == CheckMode.cluster_winning_over_topic:
+            # no recovery checks in the topic
+            overrides = {'recovery.checks.mode': 'no_check'}
+
+        # restore recoverable topic. this should not fail
+        super().restore_redpanda(baseline,
+                                 controller_checksums,
+                                 [self.recoverable_topic],
+                                 topics_overrides=overrides)
+
+        # restore unrecoverable topic. this should fail
+        exception = None
+        try:
+            super().restore_redpanda(baseline,
+                                     controller_checksums,
+                                     [self.unrecoverable_topic],
+                                     topics_overrides=overrides)
+        except RpkException as e:
+            exception = e
+        assert exception is not None, f"RpkException expected for unrecoverable {self.unrecoverable_topic.name}"
+
+
 class TopicRecoveryTest(RedpandaTest):
     def __init__(self, test_context: TestContext, *args, **kwargs):
         si_settings = SISettings(test_context,
@@ -1651,4 +1812,30 @@ class TopicRecoveryTest(RedpandaTest):
                                        num_topics=5,
                                        num_partitions_per_topic=20,
                                        check_mode=check_mode)
+        self.do_run(test_case)
+
+    @cluster(num_nodes=4,
+             log_allow_list=TRANSIENT_ERRORS +
+             ["recovery validation", "Stopping recovery of"])
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            check_mode=[
+                CheckMode.cluster_winning_over_topic, CheckMode.only_cluster,
+                CheckMode.only_topic, CheckMode.only_topic_shorthand,
+                CheckMode.topic_winning_over_cluster,
+                CheckMode.topic_winning_over_cluster_shorthand
+            ])
+    def test_prevent_recovery(self, cloud_storage_type, check_mode: str):
+        """
+        Check that failing a check prevents recovery of the topic.
+        """
+        self.redpanda.si_settings.set_expected_damage({"missing_segments"})
+        test_case = PreventRecoveryOfDamagedPartitionsCase(
+            self.redpanda,
+            self.cloud_storage_client,
+            self.kafka_tools,
+            self.rpk,
+            self.s3_bucket,
+            self.logger,
+            self.rpk_producer_maker,
+            recovery_check_mode=check_mode)
         self.do_run(test_case)
