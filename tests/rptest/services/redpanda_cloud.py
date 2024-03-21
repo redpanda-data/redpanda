@@ -50,7 +50,6 @@ def get_config_profile_name(config: None | dict[str, Any]) -> str:
 
 
 class CloudTierName(Enum):
-    DOCKER = 'docker-local'
     AWS_1 = 'tier-1-aws'
     AWS_2 = 'tier-2-aws'
     AWS_3 = 'tier-3-aws'

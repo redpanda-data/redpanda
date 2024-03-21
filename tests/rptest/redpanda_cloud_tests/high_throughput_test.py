@@ -280,16 +280,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self._advertised_max_egress = tier_product.max_egress
         self._advertised_max_client_count = tier_product.max_connection_count
 
-        if self.config_profile_name == CloudTierName.DOCKER:
-            si_settings = SISettings(
-                test_ctx,
-                log_segment_size=self.min_segment_size,
-                cloud_storage_cache_size=cluster_config[
-                    'cloud_storage_cache_size'],
-            )
-            cast(RedpandaService, self.redpanda).set_si_settings(si_settings)
-            self.s3_port = si_settings.cloud_storage_api_endpoint_port
-
         test_ctx.logger.info(
             f"config profile {self.config_profile_name}: {config_profile}")
 
@@ -857,22 +847,13 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.logger.info(f"Blocking S3 traffic for all nodes")
         self.last_num_errors = 0
 
-        if self.config_profile_name == CloudTierName.DOCKER:
-            with firewall_blocked(self.redpanda.nodes, self.s3_port):
-                # wait for the first cloud related failure + one minute
-                wait_until(lambda: not self._cloud_storage_no_new_errors(
-                    self.redpanda, self.logger),
-                           timeout_sec=600,
-                           backoff_sec=10)
-                time.sleep(60)
-        else:
-            with cloudv2_object_store_blocked(self.redpanda, self.logger):
-                # wait for the first cloud related failure + one minute
-                wait_until(lambda: not self._cloud_storage_no_new_errors(
-                    self.redpanda, self.logger),
-                           timeout_sec=600,
-                           backoff_sec=10)
-                time.sleep(60)
+        with cloudv2_object_store_blocked(self.redpanda, self.logger):
+            # wait for the first cloud related failure + one minute
+            wait_until(lambda: not self._cloud_storage_no_new_errors(
+                self.redpanda, self.logger),
+                       timeout_sec=600,
+                       backoff_sec=10)
+            time.sleep(60)
 
         # make sure nothing is crashed
         wait_until(self.redpanda.cluster_healthy(),
