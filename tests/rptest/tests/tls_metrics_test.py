@@ -40,7 +40,10 @@ ADMIN_TLS_CONFIG = dict(name='iplistener',
 
 
 class FaketimeTLSProvider(TLSProvider):
-    def __init__(self, tls, broker_faketime='-0d', client_faketime='-0d'):
+    def __init__(self,
+                 tls: tls.TLSCertManager,
+                 broker_faketime='-0d',
+                 client_faketime='-0d'):
         self.tls = tls
         self.broker_faketime = broker_faketime
         self.client_faketime = client_faketime
@@ -251,6 +254,51 @@ class TLSMetricsTest(TLSMetricsTestBase):
         assert 'rpc' in areas
         assert 'rest_proxy' in areas
         assert 'admin' in areas
+
+    @cluster(num_nodes=3)
+    def test_expiry_reload(self):
+        """
+        Verify that when replacing certificat X by certificate Y s.t.
+        expiry(Y) > expiry(X), the new expiry is reflected in the metrics.
+        """
+        node = self.redpanda.nodes[0]
+
+        metrics_samples = self._get_metrics_from_node(node, self.CERT_METRICS)
+        assert metrics_samples is not None, "Failed to get metrics"
+        vals = self._unpack_samples(metrics_samples)
+
+        status_before = dict(
+            expiry=vals['certificate_expires_at_timestamp_seconds'][0]
+            ['value'],
+            loaded=vals['loaded_at_timestamp_seconds'][0]['value'])
+        self.logger.debug(
+            f"Before reload: {json.dumps(status_before, indent=1)}")
+
+        time.sleep(5)
+
+        self.security.tls_provider = FaketimeTLSProvider(
+            tls=tls.TLSCertManager(self.logger, cert_expiry_days=10))
+
+        self.redpanda.set_security_settings(self.security)
+        self.redpanda.write_tls_certs()
+
+        metrics_samples = self._get_metrics_from_node(node, self.CERT_METRICS)
+        assert metrics_samples is not None, "Failed to get metrics"
+        vals = self._unpack_samples(metrics_samples)
+
+        status_after = dict(
+            expiry=vals['certificate_expires_at_timestamp_seconds'][0]
+            ['value'],
+            loaded=vals['loaded_at_timestamp_seconds'][0]['value'])
+        self.logger.debug(
+            f"After reload: {json.dumps(status_after, indent=1)}")
+
+        five_days = 5 * 24 * 60 * 60
+
+        assert status_before['loaded'] < status_after[
+            'loaded'], f"Unexpected status after reload: {json.dumps(status_after)}"
+        assert status_before['expiry'] + five_days < status_after[
+            'expiry'], f"Unexpected status after reload: {json.dumps(status_after)}"
 
 
 class TLSMetricsTestChain(TLSMetricsTestBase):
