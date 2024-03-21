@@ -12,6 +12,8 @@
 #include "base/units.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
+#include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/configs/config_utils.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -39,8 +41,13 @@ template<typename T>
 concept CreatableTopicCfg = std::is_same_v<T, creatable_topic_configs>
                             || std::is_same_v<T, createable_topic_config>;
 
-template<CreatableTopicCfg T>
-config_map_t make_config_map(const std::vector<T>& config) {
+template<typename Container>
+concept CreatableTopicCfgContainer = requires(Container c) {
+    requires CreatableTopicCfg<typename Container::value_type>;
+};
+
+template<CreatableTopicCfgContainer T>
+config_map_t make_config_map(const T& config) {
     config_map_t ret;
     ret.reserve(config.size());
     for (const auto& c : config) {
@@ -55,7 +62,7 @@ config_map_t config_map(const std::vector<createable_topic_config>& config) {
     return make_config_map(config);
 }
 
-config_map_t config_map(const std::vector<creatable_topic_configs>& config) {
+config_map_t config_map(const chunked_vector<creatable_topic_configs>& config) {
     return make_config_map(config);
 }
 
@@ -229,9 +236,9 @@ to_cluster_type(const creatable_topic& t) {
     return ret;
 }
 
-static std::vector<kafka::creatable_topic_configs>
+static chunked_vector<kafka::creatable_topic_configs>
 convert_topic_configs(config_response_container_t&& topic_cfgs) {
-    auto configs = std::vector<kafka::creatable_topic_configs>();
+    auto configs = chunked_vector<kafka::creatable_topic_configs>();
     configs.reserve(topic_cfgs.size());
 
     for (auto& conf : topic_cfgs) {
@@ -241,7 +248,7 @@ convert_topic_configs(config_response_container_t&& topic_cfgs) {
     return configs;
 }
 
-std::vector<kafka::creatable_topic_configs> report_topic_configs(
+chunked_vector<kafka::creatable_topic_configs> report_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties) {
     auto topic_cfgs = make_topic_configs(

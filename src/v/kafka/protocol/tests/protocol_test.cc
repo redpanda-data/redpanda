@@ -216,21 +216,24 @@ template<>
 long create_default_and_non_default_data(
   decltype(create_topics_response::data)& non_default_data,
   decltype(create_topics_response::data)& default_data) {
+    auto make_topic_result = [](kafka::error_code ec) {
+        return creatable_topic_result{
+          model::topic{"topic1"},
+          {},
+          kafka::error_code{1},
+          "test_error_message",
+          3,
+          16,
+          std::nullopt,
+          ec};
+    };
+
     non_default_data.throttle_time_ms = std::chrono::milliseconds(1000);
+    non_default_data.topics.emplace_back(
+      make_topic_result(kafka::error_code{2}));
 
-    non_default_data.topics.emplace_back(creatable_topic_result{
-      model::topic{"topic1"},
-      {},
-      kafka::error_code{1},
-      "test_error_message",
-      3,
-      16,
-      std::nullopt,
-      kafka::error_code{2}});
-
-    default_data = non_default_data;
-
-    default_data.topics.at(0).topic_config_error_code = kafka::error_code{0};
+    default_data.throttle_time_ms = std::chrono::milliseconds(1000);
+    default_data.topics.emplace_back(make_topic_result(kafka::error_code{0}));
 
     // int16 (2 bytes) + tag (2 bytes)
     return 4;
