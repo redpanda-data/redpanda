@@ -13,6 +13,9 @@
 
 #include "wasm/api.h"
 
+#include <seastar/util/log.hh>
+#include <seastar/util/noncopyable_function.hh>
+
 class wasm_logger final : public wasm::logger {
 public:
     wasm_logger() = delete;
@@ -32,4 +35,24 @@ public:
 private:
     ss::sstring _name;
     ss::logger* _log;
+};
+
+class capturing_logger final : public wasm::logger {
+public:
+    capturing_logger() = delete;
+    explicit capturing_logger(
+      ss::noncopyable_function<void(ss::log_level, std::string_view)> callback)
+      : _callback(std::move(callback)) {}
+    ~capturing_logger() override = default;
+    capturing_logger(const capturing_logger&) = delete;
+    capturing_logger& operator=(const capturing_logger&) = delete;
+    capturing_logger(capturing_logger&&) = delete;
+    capturing_logger& operator=(capturing_logger&&) = delete;
+
+    void log(ss::log_level lvl, std::string_view message) noexcept override {
+        _callback(lvl, message);
+    }
+
+private:
+    ss::noncopyable_function<void(ss::log_level, std::string_view)> _callback;
 };

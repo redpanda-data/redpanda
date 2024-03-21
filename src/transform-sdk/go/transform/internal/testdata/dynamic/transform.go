@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"os"
 
 	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
 )
@@ -35,6 +36,11 @@ func identityTransform(e transform.WriteEvent, w transform.RecordWriter) error {
 		return errors.New("☠︎")
 	case "bomb":
 		panic("💥")
+	case "print":
+		b := e.Record().Value
+		// Don't ignore short reads!
+		_, err := os.Stdout.Write(b)
+		return err
 	case "loop":
 		for {
 		}

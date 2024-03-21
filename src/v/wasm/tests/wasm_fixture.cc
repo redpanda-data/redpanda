@@ -16,12 +16,9 @@
 #include "model/record_batch_types.h"
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
-#include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "random/generators.h"
-#include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 #include "wasm/api.h"
 #include "wasm/schema_registry.h"
@@ -172,6 +169,7 @@ void WasmTestFixture::SetUp() {
 void WasmTestFixture::TearDown() {
     if (_engine) {
         _engine->stop().get();
+        _log_lines.clear();
     }
     _engine = nullptr;
     _factory = nullptr;
@@ -190,11 +188,13 @@ void WasmTestFixture::load_wasm(const std::string& path) {
     _factory = _runtime->make_factory(_meta, std::move(buf)).get();
     if (_engine) {
         _engine->stop().get();
+        _log_lines.clear();
     }
-    _engine = _factory
-                ->make_engine(
-                  std::make_unique<wasm_logger>(_meta.name, &dummy_logger))
-                .get();
+    auto logger = std::make_unique<capturing_logger>(
+      [this](ss::log_level, std::string_view log) {
+          _log_lines.emplace_back(log);
+      });
+    _engine = _factory->make_engine(std::move(logger)).get();
     _engine->start().get();
 }
 

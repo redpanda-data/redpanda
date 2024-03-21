@@ -14,6 +14,7 @@ package integration_tests
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"testing"
@@ -111,4 +112,60 @@ func TestIdentity(t *testing.T) {
 	require.NoError(t, err)
 	fetches := client.PollFetches(ctx)
 	requireRecordsEquals(t, fetches, r)
+}
+
+type logValue struct {
+	IntValue    int    `json:"intValue"`
+	StringValue string `json:"stringValue"`
+}
+
+func (av logValue) MarshalJSON() ([]byte, error) {
+	if len(av.StringValue) > 0 {
+		return json.Marshal(map[string]string{"stringValue": av.StringValue})
+	}
+	return json.Marshal(map[string]int{"intValue": av.IntValue})
+}
+
+type logAttribute struct {
+	Key   string   `json:"key"`
+	Value logValue `json:"value"`
+}
+
+type openTelemetryLogEvent struct {
+	Body           logValue       `json:"body"`
+	TimeUnixNano   uint64         `json:"timeUnixNano"`
+	SeverityNumber int            `json:"severityNumber"`
+	Attributes     []logAttribute `json:"attributes"`
+}
+
+func TestLogging(t *testing.T) {
+	t.Parallel()
+	binary := loadWasmFile(t, "LOGGING")
+	metadata := TransformDeployMetadata{
+		Name:         "logging-xform",
+		InputTopic:   "events",
+		OutputTopics: []string{"empty"},
+	}
+	deployTransform(t, metadata, binary)
+	r := &kgo.Record{
+		Key:   []byte("testing"),
+		Value: []byte("hello, world"),
+	}
+	client := makeClient(t, kgo.DefaultProduceTopic(metadata.InputTopic), kgo.ConsumeTopics("_redpanda.transform_logs"))
+	defer client.Close()
+	err := client.ProduceSync(ctx, r).FirstErr()
+	require.NoError(t, err)
+	fetches := client.PollFetches(ctx)
+	require.NoError(t, fetches.Err())
+	records := fetches.Records()
+	require.Equal(t, 1, len(records), "expected a single log record")
+	require.Equal(t, []byte(metadata.Name), records[0].Key)
+	var logEvent openTelemetryLogEvent
+	require.NoError(t, json.Unmarshal(records[0].Value, &logEvent))
+	require.Equal(t, "testing:hello, world\n", logEvent.Body.StringValue)
+	require.Equal(t, 13, logEvent.SeverityNumber)
+	require.Equal(t, []logAttribute{
+		{Key: "transform_name", Value: logValue{StringValue: metadata.Name}},
+		{Key: "node", Value: logValue{IntValue: 0}},
+	}, logEvent.Attributes)
 }

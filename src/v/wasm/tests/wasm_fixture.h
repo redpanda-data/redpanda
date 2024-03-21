@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/bytes.h"
 #include "model/record.h"
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -41,17 +42,18 @@ public:
     model::record_batch make_tiny_batch(iobuf record_value);
     model::record_batch transform(const model::record_batch&);
     // For the "dynamic" wasm transform, issues a command record with the
-    // corresponding value
+    // corresponding value, and return the value.
     template<typename T>
-    void execute_command(std::string_view cmd, T&& value) {
+    iobuf execute_command(std::string_view cmd, T&& value) {
         iobuf k;
         k.append(cmd.data(), cmd.size());
         iobuf v;
         serde::write(v, std::forward<T>(value));
         storage::record_batch_builder b(
           model::record_batch_type::raft_data, model::offset(1));
-        b.add_raw_kv(std::move(k), std::move(v));
+        b.add_raw_kv(std::move(k), v.copy());
         transform(std::move(b).build());
+        return v;
     }
 
     model::transform_metadata meta() const { return _meta; };
@@ -61,6 +63,8 @@ public:
     std::vector<pandaproxy::schema_registry::subject_schema>
     registered_schemas() const;
 
+    std::vector<ss::sstring> log_lines() const { return _log_lines; }
+
 private:
     std::unique_ptr<wasm::runtime> _runtime;
     ss::shared_ptr<wasm::factory> _factory;
@@ -68,4 +72,5 @@ private:
     std::unique_ptr<wasm::transform_probe> _probe;
     fake_schema_registry* _sr;
     model::transform_metadata _meta;
+    std::vector<ss::sstring> _log_lines;
 };
