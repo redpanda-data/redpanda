@@ -17,19 +17,16 @@
 #include <print>
 
 int main() {
-    // This is an example of copying records from one location to another.
+    // This is an example of copying records from one location to another, with
+    // some printing.
     redpanda::on_record_written(
       [](redpanda::write_event event, redpanda::record_writer* writer) {
           redpanda::bytes_view raw_key = event.record.key.value_or(
             redpanda::bytes_view{});
           redpanda::bytes_view raw_value = event.record.value.value_or(
             redpanda::bytes_view{});
-          // NOLINTBEGIN(*-reinterpret-cast)
-          std::string_view key = {
-            reinterpret_cast<const char*>(raw_key.data()), raw_key.size()};
-          std::string_view value = {
-            reinterpret_cast<const char*>(raw_value.data()), raw_value.size()};
-          // NOLINTEND(*-reinterpret-cast)
+          auto key = std::string_view{raw_key};
+          auto value = std::string_view{raw_value};
           std::println(stderr, "{}:{}", key, value);
           return writer->write(event.record);
       });
