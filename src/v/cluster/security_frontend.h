@@ -23,6 +23,28 @@
 
 namespace cluster {
 
+/**
+ * Frontend interface to security-related controller commands
+ *
+ * User management:
+ *   - create_user_cmd
+ *   - delete_user_cmd
+ *   - update_user_cmd
+ *
+ * Role management:
+ *   - create_role_cmd
+ *   - delete_role_cmd
+ *   - update_role_cmd
+ *   - rename_role_cmd
+ *
+ * ACL management:
+ *   - create_acls_cmd
+ *   - delete_acls_cmd
+ *
+ * Member functions are not guaranteed to route outgoing requests to the
+ * controller leader node. See individual members for detail.
+ *
+ */
 class security_frontend final {
 public:
     security_frontend(
@@ -35,47 +57,145 @@ public:
       ss::sharded<ss::abort_source>&,
       ss::sharded<security::authorizer>&);
 
-    // Should be called ONLY on the controller leader node
+    /**
+     * Create a SASL/SCRAM user with the provided credential.
+     *
+     * Returns:
+     *   errc::user_exists
+     *     if the user was already present in the credential store
+     *   errc::success
+     *     otherwise
+     *
+     * Should be called ONLY on the controller leader node, but may be called
+     * from any shard
+     */
     ss::future<std::error_code> create_user(
       security::credential_user,
       security::scram_credential,
       model::timeout_clock::time_point);
 
-    // Should be called ONLY on the controller leader node
+    /**
+     * Delete a SASL/SCRAM user by name.
+     *
+     * Returns:
+     *   errc::user_does_not_exist
+     *     if the user was not present in the credential store
+     *   errc::success
+     *     otherwise
+     *
+     * Should be called ONLY on the controller leader node, but may be called
+     * from any shard
+     */
     ss::future<std::error_code>
       delete_user(security::credential_user, model::timeout_clock::time_point);
 
-    // Should be called ONLY on the controller leader node
+    /**
+     * Update a SASL/SCRAM user's stored credential by (user)name.
+     *
+     * Returns:
+     *   errc::user_does_not_exist
+     *     if the user was not present in the credential store
+     *   errc::success
+     *     otherwise
+     *
+     * Should be called ONLY on the controller leader node, but may be called
+     * from any shard
+     */
     ss::future<std::error_code> update_user(
       security::credential_user,
       security::scram_credential,
       model::timeout_clock::time_point);
 
-    // Should be called ONLY on the controller leader node
+    /**
+     * Create a Redpanda Role.
+     *
+     * Returns:
+     *   errc::role_exists
+     *     if the role was already present in the store
+     *   errc::success
+     *     otherwise
+     *
+     * Should be called ONLY on the controller leader node, but may be called
+     * from any shard
+     */
     ss::future<std::error_code> create_role(
       security::role_name name,
       security::role role,
       model::timeout_clock::time_point tout);
 
-    // Should be called ONLY on the controller leader node
+    /**
+     * Delete a Redpanda Role by name.
+     *
+     * Returns:
+     *   errc::role_does_not_exist
+     *     if the role was not present in the store
+     *   errc::success
+     *     otherwise
+     *
+     * Should be called ONLY on the controller leader node, but may be called
+     * from any shard
+     */
     ss::future<std::error_code> delete_role(
       security::role_name name, model::timeout_clock::time_point tout);
 
-    // Should be called ONLY on the controller leader node
+    /**
+     * Update a Redpanda Role by name, overwriting its contents with the
+     * contents of the provided role.
+     *
+     * Returns:
+     *   errc::role_does_not_exist
+     *     if the role was not present in the store
+     *   errc::success
+     *     otherwise
+     *
+     * Should be called ONLY on the controller leader node, but may be called
+     * from any shard
+     */
     ss::future<std::error_code> update_role(
       security::role_name name,
       security::role role,
       model::timeout_clock::time_point tout);
 
-    // Should be called ONLY on the controller leader node
+    /**
+     * Rename a Redpanda Role.
+     *
+     * Returns:
+     *   errc::role_does_not_exist
+     *     if the target role was not present in the store
+     *   errc::role_exists
+     *     if a role with the new name was already present in the store
+     *   errc::success
+     *     otherwise
+     *
+     * Should be called ONLY on the controller leader node, but may be called
+     * from any shard
+     */
     ss::future<std::error_code> rename_role(
       security::role_name name,
       security::role_name new_name,
       model::timeout_clock::time_point tout);
 
+    /**
+     * Add ACL bindings to the authorizer
+     *
+     * Returns:
+     *   errc::success
+     *
+     * May be called from any node; handles routing the underlying controller
+     * command to the leader node automatically.
+     */
     ss::future<std::vector<errc>> create_acls(
       std::vector<security::acl_binding>, model::timeout_clock::duration);
 
+    /**
+     * Remove ACL bindings matching the provided filters from the authorizer
+     *
+     * Returns:
+     *   errc::success
+     *
+     * May be called from any node; handles routing the underlying controller
+     * command to the leader node automatically.
+     */
     ss::future<std::vector<delete_acls_result>> delete_acls(
       std::vector<security::acl_binding_filter>,
       model::timeout_clock::duration);
@@ -90,6 +210,20 @@ public:
     static std::optional<user_and_credential>
     get_bootstrap_user_creds_from_env();
 
+    /**
+     * Wait until this node has caught up to the controller leader committed
+     * offset, subject to the provided timeout.
+     *
+     * Useful for achieving strong consistency for, e.g., describe ACL requests
+     *
+     * Returns:
+     *   errc::shutting_down
+     *     if the wait operation is interrupted by an abort request
+     *   errc::timeout
+     *     if the timeout expires before the node is caught up
+     *   errc::success
+     *     otherwise
+     */
     ss::future<std::error_code>
       wait_until_caughtup_with_leader(model::timeout_clock::duration);
 
