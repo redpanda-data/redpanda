@@ -1338,6 +1338,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             rate_limit_bps=self._advertised_max_ingress,
             custom_node=[self.preallocated_nodes[0]])
 
+        consumer = RpkConsumer(self._ctx,
+                               self.redpanda,
+                               self.topic,
+                               num_msgs=100)
+
         try:
             producer.start()
             self._wait_for_traffic(producer,
@@ -1345,7 +1350,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                                    timeout=self.msg_timeout)
 
             self.stage_lots_of_failed_consumers()
-            self.stage_hard_restart(producer)
+            self.redpanda.concurrent_restart_pods(180)
+            self.redpanda.verify_basic_produce_consume(producer, consumer)
 
         finally:
             producer.stop()
@@ -1739,61 +1745,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         benchmark_time_min = benchmark.benchmark_time() + 5
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
-
-    def stage_hard_restart(self, producer):
-        # This stage force stops all Redpanda nodes. It then
-        # starts them all again and verifies the cluster is
-        # healthy. Afterwards is runs some basic produce + consume
-        # operations.
-
-        self.logger.info(f"Starting stage_hard_restart")
-
-        # hard stop all nodes
-        self.logger.info("stopping all redpanda nodes")
-        for node in self.redpanda.nodes:
-            self.redpanda.stop_node(node, forced=True)
-
-        # start all nodes again
-        self.logger.info("starting all redpanda nodes")
-        for node in self.redpanda.nodes:
-            self.redpanda.start_node(node, timeout=600)
-
-        # wait until the cluster is health once more
-        self.logger.info("waiting for RP cluster to be healthy")
-        wait_until(self.redpanda.cluster_healthy(),
-                   timeout_sec=900,
-                   backoff_sec=1)
-
-        # verify basic produce and consume operations still work.
-
-        self.logger.info("checking basic producer functions")
-        current_sent = producer.produce_status.sent
-        produce_count = 100
-
-        def producer_complete():
-            number_left = (current_sent +
-                           produce_count) - producer.produce_status.sent
-            self.logger.info(f"{number_left} messages still need to be sent.")
-            return number_left <= 0
-
-        wait_until(producer_complete, timeout_sec=120, backoff_sec=1)
-
-        self.logger.info("checking basic consumer functions")
-        current_sent = producer.produce_status.sent
-        consume_count = 100
-        consumer = RpkConsumer(self._ctx,
-                               self.redpanda,
-                               self.topic,
-                               offset="newest",
-                               num_msgs=consume_count)
-        consumer.start()
-        wait_until(lambda: consumer.message_count >= consume_count,
-                   timeout_sec=120,
-                   backoff_sec=1,
-                   err_msg=f"Could not consume {consume_count} msgs in 1 min")
-
-        consumer.stop()
-        consumer.free()
 
     def _prepare_omb_workload(self, ramp_time, duration, partitions, rate,
                               msg_size, producers, consumers):
