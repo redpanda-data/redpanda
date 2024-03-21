@@ -941,7 +941,9 @@ FIXTURE_TEST(
 // NOLINTNEXTLINE
 SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     storage::disk_log_builder b(
-      storage::log_builder_config(), model::offset_translator_batch_types());
+      storage::log_builder_config(),
+      model::offset_translator_batch_types(),
+      raft::group_id{0});
     b | storage::start(manifest_ntp);
 
     archival::archival_policy policy(manifest_ntp, segment_time_limit{0s});

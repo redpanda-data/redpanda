@@ -487,6 +487,13 @@ ss::future<ss::shared_ptr<log>> log_manager::manage(
   raft::group_id group,
   std::vector<model::record_batch_type> translator_batch_types) {
     auto gate = _open_gate.hold();
+    if (!translator_batch_types.empty()) {
+        // Sanity check to avoid multiple logs overwriting each others'
+        // translator state in the kvstore, which is keyed by group id.
+        vassert(
+          group != raft::group_id{},
+          "When configured to translate offsets, must supply a valid group id");
+    }
 
     auto units = co_await _resources.get_recovery_units();
     co_return co_await do_manage(
