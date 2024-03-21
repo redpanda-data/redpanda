@@ -1395,13 +1395,8 @@ ss::future<> consensus::do_start() {
               _last_snapshot_index, std::move(metadata->latest_configuration));
             _probe->configuration_update();
 
-            auto delta = delta_for_truncation(metadata.value());
-            if (delta.has_value()) {
-                start_truncate_cfg = storage::truncate_prefix_config(
-                  model::next_offset(_last_snapshot_index),
-                  _scheduling.default_iopc,
-                  delta);
-
+            start_truncate_cfg = truncation_cfg_for_snapshot(metadata.value());
+            if (start_truncate_cfg.has_value()) {
                 _flushed_offset = std::max(
                   _last_snapshot_index, _flushed_offset);
                 co_await _configuration_manager.prefix_truncate(
@@ -2171,15 +2166,15 @@ ss::future<> consensus::hydrate_snapshot() {
     co_await _configuration_manager.add(
       _last_snapshot_index, std::move(metadata->latest_configuration));
     _probe->configuration_update();
-    auto delta = delta_for_truncation(metadata.value());
-    if (delta.has_value()) {
-        co_await truncate_to_latest_snapshot(model::offset_delta{*delta});
+    auto truncate_cfg = truncation_cfg_for_snapshot(metadata.value());
+    if (truncate_cfg.has_value()) {
+        co_await truncate_to_latest_snapshot(truncate_cfg.value());
     }
     _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
 }
 
-std::optional<model::offset_delta>
-consensus::delta_for_truncation(const snapshot_metadata& metadata) {
+std::optional<storage::truncate_prefix_config>
+consensus::truncation_cfg_for_snapshot(const snapshot_metadata& metadata) {
     if (
       _keep_snapshotted_log
       && _log->offsets().dirty_offset >= _last_snapshot_index) {
@@ -2200,19 +2195,18 @@ consensus::delta_for_truncation(const snapshot_metadata& metadata) {
           "manager: {}",
           delta);
     }
-    return model::offset_delta{delta};
+    return storage::truncate_prefix_config(
+      model::next_offset(_last_snapshot_index),
+      _scheduling.default_iopc,
+      model::offset_delta(delta));
 }
 
-ss::future<> consensus::truncate_to_latest_snapshot(
-  std::optional<model::offset_delta> force_truncate_delta) {
+ss::future<>
+consensus::truncate_to_latest_snapshot(storage::truncate_prefix_config cfg) {
     // we have to prefix truncate config manage at exactly last offset included
     // in snapshot as this is the offset of configuration included in snapshot
     // metadata.
-    return _log
-      ->truncate_prefix(storage::truncate_prefix_config(
-        model::next_offset(_last_snapshot_index),
-        _scheduling.default_iopc,
-        force_truncate_delta))
+    return _log->truncate_prefix(cfg)
       .then([this] {
           return _configuration_manager.prefix_truncate(_last_snapshot_index);
       })

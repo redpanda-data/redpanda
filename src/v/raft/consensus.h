@@ -39,6 +39,7 @@
 #include "storage/log.h"
 #include "storage/offset_translator_state.h"
 #include "storage/snapshot.h"
+#include "storage/types.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
@@ -556,10 +557,9 @@ private:
     /**
      * Truncates the log up the last offset stored in the snapshot
      */
-    std::optional<model::offset_delta>
-    delta_for_truncation(const snapshot_metadata& metadata);
-    ss::future<> truncate_to_latest_snapshot(
-      std::optional<model::offset_delta> force_truncate_delta = std::nullopt);
+    std::optional<storage::truncate_prefix_config>
+    truncation_cfg_for_snapshot(const snapshot_metadata&);
+    ss::future<> truncate_to_latest_snapshot(storage::truncate_prefix_config);
     ss::future<install_snapshot_reply>
       finish_snapshot(install_snapshot_request, install_snapshot_reply);
 
