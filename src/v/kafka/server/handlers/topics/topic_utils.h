@@ -16,6 +16,7 @@
 #include "kafka/server/handlers/topics/validators.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
 #include <boost/container/flat_map.hpp>
 
@@ -110,7 +111,7 @@ Iter validate_requests_range(
 // Kafka protocol error message
 void append_cluster_results(
   const std::vector<cluster::topic_result>&,
-  std::vector<creatable_topic_result>&);
+  chunked_vector<creatable_topic_result>&);
 
 // Converts objects representing KafkaAPI message to objects consumed
 // by cluster::controller API
