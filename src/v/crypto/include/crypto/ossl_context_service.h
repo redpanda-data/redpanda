@@ -52,5 +52,7 @@ public:
 private:
     class impl;
     std::unique_ptr<impl> _impl;
+
+    bool in_rp_fixture_test() const;
 };
 } // namespace crypto
