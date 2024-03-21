@@ -62,6 +62,12 @@ type Client interface {
 		options types.ContainerListOptions,
 	) ([]types.Container, error)
 
+	ContainerLogs(
+		ctx context.Context,
+		containerID string,
+		options types.ContainerLogsOptions,
+	) (io.ReadCloser, error)
+
 	ContainerInspect(
 		ctx context.Context,
 		containerID string,
