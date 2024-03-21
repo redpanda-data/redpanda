@@ -20,6 +20,7 @@
 #include "serde/serde_exception.h"
 #include "storage/index_state_serde_compat.h"
 #include "storage/logger.h"
+#include "utils/to_string.h"
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>

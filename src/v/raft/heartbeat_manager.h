@@ -24,6 +24,7 @@
 #include <seastar/util/log.hh>
 
 #include <absl/container/btree_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
 #include <boost/container/flat_set.hpp>
 

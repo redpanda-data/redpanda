@@ -18,6 +18,7 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/prefix_truncate_record.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"

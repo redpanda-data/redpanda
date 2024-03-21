@@ -30,6 +30,8 @@
 #include <fmt/core.h>
 #include <roaring/roaring.hh>
 
+#include <queue>
+
 namespace storage::internal {
 
 struct compaction_reducer {};

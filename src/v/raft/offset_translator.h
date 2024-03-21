@@ -13,6 +13,7 @@
 
 #include "base/units.h"
 #include "model/fundamental.h"
+#include "raft/fundamental.h"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/log.h"

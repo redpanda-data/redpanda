@@ -11,6 +11,7 @@
 
 #include "base/vassert.h"
 #include "base/vlog.h"
+#include "model/async_adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
