@@ -41,11 +41,11 @@ func (a *AdminAPI) DeleteWasmTransform(ctx context.Context, name string) error {
 
 // PartitionTransformStatus is the status of a single transform that is running on an input partition.
 type PartitionTransformStatus struct {
-	NodeID    int `json:"node_id"`
-	Partition int `json:"partition"`
+	NodeID    int `json:"node_id" yaml:"node_id"`
+	Partition int `json:"partition" yaml:"partition"`
 	// Status is an enum of: ["running", "inactive", "errored", "unknown"].
-	Status string `json:"status"`
-	Lag    int    `json:"lag"`
+	Status string `json:"status" yaml:"status"`
+	Lag    int    `json:"lag" yaml:"lag"`
 }
 
 // EnvironmentVariable is a configuration key/value that can be injected into to a data transform.

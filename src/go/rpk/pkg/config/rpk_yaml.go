@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -38,7 +39,7 @@ func defaultVirtualRpkYaml() (RpkYaml, error) {
 	path, _ := DefaultRpkYamlPath() // if err is non-nil, we fail in Write
 	y := RpkYaml{
 		fileLocation: path,
-		Version:      3,
+		Version:      4,
 		Profiles:     []RpkProfile{DefaultRpkProfile()},
 		CloudAuths:   []RpkCloudAuth{DefaultRpkCloudAuth()},
 	}
@@ -69,7 +70,7 @@ func DefaultRpkCloudAuth() RpkCloudAuth {
 
 func emptyVirtualRpkYaml() RpkYaml {
 	return RpkYaml{
-		Version: 3,
+		Version: 4,
 	}
 }
 
@@ -153,6 +154,8 @@ type (
 		ClusterName string `json:"cluster_name" yaml:"cluster_name"`
 		AuthOrgID   string `json:"auth_org_id" yaml:"auth_org_id"`
 		AuthKind    string `json:"auth_kind" yaml:"auth_kind"`
+		ClusterType string `json:"cluster_type" yaml:"cluster_type"`
+		ClusterURL  string `json:"cluster_url,omitempty" yaml:"cluster_url,omitempty"`
 	}
 
 	// RpkCloudAuth is unique by name and org ID. We support multiple auths
@@ -422,6 +425,23 @@ func (c *RpkCloudCluster) HasAuth(a RpkCloudAuth) bool {
 		return false
 	}
 	return c.AuthOrgID == a.OrgID && c.AuthKind == a.Kind
+}
+
+func (c *RpkCloudCluster) IsServerless() bool {
+	return c != nil && c.ClusterType == publicapi.ServerlessClusterType
+}
+
+func (c *RpkCloudCluster) CheckClusterURL() (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("cluster information not present in current profile; please delete and re-create the current profile with 'rpk profile create --from-cloud'")
+	}
+	if c.ClusterURL == "" {
+		if c.ClusterID != "" {
+			return "", fmt.Errorf("cluster URL not present in profile; please delete and re-create the current profile with 'rpk profile create <name> --from-cloud=%v'", c.ClusterID)
+		}
+		return "", errors.New("cluster URL not present in profile; please delete and re-create the current profile with 'rpk profile create --from-cloud' and selecting this cluster")
+	}
+	return c.ClusterURL, nil
 }
 
 ////////////////
