@@ -1390,7 +1390,7 @@ ss::future<> consensus::do_start() {
         auto snapshot_units = co_await _snapshot_lock.get_units();
         auto metadata = co_await read_snapshot_metadata();
         if (metadata.has_value()) {
-            load_from_metadata(metadata.value());
+            update_offset_from_snapshot(metadata.value());
             co_await _configuration_manager.add(
               _last_snapshot_index, std::move(metadata->latest_configuration));
             _probe->configuration_update();
@@ -2162,7 +2162,7 @@ ss::future<> consensus::hydrate_snapshot() {
     if (!metadata.has_value()) {
         co_return;
     }
-    load_from_metadata(metadata.value());
+    update_offset_from_snapshot(metadata.value());
     co_await _configuration_manager.add(
       _last_snapshot_index, std::move(metadata->latest_configuration));
     _probe->configuration_update();
@@ -2239,7 +2239,8 @@ consensus::read_snapshot_metadata() {
     co_return metadata;
 }
 
-void consensus::load_from_metadata(const raft::snapshot_metadata& metadata) {
+void consensus::update_offset_from_snapshot(
+  const raft::snapshot_metadata& metadata) {
     vassert(
       metadata.last_included_index >= _last_snapshot_index,
       "Tried to load stale snapshot. Loaded snapshot last "
