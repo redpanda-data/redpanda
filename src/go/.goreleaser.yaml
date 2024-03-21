@@ -1,6 +1,24 @@
 project_name: rpk
 builds:
-  - id: rpk-windows-and-linux
+  - id: rpk-linux
+    dir: ./rpk/
+    main: ./cmd/rpk
+    binary: rpk
+    ldflags:
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.version={{.Tag}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.rev={{.ShortCommit}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.buildTime={{.Date}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.hostOs={{.Os}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.hostArch={{.Arch}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common.tag={{.Tag}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+  - id: rpk-windows
     dir: ./rpk/
     main: ./cmd/rpk
     binary: rpk
@@ -15,7 +33,6 @@ builds:
       - CGO_ENABLED=0
     goos:
       - windows
-      - linux
     goarch:
       - amd64
       - arm64
@@ -51,7 +68,8 @@ builds:
 archives:
   - id: rpk
     builds:
-      - rpk-windows-and-linux
+      - rpk-linux
+      - rpk-windows
       - rpk-darwin
     format: zip
     name_template: "rpk-{{ .Os }}-{{ .Arch }}"
