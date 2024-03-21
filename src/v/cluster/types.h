@@ -15,6 +15,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/tx_hash_ranges.h"
+#include "cluster/version.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -52,13 +53,6 @@
 
 namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
-
-// A cluster version is a logical protocol version describing the content
-// of the raft0 on disk structures, and available features.  These are
-// passed over the network via the health_manager, and persisted in
-// the feature_manager
-using cluster_version = named_type<int64_t, struct cluster_version_tag>;
-constexpr cluster_version invalid_version = cluster_version{-1};
 
 using replicas_t = std::vector<model::broker_shard>;
 struct allocate_id_request
