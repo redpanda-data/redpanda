@@ -28,7 +28,7 @@ from rptest.archival.s3_client import S3Client
 from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rp_storage_tool import RpStorageTool
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -42,8 +42,8 @@ from rptest.utils.si_utils import (
     EMPTY_SEGMENT_SIZE, MISSING_DATA_ERRORS, NTP, TRANSIENT_ERRORS,
     PathMatcher, BucketView, SegmentReader, default_log_segment_size,
     get_expected_ntp_restored_size, get_on_disk_size_per_ntp, is_close_size,
-    parse_s3_manifest_path, parse_s3_segment_path, verify_file_layout, NTPR,
-    gen_local_path_from_remote)
+    parse_s3_manifest_path, parse_s3_segment_path, quiesce_uploads,
+    verify_file_layout, NTPR, gen_local_path_from_remote)
 
 CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC = 10
 
@@ -104,15 +104,21 @@ class BaseCase:
         derived classes."""
         pass
 
-    def restore_redpanda(self, baseline, controller_checksums):
+    def restore_redpanda(self,
+                         baseline,
+                         controller_checksums,
+                         topics_spec: Sequence[TopicSpec] | None = None,
+                         topics_overrides: dict[str, str] | None = None):
         """Run restore procedure. Default implementation runs it for every topic
         that it can find in S3."""
+
+        topics_spec = topics_spec or self.expected_recovered_topics
         topic_manifests = list(self._get_all_topic_manifests())
         self.logger.info(f"topic_manifests: {topic_manifests}")
-        for topic in self.expected_recovered_topics:
+        for topic in topics_spec:
             for _, manifest in topic_manifests:
                 if manifest['topic'] == topic.name:
-                    self._restore_topic(manifest)
+                    self._restore_topic(manifest, overrides=topics_overrides)
 
     def validate_node(self, host, baseline, restored):
         """Validate restored node data using two sets of checksums.
@@ -231,7 +237,9 @@ class BaseCase:
             self.logger.info(f"Topic manifest found at {key}, content:\n{j}")
             yield (key, m)
 
-    def _restore_topic(self, manifest, overrides=None):
+    def _restore_topic(self,
+                       manifest,
+                       overrides: dict[str, str] | None = None):
         """Restore individual topic. Parameter 'path' is a path to topic
         manifest, 'manifest' is a dictionary with manifest data (it's used
         to generate topic configuration), 'overrides' contains values that
