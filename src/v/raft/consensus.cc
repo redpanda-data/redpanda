@@ -1645,7 +1645,10 @@ ss::future<vote_reply> consensus::vote(vote_request&& r) {
           .with(
             _jit.base_duration(),
             [this, r = std::move(r)]() mutable {
-                return do_vote(std::move(r));
+                return do_vote(std::move(r)).then([this](vote_reply reply) {
+                    vlog(_ctxlog.trace, "vote reply: {}", reply);
+                    return reply;
+                });
             })
           .handle_exception_type(
             [this, target_node_id](const ss::semaphore_timed_out&) {
@@ -1757,6 +1760,15 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
     reply.log_ok
       = r.prev_log_term > last_entry_term
         || (r.prev_log_term == last_entry_term && r.prev_log_index >= last_log_index);
+
+    vlog(
+      _ctxlog.trace,
+      "vote log_ok response: {}, last_entry_term: {}, last_log_index: {}, log "
+      "offsets: {}",
+      reply.log_ok,
+      last_entry_term,
+      last_log_index,
+      lstats);
 
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _term) {
