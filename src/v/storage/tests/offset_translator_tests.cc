@@ -324,7 +324,7 @@ struct fuzz_checker {
     ss::future<> start() {
         _tr.emplace(_make_offset_translator());
         co_await _tr->start(raft::offset_translator::must_reset::yes);
-        co_await _tr->sync_with_log(_log, std::nullopt);
+        co_await _tr->sync_with_log(*_log, std::nullopt);
     }
 
     ss::future<> append() {
@@ -477,7 +477,7 @@ struct fuzz_checker {
             co_await _tr->start(raft::offset_translator::must_reset::no);
             co_await _tr->prefix_truncate(
               _snapshot_offset, model::offset_delta(_snapshot_delta));
-            co_await _tr->sync_with_log(_log, std::nullopt);
+            co_await _tr->sync_with_log(*_log, std::nullopt);
         }
     }
 

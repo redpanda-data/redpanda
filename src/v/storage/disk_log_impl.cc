@@ -190,6 +190,21 @@ ss::future<> disk_log_impl::remove() {
       .finally([this] { _probe->clear_metrics(); });
 }
 
+ss::future<>
+disk_log_impl::start(std::optional<truncate_prefix_config> truncate_cfg) {
+    auto is_new = is_new_log();
+    co_await offset_translator().start(
+      raft::offset_translator::must_reset{is_new});
+    if (truncate_cfg.has_value()) {
+        co_await truncate_prefix(truncate_cfg.value());
+    }
+    // Reset or load the offset translator state, depending on whether this is
+    // a brand new log.
+    if (!is_new) {
+        co_await offset_translator().sync_with_log(*this, _compaction_as);
+    }
+}
+
 ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     vlog(stlog.debug, "closing log {}", *this);

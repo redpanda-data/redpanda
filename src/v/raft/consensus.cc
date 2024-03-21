@@ -1446,7 +1446,7 @@ ss::future<> consensus::do_start() {
 
         update_follower_stats(_configuration_manager.get_latest());
 
-        co_await _offset_translator.sync_with_log(_log, _as);
+        co_await _offset_translator.sync_with_log(*_log, _as);
 
         /**
          * fix for incorrectly persisted configuration index. In

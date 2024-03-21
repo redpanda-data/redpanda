@@ -45,6 +45,8 @@ public:
     log& operator=(const log&) = delete;
     virtual ~log() noexcept = default;
 
+    virtual ss::future<> start(std::optional<truncate_prefix_config>) = 0;
+
     // it shouldn't block for a long time as it will block other logs
     // eviction
     virtual ss::future<> housekeeping(housekeeping_config) = 0;

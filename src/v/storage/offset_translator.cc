@@ -166,7 +166,7 @@ ss::future<> offset_translator::start(must_reset reset) {
 }
 
 ss::future<> offset_translator::sync_with_log(
-  ss::shared_ptr<storage::log> log, storage::opt_abort_source_t as) {
+  storage::log& log, storage::opt_abort_source_t as) {
     if (_filtered_types.empty()) {
         co_return;
     }
@@ -176,7 +176,7 @@ ss::future<> offset_translator::sync_with_log(
       "ntp {}: offset translation state shouldn't be empty",
       _state->ntp());
 
-    auto log_offsets = log->offsets();
+    auto log_offsets = log.offsets();
 
     // Trim the offset2delta map to log dirty_offset (discrepancy can
     // happen if the offsets map was persisted, but the log wasn't flushed).
@@ -189,7 +189,7 @@ ss::future<> offset_translator::sync_with_log(
         co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
     }
 
-    // read the log to insert the remaining entries into map
+    // Read the log to insert the remaining entries into map.
     model::offset start_offset = model::next_offset(_highest_known_offset);
 
     vlog(
@@ -201,7 +201,7 @@ ss::future<> offset_translator::sync_with_log(
 
     auto reader_cfg = storage::log_reader_config(
       start_offset, log_offsets.dirty_offset, ss::default_priority_class(), as);
-    auto reader = co_await log->make_reader(reader_cfg);
+    auto reader = co_await log.make_reader(reader_cfg);
 
     struct log_consumer {
         explicit log_consumer(offset_translator& self)
