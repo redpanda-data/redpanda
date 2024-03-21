@@ -123,37 +123,121 @@ std::ostream& operator<<(std::ostream&, resource_type);
 std::ostream& operator<<(std::ostream&, pattern_type);
 std::ostream& operator<<(std::ostream&, principal_type);
 
-/*
- * Kafka principal is (principal-type, principal)
+/**
+ * Abstract interface for Kafka principals.
+ *
+ * A Kafka principal is (principal-type, principal).
+ *
+ * Note that no virtual destructor is provided here. This is intentional.
+ * acl_principal_base is meant to support polymorphic references at various
+ * auth APIs, **not** to support polymorphic construction/destruction of
+ * principal instances.
+ *
  */
-class acl_principal
+class acl_principal_base {
+public:
+    /**
+     * Get a view to the principal name.
+     */
+    virtual std::string_view name_view() const = 0;
+    /**
+     * Get the principal type
+     */
+    virtual principal_type type() const = 0;
+
+private:
+    template<typename H>
+    friend H AbslHashValue(H h, const acl_principal_base& e) {
+        return H::combine(std::move(h), e.type(), e.name_view());
+    }
+
+    friend bool
+    operator==(const acl_principal_base& l, const acl_principal_base& r) {
+        return l.type() == r.type() && l.name_view() == r.name_view();
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const acl_principal_base&);
+};
+
+/**
+ * Concrete instance of a Kafka principal.
+ *
+ * This implementation owns the memory for its name.
+ */
+class acl_principal final
   : public serde::
-      envelope<acl_principal, serde::version<0>, serde::compat_version<0>> {
+      envelope<acl_principal, serde::version<0>, serde::compat_version<0>>
+  , public acl_principal_base {
 public:
     acl_principal() = default;
     acl_principal(principal_type type, ss::sstring name)
       : _type(type)
       , _name(std::move(name)) {}
 
-    friend bool operator==(const acl_principal&, const acl_principal&)
-      = default;
-
-    template<typename H>
-    friend H AbslHashValue(H h, const acl_principal& e) {
-        return H::combine(std::move(h), e._type, e._name);
+    /**
+     * Get a view to the principal name.
+     */
+    std::string_view name_view() const override { return _name; }
+    /**
+     * Get the principal type
+     */
+    principal_type type() const override { return _type; }
+    /**
+     * Check whether this is a 'wildcard' principal.
+     *
+     * Note that this is type()-dependent. A principal of type 'role' is
+     * always exempt from wildcard matching.
+     */
+    bool wildcard() const {
+        switch (_type) {
+        case principal_type::user:
+        case principal_type::ephemeral_user:
+            return _name == "*";
+        case principal_type::role:
+            return false;
+        }
     }
 
-    friend std::ostream& operator<<(std::ostream&, const acl_principal&);
-
+    // Needed for ADL serialization
     const ss::sstring& name() const { return _name; }
-    principal_type type() const { return _type; }
-    bool wildcard() const { return _name == "*"; }
 
     auto serde_fields() { return std::tie(_type, _name); }
 
 private:
     principal_type _type;
     ss::sstring _name;
+};
+
+/**
+ * Concrete instance of a Kafka principal.
+ *
+ * This implementation does _not_ own the memory for its name. Use
+ * with care, similarly to a string_view, only when the lifetime of
+ * the view is known not to exceed the referenced principal.
+ *
+ */
+class acl_principal_view final : public acl_principal_base {
+public:
+    acl_principal_view() = delete;
+    acl_principal_view(principal_type type, std::string_view name)
+      : _type(type)
+      , _name(name) {}
+    explicit acl_principal_view(const acl_principal& p)
+      : _type(p.type())
+      , _name(p.name_view()) {}
+
+    /**
+     * Get a view to the principal name.
+     */
+    std::string_view name_view() const override { return _name; }
+    /**
+     * Get the principal type
+     */
+    principal_type type() const override { return _type; }
+
+private:
+    principal_type _type;
+    std::string_view _name;
 };
 
 inline const acl_principal acl_wildcard_user(principal_type::user, "*");

@@ -11,6 +11,20 @@
 #include "security/role.h"
 
 namespace security {
+
+namespace {
+role_member_type member_type_for_principal_type(security::principal_type p) {
+    switch (p) {
+    case security::principal_type::user:
+        return role_member_type::user;
+    case security::principal_type::ephemeral_user:
+    case security::principal_type::role:
+        vassert(false, "Invalid principal_type {{{}}} for role membership", p);
+    }
+    __builtin_unreachable();
+}
+} // namespace
+
 std::ostream& operator<<(std::ostream& os, role_member_type t) {
     switch (t) {
     case role_member_type::user:
@@ -19,14 +33,41 @@ std::ostream& operator<<(std::ostream& os, role_member_type t) {
     __builtin_unreachable();
 }
 
-std::ostream& operator<<(std::ostream& os, const role_member& m) {
+std::ostream& operator<<(std::ostream& os, const role_member_view& m) {
     fmt::print(os, "{{{}}}:{{{}}}", m.type(), m.name());
     return os;
 }
 
-// TODO(oren): maybe we should have the role name on the role?
+std::ostream& operator<<(std::ostream& os, const role_member& m) {
+    return os << role_member_view{m.type(), m.name()};
+}
+
+role_member_view::role_member_view(const role_member& m)
+  : _type(m.type())
+  , _name(m.name()) {}
+
+role_member_view
+role_member_view::from_principal(const security::acl_principal& p) {
+    return {member_type_for_principal_type(p.type()), p.name_view()};
+}
+
+role_member role_member::from_principal(const security::acl_principal& p) {
+    return role_member{role_member_view::from_principal(p)};
+}
+
 std::ostream& operator<<(std::ostream& os, const role& r) {
     fmt::print(os, "role members: {{{}}}", fmt::join(r.members(), ","));
     return os;
 }
+
+security::acl_principal role::to_principal(std::string_view role_name) {
+    return {
+      security::principal_type::role, {role_name.data(), role_name.size()}};
+}
+
+security::acl_principal_view
+role::to_principal_view(std::string_view role_name) {
+    return {security::principal_type::role, role_name};
+}
+
 } // namespace security

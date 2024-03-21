@@ -17,12 +17,16 @@
 #include "security/acl.h"
 #include "security/acl_store.h"
 #include "security/logger.h"
+#include "security/role.h"
+#include "security/role_store.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
+
+#include <assert.h>
 
 namespace security {
 
@@ -55,11 +59,14 @@ struct auth_result {
     // The operation request
     security::acl_operation operation;
 
+    // If found, the role that was matched to provide authZ decision
+    std::optional<security::role_name> role;
+
     friend std::ostream& operator<<(std::ostream& os, const auth_result& a) {
         fmt::print(
           os,
           "{{authorized:{}, authorization_disabled:{}, is_superuser:{}, "
-          "operation: {}, empty_matches:{}, principal:{}, host:{}, "
+          "operation: {}, empty_matches:{}, principal:{}, role:{}, host:{}, "
           "resource_type:{}, "
           "resource_name:{}, resource_pattern:{}, acl:{}}}",
           a.authorized,
@@ -68,6 +75,7 @@ struct auth_result {
           a.operation,
           a.empty_matches,
           a.principal,
+          a.role,
           a.host,
           a.resource_type,
           a.resource_name,
@@ -151,6 +159,27 @@ struct auth_result {
     }
 
     template<typename T>
+    static auth_result role_acl_match(
+      const security::acl_principal& principal,
+      const security::role_name& role,
+      security::acl_host host,
+      security::acl_operation operation,
+      const T& resource,
+      bool authorized,
+      const acl_matches::acl_match& match) {
+        return {
+          .authorized = authorized,
+          .resource_pattern = match.resource,
+          .acl = match.acl,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+          .operation = operation,
+          .role = role};
+    }
+
+    template<typename T>
     static auth_result opt_acl_match(
       const security::acl_principal& principal,
       security::acl_host host,
@@ -189,15 +218,20 @@ public:
     // allow operation when no ACL match is found
     using allow_empty_matches = ss::bool_class<struct allow_empty_matches_type>;
 
-    explicit authorizer(
-      std::function<config::binding<std::vector<ss::sstring>>()> superusers_cb)
-      : authorizer(allow_empty_matches::no, superusers_cb) {}
+    authorizer() = delete;
+
+    authorizer(
+      config::binding<std::vector<ss::sstring>> superusers,
+      const role_store* roles)
+      : authorizer(allow_empty_matches::no, std::move(superusers), roles) {}
 
     authorizer(
       allow_empty_matches allow,
-      std::function<config::binding<std::vector<ss::sstring>>()> superusers_cb)
-      : _superusers_conf(superusers_cb())
-      , _allow_empty_matches(allow) {
+      config::binding<std::vector<ss::sstring>> superusers,
+      const role_store* roles)
+      : _superusers_conf(std::move(superusers))
+      , _allow_empty_matches(allow)
+      , _role_store(roles) {
         update_superusers();
         _superusers_conf.watch([this]() { update_superusers(); });
     }
@@ -258,21 +292,106 @@ public:
               bool(_allow_empty_matches));
         }
 
-        // check for deny
-        if (auto entry = acls.find(
-              operation, principal, host, acl_permission::deny);
-            entry.has_value()) {
-            return auth_result::acl_match(
-              principal, host, operation, resource_name, false, *entry);
+        auto check_access =
+          [this, &acls, &operation, &host, &resource_name](
+            acl_permission perm,
+            const security::acl_principal& user,
+            std::optional<const security::acl_principal_base*> role
+            = std::nullopt) -> std::optional<auth_result> {
+            vassert(
+              !role
+                || *role != nullptr && (*role)->type() == principal_type::role,
+              "Role principal should be non-null and have 'role' type if "
+              "present");
+            const acl_principal_base& to_check = *role.value_or(&user);
+            bool is_allow = perm == acl_permission::allow;
+            std::optional<acl_matches::acl_match> entry;
+            if (is_allow) {
+                entry = acl_any_implied_ops_allowed(
+                  acls, to_check, host, operation);
+            } else {
+                entry = acls.find(operation, to_check, host, perm);
+            }
+            if (!entry) {
+                return std::nullopt;
+            }
+            switch (to_check.type()) {
+            case principal_type::user:
+            case principal_type::ephemeral_user:
+                return auth_result::acl_match(
+                  user, host, operation, resource_name, is_allow, *entry);
+            case principal_type::role:
+                return auth_result::role_acl_match(
+                  user,
+                  security::role_name{to_check.name_view()},
+                  host,
+                  operation,
+                  resource_name,
+                  is_allow,
+                  *entry);
+            }
+            __builtin_unreachable();
+        };
+
+        auto check_role_access =
+          [this, &principal, &check_access](
+            acl_permission perm,
+            const acl_principal& user) -> std::optional<auth_result> {
+            switch (principal.type()) {
+            case security::principal_type::user: {
+                auto result = _role_store->roles_for_member(
+                                security::role_member_view::from_principal(
+                                  principal))
+                              | std::views::transform([](const auto& e) {
+                                    return role::to_principal_view(e);
+                                })
+                              | std::views::transform(
+                                [&user, &check_access, perm](const auto& e) {
+                                    return check_access(perm, user, &e);
+                                })
+                              | std::views::filter(
+                                [](const std::optional<auth_result>& r) {
+                                    return r.has_value();
+                                })
+                              | std::views::take(1);
+                return (result.empty() ? std::nullopt : result.front());
+            }
+            case security::principal_type::ephemeral_user:
+            case security::principal_type::role:
+                return std::nullopt;
+            }
+            __builtin_unreachable();
+        };
+
+        if (auto result = check_access(acl_permission::deny, principal);
+            result.has_value()) {
+            return std::move(result).value();
         }
 
-        // check for allow
+        if (auto result = check_role_access(acl_permission::deny, principal);
+            result.has_value()) {
+            return std::move(result).value();
+        }
+
+        if (auto result = check_access(acl_permission::allow, principal);
+            result.has_value()) {
+            return std::move(result).value();
+        }
+
+        if (auto result = check_role_access(acl_permission::allow, principal);
+            result.has_value()) {
+            return std::move(result).value();
+        }
+
+        // NOTE(oren): We know there isn't a match at this point, but I've left
+        // this as an opt_acl_match to preserve semantics, namely that this
+        // will return a non-authorized result irrespective of the
+        // allow_empty_matches flag. On the other hand, switching to an
+        // empty_match_result _should_ alter semantics but doesn't break any
+        // tests. Not clear whether this is a bug, intended behavior, a gap
+        // in test coverage, or a combination.
         return auth_result::opt_acl_match(
-          principal,
-          host,
-          operation,
-          resource_name,
-          acl_any_implied_ops_allowed(acls, principal, host, operation));
+          principal, host, operation, resource_name, std::nullopt);
     }
 
     ss::future<fragmented_vector<acl_binding>> all_bindings() const {
@@ -293,7 +412,7 @@ private:
      */
     std::optional<acl_matches::acl_match> acl_any_implied_ops_allowed(
       const acl_matches& acls,
-      const acl_principal& principal,
+      const acl_principal_base& principal,
       const acl_host& host,
       const acl_operation operation) const {
         auto check_op = [&acls, &principal, &host](
@@ -352,6 +471,7 @@ private:
     }
 
     allow_empty_matches _allow_empty_matches;
+    const role_store* _role_store;
 };
 
 } // namespace security

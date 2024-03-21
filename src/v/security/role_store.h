@@ -25,6 +25,27 @@
 
 namespace security {
 
+namespace detail {
+
+// Hash and Equal structs for transparent lookups in node_hash_map
+struct role_member_hash {
+    using is_transparent = std::true_type;
+
+    size_t operator()(role_member_view v) const {
+        return absl::Hash<role_member_view>{}(v);
+    }
+};
+
+struct role_member_eq {
+    using is_transparent = std::true_type;
+
+    bool operator()(role_member_view lhs, role_member_view rhs) const {
+        return lhs == rhs;
+    }
+};
+
+} // namespace detail
+
 /*
  * Store for roles and role members.
  *
@@ -47,10 +68,16 @@ class role_store {
     };
     using role_set_type = absl::node_hash_set<role_name>;
     using name_view_set_type = absl::flat_hash_set<role_name_view>;
-    using members_store_type
-      = absl::node_hash_map<role_member, name_view_set_type>;
+    using members_store_type = absl::node_hash_map<
+      role_member,
+      name_view_set_type,
+      detail::role_member_hash,
+      detail::role_member_eq>;
 
 public:
+    using roles_range
+      = boost::iterator_range<name_view_set_type::const_iterator>;
+
     role_store() noexcept = default;
     role_store(const role_store&) = delete;
     role_store& operator=(const role_store&) = delete;
@@ -85,8 +112,8 @@ public:
         return role{{member_rng.begin(), member_rng.end()}};
     }
 
-    boost::iterator_range<name_view_set_type::const_iterator>
-    roles_for_member(const role_member& user) const {
+    template<RoleMember T>
+    roles_range roles_for_member(const T& user) const {
         if (auto it = _members_store.find(user); it != _members_store.end()) {
             return it->second;
         }
