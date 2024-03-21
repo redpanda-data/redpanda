@@ -59,7 +59,6 @@ void println(std::string_view str) {
     std::fwrite(msg.c_str(), sizeof(char), msg.size(), stderr);
     // NOLINTNEXTLINE
     std::fflush(stderr);
-    std::abort();
 }
 
 /**
