@@ -47,7 +47,7 @@ static ss::future<consensus_ptr> create_raft0(
                   model::controller_ntp,
                   gr,
                   controller_stm_shard,
-                  model::shard_revision_id(0));
+                  model::revision_id(0));
             })
             .then([p] { return p; });
       });

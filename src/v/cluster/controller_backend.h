@@ -279,23 +279,21 @@ private:
     ss::future<std::error_code> create_partition(
       model::ntp,
       raft::group_id,
-      model::revision_id,
-      model::shard_revision_id,
+      model::revision_id log_revision,
       replicas_t initial_replicas);
 
     ss::future<> add_to_shard_table(
-      model::ntp, raft::group_id, ss::shard_id, model::shard_revision_id);
+      model::ntp,
+      raft::group_id,
+      ss::shard_id,
+      model::revision_id log_revision);
     ss::future<> remove_from_shard_table(
-      model::ntp, raft::group_id, model::shard_revision_id);
+      model::ntp, raft::group_id, model::revision_id log_revision);
 
-    ss::future<> shutdown_partition(
-      ss::lw_shared_ptr<partition>, model::shard_revision_id);
+    ss::future<> shutdown_partition(ss::lw_shared_ptr<partition>);
 
     ss::future<std::error_code> transfer_partition(
-      model::ntp ntp,
-      raft::group_id,
-      model::revision_id,
-      model::shard_revision_id);
+      model::ntp, raft::group_id, model::revision_id log_revision);
 
     ss::future<std::error_code> delete_partition(
       model::ntp,

@@ -72,13 +72,14 @@ bool allocation_node::is_full(const model::ntp& ntp) const {
 
 ss::shard_id
 allocation_node::allocate(const partition_allocation_domain domain) {
-    auto it = std::min_element(_weights.begin(), _weights.end());
-    (*it)++; // increment the weights
+    // auto it = std::min_element(_weights.begin(), _weights.end());
+    // (*it)++; // increment the weights
     _allocated_partitions++;
     ++_allocated_domain_partitions[domain];
     _final_partitions++;
     ++_final_domain_partitions[domain];
-    const ss::shard_id core = std::distance(_weights.begin(), it);
+    // const ss::shard_id core = std::distance(_weights.begin(), it);
+    const ss::shard_id core = -1;
     vlog(
       clusterlog.trace,
       "allocation [node: {}, core: {}], total allocated: {}",
@@ -90,13 +91,14 @@ allocation_node::allocate(const partition_allocation_domain domain) {
 
 void allocation_node::deallocate_on(
   ss::shard_id core, const partition_allocation_domain domain) {
+    // vassert(
+    //   core < _weights.size(),
+    //   "Tried to deallocate a non-existing core:{} - {}",
+    //   core,
+    //   *this);
     vassert(
-      core < _weights.size(),
-      "Tried to deallocate a non-existing core:{} - {}",
-      core,
-      *this);
-    vassert(
-      _allocated_partitions > allocation_capacity{0} && _weights[core] > 0,
+      _allocated_partitions > allocation_capacity{0},
+      // && _weights[core] > 0,
       "unable to deallocate partition from core {} at node {}",
       core,
       *this);
@@ -113,7 +115,7 @@ void allocation_node::deallocate_on(
     --domain_partitions;
 
     _allocated_partitions--;
-    _weights[core]--;
+    // _weights[core]--;
     vlog(
       clusterlog.trace,
       "deallocation [node: {}, core: {}], total allocated: {}",
@@ -124,13 +126,13 @@ void allocation_node::deallocate_on(
 
 void allocation_node::allocate_on(
   ss::shard_id core, const partition_allocation_domain domain) {
-    vassert(
-      core < _weights.size(),
-      "Tried to allocate a non-existing core:{} - {}",
-      core,
-      *this);
+    // vassert(
+    //   core < _weights.size(),
+    //   "Tried to allocate a non-existing core:{} - {}",
+    //   core,
+    //   *this);
 
-    _weights[core]++;
+    // _weights[core]++;
     _allocated_partitions++;
     ++_allocated_domain_partitions[domain];
     vlog(

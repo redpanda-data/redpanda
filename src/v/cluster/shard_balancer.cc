@@ -14,6 +14,8 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "config/node_config.h"
+#include "random/generators.h"
+#include "ssx/async_algorithm.h"
 
 namespace cluster {
 
@@ -37,11 +39,37 @@ ss::future<> shard_balancer::start() {
       "method can only be invoked on shard {}",
       shard_id);
 
-    auto tt_version = _topics.local().topics_map_revision();
+    chunked_vector<model::ntp> partitions;
+    // We expect topic_table to remain unchanged throughout the loop because the
+    // method is supposed to be called after local controller replay is finished
+    // but before we start getting new controller updates from the leader.
+    const auto& topics = _topics.local();
+    auto tt_version = topics.topics_map_revision();
+    ssx::async_counter counter;
+    for (const auto& [ns_tp, md_item] : topics.all_topics_metadata()) {
+        vassert(
+          tt_version == topics.topics_map_revision(),
+          "topic_table unexpectedly changed");
 
-    co_await _shard_placement.invoke_on_all([this](shard_placement_table& spt) {
-        return spt.initialize(_topics.local(), _self);
-    });
+        co_await ssx::async_for_each_counter(
+          counter,
+          md_item.get_assignments().begin(),
+          md_item.get_assignments().end(),
+          [&](const partition_assignment& p_as) {
+              vassert(
+                tt_version == topics.topics_map_revision(),
+                "topic_table unexpectedly changed");
+
+              model::ntp ntp{ns_tp.ns, ns_tp.tp, p_as.id};
+              auto replicas_view = topics.get_replicas_view(ntp, md_item, p_as);
+              auto log_rev = log_revision_on_node(replicas_view, _self);
+              if (log_rev) {
+                  partitions.push_back(ntp);
+              }
+          });
+    }
+
+    co_await _shard_placement.local().initialize(partitions);
 
     // we shouldn't be receiving any controller updates at this point, so no
     // risk of missing a notification between initializing shard_placement_table
@@ -104,9 +132,17 @@ ss::future<> shard_balancer::process_delta(const topic_table::delta& delta) {
     auto shard_rev = model::shard_revision_id{
       replicas_view.last_cmd_revision()};
 
+    if (target) {
+        if (_shard_placement.local().ntp2target().contains(ntp)) {
+            co_return;
+        } else {
+            target->shard = random_generators::get_int(ss::smp::count - 1);
+        }
+    }
+
     vlog(
-      clusterlog.trace,
-      "[{}] setting placement target on on this node: {}, shard_rev: {}",
+      clusterlog.info,
+      "[{}] setting placement target on this node: {}, shard_rev: {}",
       ntp,
       target,
       shard_rev);
