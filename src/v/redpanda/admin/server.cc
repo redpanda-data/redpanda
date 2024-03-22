@@ -1549,7 +1549,8 @@ void config_multi_property_validation(
 
             if (!is_valid_configuration) {
                 errors["cloud_storage_enabled"] = ssx::sformat(
-                  "To enable cloud storage you need to configure S3 or Azure "
+                  "To enable cloud storage you need to configure S3 or "
+                  "Azure "
                   "Blob Storage access. For S3 {} must be set. For ABS {} "
                   "must be set",
                   join_properties(s3_properties),
@@ -1558,9 +1559,12 @@ void config_multi_property_validation(
         } break;
         case model::cloud_credentials_source::aws_instance_metadata:
         case model::cloud_credentials_source::gcp_instance_metadata:
-        case model::cloud_credentials_source::sts: {
-            // TODO(vlad): When we add support for non-config file auth
-            // methods for ABS, handling here should be updated too.
+        case model::cloud_credentials_source::sts:
+        case model::cloud_credentials_source::azure_aks_oidc_federation: {
+            // basic config checks for cloud_storage. for sts and
+            // azure_aks_oidc_federation it is expected to receive part of the
+            // configuration via env variables, while aws_instance_metadata and
+            // gcp_instance_metadata do not require extra configuration
             config_properties_seq properties = {
               std::ref(updated_config.cloud_storage_region),
               std::ref(updated_config.cloud_storage_bucket),
@@ -1573,8 +1577,25 @@ void config_multi_property_validation(
                 }
             }
         } break;
+        case model::cloud_credentials_source::azure_vm_instance_metadata: {
+            // azure_vm_instance_metadata requires an client_id to work
+            // correctly
+            config_properties_seq properties = {
+              std::ref(updated_config.cloud_storage_region),
+              std::ref(updated_config.cloud_storage_bucket),
+              std::ref(updated_config.cloud_storage_azure_managed_identity_id),
+            };
+
+            for (auto& p : properties) {
+                if (p() == std::nullopt) {
+                    errors[ss::sstring(p.get().name())]
+                      = "Must be set when cloud storage enabled";
+                }
+            }
+        } break;
         }
     }
+
     if (
       updated_config.enable_schema_id_validation
         != pandaproxy::schema_registry::schema_id_validation_mode::none
