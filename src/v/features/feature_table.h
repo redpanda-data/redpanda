@@ -74,7 +74,7 @@ enum class feature : std::uint64_t {
     cloud_metadata_cluster_recovery = 1ULL << 40U,
     audit_logging = 1ULL << 41U,
     compaction_placeholder_batch = 1ULL << 42U,
-    node_local_core_assignment = 1ULL << 43U,
+    partition_shard_in_health_report = 1ULL << 43U,
     role_based_access_control = 1ULL << 44U,
 
     // Dummy features for testing only
@@ -375,8 +375,8 @@ constexpr static std::array feature_schema{
     feature_spec::prepare_policy::always},
   feature_spec{
     cluster::cluster_version{12},
-    "node_local_core_assignment",
-    feature::node_local_core_assignment,
+    "partition_shard_in_health_report",
+    feature::partition_shard_in_health_report,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
