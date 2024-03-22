@@ -1519,11 +1519,8 @@ void config_multi_property_validation(
         using config_properties_seq = std::vector<std::reference_wrapper<
           const config::property<std::optional<ss::sstring>>>>;
 
-        config_properties_seq properties{};
-
-        if (
-          updated_config.cloud_storage_credentials_source
-          == model::cloud_credentials_source::config_file) {
+        switch (updated_config.cloud_storage_credentials_source.value()) {
+        case model::cloud_credentials_source::config_file: {
             config_properties_seq s3_properties = {
               std::ref(updated_config.cloud_storage_region),
               std::ref(updated_config.cloud_storage_bucket),
@@ -1558,7 +1555,10 @@ void config_multi_property_validation(
                   join_properties(s3_properties),
                   join_properties(abs_properties));
             }
-        } else {
+        } break;
+        case model::cloud_credentials_source::aws_instance_metadata:
+        case model::cloud_credentials_source::gcp_instance_metadata:
+        case model::cloud_credentials_source::sts: {
             // TODO(vlad): When we add support for non-config file auth
             // methods for ABS, handling here should be updated too.
             config_properties_seq properties = {
@@ -1572,6 +1572,7 @@ void config_multi_property_validation(
                       = "Must be set when cloud storage enabled";
                 }
             }
+        } break;
         }
     }
     if (
