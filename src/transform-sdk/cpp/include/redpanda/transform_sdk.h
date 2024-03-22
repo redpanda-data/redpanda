@@ -71,6 +71,9 @@ public:
     /** Returns true if the views have the same contents. */
     bool operator==(const bytes_view& other) const;
 
+    /** Convert this bytes view into a string view. */
+    explicit operator std::string_view() const;
+
 private:
     bytes::const_pointer _start{}, _end{};
 };

@@ -59,7 +59,6 @@ void println(std::string_view str) {
     std::fwrite(msg.c_str(), sizeof(char), msg.size(), stderr);
     // NOLINTNEXTLINE
     std::fflush(stderr);
-    std::abort();
 }
 
 /**
@@ -271,15 +270,11 @@ read_record_view(bytes_view payload) {
         ASSIGN_OR_RETURN(auto kv_result, read_kv(payload));
         payload = payload.subview(kv_result.read);
         auto [key_opt, value] = kv_result.value;
-        const std::string_view key
-          = key_opt
-              .transform([](bytes_view buf) {
-                  return std::string_view{
-                    // NOLINTNEXTLINE(*reinterpret-cast)
-                    reinterpret_cast<const char*>(buf.data()),
-                    buf.size()};
-              })
-              .value_or(std::string_view{});
+        const std::string_view key = key_opt
+                                       .transform([](bytes_view buf) {
+                                           return std::string_view{buf};
+                                       })
+                                       .value_or(std::string_view{});
         headers.emplace_back(key, value);
     }
     auto [key, value] = kv_result.value;
@@ -423,6 +418,10 @@ bytes::value_type bytes_view::operator[](size_t n) const { return _start[n]; }
 
 bool bytes_view::operator==(const bytes_view& other) const {
     return std::ranges::equal(*this, other);
+}
+bytes_view::operator std::string_view() const {
+    // NOLINTNEXTLINE(*-reinterpret-cast)
+    return {reinterpret_cast<const char*>(data()), size()};
 }
 
 header::operator header_view() const {
