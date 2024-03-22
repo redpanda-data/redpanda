@@ -160,6 +160,10 @@ class RoleMember(NamedTuple):
     principal_type: PrincipalType
     name: str
 
+    @classmethod
+    def User(cls, name: str):
+        return cls(cls.PrincipalType.USER, name)
+
 
 class RoleMemberList:
     members: list[RoleMember]

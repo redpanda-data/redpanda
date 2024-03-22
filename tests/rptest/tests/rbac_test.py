@@ -125,10 +125,7 @@ class RBACTest(RBACTestBase):
 
         with expect_http_error(403):
             self.user_admin.update_role_members(
-                role=self.role_name1,
-                add=[
-                    RoleMember(RoleMember.PrincipalType.USER, ALICE.username)
-                ])
+                role=self.role_name1, add=[RoleMember.User(ALICE.username)])
 
         with expect_http_error(403):
             self.user_admin.list_role_members(role=self.role_name1)
@@ -374,8 +371,8 @@ class RBACTest(RBACTestBase):
 
     @cluster(num_nodes=3)
     def test_members_endpoint(self):
-        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
-        bob = RoleMember(RoleMember.PrincipalType.USER, 'bob')
+        alice = RoleMember.User('alice')
+        bob = RoleMember.User('bob')
 
         self.logger.debug(
             "Test that update_role_members can create the role as a side effect"
@@ -502,8 +499,8 @@ class RBACTest(RBACTestBase):
 
     @cluster(num_nodes=3)
     def test_members_endpoint_errors(self):
-        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
-        bob = RoleMember(RoleMember.PrincipalType.USER, 'bob')
+        alice = RoleMember.User('alice')
+        bob = RoleMember.User('bob')
 
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
             self.superuser_admin.list_role_members(role=self.role_name0)
@@ -602,7 +599,7 @@ class RBACTest(RBACTestBase):
     @cluster(num_nodes=3)
     def test_list_user_roles(self):
         username = ALICE.username
-        alice = RoleMember(RoleMember.PrincipalType.USER, username)
+        alice = RoleMember.User(username)
 
         res = self.user_admin.list_user_roles()
         assert res.status_code == 200, f"Unexpected status {res.status_code}"
