@@ -20,6 +20,7 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <iterator>
 #include <ranges>
 #include <stdexcept>
 
@@ -1082,4 +1083,17 @@ BOOST_AUTO_TEST_CASE(test_delta_for_cstore_col_at_with_hint_xor) {
 BOOST_AUTO_TEST_CASE(test_delta_for_cstore_col_at_with_hint_delta) {
     delta_delta_column column{};
     at_with_hint_test_case(short_test_size, column);
+}
+
+static_assert(std::forward_iterator<delta_delta_column::lw_const_iterator>);
+
+BOOST_AUTO_TEST_CASE(test_lw_iterator) {
+    delta_delta_column column;
+    for (auto i = 0; i < 20000; ++i) {
+        column.append(i);
+    }
+    size_t i = 0;
+    for (auto it = column.lw_begin(); it != column.lw_end(); ++it) {
+        BOOST_REQUIRE_EQUAL(i++, *it);
+    }
 }
