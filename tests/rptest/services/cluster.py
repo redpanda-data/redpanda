@@ -126,7 +126,8 @@ def cluster(log_allow_list=None,
 
                 raise
             else:
-                if not isinstance(self.redpanda, RedpandaServiceBase):
+                if not isinstance(self.redpanda,
+                                  RedpandaServiceBase | RedpandaServiceCloud):
                     # If None we passed without instantiating a RedpandaService, for example
                     # in a skipped test.
                     # Also skip if we are running against the cloud
@@ -160,7 +161,8 @@ def cluster(log_allow_list=None,
                     # RSB (technically, it might be that self.redpanda is RSB but some
                     # additional redpanda in the registry is, but that situation never arises
                     # in practice in our current tests)
-                    assert isinstance(redpanda, RedpandaServiceBase)
+                    assert isinstance(
+                        redpanda, RedpandaServiceBase | RedpandaServiceCloud)
 
                     if check_allowed_error_logs:
                         # Only do log inspections on tests that are otherwise
@@ -173,8 +175,15 @@ def cluster(log_allow_list=None,
                             redpanda.raise_on_bad_logs(
                                 allow_list=log_allow_list)
                         except:
-                            redpanda.cloud_storage_diagnostics()
+                            # Perform diagnostics only for Local run
+                            if isinstance(redpanda, RedpandaServiceBase):
+                                redpanda.cloud_storage_diagnostics()
                             raise
+
+                    # Do a check if this is the cloud
+                    # since the rest not applies to RedpandaServiceCloud class
+                    if isinstance(redpanda, RedpandaServiceCloud):
+                        return r
 
                     if check_for_storage_usage_inconsistencies:
                         try:
