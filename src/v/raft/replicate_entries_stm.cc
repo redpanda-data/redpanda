@@ -341,117 +341,41 @@ result<replicate_result> replicate_entries_stm::build_replicate_result() const {
 }
 
 ss::future<result<replicate_result>>
-replicate_entries_stm::wait_for_majority_flush() {
-    if (!_append_result) {
-        co_return build_replicate_result();
-    }
-    // this is happening outside of _opsem
-    // store offset and term of an appended entry
-    auto appended_offset = _append_result->value().last_offset;
-    auto appended_term = _append_result->value().last_term;
-    /**
-     * we have to finish replication when committed offset is greater or
-     * equal to the appended offset or when term have changed after
-     * commit_index update, if that happend it means that entry might
-     * have been either commited or truncated
-     */
-    auto stop_cond = [this, appended_offset, appended_term] {
-        const auto current_committed_offset = _ptr->committed_offset();
-        const auto committed = current_committed_offset >= appended_offset;
-        const auto truncated = _ptr->term() > appended_term
-                               && current_committed_offset
-                                    > _initial_committed_offset
-                               && _ptr->_log->get_term(appended_offset)
-                                    != appended_term;
-
-        return committed || truncated;
-    };
-    try {
-        co_await _ptr->_commit_index_updated.wait(stop_cond);
-        co_return process_result(appended_offset, appended_term);
-
-    } catch (const ss::broken_condition_variable&) {
-        vlog(
-          _ctxlog.debug,
-          "Replication of entries with last offset: {} aborted - "
-          "shutting down",
-          _dirty_offset);
-        co_return result<replicate_result>(
-          make_error_code(errc::shutting_down));
-    }
-}
-
-ss::future<result<replicate_result>>
-replicate_entries_stm::wait_for_majority_no_flush() {
-    if (!_append_result) {
-        co_return build_replicate_result();
-    }
-    auto appended_offset = _append_result->value().last_offset;
-    auto appended_term = _append_result->value().last_term;
-
-    auto stop_cond = [this, appended_offset, appended_term] {
-        const auto current_committed_offset = _ptr->committed_offset();
-        const auto current_majority_replicated
-          = _ptr->majority_replicated_index();
-        const auto replicated = current_majority_replicated >= appended_offset;
-        const auto truncated = _ptr->term() > appended_term
-                               && current_committed_offset
-                                    > _initial_committed_offset
-                               && _ptr->_log->get_term(appended_offset)
-                                    != appended_term;
-
-        return replicated || truncated;
-    };
-    try {
-        co_await _ptr->_majority_replicated_index_updated.wait(stop_cond);
-        co_return process_result(appended_offset, appended_term);
-    } catch (const ss::broken_condition_variable&) {
-        vlog(
-          _ctxlog.debug,
-          "Replication of entries with last offset: {}, flush: {} aborted - "
-          "shutting down",
-          _dirty_offset,
-          _is_flush_required);
-        co_return result<replicate_result>(
-          make_error_code(errc::shutting_down));
-    }
-}
-
-ss::future<result<replicate_result>>
 replicate_entries_stm::wait_for_majority() {
-    if (_is_flush_required) {
-        co_return co_await wait_for_majority_flush();
+    if (!_append_result) {
+        co_return build_replicate_result();
     }
-    co_return co_await wait_for_majority_no_flush();
+    auto& append_result = _append_result->value();
+    auto appended_offset = append_result.last_offset;
+    auto appended_term = append_result.last_term;
+    auto result = _is_flush_required
+                    ? _ptr->_replication_monitor.wait_until_committed(
+                      append_result)
+                    : _ptr->_replication_monitor.wait_until_majority_replicated(
+                      append_result);
+    co_return process_result(
+      co_await std::move(result), appended_offset, appended_term);
 }
 
 result<replicate_result> replicate_entries_stm::process_result(
-  model::offset appended_offset, model::term_id appended_term) {
-    using ret_t = result<replicate_result>;
+  raft::errc result,
+  model::offset appended_offset,
+  model::term_id appended_term) {
+    using ret_t = ::result<replicate_result>;
     vlog(
       _ctxlog.trace,
       "Replication result [offset: {}, term: {}, commit_idx: "
       "{}, "
-      "current_term: {}]",
+      "current_term: {}], flushed: {}, result: {}",
       appended_offset,
       appended_term,
       _ptr->committed_offset(),
-      _ptr->term());
+      _ptr->term(),
+      _is_flush_required,
+      result);
 
-    // if term has changed we have to check if entry was
-    // replicated
-    if (unlikely(appended_term != _ptr->term())) {
-        const auto current_term = _ptr->_log->get_term(appended_offset);
-        if (current_term != appended_term) {
-            vlog(
-              _ctxlog.debug,
-              "Replication failure: appended term of entry {} is different "
-              "than expected, expected term: {}, current term: {}",
-              appended_offset,
-              appended_term,
-              current_term);
-            return ret_t(errc::replicated_entry_truncated);
-        }
+    if (result != raft::errc::success) {
+        return ret_t{result};
     }
 
     if (_is_flush_required) {
@@ -466,13 +390,6 @@ result<replicate_result> replicate_entries_stm::process_result(
           appended_offset,
           _initial_committed_offset);
     }
-
-    vlog(
-      _ctxlog.trace,
-      "Replication success, last offset: {}, flush:{}, term: {}",
-      appended_offset,
-      _is_flush_required,
-      appended_term);
     return build_replicate_result();
 }
 

@@ -147,8 +147,9 @@ consensus::consensus(
   , _append_requests_buffer(*this, 256)
   , _write_caching_enabled(log_config().write_caching())
   , _max_pending_flush_bytes(log_config().flush_bytes())
-  , _max_flush_delay_ms(flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
-                          .next_duration()) {
+  , _max_flush_delay_ms(
+      flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}.next_duration())
+  , _replication_monitor(this) {
     setup_metrics();
     setup_public_metrics();
     update_follower_stats(_configuration_manager.get_latest());
@@ -273,6 +274,7 @@ ss::future<> consensus::stop() {
     for (auto& idx : _fstats) {
         idx.second.follower_state_change.broken();
     }
+    co_await _replication_monitor.stop();
     co_await _event_manager.stop();
     if (_stm_manager) {
         co_await _stm_manager->stop();
@@ -2270,6 +2272,7 @@ void consensus::update_offset_from_snapshot(
     maybe_update_last_visible_index(_commit_index);
     if (prev_commit_index != _commit_index) {
         _commit_index_updated.broadcast();
+        _replication_monitor.notify_committed();
         _event_manager.notify_commit_index();
     }
 
@@ -2968,6 +2971,7 @@ consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
         _commit_index = majority_match;
         vlog(_ctxlog.trace, "Leader commit index updated {}", _commit_index);
 
+        _replication_monitor.notify_committed();
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index();
         // if we successfully acknowledged all quorum writes we can make pending
@@ -2997,6 +3001,7 @@ void consensus::maybe_update_follower_commit_idx(
             _commit_index = new_commit_idx;
             vlog(
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
+            _replication_monitor.notify_committed();
             _commit_index_updated.broadcast();
             _event_manager.notify_commit_index();
         }
@@ -3504,6 +3509,7 @@ void consensus::do_update_majority_replicated_index(model::offset offset) {
     auto previous_majority_replicated_index = _majority_replicated_index;
     _majority_replicated_index = std::max(_majority_replicated_index, offset);
     if (previous_majority_replicated_index != _majority_replicated_index) {
+        _replication_monitor.notify_replicated();
         _majority_replicated_index_updated.broadcast();
     }
 }

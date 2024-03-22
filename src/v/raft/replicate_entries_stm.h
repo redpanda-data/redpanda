@@ -36,46 +36,34 @@ namespace raft {
 /// return ptr->apply()
 ///            .then([ptr]{
 ///                 // wait in background.
-///                (void)ptr->wait().finally([ptr]{});
+///                (void)ptr->wait_for_majority().finally([ptr]{});
 ///            });
 ///
 /// Replicate STM implements following algorithm
 ///
-///  Stop conditions:
-///    1) leader commit_index > offset of an entry that was replicated
-///       to the leader log (SUCCESS)
-///    2) term has changed (FAILURE)
-///    3) current node is not the leader (FAILURE)
-///
-///  Algorithm steps:
 ///    1) Append entry to leader log without flush
-///    2) Dispatch append entries RPC calls to followers and in parallel flush
-///       entries to leader disk
-///    3) Wait for (1),(2) or (3)
-///    4) When
-///       ->(1) reply with success
-///       ->(2) or (3) check if entry with given offset and term exists in log
-///         if entry exists reply with success, reply with false otherwise
-///
-///
-///   Wait is realized with condition variable that is only notified when commit
-///   index change
-///
+///    ->   wait for (1) to finish successfully.
+///    2) Dispatch append entries RPC calls to followers and in parallel.
+///    Entries are flushed if write caching is disabled or the caller
+///    decides to force flush.
+///    3) Rely on the replication monitor to wait until the entries are
+///    successfully replicated or truncated. See replication_monitor for
+///    details.
 ///
 ///
 ///                            N1 (Leader)        +
 ///                            +-------+          |
-///                        +-->| Flush |--------->+     OK
-///                        |   +-------+          |     +----(1)----> SUCCESS
-///                        |                      |     |
-///      N1 (Leader)       |   N2                 |     |
-/// +-------------------+  |   +--------+-------+ |     |
-/// |Replicate |Append  |--+-->+ Append | Flush |-+---->+
-/// +-------------------+  |   +--------+-------+ |     |
-///                     |  |                      |     |
-///                     |  |   N3                 |     |
-///                     |  |   +--------+-------+ |     +-(2)-(3)---> FAILURE
-///                     |  +-->| Append | Flush |-+     ERR
+///                        +-->| Flush |--------->+
+///                        |   +-------+          |              +->SUCCESS
+///                        |                      |            OK|
+///      N1 (Leader)       |   N2                 |              |
+/// +-------------------+  |   +--------+-------+ |     +---------------------+
+/// |Replicate |Append  |--+-->+ Append | Flush |-+---->| replication_monitor |
+/// +-------------------+  |   +--------+-------+ |     +---------------------+
+///                     |  |                      |              |
+///                     |  |   N3                 |              |
+///                     |  |   +--------+-------+ |              +--> FAILURE
+///                     |  +-->| Append | Flush |-+
 ///                     |      +--------+-------+ |
 ///                     |                         +
 ///                     v               Wait for (1) or (2)
@@ -117,17 +105,14 @@ private:
     ss::future<result<append_entries_reply>>
       send_append_entries_request(vnode, model::record_batch_reader);
 
-    result<replicate_result> process_result(model::offset, model::term_id);
+    result<replicate_result>
+      process_result(raft::errc, model::offset, model::term_id);
     bool should_skip_follower_request(vnode);
     clock_type::time_point append_entries_timeout();
     /// This append will happen under the lock
     ss::future<result<storage::append_result>> append_to_self();
 
     result<replicate_result> build_replicate_result() const;
-
-    ss::future<result<replicate_result>> wait_for_majority_flush();
-
-    ss::future<result<replicate_result>> wait_for_majority_no_flush();
 
     consensus* _ptr;
     /// we keep a copy around until we finish the retries

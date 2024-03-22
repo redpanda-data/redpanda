@@ -517,6 +517,10 @@ public:
     size_t flush_bytes() const { return _max_pending_flush_bytes; }
     std::chrono::milliseconds flush_ms() const { return _max_flush_delay_ms; }
 
+    replication_monitor& get_replication_monitor() {
+        return _replication_monitor;
+    }
+
 private:
     friend replication_monitor;
     friend replicate_entries_stm;
@@ -893,6 +897,8 @@ private:
     std::chrono::milliseconds _max_flush_delay_ms;
 
     ss::condition_variable _background_flusher;
+
+    replication_monitor _replication_monitor;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
