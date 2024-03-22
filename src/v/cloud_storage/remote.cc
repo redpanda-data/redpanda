@@ -1582,7 +1582,9 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
                   return cloud_roles::aws_region_name{cfg.region};
               },
               [](cloud_storage_clients::abs_configuration const&) {
-                  vassert(false, "Attempt to create refresh creds for ABS");
+                  // Azure Blob Storage does not need a region name to compose
+                  // the requests, so this value is defaulted since it's ignored
+                  // downstream
                   return cloud_roles::aws_region_name{};
               });
             _refresh_credentials.emplace(cloud_roles::make_refresh_credentials(
