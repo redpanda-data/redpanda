@@ -451,23 +451,30 @@ ss::future<configuration> configuration::get_abs_config() {
     const auto container = get_value_or_throw(
       config::shard_local_cfg().cloud_storage_azure_container,
       "cloud_storage_azure_container");
-    const auto shared_key = cloud_roles::private_key_str{get_value_or_throw(
-      config::shard_local_cfg().cloud_storage_azure_shared_key,
-      "cloud_storage_azure_shared_key")};
+    const auto shared_key =
+      []() -> std::optional<cloud_roles::private_key_str> {
+        auto opt
+          = config::shard_local_cfg().cloud_storage_azure_shared_key.value();
+        if (opt.has_value()) {
+            return cloud_roles::private_key_str(opt.value());
+        }
+        return std::nullopt;
+    }();
 
     const auto cloud_credentials_source
       = config::shard_local_cfg().cloud_storage_credentials_source.value();
-    if (
-      cloud_credentials_source
-      != model::cloud_credentials_source::config_file) {
+    using enum model::cloud_credentials_source;
+    if (!(cloud_credentials_source == config_file
+          || cloud_credentials_source == azure_aks_oidc_federation
+          || cloud_credentials_source == azure_vm_instance_metadata)) {
         vlog(
           cst_log.error,
           "Configuration property cloud_storage_credentials_source must be set "
-          "to 'config_file' as only Shared Key Authorization is supported for "
-          "now.");
+          "to 'config_file' or 'azure_aks_oidc_federation' or "
+          "'azure_vm_instance_metadata'");
         throw std::runtime_error(
-          "configuration property cloud_storage_credentials_source is not "
-          "equal to 'config_file'");
+          "configuration property cloud_storage_credentials_source is not set "
+          "to a value allowed for ABS");
     }
 
     auto disable_metrics = net::metrics_disabled(
