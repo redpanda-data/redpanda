@@ -803,6 +803,26 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
 
     const auto current_term = _insync_term;
 
+    // If the caller didn't invoke `sync` before calling `replicate` we
+    // might have some batches which are not applied to the STM yet. These
+    // batches could potentially set _active_operation_res and therefore
+    // mask the actual failure.
+    {
+        auto commit = _raft->committed_offset();
+        auto insync = _manifest->get_insync_offset();
+        if (insync < commit) {
+            vlog(_logger.debug, "Replicate is called while STM is catching up");
+            auto sync_res = co_await do_sync(
+              config::shard_local_cfg()
+                .cloud_storage_metadata_sync_timeout_ms.value(),
+              &as);
+            if (!sync_res) {
+                vlog(_logger.warn, "Failed to catch up");
+                co_return errc::timeout;
+            }
+        }
+    }
+
     // Create a promise to deliver the result of the batch application
     _active_operation_res.emplace();
     auto broken_promise_to_shutdown = [](const ss::broken_promise&) {
