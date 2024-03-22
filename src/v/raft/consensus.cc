@@ -263,7 +263,6 @@ void consensus::shutdown_input() {
         _vote_timeout.cancel();
         _as.request_abort();
         _commit_index_updated.broken();
-        _majority_replicated_index_updated.broken();
         _follower_reply.broken();
     }
 }
@@ -3510,7 +3509,6 @@ void consensus::do_update_majority_replicated_index(model::offset offset) {
     _majority_replicated_index = std::max(_majority_replicated_index, offset);
     if (previous_majority_replicated_index != _majority_replicated_index) {
         _replication_monitor.notify_replicated();
-        _majority_replicated_index_updated.broadcast();
     }
 }
 
