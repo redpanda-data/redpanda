@@ -38,6 +38,9 @@
 #include "ssx/future-util.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
+#include "storage/ntp_config.h"
+#include "storage/snapshot.h"
+#include "storage/types.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
@@ -111,11 +114,6 @@ consensus::consensus(
   , _group(group)
   , _jit(std::move(jit))
   , _log(l)
-  , _offset_translator(
-      offset_translator_batch_types(_log->config().ntp()),
-      group,
-      _log->config().ntp(),
-      storage)
   , _scheduling(scheduling_config)
   , _disk_timeout(std::move(disk_timeout))
   , _client_protocol(client)
@@ -1373,7 +1371,7 @@ ss::future<> consensus::do_start() {
         auto u = co_await _op_lock.get_units();
 
         read_voted_for();
-        bool initial_state = is_initial_state();
+        bool initial_state = _log->is_new_log();
 
         vlog(
           _ctxlog.info,
@@ -1388,10 +1386,26 @@ ss::future<> consensus::do_start() {
           "Configuration manager started: {}",
           _configuration_manager);
 
-        co_await _offset_translator.start(
-          offset_translator::must_reset{initial_state});
+        std::optional<storage::truncate_prefix_config> start_truncate_cfg;
+        auto snapshot_units = co_await _snapshot_lock.get_units();
+        auto metadata = co_await read_snapshot_metadata();
+        if (metadata.has_value()) {
+            update_offset_from_snapshot(metadata.value());
+            co_await _configuration_manager.add(
+              _last_snapshot_index, std::move(metadata->latest_configuration));
+            _probe->configuration_update();
 
-        co_await _snapshot_lock.with([this] { return hydrate_snapshot(); });
+            start_truncate_cfg = truncation_cfg_for_snapshot(metadata.value());
+            if (start_truncate_cfg.has_value()) {
+                _flushed_offset = std::max(
+                  _last_snapshot_index, _flushed_offset);
+                co_await _configuration_manager.prefix_truncate(
+                  _last_snapshot_index);
+            }
+            _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
+        }
+        co_await _log->start(start_truncate_cfg);
+        snapshot_units.return_all();
 
         vlog(
           _ctxlog.debug,
@@ -1445,8 +1459,6 @@ ss::future<> consensus::do_start() {
         }
 
         update_follower_stats(_configuration_manager.get_latest());
-
-        co_await _offset_translator.sync_with_log(_log, _as);
 
         /**
          * fix for incorrectly persisted configuration index. In
@@ -2026,16 +2038,9 @@ consensus::do_append_entries(append_entries_request&& r) {
           truncate_at);
         _probe->log_truncated();
 
-        // We are truncating the offset translator before truncating the log
-        // because if saving offset translator state fails, we will retry and
-        // eventually log and offset translator will become consistent. OTOH if
-        // log truncation were first and saving offset translator state failed,
-        // we wouldn't retry and log and offset translator could diverge.
-        return _offset_translator.truncate(truncate_at)
-          .then([this, truncate_at] {
-              return _log->truncate(storage::truncate_config(
-                truncate_at, _scheduling.default_iopc));
-          })
+        return _log
+          ->truncate(
+            storage::truncate_config(truncate_at, _scheduling.default_iopc))
           .then([this, truncate_at] {
               _last_quorum_replicated_index_with_flush = std::min(
                 model::prev_offset(truncate_at),
@@ -2153,36 +2158,57 @@ consensus::install_snapshot(install_snapshot_request&& r) {
 ss::future<> consensus::hydrate_snapshot() {
     // Read snapshot, reset state machine using snapshot contents (and load
     // snapshot’s cluster configuration) (§7.8)
-    return _snapshot_mgr.open_snapshot().then(
-      [this](std::optional<storage::snapshot_reader> reader) {
-          // no snapshot do nothing
-          if (!reader) {
-              return ss::now();
-          }
-          return ss::do_with(
-            std::move(*reader), [this](storage::snapshot_reader& reader) {
-                return do_hydrate_snapshot(reader).finally(
-                  [&reader] { return reader.close(); });
-            });
-      });
+    auto metadata = co_await read_snapshot_metadata();
+    if (!metadata.has_value()) {
+        co_return;
+    }
+    update_offset_from_snapshot(metadata.value());
+    co_await _configuration_manager.add(
+      _last_snapshot_index, std::move(metadata->latest_configuration));
+    _probe->configuration_update();
+    auto truncate_cfg = truncation_cfg_for_snapshot(metadata.value());
+    if (truncate_cfg.has_value()) {
+        co_await truncate_to_latest_snapshot(truncate_cfg.value());
+    }
+    _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
 }
 
-ss::future<> consensus::truncate_to_latest_snapshot() {
+std::optional<storage::truncate_prefix_config>
+consensus::truncation_cfg_for_snapshot(const snapshot_metadata& metadata) {
+    if (
+      _keep_snapshotted_log
+      && _log->offsets().dirty_offset >= _last_snapshot_index) {
+        // skip prefix truncating if we want to preserve the log (e.g. for the
+        // controller partition), but only if there is no gap between old end
+        // offset and new start offset, otherwise we must still advance the log
+        // start offset by prefix-truncating.
+        return std::nullopt;
+    }
+    auto delta = metadata.log_start_delta;
+    if (delta < offset_translator_delta(0)) {
+        delta = offset_translator_delta(
+          _configuration_manager.offset_delta(_last_snapshot_index));
+        vlog(
+          _ctxlog.warn,
+          "received snapshot without delta field in metadata, "
+          "falling back to delta obtained from configuration "
+          "manager: {}",
+          delta);
+    }
+    return storage::truncate_prefix_config(
+      model::next_offset(_last_snapshot_index),
+      _scheduling.default_iopc,
+      model::offset_delta(delta));
+}
+
+ss::future<>
+consensus::truncate_to_latest_snapshot(storage::truncate_prefix_config cfg) {
     // we have to prefix truncate config manage at exactly last offset included
     // in snapshot as this is the offset of configuration included in snapshot
     // metadata.
-    //
-    // We truncate the log before truncating offset translator to wait for
-    // readers that started reading from the start of the log before we advanced
-    // _last_snapshot_index and thus can still need offset translation info.
-    return _log
-      ->truncate_prefix(storage::truncate_prefix_config(
-        model::next_offset(_last_snapshot_index), _scheduling.default_iopc))
+    return _log->truncate_prefix(cfg)
       .then([this] {
           return _configuration_manager.prefix_truncate(_last_snapshot_index);
-      })
-      .then([this] {
-          return _offset_translator.prefix_truncate(_last_snapshot_index);
       })
       .then([this] {
           // when log was prefix truncate flushed offset should be equal to at
@@ -2191,71 +2217,54 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
       });
 }
 
-ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
-    return reader.read_metadata()
-      .then([this](iobuf buf) {
-          auto parser = iobuf_parser(std::move(buf));
-          auto metadata = reflection::adl<snapshot_metadata>{}.from(parser);
-          vassert(
-            metadata.last_included_index >= _last_snapshot_index,
-            "Tried to load stale snapshot. Loaded snapshot last "
-            "index {}, current snapshot last index {}",
-            metadata.last_included_index,
-            _last_snapshot_index);
+ss::future<std::optional<snapshot_metadata>>
+consensus::read_snapshot_metadata() {
+    std::optional<raft::snapshot_metadata> metadata;
+    auto snapshot_reader = co_await _snapshot_mgr.open_snapshot();
+    if (!snapshot_reader.has_value()) {
+        co_return std::nullopt;
+    }
+    std::exception_ptr eptr;
+    try {
+        auto buf = co_await snapshot_reader->read_metadata();
+        auto parser = iobuf_parser(std::move(buf));
+        metadata = reflection::adl<raft::snapshot_metadata>{}.from(parser);
+    } catch (...) {
+        eptr = std::current_exception();
+    }
+    co_await snapshot_reader->close();
+    if (eptr) {
+        rethrow_exception(eptr);
+    }
+    co_return metadata;
+}
 
-          vlog(
-            _ctxlog.info,
-            "hydrating snapshot with last included index: {}",
-            metadata.last_included_index);
+void consensus::update_offset_from_snapshot(
+  const raft::snapshot_metadata& metadata) {
+    vassert(
+      metadata.last_included_index >= _last_snapshot_index,
+      "Tried to load stale snapshot. Loaded snapshot last "
+      "index {}, current snapshot last index {}",
+      metadata.last_included_index,
+      _last_snapshot_index);
+    vlog(
+      _ctxlog.info,
+      "hydrating snapshot with last included index: {}",
+      metadata.last_included_index);
 
-          _last_snapshot_index = metadata.last_included_index;
-          _last_snapshot_term = metadata.last_included_term;
+    _last_snapshot_index = metadata.last_included_index;
+    _last_snapshot_term = metadata.last_included_term;
 
-          // TODO: add applying snapshot content to state machine
-          auto prev_commit_index = _commit_index;
-          _commit_index = std::max(_last_snapshot_index, _commit_index);
-          maybe_update_last_visible_index(_commit_index);
-          if (prev_commit_index != _commit_index) {
-              _commit_index_updated.broadcast();
-              _event_manager.notify_commit_index();
-          }
+    // TODO: add applying snapshot content to state machine
+    auto prev_commit_index = _commit_index;
+    _commit_index = std::max(_last_snapshot_index, _commit_index);
+    maybe_update_last_visible_index(_commit_index);
+    if (prev_commit_index != _commit_index) {
+        _commit_index_updated.broadcast();
+        _event_manager.notify_commit_index();
+    }
 
-          update_follower_stats(metadata.latest_configuration);
-          return _configuration_manager
-            .add(_last_snapshot_index, std::move(metadata.latest_configuration))
-            .then([this, delta = metadata.log_start_delta]() mutable {
-                _probe->configuration_update();
-
-                if (delta < offset_translator_delta(0)) {
-                    delta = offset_translator_delta(
-                      _configuration_manager.offset_delta(
-                        _last_snapshot_index));
-                    vlog(
-                      _ctxlog.warn,
-                      "received snapshot without delta field in metadata, "
-                      "falling back to delta obtained from configuration "
-                      "manager: {}",
-                      delta);
-                }
-                return _offset_translator.prefix_truncate_reset(
-                  _last_snapshot_index, delta);
-            })
-            .then([this] {
-                if (
-                  _keep_snapshotted_log
-                  && _log->offsets().dirty_offset >= _last_snapshot_index) {
-                    // skip prefix truncating if we want to preserve the log
-                    // (e.g. for the controller partition), but only if there is
-                    // no gap between old end offset and new start offset,
-                    // otherwise we must still advance the log start offset by
-                    // prefix-truncating.
-                    return ss::now();
-                }
-                return truncate_to_latest_snapshot();
-            });
-      })
-      .then([this] { return _snapshot_mgr.get_snapshot_size(); })
-      .then([this](uint64_t size) { _snapshot_size = size; });
+    update_follower_stats(metadata.latest_configuration);
 }
 
 ss::future<install_snapshot_reply>
@@ -2421,9 +2430,7 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
     _flushed_offset = std::max(last_included_index, _flushed_offset);
 
     co_await _snapshot_lock.with([this, last_included_index]() mutable {
-        return ss::when_all_succeed(
-          _configuration_manager.prefix_truncate(last_included_index),
-          _offset_translator.prefix_truncate(last_included_index));
+        return _configuration_manager.prefix_truncate(last_included_index);
     });
 }
 
@@ -2455,8 +2462,7 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
       .latest_configuration = *config,
       .cluster_time = clock_type::time_point::min(),
       .log_start_delta = offset_translator_delta(
-        _offset_translator.state()->delta(
-          model::next_offset(last_included_index))),
+        _log->offset_delta(model::next_offset(last_included_index))()),
     };
 
     return details::persist_snapshot(
@@ -2673,29 +2679,24 @@ ss::future<storage::append_result> consensus::disk_append(
 
     class consumer {
     public:
-        consumer(offset_translator& translator, storage::log_appender appender)
-          : _translator(translator)
-          , _appender(std::move(appender)) {}
+        consumer(storage::log_appender appender)
+          : _appender(std::move(appender)) {}
 
         ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
             auto ret = co_await _appender(batch);
-            // passing batch to translator after appender so that correct batch
-            // offsets are filled.
-            _translator.process(batch);
             co_return ret;
         }
 
         auto end_of_stream() { return _appender.end_of_stream(); }
 
     private:
-        offset_translator& _translator;
         storage::log_appender _appender;
     };
 
     return details::for_each_ref_extract_configuration(
              _log->offsets().dirty_offset,
              std::move(reader),
-             consumer(_offset_translator, _log->make_appender(cfg)),
+             consumer(_log->make_appender(cfg)),
              cfg.timeout)
       .then([this, should_update_last_quorum_idx](
               std::tuple<ret_t, std::vector<offset_configuration>> t) {
@@ -2735,12 +2736,6 @@ ss::future<storage::append_result> consensus::disk_append(
               if (_bg.is_closed()) {
                   return ret;
               }
-
-              // Do checkpointing in the background to avoid latency spikes in
-              // the write path caused by KVStore flush debouncing.
-
-              ssx::spawn_with_gate(
-                _bg, [this] { return _offset_translator.maybe_checkpoint(); });
 
               _configuration_manager
                 .maybe_store_highest_known_offset_in_background(
@@ -3472,8 +3467,6 @@ ss::future<> consensus::remove_persistent_state() {
       storage::kvstore::key_space::consensus, last_applied_key());
     // configuration manager
     co_await _configuration_manager.remove_persistent_state();
-    // offset translator
-    co_await _offset_translator.remove_persistent_state();
     // snapshot
     co_await _snapshot_mgr.remove_snapshot();
     co_await _snapshot_mgr.remove_partial_snapshots();

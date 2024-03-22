@@ -9,15 +9,16 @@
  * by the Apache License, Version 2.0
  */
 
-#include "raft/offset_translator.h"
+#include "storage/offset_translator.h"
 
 #include "base/vlog.h"
-#include "raft/consensus_utils.h"
-#include "raft/logger.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
+#include "storage/logger.h"
+#include "storage/storage_resources.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/util/log.hh>
 
 namespace raft {
 
@@ -27,12 +28,26 @@ offset_translator::offset_translator(
   std::vector<model::record_batch_type> filtered_types,
   raft::group_id group,
   model::ntp ntp,
-  storage::api& storage_api)
+  storage::kvstore& kvs,
+  storage::storage_resources& resources)
   : _filtered_types(std::move(filtered_types))
   , _state(ss::make_lw_shared<storage::offset_translator_state>(std::move(ntp)))
   , _group(group)
   , _logger(logger, ssx::sformat("ntp: {}", _state->ntp()))
-  , _storage_api(storage_api) {}
+  , _kvs(kvs)
+  , _resources(resources) {}
+
+offset_translator::offset_translator(
+  std::vector<model::record_batch_type> filtered_types,
+  raft::group_id group,
+  model::ntp ntp,
+  storage::api& storage_api)
+  : offset_translator(
+    std::move(filtered_types),
+    group,
+    std::move(ntp),
+    storage_api.kvs(),
+    storage_api.resources()) {}
 
 void offset_translator::process(const model::record_batch& batch) {
     if (_filtered_types.empty()) {
@@ -43,7 +58,7 @@ void offset_translator::process(const model::record_batch& batch) {
 
     // Update resource manager for the extra dirty bytes, it may hint us
     // to checkpoint early in response.
-    _checkpoint_hint |= _storage_api.resources().offset_translator_take_bytes(
+    _checkpoint_hint |= _resources.offset_translator_take_bytes(
       batch.size_bytes(), _bytes_processed_units);
 
     if (
@@ -110,9 +125,9 @@ ss::future<> offset_translator::start(must_reset reset) {
 
         co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
     } else {
-        auto map_buf = _storage_api.kvs().get(
+        auto map_buf = _kvs.get(
           storage::kvstore::key_space::offset_translator, offsets_map_key());
-        auto highest_known_offset_buf = _storage_api.kvs().get(
+        auto highest_known_offset_buf = _kvs.get(
           storage::kvstore::key_space::offset_translator,
           highest_known_offset_key());
 
@@ -151,7 +166,7 @@ ss::future<> offset_translator::start(must_reset reset) {
 }
 
 ss::future<> offset_translator::sync_with_log(
-  ss::shared_ptr<storage::log> log, storage::opt_abort_source_t as) {
+  storage::log& log, storage::opt_abort_source_t as) {
     if (_filtered_types.empty()) {
         co_return;
     }
@@ -161,7 +176,7 @@ ss::future<> offset_translator::sync_with_log(
       "ntp {}: offset translation state shouldn't be empty",
       _state->ntp());
 
-    auto log_offsets = log->offsets();
+    auto log_offsets = log.offsets();
 
     // Trim the offset2delta map to log dirty_offset (discrepancy can
     // happen if the offsets map was persisted, but the log wasn't flushed).
@@ -174,7 +189,7 @@ ss::future<> offset_translator::sync_with_log(
         co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
     }
 
-    // read the log to insert the remaining entries into map
+    // Read the log to insert the remaining entries into map.
     model::offset start_offset = model::next_offset(_highest_known_offset);
 
     vlog(
@@ -186,7 +201,7 @@ ss::future<> offset_translator::sync_with_log(
 
     auto reader_cfg = storage::log_reader_config(
       start_offset, log_offsets.dirty_offset, ss::default_priority_class(), as);
-    auto reader = co_await log->make_reader(reader_cfg);
+    auto reader = co_await log.make_reader(reader_cfg);
 
     struct log_consumer {
         explicit log_consumer(offset_translator& self)
@@ -239,63 +254,40 @@ ss::future<> offset_translator::truncate(model::offset offset) {
     co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
 }
 
-ss::future<> offset_translator::prefix_truncate(model::offset offset) {
+ss::future<> offset_translator::prefix_truncate(
+  model::offset offset,
+  std::optional<model::offset_delta> force_truncate_delta) {
     if (_filtered_types.empty()) {
         co_return;
     }
 
-    if (offset > _highest_known_offset) {
-        throw std::runtime_error{_logger.format(
-          "trying to prefix truncate offset translator at offset {} which "
-          "is > highest_known_offset {}",
-          offset,
-          _highest_known_offset)};
-    }
-
-    if (!_state->prefix_truncate(offset)) {
+    if (unlikely(offset > _highest_known_offset)) {
+        if (!force_truncate_delta.has_value()) {
+            throw std::runtime_error{_logger.format(
+              "trying to prefix truncate offset translator at offset {} which "
+              "is > highest_known_offset {}",
+              offset,
+              _highest_known_offset)};
+        }
+        // If the truncation is for past the end of the log (e.g. in the case
+        // of a stale replica being caught up from a snapshot), allow it.
+        *_state = storage::offset_translator_state(
+          _state->ntp(), offset, force_truncate_delta.value());
+        _highest_known_offset = offset;
+    } else if (!_state->prefix_truncate(offset)) {
         co_return;
     }
 
     ++_map_version;
 
-    vlog(
-      _logger.debug,
-      "prefix_truncate at offset: {}, new state: {}",
+    vlogl(
+      _logger,
+      force_truncate_delta.has_value() ? ss::log_level::info
+                                       : ss::log_level::debug,
+      "prefix_truncate at offset: {}, force_truncate_delta: {}, new state: {}",
       offset,
+      force_truncate_delta,
       _state);
-
-    co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
-}
-
-ss::future<>
-offset_translator::prefix_truncate_reset(model::offset offset, int64_t delta) {
-    if (_filtered_types.empty()) {
-        co_return;
-    }
-
-    if (offset <= _highest_known_offset) {
-        co_await prefix_truncate(offset);
-        co_return;
-    }
-
-    vassert(
-      delta >= 0,
-      "not enough state to recover offset translator. Requested to reset "
-      "at offset {}. Translator highest_known_offset: {}, state: {}",
-      offset,
-      _highest_known_offset,
-      _state);
-
-    *_state = storage::offset_translator_state(_state->ntp(), offset, delta);
-    ++_map_version;
-
-    _highest_known_offset = offset;
-
-    vlog(
-      _logger.info,
-      "prefix_truncate_reset at offset/delta: {}/{}",
-      offset,
-      delta);
 
     co_await _checkpoint_lock.with([this] { return do_checkpoint(); });
 }
@@ -305,10 +297,10 @@ ss::future<> offset_translator::remove_persistent_state() {
         co_return;
     }
 
-    co_await _storage_api.kvs().remove(
+    co_await _kvs.remove(
       storage::kvstore::key_space::offset_translator,
       highest_known_offset_key());
-    co_await _storage_api.kvs().remove(
+    co_await _kvs.remove(
       storage::kvstore::key_space::offset_translator, offsets_map_key());
 }
 
@@ -367,14 +359,14 @@ ss::future<> offset_translator::do_checkpoint() {
     // recreated by reading log from the highest known offset).
 
     if (map_buf) {
-        co_await _storage_api.kvs().put(
+        co_await _kvs.put(
           storage::kvstore::key_space::offset_translator,
           offsets_map_key(),
           std::move(*map_buf));
         _map_version_at_checkpoint = map_version;
     }
 
-    co_await _storage_api.kvs().put(
+    co_await _kvs.put(
       storage::kvstore::key_space::offset_translator,
       highest_known_offset_key(),
       std::move(hko_buf));
@@ -395,7 +387,7 @@ ss::future<> offset_translator::move_persistent_state(
     };
     using state_ptr = std::unique_ptr<ot_state>;
     vlog(
-      raftlog.debug,
+      storage::stlog.debug,
       "moving group {} offset translator state from {} to {}",
       group,
       source_shard,

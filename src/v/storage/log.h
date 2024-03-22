@@ -14,8 +14,10 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
+#include "raft/fundamental.h"
 #include "storage/log_appender.h"
 #include "storage/ntp_config.h"
 #include "storage/segment_reader.h"
@@ -42,6 +44,8 @@ public:
     log(const log&) = delete;
     log& operator=(const log&) = delete;
     virtual ~log() noexcept = default;
+
+    virtual ss::future<> start(std::optional<truncate_prefix_config>) = 0;
 
     // it shouldn't block for a long time as it will block other logs
     // eviction
@@ -96,8 +100,28 @@ public:
     virtual ss::future<std::optional<timequery_result>>
       timequery(timequery_config) = 0;
 
+    // Prefer to use offset_delta() or from/to_log_offset().
+    // TODO: remove direct access to the translator state and instead rely on
+    // the translation/delta interface.
+    virtual ss::lw_shared_ptr<const storage::offset_translator_state>
+    get_offset_translator_state() const = 0;
+
+    // Returns the offset delta for a given offset. This can be used for
+    // example to translate a Raft offset to a data offset.
+    virtual model::offset_delta offset_delta(model::offset) const = 0;
+
+    // Translate the given log offset into a data offset.
+    virtual model::offset from_log_offset(model::offset) const = 0;
+
+    // Translate the given data offset into a log offset.
+    virtual model::offset to_log_offset(model::offset) const = 0;
+
     const ntp_config& config() const { return _config; }
 
+    // Returns whether the log has never been appended to.
+    // NOTE: this is different than having no segments, which also may happen
+    // if we GC away all our segments.
+    virtual bool is_new_log() const = 0;
     virtual size_t segment_count() const = 0;
     virtual storage::offset_stats offsets() const = 0;
     // Returns counter which is incremented after every log suffix truncation
@@ -210,10 +234,12 @@ class segment_set;
 class kvstore;
 ss::shared_ptr<log> make_disk_backed_log(
   ntp_config,
+  raft::group_id,
   log_manager&,
   segment_set,
   kvstore&,
-  ss::sharded<features::feature_table>& feature_table);
+  ss::sharded<features::feature_table>& feature_table,
+  std::vector<model::record_batch_type> translator_batch_types);
 
 bool deletion_exempt(const model::ntp& ntp);
 

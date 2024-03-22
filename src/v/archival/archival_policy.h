@@ -99,7 +99,6 @@ public:
       model::offset begin_inclusive,
       model::offset end_exclusive,
       ss::shared_ptr<storage::log>,
-      const storage::offset_translator_state&,
       ss::lowres_clock::duration segment_lock_duration);
 
     ss::future<candidate_creation_result> get_next_compacted_segment(
@@ -127,8 +126,7 @@ private:
     lookup_result find_segment(
       model::offset last_offset,
       model::offset adjusted_lso,
-      ss::shared_ptr<storage::log>,
-      const storage::offset_translator_state&);
+      ss::shared_ptr<storage::log>);
 
     model::ntp _ntp;
     std::optional<segment_time_limit> _upload_limit;

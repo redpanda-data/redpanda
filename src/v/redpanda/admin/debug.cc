@@ -594,16 +594,16 @@ admin_server::get_local_offsets_translated_handler(
                   "partition with ntp {} could not be found on the node",
                   ntp)));
           }
-          const auto ots = partition->get_offset_translator_state();
+          const auto& log = partition->log();
           std::vector<ss::httpd::debug_json::translated_offset> result;
           for (const auto offset : input) {
               try {
                   ss::httpd::debug_json::translated_offset to;
                   if (translate_to == to_kafka) {
-                      to.kafka_offset = ots->from_log_offset(offset);
+                      to.kafka_offset = log->from_log_offset(offset);
                       to.rp_offset = offset;
                   } else {
-                      to.rp_offset = ots->to_log_offset(offset);
+                      to.rp_offset = log->to_log_offset(offset);
                       to.kafka_offset = offset;
                   }
                   result.push_back(std::move(to));

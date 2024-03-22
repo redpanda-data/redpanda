@@ -18,6 +18,7 @@
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/offset_translator_state.h"
+#include "storage/storage_resources.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
@@ -48,6 +49,13 @@ public:
       model::ntp ntp,
       storage::api& storage_api);
 
+    offset_translator(
+      std::vector<model::record_batch_type> filtered_types,
+      raft::group_id group,
+      model::ntp ntp,
+      storage::kvstore& kvstore,
+      storage::storage_resources& resources);
+
     offset_translator(const offset_translator&) = delete;
     offset_translator& operator=(const offset_translator&) = delete;
 
@@ -65,8 +73,7 @@ public:
 
     /// Searches for non-data batches up to the tip of the log. After this
     /// method succeeds, offset translator is usable.
-    ss::future<>
-      sync_with_log(ss::shared_ptr<storage::log>, storage::opt_abort_source_t);
+    ss::future<> sync_with_log(storage::log&, storage::opt_abort_source_t);
 
     /// Process the batch and add it to offset translation state if it is not
     /// a data batch.
@@ -87,13 +94,12 @@ public:
 
     /// Removes the offset translation state up to and including the offset. The
     /// offset delta for the next offsets is preserved.
-    ss::future<> prefix_truncate(model::offset);
-
-    /// Removes the offset translation state up to and including the offset. The
-    /// offset delta for the next offsets is set to `delta`. If there is offset
-    /// translation state for the next offsets, it must be consistent with
-    /// `delta`.
-    ss::future<> prefix_truncate_reset(model::offset, int64_t delta);
+    //
+    /// The offset delta for the next offsets is set to `delta`. If there is
+    /// offset translation state for the next offsets, it must be consistent
+    /// with `delta`.
+    ss::future<> prefix_truncate(
+      model::offset, std::optional<model::offset_delta> = std::nullopt);
 
     ss::future<> remove_persistent_state();
 
@@ -145,7 +151,8 @@ private:
     size_t _bytes_processed_at_checkpoint = 0;
     size_t _map_version_at_checkpoint = 0;
 
-    storage::api& _storage_api;
+    storage::kvstore& _kvs;
+    storage::storage_resources& _resources;
 };
 
 } // namespace raft

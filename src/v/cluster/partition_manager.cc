@@ -27,12 +27,10 @@
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
-#include "raft/offset_translator.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/async-clear.h"
-#include "storage/offset_translator_state.h"
 #include "storage/segment_utils.h"
 #include "storage/snapshot.h"
 #include "utils/retry_chain_node.h"
@@ -214,7 +212,10 @@ ss::future<consensus_ptr> partition_manager::manage(
               ntp_cfg, manifest, max_offset);
         }
     }
-    auto log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
+    auto translator_batch_types = raft::offset_translator_batch_types(
+      ntp_cfg.ntp());
+    auto log = co_await _storage.log_mgr().manage(
+      std::move(ntp_cfg), group, std::move(translator_batch_types));
     vlog(
       clusterlog.debug,
       "Log created manage completed, ntp: {}, rev: {}, {} "

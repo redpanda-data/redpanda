@@ -17,6 +17,7 @@
 #include "storage/failure_probes.h"
 #include "storage/lock_manager.h"
 #include "storage/log.h"
+#include "storage/offset_translator.h"
 #include "storage/probe.h"
 #include "storage/readers_cache.h"
 #include "storage/types.h"
@@ -54,16 +55,19 @@ public:
 
     disk_log_impl(
       ntp_config,
+      raft::group_id,
       log_manager&,
       segment_set,
       kvstore&,
-      ss::sharded<features::feature_table>& feature_table);
+      ss::sharded<features::feature_table>& feature_table,
+      std::vector<model::record_batch_type> translator_batch_types);
     ~disk_log_impl() override;
     disk_log_impl(disk_log_impl&&) noexcept = delete;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;
     disk_log_impl(const disk_log_impl&) = delete;
     disk_log_impl& operator=(const disk_log_impl&) = delete;
 
+    ss::future<> start(std::optional<truncate_prefix_config>) final;
     ss::future<std::optional<ss::sstring>> close() final;
     ss::future<> remove() final;
     ss::future<> flush() final;
@@ -105,7 +109,16 @@ public:
     ss::future<std::optional<timequery_result>>
     timequery(timequery_config cfg) final;
     size_t segment_count() const final { return _segs.size(); }
+    bool is_new_log() const final;
     offset_stats offsets() const final;
+    ss::lw_shared_ptr<const storage::offset_translator_state>
+    get_offset_translator_state() const final {
+        return _offset_translator.state();
+    }
+    raft::offset_translator& offset_translator() { return _offset_translator; }
+    model::offset_delta offset_delta(model::offset) const final;
+    model::offset from_log_offset(model::offset) const final;
+    model::offset to_log_offset(model::offset) const final;
     model::offset find_last_term_start_offset() const final;
     model::timestamp start_timestamp() const final;
     std::optional<model::term_id> get_term(model::offset) const final;
@@ -117,6 +130,9 @@ public:
     // Must be called while _segments_rolling_lock is held.
     ss::future<> maybe_roll_unlocked(
       model::term_id, model::offset next_offset, ss::io_priority_class);
+
+    // Kicks off a background flush of offset translator state to the kvstore.
+    void bg_checkpoint_offset_translator();
 
     ss::future<> force_roll(ss::io_priority_class) override;
 
@@ -317,6 +333,8 @@ private:
     // method.
     mutex _start_offset_lock{"disk_log_impl::start_offset_lock"};
     lock_manager _lock_mngr;
+    raft::offset_translator _offset_translator;
+
     std::unique_ptr<storage::probe> _probe;
     failure_probes _failure_probes;
     std::optional<eviction_monitor> _eviction_monitor;

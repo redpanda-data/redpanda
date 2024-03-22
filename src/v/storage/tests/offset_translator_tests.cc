@@ -9,12 +9,13 @@
 
 #include "bytes/random.h"
 #include "model/fundamental.h"
-#include "raft/offset_translator.h"
+#include "raft/types.h"
 #include "random/generators.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
+#include "storage/offset_translator.h"
 #include "storage/record_batch_builder.h"
 #include "test_utils/fixture.h"
 
@@ -323,7 +324,7 @@ struct fuzz_checker {
     ss::future<> start() {
         _tr.emplace(_make_offset_translator());
         co_await _tr->start(raft::offset_translator::must_reset::yes);
-        co_await _tr->sync_with_log(_log, std::nullopt);
+        co_await _tr->sync_with_log(*_log, std::nullopt);
     }
 
     ss::future<> append() {
@@ -474,9 +475,9 @@ struct fuzz_checker {
             _gate = ss::gate{};
 
             co_await _tr->start(raft::offset_translator::must_reset::no);
-            co_await _tr->prefix_truncate_reset(
-              _snapshot_offset, _snapshot_delta);
-            co_await _tr->sync_with_log(_log, std::nullopt);
+            co_await _tr->prefix_truncate(
+              _snapshot_offset, model::offset_delta(_snapshot_delta));
+            co_await _tr->sync_with_log(*_log, std::nullopt);
         }
     }
 

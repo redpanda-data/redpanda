@@ -9,6 +9,7 @@
 
 #include "storage/tests/utils/disk_log_builder.h"
 
+#include "model/record_batch_types.h"
 #include "storage/disk_log_appender.h"
 #include "storage/types.h"
 
@@ -21,8 +22,13 @@ using namespace std::chrono_literals; // NOLINT
 // util functions to be moved from storage_fixture
 // make_ntp, make_dir etc
 namespace storage {
-disk_log_builder::disk_log_builder(storage::log_config config)
+disk_log_builder::disk_log_builder(
+  storage::log_config config,
+  std::vector<model::record_batch_type> types,
+  raft::group_id group_id)
   : _log_config(std::move(config))
+  , _translator_batch_types(std::move(types))
+  , _group_id(group_id)
   , _storage(
       [this]() {
           return kvstore_config(
@@ -100,7 +106,7 @@ ss::future<> disk_log_builder::start(storage::ntp_config cfg) {
     co_return co_await _storage.start().then(
       [this, cfg = std::move(cfg)]() mutable {
           return _storage.log_mgr()
-            .manage(std::move(cfg))
+            .manage(std::move(cfg), _group_id, _translator_batch_types)
             .then([this](ss::shared_ptr<storage::log> log) { _log = log; });
       });
 }

@@ -54,6 +54,12 @@ enum class record_batch_type : int8_t {
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
 
+// The set of batch types that may appear in a data partition that aren't
+// assigned a new translated offset. When translated, such batches are given an
+// offset matching the next batch of type outside this set.
+//
+// Put simply, batches of these types do not increment the offset that would be
+// returned upon translating offsets for Kafka fetches.
 inline std::vector<model::record_batch_type> offset_translator_batch_types() {
     return {
       model::record_batch_type::raft_configuration,

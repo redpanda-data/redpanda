@@ -166,8 +166,7 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
         if (o == model::offset{}) {
             return std::nullopt;
         }
-        return model::offset_cast(
-          get_offset_translator_state()->from_log_offset(o));
+        return model::offset_cast(log()->from_log_offset(o));
     };
 
     auto time_point_to_delta = [](ss::lowres_clock::time_point tp)
@@ -321,9 +320,8 @@ ss::future<result<kafka_result>> partition::replicate(
     if (!res) {
         co_return ret_t(res.error());
     }
-    co_return ret_t(
-      kafka_result{kafka::offset(get_offset_translator_state()->from_log_offset(
-        res.value().last_offset)())});
+    co_return ret_t(kafka_result{
+      kafka::offset(log()->from_log_offset(res.value().last_offset)())});
 }
 
 ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
@@ -373,8 +371,7 @@ kafka_stages partition::replicate_in_stages(
               return ret_t(r.error());
           }
           auto old_offset = r.value().last_offset;
-          auto new_offset = kafka::offset(
-            get_offset_translator_state()->from_log_offset(old_offset)());
+          auto new_offset = kafka::offset(log()->from_log_offset(old_offset)());
           return ret_t(kafka_result{new_offset});
       });
     return kafka_stages(
@@ -583,8 +580,7 @@ partition::local_timequery(storage::timequery_config cfg) {
       cfg.time,
       cfg.max_offset);
 
-    cfg.max_offset = _raft->get_offset_translator_state()->to_log_offset(
-      cfg.max_offset);
+    cfg.max_offset = _raft->log()->to_log_offset(cfg.max_offset);
 
     auto result = co_await _raft->timequery(cfg);
 
@@ -662,8 +658,7 @@ partition::local_timequery(storage::timequery_config cfg) {
           cfg.time,
           cfg.max_offset,
           result->offset);
-        result->offset = _raft->get_offset_translator_state()->from_log_offset(
-          result->offset);
+        result->offset = _raft->log()->from_log_offset(result->offset);
     }
 
     co_return result;

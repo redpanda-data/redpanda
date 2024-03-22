@@ -15,6 +15,7 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
@@ -105,10 +106,12 @@ bool deletion_exempt(const model::ntp& ntp) {
 
 disk_log_impl::disk_log_impl(
   ntp_config cfg,
+  raft::group_id group,
   log_manager& manager,
   segment_set segs,
   kvstore& kvstore,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  std::vector<model::record_batch_type> translator_batch_types)
   : log(std::move(cfg))
   , _manager(manager)
   , _segment_size_jitter(
@@ -118,6 +121,12 @@ disk_log_impl::disk_log_impl(
   , _feature_table(feature_table)
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs)
+  , _offset_translator(
+      std::move(translator_batch_types),
+      group,
+      config().ntp(),
+      _kvstore,
+      resources())
   , _probe(std::make_unique<storage::probe>())
   , _max_segment_size(compute_max_segment_size())
   , _readers_cache(std::make_unique<readers_cache>(
@@ -158,6 +167,7 @@ ss::future<> disk_log_impl::remove() {
         permanent_delete.emplace_back(
           remove_segment_permanently(s, "disk_log_impl::remove()"));
     }
+    co_await _offset_translator.remove_persistent_state();
 
     co_await _readers_cache->stop()
       .then([this, permanent_delete = std::move(permanent_delete)]() mutable {
@@ -179,6 +189,21 @@ ss::future<> disk_log_impl::remove() {
             });
       })
       .finally([this] { _probe->clear_metrics(); });
+}
+
+ss::future<>
+disk_log_impl::start(std::optional<truncate_prefix_config> truncate_cfg) {
+    auto is_new = is_new_log();
+    co_await offset_translator().start(
+      raft::offset_translator::must_reset{is_new});
+    if (truncate_cfg.has_value()) {
+        co_await truncate_prefix(truncate_cfg.value());
+    }
+    // Reset or load the offset translator state, depending on whether this is
+    // a brand new log.
+    if (!is_new) {
+        co_await offset_translator().sync_with_log(*this, _compaction_as);
+    }
 }
 
 ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
@@ -1393,6 +1418,25 @@ model::term_id disk_log_impl::term() const {
     return _segs.back()->offsets().term;
 }
 
+bool disk_log_impl::is_new_log() const {
+    static constexpr model::offset not_initialized{};
+    const auto os = offsets();
+    return segment_count() == 0 && os.dirty_offset == not_initialized
+           && os.start_offset == not_initialized;
+}
+
+model::offset_delta disk_log_impl::offset_delta(model::offset o) const {
+    return model::offset_delta{_offset_translator.state()->delta(o)};
+}
+
+model::offset disk_log_impl::from_log_offset(model::offset log_offset) const {
+    return _offset_translator.state()->from_log_offset(log_offset);
+}
+
+model::offset disk_log_impl::to_log_offset(model::offset data_offset) const {
+    return _offset_translator.state()->to_log_offset(data_offset);
+}
+
 offset_stats disk_log_impl::offsets() const {
     if (_segs.empty()) {
         offset_stats ret;
@@ -1611,6 +1655,12 @@ size_t disk_log_impl::bytes_left_before_roll() const {
         return 0;
     }
     return max - fo;
+}
+
+void disk_log_impl::bg_checkpoint_offset_translator() {
+    ssx::spawn_with_gate(_compaction_housekeeping_gate, [this] {
+        return _offset_translator.maybe_checkpoint();
+    });
 }
 
 ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
@@ -2451,7 +2501,7 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
 
 ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
     vassert(!_closed, "truncate_prefix() on closed log - {}", *this);
-    return _failure_probes.truncate_prefix().then([this, cfg]() mutable {
+    co_await _failure_probes.truncate_prefix().then([this, cfg]() mutable {
         // dispatch the actual truncation
         return do_truncate_prefix(cfg)
           .then([this] {
@@ -2466,6 +2516,11 @@ ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
           })
           .discard_result();
     });
+    // We truncate the segments before truncating offset translator to wait for
+    // readers that started reading from the start of the log before we advanced
+    // the start offset and thus can still need offset translation info.
+    co_await _offset_translator.prefix_truncate(
+      model::prev_offset(cfg.start_offset), cfg.force_truncate_delta);
 }
 
 ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
@@ -2529,7 +2584,15 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
 
 ss::future<> disk_log_impl::truncate(truncate_config cfg) {
     vassert(!_closed, "truncate() on closed log - {}", *this);
-    return _failure_probes.truncate().then([this, cfg]() mutable {
+    // We are truncating the offset translator before truncating the log
+    // because if saving offset translator state fails (e.g. because of a
+    // crash), we can retry and eventually log and offset translator will
+    // become consistent. OTOH if log truncation were first and saving offset
+    // translator state failed, we wouldn't retry and log and offset translator
+    // could diverge.
+    co_await _offset_translator.truncate(cfg.base_offset);
+
+    co_await _failure_probes.truncate().then([this, cfg]() mutable {
         // Before truncation, erase any claim about a particular segment being
         // clean: this may refer to a segment we are about to delete, or it
         // may refer to a segment that we will modify the indices+data for: on
@@ -2929,12 +2992,21 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
 
 ss::shared_ptr<log> make_disk_backed_log(
   ntp_config cfg,
+  raft::group_id group,
   log_manager& manager,
   segment_set segs,
   kvstore& kvstore,
-  ss::sharded<features::feature_table>& feature_table) {
-    return ss::make_shared<disk_log_impl>(
-      std::move(cfg), manager, std::move(segs), kvstore, feature_table);
+  ss::sharded<features::feature_table>& feature_table,
+  std::vector<model::record_batch_type> translator_batch_types) {
+    auto disk_log = ss::make_shared<disk_log_impl>(
+      std::move(cfg),
+      group,
+      manager,
+      std::move(segs),
+      kvstore,
+      feature_table,
+      std::move(translator_batch_types));
+    return disk_log;
 }
 
 /*

@@ -172,7 +172,10 @@ public:
       storage_resources&,
       ss::sharded<features::feature_table>&) noexcept;
 
-    ss::future<ss::shared_ptr<log>> manage(ntp_config);
+    ss::future<ss::shared_ptr<log>> manage(
+      ntp_config,
+      raft::group_id = raft::group_id{},
+      std::vector<model::record_batch_type> translator_batch_types = {});
 
     ss::future<> shutdown(model::ntp);
 
@@ -249,7 +252,10 @@ private:
     using compaction_list_type
       = intrusive_list<log_housekeeping_meta, &log_housekeeping_meta::link>;
 
-    ss::future<ss::shared_ptr<log>> do_manage(ntp_config);
+    ss::future<ss::shared_ptr<log>> do_manage(
+      ntp_config,
+      raft::group_id,
+      std::vector<model::record_batch_type> translator_batch_types);
     ss::future<> clean_close(ss::shared_ptr<storage::log>);
 
     /**
@@ -265,7 +271,7 @@ private:
     std::optional<batch_cache_index> create_cache(with_cache);
 
     ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
-    ss::future<> recover_log_state(const ntp_config&);
+    ss::future<> maybe_clear_kvstore(const ntp_config&);
     ss::future<> async_clear_logs();
 
     ss::future<> housekeeping_scan(model::timestamp);

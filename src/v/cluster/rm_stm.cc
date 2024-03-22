@@ -1800,16 +1800,14 @@ void rm_stm::apply_data(
 
 kafka::offset rm_stm::from_log_offset(model::offset log_offset) const {
     if (log_offset > model::offset{-1}) {
-        return kafka::offset(
-          _raft->get_offset_translator_state()->from_log_offset(log_offset));
+        return kafka::offset(_raft->log()->from_log_offset(log_offset));
     }
     return kafka::offset(log_offset);
 }
 
 model::offset rm_stm::to_log_offset(kafka::offset k_offset) const {
     if (k_offset > kafka::offset{-1}) {
-        return _raft->get_offset_translator_state()->to_log_offset(
-          model::offset(k_offset()));
+        return _raft->log()->to_log_offset(model::offset(k_offset()));
     }
 
     return model::offset(k_offset);

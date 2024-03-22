@@ -279,11 +279,23 @@ struct truncate_config {
  * starting offset is contained in the log is not removed.
  */
 struct truncate_prefix_config {
-    truncate_prefix_config(model::offset o, ss::io_priority_class p)
+    truncate_prefix_config(
+      model::offset o,
+      ss::io_priority_class p,
+      std::optional<model::offset_delta> force_truncate_delta = std::nullopt)
       : start_offset(o)
-      , prio(p) {}
+      , prio(p)
+      , force_truncate_delta(force_truncate_delta) {}
     model::offset start_offset;
     ss::io_priority_class prio;
+
+    // When supplied and `start_offset` is ahead of the log's end offset,
+    // indicates that truncation should proceed and this delta should be the
+    // delta at the start offset.
+    //
+    // When not supplied, truncation past the log's end offset will result in
+    // an error.
+    std::optional<model::offset_delta> force_truncate_delta;
 
     friend std::ostream&
     operator<<(std::ostream&, const truncate_prefix_config&);

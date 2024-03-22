@@ -108,13 +108,11 @@ public:
             }
             // The eviction STM only keeps track of DeleteRecords truncations
             // as Raft offsets. Translate if possible.
-            auto offset_translator_state = get_offset_translator_state();
             if (
               offset_res.value() != model::offset{}
               && _raft->start_offset() < offset_res.value()) {
-                auto start_kafka_offset
-                  = offset_translator_state->from_log_offset(
-                    offset_res.value());
+                auto start_kafka_offset = log()->from_log_offset(
+                  offset_res.value());
                 co_return start_kafka_offset;
             }
             // If a start override is no longer in the offset translator state,
@@ -283,7 +281,7 @@ public:
 
     ss::lw_shared_ptr<const storage::offset_translator_state>
     get_offset_translator_state() const {
-        return _raft->get_offset_translator_state();
+        return _raft->log()->get_offset_translator_state();
     }
 
     ss::shared_ptr<cluster::rm_stm> rm_stm();
@@ -378,9 +376,7 @@ public:
         if (_log_eviction_stm && !is_read_replica_mode_enabled()) {
             auto o = _log_eviction_stm->start_offset_override();
             if (o != model::offset{} && _raft->start_offset() < o) {
-                auto offset_translator_state = get_offset_translator_state();
-                auto start_kafka_offset
-                  = offset_translator_state->from_log_offset(o);
+                auto start_kafka_offset = log()->from_log_offset(o);
                 return start_kafka_offset;
             }
             // If a start override is no longer in the offset translator state,

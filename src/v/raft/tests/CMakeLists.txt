@@ -67,15 +67,6 @@ rp_test(
 )
 
 rp_test(
-  UNIT_TEST
-  BINARY_NAME test_offset_translator
-  SOURCES offset_translator_tests.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  LABELS kafka
-  ARGS "-- -c 8"
-)
-
-rp_test(
   BENCHMARK_TEST
   BINARY_NAME heartbeat_bench
   SOURCES heartbeat_bench.cc

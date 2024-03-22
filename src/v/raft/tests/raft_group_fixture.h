@@ -881,10 +881,9 @@ inline void validate_offset_translation(raft_group& gr) {
     auto end = gr.get_members().begin()->second.consensus->last_visible_index();
 
     for (auto o = start; o < end; o++) {
-        reference[o] = gr.get_members()
-                         .begin()
-                         ->second.consensus->get_offset_translator_state()
-                         ->from_log_offset(o);
+        reference[o]
+          = gr.get_members().begin()->second.consensus->log()->from_log_offset(
+            o);
     }
 
     for (auto it = std::next(gr.get_members().begin());
@@ -898,9 +897,7 @@ inline void validate_offset_translation(raft_group& gr) {
             if (!reference.contains(o)) {
                 continue;
             }
-            auto translated = it->second.consensus
-                                ->get_offset_translator_state()
-                                ->from_log_offset(o);
+            auto translated = it->second.consensus->log()->from_log_offset(o);
             tstlog.info(
               "translation for offset {}, validating {} == {}\n",
               o,

@@ -28,17 +28,17 @@
 #include "raft/group_configuration.h"
 #include "raft/heartbeats.h"
 #include "raft/logger.h"
-#include "raft/offset_translator.h"
 #include "raft/probe.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
 #include "raft/replicate_batcher.h"
 #include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
+#include "raft/types.h"
 #include "ssx/semaphore.h"
-#include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/snapshot.h"
+#include "storage/types.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
@@ -407,11 +407,6 @@ public:
 
     ss::shared_ptr<storage::log> log() { return _log; }
 
-    ss::lw_shared_ptr<const storage::offset_translator_state>
-    get_offset_translator_state() {
-        return _offset_translator.state();
-    }
-
     /**
      * In our raft implementation heartbeats are sent outside of the consensus
      * lock. In order to prevent reordering and do not flood followers with
@@ -549,12 +544,16 @@ private:
      * Hydrate the consensus state with the data from the snapshot
      */
     ss::future<> hydrate_snapshot();
-    ss::future<> do_hydrate_snapshot(storage::snapshot_reader&);
+
+    void update_offset_from_snapshot(const snapshot_metadata&);
+    ss::future<std::optional<snapshot_metadata>> read_snapshot_metadata();
 
     /**
      * Truncates the log up the last offset stored in the snapshot
      */
-    ss::future<> truncate_to_latest_snapshot();
+    std::optional<storage::truncate_prefix_config>
+    truncation_cfg_for_snapshot(const snapshot_metadata&);
+    ss::future<> truncate_to_latest_snapshot(storage::truncate_prefix_config);
     ss::future<install_snapshot_reply>
       finish_snapshot(install_snapshot_request, install_snapshot_reply);
 
@@ -656,19 +655,6 @@ private:
 
     voter_priority next_target_priority();
     voter_priority get_node_priority(vnode) const;
-
-    /**
-     * Return true if there is no state backing this consensus group i.e. there
-     * is no snapshot and log is empty
-     */
-    bool is_initial_state() const {
-        static constexpr model::offset not_initialized{};
-        auto lstats = _log->offsets();
-        return _log->segment_count() == 0
-               && lstats.dirty_offset == not_initialized
-               && lstats.start_offset == not_initialized
-               && _last_snapshot_index == not_initialized;
-    }
 
     template<typename Reply>
     result<Reply> validate_reply_target_node(
@@ -779,7 +765,6 @@ private:
     raft::group_id _group;
     timeout_jitter _jit;
     ss::shared_ptr<storage::log> _log;
-    offset_translator _offset_translator;
     scheduling_config _scheduling;
     config::binding<std::chrono::milliseconds> _disk_timeout;
     consensus_client_protocol _client_protocol;

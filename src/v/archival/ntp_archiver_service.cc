@@ -1403,7 +1403,7 @@ ntp_archiver::make_segment_index(
   std::string_view index_path,
   ss::input_stream<char> stream) {
     auto base_kafka_offset = model::offset_cast(
-      _parent.get_offset_translator_state()->from_log_offset(base_rp_offset));
+      _parent.log()->from_log_offset(base_rp_offset));
 
     cloud_storage::offset_index ix{
       base_rp_offset,
@@ -1469,9 +1469,10 @@ ntp_archiver::do_schedule_single_upload(
     auto first_source = upload.sources.front();
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
-    auto ot_state = _parent.get_offset_translator_state();
-    auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
-    auto delta_offset_next = ot_state->next_offset_delta(upload.final_offset);
+    auto log = _parent.log();
+    auto delta = base - model::offset_cast(log->from_log_offset(base));
+    auto delta_offset_next = log->offset_delta(
+      model::next_offset(upload.final_offset));
 
     // The upload is successful only if the segment, and tx_range are
     // uploaded.
@@ -1558,7 +1559,6 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
           start_upload_offset,
           last_stable_offset,
           log,
-          *_parent.get_offset_translator_state(),
           _conf->segment_upload_timeout);
         break;
     case segment_upload_kind::compacted:
@@ -2925,9 +2925,10 @@ ss::future<bool> ntp_archiver::do_upload_local(
 
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
-    auto ot_state = _parent.get_offset_translator_state();
-    auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
-    auto delta_offset_next = ot_state->next_offset_delta(upload.final_offset);
+    auto log = _parent.log();
+    auto delta = base - model::offset_cast(log->from_log_offset(base));
+    auto delta_offset_next = log->offset_delta(
+      model::next_offset(upload.final_offset));
     auto archiver_term = _start_term;
 
     // Upload segments and tx-manifest in parallel

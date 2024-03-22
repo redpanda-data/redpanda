@@ -90,7 +90,7 @@ public:
         co_await wait_for_leader(ntp);
 
         partition = app.partition_manager.local().get(ntp).get();
-        log = partition->log();
+        log = partition->log().get();
     }
 
     ss::future<work_dir_summary> dir_summary() {
@@ -146,7 +146,7 @@ protected:
     const model::topic topic_name{"compaction_e2e_test_topic"};
     const model::ntp ntp{model::kafka_namespace, topic_name, 0};
     cluster::partition* partition;
-    ss::shared_ptr<storage::log> log;
+    storage::log* log;
     scoped_config test_local_cfg;
 };
 
@@ -203,7 +203,10 @@ TEST_P(CompactionFixtureParamTest, TestDedupeOnePass) {
     // Consume again after restarting and ensure our assertions about
     // duplicates are still valid.
     restart(should_wipe::no);
+
     wait_for_leader(ntp).get();
+    partition = app.partition_manager.local().get(ntp).get();
+    log = partition->log().get();
     auto restart_summary = dir_summary().get();
 
     tests::kafka_consume_transport second_consumer(make_kafka_client().get());
