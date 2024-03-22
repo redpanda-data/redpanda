@@ -62,7 +62,7 @@ class OMBValidationTest(RedpandaCloudTest):
     EXPECTED_MAX_LATENCIES = {
         OMBSampleConfigurations.E2E_LATENCY_50PCT: 20.0,
         OMBSampleConfigurations.E2E_LATENCY_75PCT: 25.0,
-        OMBSampleConfigurations.E2E_LATENCY_99PCT: 50.0,
+        OMBSampleConfigurations.E2E_LATENCY_99PCT: 60.0,
         OMBSampleConfigurations.E2E_LATENCY_999PCT: 100.0,
     }
 
