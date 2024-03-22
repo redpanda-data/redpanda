@@ -414,6 +414,7 @@ class ConsumerGroupTest(RedpandaTest):
                                                  timeout_s=60,
                                                  backoff_s=2)
 
+        prev_offsets = offsets
 
         # Validate that the group state is recovered.
         test_admin = KafkaTestAdminClient(self.redpanda)
@@ -422,10 +423,8 @@ class ConsumerGroupTest(RedpandaTest):
 
         self.logger.info(f"Got offsets after restart: {offsets}")
         assert len(offsets) == 1
-        assert offsets[TopicPartition(self.topic_spec.name, 0)].offset == 1000
-        assert offsets[TopicPartition(
-            self.topic_spec.name,
-            0)].leader_epoch < 0  # This is a bug. Fixed in followup commit.
+        assert offsets == prev_offsets, \
+            f"Expected {prev_offsets}, got {offsets}."
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(static_members=True)
