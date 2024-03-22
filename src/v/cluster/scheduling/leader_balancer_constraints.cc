@@ -64,85 +64,11 @@ void even_topic_distributon_constraint::update_index(const reassignment& r) {
 
 std::optional<reassignment>
 even_topic_distributon_constraint::recommended_reassignment() {
-    // Sort topics based on topic error here
-    std::vector<decltype(_topic_node_index)::const_iterator> sorted_topics;
-    sorted_topics.reserve(_topic_node_index.size());
-
-    for (auto it = _topic_node_index.cbegin(); it != _topic_node_index.cend();
-         ++it) {
-        sorted_topics.push_back(it);
-    }
-
-    std::sort(
-      sorted_topics.begin(),
-      sorted_topics.end(),
-      [this](const auto& a, const auto& b) {
-          return _topic_skew[a->first] > _topic_skew[b->first];
-      });
-
-    // Look for a topic with the most skew
-    for (const auto& topic : sorted_topics) {
-        const auto& nodes = topic->second;
-
-        if (nodes.size() == 0) {
-            continue;
-        }
-
-        std::vector<decltype(nodes.cbegin())> nodes_sorted;
-        nodes_sorted.reserve(nodes.size());
-
-        for (auto it = nodes.cbegin(); it != nodes.cend(); ++it) {
-            nodes_sorted.push_back(it);
-        }
-
-        std::sort(
-          nodes_sorted.begin(),
-          nodes_sorted.end(),
-          [](const auto& a, const auto& b) {
-              return a->second.size() > b->second.size();
-          });
-
-        // Try to move leadership off the node with the most leadership.
-        for (const auto& node : nodes_sorted) {
-            // Don't try moving a group from a muted node.
-            if (mi().muted_nodes().contains(node->first)) {
-                continue;
-            }
-
-            for (const auto& g_info : node->second) {
-                const auto& leader = g_info.leader;
-                const auto& group = g_info.group_id;
-                const auto& replicas = g_info.replicas;
-
-                // Don't try moving any groups that are currently muted.
-                if (mi().muted_groups().contains(
-                      static_cast<uint64_t>(group))) {
-                    continue;
-                }
-
-                for (const auto& replica : replicas) {
-                    // Don't try a move to a different shard to on the same
-                    // node. As it won't decrease error
-                    if (replica.node_id == node->first || leader == replica) {
-                        continue;
-                    }
-
-                    // Don't try moving group to a muted node.
-                    if (mi().muted_nodes().contains(replica.node_id)) {
-                        continue;
-                    }
-
-                    reassignment r{group, leader, replica};
-
-                    if (evaluate_internal(r) > error_jitter) {
-                        return r;
-                    }
-                }
-            }
-        }
-    }
-
-    return std::nullopt;
+    // This method is deprecated and is ony used in `leader_balancer_greedy`
+    // which doesn't use the `even_topic_distributon_constraint`. Hence there is
+    // no need to implement it here. Once the greedy balancer has been removed
+    // this should be removed as well.
+    vassert(false, "not implemented");
 }
 
 void even_topic_distributon_constraint::rebuild_indexes() {
