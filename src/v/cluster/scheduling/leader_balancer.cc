@@ -634,7 +634,7 @@ leader_balancer::build_group_id_to_topic_rev() const {
 ss::future<std::optional<leader_balancer::group_replicas_t>>
 leader_balancer::collect_group_replicas_from_health_report() {
     if (!_feature_table.is_active(
-          features::feature::node_local_core_assignment)) {
+          features::feature::partition_shard_in_health_report)) {
         co_return std::nullopt;
     }
 
