@@ -2479,6 +2479,8 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
      * whose max offset falls below the new starting offset.
      */
     {
+        ssx::semaphore_units seg_rewrite_units
+          = co_await _segment_rewrite_lock.get_units();
         auto cache_lock = co_await _readers_cache->evict_prefix_truncate(
           cfg.start_offset);
         co_await remove_prefix_full_segments(cfg);
