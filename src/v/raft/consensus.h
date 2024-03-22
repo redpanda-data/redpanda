@@ -32,6 +32,7 @@
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
 #include "raft/replicate_batcher.h"
+#include "raft/replication_monitor.h"
 #include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
@@ -517,6 +518,7 @@ public:
     std::chrono::milliseconds flush_ms() const { return _max_flush_delay_ms; }
 
 private:
+    friend replication_monitor;
     friend replicate_entries_stm;
     friend vote_stm;
     friend recovery_stm;
