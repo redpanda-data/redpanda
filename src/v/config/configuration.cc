@@ -988,7 +988,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "on",
        .visibility = visibility::user},
-      model::write_caching_mode::off,
+      model::write_caching_mode::on,
       {model::write_caching_mode::on,
        model::write_caching_mode::off,
        model::write_caching_mode::disabled})
