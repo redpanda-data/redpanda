@@ -362,9 +362,9 @@ ss::future<> ntp_archiver::upload_until_abort() {
         vlog(_rtclog.debug, "upload loop starting in term {}", _start_term);
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
-        bool is_synced = co_await _parent.archival_meta_stm()->sync(
+        auto is_synced = co_await _parent.archival_meta_stm()->sync(
           sync_timeout);
-        if (!is_synced) {
+        if (!is_synced.has_value()) {
             continue;
         }
         vlog(_rtclog.debug, "upload loop synced in term {}", _start_term);
@@ -667,9 +667,9 @@ ss::future<> ntp_archiver::upload_until_term_change() {
 
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
-        bool is_synced = co_await _parent.archival_meta_stm()->sync(
+        auto is_synced = co_await _parent.archival_meta_stm()->sync(
           sync_timeout);
-        if (!is_synced) {
+        if (!is_synced.has_value()) {
             // This can happen on leadership changes, or on timeouts waiting
             // for stm to catch up: in either case, we should re-check our
             // loop condition: we will drop out if lost leadership, otherwise

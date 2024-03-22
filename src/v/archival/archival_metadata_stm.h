@@ -235,8 +235,9 @@ public:
 
     /// This method guarantees that the STM applied all changes
     /// in the log to the in-memory state.
-    ss::future<bool> sync(model::timeout_clock::duration timeout);
-    ss::future<bool>
+    ss::future<std::optional<model::offset>>
+    sync(model::timeout_clock::duration timeout);
+    ss::future<std::optional<model::offset>>
     sync(model::timeout_clock::duration timeout, ss::abort_source* as);
 
     model::offset get_start_offset() const;
