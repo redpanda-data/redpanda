@@ -1613,28 +1613,21 @@ bool auth_refresh_bg_op::is_static_config() const {
 }
 
 cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
-    return std::visit(
-      [](const auto& cfg) -> cloud_roles::credentials {
-          using cfg_type = std::decay_t<decltype(cfg)>;
-          if constexpr (std::is_same_v<
-                          cloud_storage_clients::s3_configuration,
-                          cfg_type>) {
-              return cloud_roles::aws_credentials{
-                cfg.access_key.value(),
-                cfg.secret_key.value(),
-                std::nullopt,
-                cfg.region};
-          } else if constexpr (std::is_same_v<
-                                 cloud_storage_clients::abs_configuration,
-                                 cfg_type>) {
-              return cloud_roles::abs_credentials{
-                cfg.storage_account_name, cfg.shared_key.value()};
-          } else {
-              static_assert(always_false_v<cfg_type>, "Unknown client type");
-              return cloud_roles::aws_credentials{};
-          }
+    return ss::visit(
+      _client_conf,
+      [](cloud_storage_clients::s3_configuration const& cfg)
+        -> cloud_roles::credentials {
+          return cloud_roles::aws_credentials{
+            cfg.access_key.value(),
+            cfg.secret_key.value(),
+            std::nullopt,
+            cfg.region};
       },
-      _client_conf);
+      [](cloud_storage_clients::abs_configuration const& cfg)
+        -> cloud_roles::credentials {
+          return cloud_roles::abs_credentials{
+            cfg.storage_account_name, cfg.shared_key.value()};
+      });
 }
 
 ss::future<> auth_refresh_bg_op::stop() {
