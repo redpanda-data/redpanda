@@ -19,6 +19,7 @@
 #include "security/credential_store.h"
 #include "security/oidc_authenticator.h"
 #include "security/oidc_service.h"
+#include "security/request_auth.h"
 #include "security/role_store.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
@@ -319,12 +320,13 @@ void admin_server::register_security_routes() {
 
     // RBAC stubs
 
-    register_route<user>(
+    register_route<user, true>(
       ss::httpd::security_json::list_user_roles,
-      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+      [this](
+        std::unique_ptr<ss::http::request> req, request_auth_result auth_result)
         -> ss::future<ss::json::json_return_type> {
-          ss::httpd::security_json::roles_list body;
-          co_return ss::json::json_return_type(body);
+          return list_user_roles_handler(
+            std::move(req), std::move(auth_result));
       });
 
     register_route<superuser>(
@@ -578,6 +580,28 @@ admin_server::oidc_revoke_handler(std::unique_ptr<ss::http::request>) {
         return ks.revoke_credentials(security::oidc::sasl_authenticator::name);
     });
     co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<ss::json::json_return_type> admin_server::list_user_roles_handler(
+  std::unique_ptr<ss::http::request> req, request_auth_result auth_result) {
+    ss::sstring filter = req->get_query_param("filter");
+
+    security::role_member member{
+      security::role_member_type::user, auth_result.get_username()};
+
+    auto rng = _controller->get_role_store().local().range(
+      [&filter, &member](const auto& e) {
+          return security::role_store::has_member(e, member)
+                 && security::role_store::name_prefix_filter(e, filter);
+      });
+
+    ss::httpd::security_json::roles_list body;
+    std::for_each(rng.begin(), rng.end(), [&body](const auto& rn) {
+        ss::httpd::security_json::role_description j_desc;
+        j_desc.name = ss::sstring{rn()};
+        body.roles.push(j_desc);
+    });
+    co_return ss::json::json_return_type(body);
 }
 
 ss::future<ss::json::json_return_type>

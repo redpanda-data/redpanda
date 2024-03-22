@@ -17,7 +17,8 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import (Admin, RoleMemberList, RoleUpdate,
                                    RoleErrorCode, RoleError, RolesList,
-                                   RoleMemberUpdateResponse, RoleMember)
+                                   RoleDescription, RoleMemberUpdateResponse,
+                                   RoleMember)
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -113,10 +114,6 @@ class RBACTest(RBACTestBase):
 
         with expect_http_error(403):
             self.user_admin.list_role_members(role=self.role_name1)
-
-        res = self.user_admin.list_user_roles()
-        assert len(
-            RolesList.from_response(res)) == 0, "Unexpected roles for user"
 
         with expect_http_error(403):
             self.user_admin.delete_role(role=self.role_name1)
@@ -380,6 +377,81 @@ class RBACTest(RBACTestBase):
                 }]}))
 
         assert res.status_code == 200, f"Request unexpectedly failed with status {res.status_code}"
+
+    @cluster(num_nodes=3)
+    def test_list_user_roles(self):
+        username = ALICE.username
+        alice = RoleMember(RoleMember.PrincipalType.USER, username)
+
+        res = self.user_admin.list_user_roles()
+        assert res.status_code == 200, f"Unexpected status {res.status_code}"
+        assert len(
+            RolesList.from_response(res)) == 0, "Unexpected roles for user"
+
+        res = self.superuser_admin.update_role_members(role=self.role_name0,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, f"Unexpected status {res.status_code}"
+
+        res = self.superuser_admin.update_role_members(role=self.role_name1,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, f"Unexpected status {res.status_code}"
+
+        def check_user_roles(expected: list[str] = []):
+            try:
+                res = self.user_admin.list_user_roles()
+                assert res.status_code == 200, f"Unexpected status {res.status_code}"
+                ls = RolesList.from_response(res)
+                return all([RoleDescription(e) in ls for e in expected]), ls
+            except:
+                return False, None
+
+        roles_list = wait_until_result(
+            lambda: check_user_roles([self.role_name0, self.role_name1]),
+            timeout_sec=5,
+            backoff_sec=1)
+
+        assert roles_list is not None, "Roles list never resolved"
+
+        assert len(roles_list) == 2, f"Unexpected roles list {roles_list}"
+        assert all(
+            RoleDescription(n) in roles_list
+            for n in [self.role_name0, self.role_name1
+                      ]), f"Unexpected roles list {roles_list}"
+
+        self.logger.debug("Test '?filter' parameter")
+
+        res = self.user_admin.list_user_roles(filter="f")
+        assert res.status_code == 200, f"Unexpected status code: {res.status_code}"
+
+        roles_list = RolesList.from_response(res)
+        assert len(roles_list) == 1, f"Unexpected roles list {roles_list}"
+        assert RoleDescription(
+            self.role_name0
+        ) in roles_list, f"Unexpected roles list {roles_list}"
+        assert RoleDescription(
+            self.role_name1
+        ) not in roles_list, f"Unexpected roles list {roles_list}"
+
+        bogus_admin = Admin(self.redpanda, auth=("bob", "1234"))
+
+        with expect_http_error(401):
+            bogus_admin.list_user_roles()
+
+    @cluster(num_nodes=3)
+    def test_list_user_roles_no_authn(self):
+        noauth_admin = Admin(self.redpanda)
+
+        with expect_http_error(401):
+            noauth_admin.list_user_roles()
+
+        self.redpanda.set_cluster_config({'admin_api_require_auth': False})
+
+        res = noauth_admin.list_user_roles()
+        assert res.status_code == 200, f"Unexpected status {res.status_code}"
+        roles = RolesList.from_response(res)
+        assert len(roles) == 0, f"Unexpected roles: {str(roles)}"
 
 
 class RBACTelemetryTest(RBACTestBase):
