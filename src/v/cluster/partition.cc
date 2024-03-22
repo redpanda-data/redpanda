@@ -1121,7 +1121,7 @@ partition::unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
                           .cloud_storage_metadata_sync_timeout_ms.value();
     auto sync_result = co_await ss::coroutine::as_future(
       _archival_meta_stm->sync(sync_timeout));
-    if (sync_result.failed() || sync_result.get() == false) {
+    if (sync_result.failed() || sync_result.get() == std::nullopt) {
         vlog(
           clusterlog.warn,
           "[{}] Could not sync with log. Skipping unsafe reset ...",

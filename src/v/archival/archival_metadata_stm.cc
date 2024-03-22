@@ -730,17 +730,29 @@ ss::future<std::error_code> archival_metadata_stm::process_anomalies(
     co_return co_await builder.replicate();
 }
 
-ss::future<bool>
+ss::future<std::optional<model::offset>>
 archival_metadata_stm::sync(model::timeout_clock::duration timeout) {
     return sync(timeout, nullptr);
 }
 
-ss::future<bool> archival_metadata_stm::sync(
+ss::future<std::optional<model::offset>> archival_metadata_stm::sync(
   model::timeout_clock::duration timeout, ss::abort_source* as) {
     return _lock
-      .with(timeout, [this, timeout, as] { return do_sync(timeout, as); })
+      .with(
+        timeout,
+        [this, timeout, as] {
+            return do_sync(timeout, as).then([this](bool synced) {
+                std::optional<model::offset> res;
+                if (synced) {
+                    res = _manifest->get_applied_offset();
+                }
+                return res;
+            });
+        })
       .handle_exception_type(
-        [](const ss::semaphore_timed_out&) { return false; });
+        [](const ss::semaphore_timed_out&) -> std::optional<model::offset> {
+            return std::nullopt;
+        });
 }
 
 ss::future<bool> archival_metadata_stm::do_sync(
