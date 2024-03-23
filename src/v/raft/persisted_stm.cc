@@ -10,6 +10,7 @@
 #include "raft/persisted_stm.h"
 
 #include "bytes/iostream.h"
+#include "cluster/types.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/offset_monitor.h"

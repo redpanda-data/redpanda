@@ -12,6 +12,7 @@
 #include "storage/offset_translator.h"
 
 #include "base/vlog.h"
+#include "reflection/adl.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
 #include "storage/logger.h"

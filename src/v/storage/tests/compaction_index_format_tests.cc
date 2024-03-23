@@ -11,6 +11,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/random.h"
+#include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "storage/compacted_index.h"

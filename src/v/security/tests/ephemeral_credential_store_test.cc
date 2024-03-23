@@ -12,6 +12,7 @@
 #include "security/ephemeral_credential_store.h"
 #include "security/scram_authenticator.h"
 #include "security/scram_credential.h"
+#include "security/tests/randoms.h"
 #include "security/types.h"
 #include "test_utils/randoms.h"
 

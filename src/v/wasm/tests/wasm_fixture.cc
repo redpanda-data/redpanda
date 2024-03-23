@@ -32,8 +32,11 @@
 
 #include <fmt/chrono.h>
 
+#include <chrono>
 #include <memory>
 #include <stdexcept>
+
+using namespace std::chrono_literals;
 
 namespace {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)

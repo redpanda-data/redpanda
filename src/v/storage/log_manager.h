@@ -13,7 +13,6 @@
 
 #include "base/seastarx.h"
 #include "base/units.h"
-#include "cluster/topic_table.h"
 #include "config/property.h"
 #include "container/intrusive_list_helpers.h"
 #include "features/feature_table.h"

@@ -28,8 +28,11 @@
 #include <seastar/testing/perf_tests.hh>
 #include <seastar/util/file.hh>
 
+#include <chrono>
 #include <cstdlib>
 #include <unistd.h>
+
+using namespace std::chrono_literals;
 
 template<size_t BatchSize, size_t RecordSize>
 class WasmBenchTest {
