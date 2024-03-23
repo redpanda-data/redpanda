@@ -12,6 +12,8 @@
 #pragma once
 
 #include "cluster/health_monitor_types.h"
+#include "cluster/partition_balancer_state.h"
+#include "cluster/partition_balancer_types.h"
 #include "cluster/tx_snapshot_utils.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
@@ -193,3 +195,50 @@ inline tx_snapshot_v3::tx_seqs_snapshot random_tx_seqs_snapshot() {
 }
 
 } // namespace cluster
+
+namespace tests {
+
+inline cluster::producer_ptr
+random_producer_state(cluster::producer_state_manager& psm) {
+    return ss::make_lw_shared<cluster::producer_state>(
+      psm,
+      model::producer_identity{
+        random_generators::get_int<int64_t>(),
+        random_generators::get_int<int16_t>()},
+      tests::random_named_int<raft::group_id>(),
+      ss::noncopyable_function<void()>{});
+}
+
+inline cluster::partition_balancer_status random_balancer_status() {
+    return random_generators::random_choice({
+      cluster::partition_balancer_status::off,
+      cluster::partition_balancer_status::starting,
+      cluster::partition_balancer_status::ready,
+      cluster::partition_balancer_status::in_progress,
+      cluster::partition_balancer_status::stalled,
+    });
+}
+
+inline cluster::partition_balancer_violations::unavailable_node
+random_unavailable_node() {
+    return {
+      tests::random_named_int<model::node_id>(),
+      model::timestamp(random_generators::get_int<int64_t>())};
+}
+
+inline cluster::partition_balancer_violations::full_node random_full_node() {
+    return {
+      tests::random_named_int<model::node_id>(),
+      random_generators::get_int<uint32_t>()};
+}
+
+inline cluster::partition_balancer_violations
+random_partition_balancer_violations() {
+    auto random_un_gen = tests::random_vector(
+      []() { return random_unavailable_node(); });
+    auto random_fn_gen = tests::random_vector(
+      []() { return random_full_node(); });
+    return {std::move(random_un_gen), std::move(random_fn_gen)};
+}
+
+} // namespace tests

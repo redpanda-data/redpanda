@@ -14,6 +14,7 @@
 #include "cluster/types.h"
 #include "compat/cluster_generator.h"
 #include "compat/generator.h"
+#include "security/tests/randoms.h"
 #include "test_utils/randoms.h"
 
 namespace compat {

@@ -28,6 +28,7 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
+#include "security/tests/randoms.h"
 #include "storage/types.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
