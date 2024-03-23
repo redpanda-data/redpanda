@@ -53,6 +53,7 @@ set(gsrcs
     stm_manager_test.cc
     raft_reconfiguration_test.cc
     persisted_stm_test.cc
+    replication_monitor_tests.cc
 )
 
 rp_test(
