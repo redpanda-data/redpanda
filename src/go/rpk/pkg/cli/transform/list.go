@@ -17,11 +17,32 @@ import (
 	"os"
 	"strings"
 
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
+	dataplanev1alpha1 "github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/dataplane/v1alpha1"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+)
+
+type (
+	detailedTransformMetadata struct {
+		Name         string                              `json:"name" yaml:"name"`
+		InputTopic   string                              `json:"input_topic" yaml:"input_topic"`
+		OutputTopics []string                            `json:"output_topics" yaml:"output_topics"`
+		Environment  map[string]string                   `json:"environment" yaml:"environment"`
+		Status       []adminapi.PartitionTransformStatus `json:"status" yaml:"status"`
+	}
+	summarizedTransformMetadata struct {
+		Name         string            `json:"name" yaml:"name"`
+		InputTopic   string            `json:"input_topic" yaml:"input_topic"`
+		OutputTopics []string          `json:"output_topics" yaml:"output_topics"`
+		Environment  map[string]string `json:"environment" yaml:"environment"`
+		Running      string            `json:"running" yaml:"running"`
+		Lag          int               `json:"lag" yaml:"lag"`
+	}
 )
 
 func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -44,18 +65,38 @@ The --detailed flag (-d) opts in to printing extra per-processor information.
 		Args:    cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
-			if h, ok := f.Help([]string{}); ok {
-				out.Exit(h)
+			if detailed {
+				if h, ok := f.Help([]detailedTransformMetadata{}); ok {
+					out.Exit(h)
+				}
+			} else {
+				if h, ok := f.Help([]summarizedTransformMetadata{}); ok {
+					out.Exit(h)
+				}
 			}
 
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			config.CheckExitServerlessAdmin(p)
 
-			api, err := adminapi.NewClient(fs, p)
-			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+			var l []adminapi.TransformMetadata
+			if p.FromCloud && !p.CloudCluster.IsServerless() {
+				url, err := p.CloudCluster.CheckClusterURL()
+				out.MaybeDie(err, "unable to get cluster information: %v", err)
 
-			l, err := api.ListWasmTransforms(cmd.Context())
-			out.MaybeDie(err, "unable to list transforms: %v", err)
+				cl, err := publicapi.NewDataPlaneClientSet(url, p.CurrentAuth().AuthToken)
+				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
+
+				res, err := cl.Transform.ListTransforms(cmd.Context(), connect.NewRequest(&dataplanev1alpha1.ListTransformsRequest{}))
+				out.MaybeDie(err, "unable to list transforms from Cloud: %v", err)
+				l = dataplaneToAdminTransformMetadata(res.Msg.Transforms)
+			} else {
+				api, err := adminapi.NewClient(fs, p)
+				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+
+				l, err = api.ListWasmTransforms(cmd.Context())
+				out.MaybeDie(err, "unable to list transforms: %v", err)
+			}
 
 			if detailed {
 				d := detailView(l)
@@ -70,24 +111,6 @@ The --detailed flag (-d) opts in to printing extra per-processor information.
 	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "Print per-partition information for data transforms")
 	return cmd
 }
-
-type (
-	detailedTransformMetadata struct {
-		Name         string                              `json:"name"`
-		InputTopic   string                              `json:"input_topic"`
-		OutputTopics []string                            `json:"output_topics"`
-		Environment  map[string]string                   `json:"environment"`
-		Status       []adminapi.PartitionTransformStatus `json:"status"`
-	}
-	summarizedTransformMetadata struct {
-		Name         string            `json:"name"`
-		InputTopic   string            `json:"input_topic"`
-		OutputTopics []string          `json:"output_topics"`
-		Environment  map[string]string `json:"environment"`
-		Running      string            `json:"running"`
-		Lag          int               `json:"lag"`
-	}
-)
 
 func makeEnvMap(env []adminapi.EnvironmentVariable) map[string]string {
 	out := make(map[string]string)
@@ -104,7 +127,7 @@ func summarizedView(metadata []adminapi.TransformMetadata) (resp []summarizedTra
 		running := 0
 		lag := 0
 		for _, v := range meta.Status {
-			if v.Status == "running" {
+			if strings.ToLower(v.Status) == "running" {
 				running++
 			}
 			lag += v.Lag
@@ -167,4 +190,42 @@ func printDetailed(f config.OutFormatter, d []detailedTransformMetadata, w io.Wr
 			tw.Print("", p.Partition, p.NodeID, p.Status, p.Lag)
 		}
 	}
+}
+
+func dataplaneToAdminTransformMetadata(transforms []*dataplanev1alpha1.TransformMetadata) []adminapi.TransformMetadata {
+	var transformMetadata []adminapi.TransformMetadata
+	for _, t := range transforms {
+		var (
+			status []adminapi.PartitionTransformStatus
+			envs   []adminapi.EnvironmentVariable
+		)
+		if t != nil {
+			for _, s := range t.Statuses {
+				if s != nil {
+					status = append(status, adminapi.PartitionTransformStatus{
+						NodeID:    int(s.BrokerId),
+						Partition: int(s.PartitionId),
+						Status:    strings.TrimPrefix(s.Status.String(), "PARTITION_STATUS_"),
+						Lag:       int(s.Lag),
+					})
+				}
+			}
+			for _, e := range t.EnvironmentVariables {
+				if e != nil {
+					envs = append(envs, adminapi.EnvironmentVariable{
+						Key:   e.Key,
+						Value: e.Value,
+					})
+				}
+			}
+			transformMetadata = append(transformMetadata, adminapi.TransformMetadata{
+				Name:         t.Name,
+				InputTopic:   t.InputTopicName,
+				OutputTopics: t.OutputTopicNames,
+				Status:       status,
+				Environment:  envs,
+			})
+		}
+	}
+	return transformMetadata
 }
