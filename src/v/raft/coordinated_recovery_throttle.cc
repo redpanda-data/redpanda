@@ -91,11 +91,22 @@ void coordinated_recovery_throttle::setup_metrics() {
         namespace sm = ss::metrics;
         _public_metrics.add_group(
           prometheus_sanitize::metrics_name("raft:recovery"),
-          {sm::make_gauge(
-            "partition_movement_available_bandwidth",
-            [this] { return _throttler.available(); },
-            sm::description(
-              "Bandwidth available for partition movement. bytes/sec"))});
+          {// note: deprecate partition_movement_available_bandwidth
+           // in favor of partition_movement_consumed_bandwidth when
+           // possible.
+           sm::make_gauge(
+             "partition_movement_available_bandwidth",
+             [this] { return _throttler.available(); },
+             sm::description(
+               "Bandwidth available for partition movement. bytes/sec")),
+           sm::make_gauge(
+             "partition_movement_consumed_bandwidth",
+             [this] {
+                 return _throttler.last_reset_capacity()
+                        - _throttler.available();
+             },
+             sm::description(
+               "Bandwidth consumed for partition movement. bytes/sec"))});
     }
 }
 
