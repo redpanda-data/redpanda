@@ -11,8 +11,6 @@
 
 #include "base/likely.h"
 #include "base/vlog.h"
-#include "cluster/cluster_utils.h"
-#include "cluster/topic_table.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -65,6 +63,8 @@
 #include <exception>
 #include <filesystem>
 #include <optional>
+
+using namespace std::chrono_literals;
 
 namespace storage {
 using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
