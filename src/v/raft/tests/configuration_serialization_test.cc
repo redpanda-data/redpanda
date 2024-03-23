@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf_parser.h"
+#include "model/adl_serde.h"
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"

@@ -23,10 +23,13 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <iostream>
 #include <stdexcept>
+
+using namespace std::chrono_literals;
 
 namespace transform::testing {
 ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
