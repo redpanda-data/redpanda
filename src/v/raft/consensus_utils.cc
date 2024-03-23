@@ -9,7 +9,6 @@
 
 #include "raft/consensus_utils.h"
 
-#include "archival/archival_metadata_stm.h"
 #include "base/likely.h"
 #include "base/vassert.h"
 #include "bytes/iostream.h"
