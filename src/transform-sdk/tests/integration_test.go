@@ -88,7 +88,6 @@ func deployTransform(t *testing.T, metadata TransformDeployMetadata, binary []by
 }
 
 func TestIdentity(t *testing.T) {
-	t.Parallel()
 	binary := loadWasmFile(t, "IDENTITY")
 	metadata := TransformDeployMetadata{
 		Name:         "identity-xform",
@@ -139,7 +138,6 @@ type openTelemetryLogEvent struct {
 }
 
 func TestLogging(t *testing.T) {
-	t.Parallel()
 	binary := loadWasmFile(t, "LOGGING")
 	metadata := TransformDeployMetadata{
 		Name:         "logging-xform",
@@ -171,7 +169,6 @@ func TestLogging(t *testing.T) {
 }
 
 func TestMultipleOutputs(t *testing.T) {
-	t.Parallel()
 	binary := loadWasmFile(t, "TEE")
 	metadata := TransformDeployMetadata{
 		Name:         "tee-xform",
