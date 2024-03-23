@@ -1193,7 +1193,8 @@ partition_manifest partition_manifest::clone() const {
       _last_partition_scrub,
       _last_scrubbed_offset,
       _detected_anomalies,
-      _highest_producer_id);
+      _highest_producer_id,
+      _applied_offset);
     return tmp;
 }
 
@@ -2053,7 +2054,8 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
     if (
       handler._version != to_underlying(manifest_version::v1)
       && handler._version != to_underlying(manifest_version::v2)
-      && handler._version != to_underlying(manifest_version::v3)) {
+      && handler._version != to_underlying(manifest_version::v3)
+      && handler._version != to_underlying(manifest_version::v4)) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "partition manifest version {} is not supported",
@@ -2626,7 +2628,7 @@ partition_manifest::timequery(model::timestamp t) const {
 struct partition_manifest_serde
   : public serde::envelope<
       partition_manifest_serde,
-      serde::version<to_underlying(manifest_version::v3)>,
+      serde::version<to_underlying(manifest_version::v4)>,
       serde::compat_version<0>> {
     model::ntp _ntp;
     model::initial_revision_id _rev;
@@ -2650,6 +2652,7 @@ struct partition_manifest_serde
     model::timestamp _last_partition_scrub;
     std::optional<model::offset> _last_scrubbed_offset;
     model::producer_id _highest_producer_id;
+    model::offset _applied_offset;
 };
 
 static_assert(

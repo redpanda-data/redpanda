@@ -14,20 +14,26 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/errc.h"
 #include "cluster/state_machine_registry.h"
 #include "features/fwd.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timeout_clock.h"
 #include "raft/persisted_stm.h"
 #include "storage/record_batch_builder.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/weak_ptr.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <exception>
 #include <functional>
 #include <system_error>
 
@@ -36,6 +42,7 @@ namespace cluster {
 namespace details {
 /// This class is supposed to be implemented in unit tests.
 class archival_metadata_stm_accessor;
+class command_batch_builder_accessor;
 } // namespace details
 
 class archival_metadata_stm;
@@ -45,6 +52,8 @@ using segment_validated = ss::bool_class<struct segment_validated_tag>;
 /// Batch builder allows to combine different archival_metadata_stm commands
 /// together in a single record batch
 class command_batch_builder {
+    friend class command_batch_builder_accessor;
+
 public:
     command_batch_builder(
       archival_metadata_stm& stm,
@@ -85,6 +94,18 @@ public:
       cloud_storage::scrub_status status,
       cloud_storage::anomalies detected);
     command_batch_builder& reset_scrubbing_metadata();
+    /// Add read-write fence
+    ///
+    /// The fence prevents all subsequent commands in the batch from being
+    /// applied to the in-memory state of the STM if the 'applied_offset' is
+    /// greater than the 'offset'. This mechanism is supposed to be used as a
+    /// concurrency-control mechanism.
+    command_batch_builder& read_write_fence(model::offset offset);
+
+    /// Add update_highest_producer_id_cmd command
+    command_batch_builder&
+    update_highest_producer_id(model::producer_id highest_pid);
+
     /// Replicate the configuration batch
     ss::future<std::error_code> replicate();
 
@@ -212,10 +233,12 @@ public:
       model::term_id term,
       const cloud_storage::partition_manifest& manifest);
 
-    // Attempts to bring the archival STM in sync with the log.
-    // Returns "true" if it has synced succesfully *and* the replica
-    // is still the leader with the correct term.
-    ss::future<bool> sync(model::timeout_clock::duration timeout);
+    /// This method guarantees that the STM applied all changes
+    /// in the log to the in-memory state.
+    ss::future<std::optional<model::offset>>
+    sync(model::timeout_clock::duration timeout);
+    ss::future<std::optional<model::offset>>
+    sync(model::timeout_clock::duration timeout, ss::abort_source* as);
 
     model::offset get_start_offset() const;
     model::offset get_last_offset() const;
@@ -228,7 +251,7 @@ public:
     fragmented_vector<cloud_storage::partition_manifest::lw_segment_meta>
     get_segments_to_cleanup() const;
 
-    /// Create batch builder that can be used to combine and replicate multipe
+    /// Create batch builder that can be used to combine and replicate multiple
     /// STM commands together
     command_batch_builder
     batch_start(ss::lowres_clock::time_point deadline, ss::abort_source&);
@@ -251,6 +274,9 @@ public:
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
 private:
+    ss::future<bool>
+    do_sync(model::timeout_clock::duration timeout, ss::abort_source* as);
+
     ss::future<std::error_code> do_add_segments(
       std::vector<cloud_storage::segment_meta>,
       std::optional<model::offset> clean_offset,
@@ -288,6 +314,7 @@ private:
     struct process_anomalies_cmd;
     struct reset_scrubbing_metadata;
     struct update_highest_producer_id_cmd;
+    struct read_write_fence_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -316,6 +343,13 @@ private:
     void apply_process_anomalies(iobuf);
     void apply_reset_scrubbing_metadata();
     void apply_update_highest_producer_id(model::producer_id pid);
+    // apply fence command and return true if the 'apply' call should
+    // be interrupted
+    bool apply_read_write_fence(const read_write_fence_cmd&) noexcept;
+
+    // Notify current waiter in the 'do_replicate'
+    void maybe_notify_waiter(cluster::errc) noexcept;
+    void maybe_notify_waiter(std::exception_ptr) noexcept;
 
 private:
     prefix_logger _logger;
@@ -332,12 +366,7 @@ private:
     // The offset of the last record that modified this stm
     model::offset _last_dirty_at;
 
-    // The last replication future
-    struct last_replicate {
-        model::term_id term;
-        ss::shared_future<result<raft::replicate_result>> result;
-    };
-    std::optional<last_replicate> _last_replicate;
+    std::optional<ss::promise<errc>> _active_operation_res;
 
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;

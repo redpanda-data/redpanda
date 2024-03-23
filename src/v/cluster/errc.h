@@ -81,6 +81,7 @@ enum class errc : int16_t {
     transform_count_limit_exceeded,
     role_exists,
     role_does_not_exist,
+    inconsistent_stm_update,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -235,6 +236,8 @@ struct errc_category final : public std::error_category {
             return "Role already exists";
         case errc::role_does_not_exist:
             return "Role does not exist";
+        case errc::inconsistent_stm_update:
+            return "STM command can't be applied";
         }
         return "cluster::errc::unknown";
     }

@@ -9,6 +9,7 @@
 
 #include "archival/archival_metadata_stm.h"
 
+#include "archival/logger.h"
 #include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
@@ -27,6 +28,7 @@
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
+#include "model/timeout_clock.h"
 #include "raft/consensus.h"
 #include "raft/persisted_stm.h"
 #include "resource_mgmt/io_priority.h"
@@ -39,6 +41,10 @@
 #include "utils/named_type.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_future.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/sstring.hh>
@@ -46,7 +52,9 @@
 #include <seastar/util/defer.hh>
 
 #include <algorithm>
+#include <exception>
 #include <optional>
+#include <utility>
 
 namespace cluster {
 
@@ -185,9 +193,23 @@ struct archival_metadata_stm::update_highest_producer_id_cmd {
     using value = model::producer_id;
 };
 
+struct archival_metadata_stm::read_write_fence_cmd
+  : public serde::envelope<
+      read_write_fence_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr cmd_key key{14};
+
+    model::offset last_applied_offset;
+};
+
+// Serde format description
+// v5
+//  - add apply_offset field
+//
 struct archival_metadata_stm::snapshot
   : public serde::
-      envelope<snapshot, serde::version<4>, serde::compat_version<0>> {
+      envelope<snapshot, serde::version<5>, serde::compat_version<0>> {
     /// List of segments
     fragmented_vector<segment> segments;
     /// List of replaced segments
@@ -230,6 +252,8 @@ struct archival_metadata_stm::snapshot
     cloud_storage::anomalies detected_anomalies;
     // Highest producer ID used by this partition.
     model::producer_id highest_producer_id;
+    // Offset of the last applied command
+    model::offset applied_offset;
 
     auto serde_fields() {
         return std::tie(
@@ -248,7 +272,8 @@ struct archival_metadata_stm::snapshot
           last_partition_scrub,
           last_scrubbed_offset,
           detected_anomalies,
-          highest_producer_id);
+          highest_producer_id,
+          applied_offset);
     }
 };
 
@@ -405,6 +430,28 @@ command_batch_builder& command_batch_builder::cleanup_archive(
     return *this;
 }
 
+command_batch_builder&
+command_batch_builder::read_write_fence(model::offset offset) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::read_write_fence_cmd::key);
+    auto record_val = archival_metadata_stm::read_write_fence_cmd{
+      .last_applied_offset = offset};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    return *this;
+}
+
+command_batch_builder& command_batch_builder::update_highest_producer_id(
+  model::producer_id highest_pid) {
+    if (highest_pid != model::producer_id{}) {
+        iobuf key_buf = serde::to_iobuf(
+          archival_metadata_stm::update_highest_producer_id_cmd::key);
+        iobuf val_buf = serde::to_iobuf(highest_pid());
+        _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    }
+    return *this;
+}
+
 ss::future<std::error_code> command_batch_builder::replicate() {
     _as.check();
     return _stm.get()._lock.with([this]() {
@@ -412,7 +459,7 @@ ss::future<std::error_code> command_batch_builder::replicate() {
           _stm.get()._logger.debug, "command_batch_builder::replicate called");
         auto now = ss::lowres_clock::now();
         auto timeout = now < _deadline ? _deadline - now : 0ms;
-        return _stm.get().sync(timeout).then([this](bool success) {
+        return _stm.get().do_sync(timeout, &_as).then([this](bool success) {
             if (!success) {
                 return ss::make_ready_future<std::error_code>(errc::not_leader);
             }
@@ -575,6 +622,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .start_kafka_offset = m.get_start_kafka_offset_override(),
       .spillover_manifests = std::move(spillover),
       .highest_producer_id = m.highest_producer_id(),
+      .applied_offset = m.get_applied_offset(),
     });
 
     auto snapshot = raft::stm_snapshot::create(
@@ -683,164 +731,113 @@ ss::future<std::error_code> archival_metadata_stm::process_anomalies(
     co_return co_await builder.replicate();
 }
 
-ss::future<bool>
+ss::future<std::optional<model::offset>>
 archival_metadata_stm::sync(model::timeout_clock::duration timeout) {
-    // If there's any replications pending, wait for them to complete.
-    // Note that we throw away the result and use Raft's committed offset
-    // below. If replication failed, exit unsuccessfully.
+    return sync(timeout, nullptr);
+}
 
-    if (_last_replicate) {
-        if (!_last_replicate->result.available()) {
-            vlog(
-              _logger.debug, "Waiting for ongoing replication before syncing");
-        }
+ss::future<std::optional<model::offset>> archival_metadata_stm::sync(
+  model::timeout_clock::duration timeout, ss::abort_source* as) {
+    return _lock
+      .with(
+        timeout,
+        [this, timeout, as] {
+            return do_sync(timeout, as).then([this](bool synced) {
+                std::optional<model::offset> res;
+                if (synced) {
+                    res = _manifest->get_applied_offset();
+                }
+                return res;
+            });
+        })
+      .handle_exception_type(
+        [](const ss::semaphore_timed_out&) -> std::optional<model::offset> {
+            return std::nullopt;
+        });
+}
 
-        try {
-            const auto before = model::timeout_clock::now();
-
-            const auto res = co_await _last_replicate->result.get_future(
-              before + timeout);
-
-            const auto after = model::timeout_clock::now();
-            // Update the timeout whille accounting for under/overflow.
-            const auto duration = after > before
-                                    ? after - before
-                                    : ss::lowres_clock::duration{0};
-
-            if (duration >= timeout) {
-                throw ss::timed_out_error{};
-            }
-
-            timeout -= duration;
-
-            // If we've got this far it means that the _last_replicate future
-            // was resolved. If it resolved successfully, then we can continue.
-            // If it failed for any reason, it is safe to "forget" about it in
-            // only if the term changed. Otherwise we can't make any assumptions
-            // about its state.
-            // Stepping down (liveness) is guaranteed by the logic in the
-            // `do_replicate_commands` method.
-            if (res || _last_replicate->term < _raft->term()) {
-                _last_replicate = std::nullopt;
-            }
-
-            if (!res) {
-                vlog(
-                  _logger.warn,
-                  "Replication failed for archival STM command: {}",
-                  res.error());
-
-                co_return false;
-            }
-        } catch (const ss::timed_out_error&) {
-            vlog(
-              _logger.warn,
-              "Replication wait for archival STM timed out (timeout = {})",
-              timeout);
-            co_return false;
-        } catch (...) {
-            vlog(
-              _logger.error,
-              "Replication failed for archival STM command: {}",
-              std::current_exception());
-            co_return false;
-        }
-    }
-
-    if (!_raft->is_leader()) {
+ss::future<bool> archival_metadata_stm::do_sync(
+  model::timeout_clock::duration timeout, ss::abort_source* as) {
+    if (!co_await raft::persisted_stm<>::sync(timeout)) {
         co_return false;
     }
 
-    const auto last_applied_term = _insync_term;
-    const auto last_applied_offset = _manifest->get_insync_offset();
-    const auto current_term = _raft->term();
-    const auto committed_offset = _raft->committed_offset();
+    vassert(
+      !_lock.try_get_units().has_value(),
+      "Attempt to replicate STM command while not under lock");
+    // This mutex is held during the replication of the record batch.
+    // After acquiring the mutex we can't have in-flight replication request but
+    // we can have some data in the log which is not applied to the STM yet.
+    // The code below simply waits until all record batches up to current
+    // committed offset are applied to the STM.
+    // The log eviction STM can also replicate its own batch without holding the
+    // lock but it's not critical.
 
-    if (
-      last_applied_term == current_term
-      && last_applied_offset < committed_offset) {
-        // Case 1: we have already synced (once or more) during the current
-        // term, but need to sync again (e.g. re-starting the archiver to
-        // apply topic configs)
-        vlog(
-          _logger.debug,
-          "Syncing archival STM from last applied offset {} to committed "
-          "offest {} in term {}",
-          last_applied_offset,
-          committed_offset,
-          current_term);
+    auto insync = _manifest->get_insync_offset();
 
-        const bool synced = co_await wait_no_throw(
-          committed_offset, model::timeout_clock::now() + timeout);
-
-        if (!synced) {
-            vlog(
-              _logger.warn,
-              "Failed to sync archival STM from offset {} to offest {} in "
-              "term {}",
-              last_applied_offset,
-              committed_offset,
-              current_term);
+    // all archival commands are replicated with acks=-1
+    // this is why we can use committed_offset
+    auto commit = _raft->committed_offset();
+    if (insync < commit) {
+        if (as == nullptr) {
+            co_return co_await wait_no_throw(
+              commit, ss::lowres_clock::now() + timeout);
+        } else {
+            co_return co_await wait_no_throw(
+              commit, ss::lowres_clock::now() + timeout, *as);
         }
-
-        co_return synced;
-    } else {
-        // Case 2: we have not synced since the last term (e.g. on
-        // leadership changes)
-        vlog(
-          _logger.debug,
-          "Syncing archival STM to latest term {} from term {}",
-          current_term,
-          last_applied_term);
-        const bool synced = co_await persisted_stm::sync(timeout);
-
-        if (!synced) {
-            vlog(_logger.warn, "Failed to sync archival STM to latest term");
-        }
-
-        co_return synced;
     }
+    // This should be impossible under lock
+    vassert(
+      _active_operation_res.has_value() == false, "Concurrency violation");
+    co_return true;
 }
 
 ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
   model::record_batch batch, ss::abort_source& as) {
     vassert(
-      !_last_replicate.has_value(),
-      "Concurrent replication of archival STM commands");
-    vassert(
       !_lock.try_get_units().has_value(),
       "Attempt to replicate STM command while not under lock");
+    vassert(
+      _active_operation_res.has_value() == false, "Concurrency violation");
 
     const auto current_term = _insync_term;
 
-    ss::shared_promise<result<raft::replicate_result>> replication_promise;
-    _last_replicate = last_replicate{
-      .term = current_term, .result = replication_promise.get_shared_future()};
+    // If the caller didn't invoke `sync` before calling `replicate` we
+    // might have some batches which are not applied to the STM yet. These
+    // batches could potentially set _active_operation_res and therefore
+    // mask the actual failure.
+    {
+        auto commit = _raft->committed_offset();
+        auto insync = _manifest->get_insync_offset();
+        if (insync < commit) {
+            vlog(_logger.debug, "Replicate is called while STM is catching up");
+            auto sync_res = co_await do_sync(
+              config::shard_local_cfg()
+                .cloud_storage_metadata_sync_timeout_ms.value(),
+              &as);
+            if (!sync_res) {
+                vlog(_logger.warn, "Failed to catch up");
+                co_return errc::timeout;
+            }
+        }
+    }
+
+    // Create a promise to deliver the result of the batch application
+    _active_operation_res.emplace();
+    auto broken_promise_to_shutdown = [](const ss::broken_promise&) {
+        return errc::shutting_down;
+    };
+    auto apply_result = _active_operation_res->get_future()
+                          .handle_exception_type(broken_promise_to_shutdown);
+    auto op_state_reset = ss::defer([&] { _active_operation_res.reset(); });
 
     auto opts = raft::replicate_options(raft::consistency_level::quorum_ack);
     opts.set_force_flush();
-
-    auto fut
-      = _raft
-          ->replicate(
-            current_term,
-            model::make_memory_record_batch_reader(std::move(batch)),
-            opts)
-          .then_wrapped(
-            [replication_promise = std::move(replication_promise)](
-              auto f) mutable -> ss::future<result<raft::replicate_result>> {
-                if (f.failed()) {
-                    const auto ex_ptr = f.get_exception();
-                    replication_promise.set_exception(ex_ptr);
-                    return ss::make_exception_future<
-                      result<raft::replicate_result>>(ex_ptr);
-                } else {
-                    const auto res = f.get();
-                    replication_promise.set_value(res);
-                    return ss::make_ready_future<
-                      result<raft::replicate_result>>(res);
-                }
-            });
+    auto fut = _raft->replicate(
+      current_term,
+      model::make_memory_record_batch_reader(std::move(batch)),
+      opts);
 
     // Raft's replicate() doesn't take an external abort source, and
     // archiver is shut down before consensus, so we must wrap this
@@ -878,7 +875,10 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         co_return errc::replication_error;
     }
 
-    co_return errc::success;
+    // We are under lock so it's guaranteed that the command that will
+    // trigger this is replicated by this call.
+    op_state_reset.cancel();
+    co_return co_await std::move(apply_result);
 }
 
 ss::future<std::error_code> archival_metadata_stm::mark_clean(
@@ -928,7 +928,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     {
         auto now = ss::lowres_clock::now();
         auto timeout = now < deadline ? deadline - now : 0ms;
-        if (!co_await sync(timeout)) {
+        if (!co_await do_sync(timeout, &as)) {
             co_return errc::timeout;
         }
     }
@@ -1009,6 +1009,7 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
         b.for_each_record(
           [this, base_offset = b.base_offset()](model::record&& r) {
               _last_dirty_at = base_offset + model::offset{r.offset_delta()};
+              _manifest->advance_applied_offset(_last_dirty_at);
               auto key = serde::from_iobuf<uint8_t>(r.release_key());
               auto val = serde::from_iobuf<prefix_truncate_record>(
                 r.release_value());
@@ -1019,81 +1020,110 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
               }
           });
     } else {
-        b.for_each_record([this,
-                           base_offset = b.base_offset()](model::record&& r) {
-            auto key = serde::from_iobuf<cmd_key>(r.release_key());
+        auto on_exit = ss::defer(
+          [this] { maybe_notify_waiter(errc::success); });
+        try {
+            b.for_each_record([this, base_offset = b.base_offset()](
+                                model::record&& r) {
+                auto key = serde::from_iobuf<cmd_key>(r.release_key());
 
-            if (key != mark_clean_cmd::key) {
-                // All keys other than mark clean make the manifest dirty
-                _last_dirty_at = base_offset + model::offset{r.offset_delta()};
-            }
+                if (key != read_write_fence_cmd::key) {
+                    _manifest->advance_applied_offset(
+                      base_offset + model::offset{r.offset_delta()});
+                }
 
-            switch (key) {
-            case add_segment_cmd::key:
-                apply_add_segment(
-                  serde::from_iobuf<add_segment_cmd::value>(r.release_value()));
-                break;
-            case truncate_cmd::key:
-                apply_truncate(
-                  serde::from_iobuf<truncate_cmd::value>(r.release_value()));
-                break;
-            case update_start_offset_cmd::key:
-                apply_update_start_offset(
-                  serde::from_iobuf<update_start_offset_cmd::value>(
-                    r.release_value()));
-                break;
-            case cleanup_metadata_cmd::key:
-                apply_cleanup_metadata();
-                break;
-            case mark_clean_cmd::key:
-                apply_mark_clean(
-                  serde::from_iobuf<mark_clean_cmd::value>(r.release_value()));
-                break;
-            case truncate_archive_init_cmd::key:
-                apply_truncate_archive_init(
-                  serde::from_iobuf<truncate_archive_init_cmd::value>(
-                    r.release_value()));
-                break;
-            case truncate_archive_commit_cmd::key: {
-                auto cmd
-                  = serde::from_iobuf<truncate_archive_commit_cmd::value>(
-                    r.release_value());
-                apply_truncate_archive_commit(
-                  cmd.start_offset, cmd.bytes_removed);
-            } break;
-            case update_start_kafka_offset_cmd::key:
-                apply_update_start_kafka_offset(
-                  serde::from_iobuf<update_start_kafka_offset_cmd::value>(
-                    r.release_value()));
-                break;
-            case reset_metadata_cmd::key:
-                apply_reset_metadata();
-                break;
-            case spillover_cmd::key:
-                apply_spillover(
-                  serde::from_iobuf<spillover_cmd>(r.release_value()));
-                break;
-            case replace_manifest_cmd::key:
-                apply_replace_manifest(r.release_value());
-                break;
-            case process_anomalies_cmd::key:
-                apply_process_anomalies(r.release_value());
-                break;
-            case reset_scrubbing_metadata::key:
-                apply_reset_scrubbing_metadata();
-                break;
-            case update_highest_producer_id_cmd::key:
-                apply_update_highest_producer_id(
-                  serde::from_iobuf<update_highest_producer_id_cmd::value>(
-                    r.release_value()));
-                break;
-            default:
-                throw std::runtime_error(fmt_with_ctx(
-                  fmt::format,
-                  "Unknown archival metadata STM command {}",
-                  static_cast<int>(key)));
-            };
-        });
+                if (key != mark_clean_cmd::key) {
+                    // All keys other than mark clean make the manifest dirty
+                    _last_dirty_at = base_offset
+                                     + model::offset{r.offset_delta()};
+                }
+
+                switch (key) {
+                case add_segment_cmd::key:
+                    apply_add_segment(serde::from_iobuf<add_segment_cmd::value>(
+                      r.release_value()));
+                    break;
+                case truncate_cmd::key:
+                    apply_truncate(serde::from_iobuf<truncate_cmd::value>(
+                      r.release_value()));
+                    break;
+                case update_start_offset_cmd::key:
+                    apply_update_start_offset(
+                      serde::from_iobuf<update_start_offset_cmd::value>(
+                        r.release_value()));
+                    break;
+                case cleanup_metadata_cmd::key:
+                    apply_cleanup_metadata();
+                    break;
+                case mark_clean_cmd::key:
+                    apply_mark_clean(serde::from_iobuf<mark_clean_cmd::value>(
+                      r.release_value()));
+                    break;
+                case truncate_archive_init_cmd::key:
+                    apply_truncate_archive_init(
+                      serde::from_iobuf<truncate_archive_init_cmd::value>(
+                        r.release_value()));
+                    break;
+                case truncate_archive_commit_cmd::key: {
+                    auto cmd
+                      = serde::from_iobuf<truncate_archive_commit_cmd::value>(
+                        r.release_value());
+                    apply_truncate_archive_commit(
+                      cmd.start_offset, cmd.bytes_removed);
+                } break;
+                case update_start_kafka_offset_cmd::key:
+                    apply_update_start_kafka_offset(
+                      serde::from_iobuf<update_start_kafka_offset_cmd::value>(
+                        r.release_value()));
+                    break;
+                case reset_metadata_cmd::key:
+                    apply_reset_metadata();
+                    break;
+                case spillover_cmd::key:
+                    apply_spillover(
+                      serde::from_iobuf<spillover_cmd>(r.release_value()));
+                    break;
+                case replace_manifest_cmd::key:
+                    apply_replace_manifest(r.release_value());
+                    break;
+                case process_anomalies_cmd::key:
+                    apply_process_anomalies(r.release_value());
+                    break;
+                case reset_scrubbing_metadata::key:
+                    apply_reset_scrubbing_metadata();
+                    break;
+                case update_highest_producer_id_cmd::key:
+                    apply_update_highest_producer_id(
+                      serde::from_iobuf<update_highest_producer_id_cmd::value>(
+                        r.release_value()));
+                    break;
+                case read_write_fence_cmd::key:
+                    if (apply_read_write_fence(
+                          serde::from_iobuf<read_write_fence_cmd>(
+                            r.release_value()))) {
+                        // This means that there is a concurrency violation. The
+                        // fence was created before some other command was
+                        // applied. We can't apply the commands from this batch.
+                        return ss::stop_iteration::yes;
+                    }
+                    break;
+                default:
+                    throw std::runtime_error(fmt_with_ctx(
+                      fmt::format,
+                      "Unknown archival metadata STM command {}",
+                      static_cast<int>(key)));
+                };
+                return ss::stop_iteration::no;
+            });
+        } catch (...) {
+            vlog(
+              _logger.error,
+              "Unexpected error while applying changes to "
+              "archival_metadata_stm: {}",
+              std::current_exception());
+            on_exit.cancel();
+            maybe_notify_waiter(std::current_exception());
+        }
     }
 
     // The offset should only be advanced after all the changes are applied.
@@ -1201,7 +1231,8 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
       snap.last_partition_scrub,
       snap.last_scrubbed_offset,
       snap.detected_anomalies,
-      snap.highest_producer_id);
+      snap.highest_producer_id,
+      snap.applied_offset);
 
     vlog(
       _logger.info,
@@ -1292,6 +1323,20 @@ model::offset archival_metadata_stm::max_collectible_offset() {
     return lo;
 }
 
+void archival_metadata_stm::maybe_notify_waiter(cluster::errc err) noexcept {
+    if (_active_operation_res) {
+        auto p = std::exchange(_active_operation_res, std::nullopt);
+        p->set_value(err);
+    }
+}
+
+void archival_metadata_stm::maybe_notify_waiter(std::exception_ptr e) noexcept {
+    if (_active_operation_res) {
+        auto p = std::exchange(_active_operation_res, std::nullopt);
+        p->set_exception(e);
+    }
+}
+
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
     auto meta = segment.meta;
     bool disable_safe_add
@@ -1315,6 +1360,7 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
           "Can't add segment: {}, previous segment: {}",
           meta,
           last);
+        maybe_notify_waiter(errc::inconsistent_stm_update);
         return;
     }
     if (meta.ntp_revision == model::initial_revision_id{}) {
@@ -1412,6 +1458,21 @@ void archival_metadata_stm::apply_update_start_kafka_offset(kafka::offset so) {
 void archival_metadata_stm::apply_reset_metadata() {
     vlog(_logger.info, "Resetting manifest");
     _manifest->unsafe_reset();
+}
+
+bool archival_metadata_stm::apply_read_write_fence(
+  const archival_metadata_stm::read_write_fence_cmd& cmd) noexcept {
+    if (_manifest->get_applied_offset() != cmd.last_applied_offset) {
+        vlog(
+          _logger.warn,
+          "Concurrent modification error detected, current applied offset: {}, "
+          "read-write fence: {}",
+          _manifest->get_applied_offset(),
+          cmd.last_applied_offset);
+        maybe_notify_waiter(errc::concurrent_modification_error);
+        return true;
+    }
+    return false;
 }
 
 void archival_metadata_stm::apply_update_highest_producer_id(

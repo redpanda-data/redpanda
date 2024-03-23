@@ -83,6 +83,7 @@ enum class manifest_version : int32_t {
     v1 = 1,
     v2 = 2,
     v3 = 3, // v23.3.x
+    v4 = 4, // add applied_offset field
 };
 
 enum class tx_range_manifest_version : int32_t {
