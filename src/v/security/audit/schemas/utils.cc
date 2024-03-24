@@ -239,7 +239,10 @@ api_activity_unmapped unmapped_data(const security::auth_result& auth_result) {
 actor result_to_actor(const security::auth_result& result) {
     user user{
       .name = result.principal.name(),
-      .type_id = result.is_superuser ? user::type::admin : user::type::user};
+      .type_id = result.is_superuser ? user::type::admin : user::type::user,
+      .groups = result.role ? std::vector<group>{group{
+                  .type = group::type_id::role, .name = result.role.value()}}
+                            : std::vector<group>{}};
 
     policy policy;
     policy.name = "aclAuthorization";
