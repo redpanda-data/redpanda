@@ -20,7 +20,7 @@
 #include "storage/logger.h"
 #include "storage/parser.h"
 #include "storage/parser_utils.h"
-#include "storage/segment_appender_utils.h"
+#include "storage/record_batch_utils.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>

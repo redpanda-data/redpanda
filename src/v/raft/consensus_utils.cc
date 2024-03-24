@@ -33,7 +33,7 @@
 #include "storage/offset_translator.h"
 #include "storage/offset_translator_state.h"
 #include "storage/record_batch_builder.h"
-#include "storage/segment_appender_utils.h"
+#include "storage/record_batch_utils.h"
 #include "storage/segment_utils.h"
 #include "storage/version.h"
 

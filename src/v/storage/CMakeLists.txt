@@ -18,7 +18,7 @@ v_cc_library(
     segment_set.cc
     segment.cc
     segment_index.cc
-    segment_appender_utils.cc
+    record_batch_utils.cc
     storage_resources.cc
     batch_cache.cc
     index_state.cc

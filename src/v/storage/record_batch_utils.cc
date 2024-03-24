@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "storage/segment_appender_utils.h"
+#include "storage/record_batch_utils.h"
 
 #include "model/record.h"
 #include "reflection/adl.h"

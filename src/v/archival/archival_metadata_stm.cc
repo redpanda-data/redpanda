@@ -37,7 +37,7 @@
 #include "ssx/future-util.h"
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
-#include "storage/segment_appender_utils.h"
+#include "storage/record_batch_utils.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/coroutine.hh>

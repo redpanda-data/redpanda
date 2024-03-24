@@ -22,7 +22,7 @@
 #include "storage/logger.h"
 #include "storage/parser_utils.h"
 #include "storage/readers_cache.h"
-#include "storage/segment_appender_utils.h"
+#include "storage/record_batch_utils.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
 #include "storage/storage_resources.h"

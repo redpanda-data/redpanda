@@ -18,7 +18,7 @@
 #include "model/record_batch_types.h"
 #include "model/tests/random_batch.h"
 #include "storage/parser.h"
-#include "storage/segment_appender_utils.h"
+#include "storage/record_batch_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
 
 #include <boost/test/tools/interface.hpp>

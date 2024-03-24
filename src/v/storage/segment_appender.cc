@@ -17,7 +17,7 @@
 #include "ssx/semaphore.h"
 #include "storage/chunk_cache.h"
 #include "storage/logger.h"
-#include "storage/segment_appender_utils.h"
+#include "storage/record_batch_utils.h"
 #include "storage/storage_resources.h"
 
 #include <seastar/core/align.hh>
