@@ -20,5 +20,6 @@ namespace storage {
 // batch header fields are serialized, with no additional bytes for size,
 // versions, etc.
 iobuf batch_header_to_disk_iobuf(const model::record_batch_header& h);
+model::record_batch_header header_from_iobuf(iobuf b);
 
 } // namespace storage
