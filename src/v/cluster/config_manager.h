@@ -21,6 +21,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 
 namespace YAML {
 class Node;

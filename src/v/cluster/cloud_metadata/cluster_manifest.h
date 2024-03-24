@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cloud_storage/base_manifest.h"
 #include "cluster/cloud_metadata/error_outcome.h"

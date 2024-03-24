@@ -15,6 +15,8 @@
 #include "cluster/fwd.h"
 #include "cluster/plugin_table.h"
 
+#include <seastar/core/sharded.hh>
+
 namespace cluster {
 /**
  * The plugin backend is responsible for dispatching controller updates into the

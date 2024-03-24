@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/materialized_manifest_cache.h"
 #include "cloud_storage/read_path_probes.h"
@@ -25,6 +26,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timed_out_error.hh>
 

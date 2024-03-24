@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "cluster/producer_state.h"
 #include "config/property.h"
+#include "metrics/metrics.h"
 
 #include <seastar/core/sharded.hh>
 

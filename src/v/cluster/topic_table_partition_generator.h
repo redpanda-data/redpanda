@@ -12,6 +12,8 @@
 
 #include "cluster/topic_table.h"
 
+#include <seastar/core/sharded.hh>
+
 namespace cluster {
 struct partition_replicas {
     model::ntp partition;

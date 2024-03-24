@@ -11,12 +11,13 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "cloud_storage_clients/configuration.h"
+#include "cloud_storage_clients/types.h"
 #include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "ssx/semaphore.h"
 #include "utils/named_type.h"
 #include "utils/retry_chain_node.h"
 
@@ -97,27 +98,6 @@ static constexpr int32_t topic_manifest_version = 1;
 std::ostream& operator<<(std::ostream& o, const download_result& r);
 
 std::ostream& operator<<(std::ostream& o, const upload_result& r);
-
-struct configuration {
-    /// Client configuration
-    cloud_storage_clients::client_configuration client_config;
-    /// Number of simultaneous client uploads
-    connection_limit connection_limit;
-    /// Disable metrics in the remote
-    remote_metrics_disabled metrics_disabled;
-    /// The S3 bucket or ABS container to use
-    cloud_storage_clients::bucket_name bucket_name;
-
-    model::cloud_credentials_source cloud_credentials_source;
-
-    friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
-
-    static ss::future<configuration> get_config();
-    static ss::future<configuration> get_s3_config();
-    static ss::future<configuration> get_abs_config();
-    static const config::property<std::optional<ss::sstring>>&
-    get_bucket_config();
-};
 
 struct offset_range {
     kafka::offset begin;

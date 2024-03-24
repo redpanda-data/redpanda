@@ -14,6 +14,8 @@
 #include "cluster/types.h"
 #include "test_utils/async.h"
 
+#include <seastar/core/sharded.hh>
+
 #include <chrono>
 
 static const model::ns test_ns = model::ns("test-namespace");

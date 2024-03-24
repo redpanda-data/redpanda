@@ -12,6 +12,7 @@
 
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/configuration.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_probe.h"

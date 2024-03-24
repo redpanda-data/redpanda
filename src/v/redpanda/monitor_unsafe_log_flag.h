@@ -11,8 +11,10 @@
 
 #pragma once
 
-#include "cluster/types.h"
+#include "config/property.h"
 #include "features/feature_table.h"
+
+#include <seastar/core/sharded.hh>
 
 class monitor_unsafe_log_flag {
 public:

@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/util/noncopyable_function.hh>
 
