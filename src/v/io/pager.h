@@ -100,12 +100,21 @@ private:
 
     static void handle_completion(page&) noexcept;
 
+    /// The underlying file managed by this pager.
     std::filesystem::path file_;
+
+    /// The readable size of the file.
     size_t size_;
+
+    /// Global page cache eviction. Doesn't own the pages.
     page_cache* cache_;
+
+    /// Pages that contain data for this file.
+    page_set pages_;
+
+    /// The IO scheduler and queue for IO operations on this file.
     scheduler* sched_;
     scheduler::queue queue_;
-    page_set pages_;
 };
 
 } // namespace experimental::io
