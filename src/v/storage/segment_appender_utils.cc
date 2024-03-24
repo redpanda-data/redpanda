@@ -14,7 +14,7 @@
 
 namespace storage {
 
-iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
+iobuf batch_header_to_disk_iobuf(const model::record_batch_header& h) {
     iobuf b;
     reflection::serialize(
       b,

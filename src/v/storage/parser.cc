@@ -354,7 +354,7 @@ public:
                 // might change it in-place (this is a low level tool)
                 // we're also need to update header only crc
                 _header.header_crc = model::internal_header_only_crc(_header);
-                iobuf hdr = disk_header_to_iobuf(_header);
+                iobuf hdr = batch_header_to_disk_iobuf(_header);
                 co_await write_iobuf_to_output_stream(std::move(hdr), _output);
                 co_await write_iobuf_to_output_stream(
                   std::move(body.value()), _output);

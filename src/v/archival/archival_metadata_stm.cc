@@ -582,7 +582,7 @@ ss::future<> archival_metadata_stm::create_log_segment_with_config_batches(
             b.header().header_crc = model::internal_header_only_crc(b.header());
             vlog(clusterlog.debug, "Writing archival batch {}", b.header());
             auto buffer = std::make_unique<iobuf>(
-              storage::disk_header_to_iobuf(b.header()));
+              storage::batch_header_to_disk_iobuf(b.header()));
             buffer->append(std::move(b).release_data());
             auto batch_stream = make_iobuf_input_stream(std::move(*buffer));
             co_await ss::copy(batch_stream, stream);
