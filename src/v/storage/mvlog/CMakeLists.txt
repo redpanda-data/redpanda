@@ -5,6 +5,7 @@ v_cc_library(
   SRCS
     batch_collector.cc
     entry.cc
+    entry_stream.cc
     entry_stream_utils.cc
     logger.cc
     segment_appender.cc
