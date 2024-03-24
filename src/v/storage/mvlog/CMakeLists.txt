@@ -3,6 +3,7 @@
 v_cc_library(
   NAME mvlog
   SRCS
+    batch_collecting_stream_utils.cc
     batch_collector.cc
     entry.cc
     entry_stream.cc
