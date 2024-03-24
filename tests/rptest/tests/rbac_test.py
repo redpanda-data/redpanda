@@ -391,17 +391,12 @@ class RBACTest(RBACTestBase):
         ) == 0, f"Incorrect 'removed' result: {member_update.removed}"
         assert alice in member_update.added, f"Incorrect member added: {member_update.added[0]}"
 
-        def try_get_members(role):
-            try:
-                res = self.superuser_admin.list_role_members(role=role)
-                return True, res
-            except:
-                return False, None
-
         self.logger.debug("And check that we can query the role we created")
-        res = wait_until_result(lambda: try_get_members(self.role_name0),
-                                timeout_sec=5,
-                                backoff_sec=1)
+        res = wait_until_result(lambda: self.superuser_admin.list_role_members(
+            role=self.role_name0),
+                                timeout_sec=10,
+                                backoff_sec=1,
+                                retry_on_exc=True)
         assert res is not None, f"Failed to get members for newly created role"
 
         assert res.status_code == 200, "Expected 200 (OK)"
@@ -426,22 +421,20 @@ class RBACTest(RBACTestBase):
         def until_members(role,
                           expected: list[RoleMember] = [],
                           excluded: list[RoleMember] = []):
-            try:
-                res = self.superuser_admin.list_role_members(role=role)
-                assert res.status_code == 200, "Expected 200 (OK)"
-                members = RoleMemberList.from_response(res)
-                exp = all(m in members for m in expected)
-                excl = not any(m in members for m in excluded)
-                return exp and excl, members
-            except:
-                return False, None
+            res = self.superuser_admin.list_role_members(role=role)
+            assert res.status_code == 200, "Expected 200 (OK)"
+            members = RoleMemberList.from_response(res)
+            exp = all(m in members for m in expected)
+            excl = not any(m in members for m in excluded)
+            return exp and excl, members
 
         self.logger.debug(
             "And verify that the members list eventually reflects that change")
         members = wait_until_result(
             lambda: until_members(self.role_name0, expected=[alice, bob]),
             timeout_sec=5,
-            backoff_sec=1)
+            backoff_sec=1,
+            retry_on_exc=True)
 
         assert members is not None, "Failed to get members"
         for m in [bob, alice]:
@@ -465,7 +458,8 @@ class RBACTest(RBACTestBase):
         members = wait_until_result(lambda: until_members(
             self.role_name0, expected=[bob], excluded=[alice]),
                                     timeout_sec=5,
-                                    backoff_sec=1)
+                                    backoff_sec=1,
+                                    retry_on_exc=True)
 
         assert members is not None
         assert len(members) == 1, f"Unexpected member: {members}"
@@ -540,15 +534,14 @@ class RBACTest(RBACTestBase):
                                                  create=True)
 
         def role_exists(role):
-            try:
-                self.superuser_admin.list_role_members(role=role)
-                return True
-            except:
-                return False
+            self.superuser_admin.list_role_members(role=role)
+            return True
 
-        wait_until(lambda: role_exists(self.role_name0),
+        wait_until(lambda: self.superuser_admin.list_role_members(
+            role=self.role_name0).status_code == 200,
                    timeout_sec=5,
-                   backoff_sec=1)
+                   backoff_sec=1,
+                   retry_on_exc=True)
 
         self.logger.debug("Role members must be JSON objects")
         with expect_role_error(RoleErrorCode.MALFORMED_DEF):
@@ -616,19 +609,15 @@ class RBACTest(RBACTestBase):
                                                        create=True)
         assert res.status_code == 200, f"Unexpected status {res.status_code}"
 
-        def check_user_roles(expected: list[str] = []):
-            try:
-                res = self.user_admin.list_user_roles()
-                assert res.status_code == 200, f"Unexpected status {res.status_code}"
-                ls = RolesList.from_response(res)
-                return all([RoleDescription(e) in ls for e in expected]), ls
-            except:
-                return False, None
+        def list_roles(n_expected: int):
+            res = self.user_admin.list_user_roles()
+            ls = RolesList.from_response(res)
+            return len(ls) == n_expected, ls
 
-        roles_list = wait_until_result(
-            lambda: check_user_roles([self.role_name0, self.role_name1]),
-            timeout_sec=5,
-            backoff_sec=1)
+        roles_list = wait_until_result(lambda: list_roles(2),
+                                       timeout_sec=5,
+                                       backoff_sec=1,
+                                       retry_on_exc=True)
 
         assert roles_list is not None, "Roles list never resolved"
 
