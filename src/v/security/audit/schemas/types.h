@@ -206,6 +206,17 @@ struct authorization_result {
     auto equality_fields() const { return std::tie(decision, policy); }
 };
 
+// A collection or association of entities, such as users, policies, or devices.
+// https://schema.ocsf.io/1.0.0/objects/group?extensions=
+struct group {
+    enum class type_id : int { unknown = 0, role = 1 };
+
+    type_id type{type_id::unknown};
+    ss::sstring name;
+
+    auto equality_fields() const { return std::tie(type, name); }
+};
+
 // Characteristics of a user/person or security principal
 // https://schema.ocsf.io/1.0.0/objects/user?extensions=
 struct user {
@@ -221,9 +232,10 @@ struct user {
     ss::sstring name;
     type type_id{type::unknown};
     ss::sstring uid;
+    std::vector<group> groups;
 
     auto equality_fields() const {
-        return std::tie(domain, name, type_id, uid);
+        return std::tie(domain, name, type_id, uid, groups);
     }
 };
 
@@ -452,6 +464,24 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
+inline void rjson_serialize(Writer<StringBuffer>& w, sa::group::type_id type) {
+    switch (type) {
+    case sa::group::type_id::unknown:
+        return rjson_serialize(w, std::string_view{"unknown"});
+    case sa::group::type_id::role:
+        return rjson_serialize(w, std::string_view{"role"});
+    }
+}
+
+inline void rjson_serialize(Writer<StringBuffer>& w, const sa::group& group) {
+    w.StartObject();
+    w.Key("type");
+    rjson_serialize(w, group.type);
+    w.Key("name");
+    rjson_serialize(w, group.name);
+    w.EndObject();
+}
+
 inline void rjson_serialize(Writer<StringBuffer>& w, const sa::user& user) {
     w.StartObject();
     if (!user.domain.empty()) {
@@ -465,6 +495,10 @@ inline void rjson_serialize(Writer<StringBuffer>& w, const sa::user& user) {
     if (!user.uid.empty()) {
         w.Key("uid");
         rjson_serialize(w, user.uid);
+    }
+    if (!user.groups.empty()) {
+        w.Key("groups");
+        rjson_serialize(w, user.groups);
     }
     w.EndObject();
 }

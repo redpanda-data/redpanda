@@ -48,6 +48,25 @@ static const ss::sstring default_user_ser{
 }
 )"};
 
+static const sa::user default_user_with_role{
+  .domain = "redpanda.com",
+  .name = "redpanda-user",
+  .type_id = sa::user::type::user,
+  .uid = "none",
+  .groups = std::vector<sa::group>{
+    {sa::group{.type = sa::group::type_id::role, .name = "redpanda-group"}}}};
+
+static const ss::sstring default_user_with_role_ser{
+  R"(
+{
+"domain": "redpanda.com",
+"name": "redpanda-user",
+"type_id": 1,
+"uid": "none",
+"groups" : [{"type": "role", "name": "redpanda-group"}]
+}
+)"};
+
 static const sa::authorization_result authz_success{
   .decision = "authorized",
   .policy = sa::policy{
@@ -249,7 +268,8 @@ BOOST_AUTO_TEST_CASE(validate_api_activity) {
         .count()};
     auto api_act = sa::api_activity{
       sa::api_activity::activity_id::create,
-      sa::actor{.authorizations = {authz_success}, .user = default_user},
+      sa::actor{
+        .authorizations = {authz_success}, .user = default_user_with_role},
       sa::api{api_create_topic},
       std::move(dst_endpoint),
       test_http_request(),
@@ -278,7 +298,7 @@ BOOST_AUTO_TEST_CASE(validate_api_activity) {
         "authorizations": [)"
       + authz_success_ser + R"(],
         "user": )"
-      + default_user_ser + R"(
+      + default_user_with_role_ser + R"(
     },
     "api": )"
       + api_create_topic_ser + R"(,
@@ -921,8 +941,13 @@ BOOST_AUTO_TEST_CASE(test_ocsf_size) {
       += sizeof(std::optional<ss::sstring>)
          + (status_detail.has_value() ? sizeof(ss::sstring) + status_detail->size() : 0);
     estimated_size += user.domain.size() + user.name.size() + user.uid.size()
-                      + sizeof(user.type_id) + (sizeof(ss::sstring) * 3);
+                      + sizeof(user.type_id) + (sizeof(ss::sstring) * 3)
+                      + sizeof(user.groups); // NOLINT bugprone-sizeof-container
+    if (user.groups.size() == 1) {
+        estimated_size += sizeof(user.type_id) + sizeof(user.groups[0].type)
+                          + sizeof(ss::sstring) + user.groups[0].name.size();
+    }
 
-    BOOST_CHECK_EQUAL(estimated_size, 392);
-    BOOST_CHECK_EQUAL(authn.estimated_size(), 392);
+    BOOST_CHECK_EQUAL(estimated_size, 416);
+    BOOST_CHECK_EQUAL(authn.estimated_size(), 416);
 }
