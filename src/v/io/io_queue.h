@@ -44,6 +44,9 @@ class io_queue {
 public:
     /**
      * Callback invoked when the scheduler completes an operation.
+     *
+     * Write completions are delivered only if after the write has completed the
+     * operation will not be requeued.
      */
     using completion_callback_type
       = seastar::noncopyable_function<void(page&) noexcept>;

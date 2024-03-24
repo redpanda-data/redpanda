@@ -222,9 +222,7 @@ void pager::handle_completion(page& page) noexcept {
         page.signal_waiters();
     } else if (page.test_flag(page::flags::dirty)) {
         vassert(page.test_flag(page::flags::write), "Expected write page");
-        if (!page.test_flag(page::flags::queued)) {
-            page.clear_flag(page::flags::dirty);
-        }
+        page.clear_flag(page::flags::dirty);
     }
 }
 
