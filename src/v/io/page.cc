@@ -54,7 +54,12 @@ auto underlying(T type) {
     return static_cast<std::underlying_type_t<T>>(type);
 }
 
-void page::set_flag(flags flag) noexcept { flags_.set(underlying(flag)); }
+void page::set_flag(flags flag) noexcept {
+    flags_.set(underlying(flag));
+    vassert(
+      !(test_flag(flags::dirty) && test_flag(flags::faulting)),
+      "Dirty and faulting states are mutually exclusive");
+}
 
 void page::clear_flag(flags flag) noexcept { flags_.reset(underlying(flag)); }
 
