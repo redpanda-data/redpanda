@@ -144,7 +144,7 @@ static ss::future<result<model::record_batch_header>> read_header_impl(
         // happens when we fallocate the file
         co_return parser_errc::fallocated_file_read_zero_bytes_for_header;
     }
-    auto header = header_from_iobuf(std::move(b));
+    auto header = batch_header_from_disk_iobuf(std::move(b));
 
     if (auto computed_crc = model::internal_header_only_crc(header);
         unlikely(header.header_crc != computed_crc)) {

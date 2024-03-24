@@ -39,7 +39,7 @@ iobuf batch_header_to_disk_iobuf(const model::record_batch_header& h) {
     return b;
 }
 
-model::record_batch_header header_from_iobuf(iobuf b) {
+model::record_batch_header batch_header_from_disk_iobuf(iobuf b) {
     iobuf_parser parser(std::move(b));
     auto header_crc = reflection::adl<uint32_t>{}.from(parser);
     auto sz = reflection::adl<int32_t>{}.from(parser);
