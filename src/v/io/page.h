@@ -70,7 +70,8 @@ public:
 
     /*
      * read,write: page is queued for read or write
-     * faulting: page is faulting when a read is occuring in response to a cache miss.
+     * faulting: page is faulting when a read is occuring in response to a cache
+     * miss.
      * dirty: page contains data not persisted to disk
      */
     enum class flags { faulting, dirty, read, write, queued, num_flags };
