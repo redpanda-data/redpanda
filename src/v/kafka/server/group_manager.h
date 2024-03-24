@@ -12,6 +12,7 @@
 #pragma once
 #include "base/seastarx.h"
 #include "cluster/cloud_metadata/offsets_snapshot.h"
+#include "cluster/notification.h"
 #include "cluster/topic_table.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"

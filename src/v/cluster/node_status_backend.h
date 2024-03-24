@@ -14,7 +14,7 @@
 #include "cluster/fwd.h"
 #include "cluster/node_status_rpc_types.h"
 #include "cluster/node_status_table.h"
-#include "cluster/types.h"
+#include "cluster/notification.h"
 #include "config/property.h"
 #include "features/fwd.h"
 #include "metrics/metrics.h"

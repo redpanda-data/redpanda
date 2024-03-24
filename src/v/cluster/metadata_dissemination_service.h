@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
+#include "cluster/notification.h"
 #include "config/tls_config.h"
 #include "features/fwd.h"
 #include "model/fundamental.h"

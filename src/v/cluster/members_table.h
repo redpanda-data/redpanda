@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/commands.h"
+#include "cluster/notification.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "utils/waiter_queue.h"

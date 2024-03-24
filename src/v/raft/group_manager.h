@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "cluster/types.h"
+#include "cluster/notification.h"
 #include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "raft/heartbeat_manager.h"
