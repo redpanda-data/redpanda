@@ -54,18 +54,11 @@ auto underlying(T type) {
     return static_cast<std::underlying_type_t<T>>(type);
 }
 
-void page::set_flag(flags flag) noexcept {
-    assert(flag != flags::num_flags);
-    flags_.set(underlying(flag));
-}
+void page::set_flag(flags flag) noexcept { flags_.set(underlying(flag)); }
 
-void page::clear_flag(flags flag) noexcept {
-    assert(flag != flags::num_flags);
-    flags_.reset(underlying(flag));
-}
+void page::clear_flag(flags flag) noexcept { flags_.reset(underlying(flag)); }
 
 bool page::test_flag(flags flag) const noexcept {
-    assert(flag != flags::num_flags);
     return flags_.test(underlying(flag));
 }
 
