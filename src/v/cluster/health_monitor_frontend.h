@@ -56,6 +56,12 @@ public:
     ss::future<result<node_health_report>>
       collect_node_health(node_report_filter);
 
+    /**
+     * Collects node local state into node health report. The report contains
+     * status of all partition replicas that are present on requested node.
+     */
+    ss::future<columnar_node_health_report> collect_node_health();
+
     // Return status of all nodes
     ss::future<result<std::vector<node_state>>>
       get_nodes_status(model::timeout_clock::time_point);
