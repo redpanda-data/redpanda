@@ -1344,7 +1344,11 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         self._resource_settings = rs
 
     @property
-    def si_settings(self):
+    def si_settings(self) -> SISettings:
+        '''Return the SISettings object associated with this redpanda service,
+        containing the cloud storage associated settings. Throws if si settings
+        were not configured for this service.'''
+        assert self._si_settings, 'si_settings were None, probably because they were not specified during redpanda service creation'
         return self._si_settings
 
     def for_nodes(self, nodes, cb: Callable) -> list:
@@ -3941,7 +3945,7 @@ class RedpandaService(RedpandaServiceBase):
                     for segment, data in segments.items():
                         partition.set_segment_size(segment, data["size"])
 
-        if scan_cache and self.si_settings is not None and node.account.exists(
+        if scan_cache and self._si_settings is not None and node.account.exists(
                 store.cache_dir):
             bytes = int(
                 node.account.ssh_output(

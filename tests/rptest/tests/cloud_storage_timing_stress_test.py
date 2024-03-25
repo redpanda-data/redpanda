@@ -247,13 +247,6 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                            retention_bytes=60 * log_segment_size)
 
     def __init__(self, test_context):
-        self.si_settings = SISettings(
-            test_context,
-            log_segment_size=self.log_segment_size,
-            cloud_storage_housekeeping_interval_ms=1000,
-            cloud_storage_spillover_manifest_max_segments=10,
-            cloud_storage_segment_max_upload_interval_sec=10)
-
         extra_rp_conf = dict(
             log_compaction_interval_ms=1000,
             compacted_log_segment_size=self.log_segment_size,
@@ -264,7 +257,15 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             cloud_storage_enable_segment_merging=True,
             cloud_storage_cache_chunk_size=self.chunk_size,
             cloud_storage_spillover_manifest_size=None)
-        if "googleapis" in self.si_settings.cloud_storage_api_endpoint:
+
+        si_settings = SISettings(
+            test_context,
+            log_segment_size=self.log_segment_size,
+            cloud_storage_housekeeping_interval_ms=1000,
+            cloud_storage_spillover_manifest_max_segments=10,
+            cloud_storage_segment_max_upload_interval_sec=10)
+
+        if "googleapis" in si_settings.cloud_storage_api_endpoint:
             # If the test is running on GCS we shouldn't retry earlier than
             # after 1s. GCS throttles uploads if they happen once per sencond
             # or faster (per object).
@@ -274,7 +275,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
               self).__init__(test_context=test_context,
                              extra_rp_conf=extra_rp_conf,
                              log_level="trace",
-                             si_settings=self.si_settings)
+                             si_settings=si_settings)
 
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)

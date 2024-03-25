@@ -1686,13 +1686,12 @@ class ClusterConfigAzureSharedKey(RedpandaTest):
     ), )
 
     def __init__(self, test_context):
-        self.si_settings = SISettings(test_context,
-                                      log_segment_size=self.segment_size,
-                                      fast_uploads=True)
         super().__init__(test_context,
                          log_level="trace",
-                         si_settings=self.si_settings,
-                         extra_rp_conf={})
+                         si_settings=SISettings(
+                             test_context,
+                             log_segment_size=self.segment_size,
+                             fast_uploads=True))
 
         self.kafka_cli = KafkaCliTools(self.redpanda)
 
@@ -1729,7 +1728,7 @@ class ClusterConfigAzureSharedKey(RedpandaTest):
         1. Begin with a key in-place
         2. Validate uploads work
         3. Replace the key with a bogus one
-        4. Validate uploads are failing 
+        4. Validate uploads are failing
         5. Set the key back to the initial value
         6. Validate uploads work again
         7. Try to unset the key

@@ -191,13 +191,6 @@ class CloudStorageScrubberTest(RedpandaTest):
     topics = [TopicSpec(partition_count=partition_count)]
 
     def __init__(self, test_context):
-        self.si_settings = SISettings(
-            test_context,
-            log_segment_size=self.segment_size,
-            cloud_storage_spillover_manifest_max_segments=10,
-            cloud_storage_housekeeping_interval_ms=1000 * 10,
-            fast_uploads=True)
-
         super().__init__(
             test_context=test_context,
             extra_rp_conf={
@@ -212,7 +205,12 @@ class CloudStorageScrubberTest(RedpandaTest):
                 "cloud_storage_enable_segment_merging": False,
                 "cloud_storage_spillover_manifest_size": None,
             },
-            si_settings=self.si_settings)
+            si_settings=SISettings(
+                test_context,
+                log_segment_size=self.segment_size,
+                cloud_storage_spillover_manifest_max_segments=10,
+                cloud_storage_housekeeping_interval_ms=1000 * 10,
+                fast_uploads=True))
 
         self.bucket_name = self.si_settings.cloud_storage_bucket
         self.rpk = RpkTool(self.redpanda)

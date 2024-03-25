@@ -438,12 +438,6 @@ class UsageTestCloudStorageMetrics(RedpandaTest):
     ]
 
     def __init__(self, test_context):
-        self.si_settings = SISettings(
-            test_context,
-            log_segment_size=self.log_segment_size,
-            cloud_storage_housekeeping_interval_ms=2000,
-            fast_uploads=True)
-
         # Parameters to ensure timely reporting of cloud usage stats via
         # the kafka::usage_manager
         extra_rp_conf = dict(health_monitor_max_metadata_age=2000,
@@ -453,10 +447,13 @@ class UsageTestCloudStorageMetrics(RedpandaTest):
                              log_compaction_interval_ms=2000,
                              compacted_log_segment_size=self.log_segment_size)
 
-        super(UsageTestCloudStorageMetrics,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf,
-                             si_settings=self.si_settings)
+        super(UsageTestCloudStorageMetrics, self).__init__(
+            test_context=test_context,
+            extra_rp_conf=extra_rp_conf,
+            si_settings=SISettings(test_context,
+                                   log_segment_size=self.log_segment_size,
+                                   cloud_storage_housekeeping_interval_ms=2000,
+                                   fast_uploads=True))
 
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)
