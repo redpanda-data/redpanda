@@ -880,6 +880,33 @@ def decode_bootstrap_cluster_cmd_data(rdr: Reader, version):
                 lambda rdr: rdr.read_envelope(decode_broker_serde, 0))
         }
 
+    if version >= 3:
+        decoded |= {
+            'recovery_state':
+            rdr.read_optional(lambda rdr: rdr.read_envelope(
+                lambda rdr, _: {
+                    'manifest':
+                    rdr.read_envelope(
+                        lambda rdr, _: {
+                            'upload_time_since_epoch_ns':
+                            rdr.read_int64(),
+                            'cluster_uuid':
+                            rdr.read_uuid(),
+                            'metadata_id':
+                            rdr.read_int64(),
+                            'controller_snapshot_offset':
+                            rdr.read_int64(),
+                            'controller_snapshot_path':
+                            rdr.read_string(),
+                            'offsets_snapshots_by_partition':
+                            rdr.read_serde_vector(lambda rdr: rdr.
+                                                  read_serde_vector(
+                                                      Reader.read_string)),
+                        }),
+                    'bucket':
+                    rdr.read_string(),
+                }))
+        }
     return decoded
 
 
@@ -891,7 +918,7 @@ def decode_cluster_bootstrap_command(k_rdr, rdr):
     if cmd['type'] == 0:
         cmd['type_name'] = 'bootstrap_cluster'
         cmd |= rdr.read_envelope(decode_bootstrap_cluster_cmd_data,
-                                 max_version=1)
+                                 max_version=3)
 
     return cmd
 
