@@ -1294,7 +1294,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     // we only support increasing number of partitions
     if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
         co_return make_error_result(
-          p_cfg.tp_ns, errc::topic_invalid_partitions);
+          p_cfg.tp_ns, errc::topic_invalid_partitions_decreased);
     }
     if (_topics.local().is_fully_disabled(p_cfg.tp_ns)) {
         co_return make_error_result(p_cfg.tp_ns, errc::topic_disabled);
