@@ -14,7 +14,6 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
-#include "transform/logger.h"
 #include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
@@ -23,10 +22,6 @@
 
 #include <gtest/gtest.h>
 
-#include <chrono>
-#include <cstdint>
-#include <exception>
-#include <iostream>
 #include <stdexcept>
 
 using namespace std::chrono_literals;
@@ -35,16 +30,18 @@ namespace transform::testing {
 ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
     co_await _cork.wait();
     for (auto& batch : batches) {
-        _batches.push_back(std::move(batch));
+        for (auto& r : batch.copy_records()) {
+            _records.push_back(std::move(r));
+        }
     }
     _cond_var.broadcast();
 }
 
-ss::future<model::record_batch> fake_sink::read() {
-    co_await _cond_var.wait(1s, [this] { return !_batches.empty(); });
-    auto batch = std::move(_batches.front());
-    _batches.pop_front();
-    co_return batch;
+ss::future<model::record> fake_sink::read() {
+    co_await _cond_var.wait(1s, [this] { return !_records.empty(); });
+    auto record = std::move(_records.front());
+    _records.pop_front();
+    co_return record;
 }
 
 void fake_sink::uncork() {

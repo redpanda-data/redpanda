@@ -11,13 +11,11 @@
 
 #pragma once
 
-#include "base/units.h"
 #include "model/record.h"
 #include "model/tests/randoms.h"
 #include "model/transform.h"
 #include "ssx/semaphore.h"
 #include "transform/io.h"
-#include "utils/notification_list.h"
 #include "wasm/api.h"
 #include "wasm/transform_probe.h"
 
@@ -25,7 +23,6 @@
 #include <seastar/core/condition-variable.hh>
 
 #include <optional>
-#include <utility>
 
 namespace transform::testing {
 
@@ -93,8 +90,8 @@ class fake_sink : public sink {
 public:
     ss::future<> write(ss::chunked_fifo<model::record_batch> batches) override;
 
-    ss::future<model::record_batch> read();
-    bool empty() const { return _batches.empty(); }
+    ss::future<model::record> read();
+    bool empty() const { return _records.empty(); }
 
     /**
      * Pause writes for this sink. All calls to `write` will not resolve until
@@ -108,7 +105,7 @@ public:
     void uncork();
 
 private:
-    ss::chunked_fifo<model::record_batch> _batches;
+    ss::chunked_fifo<model::record> _records;
     ss::condition_variable _cond_var;
     ssx::semaphore _cork = {ssx::semaphore::max_counter(), "fake_sink"};
 };
