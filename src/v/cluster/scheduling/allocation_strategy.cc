@@ -28,6 +28,8 @@
 
 namespace cluster {
 
+namespace {
+
 std::vector<model::node_id> solve_hard_constraints(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& current_replicas,
@@ -73,12 +75,18 @@ std::vector<model::node_id> solve_hard_constraints(
  * for a given level of constraints
  */
 std::vector<model::node_id> optimize_constraints(
-  const std::vector<model::node_id>& possible_nodes,
+  std::vector<model::node_id> possible_nodes,
   const soft_constraints_level& constraints,
   const std::vector<model::broker_shard>& current_replicas,
   const allocation_state::underlying_t& allocation_nodes) {
     vlog(
       clusterlog.trace, "optimizing soft constraints level: {}", constraints);
+
+    if (possible_nodes.size() <= 1) {
+        // nothing to optimize, choose the only node available after solving
+        // hard constraints.
+        return possible_nodes;
+    }
 
     std::vector<soft_constraint_evaluator> evaluators;
     evaluators.reserve(constraints.size());
@@ -143,7 +151,7 @@ model::node_id find_best_fit(
 
     for (const auto& lvl : constraints) {
         to_optimize = optimize_constraints(
-          to_optimize, lvl, current_replicas, allocation_nodes);
+          std::move(to_optimize), lvl, current_replicas, allocation_nodes);
         vlog(
           clusterlog.trace,
           "after optimizing soft constraints level, eligible nodes: {}",
@@ -152,6 +160,8 @@ model::node_id find_best_fit(
 
     return random_generators::random_choice(to_optimize);
 }
+
+} // namespace
 
 allocation_strategy simple_allocation_strategy() {
     class impl : public allocation_strategy::impl {
