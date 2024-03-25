@@ -397,6 +397,15 @@ partition_statuses_cstore partition_statuses_cstore::copy() const {
     return ret;
 }
 
+get_node_health_reply get_node_health_reply::copy() const {
+    return get_node_health_reply{
+      .error = error,
+      .report = report,
+      .columnar_report = columnar_report
+                           ? std::make_optional(columnar_report->copy())
+                           : std::nullopt,
+    };
+}
 
 std::ostream& operator<<(std::ostream& o, const topic_status& tl) {
     fmt::print(o, "{{topic: {}, leaders: {}}}", tl.tp_ns, tl.partitions);
@@ -442,12 +451,21 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
 }
 
 std::ostream& operator<<(std::ostream& o, const get_node_health_request& r) {
-    fmt::print(o, "{{filter: {}}}", r.filter);
+    fmt::print(
+      o,
+      "{{filter: {}, use_columnar_format: {}}}",
+      r.filter,
+      r.use_columnar_format);
     return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const get_node_health_reply& r) {
-    fmt::print(o, "{{error: {}, report: {}}}", r.error, r.report);
+    fmt::print(
+      o,
+      "{{error: {}, report: {}, columnar_report: {}}}",
+      r.error,
+      r.report,
+      r.columnar_report);
     return o;
 }
 

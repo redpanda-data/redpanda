@@ -115,13 +115,16 @@ private:
         alive is_alive = alive::no;
     };
 
+    using report_variant_t
+      = std::variant<node_health_report, columnar_node_health_report>;
+
     using status_cache_t = absl::node_hash_map<model::node_id, reply_status>;
     using report_cache_t
       = absl::node_hash_map<model::node_id, node_health_report>;
 
     void tick();
     ss::future<std::error_code> collect_cluster_health();
-    ss::future<result<node_health_report>>
+    ss::future<result<report_variant_t>>
       collect_remote_node_health(model::node_id);
     ss::future<std::error_code> maybe_refresh_cluster_health(
       force_refresh, model::timeout_clock::time_point);
@@ -136,8 +139,11 @@ private:
       collect_topic_status(partitions_filter);
     ss::future<topics_store> collect_topic_status();
 
-    result<node_health_report>
+    result<report_variant_t>
       process_node_reply(model::node_id, result<get_node_health_reply>);
+
+    ss::future<std::error_code>
+      process_health_reports(std::vector<result<report_variant_t>>);
 
     std::chrono::milliseconds max_metadata_age();
     void abort_current_refresh();

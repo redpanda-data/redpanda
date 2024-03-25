@@ -96,6 +96,18 @@ inline node_health_report random_node_health_report() {
       random_ds};
 }
 
+inline columnar_node_health_report random_columnar_node_health_report() {
+    columnar_node_health_report report;
+    report.id = tests::random_named_int<model::node_id>();
+    report.local_state = node::random_local_state();
+    report.drain_status = random_drain_status();
+    auto topics = tests::random_chunked_vector(random_topic_status);
+    for (auto& t : topics) {
+        report.topics.append(t.tp_ns, t.partitions);
+    }
+    return report;
+}
+
 inline cluster_health_report random_cluster_health_report() {
     return cluster_health_report{
       {},

@@ -38,6 +38,7 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_timeout.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
@@ -352,7 +353,7 @@ health_monitor_backend::maybe_refresh_cluster_health(
     co_return errc::success;
 }
 
-ss::future<result<node_health_report>>
+ss::future<result<health_monitor_backend::report_variant_t>>
 health_monitor_backend::collect_remote_node_health(model::node_id id) {
     const auto timeout = model::timeout_clock::now() + max_metadata_age();
     return _connections.local()
@@ -363,7 +364,7 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
         max_metadata_age(),
         [timeout](controller_client_protocol client) mutable {
             return client.collect_node_health_report(
-              get_node_health_request{.filter = node_report_filter{},.use_columnar_format = co},
+              get_node_health_request{.filter = node_report_filter{}},
               rpc::client_opts(timeout));
         })
       .then(&rpc::get_ctx_data<get_node_health_reply>)
@@ -372,7 +373,8 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
       });
 }
 
-result<node_health_report>
+namespace {
+result<std::variant<node_health_report, columnar_node_health_report>>
 map_reply_result(result<get_node_health_reply> reply) {
     if (!reply) {
         return {reply.error()};
@@ -382,8 +384,10 @@ map_reply_result(result<get_node_health_reply> reply) {
     }
     return {std::move(*reply.value().report)};
 }
+} // namespace
 
-result<node_health_report> health_monitor_backend::process_node_reply(
+result<health_monitor_backend::report_variant_t>
+health_monitor_backend::process_node_reply(
   model::node_id id, result<get_node_health_reply> reply) {
     auto res = map_reply_result(std::move(reply));
     auto [status_it, _] = _status.try_emplace(id);
@@ -408,19 +412,20 @@ result<node_health_report> health_monitor_backend::process_node_reply(
         return res.error();
     }
 
-    // TODO serialize storage_space_alert, instead of recomputing here.
-    auto& s = res.value().local_state;
-    node::local_monitor::update_alert(s.data_disk);
-    if (
-      !status_it->second.is_alive
-      && clusterlog.is_enabled(ss::log_level::info)) {
-        vlog(
-          clusterlog.info,
-          "received node {} health report, marking node as up",
-          id);
-    }
-    status_it->second.last_reply_timestamp = ss::lowres_clock::now();
-    status_it->second.is_alive = alive::yes;
+    ss::visit(res.value(), [&status_it, id](auto& report) {
+        auto& s = report.local_state;
+        node::local_monitor::update_alert(s.data_disk);
+        if (
+          !status_it->second.is_alive
+          && clusterlog.is_enabled(ss::log_level::info)) {
+            vlog(
+              clusterlog.info,
+              "received node {} health report, marking node as up",
+              id);
+        }
+        status_it->second.last_reply_timestamp = ss::lowres_clock::now();
+        status_it->second.is_alive = alive::yes;
+    });
 
     return res;
 }
@@ -435,47 +440,69 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
           if (id == _self) {
-              return collect_current_node_health(node_report_filter{});
+              return collect_current_node_health(node_report_filter{})
+                .then([](result<node_health_report> r) {
+                    return result<report_variant_t>(std::move(r));
+                });
           }
           return collect_remote_node_health(id);
       });
 
+    co_return co_await process_health_reports(std::move(reports));
+}
+
+ss::future<std::error_code> health_monitor_backend::process_health_reports(
+  std::vector<result<report_variant_t>> report_variants) {
     auto old_reports = std::exchange(_reports, {});
 
     // update nodes reports and cache cluster-level disk health
     storage::disk_space_alert cluster_disk_health
       = storage::disk_space_alert::ok;
-    for (auto& r : reports) {
-        if (r) {
-            const auto id = r.value().id;
+    for (auto& r : report_variants) {
+        if (!r) {
+            continue;
+        }
+        node_health_report final_report = ss::visit(
+          r.value(),
+          [](node_health_report& legacy_report) {
+              vlog(
+                clusterlog.debug,
+                "collected node {} legacy health report: {}",
+                legacy_report.id,
+                legacy_report);
+              return std::move(legacy_report);
+          },
+          [](columnar_node_health_report& report) {
+              vlog(
+                clusterlog.debug,
+                "collected node {} columnar health report: {}",
+                report.id,
+                report);
+              return report.materialize_legacy_report();
+          });
+        model::node_id id = final_report.id;
+        std::optional<std::reference_wrapper<const node_health_report>>
+          old_report;
+        if (auto old_i = old_reports.find(id); old_i != old_reports.end()) {
             vlog(
               clusterlog.debug,
-              "collected node {} health report: {}",
+              "(previous node report from {}: {})",
               id,
-              r.value());
-
-            std::optional<std::reference_wrapper<const node_health_report>>
-              old_report;
-            if (auto old_i = old_reports.find(id); old_i != old_reports.end()) {
-                vlog(
-                  clusterlog.debug,
-                  "(previous node report from {}: {})",
-                  id,
-                  old_i->second);
-                old_report = old_i->second;
-            } else {
-                vlog(clusterlog.debug, "(initial node report from {})", id);
-            }
-
-            for (auto& cb : _node_callbacks) {
-                cb.second(r.value(), old_report);
-            }
-            cluster_disk_health = storage::max_severity(
-              r.value().local_state.get_disk_alert(), cluster_disk_health);
-
-            _reports.emplace(id, std::move(r.value()));
+              old_i->second);
+            old_report = old_i->second;
+        } else {
+            vlog(clusterlog.debug, "(initial node report from {})", id);
         }
+
+        for (auto& cb : _node_callbacks) {
+            cb.second(final_report, old_report);
+        }
+        cluster_disk_health = storage::max_severity(
+          final_report.local_state.get_disk_alert(), cluster_disk_health);
+
+        _reports.emplace(id, std::move(final_report));
     }
+
     _reports_disk_health = cluster_disk_health;
 
     if (config::shard_local_cfg().enable_usage()) {

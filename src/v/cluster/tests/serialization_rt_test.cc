@@ -1634,11 +1634,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::get_node_health_reply data{
           .report = report,
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
         // try serde with non-default error code. adl doesn't encode error so
         // this is a serde only test.
-        data.error = cluster::errc::error_collecting_health_report;
-        roundtrip_test(data);
+        cluster::get_node_health_reply other_data{
+          .report = report,
+        };
+        other_data.error = cluster::errc::error_collecting_health_report;
+        roundtrip_test(std::move(other_data));
     }
     {
         std::vector<model::node_id> nodes;

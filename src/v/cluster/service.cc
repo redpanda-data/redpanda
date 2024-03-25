@@ -525,19 +525,31 @@ void clear_partition_sizes(node_health_report& report) {
         }
     }
 }
+
 } // namespace
 
 ss::future<get_node_health_reply>
 service::do_collect_node_health_report(get_node_health_request req) {
-    auto res = co_await _hm_frontend.local().collect_node_health(
-      std::move(req.filter));
-    if (res.has_error()) {
+    if (!req.use_columnar_format) [[unlikely]] {
+        auto res = co_await _hm_frontend.local().collect_node_health(
+          std::move(req.filter));
+        if (res.has_error()) {
+            co_return get_node_health_reply{
+              .error = map_health_monitor_error_code(res.error())};
+        }
         co_return get_node_health_reply{
-          .error = map_health_monitor_error_code(res.error())};
+          .error = errc::success,
+          .report = std::move(res.value()),
+        };
     }
+
+    /**
+     * By default collect the columnar node health report
+     */
+    auto res = co_await _hm_frontend.local().collect_node_health();
     co_return get_node_health_reply{
       .error = errc::success,
-      .report = std::move(res.value()),
+      .columnar_report = std::move(res),
     };
 }
 
