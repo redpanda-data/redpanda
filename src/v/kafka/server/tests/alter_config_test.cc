@@ -162,7 +162,7 @@ public:
     void assert_property_presented(
       const ss::sstring& resource_name,
       const ss::sstring& key,
-      const kafka::describe_configs_response resp,
+      const kafka::describe_configs_response& resp,
       const bool presented) {
         auto it = std::find_if(
           resp.data.results.begin(),
@@ -187,7 +187,7 @@ public:
 
     void assert_properties_amount(
       const ss::sstring& resource_name,
-      const kafka::describe_configs_response resp,
+      const kafka::describe_configs_response& resp,
       const size_t amount) {
         auto it = std::find_if(
           resp.data.results.begin(),
@@ -206,7 +206,7 @@ public:
       const model::topic& topic,
       const ss::sstring& key,
       const ss::sstring& value,
-      const kafka::describe_configs_response resp) {
+      const kafka::describe_configs_response& resp) {
         auto it = std::find_if(
           resp.data.results.begin(),
           resp.data.results.end(),
