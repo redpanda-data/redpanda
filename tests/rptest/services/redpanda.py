@@ -4897,36 +4897,13 @@ def make_redpanda_service(context: TestContext,
     """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
 
     # https://github.com/redpanda-data/core-internal/issues/1002
-    assert RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG not in context.globals, \
-        'make_redpanda_service should not be called in a cloud test context'
+    assert not is_redpanda_cloud(context), 'make_redpanda_service '  \
+        + 'should not be called in a cloud test context'
 
-    if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in context.globals:
-        if cloud_tier is None:
-            cloud_tier = get_config_profile_name(context.globals[
-                RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG])
-        if extra_rp_conf is not None:
-            context.logger.info(
-                f"extra_rp_conf is ignored with RedpandaServiceCloud")
-
-        assert num_brokers is None, f'num_broker specified but cloud tests cannot vary broker count'
-
-        service = RedpandaServiceCloud(context,
-                                       config_profile_name=cloud_tier,
-                                       **kwargs)
-
-    else:
-        if num_brokers is None:
-            assert cloud_tier is not None
-            num_brokers = 3
-
-        service = RedpandaService(context,
-                                  num_brokers,
-                                  extra_rp_conf=extra_rp_conf,
-                                  **kwargs)
-
-    # currently we just pretend we always return a RedpandaService, pending the
-    # deletion of the paths above that return a cloud service
-    return cast(RedpandaService, service)
+    return RedpandaService(context,
+                           num_brokers,
+                           extra_rp_conf=extra_rp_conf,
+                           **kwargs)
 
 
 def make_redpanda_cloud_service(context: TestContext,
@@ -4935,10 +4912,11 @@ def make_redpanda_cloud_service(context: TestContext,
     """Create a RedpandaServiceCloud service. This can only be used in a test
     running against Redpanda Cloud or else it will throw."""
 
-    cloud_config = context.globals.get(
-        RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG)
+    assert is_redpanda_cloud(context), 'make_redpanda_cloud_service '  \
+        + 'called but not in a cloud context (missing cloud_cluster in globals)'
 
-    assert cloud_config, "Trying to create a cloud test, but no cloud_cluster section found in config"
+    cloud_config = context.globals[
+        RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG]
 
     config_profile_name = get_config_profile_name(cloud_config)
 
