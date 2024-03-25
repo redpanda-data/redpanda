@@ -54,7 +54,7 @@ public:
       ss::sharded<partition_leaders_table>& leaders_table,
       ss::sharded<rpc::connection_cache>& conn_cache,
       size_t batch_size = topic_table_partition_generator::default_batch_size,
-      uint8_t retries_allowed = 3);
+      uint8_t retries_allowed = default_retries_allowed);
 
     ss::future<std::optional<uint64_t>> reduce();
 

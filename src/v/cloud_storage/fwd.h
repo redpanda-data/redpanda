@@ -21,7 +21,6 @@ class partition_manifest;
 class topic_manifest;
 class partition_probe;
 class async_manifest_view;
-class partition_probe;
 
 struct log_recovery_result;
 struct offset_range;
