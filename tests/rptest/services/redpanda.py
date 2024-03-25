@@ -2010,35 +2010,6 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         pods = pods or self.pods
         return self._metrics_samples(sample_patterns, pods, metrics_endpoint)
 
-    def metric_sum(
-            self,
-            metric_name,
-            metrics_endpoint: MetricsEndpoint = MetricsEndpoint.PUBLIC_METRICS,
-            ns=None,
-            topic=None,
-            nodes=None):
-        """Returns sum of metrics values of a given metric name.
-        """
-
-        count = 0
-        metrics = self.metrics(None, metrics_endpoint=metrics_endpoint)
-        for family in metrics:
-            for sample in family.samples:
-                labels = sample.labels
-                if ns:
-                    assert "redpanda_namespace" in labels or "namespace" in labels, f"Missing namespace label: {sample}"
-                    if labels.get("redpanda_namespace",
-                                  labels.get("namespace")) != ns:
-                        continue
-                if topic:
-                    assert "redpanda_topic" in labels or "topic" in labels, f"Missing topic label: {sample}"
-                    if labels.get("redpanda_topic",
-                                  labels.get("topic")) != topic:
-                        continue
-                if sample.name == metric_name:
-                    count += int(sample.value)
-        return count
-
     def metric_sum(self,
                    metric_name: str,
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
