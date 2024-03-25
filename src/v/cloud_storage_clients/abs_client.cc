@@ -773,7 +773,7 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
   [[maybe_unused]] std::optional<ss::sstring> continuation_token,
   ss::lowres_clock::duration timeout,
   std::optional<char> delimiter,
-  std::optional<item_filter> gather_item_if) {
+  std::optional<item_filter>) {
     auto header = _requestor.make_list_blobs_request(
       name,
       _adls_client.has_value(),

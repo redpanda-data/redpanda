@@ -34,12 +34,12 @@ inline storage::disk_log_builder make_log_builder(std::string_view data_path) {
 }
 
 struct segment_spec {
-    size_t start_offset;
-    size_t end_offset;
+    model::offset start_offset;
+    model::offset end_offset;
     size_t size_bytes;
     std::optional<model::timestamp> timestamp{std::nullopt};
-    size_t start_kafka_offset;
-    size_t end_kafka_offset;
+    model::offset start_kafka_offset;
+    model::offset end_kafka_offset;
 
     segment_spec(
       size_t start,
@@ -75,7 +75,7 @@ inline void populate_local_log(
   storage::disk_log_builder& b, const std::vector<segment_spec>& segs) {
     for (const auto& spec : segs) {
         auto record_batch = make_random_batch(model::test::record_batch_spec{
-          .offset = model::offset{spec.start_offset},
+          .offset = spec.start_offset,
           .allow_compression = false,
           .count = 1,
           .record_sizes = std::vector<size_t>{spec.size_bytes},
@@ -91,8 +91,8 @@ inline void populate_manifest(
     for (const auto& spec : segs) {
         m.add(
           {.size_bytes = spec.size_bytes,
-           .base_offset = model::offset{spec.start_offset},
-           .committed_offset = model::offset{spec.end_offset},
+           .base_offset = spec.start_offset,
+           .committed_offset = spec.end_offset,
            .max_timestamp = spec.timestamp ? *spec.timestamp
                                            : model::timestamp::now(),
            .delta_offset = model::offset_delta(

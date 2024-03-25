@@ -497,8 +497,8 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
       _parent.ntp(),
       topic_cfg);
 
-    auto replication_factor = cluster::replication_factor{
-      _parent.raft()->config().current_config().voters.size()};
+    auto replication_factor = cluster::replication_factor(
+      _parent.raft()->config().current_config().voters.size());
 
     try {
         retry_chain_node fib(
@@ -1243,6 +1243,7 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
   upload_candidate candidate,
   std::vector<ss::rwlock::holder> segment_read_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    auto holder = std::move(segment_read_locks);
     vassert(
       candidate.remote_sources.empty(),
       "This method can only work with local segments");
