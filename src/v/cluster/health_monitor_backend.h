@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/notification.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"

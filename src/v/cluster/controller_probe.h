@@ -12,7 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "cluster/types.h"
+#include "cluster/notification.h"
 #include "metrics/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>

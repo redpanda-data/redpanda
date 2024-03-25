@@ -20,6 +20,8 @@
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 
+#include <seastar/core/sharded.hh>
+
 namespace kafka {
 
 ss::future<bool> try_create_consumer_group_topic(

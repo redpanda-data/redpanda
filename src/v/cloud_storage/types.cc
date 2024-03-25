@@ -11,6 +11,7 @@
 #include "cloud_storage/types.h"
 
 #include "base/vlog.h"
+#include "cloud_storage/configuration.h"
 #include "cloud_storage/logger.h"
 
 #include <absl/container/node_hash_set.h>

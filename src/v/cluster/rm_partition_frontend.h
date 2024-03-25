@@ -18,6 +18,7 @@
 #include "rpc/fwd.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/sharded.hh>
 
 namespace cluster {
 

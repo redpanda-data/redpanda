@@ -20,6 +20,9 @@
 #include <seastar/util/defer.hh>
 
 #include <bit>
+#include <chrono>
+
+using namespace std::chrono_literals;
 
 // Befriended to expose internal state in tests.
 struct test_fixture;

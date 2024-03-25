@@ -17,6 +17,9 @@
 #include "kafka/server/handlers/topics/types.h"
 
 #include <charconv>
+#include <chrono>
+
+using namespace std::chrono_literals;
 
 namespace kafka {
 

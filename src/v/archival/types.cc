@@ -11,12 +11,18 @@
 #include "archival/types.h"
 
 #include "archival/logger.h"
+#include "cloud_storage/configuration.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
+#include "net/types.h"
 
 #include <fmt/chrono.h>
 #include <fmt/format.h>
+
+#include <chrono>
+
+using namespace std::chrono_literals;
 
 namespace archival {
 

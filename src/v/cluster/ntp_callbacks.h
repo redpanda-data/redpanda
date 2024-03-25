@@ -10,7 +10,9 @@
  */
 
 #pragma once
-#include "cluster/types.h"
+
+#include "cluster/notification.h"
+#include "model/fundamental.h"
 
 #include <absl/container/flat_hash_map.h>
 

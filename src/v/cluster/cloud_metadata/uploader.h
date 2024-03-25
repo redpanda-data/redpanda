@@ -13,6 +13,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/types.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
+#include "cluster/notification.h"
 #include "cluster/types.h"
 #include "config/property.h"
 #include "storage/fwd.h"

@@ -12,6 +12,7 @@
 
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
+#include "cluster/notification.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"
 #include "config/property.h"

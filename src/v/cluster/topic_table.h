@@ -12,8 +12,8 @@
 #pragma once
 
 #include "cluster/commands.h"
+#include "cluster/notification.h"
 #include "cluster/topic_table_probe.h"
-#include "cluster/types.h"
 #include "container/contiguous_range_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

@@ -13,6 +13,7 @@
 
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
+#include "cluster/notification.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -20,6 +21,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 
 namespace YAML {
 class Node;
