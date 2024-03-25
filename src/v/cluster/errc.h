@@ -79,6 +79,10 @@ enum class errc : int16_t {
     invalid_partition_operation,
     concurrent_modification_error,
     transform_count_limit_exceeded,
+    topic_invalid_partitions_core_limit,
+    topic_invalid_partitions_memory_limit,
+    topic_invalid_partitions_fd_limit,
+    topic_invalid_partitions_decreased,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -229,6 +233,14 @@ struct errc_category final : public std::error_category {
             return "Concurrent modification error";
         case errc::transform_count_limit_exceeded:
             return "Too many transforms deployed";
+        case errc::topic_invalid_partitions_core_limit:
+            return "Can not increase partition count due to core limit";
+        case errc::topic_invalid_partitions_memory_limit:
+            return "Can not increase partition count due to memory limit";
+        case errc::topic_invalid_partitions_fd_limit:
+            return "Can not increase partition count due to FD limit";
+        case errc::topic_invalid_partitions_decreased:
+            return "Can not decrease the number of partitions";
         }
         return "cluster::errc::unknown";
     }
