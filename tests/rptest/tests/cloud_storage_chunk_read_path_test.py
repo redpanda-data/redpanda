@@ -26,17 +26,15 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         self.log_segment_size = 1048576 * 5
         self.test_context = test_context
         self.message_size = 1024
-        self.si_settings = SISettings(
-            test_context=test_context,
-            log_segment_size=self.log_segment_size,
-        )
-        self.si_settings.load_context(self.logger, test_context=test_context)
 
         self.default_chunk_size = 1024 * 256
         super().__init__(test_context=test_context,
                          node_prealloc_count=1,
                          num_brokers=3,
-                         si_settings=self.si_settings,
+                         si_settings=SISettings(
+                             test_context=test_context,
+                             log_segment_size=self.log_segment_size,
+                         ),
                          extra_rp_conf={
                              'cloud_storage_cache_chunk_size':
                              self.default_chunk_size

@@ -43,7 +43,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
             "log_compaction_interval_ms": 1000,
             "cloud_storage_spillover_manifest_size": None,
         }
-        self.si_settings = SISettings(
+        si_settings = SISettings(
             test_context,
             log_segment_size=OffsetForLeaderEpochArchivalTest.segment_size,
             cloud_storage_cache_size=5 *
@@ -51,14 +51,14 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
         if test_context.function_name == 'test_querying_archive':
             self.extra_rp_conf[
                 'cloud_storage_spillover_manifest_max_segments'] = 10
-            self.si_settings.log_segment_size = 1024
-            self.si_settings.fast_uploads = True,
-            self.si_settings.cloud_storage_housekeeping_interval_ms = 10000
+            si_settings.log_segment_size = 1024
+            si_settings.fast_uploads = True,
+            si_settings.cloud_storage_housekeeping_interval_ms = 10000
 
         super(OffsetForLeaderEpochArchivalTest,
               self).__init__(test_context=test_context,
                              extra_rp_conf=self.extra_rp_conf,
-                             si_settings=self.si_settings)
+                             si_settings=si_settings)
 
     def _alter_topic_retention_with_retry(self, topic):
         rpk = RpkTool(self.redpanda)

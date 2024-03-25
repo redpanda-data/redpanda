@@ -59,19 +59,17 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
         self.extra_rp_conf['cloud_storage_disable_chunk_reads'] = True
         self.extra_rp_conf['cloud_storage_spillover_manifest_size'] = None
 
-        self.si_settings = SISettings(
-            test_context,
-            cloud_storage_max_connections=10,
-            log_segment_size=1024 * 1024,  # 1MB
-            fast_uploads=True,
-        )
-
-        super(TieredStorageTest,
-              self).__init__(test_context=test_context,
-                             si_settings=self.si_settings,
-                             extra_rp_conf=self.extra_rp_conf,
-                             environment=environment,
-                             log_level="trace")
+        super(TieredStorageTest, self).__init__(
+            test_context=test_context,
+            extra_rp_conf=self.extra_rp_conf,
+            environment=environment,
+            log_level="trace",
+            si_settings=SISettings(
+                test_context,
+                cloud_storage_max_connections=10,
+                log_segment_size=1024 * 1024,  # 1MB
+                fast_uploads=True,
+            ))
 
         self.s3_bucket_name = self.si_settings.cloud_storage_bucket
 
