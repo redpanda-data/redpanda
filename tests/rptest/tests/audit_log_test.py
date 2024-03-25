@@ -1728,12 +1728,23 @@ class AuditLogTestOauth(AuditLogTestBase):
                     'name'] == username and (record['user']['uid'] == sub
                                              if sub is not None else True)
 
+    @staticmethod
+    def oidc_metadata_filter_function(service_name: str, topic: str,
+                                      username: str, record):
+        return record['class_uid'] == 6003 and record['api']['service'][
+            'name'] == service_name and record['api'][
+                'operation'] == 'metadata' and record.get('resources') and any(
+                    resource['type'] == 'topic' and resource['name'] == topic
+                    for resource in record.get('resources')
+                ) and record['actor']['user']['name'] == username
+
     @cluster(num_nodes=6)
     def test_kafka_oauth(self):
         """
         Validate that authentication events using OAUTH in Kafka
         generate valid audit messages
         """
+        self.modify_audit_event_types(['describe', 'authenticate'])
         kc_node = self.keycloak.nodes[0]
         self.super_rpk.create_topic(self.example_topic)
         service_user_id = self.keycloak.admin_ll.get_user_id(
@@ -1773,6 +1784,15 @@ class AuditLogTestOauth(AuditLogTestBase):
         assert len(records) == len(
             ip_set), f"Expected one record but received {len(records)}"
 
+        records = self.read_all_from_audit_log(
+            partial(self.oidc_metadata_filter_function,
+                    self.kafka_rpc_service_name, self.example_topic,
+                    service_user_id),
+            lambda records: self.aggregate_count(records) >= 1)
+
+        assert 1 == len(
+            records), f"Expected one record but received {len(records)}"
+
     @cluster(num_nodes=6)
     def test_admin_oauth(self):
         """
@@ -1811,7 +1831,11 @@ class AuditLogTestOauth(AuditLogTestBase):
                     userinfo['sub'], None),
             lambda records: self.aggregate_count(records) >= 1)
 
-        assert len(records) == 1, f"Expected one record got {len(records)}"
+        ip_set = set()
+        [ip_set.add(r["dst_endpoint"]["ip"]) for r in records]
+
+        assert len(records) == len(
+            ip_set), f"Expected one record but received {len(records)}"
 
 
 class AuditLogTestSchemaRegistry(AuditLogTestBase):
