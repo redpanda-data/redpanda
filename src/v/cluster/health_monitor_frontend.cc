@@ -11,6 +11,7 @@
 #include "cluster/health_monitor_frontend.h"
 
 #include "cluster/health_monitor_backend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "config/property.h"
 #include "model/timeout_clock.h"
@@ -73,6 +74,7 @@ health_monitor_frontend::collect_node_health(node_report_filter f) {
           return be.collect_current_node_health(std::move(f));
       });
 }
+
 std::optional<alive>
 health_monitor_frontend::is_alive(model::node_id id) const {
     auto status = _node_status_table.local().get_node_status(id);
@@ -82,6 +84,14 @@ health_monitor_frontend::is_alive(model::node_id id) const {
     return alive(
       status->last_seen + _alive_timeout() >= model::timeout_clock::now());
 }
+
+ss::future<columnar_node_health_report>
+health_monitor_frontend::collect_node_health() {
+    return dispatch_to_backend([](health_monitor_backend& be) mutable {
+        return be.collect_current_node_health();
+    });
+}
+
 ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
 health_monitor_frontend::get_node_drain_status(
   model::node_id node_id, model::timeout_clock::time_point deadline) {

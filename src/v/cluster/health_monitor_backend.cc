@@ -363,7 +363,7 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
         max_metadata_age(),
         [timeout](controller_client_protocol client) mutable {
             return client.collect_node_health_report(
-              get_node_health_request{.filter = node_report_filter{}},
+              get_node_health_request{.filter = node_report_filter{},.use_columnar_format = co},
               rpc::client_opts(timeout));
         })
       .then(&rpc::get_ctx_data<get_node_health_reply>)
@@ -536,6 +536,25 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
 
     co_return ret;
 }
+
+ss::future<columnar_node_health_report>
+health_monitor_backend::collect_current_node_health() {
+    vlog(clusterlog.debug, "collecting health report");
+    columnar_node_health_report ret;
+    ret.id = _self;
+
+    ret.local_state = _local_monitor.local().get_state_cached();
+    ret.local_state.logical_version
+      = features::feature_table::get_latest_logical_version();
+
+    ret.drain_status = co_await _drain_manager.local().status();
+    ret.topics = co_await collect_topic_status();
+    auto [it, _] = _status.try_emplace(ret.id);
+    it->second.is_alive = alive::yes;
+    it->second.last_reply_timestamp = ss::lowres_clock::now();
+    co_return ret;
+}
+
 namespace {
 
 struct ntp_report {
@@ -624,7 +643,21 @@ health_monitor_backend::collect_topic_status(partitions_filter filters) {
 
     co_return topics;
 }
+ss::future<topics_store> health_monitor_backend::collect_topic_status() {
+    auto reports_map = co_await _partition_manager.map_reduce0(
+      [](partition_manager& pm) {
+          return collect_shard_local_reports(pm, partitions_filter{});
+      },
+      reports_acc_t{},
+      &reduce_reports_map);
 
+    topics_store topics;
+    for (auto& [tp_ns, partitions] : reports_map) {
+        topics.append(tp_ns, partitions);
+    }
+
+    co_return topics;
+}
 std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
     return config::shard_local_cfg().health_monitor_max_metadata_age();
 }

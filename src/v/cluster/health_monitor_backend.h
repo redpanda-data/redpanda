@@ -71,6 +71,12 @@ public:
     ss::future<result<node_health_report>>
       collect_current_node_health(node_report_filter);
 
+    /**
+     * Collects current node health and returns the report using columnar
+     * format.
+     */
+    ss::future<columnar_node_health_report> collect_current_node_health();
+
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);
 
@@ -128,6 +134,7 @@ private:
 
     ss::future<chunked_vector<topic_status>>
       collect_topic_status(partitions_filter);
+    ss::future<topics_store> collect_topic_status();
 
     result<node_health_report>
       process_node_reply(model::node_id, result<get_node_health_reply>);

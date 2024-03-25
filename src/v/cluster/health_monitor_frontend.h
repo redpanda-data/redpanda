@@ -65,6 +65,12 @@ public:
       collect_node_health(node_report_filter);
 
     /**
+     * Collects node local state into node health report. The report contains
+     * status of all partition replicas that are present on requested node.
+     */
+    ss::future<columnar_node_health_report> collect_node_health();
+
+    /**
      * Return drain status for a given node.
      */
     ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
