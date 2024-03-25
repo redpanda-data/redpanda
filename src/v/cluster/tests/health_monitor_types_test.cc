@@ -20,6 +20,7 @@
 #include "test_utils/test.h"
 #include "utils/human.h"
 
+#include <fmt/format.h>
 #include <fmt/ostream.h>
 #include <gtest/gtest.h>
 
@@ -151,4 +152,19 @@ TEST(health_monitor_types, iteration_types) {
             (void)(p);
         }
     }
+}
+
+TEST(health_monitor_types, test_empty_topic) {
+    topics_store topics;
+
+    topics.append(make_tp_ns(), make_partition_statues(1));
+    topics.append(make_tp_ns(), make_partition_statues(3));
+    topics.append(make_tp_ns(), make_partition_statues(2));
+    topics.append(make_tp_ns(), {});
+    topics.append(make_tp_ns(), make_partition_statues(2));
+
+    fmt::print("topics: {}\n", fmt::join(topics, ",\n"));
+    auto buffer = serde::to_iobuf(topics.copy());
+    auto deserialized = serde::from_iobuf<topics_store>(std::move(buffer));
+    fmt::print("topics: {}\n", fmt::join(deserialized, ",\n"));
 }
