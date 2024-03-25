@@ -1695,30 +1695,6 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             'ResourceSettings: setting dedicated_nodes=True because serving from redpanda cloud'
         )
 
-    @property
-    def kubectl(self):
-        assert self.__kubectl, 'kubectl accessed before cluster was started?'
-        return self.__kubectl
-
-    def who_am_i(self):
-        return self._cloud_cluster.cluster_id
-
-    def security_config(self):
-        return dict(security_protocol='SASL_SSL',
-                    sasl_mechanism=self._superuser.algorithm,
-                    sasl_plain_username=self._superuser.username,
-                    sasl_plain_password=self._superuser.password,
-                    enable_tls=True)
-
-    def rebuild_pods_classes(self):
-        """Querry pods and create Classes fresh
-        """
-        self.pods = [
-            CloudBroker(p, self.kubectl, self.logger)
-            for p in self.get_redpanda_pods()
-        ]
-
-    def start(self, **kwargs):
         cluster_id = self._cloud_cluster.create(superuser=self._superuser)
         remote_uri = f'redpanda@{cluster_id}-agent'
         self.__kubectl = KubectlTool(
@@ -1734,6 +1710,34 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         node_count = self.config_profile['nodes_count']
         assert self._min_brokers <= node_count, f'Not enough brokers: test needs {self._min_brokers} but cluster has {node_count}'
+
+    def rebuild_pods_classes(self):
+        """Querry pods and create Classes fresh
+        """
+        self.pods = [
+            CloudBroker(p, self.kubectl, self.logger)
+            for p in self.get_redpanda_pods()
+        ]
+
+    @property
+    def kubectl(self):
+        assert self.__kubectl, 'kubectl accessed before cluster was started?'
+        return self.__kubectl
+
+    def who_am_i(self):
+        return self._cloud_cluster.cluster_id
+
+    def security_config(self):
+        return dict(security_protocol='SASL_SSL',
+                    sasl_mechanism=self._superuser.algorithm,
+                    sasl_plain_username=self._superuser.username,
+                    sasl_plain_password=self._superuser.password,
+                    enable_tls=True)
+
+    def start(self):
+        """Does nothing, do not call."""
+        # everything here was moved into __init__
+        pass
 
     def format_pod_status(self, pods):
         statuses_list = [(p['metadata']['name'], p['status']['phase'])
