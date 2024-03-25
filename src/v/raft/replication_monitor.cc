@@ -14,6 +14,8 @@
 #include "raft/consensus.h"
 #include "raft/errc.h"
 
+#include <ranges>
+
 namespace raft {
 
 replication_monitor::replication_monitor(consensus* r)
@@ -41,6 +43,20 @@ replication_monitor::replication_monitor(consensus* r)
               }
           });
     });
+}
+
+std::ostream& operator<<(std::ostream& o, const replication_monitor& mon) {
+    static constexpr size_t max_waiters_to_print = 3;
+    auto to_copy = std::min(mon._waiters.size(), max_waiters_to_print);
+    auto view = std::views::values(mon._waiters);
+    auto begin = view.begin();
+    auto end = std::next(begin, static_cast<long>(to_copy));
+    fmt::print(
+      o,
+      "{{count: {}, waiters: [{}]}}",
+      mon._waiters.size(),
+      fmt::join(begin, end, ","));
+    return o;
 }
 
 std::ostream&

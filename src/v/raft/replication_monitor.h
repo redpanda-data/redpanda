@@ -93,6 +93,7 @@ private:
     ss::condition_variable _committed_event_cv;
 
 public:
+    friend std::ostream& operator<<(std::ostream&, const replication_monitor&);
     friend std::ostream& operator<<(std::ostream&, const waiter&);
     friend std::ostream& operator<<(std::ostream&, const wait_type&);
 };

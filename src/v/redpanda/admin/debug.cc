@@ -68,6 +68,7 @@ void fill_raft_state(
     raft_state.write_caching_enabled = src.write_caching_enabled;
     raft_state.flush_bytes = src.flush_bytes;
     raft_state.flush_ms = src.flush_ms.count();
+    raft_state.replication_monitor_state = src.replication_monitor_state;
     if (src.followers) {
         for (const auto& f : *src.followers) {
             ss::httpd::debug_json::raft_follower_state follower_state;

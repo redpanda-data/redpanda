@@ -3924,7 +3924,7 @@ struct partition_stm_state
 struct partition_raft_state
   : serde::envelope<
       partition_raft_state,
-      serde::version<3>,
+      serde::version<4>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -3949,6 +3949,7 @@ struct partition_raft_state
     bool write_caching_enabled;
     size_t flush_bytes;
     std::chrono::milliseconds flush_ms;
+    ss::sstring replication_monitor_state;
 
     struct follower_state
       : serde::envelope<
@@ -4040,7 +4041,8 @@ struct partition_raft_state
           recovery_state,
           write_caching_enabled,
           flush_bytes,
-          flush_ms);
+          flush_ms,
+          replication_monitor_state);
     }
 
     friend bool
