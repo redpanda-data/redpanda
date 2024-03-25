@@ -2572,6 +2572,15 @@ configuration::configuration()
       "default this value is calculated automaticaly",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , partition_autobalancing_topic_aware(
+      *this,
+      "partition_autobalancing_topic_aware",
+      "If true, Redpanda will prioritize balancing topic-wise number of "
+      "partitions on each node, as opposed to balancing the total number of "
+      "partitions. This should give better balancing results if topics with "
+      "diverse partition sizes and load profiles are present in the cluster.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
   , enable_leader_balancer(
       *this,
       "enable_leader_balancer",
