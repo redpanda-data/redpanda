@@ -10,14 +10,11 @@
  */
 
 #include "bytes/random.h"
-#include "container/zip.h"
 #include "gmock/gmock.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
-#include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "test_utils/async.h"
@@ -34,8 +31,6 @@
 #include <functional>
 #include <iterator>
 #include <memory>
-#include <ranges>
-#include <tuple>
 #include <unistd.h>
 #include <vector>
 
@@ -201,9 +196,8 @@ public:
     std::vector<model::record>
     read_records(model::output_topic_index idx, size_t n) {
         std::vector<model::record> records;
-        while (n > records.size()) {
-            auto read = _sinks[idx()]->read().get().copy_records();
-            std::move(read.begin(), read.end(), std::back_inserter(records));
+        for (size_t i = 0; i < n; ++i) {
+            records.push_back(_sinks[idx()]->read().get());
         }
         return records;
     }
