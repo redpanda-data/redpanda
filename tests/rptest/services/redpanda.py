@@ -4929,7 +4929,7 @@ def make_redpanda_cloud_service(context: TestContext,
                                 min_brokers=min_brokers)
 
 
-def make_redpanda_service_mixed(context: TestContext, *, min_brokers: int = 3):
+def make_redpanda_mixed_service(context: TestContext, *, min_brokers: int = 3):
     """Creates either a RedpandaService or RedpandaServiceCloud depending on which
     environemnt we are running in. This allows you to write a so-called 'mixed' test
     which can run against services of different types.
