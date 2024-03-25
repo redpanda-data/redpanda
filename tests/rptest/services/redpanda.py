@@ -1297,24 +1297,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
         pass
 
-    def raw_metrics(
-            self,
-            node,
-            metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
-        assert node in self._started, f"Node {node.account.hostname} is not started"
-
-        url = f"http://{node.account.hostname}:9644/{metrics_endpoint.value}"
-        resp = requests.get(url, timeout=10)
-        assert resp.status_code == 200
-        return resp.text
-
-    def metrics(self,
-                node,
-                metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
-        '''Parse the prometheus text format metric from a given node.'''
-        text = self.raw_metrics(node, metrics_endpoint)
-        return text_string_to_metric_families(text)
-
     def metric_sum(self,
                    metric_name: str,
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
@@ -3263,6 +3245,24 @@ class RedpandaService(RedpandaServiceBase):
                 )
             else:
                 raise NodeCrash(crashes)
+
+    def raw_metrics(
+            self,
+            node,
+            metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
+        assert node in self._started, f"Node {node.account.hostname} is not started"
+
+        url = f"http://{node.account.hostname}:9644/{metrics_endpoint.value}"
+        resp = requests.get(url, timeout=10)
+        assert resp.status_code == 200
+        return resp.text
+
+    def metrics(self,
+                node,
+                metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
+        '''Parse the prometheus text format metric from a given node.'''
+        text = self.raw_metrics(node, metrics_endpoint)
+        return text_string_to_metric_families(text)
 
     def cloud_storage_diagnostics(self):
         """
