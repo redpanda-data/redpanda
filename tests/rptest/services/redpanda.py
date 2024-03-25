@@ -966,7 +966,7 @@ class RedpandaServiceABC(ABC):
     @abstractmethod
     def metrics(self,
                 node,
-                mmetrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
+                metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
         '''Implement this method to parse the prometheus text format metric from a given node.'''
         pass
 
