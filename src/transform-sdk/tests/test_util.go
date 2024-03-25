@@ -56,7 +56,7 @@ func startRedpanda(ctx context.Context) (*redpanda.Container, context.CancelFunc
 			if req.LogConsumerCfg == nil {
 				req.LogConsumerCfg = &testcontainers.LogConsumerConfig{}
 			}
-			// Comment this out to get broker logs
+			// Uncomment this to get broker logs
 			// req.LogConsumerCfg.Consumers = append(req.LogConsumerCfg.Consumers, &stdoutLogConsumer{})
 		}),
 		redpanda.WithEnableWasmTransform(),

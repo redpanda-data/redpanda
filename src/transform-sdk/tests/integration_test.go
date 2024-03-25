@@ -46,6 +46,11 @@ func TestMain(m *testing.M) {
 		log.Fatalf("unable to access Admin API Address: %v", err)
 	}
 	adminClient = NewAdminAPIClient(adminURL)
+	for _, logger := range []string{"transform", "wasm"} {
+		if err := adminClient.SetLogLevel(ctx, logger, "trace"); err != nil {
+			log.Fatalf("unable to set log level: %v", err)
+		}
+	}
 
 	// Setup broker
 	broker, err := container.KafkaSeedBroker(ctx)
