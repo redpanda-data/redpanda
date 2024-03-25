@@ -15,6 +15,8 @@
 #include "compat/json.h"
 #include "compat/model_json.h"
 #include "compat/storage_json.h"
+#include "container/fragmented_vector.h"
+#include "model/metadata.h"
 
 namespace json {
 
@@ -310,6 +312,41 @@ inline void rjson_serialize(
 }
 
 inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::topics_store& f) {
+    w.StartObject();
+    w.Key("topics");
+    w.StartArray();
+    for (auto& ts : f) {
+        w.StartObject();
+        w.Key("tp_ns");
+        rjson_serialize(w, model::topic_namespace(ts.tp_ns));
+        w.Key("partitions");
+        w.StartArray();
+        for (auto& ps : ts.partitions) {
+            rjson_serialize(w, ps);
+        }
+        w.EndArray();
+        w.EndObject();
+    }
+    w.EndArray();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::columnar_node_health_report& f) {
+    w.StartObject();
+    w.Key("id");
+    rjson_serialize(w, f.id);
+    w.Key("local_state");
+    rjson_serialize(w, f.local_state);
+    w.Key("topics");
+    rjson_serialize(w, f.topics);
+    w.Key("drain_status");
+    rjson_serialize(w, f.drain_status);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const cluster::node_state& f) {
     w.StartObject();
     w.Key("id");
@@ -419,6 +456,24 @@ inline void read_value(json::Value const& rd, cluster::node::local_state& obj) {
     obj = cluster::node::local_state{
       {}, redpanda_version, logical_version, uptime};
     obj.set_disks(disks);
+}
+
+inline void
+read_value(json::Value const& rd, cluster::columnar_node_health_report& obj) {
+    read_member(rd, "id", obj.id);
+    read_member(rd, "local_state", obj.local_state);
+    read_member(rd, "drain_status", obj.drain_status);
+    auto topics = rd.FindMember("topics");
+
+    for (auto it = topics->value.MemberBegin(); it != topics->value.MemberEnd();
+         ++it) {
+        model::topic_namespace tp_ns;
+        chunked_vector<cluster::partition_status> statuses;
+        read_value(it->value.FindMember("tp_ns")->value, tp_ns);
+        read_value(it->value.FindMember("partitions")->value, statuses);
+
+        obj.topics.append(tp_ns, statuses);
+    }
 }
 
 inline void

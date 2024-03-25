@@ -19,6 +19,7 @@
 #include "utils/named_type.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
@@ -735,15 +736,21 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
 /**
  * RPC requests
  */
-
+using columnar_version = ss::bool_class<struct collect_columnar_tag>;
 struct get_node_health_request
   : serde::envelope<
       get_node_health_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     node_report_filter filter;
+    /**
+     * Default to false so that the nodes which does not support the columnar
+     * representation of report are automaticaly requesting report in old
+     * format.
+     */
+    columnar_version use_columnar_format = columnar_version::no;
 
     friend bool
     operator==(const get_node_health_request&, const get_node_health_request&)
@@ -752,18 +759,21 @@ struct get_node_health_request
     friend std::ostream&
     operator<<(std::ostream&, const get_node_health_request&);
 
-    auto serde_fields() { return std::tie(filter); }
+    auto serde_fields() { return std::tie(filter, use_columnar_format); }
 };
 
 struct get_node_health_reply
   : serde::envelope<
       get_node_health_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     errc error = cluster::errc::success;
     std::optional<node_health_report> report;
+    std::optional<columnar_node_health_report> columnar_report;
+
+    get_node_health_reply copy() const;
 
     friend bool
     operator==(const get_node_health_reply&, const get_node_health_reply&)
@@ -772,7 +782,7 @@ struct get_node_health_reply
     friend std::ostream&
     operator<<(std::ostream&, const get_node_health_reply&);
 
-    auto serde_fields() { return std::tie(error, report); }
+    auto serde_fields() { return std::tie(error, report, columnar_report); }
 };
 
 struct get_cluster_health_request
