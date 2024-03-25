@@ -767,17 +767,8 @@ struct get_node_health_request
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    static constexpr int8_t initial_version = 0;
-    // version -1: included revision id in partition status
-    static constexpr int8_t revision_id_version = -1;
-    // version -2: included size_bytes in partition status
-    static constexpr int8_t size_bytes_version = -2;
-
-    static constexpr int8_t current_version = size_bytes_version;
 
     node_report_filter filter;
-    // this field is not serialized
-    int8_t decoded_version = current_version;
 
     friend bool
     operator==(const get_node_health_request&, const get_node_health_request&)
@@ -795,7 +786,6 @@ struct get_node_health_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
     std::optional<node_health_report> report;
