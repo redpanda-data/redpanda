@@ -48,9 +48,9 @@ soft_constraint::make_evaluator(const replicas_t& current_replicas) const {
 std::ostream& operator<<(std::ostream& o, const allocation_constraints& a) {
     fmt::print(
       o,
-      "{{soft_constraints: {}, hard_constraints: {}}}",
-      a.soft_constraints,
-      a.hard_constraints);
+      "{{hard_constraints: {}, soft_constraints: {}}}",
+      a.hard_constraints,
+      a.soft_constraints);
     return o;
 }
 

@@ -70,7 +70,7 @@ public:
 
 private:
     friend std::ostream& operator<<(std::ostream& o, const hard_constraint& c) {
-        fmt::print(o, "hard constraint: [{}]", c.name());
+        fmt::print(o, "hard: [{}]", c.name());
         return o;
     }
     std::unique_ptr<impl> _impl;
@@ -105,7 +105,7 @@ public:
 
 private:
     friend std::ostream& operator<<(std::ostream& o, const soft_constraint& c) {
-        fmt::print(o, "soft constraint: [{}]", c.name());
+        fmt::print(o, "soft: [{}]", c.name());
         return o;
     }
 
