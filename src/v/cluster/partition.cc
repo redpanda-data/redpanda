@@ -443,6 +443,11 @@ ss::future<> partition::start(std::optional<topic_configuration> topic_cfg) {
         co_return co_await _raft->start(std::move(builder));
     }
 
+    if (!storage::deletion_exempt(_raft->ntp())) {
+        _log_eviction_stm = builder.create_stm<cluster::log_eviction_stm>(
+          _raft.get(), clusterlog, _kvstore);
+        _raft->log()->stm_manager()->add_stm(_log_eviction_stm);
+    }
     if (is_tx_manager_topic(_raft->ntp()) && _is_tx_enabled) {
         _tm_stm = builder.create_stm<cluster::tm_stm>(
           clusterlog,
@@ -464,11 +469,6 @@ ss::future<> partition::start(std::optional<topic_configuration> topic_cfg) {
     /**
      * Data partitions
      */
-    if (!storage::deletion_exempt(_raft->ntp())) {
-        _log_eviction_stm = builder.create_stm<cluster::log_eviction_stm>(
-          _raft.get(), clusterlog, _kvstore);
-        _raft->log()->stm_manager()->add_stm(_log_eviction_stm);
-    }
     const model::topic_namespace_view tp_ns(_raft->ntp());
     const bool is_group_ntp = tp_ns == model::kafka_consumer_offsets_nt;
     const bool has_rm_stm = (_is_tx_enabled || _is_idempotence_enabled)
