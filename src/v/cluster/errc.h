@@ -82,6 +82,10 @@ enum class errc : int16_t {
     role_exists,
     role_does_not_exist,
     inconsistent_stm_update,
+    topic_invalid_partitions_core_limit,
+    topic_invalid_partitions_memory_limit,
+    topic_invalid_partitions_fd_limit,
+    topic_invalid_partitions_decreased,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -238,6 +242,14 @@ struct errc_category final : public std::error_category {
             return "Role does not exist";
         case errc::inconsistent_stm_update:
             return "STM command can't be applied";
+        case errc::topic_invalid_partitions_core_limit:
+            return "Can not increase partition count due to core limit";
+        case errc::topic_invalid_partitions_memory_limit:
+            return "Can not increase partition count due to memory limit";
+        case errc::topic_invalid_partitions_fd_limit:
+            return "Can not increase partition count due to FD limit";
+        case errc::topic_invalid_partitions_decreased:
+            return "Can not decrease the number of partitions";
         }
         return "cluster::errc::unknown";
     }
