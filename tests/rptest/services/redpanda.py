@@ -1649,6 +1649,22 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             'ResourceSettings: setting dedicated_nodes=True because serving from redpanda cloud'
         )
 
+        cluster_id = self._cloud_cluster.create(superuser=self._superuser)
+        remote_uri = f'redpanda@{cluster_id}-agent'
+        self.__kubectl = KubectlTool(
+            self,
+            remote_uri=remote_uri,
+            cluster_id=self._cloud_cluster.cluster_id,
+            cluster_privider=self._cloud_cluster.config.provider,
+            cluster_region=self._cloud_cluster.config.region,
+            tp_proxy=self._cloud_cluster.config.teleport_auth_server,
+            tp_token=self._cloud_cluster.config.teleport_bot_token)
+
+        self.rebuild_pods_classes()
+
+        node_count = self.config_profile['nodes_count']
+        assert self._min_brokers <= node_count, f'Not enough brokers: test needs {self._min_brokers} but cluster has {node_count}'
+
     @property
     def kubectl(self):
         assert self.__kubectl, 'kubectl accessed before cluster was started?'
@@ -1675,22 +1691,10 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             for p in self.get_redpanda_pods()
         ]
 
-    def start(self, **kwargs):
-        cluster_id = self._cloud_cluster.create(superuser=self._superuser)
-        remote_uri = f'redpanda@{cluster_id}-agent'
-        self.__kubectl = KubectlTool(
-            self,
-            remote_uri=remote_uri,
-            cluster_id=self._cloud_cluster.cluster_id,
-            cluster_privider=self._cloud_cluster.config.provider,
-            cluster_region=self._cloud_cluster.config.region,
-            tp_proxy=self._cloud_cluster.config.teleport_auth_server,
-            tp_token=self._cloud_cluster.config.teleport_bot_token)
-
-        self.rebuild_pods_classes()
-
-        node_count = self.config_profile['nodes_count']
-        assert self._min_brokers <= node_count, f'Not enough brokers: test needs {self._min_brokers} but cluster has {node_count}'
+    def start(self):
+        """Does nothing, do not call."""
+        # everything here was moved into __init__
+        pass
 
     def format_pod_status(self, pods):
         statuses_list = [(p['metadata']['name'], p['status']['phase'])
