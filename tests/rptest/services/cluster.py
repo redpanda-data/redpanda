@@ -186,7 +186,7 @@ def cluster(log_allow_list=None,
 
                 self.redpanda.validate_controller_log()
 
-                if self.redpanda.si_settings is not None and not self.redpanda.si_settings.skip_end_of_test_scrubbing:
+                if self.redpanda._si_settings is not None and not self.redpanda.si_settings.skip_end_of_test_scrubbing:
                     try:
                         self.redpanda.maybe_do_internal_scrub()
                         self.redpanda.stop_and_scrub_object_storage()

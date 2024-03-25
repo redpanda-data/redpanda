@@ -1217,16 +1217,15 @@ class EndToEndSpilloverTest(RedpandaTest):
 
     def __init__(self, test_context):
         extra_rp_conf = dict(cloud_storage_spillover_manifest_size=None)
-        self.si_settings = SISettings(
-            test_context,
-            log_segment_size=1024,
-            fast_uploads=True,
-            cloud_storage_housekeeping_interval_ms=10000,
-            cloud_storage_spillover_manifest_max_segments=10)
-        super(EndToEndSpilloverTest,
-              self).__init__(test_context=test_context,
-                             si_settings=self.si_settings,
-                             extra_rp_conf=extra_rp_conf)
+        super(EndToEndSpilloverTest, self).__init__(
+            test_context=test_context,
+            extra_rp_conf=extra_rp_conf,
+            si_settings=SISettings(
+                test_context,
+                log_segment_size=1024,
+                fast_uploads=True,
+                cloud_storage_housekeeping_interval_ms=10000,
+                cloud_storage_spillover_manifest_max_segments=10))
 
         self.msg_size = 1024 * 256
         self.msg_count = 3000
@@ -1308,16 +1307,14 @@ class EndToEndThrottlingTest(RedpandaTest):
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
     def __init__(self, test_context):
-        self.si_settings = SISettings(
-            test_context,
-            log_segment_size=1024,
-            fast_uploads=True,
-            # Set small throughput limit to trigger throttling
-            cloud_storage_max_throughput_per_shard=8 * 1024 * 1024)
-
-        super(EndToEndThrottlingTest,
-              self).__init__(test_context=test_context,
-                             si_settings=self.si_settings)
+        super(EndToEndThrottlingTest, self).__init__(
+            test_context=test_context,
+            si_settings=SISettings(
+                test_context,
+                log_segment_size=1024,
+                fast_uploads=True,
+                # Set small throughput limit to trigger throttling
+                cloud_storage_max_throughput_per_shard=8 * 1024 * 1024))
 
         self.rpk = RpkTool(self.redpanda)
         # 1.3GiB
