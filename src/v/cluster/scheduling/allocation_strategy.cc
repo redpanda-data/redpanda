@@ -28,19 +28,6 @@
 
 namespace cluster {
 
-inline bool contains_node_already(
-  const std::vector<model::broker_shard>& current_allocations,
-  model::node_id id) {
-    auto it = std::find_if(
-      current_allocations.cbegin(),
-      current_allocations.cend(),
-      [id](const model::broker_shard& replica) {
-          return replica.node_id == id;
-      });
-
-    return it != current_allocations.end();
-}
-
 std::vector<model::node_id> solve_hard_constraints(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& current_replicas,
