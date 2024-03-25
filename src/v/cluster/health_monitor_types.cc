@@ -238,8 +238,7 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
 }
 
 std::ostream& operator<<(std::ostream& o, const get_node_health_request& r) {
-    fmt::print(
-      o, "{{filter: {}, current_version: {}}}", r.filter, r.current_version);
+    fmt::print(o, "{{filter: {}}}", r.filter);
     return o;
 }
 
