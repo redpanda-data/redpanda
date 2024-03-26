@@ -57,6 +57,7 @@ v_cc_library(
     monitor_unsafe_log_flag.cc
   DEPS
     Seastar::seastar
+    v::crypto
     v::cluster
     v::kafka_recovery
     v::finjector

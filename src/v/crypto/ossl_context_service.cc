@@ -186,6 +186,12 @@ public:
 
     ss::future<> start() {
         lg.debug("Starting OpenSSL Context service...");
+        vassert(
+          OSSL_LIB_CTX_get0_global_default()
+            == OSSL_LIB_CTX_set0_default(nullptr),
+          "Current shard context is not global default.  Service already "
+          "started");
+
         if (ss::this_shard_id() == 0) {
             // On main shard, load the 'null' provider to the default context
             // This prevents the default context from performing any
@@ -254,23 +260,24 @@ public:
             vassert(
               replaced_context == _shard_ctx.get(),
               "Replacing original context returns unexpected library context");
+
+            if (ss::this_shard_id() == 0) {
+                _initialize_thread_worker_holder.init_ret.base_provider.reset();
+                _initialize_thread_worker_holder.init_ret.default_provider
+                  .reset();
+                _initialize_thread_worker_holder.init_ret.fips_provider.reset();
+                co_await _thread_worker.submit([this] {
+                    return finalize_worker_thread(
+                      _initialize_thread_worker_holder.orig_ctx);
+                });
+                _thread_worker_ctx.reset();
+                _defctxnull.reset();
+            }
         } else {
             lg.warn("Original context is null... startup failed?");
         }
         _old_context = nullptr;
         _shard_ctx.reset();
-
-        if (ss::this_shard_id() == 0) {
-            _initialize_thread_worker_holder.init_ret.base_provider.reset();
-            _initialize_thread_worker_holder.init_ret.default_provider.reset();
-            _initialize_thread_worker_holder.init_ret.fips_provider.reset();
-            co_await _thread_worker.submit([this] {
-                return finalize_worker_thread(
-                  _initialize_thread_worker_holder.orig_ctx);
-            });
-            _thread_worker_ctx.reset();
-            _defctxnull.reset();
-        }
     }
 
     is_fips_mode fips_mode() const { return _fips_mode; }
@@ -313,12 +320,31 @@ ossl_context_service::ossl_context_service(
     thread_worker, std::move(config_file), std::move(module_path), fips_mode)) {
 }
 
-ss::future<> ossl_context_service::start() { return _impl->start(); }
+ss::future<> ossl_context_service::start() {
+    if (in_rp_fixture_test()) {
+        lg.warn(
+          "Detected RP Fixture test, not initializing OSSL Context service");
+        return ss::make_ready_future();
+    } else {
+        return _impl->start();
+    }
+}
 
-ss::future<> ossl_context_service::stop() { return _impl->stop(); }
+ss::future<> ossl_context_service::stop() {
+    if (in_rp_fixture_test()) {
+        lg.warn("Detected RP Fixture test during stop, doing nothing");
+        return ss::make_ready_future();
+    } else {
+        return _impl->stop();
+    }
+}
 
 is_fips_mode ossl_context_service::fips_mode() const {
     return _impl->fips_mode();
+}
+
+bool ossl_context_service::in_rp_fixture_test() const {
+    return ::getenv("RP_FIXTURE_ENV") != nullptr;
 }
 
 } // namespace crypto

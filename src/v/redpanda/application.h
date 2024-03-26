@@ -25,6 +25,7 @@
 #include "cluster/self_test_frontend.h"
 #include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
+#include "crypto/ossl_context_service.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
@@ -177,6 +178,7 @@ public:
 
     std::unique_ptr<ssx::singleton_thread_worker> thread_worker;
 
+    ss::sharded<crypto::ossl_context_service> ossl_context_service;
     ss::sharded<kafka::server> _kafka_server;
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
@@ -202,6 +204,10 @@ private:
         uint64_t _config_checksum{0};
         model::timestamp _last_start_ts;
     };
+
+    // Constructs and starts the services required to provide cryptographic
+    // algorithm support to Redpanda
+    void wire_up_and_start_crypto_services();
 
     // Constructs services across shards required to get bootstrap metadata.
     void wire_up_bootstrap_services();
