@@ -42,6 +42,16 @@ public:
     // assignment modification methods must be called on this shard
     static constexpr ss::shard_id assignment_shard_id = 0;
 
+    /// Struct used to express the fact that a partition replica of some ntp is
+    /// expected on this shard.
+    struct shard_local_assignment {
+        model::revision_id log_revision;
+        model::shard_revision_id shard_revision;
+
+        friend std::ostream&
+        operator<<(std::ostream&, const shard_local_assignment&);
+    };
+
     enum class hosted_status {
         /// Cross-shard transfer is in progress, we are the destination
         receiving,
@@ -56,18 +66,21 @@ public:
     struct shard_local_state {
         model::revision_id log_revision;
         hosted_status status;
+        model::shard_revision_id shard_revision;
 
-        static shard_local_state initial(model::revision_id log_revision) {
+        static shard_local_state initial(const shard_local_assignment& as) {
             return shard_local_state{
-              .log_revision = log_revision,
+              .log_revision = as.log_revision,
               .status = hosted_status::hosted,
+              .shard_revision = as.shard_revision,
             };
         }
 
-        static shard_local_state receiving(model::revision_id log_revision) {
+        static shard_local_state receiving(const shard_local_assignment& as) {
             return shard_local_state{
-              .log_revision = log_revision,
+              .log_revision = as.log_revision,
               .status = hosted_status::receiving,
+              .shard_revision = as.shard_revision,
             };
         }
 
@@ -75,38 +88,48 @@ public:
         operator<<(std::ostream&, const shard_local_state&);
     };
 
+    enum class reconciliation_action {
+        /// Partition must be removed from this node
+        remove,
+        /// Partition must be transferred to other shard
+        transfer,
+        /// Wait until target catches up with topic_table
+        wait_for_target_update,
+        /// Partition must be created on this shard
+        create,
+    };
+
     /// A struct holding both current shard-local and target states for an ntp.
     struct placement_state {
-        /// Current shard-local state for this ntp. Will be non-null if
-        /// some kvstore state for this ntp exists on this shard.
-        std::optional<shard_local_state> local;
-        /// Current target shard for this ntp. Will be non-null on the target
-        /// shard itself, as well as shards with non-null local state.
-        std::optional<shard_placement_target> target;
-        /// Revision of the target shard.
-        model::shard_revision_id shard_revision;
-
-        // invariant: if local is nullopt, then expected_on_this_shard() is true
-        // (there is no point in keeping an item that has no local state as well
-        // as is not expected on this shard)
-        bool expected_on_this_shard() const {
-            return !_next && target && target->shard == ss::this_shard_id();
-        }
+        /// Based on expected log revision for this ntp on this node
+        /// (queried from topic_table) and the placement state, calculate the
+        /// required reconciliation action for this NTP on this shard.
+        reconciliation_action get_reconciliation_action(
+          std::optional<model::revision_id> expected_log_revision) const;
 
         friend std::ostream& operator<<(std::ostream&, const placement_state&);
+
+        placement_state() = default;
+
+        /// Current shard-local state for this ntp. Will be non-null if
+        /// some kvstore state for this ntp exists on this shard.
+        std::optional<shard_local_state> current;
+        /// If non-null, the ntp is expected to exist on this shard.
+        std::optional<shard_local_assignment> assigned;
 
     private:
         friend class shard_placement_table;
 
-        placement_state() = default;
-        placement_state(
-          const shard_placement_target& target, model::shard_revision_id rev)
-          : target(target)
-          , shard_revision(rev) {}
+        /// If placement_state is in the _states map, then is_empty() is false.
+        bool is_empty() const {
+            return !current && !_is_initial_for && !assigned;
+        }
 
-        /// If this shard is the initial shard for this partition on this node,
-        /// this field will contain the corresponding shard revision.
-        model::shard_revision_id _is_initial_at_revision;
+        /// If this shard is the initial shard for some incarnation of this
+        /// partition on this node, this field will contain the corresponding
+        /// log revision. Invariant: if both _is_initial_for and current
+        /// are present, _is_initial_for > current.log_revision
+        std::optional<model::revision_id> _is_initial_for;
         /// If x-shard transfer is in progress, will hold the destination. Note
         /// that it is initialized from target but in contrast to target, it
         /// can't change mid-transfer.
@@ -151,19 +174,27 @@ public:
       const model::ntp&, model::revision_id expected_log_rev);
 
     ss::future<std::error_code>
+    prepare_delete(const model::ntp&, model::revision_id cmd_revision);
+
+    ss::future<>
     finish_delete(const model::ntp&, model::revision_id expected_log_rev);
 
 private:
-    void set_target_on_this_shard(
+    ss::future<> set_assigned_on_this_shard(
       const model::ntp&,
-      std::optional<shard_placement_target>,
+      model::revision_id target_log_revision,
       model::shard_revision_id,
       bool is_initial,
       shard_callback_t);
 
+    ss::future<> remove_assigned_on_this_shard(
+      const model::ntp&, model::shard_revision_id, shard_callback_t);
+
     ss::future<> do_delete(const model::ntp&, placement_state&);
 
 private:
+    friend class shard_placement_test_fixture;
+
     // per-shard state
     //
     // node_hash_map for pointer stability

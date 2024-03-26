@@ -27,7 +27,7 @@ namespace cluster {
 class shard_table final {
     struct shard_revision {
         ss::shard_id shard;
-        model::shard_revision_id revision;
+        model::revision_id log_revision;
     };
 
 public:
@@ -53,49 +53,54 @@ public:
       const model::ntp& ntp,
       raft::group_id g,
       ss::shard_id shard,
-      model::shard_revision_id rev) {
+      model::revision_id log_rev) {
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            if (it->second.revision > rev) {
+            if (it->second.log_revision > log_rev) {
                 return;
             }
         }
         if (auto it = _group_idx.find(g); it != _group_idx.end()) {
-            if (it->second.revision > rev) {
+            if (it->second.log_revision > log_rev) {
                 return;
             }
         }
 
         vlog(
           clusterlog.trace,
-          "[{}] updating shard table, shard_id: {}, rev: {}",
+          "[{}] updating shard table, shard_id: {}, log_rev: {}",
           ntp,
           shard,
-          rev);
-        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, rev});
-        _group_idx.insert_or_assign(g, shard_revision{shard, rev});
+          log_rev);
+        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, log_rev});
+        _group_idx.insert_or_assign(g, shard_revision{shard, log_rev});
     }
 
-    void erase(
-      const model::ntp& ntp, raft::group_id g, model::shard_revision_id rev) {
-        // Sometimes we erase with the same revision as stored (e.g. if a
-        // partition gets disabled). This is not a problem during a
-        // cross-shard transfer because even though corresponding erase() and
-        // update() will have the same shard_revision_id, update() will always
-        // come after erase(). Therefore only erases with it->second.revision >
-        // rev needs to be rejected.
+    void
+    erase(const model::ntp& ntp, raft::group_id g, model::revision_id log_rev) {
+        // Revision check protects against race conditions between operations
+        // on instances of the same ntp with different log revisions (e.g. after
+        // a topic was deleted and then re-created). These operations can happen
+        // on different shards, therefore erase() corresponding to the old
+        // instance can happen after update() corresponding to the new one. Note
+        // that concurrent updates are not a problem during cross-shard
+        // transfers because even though corresponding erase() and update() will
+        // have the same log_revision, update() will always come after erase().
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            if (it->second.revision > rev) {
+            if (it->second.log_revision > log_rev) {
                 return;
             }
         }
         if (auto it = _group_idx.find(g); it != _group_idx.end()) {
-            if (it->second.revision > rev) {
+            if (it->second.log_revision > log_rev) {
                 return;
             }
         }
 
         vlog(
-          clusterlog.trace, "[{}] erasing from shard table, rev: {}", ntp, rev);
+          clusterlog.trace,
+          "[{}] erasing from shard table, log_rev: {}",
+          ntp,
+          log_rev);
         _ntp_idx.erase(ntp);
         _group_idx.erase(g);
     }
