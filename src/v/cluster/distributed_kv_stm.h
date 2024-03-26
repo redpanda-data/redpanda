@@ -290,13 +290,12 @@ public:
     }
 
     /**
-     * Remove all keys that match the predicate. This operation aquires a lock
-     * on this partition so that the predicate sees a consistent snapshot of the
-     * stm state.
+     * Remove all keys that match the predicate. Removal is best effort if there
+     * are interleaving updates to the state while the operation is in progress.
      */
     ss::future<errc> remove_all(ss::noncopyable_function<bool(Key)> pred) {
         auto holder = _gate.hold();
-        auto units = co_await _snapshot_lock.hold_write_lock();
+        auto units = co_await _snapshot_lock.hold_read_lock();
         absl::btree_set<Key> deleted;
         auto it = _kvs.begin();
         while (it != _kvs.end()) {
@@ -307,9 +306,17 @@ public:
             } else {
                 ++it;
             }
-            // We don't need to worry about iterators being invalidated due to
-            // the write lock we hold.
-            co_await ss::yield();
+            if (ss::need_preempt() && it != _kvs.end()) {
+                // The iterator could have be invalidated if there was a write
+                // during the yield. We'll use the ordered nature of the btree
+                // to support resuming the iterator after the suspension point.
+                Key checkpoint = it->first;
+                co_await ss::yield();
+                it = _kvs.lower_bound(checkpoint);
+            }
+        }
+        if (deleted.empty()) {
+            co_return errc::success;
         }
         co_return co_await replicate_and_wait(
           make_kv_data_batch_remove_all<Key, Value>(std::move(deleted)));
