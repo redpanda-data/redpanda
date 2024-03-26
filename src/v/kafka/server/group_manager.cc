@@ -767,6 +767,7 @@ ss::future<> group_manager::do_recover_group(
                 .log_offset = meta.log_offset,
                 .offset = meta.metadata.offset,
                 .metadata = meta.metadata.metadata,
+                .committed_leader_epoch = meta.metadata.leader_epoch,
                 .commit_timestamp = meta.metadata.commit_timestamp,
                 .expiry_timestamp = expiry_timestamp,
                 .non_reclaimable = meta.metadata.non_reclaimable,
