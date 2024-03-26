@@ -64,23 +64,6 @@
         }
     }
 },
-"role_member_update": {
-    "type"  : "object",
-    "properties": {
-        "to_add": {
-            "type": "array",
-            "items": {
-                "$ref": "role_member"
-            }
-        },
-        "to_remove": {
-            "type": "array",
-            "items": {
-                "$ref": "role_member"
-            }
-        }
-    }
-},
 "roles_list": {
     "type": "object",
     "properties": {

@@ -412,8 +412,20 @@
                 "name": "role_member_update",
                 "in": "body",
                 "required": false,
-                "schema": {
-                    "$ref": "#/definitions/role_member_update"
+                "type": "object",
+                "properties": {
+                    "add": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/role_member"
+                        }
+                    },
+                    "remove": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/role_member"
+                        }
+                    }
                 }
             }
         ],
