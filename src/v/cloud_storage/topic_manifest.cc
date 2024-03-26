@@ -246,10 +246,17 @@ struct topic_manifest_handler
     };
 };
 
+// use feature table to decide if to encode with serde
 topic_manifest::topic_manifest(
-  const cluster::topic_configuration& cfg, model::initial_revision_id rev)
+  const cluster::topic_configuration& cfg,
+  model::initial_revision_id rev,
+  const features::feature_table& ft)
   : _topic_config(cfg)
-  , _rev(rev) {}
+  , _rev(rev)
+  , _manifest_version(
+      ft.is_active(features::feature::cluster_topic_manifest_format_v2)
+        ? serde_version
+        : first_version) {}
 
 topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
