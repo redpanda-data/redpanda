@@ -446,7 +446,7 @@ ss::future<> create_offset_translator_state_for_pre_existing_partition(
       max_rp_offset);
     co_await api.kvs().put(
       storage::kvstore::key_space::offset_translator,
-      raft::offset_translator::kvstore_offsetmap_key(group),
+      storage::offset_translator::kvstore_offsetmap_key(group),
       ot_state->serialize_map());
     vlog(
       raftlog.debug,
@@ -455,7 +455,7 @@ ss::future<> create_offset_translator_state_for_pre_existing_partition(
       max_rp_offset);
     co_await api.kvs().put(
       storage::kvstore::key_space::offset_translator,
-      raft::offset_translator::kvstore_highest_known_offset_key(group),
+      storage::offset_translator::kvstore_highest_known_offset_key(group),
       reflection::to_iobuf(max_rp_offset));
 }
 

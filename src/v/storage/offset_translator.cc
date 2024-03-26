@@ -21,7 +21,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/util/log.hh>
 
-namespace raft {
+namespace storage {
 
 static ss::logger logger{"offset_translator"};
 
@@ -446,4 +446,4 @@ ss::future<> offset_translator::move_persistent_state(
     });
 }
 
-} // namespace raft
+} // namespace storage

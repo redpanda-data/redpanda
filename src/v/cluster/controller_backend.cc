@@ -1736,7 +1736,7 @@ ss::future<std::error_code> controller_backend::transfer_partition(
     // TODO: copy, not move
     co_await raft::details::move_persistent_state(
       group, ss::this_shard_id(), destination, _storage);
-    co_await raft::offset_translator::move_persistent_state(
+    co_await storage::offset_translator::move_persistent_state(
       group, ss::this_shard_id(), destination, _storage);
     co_await raft::move_persistent_stm_state(
       ntp, ss::this_shard_id(), destination, _storage);

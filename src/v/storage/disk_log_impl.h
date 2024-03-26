@@ -115,7 +115,9 @@ public:
     get_offset_translator_state() const final {
         return _offset_translator.state();
     }
-    raft::offset_translator& offset_translator() { return _offset_translator; }
+    storage::offset_translator& offset_translator() {
+        return _offset_translator;
+    }
     model::offset_delta offset_delta(model::offset) const final;
     model::offset from_log_offset(model::offset) const final;
     model::offset to_log_offset(model::offset) const final;
@@ -333,7 +335,7 @@ private:
     // method.
     mutex _start_offset_lock{"disk_log_impl::start_offset_lock"};
     lock_manager _lock_mngr;
-    raft::offset_translator _offset_translator;
+    storage::offset_translator _offset_translator;
 
     std::unique_ptr<storage::probe> _probe;
     failure_probes _failure_probes;
