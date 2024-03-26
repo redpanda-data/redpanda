@@ -38,6 +38,7 @@ please keep this up to date with every new library use.
 | sasl2           | <https://github.com/cyrusimap/cyrus-sasl/blob/master/COPYING> |
 | seastar         | Apache License 2                   |
 | snappy          | <https://github.com/google/snappy/blob/master/COPYING> |
+| unordered_dense | MIT                                |
 | xml2            | MIT                                |
 | xxhash          | BSD                                |
 | xz:liblzma      | Public Domain                      |
