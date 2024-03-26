@@ -1788,6 +1788,14 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                     sasl_plain_password=self._superuser.password,
                     enable_tls=True)
 
+    def rebuild_pods_classes(self):
+        """Querry pods and create Classes fresh
+        """
+        self.pods = [
+            CloudBroker(p, self.kubectl, self.logger)
+            for p in self.get_redpanda_pods()
+        ]
+
     def start(self, **kwargs):
         cluster_id = self._cloud_cluster.create(superuser=self._superuser)
         remote_uri = f'redpanda@{cluster_id}-agent'
@@ -1800,10 +1808,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             tp_proxy=self._cloud_cluster.config.teleport_auth_server,
             tp_token=self._cloud_cluster.config.teleport_bot_token)
 
-        self.pods = [
-            CloudBroker(p, self.kubectl, self.logger)
-            for p in self.get_redpanda_pods()
-        ]
+        self.rebuild_pods_classes()
 
         node_count = self.config_profile['nodes_count']
         assert self._min_brokers <= node_count, f'Not enough brokers: test needs {self._min_brokers} but cluster has {node_count}'
@@ -1922,6 +1927,9 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                    backoff_sec=1,
                    err_msg=f'pod {pod_name} container status not ready')
         self.logger.info(f'pod {pod_name} container status ready')
+
+        # Call to rebuild metadata for all cloud brokers
+        self.rebuild_pods_classes()
 
     def rolling_restart_pods(self, pod_timeout: int = 180):
         """Restart all pods in the cluster one at a time.
@@ -2177,6 +2185,59 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         assert expected_nodes == broker_count, (
             f'Expected {expected_nodes} per tier definition but there '
             f'were only {broker_count} brokers: {brokers}')
+
+    def raise_on_crash(self,
+                       log_allow_list: list[str | re.Pattern] | None = None):
+        """Function checks if active RP pods has restart counter changed since last check
+        """
+
+        # Can't remove log_allow_list as it is present in the metadataaddeer call
+        # Checking logs in case of crash is useless for pods as they are auto-restarted anyway
+        def _get_stored_pod(uuid):
+            """Shortcut to getting proper stored Broker class
+            """
+            for pod in self.pods:
+                if uuid == pod.uuid:
+                    return pod
+            return None
+
+        def _get_container_id(p):
+            # Shortcut to getting containerID
+            return p['containerStatuses'][0]['containerID']
+
+        def _get_restart_count(p):
+            # Shortcut to getting restart counter
+            return p['containerStatuses'][0]['restartCount']
+
+        # Not checking active count vs expected nodes
+        active, _, _ = self.get_redpanda_pods_presorted()
+        for pod in active:
+            _name = pod['metadata']['name']
+
+            # Check if stored pod and loaded one is the same
+            _stored_pod = _get_stored_pod(pod['metadata']['uid'])
+            if _stored_pod is None:
+                raise NodeCrash(
+                    (_name, "Pod not found among prior stored ones"))
+
+            # Check if container inside pod stayed the same
+            container_id = _get_container_id(pod['status'])
+            if _get_container_id(_stored_pod._status) != container_id:
+                raise NodeCrash(
+                    (_name, "Pod container mismatch with prior stored one"))
+
+            # Check that restart count is the same
+            restart_count = _get_restart_count(pod['status'])
+            if _get_restart_count(_stored_pod._status) != restart_count:
+                raise NodeCrash(
+                    (_name, "Pod has been restarted due to possible crash"))
+
+        # Worth to note that rebuilding stored broker classes
+        # can be skipped in this case since nothing changed now
+        # and should not be changed. But if some more sophisticated
+        # checks will be introduced, it might be needed to call
+        # self.rebuild_pods_classes() at the and
+        return
 
     def cluster_unhealthy_reason(self) -> str | None:
         """Check if cluster is healthy, using rpk cluster health. Note that this will return

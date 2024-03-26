@@ -122,6 +122,8 @@ def cluster(log_allow_list=None,
 
                     if isinstance(redpanda, RedpandaServiceBase):
                         redpanda.cloud_storage_diagnostics()
+                    if isinstance(redpanda,
+                                  RedpandaServiceCloud | RedpandaServiceCloud):
                         redpanda.raise_on_crash(log_allow_list=log_allow_list)
 
                 raise
