@@ -141,11 +141,16 @@ SEASTAR_THREAD_TEST_CASE(manifest_type_topic) {
 }
 
 SEASTAR_THREAD_TEST_CASE(create_topic_manifest_correct_path) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
-    auto path = m.get_manifest_path();
+    auto path = topic_manifest::get_topic_manifest_path(
+      cfg.tp_ns.ns, cfg.tp_ns.tp, manifest_format::json);
     BOOST_REQUIRE_EQUAL(
       path,
       "50000000/meta/cfg-test-namespace/cfg-test-topic/topic_manifest.json");
+    auto serde_path = topic_manifest::get_topic_manifest_path(
+      cfg.tp_ns.ns, cfg.tp_ns.tp, manifest_format::serde);
+    BOOST_REQUIRE_EQUAL(
+      serde_path,
+      "50000000/meta/cfg-test-namespace/cfg-test-topic/topic_manifest.bin");
 }
 
 SEASTAR_THREAD_TEST_CASE(update_topic_manifest_correct_path) {

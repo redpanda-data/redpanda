@@ -551,20 +551,36 @@ void topic_manifest::serialize(std::ostream& out) const {
     w.EndObject();
 }
 
-remote_manifest_path
-topic_manifest::get_topic_manifest_path(model::ns ns, model::topic topic) {
-    // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
+remote_manifest_path topic_manifest::get_topic_manifest_path(
+  model::ns ns, model::topic topic, manifest_format format) {
+    // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json or
+    // topic_manifest.bin depending on format
     constexpr uint32_t bitmask = 0xF0000000;
     auto path = fmt::format("{}/{}", ns(), topic());
     uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
-    return remote_manifest_path(
-      fmt::format("{:08x}/meta/{}/topic_manifest.json", hash, path));
+    // use format to decide if the path is json or bin
+    return remote_manifest_path(fmt::format(
+      "{:08x}/meta/{}/topic_manifest.{}",
+      hash,
+      path,
+      format == manifest_format::json ? "json" : "bin"));
 }
 
 remote_manifest_path topic_manifest::get_manifest_path() const {
     // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
     vassert(_topic_config, "Topic config is not set");
     return get_topic_manifest_path(
-      _topic_config->tp_ns.ns, _topic_config->tp_ns.tp);
+      _topic_config->tp_ns.ns,
+      _topic_config->tp_ns.tp,
+      _manifest_version == first_version ? manifest_format::json
+                                         : manifest_format::serde);
+}
+
+std::pair<manifest_format, remote_manifest_path>
+topic_manifest::get_manifest_format_and_path() const {
+    return std::make_pair(
+      _manifest_version == first_version ? manifest_format::json
+                                         : manifest_format::serde,
+      get_manifest_path());
 }
 } // namespace cloud_storage
