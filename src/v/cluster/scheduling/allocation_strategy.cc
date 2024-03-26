@@ -163,47 +163,38 @@ model::node_id find_best_fit(
 
 } // namespace
 
-allocation_strategy simple_allocation_strategy() {
-    class impl : public allocation_strategy::impl {
-    public:
-        result<model::node_id> choose_node(
-          const model::ntp& ntp,
-          const std::vector<model::broker_shard>& current_replicas,
-          const allocation_constraints& request,
-          allocation_state& state,
-          const partition_allocation_domain) final {
-            const auto& nodes = state.allocation_nodes();
-            /**
-             * evaluate hard constraints
-             */
-            std::vector<model::node_id> possible_nodes = solve_hard_constraints(
-              ntp,
-              current_replicas,
-              request.hard_constraints,
-              state.allocation_nodes());
+result<model::node_id> allocation_strategy::choose_node(
+  const model::ntp& ntp,
+  const std::vector<model::broker_shard>& current_replicas,
+  const allocation_constraints& request,
+  allocation_state& state,
+  const partition_allocation_domain) {
+    const auto& nodes = state.allocation_nodes();
+    /**
+     * evaluate hard constraints
+     */
+    std::vector<model::node_id> possible_nodes = solve_hard_constraints(
+      ntp,
+      current_replicas,
+      request.hard_constraints,
+      state.allocation_nodes());
 
-            vlog(
-              clusterlog.trace,
-              "after applying hard constraints, eligible nodes: {}",
-              possible_nodes);
+    vlog(
+      clusterlog.trace,
+      "after applying hard constraints, eligible nodes: {}",
+      possible_nodes);
 
-            if (possible_nodes.empty()) {
-                return errc::no_eligible_allocation_nodes;
-            }
+    if (possible_nodes.empty()) {
+        return errc::no_eligible_allocation_nodes;
+    }
 
-            /**
-             * soft constraints
-             */
-            auto best_fit = find_best_fit(
-              current_replicas,
-              request.soft_constraints,
-              possible_nodes,
-              nodes);
+    /**
+     * soft constraints
+     */
+    auto best_fit = find_best_fit(
+      current_replicas, request.soft_constraints, possible_nodes, nodes);
 
-            return best_fit;
-        }
-    };
-    return make_allocation_strategy<impl>();
-};
+    return best_fit;
+}
 
 } // namespace cluster

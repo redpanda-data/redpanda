@@ -20,43 +20,12 @@ class allocation_state;
 
 class allocation_strategy {
 public:
-    struct impl {
-        /**
-         * Allocates single replica according to set of given allocation
-         * constraints in the specified domain
-         */
-        virtual result<model::node_id> choose_node(
-          const model::ntp&,
-          const replicas_t&,
-          const allocation_constraints&,
-          allocation_state&,
-          partition_allocation_domain)
-          = 0;
-
-        virtual ~impl() noexcept = default;
-    };
-
-    explicit allocation_strategy(std::unique_ptr<impl> impl)
-      : _impl(std::move(impl)) {}
-
     result<model::node_id> choose_node(
       const model::ntp& ntp,
       const replicas_t& current_replicas,
       const allocation_constraints& ac,
       allocation_state& state,
-      const partition_allocation_domain domain) {
-        return _impl->choose_node(ntp, current_replicas, ac, state, domain);
-    }
-
-private:
-    std::unique_ptr<impl> _impl;
+      const partition_allocation_domain domain);
 };
 
-template<typename Impl, typename... Args>
-allocation_strategy make_allocation_strategy(Args&&... args) {
-    return allocation_strategy(
-      std::make_unique<Impl>(std::forward<Args>(args)...));
-}
-
-allocation_strategy simple_allocation_strategy();
 } // namespace cluster

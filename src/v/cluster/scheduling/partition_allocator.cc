@@ -50,7 +50,6 @@ partition_allocator::partition_allocator(
   config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>(
     partitions_per_shard, partitions_reserve_shard0, internal_kafka_topics))
-  , _allocation_strategy(simple_allocation_strategy())
   , _members(members)
   , _memory_per_partition(std::move(memory_per_partition))
   , _fds_per_partition(std::move(fds_per_partition))
