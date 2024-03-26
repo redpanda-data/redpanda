@@ -39,22 +39,55 @@ download_topic_manifest(
 
     model::ns ns = cfg.cfg.tp_ns.ns;
     model::topic topic = cfg.cfg.tp_ns.tp;
-    cloud_storage::remote_manifest_path key
-      = cloud_storage::topic_manifest::get_topic_manifest_path(ns, topic);
-
+    auto serde_path = std::pair{
+      cloud_storage::manifest_format::serde,
+      cloud_storage::topic_manifest::get_topic_manifest_path(
+        ns, topic, cloud_storage::manifest_format::serde),
+    };
+    // try serde first
     auto res = co_await remote.download_manifest(
-      bucket, key, manifest, rc_node);
+      bucket, serde_path, manifest, rc_node);
 
-    if (res != cloud_storage::download_result::success) {
+    if (res == cloud_storage::download_result::success) {
+        co_return std::make_tuple(errc::success, serde_path.second);
+    }
+
+    if (res != cloud_storage::download_result::notfound) {
         vlog(
           clusterlog.warn,
           "Could not download topic manifest {} from bucket {}: {}",
-          key,
+          serde_path.second,
           bucket,
           res);
-        co_return std::make_tuple(errc::topic_operation_error, key);
+        co_return std::make_tuple(
+          errc::topic_operation_error, serde_path.second);
     }
-    co_return std::make_tuple(errc::success, key);
+
+    vlog(
+      clusterlog.debug,
+      "Could not find serde manifest from bucket {}: {}. trying json",
+      bucket,
+      serde_path.second);
+
+    // no serde manifest and no generic error. try to fallback to json
+    auto json_path = std::pair{
+      cloud_storage::manifest_format::json,
+      cloud_storage::topic_manifest::get_topic_manifest_path(
+        ns, topic, cloud_storage::manifest_format::json)};
+    res = co_await remote.download_manifest(
+      bucket, json_path.second, manifest, rc_node);
+
+    if (res == cloud_storage::download_result::success) {
+        co_return std::make_tuple(errc::success, json_path.second);
+    }
+
+    vlog(
+      clusterlog.warn,
+      "Could not download topic manifest {} from bucket {}: {}",
+      json_path.second,
+      bucket,
+      res);
+    co_return std::make_tuple(errc::topic_operation_error, json_path.second);
 }
 
 ss::future<errc>
