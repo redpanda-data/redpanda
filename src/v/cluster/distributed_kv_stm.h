@@ -134,7 +134,7 @@ public:
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&& bytes) override {
         auto holder = _gate.hold();
-        auto units = _snapshot_lock.hold_write_lock();
+        auto units = co_await _snapshot_lock.hold_write_lock();
 
         iobuf_parser parser(std::move(bytes));
         auto snap = co_await serde::read_async<snapshot>(parser);
@@ -151,7 +151,7 @@ public:
 
     ss::future<raft::stm_snapshot> take_local_snapshot() override {
         auto holder = _gate.hold();
-        auto units = _snapshot_lock.hold_write_lock();
+        auto units = co_await _snapshot_lock.hold_write_lock();
         auto last_applied = last_applied_offset();
         snapshot result;
         if (_is_routing_partition) {
