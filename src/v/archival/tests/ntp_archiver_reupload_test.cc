@@ -599,8 +599,12 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     // Self-compact the first segment and re-upload. One compacted
     // and one non-compacted segments are uploaded.
     reset_http_call_state();
-    auto seg = self_compact_next_segment(
-      disk_log_impl()->segments().begin()->get()->offsets().get_committed_offset());
+    auto seg = self_compact_next_segment(disk_log_impl()
+                                           ->segments()
+                                           .begin()
+                                           ->get()
+                                           ->offsets()
+                                           .get_committed_offset());
 
     // Fail the first compacted upload
     fail_request_if(

@@ -337,7 +337,8 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
 
     const auto& seg = segments.front();
     BOOST_REQUIRE_EQUAL(seg->offsets().get_base_offset(), model::offset{10});
-    BOOST_REQUIRE_EQUAL(seg->offsets().get_committed_offset(), model::offset{19});
+    BOOST_REQUIRE_EQUAL(
+      seg->offsets().get_committed_offset(), model::offset{19});
 }
 
 SEASTAR_THREAD_TEST_CASE(
@@ -375,7 +376,8 @@ SEASTAR_THREAD_TEST_CASE(
 
     const auto& seg = segments.front();
     BOOST_REQUIRE_EQUAL(seg->offsets().get_base_offset(), model::offset{10});
-    BOOST_REQUIRE_EQUAL(seg->offsets().get_committed_offset(), model::offset{14});
+    BOOST_REQUIRE_EQUAL(
+      seg->offsets().get_committed_offset(), model::offset{14});
 }
 
 SEASTAR_THREAD_TEST_CASE(
@@ -1120,7 +1122,8 @@ SEASTAR_THREAD_TEST_CASE(test_do_not_reupload_prefix_truncated) {
     collector.collect_segments();
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive()(), 500);
     BOOST_REQUIRE_EQUAL(collector.segments().size(), 3);
-    BOOST_REQUIRE_EQUAL(collector.segments()[0]->offsets().get_base_offset(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(
+      collector.segments()[0]->offsets().get_base_offset(), model::offset{0});
     BOOST_REQUIRE(collector.should_replace_manifest_segment());
 }
 
@@ -1198,7 +1201,8 @@ SEASTAR_THREAD_TEST_CASE(test_bump_start_when_not_aligned) {
     collector.collect_segments();
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive()(), 500);
     BOOST_REQUIRE_EQUAL(collector.segments().size(), 3);
-    BOOST_REQUIRE_EQUAL(collector.segments()[0]->offsets().get_base_offset(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(
+      collector.segments()[0]->offsets().get_base_offset(), model::offset{0});
     BOOST_REQUIRE(collector.should_replace_manifest_segment());
 }
 

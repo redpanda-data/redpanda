@@ -122,10 +122,10 @@ segment_layout write_random_batches(
     // If the segment already includes records, start at the next offset.
     auto full_batches = model::test::make_random_batches(
       model::test::record_batch_spec{
-        .offset = seg->offsets().get_committed_offset() == model::offset{}
-                    ? seg->offsets().get_base_offset()
-                    : (
-                      seg->offsets().get_committed_offset() + model::offset_delta{1}),
+        .offset
+        = seg->offsets().get_committed_offset() == model::offset{}
+            ? seg->offsets().get_base_offset()
+            : (seg->offsets().get_committed_offset() + model::offset_delta{1}),
         .allow_compression = true,
         .count = full_batches_count,
         .records = records_per_batch,

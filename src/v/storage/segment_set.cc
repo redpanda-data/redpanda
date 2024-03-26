@@ -32,7 +32,8 @@ namespace storage {
 struct segment_ordering {
     using type = ss::lw_shared_ptr<segment>;
     bool operator()(const type& seg1, const type& seg2) const {
-        return seg1->offsets().get_base_offset() < seg2->offsets().get_base_offset();
+        return seg1->offsets().get_base_offset()
+               < seg2->offsets().get_base_offset();
     }
     bool operator()(const type& seg, model::offset value) const {
         return seg->offsets().get_dirty_offset() < value;
@@ -59,7 +60,8 @@ segment_set::~segment_set() noexcept = default;
 void segment_set::add(ss::lw_shared_ptr<segment> h) {
     if (!_handles.empty()) {
         vassert(
-          h->offsets().get_base_offset() > _handles.back()->offsets().get_dirty_offset(),
+          h->offsets().get_base_offset()
+            > _handles.back()->offsets().get_dirty_offset(),
           "New segments must be monotonically increasing. Assertion failure: "
           "({} > {}) Got:{} - Current:{}",
           h->offsets().get_base_offset(),
@@ -84,7 +86,8 @@ struct needle_in_range {
             return false;
         }
         // must use max_offset
-        return o <= s.offsets().get_dirty_offset() && o >= s.offsets().get_base_offset();
+        return o <= s.offsets().get_dirty_offset()
+               && o >= s.offsets().get_base_offset();
     }
 };
 
@@ -204,7 +207,9 @@ static ss::future<segment_set> unsafe_do_recover(
             if (i > 0) {
                 auto& prev = *good[i - 1];
 
-                if (prev.offsets().get_dirty_offset() >= s.offsets().get_base_offset()) {
+                if (
+                  prev.offsets().get_dirty_offset()
+                  >= s.offsets().get_base_offset()) {
                     vlog(
                       stlog.warn,
                       "looks like segment index for segment {} is corrupted: "

@@ -202,7 +202,8 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
     }
 
     size_t scan_from = ix_end ? ix_end->filepos : 0;
-    model::offset fo = ix_end ? ix_end->offset : segment->offsets().get_base_offset();
+    model::offset fo = ix_end ? ix_end->offset
+                              : segment->offsets().get_base_offset();
     vlog(
       stlog.debug,
       "Segment index lookup returned: {}, scanning from pos {} - offset {}",

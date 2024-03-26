@@ -853,7 +853,8 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(upload2.starting_offset() == offset2);
     BOOST_REQUIRE(upload2.exposed_name != upload1.exposed_name);
     BOOST_REQUIRE(upload2.sources.front() != upload1.sources.front());
-    BOOST_REQUIRE(upload2.sources.front()->offsets().get_base_offset() == offset2);
+    BOOST_REQUIRE(
+      upload2.sources.front()->offsets().get_base_offset() == offset2);
 
     start_offset = upload2.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
@@ -868,7 +869,8 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(upload3.starting_offset() == offset3);
     BOOST_REQUIRE(upload3.exposed_name != upload2.exposed_name);
     BOOST_REQUIRE(upload3.sources.front() != upload2.sources.front());
-    BOOST_REQUIRE(upload3.sources.front()->offsets().get_base_offset() == offset3);
+    BOOST_REQUIRE(
+      upload3.sources.front()->offsets().get_base_offset() == offset3);
 
     start_offset = upload3.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
@@ -1526,12 +1528,14 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
       manifest_ntp, archival::segment_name("0-1-v1.log"));
     auto& tracker1 = const_cast<storage::segment::offset_tracker&>(
       segment1->offsets());
-    tracker1.set_offset(storage::segment::offset_tracker::dirty_offset_t{offset2 - model::offset(1)});
+    tracker1.set_offset(storage::segment::offset_tracker::dirty_offset_t{
+      offset2 - model::offset(1)});
     auto segment2 = get_segment(
       manifest_ntp, archival::segment_name("1000-1-v1.log"));
     auto& tracker2 = const_cast<storage::segment::offset_tracker&>(
       segment2->offsets());
-    tracker2.set_offset(storage::segment::offset_tracker::dirty_offset_t{offset3 - model::offset(1)});
+    tracker2.set_offset(storage::segment::offset_tracker::dirty_offset_t{
+      offset3 - model::offset(1)});
 
     // Every segment should be returned once as we're calling the
     // policy to get next candidate.
@@ -1569,7 +1573,8 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     BOOST_REQUIRE(upload2.starting_offset == offset2);
     BOOST_REQUIRE(upload2.exposed_name != upload1.exposed_name);
     BOOST_REQUIRE(upload2.sources.front() != upload1.sources.front());
-    BOOST_REQUIRE(upload2.sources.front()->offsets().get_base_offset() == offset2);
+    BOOST_REQUIRE(
+      upload2.sources.front()->offsets().get_base_offset() == offset2);
 
     start_offset = upload2.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
@@ -1584,7 +1589,8 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     BOOST_REQUIRE(upload3.starting_offset == offset3);
     BOOST_REQUIRE(upload3.exposed_name != upload2.exposed_name);
     BOOST_REQUIRE(upload3.sources.front() != upload2.sources.front());
-    BOOST_REQUIRE(upload3.sources.front()->offsets().get_base_offset() == offset3);
+    BOOST_REQUIRE(
+      upload3.sources.front()->offsets().get_base_offset() == offset3);
 
     start_offset = upload3.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);

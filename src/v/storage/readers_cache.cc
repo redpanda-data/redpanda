@@ -198,7 +198,8 @@ readers_cache::evict_segment_readers(ss::lw_shared_ptr<segment> s) {
       _ntp,
       s->offsets().get_base_offset(),
       s->offsets().get_dirty_offset());
-    return evict_range(s->offsets().get_base_offset(), s->offsets().get_dirty_offset());
+    return evict_range(
+      s->offsets().get_base_offset(), s->offsets().get_dirty_offset());
 }
 
 ss::future<readers_cache::range_lock_holder>
