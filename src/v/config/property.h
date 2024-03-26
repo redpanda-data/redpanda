@@ -447,7 +447,10 @@ public:
     }
 
     binding(binding<T>&& rhs) noexcept
+      // The base move constructor doesn't touch _value
+      // so that's why it's safe to use `rhs` after.
       : binding_base<T>(std::move(rhs))
+      // NOLINTNEXTLINE(*-use-after-move)
       , _value(std::move(rhs._value)) {}
 
     const T& operator()() const {
@@ -529,8 +532,12 @@ public:
     }
 
     conversion_binding(conversion_binding&& rhs) noexcept
+      // The base move constructor doesn't touch _value or _convert
+      // so that's why it's safe to use `rhs` after.
       : binding_base<T>(std::move(rhs))
+      // NOLINTNEXTLINE(*-use-after-move)
       , _value(std::move(rhs._value))
+      // NOLINTNEXTLINE(*-use-after-move)
       , _convert(std::move(rhs._convert)) {}
 
     conversion_binding& operator=(conversion_binding&&) = delete;
