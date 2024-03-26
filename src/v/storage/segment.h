@@ -40,34 +40,75 @@ struct segment_closed_exception final : std::exception {
 class segment {
 public:
     using generation_id = named_type<uint64_t, struct segment_gen_tag>;
-    struct offset_tracker {
+    class offset_tracker {
+    public:
+        using committed_offset_t
+          = named_type<model::offset, struct committed_offset_tag>;
+        using stable_offset_t
+          = named_type<model::offset, struct stable_offset_tag>;
+        using dirty_offset_t
+          = named_type<model::offset, struct dirty_offset_tag>;
+
         offset_tracker(model::term_id t, model::offset base)
-          : term(t)
-          , base_offset(base)
-          , committed_offset(model::prev_offset(base))
-          , dirty_offset(model::prev_offset(base))
-          , stable_offset(model::prev_offset(base)) {}
+          : _term(t)
+          , _base_offset(base)
+          , _committed_offset(model::prev_offset(base))
+          , _stable_offset(model::prev_offset(base))
+          , _dirty_offset(model::prev_offset(base)) {}
 
-        model::term_id get_term() const { return term; }
-        model::offset get_base_offset() const { return base_offset; }
-        model::offset get_committed_offset() const { return committed_offset; }
-        model::offset get_stable_offset() const { return stable_offset; }
-        model::offset get_dirty_offset() const { return dirty_offset; }
+        template<typename... Ts>
+        void set_offsets(Ts... ts) {
+            (set_offset_impl(ts), ...);
+            vassert(
+              _committed_offset <= _stable_offset
+                && _stable_offset <= _dirty_offset,
+              "Must maintain offset invariant: committed ({}) <= stable ({}) "
+              "<= dirty ({})",
+              _committed_offset,
+              _stable_offset,
+              _dirty_offset);
+        }
 
-        model::term_id term;
-        model::offset base_offset;
+        template<typename T>
+        void set_offset(T t) {
+            set_offsets(t);
+        }
+
+        model::term_id get_term() const { return _term; }
+        model::offset get_base_offset() const { return _base_offset; }
+        model::offset get_committed_offset() const { return _committed_offset; }
+        model::offset get_stable_offset() const { return _stable_offset; }
+        model::offset get_dirty_offset() const { return _dirty_offset; }
+
+    private:
+        template<typename T>
+        void set_offset_impl(T tagged_offset) {
+            if constexpr (std::is_same_v<T, committed_offset_t>) {
+                _committed_offset = tagged_offset();
+            } else if constexpr (std::is_same_v<T, stable_offset_t>) {
+                _stable_offset = tagged_offset();
+            } else if constexpr (std::is_same_v<T, dirty_offset_t>) {
+                _dirty_offset = tagged_offset();
+            } else {
+                static_assert(always_false_v<T>, "Invalid offset type");
+            }
+        }
+
+        model::term_id _term;
+        model::offset _base_offset;
 
         /// \brief These offsets are the `batch.last_offset()` and not
         /// `batch.base_offset()` which might be confusing at first,
         /// but allow us to keep track of the actual last logical offset
 
         // Offset of last message fsynced to disk.
-        model::offset committed_offset;
-        // Offset of last message written to this log, may not yet be stable.
-        model::offset dirty_offset;
+        model::offset _committed_offset;
         // Offset of last message written to disk, may not yet have been
         // fsynced.
-        model::offset stable_offset;
+        model::offset _stable_offset;
+        // Offset of last message written to this log, may not yet be stable.
+        model::offset _dirty_offset;
+
         friend std::ostream& operator<<(std::ostream&, const offset_tracker&);
     };
     enum class bitflags : uint32_t {
@@ -376,7 +417,7 @@ inline bool
 segment::has_compactible_offsets(const compaction_config& cfg) const {
     // since we don't support partially-compacted segments, a segment must
     // end before the max compactible offset to be eligible for compaction.
-    return offsets().stable_offset <= cfg.max_collectible_offset;
+    return _tracker.get_stable_offset() <= cfg.max_collectible_offset;
 }
 
 inline void segment::mark_as_compacted_segment() {
@@ -483,9 +524,10 @@ inline bool segment::is_tombstone() const {
 }
 /// \brief used for compaction, to reset the tracker from index
 inline void segment::force_set_commit_offset_from_index() {
-    _tracker.committed_offset = _idx.max_offset();
-    _tracker.stable_offset = _idx.max_offset();
-    _tracker.dirty_offset = _idx.max_offset();
+    _tracker.set_offsets(
+      offset_tracker::committed_offset_t{_idx.max_offset()},
+      offset_tracker::stable_offset_t{_idx.max_offset()},
+      offset_tracker::dirty_offset_t{_idx.max_offset()});
 }
 
 } // namespace storage
