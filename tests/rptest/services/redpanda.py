@@ -1322,31 +1322,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
                         counts[idx] = int(sample.value) + (counts[idx] or 0)
         return all(map(lambda count: count == 0, counts.values()))
 
-    def partitions(self, topic_name=None):
-        """
-        Return partition metadata for the topic.
-        """
-        kc = KafkaCat(self)
-        md = kc.metadata()
-
-        result = []
-
-        def make_partition(topic_name, p):
-            index = p["partition"]
-            leader_id = p["leader"]
-            leader = None if leader_id == -1 else self.get_node_by_id(
-                leader_id)
-            replicas = [self.get_node_by_id(r["id"]) for r in p["replicas"]]
-            return Partition(topic_name, index, leader, replicas)
-
-        for topic in md["topics"]:
-            if topic["topic"] == topic_name or topic_name is None:
-                result.extend(
-                    make_partition(topic["topic"], p)
-                    for p in topic["partitions"])
-
-        return result
-
     def rolling_restart_nodes(self,
                               nodes,
                               override_cfg_params=None,
@@ -3015,6 +2990,31 @@ class RedpandaService(RedpandaServiceBase):
                 f"bad si config {self.cloud_storage_client} : {self._si_settings.cloud_storage_bucket if self._si_settings else self._si_settings}"
         return self.cloud_storage_client.list_objects(
             self._si_settings.cloud_storage_bucket)
+
+    def partitions(self, topic_name=None):
+        """
+        Return partition metadata for the topic.
+        """
+        kc = KafkaCat(self)
+        md = kc.metadata()
+
+        result = []
+
+        def make_partition(topic_name, p):
+            index = p["partition"]
+            leader_id = p["leader"]
+            leader = None if leader_id == -1 else self.get_node_by_id(
+                leader_id)
+            replicas = [self.get_node_by_id(r["id"]) for r in p["replicas"]]
+            return Partition(topic_name, index, leader, replicas)
+
+        for topic in md["topics"]:
+            if topic["topic"] == topic_name or topic_name is None:
+                result.extend(
+                    make_partition(topic["topic"], p)
+                    for p in topic["partitions"])
+
+        return result
 
     def set_cluster_config_to_null(self,
                                    name: str,
