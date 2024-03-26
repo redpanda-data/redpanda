@@ -1,5 +1,24 @@
 project_name: rpk
 builds:
+  - id: rpk-linux-microsoft-go
+    dir: ./rpk/
+    main: ./cmd/rpk
+    binary: rpk
+    ldflags:
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.version={{.Tag}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.rev={{.ShortCommit}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.buildTime={{.Date}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.hostOs={{.Os}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.hostArch={{.Arch}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common.tag={{.Tag}}
+    env:
+      - CGO_ENABLED=1
+      - GOEXPERIMENT=systemcrypto
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
   - id: rpk-linux
     dir: ./rpk/
     main: ./cmd/rpk
