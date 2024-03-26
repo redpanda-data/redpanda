@@ -63,8 +63,10 @@ public:
 
     ~hard_constraint() noexcept = default;
 
-    hard_constraint_evaluator
-    make_evaluator(const model::ntp&, const replicas_t& current_replicas) const;
+    hard_constraint_evaluator make_evaluator(
+      const model::ntp& ntp, const replicas_t& current_replicas) const {
+        return _impl->make_evaluator(ntp, current_replicas);
+    }
 
     ss::sstring name() const { return _impl->name(); }
 
@@ -99,7 +101,9 @@ public:
     ~soft_constraint() noexcept = default;
 
     soft_constraint_evaluator
-    make_evaluator(const replicas_t& current_replicas) const;
+    make_evaluator(const replicas_t& current_replicas) const {
+        return _impl->make_evaluator(current_replicas);
+    }
 
     ss::sstring name() const { return _impl->name(); }
 

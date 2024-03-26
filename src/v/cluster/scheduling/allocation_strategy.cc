@@ -59,10 +59,22 @@ std::vector<model::node_id> solve_hard_constraints(
 
     for (auto& p : nodes) {
         auto& node = p.second;
-        auto result = std::all_of(
-          evaluators.begin(),
-          evaluators.end(),
-          [&node](const hard_constraint_evaluator& ev) { return ev(*node); });
+        bool result = true;
+        for (size_t i = 0; i < constraints.size(); ++i) {
+            auto res = evaluators[i](*node);
+            if (clusterlog.is_enabled(ss::log_level::trace)) {
+                vlog(
+                  clusterlog.trace,
+                  "{}(node: {}) = {}",
+                  constraints[i]->name(),
+                  node->id(),
+                  res);
+            }
+            if (!res) {
+                result = false;
+                break;
+            }
+        }
 
         if (result) {
             possible_nodes.push_back(p.first);
@@ -102,20 +114,27 @@ std::vector<model::node_id> optimize_constraints(
         if (it == allocation_nodes.end()) {
             continue;
         }
+        const auto& node = *it->second;
+
+        uint32_t score = 0;
+        for (size_t i = 0; i < constraints.size(); ++i) {
+            const auto current_score = evaluators[i](node);
+            if (clusterlog.is_enabled(ss::log_level::trace)) {
+                vlog(
+                  clusterlog.trace,
+                  "{}(node: {}) = {} ({})",
+                  constraints[i]->name(),
+                  node.id(),
+                  current_score,
+                  (double)current_score / soft_constraint::max_score);
+            }
+            score += current_score;
+        }
+
         /**
          * Score is normalized so that it is always in range [0, max_score_size]
          */
-        uint32_t score = std::accumulate(
-                           evaluators.begin(),
-                           evaluators.end(),
-                           uint32_t{0},
-                           [&node = it->second](
-                             uint32_t score,
-                             const soft_constraint_evaluator& ev) {
-                               const auto current_score = ev(*node);
-                               return score + current_score;
-                           })
-                         / constraints.size();
+        score /= constraints.size();
 
         vlog(
           clusterlog.trace,
