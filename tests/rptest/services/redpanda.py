@@ -1226,15 +1226,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         self.logger.info(
             f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
 
-    def start_node(self, node, **kwargs):
-        pass
-
-    def stop_node(self, node, **kwargs):
-        pass
-
-    def clean_node(self, node, **kwargs):
-        pass
-
     def restart_nodes(self,
                       nodes,
                       override_cfg_params=None,
@@ -1274,18 +1265,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
 
     def add_extra_rp_conf(self, conf):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
-
-    def get_node_memory_mb(self) -> int:
-        pass
-
-    def get_node_cpu_count(self) -> int:
-        pass
-
-    def get_node_disk_free(self) -> int:
-        pass
-
-    def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
-        pass
 
     def metric_sum(self,
                    metric_name: str,
@@ -1371,13 +1350,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
                                 omit_seeds_on_idx_one=omit_seeds_on_idx_one,
                                 auto_assign_node_id=auto_assign_node_id)
 
-    def set_cluster_config(self,
-                           values: dict,
-                           expect_restart: bool = False,
-                           admin_client: Optional[Admin] = None,
-                           timeout: int = 10):
-        pass
-
     def set_resource_settings(self, rs):
         self._resource_settings = rs
 
@@ -1437,19 +1409,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         self.logger.info(f"Got node ID for {node.account.hostname}: {node_id}")
         self._node_id_by_idx[idx] = node_id
         return node_id
-
-    def cloud_storage_diagnostics(self):
-        pass
-
-    def raise_on_storage_usage_inconsistency(self):
-        pass
-
-    def raise_on_cloud_storage_inconsistencies(self,
-                                               inconsistencies: list[str]):
-        pass
-
-    def validate_controller_log(self):
-        pass
 
     def security_config(self):
         return self._security_config
@@ -1555,10 +1514,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         if bad_lines:
             raise BadLogLines(bad_lines)
 
-    def raise_on_crash(self,
-                       log_allow_list: list[str | re.Pattern] | None = None):
-        pass
-
     @property
     def dedicated_nodes(self):
         """
@@ -1569,12 +1524,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         :return:
         """
         return self._dedicated_nodes
-
-    def get_version(self, node):
-        """
-        Returns the version as a string.
-        """
-        pass
 
 
 class KubeServiceMixin:
