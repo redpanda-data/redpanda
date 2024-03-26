@@ -163,7 +163,8 @@ SEASTAR_THREAD_TEST_CASE(update_topic_manifest_correct_path) {
 }
 
 SEASTAR_THREAD_TEST_CASE(construct_serialize_update_same_object) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
+    auto local_ft = features::feature_table{};
+    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -257,7 +258,9 @@ SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
       std::chrono::milliseconds::min());
     min_cfg.properties.segment_size = std::make_optional(
       std::numeric_limits<size_t>::min());
-    topic_manifest m(min_cfg, model::initial_revision_id{0});
+
+    features::feature_table local_ft;
+    topic_manifest m(min_cfg, model::initial_revision_id{0}, local_ft);
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -287,7 +290,8 @@ SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
       std::chrono::milliseconds::max());
     max_cfg.properties.segment_size = std::make_optional(
       std::numeric_limits<size_t>::max());
-    topic_manifest m(max_cfg, model::initial_revision_id{0});
+    auto local_ft = features::feature_table{};
+    topic_manifest m(max_cfg, model::initial_revision_id{0}, local_ft);
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -356,7 +360,8 @@ SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {
 }
 
 SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
+    auto local_ft = features::feature_table{};
+    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
     m.update(make_manifest_stream(full_topic_manifest_json)).get();
     auto [is, size] = m.serialize().get();
     iobuf buf;
@@ -371,7 +376,8 @@ SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
+    auto local_ft = features::feature_table{};
+    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
     m.update(make_manifest_stream(negative_properties_manifest)).get();
     auto tp_cfg = m.get_topic_config();
     BOOST_REQUIRE(tp_cfg.has_value());
@@ -395,7 +401,9 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
     test_cfg.properties.retention_bytes = tristate<size_t>{disable_tristate};
     test_cfg.properties.retention_duration
       = tristate<std::chrono::milliseconds>{disable_tristate};
-    auto m = topic_manifest{test_cfg, model::initial_revision_id{0}};
+
+    auto local_ft = features::feature_table{};
+    auto m = topic_manifest{test_cfg, model::initial_revision_id{0}, local_ft};
 
     auto serialized = m.serialize().get().stream;
     auto buf = iobuf{};
@@ -447,4 +455,54 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_roundtrip_serde) {
       manifest.get_revision()
       == random_topic_configuration.properties.remote_topic_properties
            ->remote_revision);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
+    auto random_topic_configuration
+      = compat::instance_generator<cluster::topic_configuration>::random();
+    // ensure that remote_topic_properties is congruent with the enclosing
+    // topic_config
+    random_topic_configuration.properties.remote_topic_properties
+      = cluster::remote_topic_properties{
+        tests::random_named_int<model::initial_revision_id>(),
+        random_topic_configuration.partition_count};
+
+    // activate the new format via feature_table and test that the serialization
+    // is in serde format
+    auto local_ft = features::feature_table{};
+    local_ft.testing_activate_all();
+
+    // create serde image of random_topic_configuration, deserialize it through
+    // topic_manifest and check that the result is equal
+    auto manifest = topic_manifest{
+      random_topic_configuration,
+      random_topic_configuration.properties.remote_topic_properties
+        ->remote_revision,
+      local_ft};
+    BOOST_CHECK(
+      manifest.get_manifest_version() == topic_manifest::serde_version);
+    BOOST_CHECK(
+      manifest.get_revision()
+      == random_topic_configuration.properties.remote_topic_properties
+           ->remote_revision);
+    BOOST_CHECK(manifest.get_manifest_path()().extension() == ".bin");
+    BOOST_CHECK(
+      manifest.get_manifest_format_and_path().first == manifest_format::serde);
+
+    auto serialized_manifest = manifest.serialize().get().stream;
+
+    auto reconstructed_serde_manifest = topic_manifest{};
+    reconstructed_serde_manifest
+      .update(manifest_format::serde, std::move(serialized_manifest))
+      .get();
+    BOOST_CHECK(
+      reconstructed_serde_manifest.get_manifest_version()
+      == topic_manifest::serde_version);
+    BOOST_CHECK(
+      reconstructed_serde_manifest.get_revision()
+      == random_topic_configuration.properties.remote_topic_properties
+           ->remote_revision);
+    BOOST_CHECK(
+      reconstructed_serde_manifest.get_topic_config()
+      == random_topic_configuration);
 }
