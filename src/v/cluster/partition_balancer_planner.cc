@@ -22,6 +22,7 @@
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/types.h"
+#include "container/chunked_hash_map.h"
 #include "model/namespace.h"
 #include "random/generators.h"
 #include "ssx/sformat.h"
@@ -216,7 +217,7 @@ private:
     };
 
     partition_balancer_planner& _parent;
-    absl::btree_map<model::ntp, partition_sizes> _ntp2sizes;
+    chunked_hash_map<model::ntp, partition_sizes> _ntp2sizes;
     absl::node_hash_map<model::ntp, reassignment_info> _reassignments;
     absl::node_hash_map<model::ntp, allocated_partition> _force_reassignments;
     size_t _failed_actions_count = 0;
