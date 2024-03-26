@@ -98,4 +98,22 @@ void rjson_serialize(
     rjson_serialize(w, std::string_view{path.native()});
 }
 
+ss::sstring minify(std::string_view json) {
+    json::Reader r;
+    json::StringStream in(json.data());
+    json::StringBuffer out;
+    json::Writer<json::StringBuffer> w{out};
+    r.Parse(in, w);
+    return ss::sstring(out.GetString(), out.GetSize());
+}
+
+ss::sstring prettify(std::string_view json) {
+    json::Reader r;
+    json::StringStream in(json.data());
+    json::StringBuffer out;
+    json::PrettyWriter<json::StringBuffer> w{out};
+    r.Parse(in, w);
+    return ss::sstring(out.GetString(), out.GetSize());
+}
+
 } // namespace json
