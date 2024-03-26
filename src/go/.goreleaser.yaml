@@ -55,12 +55,6 @@ archives:
       - rpk-darwin
     format: zip
     name_template: "rpk-{{ .Os }}-{{ .Arch }}"
-  - id: migration-tool
-    builds:
-      - migration-tool-windows-and-linux
-      - migration-tool-darwin
-    format: zip
-    name_template: "cluster-to-redpanda-migration-{{ .Os }}-{{ .Arch }}"
 release:
   github:
     owner: redpanda-data
