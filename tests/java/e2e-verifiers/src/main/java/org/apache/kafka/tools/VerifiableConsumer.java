@@ -162,10 +162,12 @@ public class VerifiableConsumer
       if (partitionRecords.isEmpty()) continue;
 
       long minOffset = partitionRecords.get(0).offset();
-      long maxOffset
-          = partitionRecords.get(partitionRecords.size() - 1).offset();
+      var maxRecord = partitionRecords.get(partitionRecords.size() - 1);
+      long maxOffset = maxRecord.offset();
 
-      offsets.put(tp, new OffsetAndMetadata(maxOffset + 1));
+      offsets.put(
+          tp,
+          new OffsetAndMetadata(maxOffset + 1, maxRecord.leaderEpoch(), ""));
       summaries.add(new RecordSetSummary(
           tp.topic(), tp.partition(), partitionRecords.size(), minOffset,
           maxOffset));
