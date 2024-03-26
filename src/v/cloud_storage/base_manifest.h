@@ -37,6 +37,8 @@ enum class manifest_format {
     json,
     serde,
 };
+
+std::ostream& operator<<(std::ostream& s, manifest_format t);
 class base_manifest {
 public:
     virtual ~base_manifest();

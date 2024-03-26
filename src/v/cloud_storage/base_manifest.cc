@@ -35,4 +35,13 @@ std::ostream& operator<<(std::ostream& s, manifest_type t) {
     return s;
 }
 
+std::ostream& operator<<(std::ostream& os, manifest_format f) {
+    switch (f) {
+    case manifest_format::json:
+        return os << "json";
+    case manifest_format::serde:
+        return os << "serde";
+    }
+}
+
 } // namespace cloud_storage
