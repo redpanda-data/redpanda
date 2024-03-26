@@ -85,7 +85,7 @@ builds:
           env:
             - QUILL_LOG_FILE=dist/quill-{{ .Target }}.log
 archives:
-  - id: rpk
+  - id: rpk-zip
     builds:
       - rpk-linux
       - rpk-windows
@@ -96,6 +96,8 @@ release:
   github:
     owner: redpanda-data
     name: redpanda
+  ids:
+    - rpk-zip
   draft: true
   discussion_category_name: Releases
 brews:
@@ -108,7 +110,7 @@ brews:
     folder: Formula
     skip_upload: auto
     ids:
-      - rpk
+      - rpk-zip
     extra_install: |
       generate_completions_from_executable(bin/"rpk", "generate", "shell-completion", base_name: "rpk")
     caveats: |
