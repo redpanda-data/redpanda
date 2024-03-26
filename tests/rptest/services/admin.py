@@ -189,6 +189,30 @@ class RoleMemberList:
         return cls.from_json(rsp.content)
 
 
+class Role:
+    name: str
+    members: RoleMemberList
+
+    def __init__(self, name: str, members: RoleMemberList = RoleMemberList()):
+        self.name = name
+        self.members = members
+
+    @classmethod
+    def from_json(cls, body: bytes):
+        d = json.loads(body)
+        expected_keys = set(['name', 'members'])
+        assert all(k in expected_keys
+                   for k in d), f"Unexpected key(s): {d.keys()}"
+        assert 'name' in d, "Expected 'name' key"
+        name = d['name']
+        members = RoleMemberList(d.get('members', []))
+        return cls(name, members=members)
+
+    @classmethod
+    def from_response(cls, rsp: Response):
+        return cls.from_json(rsp.content)
+
+
 class RoleMemberUpdateResponse:
     role: str
     added: RoleMemberList
@@ -1011,12 +1035,15 @@ class Admin:
 
     def list_roles(self,
                    filter: Optional[str] = None,
-                   principal: Optional[str] = None):
+                   principal: Optional[str] = None,
+                   principal_type: Optional[str] = None):
         params = {}
         if filter is not None:
             params['filter'] = filter
         if principal is not None:
             params['principal'] = principal
+        if principal_type is not None:
+            params['principal_type'] = principal_type
         return self._request("get", "security/roles", params=params)
 
     def update_role_members(self,

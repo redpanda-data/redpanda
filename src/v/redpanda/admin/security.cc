@@ -10,6 +10,7 @@
  */
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
+#include "json/document.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
 #include "kafka/server/server.h"
@@ -24,10 +25,13 @@
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "security/scram_credential.h"
+#include "security/types.h"
 
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/http/exception.hh>
+#include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
+#include <seastar/json/json_elements.hh>
 
 #include <optional>
 #include <sstream>
@@ -258,6 +262,52 @@ parse_json_members_list(const json::Document& doc, std::string_view key) {
     return {result.begin(), result.end()};
 }
 
+security::role_name parse_role_name(const ss::http::request& req) {
+    ss::sstring role_v;
+    if (!admin::path_decode(req.param["role"], role_v)) {
+        vlog(adminlog.debug, "Invalid parameter 'role' got {}", role_v);
+        throw ss::httpd::bad_param_exception{fmt::format(
+          "Invalid parameter 'role' got {{{}}}", req.param["role"])};
+    }
+    return security::role_name(role_v);
+}
+
+security::role_name parse_role_definition(const json::Document& doc) {
+    if (!doc.IsObject()) {
+        vlog(adminlog.debug, "Request body is not a JSON object");
+        throw_role_exception(
+          role_errc::malformed_def, "Request body is not a JSON object");
+    }
+
+    if (!doc.HasMember("role") || !doc["role"].IsString()) {
+        vlog(adminlog.debug, "String 'role' missing from request body");
+        throw_role_exception(
+          role_errc::malformed_def, "Missing string field 'role'");
+    }
+
+    auto role_name = security::role_name{doc["role"].GetString()};
+    validate_no_control(
+      role_name(), admin_server::string_conversion_exception{role_name()});
+
+    if (!security::validate_scram_username(role_name())) {
+        throw_role_exception(role_errc::invalid_name);
+    }
+
+    return role_name;
+}
+
+template<class T>
+requires std::is_base_of_v<ss::json::jsonable, std::remove_cvref_t<T>>
+inline std::unique_ptr<ss::http::reply> make_json_response(
+  std::unique_ptr<ss::http::reply> rep,
+  ss::http::reply::status_type status,
+  T&& body) {
+    rep->set_status(status);
+    rep->write_body(
+      "json", ss::json::formatter::to_json(std::forward<T>(body)));
+    return rep;
+}
+
 } // namespace
 
 void admin_server::register_security_routes() {
@@ -331,57 +381,42 @@ void admin_server::register_security_routes() {
 
     register_route<superuser>(
       ss::httpd::security_json::list_roles,
-      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+      [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
-          ss::httpd::security_json::roles_list body;
-          co_return ss::json::json_return_type(body);
+          return list_roles_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::security_json::create_role,
-      [this](std::unique_ptr<ss::http::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          return create_role_handler(std::move(req));
-      });
+      request_handler_fn{[this](auto req, auto reply) {
+          return create_role_handler(std::move(req), std::move(reply));
+      }});
 
     register_route<superuser>(
       ss::httpd::security_json::get_role,
-      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+      [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
-          throw_role_exception(role_errc::role_not_found);
-          co_return ss::json::json_return_type(ss::json::json_void());
+          return get_role_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::security_json::update_role,
-      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
+      [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
-          throw_role_exception(role_errc::role_not_found);
-          co_return ss::json::json_return_type(ss::json::json_void());
+          return update_role_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::security_json::delete_role,
-      []([[maybe_unused]] std::unique_ptr<ss::http::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          throw_role_exception(role_errc::role_not_found);
-          co_return ss::json::json_return_type(ss::json::json_void());
-      });
+      request_handler_fn{[this](auto req, auto reply) {
+          return delete_role_handler(std::move(req), std::move(reply));
+      }});
 
     register_route<superuser>(
       ss::httpd::security_json::list_role_members,
       [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
-          ss::sstring role_v;
-          if (!admin::path_decode(req->param["role"], role_v)) {
-              vlog(
-                adminlog.debug,
-                "Invalid parameter 'role' got {{{}}}",
-                req->param["role"]);
-              throw_role_exception(role_errc::invalid_name);
-          }
-
-          auto role_name = security::role_name{std::move(role_v)};
+          auto role_name = parse_role_name(*req);
           auto role = _controller->get_role_store().local().get(role_name);
           if (!role.has_value()) {
               vlog(adminlog.debug, "Role '{}' does not exist", role_name);
@@ -604,33 +639,16 @@ ss::future<ss::json::json_return_type> admin_server::list_user_roles_handler(
     co_return ss::json::json_return_type(body);
 }
 
-ss::future<ss::json::json_return_type>
-admin_server::create_role_handler(std::unique_ptr<ss::http::request> req) {
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::create_role_handler(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
     auto doc = co_await parse_json_body(req.get());
-
-    if (!doc.IsObject()) {
-        vlog(adminlog.debug, "Request body is not a JSON object");
-        throw_role_exception(
-          role_errc::malformed_def, "Request body is not a JSON object");
-    }
-
-    if (!doc.HasMember("role") || !doc["role"].IsString()) {
-        vlog(adminlog.debug, "String 'role' missing from request body");
-        throw_role_exception(
-          role_errc::malformed_def, "Missing string field 'role'");
-    }
-
-    auto role_name = security::role_name{doc["role"].GetString()};
-    validate_no_control(role_name(), string_conversion_exception{role_name()});
-
-    if (!security::validate_scram_username(role_name())) {
-        throw_role_exception(role_errc::invalid_name);
-    }
+    auto role_name = parse_role_definition(doc);
 
     ss::httpd::security_json::role_definition j_res;
     j_res.role = role_name();
@@ -644,13 +662,15 @@ admin_server::create_role_handler(std::unique_ptr<ss::http::request> req) {
         // Idempotency: if the empty role already exists,
         // suppress the role_exists error and return success.
         if (_controller->get_role_store().local().get(role_name) == role) {
-            co_return ss::json::json_return_type(j_res);
+            co_return make_json_response(
+              std::move(rep), ss::http::reply::status_type::created, j_res);
         } else {
             throw_role_exception(role_errc::role_already_exists);
         }
     }
     co_await throw_on_error(*req, err, model::controller_ntp);
-    co_return ss::json::json_return_type(j_res);
+    co_return make_json_response(
+      std::move(rep), ss::http::reply::status_type::created, j_res);
 }
 
 ss::future<ss::json::json_return_type>
@@ -746,4 +766,122 @@ admin_server::update_role_members_handler(
 
     co_await throw_on_error(*req, err, model::controller_ntp);
     co_return ss::json::json_return_type(j_res);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::list_roles_handler(std::unique_ptr<ss::http::request> req) {
+    auto filter = req->get_query_param("filter");
+    auto user = req->get_query_param("principal");
+    auto principal_type = req->get_query_param("principal_type");
+
+    if (!principal_type.empty() && principal_type != "User") {
+        throw_role_exception(
+          role_errc::malformed_def,
+          fmt::format(
+            "Role membership reserved for user principals, got {{{}}}",
+            principal_type));
+    }
+
+    auto pred = [&filter, &user](const auto& role_entry) {
+        auto name_prefix_matches = filter.empty()
+                                   || security::role_store::name_prefix_filter(
+                                     role_entry, filter);
+        auto role_has_user = user.empty()
+                             || security::role_store::has_member(
+                               role_entry,
+                               security::role_member{
+                                 security::role_member_type::user, user});
+        return name_prefix_matches && role_has_user;
+    };
+
+    auto roles = _controller->get_role_store().local().range(pred);
+
+    ss::httpd::security_json::roles_list j_res{};
+    for (const auto& role_name : roles) {
+        ss::httpd::security_json::role_description j_desc;
+        j_desc.name = ss::sstring{role_name};
+        j_res.roles.push(j_desc);
+    }
+
+    return ss::make_ready_future<ss::json::json_return_type>(j_res);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::get_role_handler(std::unique_ptr<ss::http::request> req) {
+    auto role_name = parse_role_name(*req);
+    auto role = _controller->get_role_store().local().get(role_name);
+    if (!role.has_value()) {
+        vlog(adminlog.debug, "Role '{}' does not exist", role_name);
+        throw_role_exception(role_errc::role_not_found);
+    }
+
+    ss::httpd::security_json::role j_res;
+    j_res.name = role_name();
+    for (const auto& member : role.value().members()) {
+        j_res.members.push(role_member_to_json(member));
+    }
+    co_return ss::json::json_return_type(j_res);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::update_role_handler(std::unique_ptr<ss::http::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        // In order that we can do a reliably ordered validation of
+        // the request (and drop no-op requests), run on controller leader;
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
+    ss::sstring role_v;
+    if (!admin::path_decode(req->param["role"], role_v)) {
+        throw ss::httpd::bad_param_exception{fmt::format(
+          "Invalid parameter 'role' got {{{}}}", req->param["role"])};
+    }
+    auto from_role_name = security::role_name(role_v);
+
+    auto doc = co_await parse_json_body(req.get());
+    auto to_role_name = parse_role_definition(doc);
+
+    auto err
+      = co_await _controller->get_security_frontend().local().rename_role(
+        from_role_name, to_role_name, model::timeout_clock::now() + 5s);
+    if (err == cluster::errc::role_exists) {
+        throw_role_exception(role_errc::role_name_conflict);
+    } else if (err == cluster::errc::role_does_not_exist) {
+        throw_role_exception(role_errc::role_not_found);
+    }
+    co_await throw_on_error(*req, err, model::controller_ntp);
+
+    ss::httpd::security_json::role_definition j_res;
+    j_res.role = to_role_name();
+    co_return ss::json::json_return_type(j_res);
+}
+
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_role_handler(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        // In order that we can do a reliably ordered validation of
+        // the request (and drop no-op requests), run on controller leader;
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
+    auto role_name = parse_role_name(*req);
+
+    auto err
+      = co_await _controller->get_security_frontend().local().delete_role(
+        role_name, model::timeout_clock::now() + 5s);
+    if (err == cluster::errc::role_does_not_exist) {
+        // Idempotency: removing a non-existent user is successful.
+        vlog(
+          adminlog.debug, "Role '{}' already gone during deletion", role_name);
+        co_return make_json_response(
+          std::move(rep),
+          ss::http::reply::status_type::no_content,
+          ss::json::json_void{});
+    }
+    co_await throw_on_error(*req, err, model::controller_ntp);
+    co_return make_json_response(
+      std::move(rep),
+      ss::http::reply::status_type::no_content,
+      seastar::json::json_void{});
 }

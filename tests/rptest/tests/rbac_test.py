@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import time
+from typing import Optional
 
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
@@ -18,7 +19,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.admin import (Admin, RoleMemberList, RoleUpdate,
                                    RoleErrorCode, RoleError, RolesList,
                                    RoleDescription, RoleMemberUpdateResponse,
-                                   RoleMember)
+                                   RoleMember, Role)
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -39,6 +40,7 @@ class RBACTestBase(RedpandaTest):
     algorithm = "SCRAM-SHA-256"
     role_name0 = 'foo'
     role_name1 = 'bar'
+    role_name2 = 'baz'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -59,6 +61,23 @@ class RBACTestBase(RedpandaTest):
 
 
 class RBACTest(RBACTestBase):
+    def _role_exists(self, target_role: str):
+        res = self.superuser_admin.list_roles()
+        roles = RolesList.from_response(res).roles
+        return any(target_role == role.name for role in roles)
+
+    def _create_and_wait_for_role(self, role: str):
+        self.superuser_admin.create_role(role)
+        wait_until(lambda: self._role_exists(role),
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="Role was not created")
+
+    def _set_of_user_roles(self):
+        res = self.superuser_admin.list_roles()
+        roles = RolesList.from_response(res).roles
+        return set(role.name for role in roles)
+
     @cluster(num_nodes=3)
     def test_superuser_access(self):
         # a superuser may access the RBAC API
@@ -85,8 +104,7 @@ class RBACTest(RBACTestBase):
         res = self.superuser_admin.list_user_roles()
         assert len(RolesList.from_response(res)) == 0, "Unexpected user roles"
 
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.delete_role(role=self.role_name1)
+        self.superuser_admin.delete_role(role=self.role_name1)
 
     @cluster(num_nodes=3)
     def test_regular_user_access(self):
@@ -120,36 +138,239 @@ class RBACTest(RBACTestBase):
 
     @cluster(num_nodes=3)
     def test_create_role(self):
+        self.logger.debug("Test that simple create_role succeeds")
         res = self.superuser_admin.create_role(role=self.role_name0)
         created_role = res.json()['role']
+        assert res.status_code == 201, f"Unexpected HTTP status code: {res.status_code}"
         assert created_role == self.role_name0, f"Incorrect create role response: {res.json()}"
 
-        # Also verify idempotency
+        wait_until(lambda: self._set_of_user_roles() == {self.role_name0},
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="Role was not created")
+
+        self.logger.debug("Also test idempotency of create_role")
         res = self.superuser_admin.create_role(role=self.role_name0)
         created_role = res.json()['role']
         assert created_role == self.role_name0, f"Incorrect create role response: {res.json()}"
 
     @cluster(num_nodes=3)
     def test_invalid_create_role(self):
+        self.logger.debug("Test that create_role rejects an empty HTTP body")
         with expect_http_error(400):
             self.superuser_admin._request("post", "security/roles")
 
+        self.logger.debug("Test that create_role rejects a JSON list body")
         with expect_role_error(RoleErrorCode.MALFORMED_DEF):
             self.superuser_admin._request("post",
                                           "security/roles",
                                           data='["json list not object"]')
 
+        self.logger.debug(
+            "Test that create_role rejects an empty JSON object body")
         with expect_role_error(RoleErrorCode.MALFORMED_DEF):
             self.superuser_admin._request("post",
                                           "security/roles",
                                           json=dict())
 
         # Two ordinals (corresponding to ',' and '=') are explicitly excluded from role names
+        self.logger.debug("Test that create_role rejects invalid role names")
         for ordinal in [0x2c, 0x3d]:
             invalid_rolename = f"john{chr(ordinal)}doe"
 
             with expect_http_error(400):
                 self.superuser_admin.create_role(role=invalid_rolename)
+
+    @cluster(num_nodes=3)
+    def test_list_role_filter(self):
+        role_one = "aaaa-1"
+        role_two = "aaaa-2"
+        role_three = "bbbb-3"
+        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
+        bob = RoleMember(RoleMember.PrincipalType.USER, 'bob')
+
+        self.superuser_admin.create_role(role=role_one)
+        self.superuser_admin.create_role(role=role_two)
+        self.superuser_admin.create_role(role=role_three)
+
+        def matching_role_set(filter: Optional[str] = None,
+                              principal: Optional[str] = None,
+                              principal_type: Optional[str] = None):
+            res = self.superuser_admin.list_roles(
+                filter=filter,
+                principal=principal,
+                principal_type=principal_type)
+            roles = RolesList.from_response(res).roles
+            return set(role.name for role in roles)
+
+        def test_filter(expected_roles: set[str],
+                        filter: Optional[str] = None,
+                        principal: Optional[str] = None,
+                        principal_type: Optional[str] = None):
+            wait_until(lambda: set(expected_roles) == \
+                                matching_role_set(filter=filter, principal=principal, principal_type=principal_type),
+                       timeout_sec=10,
+                       err_msg=f"Mismatch on filter result")
+
+        self.logger.debug(
+            "Test that list_roles works with various combinations of filter")
+        test_filter(filter="aaaa", expected_roles=[role_one, role_two])
+        test_filter(filter="bb", expected_roles=[role_three])
+        test_filter(filter="aaaa-2", expected_roles=[role_two])
+        test_filter(filter="ccc", expected_roles=[])
+
+        self.logger.debug(
+            "Test that list_roles works with an unknown principal")
+        test_filter(principal=alice.name, expected_roles=[])
+
+        self.logger.debug(
+            "Test that list_roles works with an existing principals")
+        self.superuser_admin.update_role_members(role=role_one, add=[alice])
+        self.superuser_admin.update_role_members(role=role_two,
+                                                 add=[alice, bob])
+        self.superuser_admin.update_role_members(role=role_three, add=[bob])
+
+        test_filter(principal=alice.name, expected_roles=[role_one, role_two])
+        test_filter(principal=bob.name, expected_roles=[role_two, role_three])
+        test_filter(filter="aaaa",
+                    principal=bob.name,
+                    expected_roles=[role_two])
+
+        self.logger.debug(
+            "Test that list_roles rejects a non-User principal type")
+        with expect_role_error(RoleErrorCode.MALFORMED_DEF):
+            self.superuser_admin.list_roles(filter="aaa",
+                                            principal=alice.name,
+                                            principal_type="Role")
+        self.logger.debug("Test that list_roles accepts a User principal type")
+        test_filter(filter="aaaa",
+                    principal=bob.name,
+                    principal_type="User",
+                    expected_roles=[role_two])
+
+    @cluster(num_nodes=3)
+    def test_get_role(self):
+        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
+
+        self.logger.debug("Test that get_role rejects an unknown role")
+        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
+            self.superuser_admin.get_role(role=self.role_name0)
+
+        self.logger.debug("Test that get_role succeeds with an existing role")
+        self._create_and_wait_for_role(role=self.role_name1)
+
+        def get_role_succeeds(role_name: str,
+                              expected_members: list[str] = []):
+            try:
+                res = self.superuser_admin.get_role(role=role_name)
+                role = Role.from_response(res)
+
+                return role.name == role_name and \
+                    len(role.members) == len(expected_members) and \
+                    all(member in role.members for member in expected_members)
+            except HTTPError as e:
+                assert RoleError.from_http_error(e).code == RoleErrorCode.ROLE_NOT_FOUND, \
+                    f"Unexpected error while waiting for get_role to succeed: {e}"
+                return False
+
+        wait_until(lambda: get_role_succeeds(self.role_name1),
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="Get role hasn't succeeded in time")
+
+        self.logger.debug(
+            "Test that get_role succeeds with an existing role that has members"
+        )
+        self.superuser_admin.update_role_members(role=self.role_name1,
+                                                 add=[alice])
+
+        wait_until(lambda: get_role_succeeds(self.role_name1,
+                                             expected_members=[alice]),
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="Get role hasn't succeeded in time")
+
+    @cluster(num_nodes=3)
+    def test_update_role(self):
+        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
+
+        self.logger.debug("Test that update_role rejects an unknown role")
+        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
+            self.superuser_admin.update_role(
+                role=self.role_name0, update=RoleUpdate(role=self.role_name1))
+
+        self.logger.debug(
+            "Test that update_role successfully renames role and maintains members"
+        )
+        self.superuser_admin.update_role_members(role=self.role_name0,
+                                                 add=[alice],
+                                                 create=True)
+
+        res = self.superuser_admin.update_role(
+            role=self.role_name0, update=RoleUpdate(role=self.role_name1))
+        new_role = res.json()['role']
+        assert new_role == self.role_name1, f"Unexpected role name: {new_role} != {self.role_name1}"
+
+        def update_completes_atomically():
+            roles = self._set_of_user_roles()
+            # Abort waiting and fail early if we ever see both roles at the same time
+            assert roles in [{self.role_name0}, {self.role_name1}]
+            return roles == {self.role_name1}
+
+        wait_until(update_completes_atomically,
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="Role update hasn't completed in time")
+
+        def update_maintains_members(role_name: str,
+                                     expected_members: list[str] = []):
+            try:
+                res = self.superuser_admin.get_role(role=role_name)
+                role = Role.from_response(res)
+
+                return role.name == role_name and \
+                    len(role.members) == len(expected_members) and \
+                    all(member in role.members for member in expected_members)
+            except HTTPError as e:
+                assert RoleError.from_http_error(e).code == RoleErrorCode.ROLE_NOT_FOUND, \
+                    f"Unexpected error while waiting for get_role to succeed: {e}"
+                return False
+
+        wait_until(lambda: update_maintains_members(self.role_name1,
+                                                    expected_members=[alice]),
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="Role update hasn't completed in time")
+
+        self.logger.debug("Test that updated role no longer exists")
+        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
+            self.superuser_admin.update_role(
+                role=self.role_name0, update=RoleUpdate(role=self.role_name2))
+
+        self.logger.debug(
+            "Test that update_role rejects renaming to an existing role")
+        self._create_and_wait_for_role(role=self.role_name2)
+        with expect_role_error(RoleErrorCode.ROLE_NAME_CONFLICT):
+            self.superuser_admin.update_role(
+                role=self.role_name1, update=RoleUpdate(role=self.role_name2))
+
+    @cluster(num_nodes=3)
+    def test_delete_role(self):
+        self.logger.debug("Test that delete_role succeeds with existing role")
+        self._create_and_wait_for_role(role=self.role_name0)
+
+        res = self.superuser_admin.delete_role(role=self.role_name0)
+        assert res.status_code == 204, f"Unexpected HTTP status code: {res.status_code}"
+
+        wait_until(lambda: not self._role_exists(self.role_name0),
+                   timeout_sec=5,
+                   backoff_sec=0.5)
+
+        self.logger.debug(
+            "Test that delete_role succeeds with non-existing role for idempotency"
+        )
+        self.superuser_admin.delete_role(role=self.role_name0)
+        assert res.status_code == 204, f"Unexpected HTTP status code: {res.status_code}"
 
     @cluster(num_nodes=3)
     def test_members_endpoint(self):
