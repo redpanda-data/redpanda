@@ -7,6 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+# TODO(nv): update kgo infrastructure to support eager status polling from
+#   tests rather than relying on the periodic status polling
+# TODO(nv): figure out if we can put a tight bound on the number of messages lost
+# TODO(nv): Figure out how to test with cloud storage.
+
 import random
 from enum import Enum
 
