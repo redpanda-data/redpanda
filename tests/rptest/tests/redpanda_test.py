@@ -9,7 +9,7 @@
 
 from abc import ABC, abstractmethod
 import os
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence, cast
 
 from ducktape.tests.test import Test, TestContext
 from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud, SISettings, make_redpanda_service, CloudStorageType
@@ -98,8 +98,6 @@ class RedpandaTest(RedpandaTestBase):
         """
         super().__init__(test_context)
 
-        self.si_settings = si_settings
-
         if num_brokers is None and cloud_tier is None:
             # Default to a 3 node cluster if sufficient nodes are available, else
             # a single node cluster.  This is just a default: tests are welcome
@@ -115,7 +113,7 @@ class RedpandaTest(RedpandaTestBase):
                                               num_brokers,
                                               cloud_tier=cloud_tier,
                                               extra_rp_conf=extra_rp_conf,
-                                              si_settings=self.si_settings,
+                                              si_settings=si_settings,
                                               **kwargs)
         self._client = DefaultClient(self.redpanda)
 
@@ -124,6 +122,11 @@ class RedpandaTest(RedpandaTestBase):
         Hook for `skip_debug_mode` decorator
         """
         self.redpanda.set_skip_if_no_redpanda_log(True)
+
+    @property
+    def si_settings(self):
+        """Shortcut to self.redpanda.si_settings"""
+        return self.redpanda.si_settings
 
     @property
     def azure_blob_storage(self):
@@ -164,7 +167,7 @@ class RedpandaTest(RedpandaTestBase):
         versions_in: list[RedpandaVersion],
         already_running: bool = False,
         auto_assign_node_id: bool = False,
-        mid_upgrade_check: Callable[[dict[Any, RedpandaVersion]],
+        mid_upgrade_check: Callable[[Mapping[Any, RedpandaVersion]],
                                     None] = lambda x: None):
         """
         Step the cluster through all the versions in `versions`, at each stage
