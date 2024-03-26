@@ -1042,6 +1042,23 @@ public:
         return tmp;
     }
 
+    deltafor_frame copy() const {
+        deltafor_frame f;
+        f._head = _head;
+        f._last_row = _last_row;
+        f._size = _size;
+        if (_tail) {
+            encoder_t enc(
+              _tail->get_initial_value(),
+              _tail->get_row_count(),
+              _tail->get_last_value(),
+              _tail->copy());
+            f._tail = std::move(enc);
+        }
+
+        return f;
+    }
+
     friend bool operator==(const deltafor_frame&, const deltafor_frame&)
       = default;
 
@@ -1680,6 +1697,14 @@ public:
     using typename base_t::const_iterator;
     using typename base_t::lw_const_iterator;
 
+    deltafor_column copy() const {
+        deltafor_column column;
+        for (const auto& f : this->_frames) {
+            column._frames.push_back(f.copy());
+        }
+        return column;
+    }
+
     /// Find first value that matches the predicate
     const_iterator pred_search(
       value_t value, std::regular_invocable<value_t, value_t> auto pred) const {
@@ -1717,6 +1742,14 @@ public:
     using base_t::base_t;
     using typename base_t::const_iterator;
     using typename base_t::lw_const_iterator;
+
+    deltafor_column copy() const {
+        deltafor_column column;
+        for (const auto& f : this->_frames) {
+            column._frames.push_back(f.copy());
+        }
+        return column;
+    }
 
     const_iterator pred_search(
       value_t value, std::regular_invocable<value_t, value_t> auto pred) const {

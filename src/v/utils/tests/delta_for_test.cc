@@ -1097,3 +1097,23 @@ BOOST_AUTO_TEST_CASE(test_lw_iterator) {
         BOOST_REQUIRE_EQUAL(i++, *it);
     }
 }
+
+BOOST_AUTO_TEST_CASE(test_copying_delta_spec) {
+    delta_delta_column column;
+    for (auto i = 0; i < 20000; ++i) {
+        column.append(i);
+    }
+    auto another = column.copy();
+
+    BOOST_REQUIRE(another == column);
+}
+
+BOOST_AUTO_TEST_CASE(test_copying_xor_spec) {
+    delta_xor_column column;
+    for (auto i = 0; i < 20000; ++i) {
+        column.append(i);
+    }
+    auto another = column.copy();
+
+    BOOST_REQUIRE(another == column);
+}
