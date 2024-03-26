@@ -89,7 +89,7 @@ struct errc_category final : public std::error_category {
         case errc::topic_invalid_replication_factor:
             return "Unable to allocate topic with given replication factor";
         case errc::topic_invalid_config:
-            return "Topic configuration is either bogus or not supported";
+            return "Configuration is invalid";
         case errc::not_leader_controller:
             return "This node is not raft-0 leader. i.e is not leader "
                    "controller";
