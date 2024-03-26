@@ -90,7 +90,7 @@ void rjson_serialize(
     w.EndArray();
 }
 
-template<typename T, size_t chunk_size = 128>
+template<typename T, size_t chunk_size>
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const ss::chunked_fifo<T, chunk_size>& v) {
