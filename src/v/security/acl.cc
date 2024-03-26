@@ -247,7 +247,7 @@ std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
         }
         // ensure that elements won't outlive the corresponding bindings
         // in enclosing scope.
-        maybe_roles.erase_to_end(maybe_roles.begin());
+        maybe_roles.clear();
     }
 
     std::vector<std::vector<acl_binding>> res;
