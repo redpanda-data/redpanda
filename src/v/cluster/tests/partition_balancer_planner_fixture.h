@@ -113,8 +113,8 @@ public:
     }
 
     void set_maintenance_mode(model::node_id id) {
-        members.local().apply(
-          model::offset{}, cluster::maintenance_mode_cmd(id, true));
+        BOOST_REQUIRE(!members.local().apply(
+          model::offset{}, cluster::maintenance_mode_cmd(id, true)));
         auto broker = members.local().get_node_metadata_ref(id);
         BOOST_REQUIRE(broker);
         BOOST_REQUIRE(
@@ -123,8 +123,8 @@ public:
     }
 
     void set_decommissioning(model::node_id id) {
-        members.local().apply(
-          model::offset{}, cluster::decommission_node_cmd(id, 0));
+        BOOST_REQUIRE(!members.local().apply(
+          model::offset{}, cluster::decommission_node_cmd(id, 0)));
         allocator.local().decommission_node(id);
         auto broker = members.local().get_node_metadata_ref(id);
         BOOST_REQUIRE(broker);
@@ -266,8 +266,8 @@ struct partition_balancer_planner_fixture {
             last_node_idx++;
         }
         for (auto& b : new_brokers) {
-            members_table.apply(
-              model::offset{}, cluster::add_node_cmd(b.id(), b));
+            BOOST_REQUIRE(!members_table.apply(
+              model::offset{}, cluster::add_node_cmd(b.id(), b)));
         }
     }
 
