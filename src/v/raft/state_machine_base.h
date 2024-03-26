@@ -61,13 +61,6 @@ public:
     virtual ss::future<> apply_raft_snapshot(const iobuf&) = 0;
 
     /**
-     * Returns a unique identifier of this state machine. Each stm built on top
-     * of the same Raft group must have different id.
-     * Id is going to be used when logging and to mark parts of the snapshots.
-     */
-    virtual std::string_view get_name() const = 0;
-
-    /**
      * Returns a snapshot of an STM state with requested last included offset
      */
     virtual ss::future<iobuf>

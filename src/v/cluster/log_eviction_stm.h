@@ -46,6 +46,8 @@ class consensus;
 class log_eviction_stm
   : public raft::persisted_stm<raft::kvstore_backed_stm_snapshot> {
 public:
+    static constexpr const char* name = "log_eviction_stm";
+
     using offset_result = result<model::offset, std::error_code>;
     log_eviction_stm(raft::consensus*, ss::logger&, storage::kvstore&);
 
@@ -103,7 +105,6 @@ public:
         return model::next_offset(_delete_records_eviction_offset);
     }
 
-    std::string_view get_name() const final { return "log_eviction_stm"; }
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
 protected:

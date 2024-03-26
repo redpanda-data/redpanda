@@ -124,7 +124,7 @@ batch_applicator::apply_to_stm(
       _log.trace,
       "[{}][{}] applying batch with base {} and last {} offsets",
       _ctx,
-      state.stm_entry->stm->get_name(),
+      state.stm_entry->name,
       batch.header().base_offset,
       last_offset);
 
@@ -145,7 +145,7 @@ batch_applicator::apply_to_stm(
           _log.warn,
           "[{}][{}] error applying batch with base_offset: {} - {}",
           _ctx,
-          state.stm_entry->stm->get_name(),
+          state.stm_entry->name,
           batch.base_offset(),
           std::current_exception());
         state.error = true;
@@ -153,16 +153,20 @@ batch_applicator::apply_to_stm(
     }
 }
 
+state_machine_manager::named_stm::named_stm(ss::sstring name, stm_ptr stm)
+  : name(std::move(name))
+  , stm(std::move(stm)) {}
+
 state_machine_manager::state_machine_manager(
-  consensus* raft, std::vector<stm_ptr> stms, ss::scheduling_group apply_sg)
+  consensus* raft, std::vector<named_stm> stms, ss::scheduling_group apply_sg)
   : _raft(raft)
   , _log(ctx_log(_raft->group(), _raft->ntp()))
   , _apply_sg(apply_sg) {
-    for (auto& stm : stms) {
-        std::string_view name = stm->get_name();
+    for (auto& n_stm : stms) {
         _machines.try_emplace(
-          ss::sstring(name),
-          ss::make_lw_shared<state_machine_entry>(std::move(stm)));
+          n_stm.name,
+          ss::make_lw_shared<state_machine_entry>(
+            n_stm.name, std::move(n_stm.stm)));
     }
 }
 
@@ -377,7 +381,7 @@ void state_machine_manager::maybe_start_background_apply(
     vlog(
       _log.debug,
       "starting background apply fiber for '{}' state machine",
-      entry->stm->get_name());
+      entry->name);
 
     ssx::spawn_with_gate(_gate, [this, entry] {
         return entry->background_apply_mutex.get_units().then(
@@ -401,7 +405,7 @@ ss::future<> state_machine_manager::background_apply_fiber(
           "reading batches in range [{}, {}] for '{}' stm background apply",
           entry->stm->next(),
           _next,
-          entry->stm->get_name());
+          entry->name);
         bool error = false;
         try {
             model::record_batch_reader reader = co_await _raft->make_reader(
@@ -415,7 +419,7 @@ ss::future<> state_machine_manager::background_apply_fiber(
             vlog(
               _log.warn,
               "exception thrown from background apply fiber for {} - {}",
-              entry->stm->get_name(),
+              entry->name,
               std::current_exception());
         }
         if (error) {
@@ -426,7 +430,7 @@ ss::future<> state_machine_manager::background_apply_fiber(
     vlog(
       _log.debug,
       "finished background apply for '{}' state machine",
-      entry->stm->get_name());
+      entry->name);
 }
 
 ss::future<iobuf>

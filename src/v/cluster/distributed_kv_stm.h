@@ -78,6 +78,7 @@ requires std::is_trivially_copyable_v<Key>
          && std::is_trivially_copyable_v<Value>
 class distributed_kv_stm final : public raft::persisted_stm<> {
 public:
+    static constexpr const char* name = "distributed_kv_stm";
     explicit distributed_kv_stm(
       size_t max_partitions, ss::logger& logger, raft::consensus* raft)
       : persisted_stm<>("distributed_kv_stm.snapshot", logger, raft)
@@ -156,7 +157,6 @@ public:
         co_return;
     }
 
-    std::string_view get_name() const final { return "distributed_kv_stm"; }
     // TODO: implement delete retention with incremental raft snapshots.
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
