@@ -70,10 +70,15 @@ private:
 
 public:
     using this_type = fragmented_vector<T, fragment_size_bytes>;
+    using backing_type = std::vector<std::vector<T>>;
     using value_type = T;
     using reference = T&;
     using const_reference = const T&;
     using size_type = size_t;
+    using allocator_type = backing_type::allocator_type;
+    using difference_type = backing_type::difference_type;
+    using pointer = T*;
+    using const_pointer = const T*;
 
     /**
      * The maximum number of bytes per fragment as specified in
@@ -89,6 +94,8 @@ public:
       "max size of a fragment must be <= 128KiB");
 
     fragmented_vector() noexcept = default;
+    explicit fragmented_vector(allocator_type alloc)
+      : _frags(alloc) {}
     fragmented_vector& operator=(const fragmented_vector&) noexcept = delete;
     fragmented_vector(fragmented_vector&& other) noexcept {
         *this = std::move(other);
@@ -522,7 +529,7 @@ private:
 
     size_t _size{0};
     size_t _capacity{0};
-    std::vector<std::vector<T>> _frags;
+    backing_type _frags;
 #ifndef NDEBUG
     // Add a generation number that is incremented on every mutation to catch
     // invalidated iterator accesses.

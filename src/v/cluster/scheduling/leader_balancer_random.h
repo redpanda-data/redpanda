@@ -14,14 +14,11 @@
 #include "cluster/scheduling/leader_balancer_constraints.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
+#include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
 #include "model/metadata.h"
 #include "raft/fundamental.h"
 #include "random/generators.h"
-
-#include <absl/container/btree_map.h>
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/node_hash_map.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -95,7 +92,7 @@ private:
         raft::group_id group_id;
         model::broker_shard broker_shard;
     };
-    absl::node_hash_map<raft::group_id, model::broker_shard> _current_leaders;
+    chunked_hash_map<raft::group_id, model::broker_shard> _current_leaders;
 
     using replicas_t = fragmented_vector<replica>;
     replicas_t _replicas;

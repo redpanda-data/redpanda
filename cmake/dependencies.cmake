@@ -53,6 +53,11 @@ fetch_dep(rapidjson
   TAG 14a5dd756e9bef26f9b53d3b4eb1b73c6a1794d5
   SOURCE_SUBDIR redpanda_build)
 
+fetch_dep(unordered_dense
+  REPO https://github.com/redpanda-data/unordered_dense
+  TAG 9338f301522a965309ecec58ce61f54a52fb5c22
+)
+
 set(CRC32C_BUILD_TESTS OFF)
 set(CRC32C_BUILD_BENCHMARKS OFF)
 set(CRC32C_USE_GLOG OFF)
@@ -130,7 +135,8 @@ FetchContent_MakeAvailable(
     tinygo
     wasmtime
     hdrhistogram
-    ada)
+    ada
+    unordered_dense)
 
 add_library(Crc32c::crc32c ALIAS crc32c)
 add_library(aklomp::base64 ALIAS base64)
