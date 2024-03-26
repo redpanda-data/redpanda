@@ -142,7 +142,7 @@ log_manager::log_manager(
   , _feature_table(feature_table)
   , _jitter(_config.compaction_interval())
   , _trigger_gc_jitter(0s, 5s)
-  , _batch_cache(config.reclaim_opts) {
+  , _batch_cache(_config.reclaim_opts) {
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
