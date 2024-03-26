@@ -47,6 +47,7 @@ from rptest.util import firewall_blocked
 from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.redpanda_cloud_tests.cloudv2_object_store_blocked import cloudv2_object_store_blocked
 from rptest.utils.test_mixins import PreallocNodesMixin
+from rptest.utils.mode_checks import skip_unless_cloud_type_is
 
 KiB = 1024
 MiB = KiB * KiB
@@ -785,6 +786,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                    timeout_sec=restart_timeout,
                    backoff_sec=1)
 
+    @skip_if_cloud_type_is('CLOUD_TYPE_FMC')
     @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
         """
