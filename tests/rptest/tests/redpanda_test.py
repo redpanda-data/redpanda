@@ -131,7 +131,7 @@ class RedpandaTest(RedpandaTestBase):
 
     @property
     def cloud_storage_client(self):
-        return self.redpanda.cloud_storage_client
+        return self.redpanda._cloud_storage_client
 
     def client(self):
         return self._client
