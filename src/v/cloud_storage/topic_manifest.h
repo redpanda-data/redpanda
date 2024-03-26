@@ -13,7 +13,6 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
-#include "json/document.h"
 
 #include <optional>
 
@@ -38,8 +37,13 @@ public:
     /// Create empty manifest that supposed to be updated later
     topic_manifest();
 
+    ss::future<> update(ss::input_stream<char> is) override {
+        // assume format is json
+        return update(manifest_format::json, std::move(is));
+    }
+
     /// Update manifest file from input_stream (remote set)
-    ss::future<> update(ss::input_stream<char> is) override;
+    ss::future<> update(manifest_format, ss::input_stream<char> is) override;
 
     /// Serialize manifest object
     ///
@@ -52,7 +56,8 @@ public:
     static remote_manifest_path
     get_topic_manifest_path(model::ns ns, model::topic topic);
 
-    /// Serialize manifest object
+    /// Serialize manifest object in json format. only fields up to
+    /// first_version are serialized
     ///
     /// \param out output stream that should be used to output the json
     void serialize(std::ostream& out) const;
