@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -106,8 +107,13 @@ func executeEdit(
 			editor = fallbackEditor
 		}
 	}
+	// Fix: Issue #17386
+	// Split the editor environment variable to see if it has editor options e.g. code -w, where editor is "code" and its options is "-w"
+	eArgs := strings.Fields(editor)
+	editor = eArgs[0]
+	eArgs = append(eArgs[1:], filename)
 
-	child := exec.Command(editor, filename)
+	child := exec.Command(editor, eArgs...)
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
 	child.Stdin = os.Stdin
