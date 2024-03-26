@@ -353,53 +353,94 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
     }
 }
 
-ss::future<> topic_manifest::update(ss::input_stream<char> is) {
+ss::future<>
+topic_manifest::update(manifest_format format, ss::input_stream<char> is) {
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
     co_await ss::copy(is, os);
-    iobuf_istreambuf ibuf(result);
-    std::istream stream(&ibuf);
 
-    json::IStreamWrapper wrapper(stream);
-    json::Reader reader;
-    topic_manifest_handler handler;
-    if (reader.Parse(wrapper, handler)) {
-        vlog(cst_log.debug, "Parsed successfully!");
-        topic_manifest::do_update(handler);
-    } else {
-        rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
-        size_t o = reader.GetErrorOffset();
+    vlog(cst_log.debug, "Parsing topic manifest with format {}", format);
 
-        if (_topic_config) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest {}: {} at offset {}",
-              get_manifest_path(),
-              rapidjson::GetParseError_En(e),
-              o));
+    switch (format) {
+    case manifest_format::json: {
+        iobuf_istreambuf ibuf(result);
+        std::istream stream(&ibuf);
+
+        json::IStreamWrapper wrapper(stream);
+        json::Reader reader;
+        topic_manifest_handler handler;
+        if (reader.Parse(wrapper, handler)) {
+            vlog(cst_log.debug, "Parsed successfully!");
+            topic_manifest::do_update(handler);
         } else {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest: {} at offset {}",
-              rapidjson::GetParseError_En(e),
-              o));
+            rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
+            size_t o = reader.GetErrorOffset();
+
+            if (_topic_config) {
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format,
+                  "Failed to parse topic manifest {}: {} at offset {}",
+                  get_manifest_path(),
+                  rapidjson::GetParseError_En(e),
+                  o));
+            } else {
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format,
+                  "Failed to parse topic manifest: {} at offset {}",
+                  rapidjson::GetParseError_En(e),
+                  o));
+            }
         }
+        break;
     }
+    case manifest_format::serde:
+        // serde format is straightforward: the buffer is a
+        // cluster::topic_configuration and _rev is inside
+        // remote_topic_properties
+        _topic_config = serde::from_iobuf<cluster::topic_configuration>(
+          std::move(result));
+        _rev = _topic_config->properties.remote_topic_properties.value()
+                 .remote_revision;
+        _manifest_version = topic_manifest::serde_version;
+        break;
+    }
+
     co_return;
 }
 
 ss::future<serialized_data_stream> topic_manifest::serialize() const {
-    iobuf serialized;
-    iobuf_ostreambuf obuf(serialized);
-    std::ostream os(&obuf);
-    serialize(os);
-    if (!os.good()) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "could not serialize topic manifest {}",
-          get_manifest_path()));
+    if (!_topic_config.has_value()) {
+        ss::throw_with_backtrace<std::runtime_error>(
+          "_topic_config is not initialized");
     }
-    size_t size_bytes = serialized.size_bytes();
+
+    if (_manifest_version == first_version) {
+        // serialize in json format
+        iobuf serialized;
+        iobuf_ostreambuf obuf(serialized);
+        std::ostream os(&obuf);
+        serialize(os);
+        if (!os.good()) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "could not serialize topic manifest {}",
+              get_manifest_path()));
+        }
+        size_t size_bytes = serialized.size_bytes();
+        co_return serialized_data_stream{
+          .stream = make_iobuf_input_stream(std::move(serialized)),
+          .size_bytes = size_bytes};
+    }
+
+    // serialize in binary format
+    auto to_serialize = _topic_config.value();
+    // insert _rev into remote_topic_properties, to be able to extract it when
+    // deserializing it
+    to_serialize.properties.remote_topic_properties
+      = cluster::remote_topic_properties(_rev, to_serialize.partition_count);
+
+    auto serialized = serde::to_iobuf(std::move(to_serialize));
+    auto size_bytes = serialized.size_bytes();
     co_return serialized_data_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
@@ -483,7 +524,11 @@ void topic_manifest::serialize(std::ostream& out) const {
         }
     }
 
-    if (_topic_config->properties.mpx_virtual_cluster_id) {
+    // do not serialize fields that are not deserializable by previous versions
+    // of redpanda
+    if (
+      _manifest_version > first_version
+      && _topic_config->properties.mpx_virtual_cluster_id) {
         w.Key("virtual_cluster_id");
         w.String(fmt::format(
           "{}", _topic_config->properties.mpx_virtual_cluster_id.value()));

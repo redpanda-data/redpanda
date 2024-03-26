@@ -15,6 +15,7 @@
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
+#include "compat/cluster_generator.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -410,4 +411,35 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
         reconstructed_props));
 
     BOOST_CHECK(test_cfg == reconstructed.get_topic_config());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_topic_manifest_roundtrip_serde) {
+    // simple test that roundtrip with serde encoding works
+    auto random_topic_configuration
+      = compat::instance_generator<cluster::topic_configuration>::random();
+    // ensure that remote_topic_properties is congruent with the enclosing
+    // topic_config
+    random_topic_configuration.properties.remote_topic_properties
+      = cluster::remote_topic_properties{
+        tests::random_named_int<model::initial_revision_id>(),
+        random_topic_configuration.partition_count};
+
+    // create serde image of random_topic_configuration, deserialize it through
+    // topic_manifest and check that the result is equal
+    auto serde_image = serde::to_iobuf(
+      cluster::topic_configuration{random_topic_configuration});
+
+    auto manifest = topic_manifest{};
+    manifest
+      .update(
+        manifest_format::serde, make_iobuf_input_stream(std::move(serde_image)))
+      .get();
+
+    BOOST_CHECK(
+      manifest.get_manifest_version() == topic_manifest::serde_version);
+    BOOST_CHECK(manifest.get_topic_config() == random_topic_configuration);
+    BOOST_CHECK(
+      manifest.get_revision()
+      == random_topic_configuration.properties.remote_topic_properties
+           ->remote_revision);
 }
