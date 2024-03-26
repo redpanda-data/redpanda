@@ -32,7 +32,7 @@
 namespace {
 
 const std::regex manifest_path_expr{
-  R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest.json)REGEX"};
+  R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest\.json)REGEX"};
 
 // Possible prefix for a path which contains a topic manifest file
 const std::regex prefix_expr{"[a-fA-F0-9]0000000/"};
