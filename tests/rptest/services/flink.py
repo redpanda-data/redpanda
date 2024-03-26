@@ -174,6 +174,7 @@ class FlinkService(Service):
     STATE_RUNNING = 'RUNNING'
     STATE_CANCELING = 'CANCELING'
     STATE_DEPLOYING = 'DEPLOYING'
+    STATE_RESTARTING = 'RESTARTING'
 
     STATE_CREATED = 'CREATED'
     STATE_SCHEDULED = 'SCHEDULED'
@@ -194,11 +195,11 @@ class FlinkService(Service):
         # Map statuses
         self.job_active_statuses = [
             self.STATE_INIT, self.STATE_RECONCILING, self.STATE_RUNNING,
-            self.STATE_CANCELING, self.STATE_DEPLOYING
+            self.STATE_CANCELING, self.STATE_DEPLOYING, self.STATE_RESTARTING,
+            self.STATE_CREATED, self.STATE_SCHEDULED
         ]
         self.job_inactive_statuses = [
-            self.STATE_CREATED, self.STATE_SCHEDULED, self.STATE_FAILED,
-            self.STATE_FINISHED, self.STATE_CANCELED
+            self.STATE_FAILED, self.STATE_FINISHED, self.STATE_CANCELED
         ]
 
         # Provider instance/node util class
@@ -225,15 +226,35 @@ class FlinkService(Service):
         self.service_config['taskmanager.memory.flink.size'] = f"{tm_ram-1}g"
         # Task slots is half cpu cores, 1
         self.service_config['taskmanager.numberOfTaskSlots'] = 1
+        # Set default per-task parallelism to number of vcpus
+        self.service_config['pipeline.max-parallelism'] = specs["vcpus"]
+        # Set maximum default paralel tasks to 2xvcpus
+        self.service_config[
+            'execution.batch.adaptive.auto-parallelism.max-parallelism'] = specs[
+                "vcpus"] * 2
+        # Adaptive scheduler that handles parallelism auto configuration
+        self.service_config['jobmanager.scheduler'] = 'Adaptive'
+        # Task restarts with delay of 30 s if rate per interval exceeded 5
+        # Restarts needed due to discunnects or overloads
+        # Ref: https://nightlies.apache.org/flink/flink-docs-master/docs/ops/state/task_failure_recovery/#failure-rate-restart-strategy
+        self.service_config['restart-strategy.type'] = 'failure-rate'
+        # Delay between restarts
+        self.service_config['restart-strategy.failure-rate.delay'] = '30s'
+        # Rate measuring interval
+        self.service_config[
+            'restart-strategy.failure-rate.failure-rate-interval'] = '10s'
+        # Failures per interval
+        self.service_config[
+            'restart-strategy.failure-rate.max-failures-per-interval'] = 50
 
         self.logger.info("Flink service configufation is:\n"
                          f"{json.dumps(self.service_config, indent=2)}")
-        # No need to tinker with parallelism settings, it is adaptive
+        # No need to further tinker with parallelism settings, it is adaptive
+
         # It is better to run multiple task managers. So, there should be
         # one task manager running for each vcpus. This will provide
         # efficient use of resources
         self.num_taskmanagers = specs["vcpus"]
-
         # internal metric storage
         self._metric = {}
         self.job_idle_threshold_ms = 30000
