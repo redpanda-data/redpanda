@@ -593,11 +593,17 @@ class KgoVerifierProducer(KgoVerifierService):
         return super().wait_node(node, timeout_sec=timeout_sec)
 
     def wait_for_acks(self, count, timeout_sec, backoff_sec):
-        self._redpanda.wait_until(
-            lambda: self._status_thread.errored or self._status.acked >= count,
-            timeout_sec=timeout_sec,
-            backoff_sec=backoff_sec)
-        self._status_thread.raise_on_error()
+        def cond():
+            self._status_thread.raise_on_error()
+            return self._status_thread.errored or self._status.acked >= count
+
+        def err_msg():
+            return f"Waiting for {count} acks, got only {self._status.acked} in {timeout_sec} seconds"
+
+        wait_until(cond,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=backoff_sec,
+                   err_msg=err_msg)
 
     def wait_for_offset_map(self):
         # Producer worker aims to checkpoint every 5 seconds, so we should see this promptly.
