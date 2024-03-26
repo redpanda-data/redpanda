@@ -18,7 +18,7 @@
 #include "model/record_batch_types.h"
 #include "model/tests/random_batch.h"
 #include "storage/parser.h"
-#include "storage/segment_appender_utils.h"
+#include "storage/record_batch_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
 
 #include <boost/test/tools/interface.hpp>
@@ -59,7 +59,7 @@ inline iobuf generate_segment(model::offset base_offset, int count) {
     auto buff = model::test::make_random_batches(base_offset, count, false);
     iobuf result;
     for (auto&& batch : buff) {
-        auto hdr = storage::disk_header_to_iobuf(batch.header());
+        auto hdr = storage::batch_header_to_disk_iobuf(batch.header());
         result.append(std::move(hdr));
         result.append(iobuf_deep_copy(batch.data()));
     }
@@ -108,7 +108,7 @@ inline std::pair<iobuf, model::offset> generate_segment(
     auto [buff, next_offset] = make_random_batches(base_offset, batches);
     iobuf result;
     for (auto&& batch : buff) {
-        auto hdr = storage::disk_header_to_iobuf(batch.header());
+        auto hdr = storage::batch_header_to_disk_iobuf(batch.header());
         result.append(std::move(hdr));
         result.append(iobuf_deep_copy(batch.data()));
     }

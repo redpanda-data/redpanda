@@ -17,9 +17,9 @@
 #include "storage/file_sanitizer.h"
 #include "storage/log_reader.h"
 #include "storage/parser_utils.h"
+#include "storage/record_batch_utils.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
-#include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
 #include "utils/disk_log_builder.h"
 

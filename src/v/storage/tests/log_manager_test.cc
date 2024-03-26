@@ -16,9 +16,9 @@
 #include "storage/directories.h"
 #include "storage/disk_log_appender.h"
 #include "storage/file_sanitizer.h"
+#include "storage/record_batch_utils.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
-#include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
 
 #include <seastar/core/thread.hh>
