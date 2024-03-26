@@ -325,7 +325,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
-      seg->offsets().committed_offset);
+      seg->offsets().get_committed_offset());
 
     auto replaced = stm_manifest.replaced_segments();
     BOOST_REQUIRE_EQUAL(replaced.size(), 1);
@@ -347,7 +347,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
-      seg->offsets().committed_offset);
+      seg->offsets().get_committed_offset());
 
     replaced = stm_manifest.replaced_segments();
     BOOST_REQUIRE_EQUAL(replaced.size(), 2);
@@ -397,7 +397,7 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
-      seg->offsets().committed_offset);
+      seg->offsets().get_committed_offset());
 
     auto replaced = stm_manifest.replaced_segments();
     BOOST_REQUIRE_EQUAL(replaced.size(), 2);
@@ -523,7 +523,7 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
 
     create_segment(
       {manifest_ntp,
-       last_segment->offsets().committed_offset + model::offset{1},
+       last_segment->offsets().get_committed_offset() + model::offset{1},
        model::term_id{4},
        1});
 
@@ -546,7 +546,7 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
-      seg->offsets().committed_offset);
+      seg->offsets().get_committed_offset());
 
     auto replaced = stm_manifest.replaced_segments();
     BOOST_REQUIRE_EQUAL(replaced.size(), 1);
@@ -592,15 +592,19 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
 
     create_segment(
       {manifest_ntp,
-       last_segment->offsets().committed_offset + model::offset{1},
+       last_segment->offsets().get_committed_offset() + model::offset{1},
        model::term_id{4},
        1});
 
     // Self-compact the first segment and re-upload. One compacted
     // and one non-compacted segments are uploaded.
     reset_http_call_state();
-    auto seg = self_compact_next_segment(
-      disk_log_impl()->segments().begin()->get()->offsets().committed_offset);
+    auto seg = self_compact_next_segment(disk_log_impl()
+                                           ->segments()
+                                           .begin()
+                                           ->get()
+                                           ->offsets()
+                                           .get_committed_offset());
 
     // Fail the first compacted upload
     fail_request_if(
@@ -776,7 +780,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
 
         create_segment(
           {manifest_ntp,
-           last_segment->offsets().committed_offset + model::offset{1},
+           last_segment->offsets().get_committed_offset() + model::offset{1},
            model::term_id{6},
            10});
     }
@@ -823,7 +827,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
-      seg->offsets().committed_offset);
+      seg->offsets().get_committed_offset());
 
     replaced = stm_manifest.replaced_segments();
     BOOST_REQUIRE_EQUAL(replaced.size(), 4);

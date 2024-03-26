@@ -173,7 +173,7 @@ TEST_P(CompactionFixtureParamTest, TestDedupeOnePass) {
     ss::abort_source never_abort;
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     storage::compaction_config cfg(
-      disk_log.segments().back()->offsets().base_offset,
+      disk_log.segments().back()->offsets().get_base_offset(),
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -238,7 +238,7 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPass) {
     ss::abort_source never_abort;
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     storage::compaction_config cfg(
-      disk_log.segments().back()->offsets().base_offset,
+      disk_log.segments().back()->offsets().get_base_offset(),
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -280,7 +280,7 @@ TEST_P(CompactionFixtureBatchSizeParamTest, TestRecompactWithNewData) {
     ss::abort_source never_abort;
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     storage::compaction_config cfg(
-      disk_log.segments().back()->offsets().base_offset,
+      disk_log.segments().back()->offsets().get_base_offset(),
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -299,7 +299,7 @@ TEST_P(CompactionFixtureBatchSizeParamTest, TestRecompactWithNewData) {
     // But once we add more data, we become eligible for compaction again.
     generate_data(1, cardinality, records_per_segment).get();
     storage::compaction_config new_cfg(
-      disk_log.segments().back()->offsets().base_offset,
+      disk_log.segments().back()->offsets().get_base_offset(),
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -347,7 +347,7 @@ TEST_F(CompactionFixtureTest, TestCompactWithNonDataBatches) {
     auto before_compaction_count
       = disk_log.get_probe().get_segments_compacted();
     storage::compaction_config new_cfg(
-      disk_log.segments().back()->offsets().base_offset,
+      disk_log.segments().back()->offsets().get_base_offset(),
       ss::default_priority_class(),
       never_abort,
       std::nullopt);
@@ -434,7 +434,7 @@ TEST_P(CompactionFilledReaderTest, ReadFilledGaps) {
     // Compaction should leave behind gaps, but those gaps should be filled
     // when reading.
     storage::compaction_config cfg(
-      disk_log.segments().back()->offsets().base_offset,
+      disk_log.segments().back()->offsets().get_base_offset(),
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -492,7 +492,7 @@ TEST_F(CompactionFixtureTest, TestReadFilledGapsWithTerms) {
     }
 
     storage::compaction_config cfg(
-      disk_log.segments().back()->offsets().base_offset,
+      disk_log.segments().back()->offsets().get_base_offset(),
       ss::default_priority_class(),
       never_abort,
       std::nullopt,

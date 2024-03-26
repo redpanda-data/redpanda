@@ -165,3 +165,17 @@ rp_test(
   LABELS storage
   ARGS "-- -c 1"
 )
+
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME segment_offset_tracker
+  SOURCES
+  segment_offset_tracker_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::storage
+  ARGS "-- -c 1"
+  LABELS storage
+)

@@ -74,8 +74,8 @@ static void log_segment(const storage::segment& s) {
       test_log.info,
       "Log segment {}. Offsets: {} {}. Is compacted: {}. Is sealed: {}.",
       s.filename(),
-      s.offsets().base_offset,
-      s.offsets().dirty_offset,
+      s.offsets().get_base_offset(),
+      s.offsets().get_dirty_offset(),
       s.is_compacted_segment(),
       !s.has_appender());
 }
@@ -111,8 +111,8 @@ void log_upload_candidate(const archival::upload_candidate& up) {
       "Upload candidate, exposed name: {} "
       "real offsets: {} {}",
       up.exposed_name,
-      first_source->offsets().base_offset,
-      first_source->offsets().dirty_offset);
+      first_source->offsets().get_base_offset(),
+      first_source->offsets().get_dirty_offset());
 }
 
 // NOLINTNEXTLINE
@@ -840,7 +840,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     model::offset start_offset;
 
-    start_offset = upload1.sources.front()->offsets().dirty_offset
+    start_offset = upload1.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
     auto upload2 = require_upload_candidate(
                      policy
@@ -853,9 +853,10 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(upload2.starting_offset() == offset2);
     BOOST_REQUIRE(upload2.exposed_name != upload1.exposed_name);
     BOOST_REQUIRE(upload2.sources.front() != upload1.sources.front());
-    BOOST_REQUIRE(upload2.sources.front()->offsets().base_offset == offset2);
+    BOOST_REQUIRE(
+      upload2.sources.front()->offsets().get_base_offset() == offset2);
 
-    start_offset = upload2.sources.front()->offsets().dirty_offset
+    start_offset = upload2.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
     auto upload3 = require_upload_candidate(
                      policy
@@ -868,9 +869,10 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(upload3.starting_offset() == offset3);
     BOOST_REQUIRE(upload3.exposed_name != upload2.exposed_name);
     BOOST_REQUIRE(upload3.sources.front() != upload2.sources.front());
-    BOOST_REQUIRE(upload3.sources.front()->offsets().base_offset == offset3);
+    BOOST_REQUIRE(
+      upload3.sources.front()->offsets().get_base_offset() == offset3);
 
-    start_offset = upload3.sources.front()->offsets().dirty_offset
+    start_offset = upload3.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
     require_candidate_creation_error(
       policy
@@ -935,7 +937,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE(!candidate.sources.empty());
     BOOST_REQUIRE_GT(candidate.starting_offset(), 0);
     BOOST_REQUIRE_GT(
-      candidate.sources.front()->offsets().base_offset, model::offset{0});
+      candidate.sources.front()->offsets().get_base_offset(), model::offset{0});
 }
 
 // NOLINTNEXTLINE
@@ -1113,7 +1115,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       .is_compacted = false,
       .size_bytes = 100,
       .base_offset = model::offset(2),
-      .committed_offset = segment1->offsets().committed_offset
+      .committed_offset = segment1->offsets().get_committed_offset()
                           - model::offset(10),
       .segment_term = model::term_id{2},
       .delta_offset_end = model::offset_delta(0),
@@ -1526,12 +1528,14 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
       manifest_ntp, archival::segment_name("0-1-v1.log"));
     auto& tracker1 = const_cast<storage::segment::offset_tracker&>(
       segment1->offsets());
-    tracker1.dirty_offset = offset2 - model::offset(1);
+    tracker1.set_offset(storage::segment::offset_tracker::dirty_offset_t{
+      offset2 - model::offset(1)});
     auto segment2 = get_segment(
       manifest_ntp, archival::segment_name("1000-1-v1.log"));
     auto& tracker2 = const_cast<storage::segment::offset_tracker&>(
       segment2->offsets());
-    tracker2.dirty_offset = offset3 - model::offset(1);
+    tracker2.set_offset(storage::segment::offset_tracker::dirty_offset_t{
+      offset3 - model::offset(1)});
 
     // Every segment should be returned once as we're calling the
     // policy to get next candidate.
@@ -1556,7 +1560,7 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     BOOST_REQUIRE(!upload1.sources.empty());
     BOOST_REQUIRE(upload1.starting_offset == offset1);
 
-    start_offset = upload1.sources.front()->offsets().dirty_offset
+    start_offset = upload1.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
     auto upload2 = require_upload_candidate(
                      policy
@@ -1569,9 +1573,10 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     BOOST_REQUIRE(upload2.starting_offset == offset2);
     BOOST_REQUIRE(upload2.exposed_name != upload1.exposed_name);
     BOOST_REQUIRE(upload2.sources.front() != upload1.sources.front());
-    BOOST_REQUIRE(upload2.sources.front()->offsets().base_offset == offset2);
+    BOOST_REQUIRE(
+      upload2.sources.front()->offsets().get_base_offset() == offset2);
 
-    start_offset = upload2.sources.front()->offsets().dirty_offset
+    start_offset = upload2.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
     auto upload3 = require_upload_candidate(
                      policy
@@ -1584,9 +1589,10 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     BOOST_REQUIRE(upload3.starting_offset == offset3);
     BOOST_REQUIRE(upload3.exposed_name != upload2.exposed_name);
     BOOST_REQUIRE(upload3.sources.front() != upload2.sources.front());
-    BOOST_REQUIRE(upload3.sources.front()->offsets().base_offset == offset3);
+    BOOST_REQUIRE(
+      upload3.sources.front()->offsets().get_base_offset() == offset3);
 
-    start_offset = upload3.sources.front()->offsets().dirty_offset
+    start_offset = upload3.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
     require_candidate_creation_error(
       policy

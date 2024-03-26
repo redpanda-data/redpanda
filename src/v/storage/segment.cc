@@ -306,7 +306,8 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
        c = std::move(c),
        i = std::move(i)]() mutable {
           return readers_cache
-            ->evict_range(_tracker.base_offset, _tracker.dirty_offset)
+            ->evict_range(
+              _tracker.get_base_offset(), _tracker.get_dirty_offset())
             .then(
               [this, a = std::move(a), c = std::move(c), i = std::move(i)](
                 readers_cache::range_lock_holder readers_cache_lock) mutable {
@@ -336,14 +337,17 @@ ss::future<> segment::do_flush() {
     if (!_appender) {
         return ss::make_ready_future<>();
     }
-    auto o = _tracker.dirty_offset;
+    auto o = _tracker.get_dirty_offset();
     auto fsize = _appender->file_byte_offset();
     return _appender->flush().then([this, o, fsize] {
         // never move committed offset backward, there may be multiple
         // outstanding flushes once the one executed later in terms of offset
         // finishes we guarantee that all previous flushes finished.
-        _tracker.committed_offset = std::max(o, _tracker.committed_offset);
-        _tracker.stable_offset = std::max(o, _tracker.stable_offset);
+        _tracker.set_offsets(
+          offset_tracker::committed_offset_t{
+            std::max(o, _tracker.get_committed_offset())},
+          offset_tracker::stable_offset_t{
+            std::max(o, _tracker.get_stable_offset())});
         _reader->set_file_size(std::max(fsize, _reader->file_size()));
         clear_cached_disk_usage();
     });
@@ -382,9 +386,10 @@ ss::future<> segment::do_truncate(
   model::offset new_max_offset,
   size_t physical,
   model::timestamp new_max_timestamp) {
-    _tracker.committed_offset = new_max_offset;
-    _tracker.stable_offset = new_max_offset;
-    _tracker.dirty_offset = new_max_offset;
+    _tracker.set_offsets(
+      offset_tracker::committed_offset_t{new_max_offset},
+      offset_tracker::stable_offset_t{new_max_offset},
+      offset_tracker::dirty_offset_t{new_max_offset});
     _reader->set_file_size(physical);
     vlog(
       stlog.trace,
@@ -433,14 +438,16 @@ ss::future<> segment::do_truncate(
 
 ss::future<bool> segment::materialize_index() {
     vassert(
-      _tracker.base_offset == model::next_offset(_tracker.dirty_offset),
+      _tracker.get_base_offset()
+        == model::next_offset(_tracker.get_dirty_offset()),
       "Materializing the index must happen before tracking any data. {}",
       *this);
     return _idx.materialize_index().then([this](bool yn) {
         if (yn) {
-            _tracker.committed_offset = _idx.max_offset();
-            _tracker.stable_offset = _idx.max_offset();
-            _tracker.dirty_offset = _idx.max_offset();
+            _tracker.set_offsets(
+              offset_tracker::committed_offset_t{_idx.max_offset()},
+              offset_tracker::stable_offset_t{_idx.max_offset()},
+              offset_tracker::dirty_offset_t{_idx.max_offset()});
         }
         return yn;
     });
@@ -497,12 +504,12 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
 ss::future<append_result> segment::do_append(const model::record_batch& b) {
     check_segment_not_closed("append()");
     vassert(
-      b.base_offset() >= _tracker.base_offset,
+      b.base_offset() >= _tracker.get_base_offset(),
       "Invalid state. Attempted to append a batch with base_offset:{}, but "
       "would invalidate our initial state base offset of:{}. Actual batch "
       "header:{}, self:{}",
       b.base_offset(),
-      _tracker.base_offset,
+      _tracker.get_base_offset(),
       b.header(),
       *this);
     vassert(
@@ -528,7 +535,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
     // proxy serialization to segment_appender
     auto write_fut = _appender->append(b).then(
       [this, &b, start_physical_offset, expected_end_physical] {
-          _tracker.dirty_offset = b.last_offset();
+          _tracker.set_offset(offset_tracker::dirty_offset_t{b.last_offset()});
           const auto end_physical_offset = _appender->file_byte_offset();
 
           vassert(
@@ -555,7 +562,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
             // offset has been advances and the cache was already marked as
             // clean up to or beyond the offset of the batch we are writing. In
             // that case, the batch entry should be considered clean.
-            _tracker.stable_offset < b.last_offset()
+            _tracker.get_stable_offset() < b.last_offset()
               ? batch_cache::is_dirty_entry::yes
               : batch_cache::is_dirty_entry::no);
           return ret;
@@ -662,11 +669,13 @@ void segment::advance_stable_offset(size_t filepos) {
     // Maintain `stable_offset <= dirty_offset` invariant.
     // `advance_stable_offset` may be called before the continuation attached to
     // the `segment_appender::append` where we are advancing the dirty offset.
-    _tracker.stable_offset = it->second;
-    _tracker.dirty_offset = std::max(_tracker.dirty_offset, it->second);
+    _tracker.set_offsets(
+      offset_tracker::stable_offset_t{it->second},
+      offset_tracker::dirty_offset_t{
+        std::max(it->second, _tracker.get_dirty_offset())});
 
     if (_cache) {
-        _cache->mark_clean(_tracker.stable_offset);
+        _cache->mark_clean(_tracker.get_stable_offset());
     }
 
     _inflight.erase(_inflight.begin(), std::next(it));
@@ -679,10 +688,10 @@ std::ostream& operator<<(std::ostream& o, const segment::offset_tracker& t) {
     fmt::print(
       o,
       "{{term:{}, base_offset:{}, committed_offset:{}, dirty_offset:{}}}",
-      t.term,
-      t.base_offset,
-      t.committed_offset,
-      t.dirty_offset);
+      t.get_term(),
+      t.get_base_offset(),
+      t.get_committed_offset(),
+      t.get_dirty_offset());
     return o;
 }
 

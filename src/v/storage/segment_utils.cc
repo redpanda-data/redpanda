@@ -386,12 +386,12 @@ ss::future<storage::index_state> do_copy_segment_data(
       co_await make_reader_handle(idx_path, cfg.sanitizer_config),
       cfg.iopc,
       64_KiB);
-    auto compacted_offsets = co_await generate_compacted_list(
-                               seg->offsets().base_offset, compacted_reader)
-                               .finally([&] {
-                                   return compacted_reader.close().then_wrapped(
-                                     [](ss::future<>) {});
-                               });
+    auto compacted_offsets
+      = co_await generate_compacted_list(
+          seg->offsets().get_base_offset(), compacted_reader)
+          .finally([&] {
+              return compacted_reader.close().then_wrapped([](ss::future<>) {});
+          });
 
     // prepare a new segment with only the compacted_offsets
     auto tmpname = seg->reader().path().to_staging();
@@ -421,7 +421,7 @@ ss::future<storage::index_state> do_copy_segment_data(
     model::offset segment_last_offset{};
     if (likely(feature_table.local().is_active(
           features::feature::compaction_placeholder_batch))) {
-        segment_last_offset = seg->offsets().committed_offset;
+        segment_last_offset = seg->offsets().get_committed_offset();
     }
     auto copy_reducer = copy_data_segment_reducer(
       std::move(should_keep),
@@ -456,7 +456,7 @@ model::record_batch_reader create_segment_full_reader(
   ss::rwlock::holder h) {
     auto o = s->offsets();
     auto reader_cfg = log_reader_config(
-      o.base_offset, o.dirty_offset, cfg.iopc);
+      o.get_base_offset(), o.get_dirty_offset(), cfg.iopc);
     reader_cfg.skip_batch_cache = true;
     segment_set::underlying_t set;
     set.reserve(1);
@@ -623,7 +623,7 @@ ss::future<> rebuild_compaction_index(
     }
     // TODO: Improve memory management here, eg: ton of aborted txs?
     auto aborted_txs = co_await stm_manager->aborted_tx_ranges(
-      s->offsets().base_offset, s->offsets().stable_offset);
+      s->offsets().get_base_offset(), s->offsets().get_stable_offset());
     co_await build_compaction_index(
       create_segment_full_reader(s, cfg, pb, std::move(h)),
       stm_manager,
@@ -770,11 +770,18 @@ make_concatenated_segment(
     auto& back = segments.back()->offsets();
 
     // offsets span the concatenated range
-    segment::offset_tracker offsets(front.term, front.base_offset);
-    offsets.committed_offset = std::max(
-      front.committed_offset, back.committed_offset);
-    offsets.dirty_offset = std::max(front.dirty_offset, back.committed_offset);
-    offsets.stable_offset = std::max(front.stable_offset, back.stable_offset);
+    segment::offset_tracker offsets(front.get_term(), front.get_base_offset());
+    const auto committed_offset = std::max(
+      front.get_committed_offset(), back.get_committed_offset());
+    const auto stable_offset = std::max(
+      front.get_stable_offset(), back.get_stable_offset());
+    const auto dirty_offset = std::max(
+      front.get_dirty_offset(), back.get_committed_offset());
+
+    offsets.set_offsets(
+      segment::offset_tracker::committed_offset_t{committed_offset},
+      segment::offset_tracker::stable_offset_t{stable_offset},
+      segment::offset_tracker::dirty_offset_t{dirty_offset});
 
     // build segment reader over combined data
     auto reader = std::make_unique<segment_reader>(
@@ -805,7 +812,7 @@ make_concatenated_segment(
     }();
     segment_index index(
       index_name,
-      offsets.base_offset,
+      offsets.get_base_offset(),
       segment_index::default_data_buffer_step,
       feature_table,
       cfg.sanitizer_config,

@@ -142,7 +142,7 @@ void segment_collector::do_collect(segment_collector_mode mode) {
         auto segment_size = result.segment->size_bytes();
         if (
           _target_end_inclusive.has_value()
-          && result.segment->offsets().committed_offset
+          && result.segment->offsets().get_committed_offset()
                >= _target_end_inclusive.value()) {
             // In this case the collected size may overflow
             // _max_uploaded_segment_size a bit so we could actually find
@@ -187,11 +187,11 @@ void segment_collector::do_collect(segment_collector_mode mode) {
             _begin_inclusive = std::max(
               {_begin_inclusive,
                _log.offsets().start_offset,
-               result.segment->offsets().base_offset});
+               result.segment->offsets().get_base_offset()});
             align_begin_offset_to_manifest();
         }
         _segments.push_back(result.segment);
-        current_segment_end = result.segment->offsets().committed_offset;
+        current_segment_end = result.segment->offsets().get_committed_offset();
         start = current_segment_end + model::offset{1};
         _collected_size += segment_size;
     }
@@ -348,13 +348,13 @@ cloud_storage::segment_name segment_collector::adjust_segment_name() const {
     auto version = meta ? meta->version : storage::record_version_type::v1;
 
     cloud_storage::segment_name name{};
-    if (_begin_inclusive == first->offsets().base_offset) {
+    if (_begin_inclusive == first->offsets().get_base_offset()) {
         auto orig_path = std::filesystem::path(file_name);
         name = cloud_storage::segment_name(orig_path.filename().string());
         vlog(archival_log.debug, "Using original segment name: {}", name);
     } else {
         auto path = storage::segment_path::make_segment_path(
-          *_ntp_cfg, _begin_inclusive, first->offsets().term, version);
+          *_ntp_cfg, _begin_inclusive, first->offsets().get_term(), version);
         name = cloud_storage::segment_name(path.filename().string());
         vlog(archival_log.debug, "Using adjusted segment name: {}", name);
     }
@@ -433,8 +433,8 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
                 fmt::print(
                   seg,
                   "{}-{}/{}; ",
-                  s->offsets().base_offset,
-                  s->offsets().committed_offset,
+                  s->offsets().get_base_offset(),
+                  s->offsets().get_committed_offset(),
                   s->size_bytes());
             }
             vlog(archival_log.debug, "Collected segments: {}", seg.str());
@@ -502,8 +502,8 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
       "collected size: {}, last segment {}-{}/{}, head seek bytes: {}, tail "
       "seek bytes: {}",
       _collected_size,
-      last->offsets().base_offset,
-      last->offsets().committed_offset,
+      last->offsets().get_base_offset(),
+      last->offsets().get_committed_offset(),
       last_size_bytes,
       head_seek.bytes,
       tail_seek.bytes);
@@ -563,7 +563,7 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
         .final_file_offset = tail_seek.bytes,
         .base_timestamp = head_seek.ts,
         .max_timestamp = tail_seek.ts,
-        .term = first->offsets().term,
+        .term = first->offsets().get_term(),
         .sources = _segments,
       },
       std::move(locks_resolved)};

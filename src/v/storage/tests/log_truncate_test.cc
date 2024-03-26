@@ -496,13 +496,14 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
         auto truncate_offset = truncate_offsets[i_seg];
 
         BOOST_REQUIRE_EQUAL(
-          offsets.dirty_offset, truncate_offset - model::offset{1});
+          offsets.get_dirty_offset(), truncate_offset - model::offset{1});
 
         auto next_offsets = (*next)->offsets();
-        BOOST_REQUIRE_EQUAL(next_offsets.base_offset, truncate_offset);
+        BOOST_REQUIRE_EQUAL(next_offsets.get_base_offset(), truncate_offset);
         // segment commited offset has to be lower than next segment base
         // offset
-        BOOST_REQUIRE_LT(offsets.committed_offset, next_offsets.base_offset);
+        BOOST_REQUIRE_LT(
+          offsets.get_committed_offset(), next_offsets.get_base_offset());
     }
 }
 
@@ -554,7 +555,7 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     f2.get0();
 
     BOOST_REQUIRE_EQUAL(
-      (*log->segments().begin())->offsets().base_offset,
+      (*log->segments().begin())->offsets().get_base_offset(),
       log->offsets().start_offset);
 }
 

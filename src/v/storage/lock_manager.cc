@@ -45,7 +45,7 @@ lock_manager::range_lock(const timequery_config& cfg) {
       std::back_inserter(tmp),
       [&cfg](ss::lw_shared_ptr<segment>& s) {
           // must be base offset
-          return s->offsets().base_offset <= cfg.max_offset;
+          return s->offsets().get_base_offset() <= cfg.max_offset;
       });
     return range(std::move(tmp));
 }
@@ -59,7 +59,7 @@ lock_manager::range_lock(const log_reader_config& cfg) {
       std::back_inserter(tmp),
       [&cfg](ss::lw_shared_ptr<segment>& s) {
           // must be base offset
-          return s->offsets().base_offset <= cfg.max_offset;
+          return s->offsets().get_base_offset() <= cfg.max_offset;
       });
     return range(std::move(tmp));
 }

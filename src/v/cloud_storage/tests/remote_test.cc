@@ -553,7 +553,7 @@ FIXTURE_TEST(test_concat_segment_upload, remote_fixture) {
     for (auto i = 0; i < 4; ++i) {
         b | add_segment(start_offset) | add_random_batch(start_offset, 10);
         auto& segment = b.get_segment(i);
-        start_offset = segment.offsets().dirty_offset + model::offset{1};
+        start_offset = segment.offsets().get_dirty_offset() + model::offset{1};
     }
 
     auto bucket = cloud_storage_clients::bucket_name("bucket");

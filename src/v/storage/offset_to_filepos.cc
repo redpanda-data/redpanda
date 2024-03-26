@@ -106,7 +106,7 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
     auto ix_begin = segment->index().find_nearest(begin_inclusive);
     size_t scan_from = ix_begin ? ix_begin->filepos : 0;
     model::offset sto = ix_begin ? ix_begin->offset
-                                 : segment->offsets().base_offset;
+                                 : segment->offsets().get_base_offset();
 
     model::timestamp ts = base_timestamp;
     bool offset_found = false;
@@ -202,7 +202,8 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
     }
 
     size_t scan_from = ix_end ? ix_end->filepos : 0;
-    model::offset fo = ix_end ? ix_end->offset : segment->offsets().base_offset;
+    model::offset fo = ix_end ? ix_end->offset
+                              : segment->offsets().get_base_offset();
     vlog(
       stlog.debug,
       "Segment index lookup returned: {}, scanning from pos {} - offset {}",

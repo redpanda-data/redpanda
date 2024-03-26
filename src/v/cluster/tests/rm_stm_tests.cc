@@ -537,9 +537,10 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
           logger.info,
           "Seg index {}, begin {}, end {}",
           segment_index,
-          offsets.base_offset,
-          offsets.dirty_offset);
-        return aborted_txs(offsets.base_offset, offsets.dirty_offset);
+          offsets.get_base_offset(),
+          offsets.get_dirty_offset());
+        return aborted_txs(
+          offsets.get_base_offset(), offsets.get_dirty_offset());
     };
 
     BOOST_REQUIRE_EQUAL(
