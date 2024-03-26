@@ -74,7 +74,8 @@ struct readers_cache_test_fixture : seastar_test {
             model::offset(0),
             model::offset::max(),
             ss::default_priority_class()),
-          probe);
+          probe,
+          nullptr);
     }
 
     segment_ptr make_segment(model::offset base_offset) {
