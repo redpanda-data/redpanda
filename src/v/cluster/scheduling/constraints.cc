@@ -221,30 +221,7 @@ hard_constraint disk_not_overflowed_by_partition(
       max_disk_usage_ratio, partition_size, node_disk_reports));
 }
 
-soft_constraint max_final_capacity() {
-    class impl : public soft_constraint::impl {
-    public:
-        soft_constraint_evaluator
-        make_evaluator(const replicas_t&) const final {
-            return [](const allocation_node& node) {
-                // we return 0 for fully allocated node and 10'000'000 for nodes
-                // with maximum capacity available
-                auto final_capacity
-                  = node.max_capacity()
-                    - std::min(node.max_capacity(), node.final_partitions());
-                return (soft_constraint::max_score * final_capacity)
-                       / node.max_capacity();
-            };
-        }
-
-        ss::sstring name() const final { return "least allocated node"; }
-    };
-
-    return soft_constraint(std::make_unique<impl>());
-}
-
-soft_constraint
-max_final_capacity_in_domain(const partition_allocation_domain domain) {
+soft_constraint max_final_capacity(partition_allocation_domain domain) {
     struct impl : soft_constraint::impl {
         explicit impl(partition_allocation_domain domain_)
           : domain(domain_) {}
@@ -252,24 +229,24 @@ max_final_capacity_in_domain(const partition_allocation_domain domain) {
         soft_constraint_evaluator
         make_evaluator(const replicas_t&) const final {
             return [this](const allocation_node& node) {
+                auto count = domain == partition_allocation_domains::common
+                               ? node.final_partitions()
+                               : node.domain_final_partitions(domain);
+
+                // we return 0 for fully allocated node and 10'000'000 for
+                // nodes with maximum capacity available
                 auto final_capacity = node.max_capacity()
-                                      - std::min(
-                                        node.max_capacity(),
-                                        node.domain_final_partitions(domain));
+                                      - std::min(node.max_capacity(), count);
                 return (soft_constraint::max_score * final_capacity)
                        / node.max_capacity();
             };
         }
 
-        ss::sstring name() const final {
-            return ssx::sformat("least allocated node in domain {}", domain);
-        }
+        ss::sstring name() const final { return "max final capacity"; }
+
         partition_allocation_domain domain;
     };
 
-    vassert(
-      domain != partition_allocation_domains::common,
-      "Least allocated constraint within common domain not supported");
     return soft_constraint(std::make_unique<impl>(domain));
 }
 
