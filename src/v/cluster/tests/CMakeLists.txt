@@ -66,7 +66,6 @@ set(srcs
         health_monitor_test.cc
         metadata_dissemination_test.cc
         replicas_rebalancing_tests.cc
-        tx_topic_test.cc
         security_frontend_test.cc)
 
 foreach(cluster_test_src ${srcs})
@@ -128,6 +127,19 @@ rp_test(
   BINARY_NAME partition_balancer
   SOURCES partition_balancer_bench.cc
   LIBRARIES Seastar::seastar_perf_testing v::seastar_testing_main v::cluster
+  LABELS cluster
+)
+
+rp_test(
+  FIXTURE_TEST
+  BINARY_NAME tx_coordinator
+  SOURCES
+    tx_topic_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES
+    v::seastar_testing_main
+    v::application
+  ARGS "-- -c 1"
   LABELS cluster
 )
 
