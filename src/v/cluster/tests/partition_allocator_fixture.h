@@ -64,8 +64,12 @@ struct partition_allocator_fixture {
             .available_memory_gb = 5 * core_count,
             .available_disk_gb = 10 * core_count});
 
-        members.local().apply(
+        auto ec = members.local().apply(
           model::offset(0), cluster::add_node_cmd(0, broker));
+        if (ec) {
+            throw std::runtime_error(
+              ss::format("unable to apply add node cmd: {}", ec.message()));
+        }
 
         allocator.register_node(std::make_unique<cluster::allocation_node>(
           broker.id(),
