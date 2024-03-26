@@ -199,7 +199,8 @@ auth_result authorizer::do_authorized(
         std::optional<const security::acl_principal_base*> role
         = std::nullopt) -> std::optional<auth_result> {
         vassert(
-          !role || *role != nullptr && (*role)->type() == principal_type::role,
+          !role
+            || (*role != nullptr && (*role)->type() == principal_type::role),
           "Role principal should be non-null and have 'role' type if "
           "present");
         const acl_principal_base& to_check = *role.value_or(&user);
