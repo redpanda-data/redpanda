@@ -886,13 +886,13 @@ auto partition_balancer_planner::request_context::do_with_partition(
     }
 
     // check if the ntp is to be force reconfigured.
-    auto topic_md = _parent._state.topics().get_topic_metadata(
+    auto topic_md = _parent._state.topics().get_topic_metadata_ref(
       model::topic_namespace_view{ntp});
     const auto& force_reconfigurable_partitions
       = _parent._state.topics().partitions_to_force_recover();
     auto force_it = force_reconfigurable_partitions.find(ntp);
     if (topic_md && force_it != force_reconfigurable_partitions.end()) {
-        auto topic_revision = topic_md.value().get_revision();
+        auto topic_revision = topic_md.value().get().get_revision();
         const auto& entries = force_it->second;
         auto it = std::find_if(
           entries.begin(), entries.end(), [&](const auto& entry) {
