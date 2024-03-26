@@ -170,28 +170,6 @@ struct partition_balancer_planner_fixture {
           workers.allocator.local());
     }
 
-    cluster::topic_configuration_assignment make_tp_configuration(
-      const ss::sstring& topic, int partitions, int16_t replication_factor) {
-        cluster::topic_configuration cfg(
-          test_ns, model::topic(topic), partitions, replication_factor);
-
-        cluster::allocation_request req(
-          cfg.tp_ns, cluster::partition_allocation_domains::common);
-        req.partitions.reserve(partitions);
-        for (auto p = 0; p < partitions; ++p) {
-            req.partitions.emplace_back(
-              model::partition_id(p), replication_factor);
-        }
-
-        auto pas = workers.allocator.local()
-                     .allocate(std::move(req))
-                     .get()
-                     .value()
-                     ->copy_assignments();
-
-        return {cfg, std::move(pas)};
-    }
-
     model::topic_namespace make_tp_ns(const ss::sstring& tp) {
         return {test_ns, model::topic(tp)};
     }
