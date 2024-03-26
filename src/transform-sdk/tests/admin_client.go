@@ -101,6 +101,7 @@ func (cl *AdminAPIClient) DeployTransform(ctx context.Context, metadata Transfor
 }
 
 func isTransformsRunning(transforms []TransformMetadata, name string) bool {
+	fmt.Println("is running:", name, transforms)
 	for _, t := range transforms {
 		if t.Name != name {
 			continue
@@ -180,6 +181,27 @@ func (cl *AdminAPIClient) DeleteTransform(ctx context.Context, name string) erro
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("failed to build http request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := cl.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	return checkResponse(resp)
+}
+
+// SetLog level for a broker logger
+func (cl *AdminAPIClient) SetLogLevel(ctx context.Context, logger string, level string) error {
+	endpoint, err := url.JoinPath(cl.baseUrl, "/v1/config/log_level", url.PathEscape(logger))
+	if err != nil {
+		return fmt.Errorf("failed to join url path: %w", err)
+	}
+	endpoint += fmt.Sprintf("?level=%s", level)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to build http request: %w", err)
 	}

@@ -490,6 +490,10 @@ void assert(bool cond, std::format_string<Args...> fmt, Args&&... args) {
     }
 }
 
+// Ignore this lint check, as it can't tell our custom `assert` method
+// is a check.
+// NOLINTBEGIN(*-unchecked-optional-access)
+
 void test_zigzag_roundtrip() {
     constexpr auto testcases = std::to_array<int64_t>(
       {0,
@@ -608,6 +612,8 @@ void test_record_roundtrip(random_bytes_engine* rng) {
         assert(result.value() == rec, "record mismatch");
     }
 }
+
+// NOLINTEND(*-unchecked-optional-access)
 
 void run_test_suite() {
     unsigned seed = std::random_device()();

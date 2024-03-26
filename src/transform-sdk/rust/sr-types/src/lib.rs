@@ -38,12 +38,13 @@ pub struct SchemaId(pub i32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SchemaVersion(pub i32);
 
-/// Reference is a way for one schema to reference another. The details
-/// for how referencing is done are type-specific; for example, JSON objects
+/// Reference is a way for one schema to reference another.
+///
+/// The details for how referencing is done are type-specific; for example, JSON objects
 /// that use the key "$ref" can refer to another schema via URL. For more details
 /// on references, see the following link:
 ///
-///  https://docs.redpanda.com/current/manage/schema-reg/schema-reg-api/#reference-a-schema
+///  <https://docs.redpanda.com/current/manage/schema-reg/schema-reg-api/#reference-a-schema>
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reference {
     name: String,

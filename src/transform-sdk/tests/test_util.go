@@ -56,8 +56,8 @@ func startRedpanda(ctx context.Context) (*redpanda.Container, context.CancelFunc
 			if req.LogConsumerCfg == nil {
 				req.LogConsumerCfg = &testcontainers.LogConsumerConfig{}
 			}
-			// Comment this out to get broker logs
-			// req.LogConsumerCfg.Consumers = append(req.LogConsumerCfg.Consumers, &StdoutLogConsumer{})
+			// Uncomment this to get broker logs
+			// req.LogConsumerCfg.Consumers = append(req.LogConsumerCfg.Consumers, &stdoutLogConsumer{})
 		}),
 		redpanda.WithEnableWasmTransform(),
 	)
@@ -77,8 +77,12 @@ func requireRecordsEquals(t *testing.T, fetches kgo.Fetches, records ...*kgo.Rec
 	require.Equal(t, fetches.NumRecords(), len(records))
 	for i, got := range fetches.Records() {
 		want := records[i]
-		require.Equal(t, want.Key, got.Key, "record %d key mismatch", i)
-		require.Equal(t, want.Value, got.Value, "record %d value mismatch", i)
-		require.Equal(t, want.Headers, got.Headers, "record %d headers mismatch", i)
+		requireRecordEquals(t, got, want, "record %d mismatch", i)
 	}
+}
+
+func requireRecordEquals(t *testing.T, got *kgo.Record, want *kgo.Record, msg string, args ...interface{}) {
+	require.Equal(t, want.Key, got.Key, "record key mismatch: %v", fmt.Sprintf(msg, args...))
+	require.Equal(t, want.Value, got.Value, "record value mismatch: %v", fmt.Sprintf(msg, args...))
+	require.Equal(t, want.Headers, got.Headers, "record headers mismatch: %v", fmt.Sprintf(msg, args...))
 }
