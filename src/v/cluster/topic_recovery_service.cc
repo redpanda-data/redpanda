@@ -32,7 +32,7 @@
 namespace {
 
 const std::regex manifest_path_expr{
-  R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest\.json)REGEX"};
+  R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest\.(json|bin))REGEX"};
 
 // Possible prefix for a path which contains a topic manifest file
 const std::regex prefix_expr{"[a-fA-F0-9]0000000/"};
@@ -496,13 +496,21 @@ ss::future<result<cloud_storage::topic_manifest, recovery_error_ctx>>
 topic_recovery_service::download_manifest(ss::sstring path) {
     cloud_storage::topic_manifest m;
     auto fib = make_rtc(_as, _config);
+    auto expected_format = path.ends_with("json") ? manifest_format::json
+                                                  : manifest_format::serde;
     try {
         auto download_r = co_await _remote.local().download_manifest(
-          _config.bucket, remote_manifest_path{path}, m, fib);
+          _config.bucket,
+          {expected_format, remote_manifest_path{path}},
+          m,
+          fib);
         if (download_r != download_result::success) {
             auto error = recovery_error_ctx::make(
               fmt::format(
-                "failed to download manifest from {}: {}", path, download_r),
+                "failed to download manifest from {} format {}: {}",
+                path,
+                expected_format,
+                download_r),
               recovery_error_code::error_downloading_manifest);
             vlog(cst_log.error, "{}", error.context);
             co_return error;
@@ -512,7 +520,10 @@ topic_recovery_service::download_manifest(ss::sstring path) {
     } catch (const std::exception& ex) {
         auto error = recovery_error_ctx::make(
           fmt::format(
-            "failed to download manifest from {}: {}", path, ex.what()),
+            "failed to download manifest from {} format {}: {}",
+            path,
+            expected_format,
+            ex.what()),
           recovery_error_code::error_downloading_manifest);
         vlog(cst_log.error, "{}", error.context);
         co_return error;
