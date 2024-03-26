@@ -23,7 +23,6 @@ from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 def cluster(log_allow_list=None,
             check_allowed_error_logs=True,
             check_for_storage_usage_inconsistencies=True,
-            is_cloud_cluster=False,
             **kwargs):
     """
     Drop-in replacement for Ducktape `cluster` that imposes additional
