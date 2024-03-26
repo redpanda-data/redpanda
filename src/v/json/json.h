@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "container/fragmented_vector.h"
 #include "json/_include_first.h"
 #include "json/prettywriter.h"
 #include "json/reader.h"
@@ -88,17 +87,6 @@ void rjson_serialize(
 template<typename T, typename A>
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const std::vector<T, A>& v) {
-    w.StartArray();
-    for (const auto& e : v) {
-        rjson_serialize(w, e);
-    }
-    w.EndArray();
-}
-
-template<typename T, size_t max_fragment_size>
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const fragmented_vector<T, max_fragment_size>& v) {
     w.StartArray();
     for (const auto& e : v) {
         rjson_serialize(w, e);

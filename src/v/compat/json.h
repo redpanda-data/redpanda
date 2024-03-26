@@ -13,6 +13,7 @@
 #include "cluster/errc.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"
+#include "container/json.h"
 #include "json/document.h"
 #include "json/json.h"
 #include "model/fundamental.h"
