@@ -133,8 +133,8 @@ FIXTURE_TEST(replicate_after_compaction, compaction_multinode_test) {
     model::offset prev_last{-1};
     for (const auto& seg : new_log->segments()) {
         BOOST_REQUIRE_EQUAL(
-          seg->offsets().base_offset, model::next_offset(prev_last));
-        prev_last = seg->offsets().committed_offset;
+          seg->offsets().get_base_offset(), model::next_offset(prev_last));
+        prev_last = seg->offsets().get_committed_offset();
     }
 }
 

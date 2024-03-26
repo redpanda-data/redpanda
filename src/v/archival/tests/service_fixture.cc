@@ -114,7 +114,7 @@ segment_layout write_random_batches(
   size_t records_per_batch,
   std::optional<model::timestamp> timestamp) { // NOLINT
     segment_layout layout{
-      .base_offset = seg->offsets().base_offset,
+      .base_offset = seg->offsets().get_base_offset(),
     };
 
     auto leftover_records = records % records_per_batch;
@@ -122,10 +122,10 @@ segment_layout write_random_batches(
     // If the segment already includes records, start at the next offset.
     auto full_batches = model::test::make_random_batches(
       model::test::record_batch_spec{
-        .offset = seg->offsets().committed_offset == model::offset{}
-                    ? seg->offsets().base_offset
+        .offset = seg->offsets().get_committed_offset() == model::offset{}
+                    ? seg->offsets().get_base_offset()
                     : (
-                      seg->offsets().committed_offset + model::offset_delta{1}),
+                      seg->offsets().get_committed_offset() + model::offset_delta{1}),
         .allow_compression = true,
         .count = full_batches_count,
         .records = records_per_batch,
@@ -148,7 +148,7 @@ segment_layout write_random_batches(
     if (leftover_records != 0) {
         auto leftover_batches = model::test::make_random_batches(
           model::test::record_batch_spec{
-            .offset = seg->offsets().committed_offset + model::offset(1),
+            .offset = seg->offsets().get_committed_offset() + model::offset(1),
             .allow_compression = true,
             .count = 1,
             .records = leftover_records,
@@ -357,7 +357,7 @@ void segment_matcher<Fixture>::verify_segment(
   const archival::segment_name& name,
   const ss::sstring& expected) {
     auto segment = get_segment(ntp, name);
-    auto pos = segment->offsets().base_offset;
+    auto pos = segment->offsets().get_base_offset();
     auto size = segment->size_bytes();
     auto reader_handle
       = segment->offset_data_stream(pos, ss::default_priority_class()).get();
@@ -380,7 +380,7 @@ void segment_matcher<Fixture>::verify_index(
   const ss::sstring& expected) {
     auto segment = get_segment(ntp, name);
     auto meta = pm.get(name);
-    auto pos = segment->offsets().base_offset;
+    auto pos = segment->offsets().get_base_offset();
     auto reader_handle
       = segment->offset_data_stream(pos, ss::default_priority_class()).get();
     cloud_storage::offset_index ix{
@@ -463,8 +463,8 @@ void segment_matcher<Fixture>::verify_manifest(
     for (const auto& s : all_segments) {
         auto sname = archival::segment_name(
           std::filesystem::path(s->reader().filename()).filename().string());
-        auto base = s->offsets().base_offset;
-        auto comm = s->offsets().committed_offset;
+        auto base = s->offsets().get_base_offset();
+        auto comm = s->offsets().get_committed_offset();
         auto size = s->size_bytes();
         auto comp = s->finished_self_compaction();
         auto m = man.get(sname);

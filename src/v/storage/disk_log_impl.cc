@@ -283,7 +283,7 @@ disk_log_impl::size_based_gc_max_offset(gc_config cfg) const {
         if (reclaimed_size > safe_to_reclaim) {
             break;
         }
-        ret = segment->offsets().dirty_offset;
+        ret = segment->offsets().get_dirty_offset();
     }
     return ret;
 }
@@ -360,7 +360,7 @@ disk_log_impl::time_based_gc_max_offset(gc_config cfg) const {
     }
 
     it = std::prev(it);
-    return (*it)->offsets().committed_offset;
+    return (*it)->offsets().get_committed_offset();
 }
 
 ss::future<model::offset>
@@ -396,7 +396,7 @@ disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
       max_offset);
     // we only notify eviction monitor if there are segments to evict
     auto have_segments_to_evict = _segs.size() > 1
-                                  && _segs.front()->offsets().committed_offset
+                                  && _segs.front()->offsets().get_committed_offset()
                                        <= max_offset;
 
     if (_eviction_monitor && have_segments_to_evict) {
@@ -419,14 +419,14 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
 
     // create a logging predicate for offsets..
     auto offsets_compactible = [&cfg, &new_start_offset, this](segment& s) {
-        if (new_start_offset && s.offsets().base_offset < *new_start_offset) {
+        if (new_start_offset && s.offsets().get_base_offset() < *new_start_offset) {
             vlog(
               gclog.debug,
               "[{}] segment {} base offs {}, new start offset {}, "
               "skipping self compaction.",
               config().ntp(),
               s.reader().filename(),
-              s.offsets().base_offset,
+              s.offsets().get_base_offset(),
               *new_start_offset);
             return false;
         }
@@ -438,7 +438,7 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
               "compacting.",
               config().ntp(),
               s.reader().filename(),
-              s.offsets().stable_offset,
+              s.offsets().get_stable_offset(),
               cfg.max_collectible_offset);
             return true;
         } else {
@@ -448,7 +448,7 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
               "skipping self compaction.",
               config().ntp(),
               s.reader().filename(),
-              s.offsets().stable_offset,
+              s.offsets().get_stable_offset(),
               cfg.max_collectible_offset);
             return false;
         }
@@ -517,7 +517,7 @@ segment_set disk_log_impl::find_sliding_range(
         }
         if (
           new_start_offset
-          && seg->offsets().base_offset < new_start_offset.value()) {
+          && seg->offsets().get_base_offset() < new_start_offset.value()) {
             // Skip over segments that are being truncated.
             continue;
         }
@@ -539,7 +539,7 @@ segment_set disk_log_impl::find_sliding_range(
       && _last_compaction_window_start_offset.has_value()) {
         while (!segs.empty()) {
             if (
-              segs.back()->offsets().base_offset
+              segs.back()->offsets().get_base_offset()
               >= _last_compaction_window_start_offset.value()) {
                 // A previous compaction deduplicated the keys above this
                 // offset. As such, segments above this point would not benefit
@@ -652,7 +652,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         if (cfg.asrc) {
             cfg.asrc->check();
         }
-        if (seg->offsets().base_offset > map.max_offset()) {
+        if (seg->offsets().get_base_offset() > map.max_offset()) {
             // The map was built from newest to oldest segments within this
             // sliding range. If we see a new segment whose offsets are all
             // higher than those indexed, it may be because the segment is
@@ -816,9 +816,9 @@ disk_log_impl::find_compaction_range(const compaction_config& cfg) {
         const auto same_term = std::all_of(
           range.first,
           range.second,
-          [term = (*range.first)->offsets().term](
+          [term = (*range.first)->offsets().get_term()](
             ss::lw_shared_ptr<segment>& seg) {
-              return seg->offsets().term == term;
+              return seg->offsets().get_term() == term;
           });
 
         // found a good range if all the tests pass
@@ -1415,7 +1415,7 @@ model::term_id disk_log_impl::term() const {
         // the next append() will truncate if greater
         return model::term_id{0};
     }
-    return _segs.back()->offsets().term;
+    return _segs.back()->offsets().get_term();
 }
 
 bool disk_log_impl::is_new_log() const {
@@ -1471,16 +1471,16 @@ offset_stats disk_log_impl::offsets() const {
     const auto& eof = end->offsets();
 
     const auto start_offset = _start_offset() >= 0 ? _start_offset
-                                                   : bof.base_offset;
+                                                   : bof.get_base_offset();
 
     return storage::offset_stats{
       .start_offset = start_offset,
 
-      .committed_offset = eof.committed_offset,
-      .committed_offset_term = eof.term,
+      .committed_offset = eof.get_committed_offset(),
+      .committed_offset_term = eof.get_term(),
 
-      .dirty_offset = eof.dirty_offset,
-      .dirty_offset_term = eof.term,
+      .dirty_offset = eof.get_dirty_offset(),
+      .dirty_offset_term = eof.get_term(),
     };
 }
 
@@ -1498,7 +1498,7 @@ model::offset disk_log_impl::find_last_term_start_offset() const {
                 end = seg;
             }
             // find term start offset
-            if (seg->offsets().term < end->offsets().term) {
+            if (seg->offsets().get_term() < end->offsets().get_term()) {
                 break;
             }
             term_start = seg;
@@ -1509,7 +1509,7 @@ model::offset disk_log_impl::find_last_term_start_offset() const {
         return {};
     }
 
-    return term_start->offsets().base_offset;
+    return term_start->offsets().get_base_offset();
 }
 
 model::timestamp disk_log_impl::start_timestamp() const {
@@ -1519,7 +1519,7 @@ model::timestamp disk_log_impl::start_timestamp() const {
 
     const auto start_offset = _start_offset >= model::offset{0}
                                 ? _start_offset
-                                : _segs.front()->offsets().base_offset;
+                                : _segs.front()->offsets().get_base_offset();
 
     auto seg = _segs.lower_bound(start_offset);
     if (seg == _segs.end()) {
@@ -1631,7 +1631,7 @@ uint64_t disk_log_impl::size_bytes_after_offset(model::offset o) const {
     uint64_t size = 0;
     for (size_t i = _segs.size(); i-- > 0;) {
         auto& seg = _segs[i];
-        if (seg->offsets().base_offset < o) {
+        if (seg->offsets().get_base_offset() < o) {
             break;
         }
 
@@ -1754,8 +1754,8 @@ ss::future<> disk_log_impl::apply_segment_ms() {
                                        // bouncer condition checked this
     co_await last->release_appender(_readers_cache.get());
     auto offsets = last->offsets();
-    auto new_so = model::next_offset(offsets.committed_offset);
-    co_await new_segment(new_so, offsets.term, pc);
+    auto new_so = model::next_offset(offsets.get_committed_offset());
+    co_await new_segment(new_so, offsets.get_term(), pc);
     vlog(
       stlog.trace,
       "{} segment.ms applied, new segment start offset: {}",
@@ -1842,7 +1842,7 @@ ss::future<size_t> disk_log_impl::get_file_offset(
   model::boundary_type boundary,
   ss::io_priority_class priority) {
     auto index_entry = maybe_index_entry.value_or(segment_index::entry{
-      .offset = s->offsets().base_offset,
+      .offset = s->offsets().get_base_offset(),
       .filepos = 0,
     });
     size_t size_bytes{index_entry.filepos};
@@ -1887,10 +1887,10 @@ disk_log_impl::offset_range_size(
         std::vector<ss::lw_shared_ptr<storage::segment>> segments;
         for (auto it = base_it; it != _segs.end(); it++) {
             const auto& offsets = it->get()->offsets();
-            if (offsets.committed_offset < first) {
+            if (offsets.get_committed_offset() < first) {
                 continue;
             }
-            if (offsets.base_offset > last) {
+            if (offsets.get_base_offset() > last) {
                 break;
             }
             segments.push_back(*it);
@@ -1910,7 +1910,7 @@ disk_log_impl::offset_range_size(
         vlog(stlog.debug, "Can't find log segments to lock");
         co_return std::nullopt;
     }
-    if (segments.front()->offsets().base_offset > first) {
+    if (segments.front()->offsets().get_base_offset() > first) {
         vlog(
           stlog.debug,
           "Offset {} is out of range, {}",
@@ -1918,7 +1918,7 @@ disk_log_impl::offset_range_size(
           segments.front()->offsets());
         co_return std::nullopt;
     }
-    if (segments.back()->offsets().committed_offset < last) {
+    if (segments.back()->offsets().get_committed_offset() < last) {
         vlog(
           stlog.debug,
           "Offset {} is out of range, {}",
@@ -2063,7 +2063,7 @@ disk_log_impl::offset_range_size(
         co_return std::nullopt;
     } else {
         auto lstat = base_it->get()->offsets();
-        if (first < lstat.base_offset || first > lstat.committed_offset) {
+        if (first < lstat.get_base_offset() || first > lstat.get_committed_offset()) {
             vlog(
               stlog.debug,
               "Offset {} is not present in the segment {}",
@@ -2087,7 +2087,7 @@ disk_log_impl::offset_range_size(
             locked_range_size += s->size_bytes();
             f_locks.emplace_back(s->read_lock());
             segments.emplace_back(s);
-            last_locked_offset = s->offsets().committed_offset;
+            last_locked_offset = s->offsets().get_committed_offset();
             if (locked_range_size > (target.target_size + first_segment_size)) {
                 // The size of the locked range consist of full segments only.
                 // It's not guaranteed that the first segment will contribute
@@ -2109,8 +2109,8 @@ disk_log_impl::offset_range_size(
     }
 
     if (
-      first_segment_offsets.base_offset <= first
-      && first_segment_offsets.committed_offset >= first) {
+      first_segment_offsets.get_base_offset() <= first
+      && first_segment_offsets.get_committed_offset() >= first) {
         // The first segment is accounted only partially. We're doing subscan
         // here but most of the time it won't require the actual scanning
         // because in this mode the offset range will end on index entry or
@@ -2241,10 +2241,10 @@ disk_log_impl::offset_range_size(
                   "Setting offset range to {} - {} (end of segment), "
                   "truncation point: {}, base_file_pos: {}",
                   first,
-                  it->get()->offsets().committed_offset,
+                  it->get()->offsets().get_committed_offset(),
                   truncate_after,
                   first_segment_file_pos);
-                last_included_offset = it->get()->offsets().committed_offset;
+                last_included_offset = it->get()->offsets().get_committed_offset();
             }
             break;
         } else if (current_size > target.min_size) {
@@ -2252,9 +2252,9 @@ disk_log_impl::offset_range_size(
               stlog.debug,
               "Setting offset range to {} - {}",
               first,
-              it->get()->offsets().committed_offset);
+              it->get()->offsets().get_committed_offset());
             // We can include full segment to the list of segments
-            last_included_offset = it->get()->offsets().committed_offset;
+            last_included_offset = it->get()->offsets().get_committed_offset();
             continue;
         }
     }
@@ -2287,7 +2287,7 @@ bool disk_log_impl::is_compacted(
   model::offset first, model::offset last) const {
     for (auto it = _segs.lower_bound(first); it != _segs.end(); it++) {
         const auto& lstat = it->get()->offsets();
-        if (lstat.base_offset > last) {
+        if (lstat.get_base_offset() > last) {
             break;
         }
         if (it->get()->is_compacted_segment()) {
@@ -2347,7 +2347,7 @@ disk_log_impl::make_reader(timequery_config config) {
 
               auto offset_within_segment = index_entry
                                              ? index_entry->offset
-                                             : segment->offsets().base_offset;
+                                             : segment->offsets().get_base_offset();
 
               // adjust for partial visibility of segment prefix
               start_offset = std::max(start_offset, offset_within_segment);
@@ -2378,7 +2378,7 @@ disk_log_impl::make_reader(timequery_config config) {
 std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
     auto it = _segs.lower_bound(o);
     if (it != _segs.end() && o >= _start_offset) {
-        return (*it)->offsets().term;
+        return (*it)->offsets().get_term();
     }
 
     return std::nullopt;
@@ -2396,8 +2396,8 @@ disk_log_impl::get_term_last_offset(model::term_id term) const {
     }
     it = std::prev(it);
 
-    if ((*it)->offsets().term == term) {
-        return (*it)->offsets().dirty_offset;
+    if ((*it)->offsets().get_term() == term) {
+        return (*it)->offsets().get_dirty_offset();
     }
 
     return std::nullopt;
@@ -2476,7 +2476,7 @@ ss::future<> disk_log_impl::remove_full_segments(model::offset o) {
     return ss::do_until(
       [this, o] {
           return _segs.empty()
-                 || std::max(_segs.back()->offsets().base_offset, _start_offset)
+                 || std::max(_segs.back()->offsets().get_base_offset(), _start_offset)
                       < o;
       },
       [this] {
@@ -2490,7 +2490,7 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
     return ss::do_until(
       [this, cfg] {
           return _segs.empty()
-                 || _segs.front()->offsets().dirty_offset >= cfg.start_offset;
+                 || _segs.front()->offsets().get_dirty_offset() >= cfg.start_offset;
       },
       [this] {
           auto ptr = _segs.front();
@@ -2634,14 +2634,14 @@ ss::future<> disk_log_impl::do_truncate(
     // we want to delete even empty segments.
     if (
       cfg.base_offset
-      < std::max(_segs.back()->offsets().base_offset, _start_offset)) {
+      < std::max(_segs.back()->offsets().get_base_offset(), _start_offset)) {
         co_await remove_full_segments(cfg.base_offset);
         // recurse
         co_return co_await do_truncate(cfg, std::move(lock_guards));
     }
 
     auto last = _segs.back();
-    if (cfg.base_offset > last->offsets().dirty_offset) {
+    if (cfg.base_offset > last->offsets().get_dirty_offset()) {
         co_return;
     }
 
@@ -2657,7 +2657,7 @@ ss::future<> disk_log_impl::do_truncate(
 
     // if no offset is found in an index we will start from the segment base
     // offset
-    model::offset start = last->offsets().base_offset;
+    model::offset start = last->offsets().get_base_offset();
 
     auto pidx = last->index().find_nearest(
       std::max(start, model::prev_offset(cfg.base_offset)));
@@ -2919,7 +2919,7 @@ int64_t disk_log_impl::compaction_backlog() const {
         return 0;
     }
 
-    auto current_term = _segs.front()->offsets().term;
+    auto current_term = _segs.front()->offsets().get_term();
     auto cf = _compaction_ratio.get();
     int64_t backlog = 0;
     std::vector<ss::lw_shared_ptr<segment>> segments_this_term;
@@ -2941,7 +2941,7 @@ int64_t disk_log_impl::compaction_backlog() const {
             continue;
         }
 
-        if (current_term != s->offsets().term) {
+        if (current_term != s->offsets().get_term()) {
             // New term: consume segments from the previous term.
             backlog += compaction_backlog_term(
               std::move(segments_this_term), cf);
@@ -3069,11 +3069,11 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
     for (auto& seg : _segs) {
         if (
           retention_offset.has_value()
-          && seg->offsets().dirty_offset <= retention_offset.value()) {
+          && seg->offsets().get_dirty_offset() <= retention_offset.value()) {
             retention_segments.push_back(seg);
         } else if (
           is_cloud_retention_active()
-          && seg->offsets().dirty_offset <= max_collectible) {
+          && seg->offsets().get_dirty_offset() <= max_collectible) {
             available_segments.push_back(seg);
         } else {
             remaining_segments.push_back(seg);
@@ -3090,9 +3090,9 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
         if (
           !config().is_read_replica_mode_enabled()
           && is_cloud_retention_active() && seg != _segs.back()
-          && seg->offsets().dirty_offset <= max_collectible
+          && seg->offsets().get_dirty_offset() <= max_collectible
           && local_retention_offset.has_value()
-          && seg->offsets().dirty_offset <= local_retention_offset.value()) {
+          && seg->offsets().get_dirty_offset() <= local_retention_offset.value()) {
             local_retention_segments.push_back(seg);
         }
     }
@@ -3410,7 +3410,7 @@ disk_log_impl::cloud_gc_eligible_segments() {
     // collect eligible segments
     fragmented_vector<segment_set::type> segments;
     for (auto remaining = _segs.size() - keep_segs; auto& seg : _segs) {
-        if (seg->offsets().committed_offset <= max_collectible) {
+        if (seg->offsets().get_committed_offset() <= max_collectible) {
             segments.push_back(seg);
         }
         if (--remaining <= 0) {
@@ -3516,7 +3516,7 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
      */
     std::optional<model::offset> low_space_offset;
     if (segments.size() >= 2) {
-        low_space_offset = segments[segments.size() - 2]->offsets().base_offset;
+        low_space_offset = segments[segments.size() - 2]->offsets().get_base_offset();
     }
 
     vlog(
@@ -3555,7 +3555,7 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
              *   2. finally, we don't report it if max collectible hasn't even
              *   made it to the active segment yet.
              */
-            if (seg->offsets().base_offset <= max_collectible) {
+            if (seg->offsets().get_base_offset() <= max_collectible) {
                 res.force_roll = seg_size;
                 vlog(
                   stlog.trace,
@@ -3567,7 +3567,7 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
 
         // to be categorized
         const reclaimable_offsets::offset point{
-          .offset = seg->offsets().dirty_offset,
+          .offset = seg->offsets().get_dirty_offset(),
           .size = seg_size,
         };
 

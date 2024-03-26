@@ -35,7 +35,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_begin_offset_not_found) {
         };
         b.add_random_batch(spec).get();
         curr_offset = model::next_offset(
-          b.get_log_segments().back()->offsets().committed_offset);
+          b.get_log_segments().back()->offsets().get_committed_offset());
         ts = model::timestamp{ts.value() + 1};
     }
 
@@ -69,7 +69,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_end_offset_not_found) {
         };
         b.add_random_batch(spec).get();
         curr_offset = model::next_offset(
-          b.get_log_segments().back()->offsets().committed_offset);
+          b.get_log_segments().back()->offsets().get_committed_offset());
         ts = model::timestamp{ts.value() + 1};
     }
 
@@ -106,7 +106,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_begin_offset_found) {
         b.add_random_batch(spec).get();
         positions.push_back(b.bytes_written());
         curr_offset = model::next_offset(
-          b.get_log_segments().back()->offsets().committed_offset);
+          b.get_log_segments().back()->offsets().get_committed_offset());
         ts = model::timestamp{ts.value() + 1};
     }
 
@@ -147,7 +147,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_end_offset_found) {
         b.add_random_batch(spec).get();
         positions.push_back(b.bytes_written());
         curr_offset = model::next_offset(
-          b.get_log_segments().back()->offsets().committed_offset);
+          b.get_log_segments().back()->offsets().get_committed_offset());
         ts = model::timestamp{ts.value() + 1};
     }
 
@@ -185,7 +185,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_end_offset_allowed_to_be_missing) {
         };
         b.add_random_batch(spec).get();
         curr_offset = model::next_offset(
-          b.get_log_segments().back()->offsets().committed_offset);
+          b.get_log_segments().back()->offsets().get_committed_offset());
         ts = model::timestamp{ts.value() + 1};
     }
 

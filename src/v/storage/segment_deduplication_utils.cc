@@ -164,7 +164,7 @@ ss::future<model::offset> build_offset_map(
             vlog(gclog.debug, "Segment not fully indexed: {}", seg->filename());
             break;
         }
-        min_segment_fully_indexed = seg->offsets().base_offset;
+        min_segment_fully_indexed = seg->offsets().get_base_offset();
         if (iter == segs.begin()) {
             break;
         }
@@ -199,7 +199,7 @@ ss::future<index_state> deduplicate_segment(
       features::feature::compaction_placeholder_batch);
     auto copy_reducer = internal::copy_data_segment_reducer(
       [&map,
-       segment_last_offset = seg->offsets().committed_offset,
+       segment_last_offset = seg->offsets().get_committed_offset(),
        compaction_placeholder_enabled](
         const model::record_batch& b,
         const model::record& r,
@@ -223,7 +223,7 @@ ss::future<index_state> deduplicate_segment(
       &appender,
       seg->path().is_internal_topic(),
       should_offset_delta_times,
-      seg->offsets().committed_offset,
+      seg->offsets().get_committed_offset(),
       &cmp_idx_writer,
       inject_reader_failure);
 

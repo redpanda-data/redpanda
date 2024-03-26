@@ -186,7 +186,7 @@ public:
         if (_lease->range.empty()) {
             return model::offset{};
         }
-        return _lease->range.front()->offsets().base_offset;
+        return _lease->range.front()->offsets().get_base_offset();
     }
     /**
      * Last offset of last locked segment in read lock lease
@@ -195,7 +195,7 @@ public:
         if (_lease->range.empty()) {
             return model::offset{};
         }
-        return _lease->range.back()->offsets().dirty_offset;
+        return _lease->range.back()->offsets().get_dirty_offset();
     }
 
     /**

@@ -295,7 +295,7 @@ ss::future<> kvstore::roll() {
         vlog(
           lg.debug,
           "Rolling segment with base offset {} size {}",
-          _segment->offsets().base_offset,
+          _segment->offsets().get_base_offset(),
           _segment->appender().file_byte_offset());
         // _segment being set is a signal to stop() to flush and close the
         // segment. we clear _segment here before closing and finishing the roll
@@ -309,7 +309,7 @@ ss::future<> kvstore::roll() {
               vlog(
                 lg.debug,
                 "Removing old segment with base offset {}",
-                seg->offsets().base_offset);
+                seg->offsets().get_base_offset());
               return ss::remove_file(seg->reader().path().string()).then([seg] {
                   return ss::remove_file(seg->index().path().string());
               });
@@ -513,7 +513,7 @@ ss::future<> kvstore::replay_segments(segment_set segs) {
     // find segment that starts at _next_offset
     const auto match = std::find_if(
       segs.begin(), segs.end(), [this](const ss::lw_shared_ptr<segment>& seg) {
-          return seg->offsets().base_offset == _next_offset;
+          return seg->offsets().get_base_offset() == _next_offset;
       });
 
     // we didn't find an exact match, and the last segment starts after
@@ -521,7 +521,7 @@ ss::future<> kvstore::replay_segments(segment_set segs) {
     // log.
     if (
       match == segs.end()
-      && segs.back()->offsets().base_offset > _next_offset) {
+      && segs.back()->offsets().get_base_offset() > _next_offset) {
         throw std::runtime_error(
           fmt::format("Segment starting at offset {} not found", _next_offset));
     }
@@ -535,11 +535,11 @@ ss::future<> kvstore::replay_segments(segment_set segs) {
         vlog(
           lg.info,
           "Replaying segment with base offset {}",
-          seg->offsets().base_offset);
+          seg->offsets().get_base_offset());
         vassert(
-          seg->offsets().base_offset == _next_offset,
+          seg->offsets().get_base_offset() == _next_offset,
           "Segment base offset {} != expected next offset {}",
-          seg->offsets().base_offset,
+          seg->offsets().get_base_offset(),
           _next_offset);
 
         auto reader_handle = co_await seg->reader().data_stream(
@@ -563,7 +563,7 @@ ss::future<> kvstore::replay_segments(segment_set segs) {
         vlog(
           lg.info,
           "Removing old segment with base offset {}",
-          seg->offsets().base_offset);
+          seg->offsets().get_base_offset());
         co_await seg->close();
         co_await ss::remove_file(seg->reader().path().string());
         co_await ss::remove_file(seg->index().path().string());

@@ -2056,7 +2056,7 @@ uint64_t ntp_archiver::estimate_backlog_size() {
       0UL,
       [last_offset](
         uint64_t acc, const ss::lw_shared_ptr<storage::segment>& s) {
-          if (s->offsets().dirty_offset > last_offset) {
+          if (s->offsets().get_dirty_offset() > last_offset) {
               return acc + s->size_bytes();
           }
           return acc;

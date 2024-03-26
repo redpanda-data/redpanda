@@ -685,26 +685,26 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
     compact_and_prefix_truncate(*disk_log, make_compaction_cfg(broker_t0 - 2s));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 3);
     BOOST_REQUIRE_EQUAL(
-      disk_log->segments().front()->offsets().base_offset, model::offset(0));
+      disk_log->segments().front()->offsets().get_base_offset(), model::offset(0));
     BOOST_REQUIRE_EQUAL(
-      disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
+      disk_log->segments().back()->offsets().get_dirty_offset(), model::offset(59));
 
     // gc with timestamp +sep/2, should evict first segment
     compact_and_prefix_truncate(
       *disk_log, make_compaction_cfg(broker_t0 + (broker_ts_sep / 2)));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 2);
     BOOST_REQUIRE_EQUAL(
-      disk_log->segments().front()->offsets().base_offset, model::offset(10));
+      disk_log->segments().front()->offsets().get_base_offset(), model::offset(10));
     BOOST_REQUIRE_EQUAL(
-      disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
+      disk_log->segments().back()->offsets().get_dirty_offset(), model::offset(59));
     // gc with timestamp +sep3/2, should evict another segment
     compact_and_prefix_truncate(
       *disk_log, make_compaction_cfg(broker_t0 + (3 * broker_ts_sep / 2)));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 1);
     BOOST_REQUIRE_EQUAL(
-      disk_log->segments().front()->offsets().base_offset, model::offset(40));
+      disk_log->segments().front()->offsets().get_base_offset(), model::offset(40));
     BOOST_REQUIRE_EQUAL(
-      disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
+      disk_log->segments().back()->offsets().get_dirty_offset(), model::offset(59));
 };
 
 FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
@@ -766,7 +766,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
         if (disk_log->size_bytes() - reclaimed_size < max_size) {
             break;
         }
-        last_offset = seg->offsets().dirty_offset;
+        last_offset = seg->offsets().get_dirty_offset();
     }
 
     storage::housekeeping_config ccfg(
@@ -1675,7 +1675,7 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
     // Check if it honors max_compactible offset by resetting it to the base
     // offset of first segment. Nothing should be compacted.
     const auto first_segment_offsets = log->segments().front()->offsets();
-    c_cfg.compact.max_collectible_offset = first_segment_offsets.base_offset;
+    c_cfg.compact.max_collectible_offset = first_segment_offsets.get_base_offset();
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(log->segment_count(), 4);
 
@@ -1750,7 +1750,7 @@ FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
 
     for (int i = 0; i < 5; i++) {
-        BOOST_REQUIRE_EQUAL(disk_log->segments()[i]->offsets().term(), i + 1);
+        BOOST_REQUIRE_EQUAL(disk_log->segments()[i]->offsets().get_term()(), i + 1);
     }
 }
 
@@ -2242,12 +2242,12 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
               if (log->segment_count() == 0) {
                   return ss::now();
               }
-              auto stable = log->segments().back()->offsets().stable_offset;
+              auto stable = log->segments().back()->offsets().get_stable_offset();
               BOOST_REQUIRE_LE(prev_stable_offset, stable);
               prev_stable_offset = stable;
 
               auto committed
-                = log->segments().back()->offsets().committed_offset;
+                = log->segments().back()->offsets().get_committed_offset();
               BOOST_REQUIRE_LE(prev_committed_offset, committed);
               prev_committed_offset = committed;
 

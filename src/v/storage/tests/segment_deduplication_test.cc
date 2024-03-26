@@ -101,19 +101,19 @@ TEST(FindSlidingRangeTest, TestCollectExcludesPrevious) {
       model::offset{30}, ss::default_priority_class(), never_abort);
     auto segs = disk_log.find_sliding_range(cfg);
     ASSERT_EQ(3, segs.size());
-    ASSERT_EQ(segs.front()->offsets().base_offset(), 0);
+    ASSERT_EQ(segs.front()->offsets().get_base_offset(), model::offset{0});
 
     // Let's pretend the previous compaction indexed offsets [20, 30).
     // Subsequent compaction should ignore that last segment.
     disk_log.set_last_compaction_window_start_offset(model::offset(20));
     segs = disk_log.find_sliding_range(cfg);
     ASSERT_EQ(2, segs.size());
-    ASSERT_EQ(segs.front()->offsets().base_offset(), 0);
+    ASSERT_EQ(segs.front()->offsets().get_base_offset(), model::offset{0});
 
     disk_log.set_last_compaction_window_start_offset(model::offset(10));
     segs = disk_log.find_sliding_range(cfg);
     ASSERT_EQ(1, segs.size());
-    ASSERT_EQ(segs.front()->offsets().base_offset(), 0);
+    ASSERT_EQ(segs.front()->offsets().get_base_offset(), model::offset{0});
 }
 
 // Even though segments with one record would be skipped over during

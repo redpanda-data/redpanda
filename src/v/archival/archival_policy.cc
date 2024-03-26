@@ -188,10 +188,10 @@ archival_policy::lookup_result archival_policy::find_segment(
         // Skip forward if we hit a gap or compacted segment
         for (auto i = set.begin(); i != set.end(); i++) {
             const auto& sg = *i;
-            if (start_offset < sg->offsets().base_offset) {
+            if (start_offset < sg->offsets().get_base_offset()) {
                 // Move last offset forward
                 it = i;
-                start_offset = sg->offsets().base_offset;
+                start_offset = sg->offsets().get_base_offset();
                 break;
             }
         }
@@ -247,7 +247,7 @@ archival_policy::lookup_result archival_policy::find_segment(
         }
     }
 
-    auto dirty_offset = (*it)->offsets().dirty_offset;
+    auto dirty_offset = (*it)->offsets().get_dirty_offset();
     if (dirty_offset > adjusted_lso && !force_upload) {
         vlog(
           archival_log.debug,
@@ -278,14 +278,14 @@ static ss::future<std::optional<std::error_code>> get_file_range(
     // These are default values for full segment upload.
     // We start with these values and refine them further
     // down the code path.
-    upl->starting_offset = segment->offsets().base_offset;
+    upl->starting_offset = segment->offsets().get_base_offset();
     upl->file_offset = 0;
     upl->content_length = fsize;
-    upl->final_offset = segment->offsets().dirty_offset;
+    upl->final_offset = segment->offsets().get_dirty_offset();
     upl->final_file_offset = fsize;
     upl->base_timestamp = segment->index().base_timestamp();
     upl->max_timestamp = segment->index().max_timestamp();
-    if (!end_inclusive && segment->offsets().base_offset == begin_inclusive) {
+    if (!end_inclusive && segment->offsets().get_base_offset() == begin_inclusive) {
         // Fast path, the upload is started at the begining of the segment
         // and not truncted at the end.
         vlog(
@@ -295,7 +295,7 @@ static ss::future<std::optional<std::error_code>> get_file_range(
           fsize);
         co_return std::nullopt;
     }
-    if (begin_inclusive != segment->offsets().base_offset) {
+    if (begin_inclusive != segment->offsets().get_base_offset()) {
         auto seek_result = co_await storage::convert_begin_offset_to_file_pos(
           begin_inclusive, segment, upl->base_timestamp, io_priority);
         if (seek_result.has_error()) {
@@ -375,7 +375,7 @@ static ss::future<candidate_creation_result> create_upload_candidate(
   const storage::ntp_config* ntp_conf,
   ss::io_priority_class io_priority,
   ss::lowres_clock::duration segment_lock_duration) {
-    auto term = segment->offsets().term;
+    auto term = segment->offsets().get_term();
     auto version = storage::record_version_type::v1;
     auto meta = storage::segment_path::parse_segment_filename(
       segment->filename());
@@ -406,7 +406,7 @@ static ss::future<candidate_creation_result> create_upload_candidate(
           file_range_result.value().message());
         co_return candidate_creation_error::failed_to_get_file_range;
     }
-    if (result->starting_offset != segment->offsets().base_offset) {
+    if (result->starting_offset != segment->offsets().get_base_offset()) {
         // We need to generate new name for the segment
         auto path = storage::segment_path::make_segment_path(
           *ntp_conf, result->starting_offset, term, version);

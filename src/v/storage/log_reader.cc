@@ -139,7 +139,7 @@ void skipping_consumer::consume_batch_start(
   size_t /*size_on_disk*/) {
     _expected_next_batch = header.last_offset() + model::offset(1);
     _header = header;
-    _header.ctx.term = _reader._seg.offsets().term;
+    _header.ctx.term = _reader._seg.offsets().get_term();
 }
 
 void skipping_consumer::consume_records(iobuf&& records) {
@@ -153,7 +153,7 @@ ss::future<batch_consumer::stop_parser> skipping_consumer::consume_batch_end() {
       _header, std::move(_records), model::record_batch::tag_ctor_ng{}));
     // We keep the batch in the buffer so that the reader can be cached.
     if (
-      _header.last_offset() >= _reader._seg.offsets().stable_offset
+      _header.last_offset() >= _reader._seg.offsets().get_stable_offset()
       || _header.last_offset() >= _reader._config.max_offset) {
         co_return stop_parser::yes;
     }
@@ -248,7 +248,7 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
      * visible to the reader. however, we need to enforce visibility rules for
      * on disk reads which is bound by the stable offset.
      */
-    if (_config.start_offset > _seg.offsets().stable_offset) {
+    if (_config.start_offset > _seg.offsets().get_stable_offset()) {
         co_return result<records_t>(records_t{});
     }
 
@@ -306,11 +306,11 @@ log_reader::log_reader(
 }
 
 ss::future<> log_reader::find_next_valid_iterator() {
-    if (_config.start_offset <= _iterator.offsets().dirty_offset) {
+    if (_config.start_offset <= _iterator.offsets().get_dirty_offset()) {
         return ss::make_ready_future<>();
     }
     std::unique_ptr<log_segment_batch_reader> tmp_reader = nullptr;
-    while (_config.start_offset > _iterator.offsets().dirty_offset) {
+    while (_config.start_offset > _iterator.offsets().get_dirty_offset()) {
         _iterator.next_seg++;
         if (!tmp_reader) {
             tmp_reader = std::move(_iterator.reader);
@@ -449,7 +449,7 @@ static inline bool is_finished_offset(segment_set& s, model::offset o) {
     for (int i = (int)s.size() - 1; i >= 0; --i) {
         auto& seg = s[i];
         if (!seg->empty()) {
-            return o > seg->offsets().dirty_offset;
+            return o > seg->offsets().get_dirty_offset();
         }
     }
     return true;

@@ -47,6 +47,13 @@ public:
           , committed_offset(model::prev_offset(base))
           , dirty_offset(model::prev_offset(base))
           , stable_offset(model::prev_offset(base)) {}
+
+        model::term_id get_term() const { return term; }
+        model::offset get_base_offset() const { return base_offset; }
+        model::offset get_committed_offset() const { return committed_offset; }
+        model::offset get_stable_offset() const { return stable_offset; }
+        model::offset get_dirty_offset() const { return dirty_offset; }
+
         model::term_id term;
         model::offset base_offset;
 
