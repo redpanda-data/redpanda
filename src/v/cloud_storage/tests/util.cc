@@ -485,8 +485,8 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
           .sname_format = sname_format};
 
         m.add(s.sname, meta);
-        delta = delta
-                + model::offset(s.num_config_records - s.delta_offset_overlap);
+        delta += model::offset_delta(
+          s.num_config_records - s.delta_offset_overlap);
         auto url = m.generate_segment_path(*m.get(meta.base_offset));
         results.push_back(cloud_storage_fixture::expectation{
           .url = "/" + url().string(), .body = body});

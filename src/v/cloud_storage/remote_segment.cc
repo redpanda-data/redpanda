@@ -1157,7 +1157,7 @@ public:
         _seg_reader._cur_rp_offset = header.last_offset() + model::offset{1};
 
         if (header.type == model::record_batch_type::raft_data) {
-            auto next = rp_to_kafka(header.last_offset()) + model::offset(1);
+            auto next = rp_to_kafka(header.last_offset()) + kafka::offset(1);
             if (kafka::offset_cast(next) > _config.start_offset) {
                 _config.start_offset = kafka::offset_cast(next);
             }

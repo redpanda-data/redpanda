@@ -280,7 +280,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
                      .get();
         vlog(e2e_test_log.debug, "{} records consumed", tmp.size());
         std::copy(tmp.begin(), tmp.end(), std::back_inserter(consumed_records));
-        next_offset += model::offset((int64_t)tmp.size());
+        next_offset += kafka::offset((int64_t)tmp.size());
     }
 
     BOOST_REQUIRE_EQUAL(total_records, consumed_records.size());
@@ -310,7 +310,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     }
 
     consumed_records.clear();
-    auto last_offset = next_offset - model::offset(1);
+    auto last_offset = next_offset - kafka::offset(1);
     next_offset = kafka::offset(new_so);
     while (next_offset < last_offset) {
         auto tmp = consumer
