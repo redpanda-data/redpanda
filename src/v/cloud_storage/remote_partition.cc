@@ -415,18 +415,27 @@ public:
                         co_await set_end_of_stream();
                         throw std::system_error(result.error());
                     }
-                    data_t d = std::move(result.value());
-                    for (const auto& batch : d) {
+
+                    remote_segment_batch_reader::data_t d = std::move(
+                      result.value());
+                    data_t slice;
+                    slice.reserve(d.size());
+                    for (auto& batch : d) {
                         _partition->_probe.add_bytes_read(
                           batch.header().size_bytes);
                         _partition->_probe.add_records_read(
                           batch.record_count());
+                        slice.push_back(std::move(batch));
                     }
+
+                    d.clear();
+
                     if (
-                      _first_produced_offset == model::offset{} && !d.empty()) {
-                        _first_produced_offset = d.front().base_offset();
+                      _first_produced_offset == model::offset{}
+                      && !slice.empty()) {
+                        _first_produced_offset = slice.front().base_offset();
                     }
-                    co_return storage_t{std::move(d)};
+                    co_return storage_t{std::move(slice)};
                 } catch (const stuck_reader_exception& ex) {
                     throw_on_external_abort();
                     vlog(

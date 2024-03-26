@@ -35,7 +35,6 @@
 #include "utils/stream_utils.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>
@@ -1360,7 +1359,7 @@ remote_segment_batch_reader::remote_segment_batch_reader(
     _ts_probe.segment_reader_created();
 }
 
-ss::future<result<ss::circular_buffer<model::record_batch>>>
+ss::future<result<remote_segment_batch_reader::data_t>>
 remote_segment_batch_reader::read_some(
   model::timeout_clock::time_point deadline,
   storage::offset_translator_state& ot_state) {
@@ -1405,7 +1404,7 @@ remote_segment_batch_reader::read_some(
                 vlog(_ctxlog.error, "{}", msg);
             }
             _is_unexpected_eof = true;
-            co_return ss::circular_buffer<model::record_batch>{};
+            co_return data_t{};
         }
         _bytes_consumed = new_bytes_consumed.value();
     }
