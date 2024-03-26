@@ -21,6 +21,10 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/util/file.hh>
 
+#include <chrono>
+
+using namespace std::chrono_literals;
+
 namespace cluster {
 
 namespace {
