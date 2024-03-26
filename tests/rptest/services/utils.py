@@ -180,8 +180,16 @@ class LogSearchCloud(LogSearch):
 
     def _capture_log(self, pod, expr) -> Generator[str, None, None]:
         # Load log, output is in binary form
-        _out = self.kubectl.cmd(f"logs -n redpanda {self._get_hostname(pod)} |"
-                                f" grep {expr}")
+        _out = b""
+        pod_name = self._get_hostname(pod)
+        try:
+            _out = self.kubectl.cmd(f"logs -n redpanda {pod_name} |"
+                                    f" grep {expr}")
+        except Exception as e:
+            self.logger.warning(f"Failed to get logs from {pod_name}: {e}")
+        else:
+            _size = len(_out)
+            self.logger.debug(f"Received {_size}B of data from {pod_name}")
         # decode to str
         _out = _out.decode()
         for line in _out.splitlines():
