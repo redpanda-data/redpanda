@@ -21,9 +21,7 @@
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 
-#include <seastar/net/inet_address.hh>
-#include <seastar/net/ip.hh>
-#include <seastar/net/socket_defs.hh>
+#include <seastar/core/circular_buffer.hh>
 
 #include <chrono>
 #include <type_traits>
@@ -48,9 +46,6 @@ void rjson_serialize(json::Writer<json::StringBuffer>& w, unsigned long v);
 void rjson_serialize(json::Writer<json::StringBuffer>& w, double v);
 
 void rjson_serialize(json::Writer<json::StringBuffer>& w, std::string_view s);
-
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const ss::socket_address& v);
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const net::unresolved_address& v);
