@@ -54,7 +54,7 @@ public:
     remote_manifest_path get_manifest_path() const override;
 
     static remote_manifest_path
-    get_topic_manifest_path(model::ns ns, model::topic topic);
+    get_topic_manifest_path(model::ns ns, model::topic topic, manifest_format);
 
     /// Serialize manifest object in json format. only fields up to
     /// first_version are serialized
@@ -81,6 +81,9 @@ public:
     version_t get_manifest_version() const noexcept {
         return _manifest_version;
     }
+
+    std::pair<manifest_format, remote_manifest_path>
+    get_manifest_format_and_path() const override;
 
     bool operator==(const topic_manifest& other) const {
         return std::tie(_topic_config, _rev)
