@@ -85,6 +85,41 @@ FIXTURE_TEST(unregister_node, partition_allocator_fixture) {
     BOOST_REQUIRE_EQUAL(allocator.state().available_nodes(), 2);
 }
 
+FIXTURE_TEST(allocation_over_core_capacity, partition_allocator_fixture) {
+    const auto partition_count
+      = partition_allocator_fixture::partitions_per_shard + 1;
+    register_node(0, 1);
+    auto result
+      = allocator.allocate(make_allocation_request(partition_count, 1)).get();
+    BOOST_REQUIRE(result.has_error());
+    BOOST_REQUIRE_EQUAL(
+      result.assume_error(),
+      cluster::make_error_code(
+        cluster::errc::topic_invalid_partitions_core_limit));
+}
+
+FIXTURE_TEST(
+  allocation_over_memory_capacity, partition_allocator_memory_limited_fixture) {
+    register_node(0, 1);
+    auto result = allocator.allocate(make_allocation_request(1, 1)).get();
+    BOOST_REQUIRE(result.has_error());
+    BOOST_REQUIRE_EQUAL(
+      result.assume_error(),
+      cluster::make_error_code(
+        cluster::errc::topic_invalid_partitions_memory_limit));
+}
+
+FIXTURE_TEST(
+  allocation_over_fds_capacity, partition_allocator_fd_limited_fixture) {
+    register_node(0, 1);
+    auto result = allocator.allocate(make_allocation_request(1, 1)).get();
+    BOOST_REQUIRE(result.has_error());
+    BOOST_REQUIRE_EQUAL(
+      result.assume_error(),
+      cluster::make_error_code(
+        cluster::errc::topic_invalid_partitions_fd_limit));
+}
+
 FIXTURE_TEST(allocation_over_capacity, partition_allocator_fixture) {
     register_node(0, 6);
     register_node(1, 6);
