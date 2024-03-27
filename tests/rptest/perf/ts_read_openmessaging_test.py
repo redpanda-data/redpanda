@@ -11,7 +11,7 @@ from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurati
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 from rptest.services.redpanda import SISettings
 
 
@@ -36,14 +36,21 @@ class TSReadOpenmessagingTest(RedpandaTest):
                              si_settings=si_settings,
                              extra_rp_conf=extra_rp_conf)
 
+    def setUp(self):
+        pass
+
     @cluster(num_nodes=6)
-    @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT")
-    def test_perf(self, driver_idx):
+    @matrix(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
+            write_caching=["on", "off"])
+    def test_perf(self, driver_idx, write_caching):
         """
         An OMB perf regression test that has TS reads.
         """
 
         assert self.redpanda.dedicated_nodes
+
+        self.redpanda.add_extra_rp_conf({"write_caching": write_caching})
+        self.redpanda.start()
 
         validator = {
             OMBSampleConfigurations.PUB_LATENCY_MIN:
