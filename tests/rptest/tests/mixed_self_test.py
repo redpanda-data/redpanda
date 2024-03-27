@@ -52,3 +52,15 @@ class KafkaCliToolsTest(RedpandaMixedTest):
         rpk.consume(topic=name, n=1, timeout=10)
 
         client.delete_topic(name)
+
+
+class RedpandaMixedTestSelfTest(RedpandaMixedTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, min_brokers=3, **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_rpk_create_delete_topic(self):
+        name = 'test-rpk-create-topic'
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(name)
+        rpk.delete_topic(name)
