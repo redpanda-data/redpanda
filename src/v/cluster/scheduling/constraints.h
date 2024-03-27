@@ -88,30 +88,39 @@ distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
 
         soft_constraint_evaluator make_evaluator(
           const allocated_partition& partition,
-          std::optional<model::node_id>) const final {
+          std::optional<model::node_id> prev) const final {
             absl::flat_hash_map<T, size_t> frequency_map;
+            std::optional<T> prev_label;
 
             for (auto& r : partition.replicas()) {
                 auto const l = _mapper(r.node_id);
                 if (!l) {
                     continue;
                 }
-                auto [it, _] = frequency_map.try_emplace(*l, 0);
-                it->second += 1;
+                if (r.node_id == prev) {
+                    prev_label = l;
+                }
+                frequency_map[*l] += 1;
             }
 
-            return [this, frequency_map = std::move(frequency_map)](
+            return [this, frequency_map = std::move(frequency_map), prev_label](
                      const allocation_node& candidate_node) -> uint64_t {
                 auto node_label = _mapper(candidate_node.id());
                 if (!node_label) {
                     return (uint64_t)0;
                 }
-                auto it = frequency_map.find(*node_label);
 
+                auto it = frequency_map.find(*node_label);
                 if (it == frequency_map.end()) {
                     return (uint64_t)soft_constraint::max_score;
                 }
-                return (uint64_t)soft_constraint::max_score / (it->second + 1);
+
+                auto count = it->second;
+                if (node_label != prev_label) {
+                    count += 1;
+                }
+
+                return (uint64_t)soft_constraint::max_score / count;
             };
         }
 

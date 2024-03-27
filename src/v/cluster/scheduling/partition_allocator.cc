@@ -386,11 +386,6 @@ result<reallocation_step> partition_allocator::do_allocate_replica(
             return errc::node_does_not_exists;
         }
     }
-    auto revert = ss::defer([&] {
-        if (prev) {
-            partition.cancel_move(*prev);
-        }
-    });
 
     auto node = _allocation_strategy.choose_node(
       *_state, effective_constraints, partition, prev_node);
@@ -398,7 +393,6 @@ result<reallocation_step> partition_allocator::do_allocate_replica(
         return node.error();
     }
 
-    revert.cancel();
     auto new_replica = partition.add_replica(node.value(), prev);
     std::optional<model::broker_shard> prev_replica;
     if (prev) {

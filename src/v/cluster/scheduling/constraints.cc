@@ -30,9 +30,11 @@ hard_constraint not_fully_allocated() {
     public:
         hard_constraint_evaluator make_evaluator(
           const allocated_partition& partition,
-          std::optional<model::node_id>) const final {
-            return [&partition](const allocation_node& node) {
-                return !node.is_full(partition.ntp());
+          std::optional<model::node_id> prev) const final {
+            return [&partition, prev](const allocation_node& node) {
+                bool will_add_allocation = node.id() != prev
+                                           && !partition.is_original(node.id());
+                return !node.is_full(partition.ntp(), will_add_allocation);
             };
         }
 
@@ -159,8 +161,12 @@ hard_constraint distinct_nodes() {
     public:
         hard_constraint_evaluator make_evaluator(
           const allocated_partition& partition,
-          std::optional<model::node_id>) const final {
-            return [&partition](const allocation_node& node) {
+          std::optional<model::node_id> prev) const final {
+            return [&partition, prev](const allocation_node& node) {
+                if (prev == node.id()) {
+                    // can just stay on the same node
+                    return true;
+                }
                 return std::all_of(
                   partition.replicas().begin(),
                   partition.replicas().end(),
@@ -235,11 +241,14 @@ soft_constraint max_final_capacity(partition_allocation_domain domain) {
 
         soft_constraint_evaluator make_evaluator(
           const allocated_partition&,
-          std::optional<model::node_id>) const final {
-            return [this](const allocation_node& node) {
+          std::optional<model::node_id> prev) const final {
+            return [domain = domain, prev](const allocation_node& node) {
                 auto count = domain == partition_allocation_domains::common
                                ? node.final_partitions()
                                : node.domain_final_partitions(domain);
+                if (prev != node.id()) {
+                    count += 1;
+                }
 
                 // we return 0 for fully allocated node and 10'000'000 for
                 // nodes with maximum capacity available

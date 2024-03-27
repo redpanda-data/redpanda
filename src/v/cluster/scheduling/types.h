@@ -278,13 +278,11 @@ private:
     struct previous_replica {
         model::broker_shard bs;
         size_t idx;
-        std::optional<model::broker_shard> original;
     };
 
-    std::optional<previous_replica> prepare_move(model::node_id previous);
+    std::optional<previous_replica> prepare_move(model::node_id previous) const;
     model::broker_shard
     add_replica(model::node_id, const std::optional<previous_replica>&);
-    void cancel_move(const previous_replica&);
 
     // used to move the allocation to allocation_units
     replicas_t release_new_partition();
