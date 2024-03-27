@@ -18,18 +18,13 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "ssx/async_algorithm.h"
+#include "utils/chunked_hash_map.h"
 #include "utils/contiguous_range_map.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/util/later.hh>
-
-#include <absl/container/btree_map.h>
-#include <absl/container/node_hash_map.h>
-
-#include <cstdint>
-#include <optional>
 
 namespace cluster {
 
@@ -196,7 +191,7 @@ private:
 
     using partition_leaders
       = contiguous_range_map<model::partition_id::type, leader_meta>;
-    using topics_t = absl::node_hash_map<
+    using topics_t = chunked_hash_map<
       model::topic_namespace,
       partition_leaders,
       model::topic_namespace_hash,
