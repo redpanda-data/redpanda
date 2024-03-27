@@ -4751,7 +4751,6 @@ class RedpandaService(RedpandaServiceBase):
 def make_redpanda_service(context: TestContext,
                           num_brokers: Optional[int],
                           *,
-                          cloud_tier: str | None = None,
                           extra_rp_conf=None,
                           **kwargs) -> RedpandaService:
     """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
