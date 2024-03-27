@@ -284,6 +284,12 @@ public:
                     frag.reserve(std::min(elems_per_frag, new_cap));
                     _capacity = frag.capacity();
                 }
+                // We only reserve the first fragment as all fragments after the
+                // first are allocated at the maximum size, so we don't save
+                // anything in terms of reallocs after fully allocating the
+                // first fragment. In addition, due to cache locality, it's
+                // better to delay the allocations of those other fragments
+                // until they're going to be used.
             }
         }
         update_generation();
