@@ -866,6 +866,8 @@ void ntp_archiver::update_probe() {
 
     _probe->segments_to_delete(
       truncated_seg_count + man.replaced_segments_count());
+
+    _probe->cloud_log_size(man.cloud_log_size());
 }
 
 bool ntp_archiver::can_update_archival_metadata() const {
