@@ -233,7 +233,7 @@ class RpkACLTest(RedpandaTest):
     @cluster(num_nodes=1)
     def test_role_acl(self):
         """
-        This test ensures that we can create ACLs bound to a "RedpandaRole:" principal
+        This test ensures that we can create ACLs bound to a role principal
         and that this won't interfere with "User:" permissions, even with a
         matching principal name.
         """
@@ -252,16 +252,41 @@ class RpkACLTest(RedpandaTest):
 
         self.logger.debug("Now add topic access rights for user 'alice'")
 
-        superclient.sasl_allow_principal(f"RedpandaRole:{ROLE_NAME}", ['all'],
-                                         'topic', TOPIC_NAME)
+        self.logger.debug(
+            "Wildcard is illegal for role name, so this should have no effect")
+        superclient.sasl_deny_role('*', ['write'], 'topic', TOPIC_NAME)
 
-        acls = list(
-            filter(lambda l: l != '' and 'PRINCIPAL' not in l,
-                   superclient.acl_list().split('\n')))
+        superclient.sasl_allow_role(ROLE_NAME, ['all'], 'topic', TOPIC_NAME)
+        superclient.sasl_deny_role(f"RedpandaRole:{ROLE_NAME}", ['read'],
+                                   'topic', TOPIC_NAME)
 
-        assert len(acls) == 1, f"Too many ACLs: {acls}"
-        assert acls[-1].find(f"RedpandaRole:{ROLE_NAME}"
-                             ) == 0, f"Expected RedpandaRole ACL: {acls[-1]}"
+        def strip_acls(acls):
+            return list(
+                filter(lambda l: l != '' and 'PRINCIPAL' not in l,
+                       acls.split('\n')))
+
+        acls = strip_acls(superclient.acl_list())
+
+        assert len(acls) == 2, f"Wrong number of ACLs: {acls}"
+        for acl in acls:
+            assert acl.find(f"RedpandaRole:{ROLE_NAME} "
+                            ) == 0, f"Expected RedpandaRole ACL: {acls[-1]}"
+
+        acls = strip_acls(
+            superclient.acl_list(flags=['--allow-role', ROLE_NAME]))
+
+        assert len(acls) == 1, f"Wrong number of ACLs: {acls}"
+        for acl in acls:
+            assert acl.find(f"RedpandaRole:{ROLE_NAME} "
+                            ) == 0, f"Expected RedpandaRole ACL: {acls[-1]}"
+
+        acls = strip_acls(
+            superclient.acl_list(flags=['--deny-role', ROLE_NAME]))
+
+        assert len(acls) == 1, f"Wrong number of ACLs: {acls}"
+        for acl in acls:
+            assert acl.find(f"RedpandaRole:{ROLE_NAME}"
+                            ) == 0, f"Expected RedpandaRole ACL: {acls[-1]}"
 
         # The user is still not authorized
         with expect_exception(RpkException,
