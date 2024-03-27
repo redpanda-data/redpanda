@@ -120,7 +120,8 @@ FIXTURE_TEST(test_batched_actions, stm_test_fixture) {
     }
 
     // Delete the even keys
-    stm.remove_all([](int key) { return key % 2 == 0; }).get();
+    auto result = stm.remove_all([](int key) { return key % 2 == 0; }).get();
+    BOOST_REQUIRE_EQUAL(result, cluster::errc::success);
     for (int i = 0; i < 30; i++) {
         if (i % 2 == 0) {
             BOOST_REQUIRE(!stm.get(i).get().value().has_value());
