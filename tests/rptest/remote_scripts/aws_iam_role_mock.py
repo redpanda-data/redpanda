@@ -142,9 +142,99 @@ def make_sts_handler(token_ttl):
     return STSHandler
 
 
+def make_aks_handler(token_ttl):
+    class AKSHandler(BaseHandler):
+        token_expiry = token_ttl
+        canned_credentials = """
+{{
+  "token_type": "Bearer",
+  "expires_in": {},
+  "access_token": "panda-code"
+}}
+"""
+
+        def get_canned_credentials(self):
+            return self.canned_credentials.format(self.token_expiry)
+
+        # noinspection PyPep8Naming
+        def do_GET(self):
+            self.not_allowed()
+
+        # noinspection PyPep8Naming
+        def do_POST(self):
+            if self.path.endswith('/oauth2/v2.0/token'):
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(
+                    self.get_canned_credentials().strip().encode())
+                self.json_log(200)
+            else:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write('bad request'.encode())
+                self.json_log(400)
+
+        # noinspection PyPep8Naming
+        def do_PUT(self):
+            self.not_allowed()
+
+        # noinspection PyPep8Naming
+        def do_DELETE(self):
+            self.not_allowed()
+
+    return AKSHandler
+
+
+def make_azure_vm_handler(token_ttl):
+    class AVMHandler(BaseHandler):
+        token_expiry = token_ttl
+        canned_credentials = """
+{{
+  "token_type": "Bearer",
+  "expires_in": "{}",
+  "access_token": "panda-code"
+}}
+"""
+
+        def get_canned_credentials(self):
+            return self.canned_credentials.format(self.token_expiry)
+
+        # noinspection PyPep8Naming
+        def do_GET(self):
+            if self.path.startswith('/metadata/identity/oauth2/token'):
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(
+                    self.get_canned_credentials().strip().encode())
+                self.json_log(200)
+            else:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write('bad request'.encode())
+                self.json_log(400)
+
+        # noinspection PyPep8Naming
+        def do_POST(self):
+            self.not_allowed()
+
+        # noinspection PyPep8Naming
+        def do_PUT(self):
+            self.not_allowed()
+
+        # noinspection PyPep8Naming
+        def do_DELETE(self):
+            self.not_allowed()
+
+    return AVMHandler
+
+
 mocks = {
     'aws': make_aws_handler,
     'sts': make_sts_handler,
+    'aks': make_aks_handler,
+    'azure_vm': make_azure_vm_handler,
 }
 
 
