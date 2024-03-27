@@ -400,13 +400,6 @@ void admin_server::register_security_routes() {
       });
 
     register_route<superuser>(
-      ss::httpd::security_json::update_role,
-      [this](std::unique_ptr<ss::http::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          return update_role_handler(std::move(req));
-      });
-
-    register_route<superuser>(
       ss::httpd::security_json::delete_role,
       request_handler_fn{[this](auto req, auto reply) {
           return delete_role_handler(std::move(req), std::move(reply));
@@ -820,39 +813,6 @@ admin_server::get_role_handler(std::unique_ptr<ss::http::request> req) {
     for (const auto& member : role.value().members()) {
         j_res.members.push(role_member_to_json(member));
     }
-    co_return ss::json::json_return_type(j_res);
-}
-
-ss::future<ss::json::json_return_type>
-admin_server::update_role_handler(std::unique_ptr<ss::http::request> req) {
-    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        // In order that we can do a reliably ordered validation of
-        // the request (and drop no-op requests), run on controller leader;
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
-    }
-
-    ss::sstring role_v;
-    if (!admin::path_decode(req->param["role"], role_v)) {
-        throw ss::httpd::bad_param_exception{fmt::format(
-          "Invalid parameter 'role' got {{{}}}", req->param["role"])};
-    }
-    auto from_role_name = security::role_name(role_v);
-
-    auto doc = co_await parse_json_body(req.get());
-    auto to_role_name = parse_role_definition(doc);
-
-    auto err
-      = co_await _controller->get_security_frontend().local().rename_role(
-        from_role_name, to_role_name, model::timeout_clock::now() + 5s);
-    if (err == cluster::errc::role_exists) {
-        throw_role_exception(role_errc::role_name_conflict);
-    } else if (err == cluster::errc::role_does_not_exist) {
-        throw_role_exception(role_errc::role_not_found);
-    }
-    co_await throw_on_error(*req, err, model::controller_ntp);
-
-    ss::httpd::security_json::role_definition j_res;
-    j_res.role = to_role_name();
     co_return ss::json::json_return_type(j_res);
 }
 
