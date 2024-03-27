@@ -1032,11 +1032,6 @@ class Admin:
     def delete_role(self, role: str):
         return self._request("delete", f"security/roles/{role}")
 
-    def update_role(self, role: str, update: RoleUpdate):
-        return self._request("put",
-                             f"security/roles/{role}",
-                             json=update._asdict())
-
     def list_roles(self,
                    filter: Optional[str] = None,
                    principal: Optional[str] = None,
