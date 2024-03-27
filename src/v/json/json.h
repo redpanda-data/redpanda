@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "container/fragmented_vector.h"
 #include "json/_include_first.h"
 #include "json/prettywriter.h"
 #include "json/reader.h"
@@ -21,9 +20,7 @@
 #include "net/unresolved_address.h"
 #include "utils/named_type.h"
 
-#include <seastar/net/inet_address.hh>
-#include <seastar/net/ip.hh>
-#include <seastar/net/socket_defs.hh>
+#include <seastar/core/circular_buffer.hh>
 
 #include <chrono>
 #include <type_traits>
@@ -48,9 +45,6 @@ void rjson_serialize(json::Writer<json::StringBuffer>& w, unsigned long v);
 void rjson_serialize(json::Writer<json::StringBuffer>& w, double v);
 
 void rjson_serialize(json::Writer<json::StringBuffer>& w, std::string_view s);
-
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const ss::socket_address& v);
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const net::unresolved_address& v);
@@ -95,18 +89,7 @@ void rjson_serialize(
     w.EndArray();
 }
 
-template<typename T, size_t max_fragment_size>
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const fragmented_vector<T, max_fragment_size>& v) {
-    w.StartArray();
-    for (const auto& e : v) {
-        rjson_serialize(w, e);
-    }
-    w.EndArray();
-}
-
-template<typename T, size_t chunk_size = 128>
+template<typename T, size_t chunk_size>
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const ss::chunked_fifo<T, chunk_size>& v) {
@@ -138,22 +121,8 @@ void rjson_serialize(
     w.EndArray();
 }
 
-inline ss::sstring minify(std::string_view json) {
-    json::Reader r;
-    json::StringStream in(json.data());
-    json::StringBuffer out;
-    json::Writer<json::StringBuffer> w{out};
-    r.Parse(in, w);
-    return ss::sstring(out.GetString(), out.GetSize());
-}
+ss::sstring minify(std::string_view json);
 
-inline ss::sstring prettify(std::string_view json) {
-    json::Reader r;
-    json::StringStream in(json.data());
-    json::StringBuffer out;
-    json::PrettyWriter<json::StringBuffer> w{out};
-    r.Parse(in, w);
-    return ss::sstring(out.GetString(), out.GetSize());
-}
+ss::sstring prettify(std::string_view json);
 
 } // namespace json
