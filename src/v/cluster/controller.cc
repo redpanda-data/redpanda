@@ -659,7 +659,9 @@ ss::future<> controller::start(
             config::shard_local_cfg()
               .partition_autobalancing_min_size_threshold.bind(),
             config::shard_local_cfg().node_status_interval.bind(),
-            config::shard_local_cfg().raft_learner_recovery_rate.bind());
+            config::shard_local_cfg().raft_learner_recovery_rate.bind(),
+            config::shard_local_cfg()
+              .partition_autobalancing_topic_aware.bind());
       })
       .then([this] {
           return _partition_balancer.invoke_on(

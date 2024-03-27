@@ -56,7 +56,8 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<size_t>&& segment_fallocation_step,
   config::binding<std::optional<size_t>> min_partition_size_threshold,
   config::binding<std::chrono::milliseconds> node_status_interval,
-  config::binding<size_t> raft_learner_recovery_rate)
+  config::binding<size_t> raft_learner_recovery_rate,
+  config::binding<bool> topic_aware)
   : _raft0(std::move(raft0))
   , _controller_stm(controller_stm.local())
   , _state(state.local())
@@ -76,6 +77,7 @@ partition_balancer_backend::partition_balancer_backend(
   , _min_partition_size_threshold(std::move(min_partition_size_threshold))
   , _node_status_interval(std::move(node_status_interval))
   , _raft_learner_recovery_rate(std::move(raft_learner_recovery_rate))
+  , _topic_aware(std::move(topic_aware))
   , _timer([this] { tick(); }) {}
 
 bool partition_balancer_backend::is_enabled() const {
@@ -365,7 +367,9 @@ ss::future<> partition_balancer_backend::do_tick() {
             = _cur_term->_ondemand_rebalance_requested,
             .segment_fallocation_step = _segment_fallocation_step(),
             .min_partition_size_threshold = get_min_partition_size_threshold(),
-            .node_responsiveness_timeout = node_responsiveness_timeout},
+            .node_responsiveness_timeout = node_responsiveness_timeout,
+            .topic_aware = _topic_aware(),
+          },
           _state,
           _partition_allocator)
           .plan_actions(health_report.value(), _tick_in_progress.value());

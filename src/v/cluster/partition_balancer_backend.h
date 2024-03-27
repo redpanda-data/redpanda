@@ -50,7 +50,8 @@ public:
       config::binding<size_t>&& segment_fallocation_step,
       config::binding<std::optional<size_t>> min_partition_size_threshold,
       config::binding<std::chrono::milliseconds> node_status_interval,
-      config::binding<size_t> raft_learner_recovery_rate);
+      config::binding<size_t> raft_learner_recovery_rate,
+      config::binding<bool> topic_aware);
 
     void start();
     ss::future<> stop();
@@ -107,6 +108,7 @@ private:
     config::binding<std::optional<size_t>> _min_partition_size_threshold;
     config::binding<std::chrono::milliseconds> _node_status_interval;
     config::binding<size_t> _raft_learner_recovery_rate;
+    config::binding<bool> _topic_aware;
 
     mutex _lock{"partition_balancer_backend::lock"};
     ss::gate _gate;

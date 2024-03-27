@@ -56,6 +56,10 @@ struct planner_config {
     // the request but it is not yet considered as a violation of partition
     // balancing rules
     std::chrono::milliseconds node_responsiveness_timeout;
+    // If true, prioritize balancing topic-wise number of
+    // partitions on each node, as opposed to balancing the total number of
+    // partitions.
+    bool topic_aware = false;
 };
 
 class partition_balancer_planner {

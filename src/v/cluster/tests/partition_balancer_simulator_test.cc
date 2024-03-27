@@ -423,7 +423,9 @@ private:
             .max_concurrent_actions = 50,
             .node_availability_timeout_sec = std::chrono::minutes(1),
             .segment_fallocation_step = 16_MiB,
-            .node_responsiveness_timeout = std::chrono::seconds(10)},
+            .node_responsiveness_timeout = std::chrono::seconds(10),
+            .topic_aware = true,
+          },
           _workers.state.local(),
           _workers.allocator.local());
     }

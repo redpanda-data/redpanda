@@ -165,7 +165,9 @@ struct partition_balancer_planner_fixture {
             .max_concurrent_actions = max_concurrent_actions,
             .node_availability_timeout_sec = std::chrono::minutes(1),
             .segment_fallocation_step = 16,
-            .node_responsiveness_timeout = std::chrono::seconds(10)},
+            .node_responsiveness_timeout = std::chrono::seconds(10),
+            .topic_aware = true,
+          },
           workers.state.local(),
           workers.allocator.local());
     }
