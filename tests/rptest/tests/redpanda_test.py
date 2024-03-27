@@ -89,7 +89,6 @@ class RedpandaTest(RedpandaTestBase):
     def __init__(self,
                  test_context: TestContext,
                  num_brokers: int | None = None,
-                 cloud_tier: str | None = None,
                  extra_rp_conf: dict[str, Any] | None = None,
                  si_settings: SISettings | None = None,
                  **kwargs: Any):
@@ -99,7 +98,7 @@ class RedpandaTest(RedpandaTestBase):
         """
         super().__init__(test_context)
 
-        if num_brokers is None and cloud_tier is None:
+        if num_brokers is None:
             # Default to a 3 node cluster if sufficient nodes are available, else
             # a single node cluster.  This is just a default: tests are welcome
             # to override constructor to pass an explicit size.  This logic makes
@@ -112,7 +111,6 @@ class RedpandaTest(RedpandaTestBase):
 
         self.redpanda = make_redpanda_service(test_context,
                                               num_brokers,
-                                              cloud_tier=cloud_tier,
                                               extra_rp_conf=extra_rp_conf,
                                               si_settings=si_settings,
                                               **kwargs)
