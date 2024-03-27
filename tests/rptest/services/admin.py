@@ -1029,8 +1029,9 @@ class Admin:
     def get_role(self, role: str):
         return self._request("get", f"security/roles/{role}")
 
-    def delete_role(self, role: str):
-        return self._request("delete", f"security/roles/{role}")
+    def delete_role(self, role: str, delete_acls: Optional[bool] = None):
+        params = None if delete_acls is None else dict(delete_acls=delete_acls)
+        return self._request("delete", f"security/roles/{role}", params=params)
 
     def update_role(self, role: str, update: RoleUpdate):
         return self._request("put",
