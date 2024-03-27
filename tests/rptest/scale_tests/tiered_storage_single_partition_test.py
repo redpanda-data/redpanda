@@ -26,11 +26,10 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
     topics = (TopicSpec(replication_factor=3, partition_count=1), )
 
     def __init__(self, test_context, *args, **kwargs):
-        self.si_settings = SISettings(
+        kwargs['si_settings'] = SISettings(
             test_context=test_context,
             log_segment_size=self.log_segment_size,
         )
-        kwargs['si_settings'] = self.si_settings
 
         # Use interval uploads so that at end of test we may do an "everything
         # was uploaded" success condition.

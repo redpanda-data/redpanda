@@ -178,11 +178,10 @@ class InfiniteRetentionTest(PreallocNodesTest):
     def __init__(self, test_context, *args, **kwargs):
         self.params = self.DEFAULT_PARAMS
 
-        self.si_settings = SISettings(
+        kwargs['si_settings'] = SISettings(
             test_context=test_context,
             log_segment_size=self.params.segment_size,
         )
-        kwargs['si_settings'] = self.si_settings
 
         # Use interval uploads so that at end of test we may do an "everything
         # was uploaded" success condition.
