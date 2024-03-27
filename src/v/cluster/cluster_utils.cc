@@ -145,6 +145,7 @@ cluster::errc map_update_interruption_error_code(std::error_code ec) {
         case raft::errc::replicate_batcher_cache_error:
         case raft::errc::group_not_exists:
         case raft::errc::replicate_first_stage_exception:
+        case raft::errc::invalid_input_records:
             return errc::replication_error;
         }
         __builtin_unreachable();
@@ -317,6 +318,8 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
     raft_state.write_caching_enabled = ptr->write_caching_enabled();
     raft_state.flush_bytes = ptr->flush_bytes();
     raft_state.flush_ms = ptr->flush_ms();
+    raft_state.replication_monitor_state = fmt::format(
+      "{}", ptr->get_replication_monitor());
 
     const auto& fstats = ptr->get_follower_stats();
     if (ptr->is_elected_leader() && fstats.size() > 0) {

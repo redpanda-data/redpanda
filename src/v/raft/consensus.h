@@ -32,6 +32,7 @@
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
 #include "raft/replicate_batcher.h"
+#include "raft/replication_monitor.h"
 #include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
@@ -516,7 +517,12 @@ public:
     size_t flush_bytes() const { return _max_pending_flush_bytes; }
     std::chrono::milliseconds flush_ms() const { return _max_flush_delay_ms; }
 
+    replication_monitor& get_replication_monitor() {
+        return _replication_monitor;
+    }
+
 private:
+    friend replication_monitor;
     friend replicate_entries_stm;
     friend vote_stm;
     friend recovery_stm;
@@ -603,7 +609,7 @@ private:
     ss::future<std::error_code>
     replicate_configuration(ssx::semaphore_units u, group_configuration);
 
-    ss::future<> maybe_update_follower_commit_idx(model::offset);
+    void maybe_update_follower_commit_idx(model::offset);
 
     void arm_vote_timeout();
     void update_node_append_timestamp(vnode);
@@ -830,7 +836,6 @@ private:
     std::unique_ptr<probe> _probe;
     ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
-    ss::condition_variable _majority_replicated_index_updated;
 
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
@@ -891,6 +896,8 @@ private:
     std::chrono::milliseconds _max_flush_delay_ms;
 
     ss::condition_variable _background_flusher;
+
+    replication_monitor _replication_monitor;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

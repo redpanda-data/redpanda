@@ -75,13 +75,19 @@ std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
 }
 
 std::ostream& operator<<(std::ostream& o, const append_result& a) {
-    return o << "{append_time:"
-             << std::chrono::duration_cast<std::chrono::milliseconds>(
-                  a.append_time.time_since_epoch())
-                  .count()
-             << ", base_offset:" << a.base_offset
-             << ", last_offset:" << a.last_offset
-             << ", byte_size:" << a.byte_size << "}";
+    auto append_dur = std::chrono::duration_cast<std::chrono::milliseconds>(
+      log_clock::now() - a.append_time);
+    fmt::print(
+      o,
+      "{{time_since_append: {}, base_offset: {}, last_offset: {}, last_term: "
+      "{}, "
+      "byte_size: {}}}",
+      append_dur,
+      a.base_offset,
+      a.last_offset,
+      a.last_term,
+      a.byte_size);
+    return o;
 }
 std::ostream& operator<<(std::ostream& o, const timequery_result& a) {
     return o << "{offset:" << a.offset << ", time:" << a.time << "}";

@@ -1061,6 +1061,10 @@
                 "follower_recovery_state": {
                     "type": "follower_recovery_state",
                     "description": "Raft recovery state if this replica is a follower in recovery"
+                },
+                "replication_monitor_state": {
+                    "type": "string",
+                    "description": "State of waiters pending replication."
                 }
             }
         },

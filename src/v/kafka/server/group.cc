@@ -2180,6 +2180,7 @@ kafka::error_code map_store_offset_error_code(std::error_code ec) {
             return error_code::request_timed_out;
         case raft::errc::not_leader:
         case raft::errc::replicated_entry_truncated:
+        case raft::errc::invalid_input_records:
             return error_code::not_coordinator;
         case raft::errc::disconnected_endpoint:
         case raft::errc::exponential_backoff:

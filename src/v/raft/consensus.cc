@@ -147,8 +147,9 @@ consensus::consensus(
   , _append_requests_buffer(*this, 256)
   , _write_caching_enabled(log_config().write_caching())
   , _max_pending_flush_bytes(log_config().flush_bytes())
-  , _max_flush_delay_ms(flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
-                          .next_duration()) {
+  , _max_flush_delay_ms(
+      flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}.next_duration())
+  , _replication_monitor(this) {
     setup_metrics();
     setup_public_metrics();
     update_follower_stats(_configuration_manager.get_latest());
@@ -262,7 +263,6 @@ void consensus::shutdown_input() {
         _vote_timeout.cancel();
         _as.request_abort();
         _commit_index_updated.broken();
-        _majority_replicated_index_updated.broken();
         _follower_reply.broken();
     }
 }
@@ -273,6 +273,7 @@ ss::future<> consensus::stop() {
     for (auto& idx : _fstats) {
         idx.second.follower_state_change.broken();
     }
+    co_await _replication_monitor.stop();
     co_await _event_manager.stop();
     if (_stm_manager) {
         co_await _stm_manager->stop();
@@ -1645,7 +1646,10 @@ ss::future<vote_reply> consensus::vote(vote_request&& r) {
           .with(
             _jit.base_duration(),
             [this, r = std::move(r)]() mutable {
-                return do_vote(std::move(r));
+                return do_vote(std::move(r)).then([this](vote_reply reply) {
+                    vlog(_ctxlog.trace, "vote reply: {}", reply);
+                    return reply;
+                });
             })
           .handle_exception_type(
             [this, target_node_id](const ss::semaphore_timed_out&) {
@@ -1757,6 +1761,15 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
     reply.log_ok
       = r.prev_log_term > last_entry_term
         || (r.prev_log_term == last_entry_term && r.prev_log_index >= last_log_index);
+
+    vlog(
+      _ctxlog.trace,
+      "vote log_ok response: {}, last_entry_term: {}, last_log_index: {}, log "
+      "offsets: {}",
+      reply.log_ok,
+      last_entry_term,
+      last_log_index,
+      lstats);
 
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _term) {
@@ -1987,14 +2000,12 @@ consensus::do_append_entries(append_entries_request&& r) {
             _follower_recovery_state.reset();
         }
 
-        return f.then([this, reply, request_metadata] {
-            return maybe_update_follower_commit_idx(
-                     model::offset(request_metadata.commit_index))
-              .then([this, reply]() mutable {
-                  reply.last_flushed_log_index = _flushed_offset;
-                  reply.result = reply_result::success;
-                  return reply;
-              });
+        return f.then([this, reply, request_metadata]() mutable {
+            maybe_update_follower_commit_idx(
+              model::offset(request_metadata.commit_index));
+            reply.last_flushed_log_index = _flushed_offset;
+            reply.result = reply_result::success;
+            return reply;
         });
     }
 
@@ -2087,37 +2098,36 @@ consensus::do_append_entries(append_entries_request&& r) {
               offsets_ret ofs) {
           auto last_visible = std::min(ofs.last_offset, m.last_visible_index);
           maybe_update_last_visible_index(last_visible);
+
           _last_leader_visible_offset = std::max(
             m.last_visible_index, _last_leader_visible_offset);
           _confirmed_term = _term;
-          return maybe_update_follower_commit_idx(model::offset(m.commit_index))
-            .then([this, m, ofs, target] {
-                if (_follower_recovery_state) {
-                    _follower_recovery_state->update_progress(
-                      ofs.last_offset,
-                      std::max(m.dirty_offset, ofs.last_offset));
 
-                    if (m.dirty_offset == m.prev_log_index) {
-                        // Normal (non-recovery, non-heartbeat) append_entries
-                        // request means that recovery is over.
-                        vlog(
-                          _ctxlog.debug,
-                          "exiting follower_recovery_state, leader meta: {} "
-                          "(our offset: {})",
-                          m,
-                          ofs.last_offset);
-                        _follower_recovery_state.reset();
-                    }
-                    // m.dirty_offset can be bogus here if we are talking to
-                    // a pre-23.3 redpanda. In this case we can't reliably
-                    // distinguish between recovery and normal append_entries
-                    // and will exit recovery only via heartbeats (which is okay
-                    // but can inflate the number of recovering partitions
-                    // statistic a bit).
-                }
+          maybe_update_follower_commit_idx(model::offset(m.commit_index));
 
-                return make_append_entries_reply(target, ofs);
-            });
+          if (_follower_recovery_state) {
+              _follower_recovery_state->update_progress(
+                ofs.last_offset, std::max(m.dirty_offset, ofs.last_offset));
+
+              if (m.dirty_offset == m.prev_log_index) {
+                  // Normal (non-recovery, non-heartbeat) append_entries
+                  // request means that recovery is over.
+                  vlog(
+                    _ctxlog.debug,
+                    "exiting follower_recovery_state, leader meta: {} "
+                    "(our offset: {})",
+                    m,
+                    ofs.last_offset);
+                  _follower_recovery_state.reset();
+              }
+              // m.dirty_offset can be bogus here if we are talking to
+              // a pre-23.3 redpanda. In this case we can't reliably
+              // distinguish between recovery and normal append_entries
+              // and will exit recovery only via heartbeats (which is okay
+              // but can inflate the number of recovering partitions
+              // statistic a bit).
+          }
+          return make_append_entries_reply(target, ofs);
       })
       .handle_exception([this, reply](const std::exception_ptr& e) mutable {
           vlog(
@@ -2261,6 +2271,7 @@ void consensus::update_offset_from_snapshot(
     maybe_update_last_visible_index(_commit_index);
     if (prev_commit_index != _commit_index) {
         _commit_index_updated.broadcast();
+        _replication_monitor.notify_committed();
         _event_manager.notify_commit_index();
     }
 
@@ -2959,6 +2970,7 @@ consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
         _commit_index = majority_match;
         vlog(_ctxlog.trace, "Leader commit index updated {}", _commit_index);
 
+        _replication_monitor.notify_committed();
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index();
         // if we successfully acknowledged all quorum writes we can make pending
@@ -2975,8 +2987,9 @@ consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
     }
     return ss::now();
 }
-ss::future<>
-consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
+
+void consensus::maybe_update_follower_commit_idx(
+  model::offset request_commit_idx) {
     // Raft paper:
     //
     // If leaderCommit > commitIndex, set commitIndex =
@@ -2987,11 +3000,11 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
             _commit_index = new_commit_idx;
             vlog(
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
+            _replication_monitor.notify_committed();
             _commit_index_updated.broadcast();
             _event_manager.notify_commit_index();
         }
     }
-    return ss::make_ready_future<>();
 }
 
 void consensus::update_follower_stats(const group_configuration& cfg) {
@@ -3487,10 +3500,15 @@ void consensus::maybe_update_last_visible_index(model::offset offset) {
 }
 
 void consensus::do_update_majority_replicated_index(model::offset offset) {
+    vlog(
+      _ctxlog.trace,
+      "update majority_replicated_index, new offset: {}, current: {}",
+      offset,
+      _majority_replicated_index);
     auto previous_majority_replicated_index = _majority_replicated_index;
     _majority_replicated_index = std::max(_majority_replicated_index, offset);
     if (previous_majority_replicated_index != _majority_replicated_index) {
-        _majority_replicated_index_updated.broadcast();
+        _replication_monitor.notify_replicated();
     }
 }
 
