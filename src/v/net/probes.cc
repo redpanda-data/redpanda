@@ -110,11 +110,6 @@ void server_probe::setup_metrics(
           sm::description(ssx::sformat(
             "{}: Number of connections are blocked by connection rate",
             proto))),
-        sm::make_counter(
-          "produce_bad_create_time",
-          [this] { return _produce_bad_create_time; },
-          sm::description("number of produce requests with timestamps too far "
-                          "in the future or in the past")),
       },
       {},
       {sm::shard_label});
@@ -158,6 +153,13 @@ void server_probe::setup_public_metrics(
           [this] { return _out_bytes; },
           sm::description(
             ssx::sformat("{}: Number of bytes sent to clients", proto)),
+          {server_label(proto)})
+          .aggregate({sm::shard_label}),
+        sm::make_counter(
+          "produce_bad_create_time",
+          [this] { return _produce_bad_create_time; },
+          sm::description("number of produce requests with timestamps too far "
+                          "in the future or in the past"),
           {server_label(proto)})
           .aggregate({sm::shard_label}),
       });
