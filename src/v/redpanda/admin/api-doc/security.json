@@ -331,6 +331,12 @@
         ],
         "parameters": [
             {
+                "name": "delete_acls",
+                "in": "query",
+                "required": false,
+                "type": "boolean"
+            },
+            {
                 "name": "role",
                 "in": "path",
                 "required": true,
