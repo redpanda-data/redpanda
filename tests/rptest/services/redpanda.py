@@ -47,6 +47,7 @@ from ducktape.cluster.cluster_spec import ClusterSpec
 from prometheus_client.parser import text_string_to_metric_families
 from ducktape.errors import TimeoutError
 from ducktape.tests.test import TestContext
+from rptest.services.rpk_consumer import RpkConsumer
 
 from rptest.clients.helm import HelmTool
 from rptest.clients.kafka_cat import KafkaCat
@@ -1945,14 +1946,41 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         pod_names = [p.name for p in self.pods]
         self.logger.info(f'rolling restart on pods: {pod_names}')
 
-        def cluster_ready_replicas(cluster_name: str):
-            # kubectl get cluster rp-clo88krkqkrfamptsst0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
-            ret = self.kubectl.cmd([
-                'get', 'cluster', cluster_name, '-n=redpanda',
-                "-o=jsonpath='{.status.readyReplicas}'"
-            ]).decode()
-            # seems like readyReplicas will be empty if 0 are ready
-            return int(0 if not ret else ret)
+        for pod_name in pod_names:
+            self.restart_pod(pod_name, pod_timeout)
+            # kubectl get cluster rp-clo88krkqkrfamptsst0 -n=redpanda -o=jsonpath='{.status.replicas}'
+            expected_replicas = int(
+                self.kubectl.cmd([
+                    'get', 'cluster', cluster_name, '-n=redpanda',
+                    "-o=jsonpath='{.status.replicas}'"
+                ]).decode())
+
+            # Check cluster readiness after pod restart
+            self.check_cluster_readiness(cluster_name, expected_replicas,
+                                         pod_timeout)
+
+    def concurrent_restart_pods(self, pod_timeout):
+        """
+        Restart all pods in the cluster concurrently and wait
+        for the entire cluster to be ready.
+        """
+
+        cluster_name = f'rp-{self._cloud_cluster.cluster_id}'
+        pod_names = [p.name for p in self.pods]
+        self.logger.info(f'Starting concurrent restart on pods: {pod_names}')
+
+        threads = []
+        for pod_name in pod_names:
+            thread = threading.Thread(target=self.restart_pod,
+                                      args=(pod_name, ))
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()  # Wait for all threads to complete
+
+        self.logger.info(
+            "All pods have been restarted (deleted) concurrently.")
 
         # kubectl get cluster rp-clo88krkqkrfamptsst0 -n=redpanda -o=jsonpath='{.status.replicas}'
         expected_replicas = int(
@@ -1961,22 +1989,67 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 "-o=jsonpath='{.status.replicas}'"
             ]).decode())
 
-        for pod_name in pod_names:
-            self.restart_pod(pod_name, pod_timeout)
+        # Check cluster readiness after restart of all pods
+        self.check_cluster_readiness(cluster_name, expected_replicas,
+                                     pod_timeout)
 
+    def check_cluster_readiness(self, cluster_name: str,
+                                expected_replicas: int, pod_timeout: int):
+        """Checks if the cluster has the expected number of ready replicas."""
         self.logger.info(
-            f'waiting for cluster {cluster_name} to have readyReplicas {expected_replicas} with timeout {pod_timeout}'
+            f"Waiting for cluster {cluster_name} to have readyReplicas {expected_replicas} with timeout {pod_timeout}"
         )
+
         wait_until(
-            lambda: cluster_ready_replicas(cluster_name) == expected_replicas,
+            lambda: self.cluster_ready_replicas(cluster_name
+                                                ) == expected_replicas,
             timeout_sec=pod_timeout,
             backoff_sec=1,
             err_msg=
-            f'cluster {cluster_name} failed to arrive at readyReplicas {expected_replicas}'
+            f"Cluster {cluster_name} failed to arrive at readyReplicas {expected_replicas}"
         )
+
         self.logger.info(
-            f'cluster {cluster_name} arrived at readyReplicas {expected_replicas}'
+            f"Cluster {cluster_name} arrived at readyReplicas {expected_replicas}"
         )
+
+    def cluster_ready_replicas(self, cluster_name: str):
+        """Retrieves the number of ready replicas for the given cluster."""
+        ret = self.kubectl.cmd([
+            'get', 'cluster', cluster_name, '-n=redpanda',
+            "-o=jsonpath='{.status.readyReplicas}'"
+        ]).decode()
+        return int(0 if not ret else ret)
+
+    def verify_basic_produce_consume(self, producer, consumer):
+        self.logger.info("Checking basic producer functions")
+        current_sent = producer.produce_status.sent
+        produce_count = 100
+        consume_count = 100
+
+        def producer_complete():
+            number_left = (current_sent +
+                           produce_count) - producer.produce_status.sent
+            self.logger.info(f"{number_left} messages still need to be sent.")
+            return number_left <= 0
+
+        wait_until(producer_complete, timeout_sec=120, backoff_sec=1)
+
+        self.logger.info("Checking basic consumer functions")
+        current_sent = producer.produce_status.sent
+
+        consumer.start()
+        wait_until(
+            lambda: consumer.message_count >= consume_count,
+            timeout_sec=120,
+            backoff_sec=1,
+            err_msg=f"Could not consume {consume_count} msgs in 120 seconds")
+
+        consumer.stop()
+        consumer.free()
+        self.logger.info(
+            f"Successfully verified basic produce/consume with {produce_count}/"
+            f"{consume_count} messages.")
 
     def stop(self, **kwargs):
         if self._cloud_cluster.config.delete_cluster:
