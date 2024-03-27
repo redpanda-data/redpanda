@@ -243,6 +243,25 @@ make_fragmented_memory_storage_batches(Container batches) {
     }
     return data;
 }
+
+template<typename Container>
+ss::future<Container> consume_reader_to_fragmented_memory(
+  record_batch_reader reader, timeout_clock::time_point timeout) {
+    class fragmented_memory_batch_consumer {
+    public:
+        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+            _result.push_back(std::move(b));
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        Container end_of_stream() { return std::move(_result); }
+
+    private:
+        Container _result;
+    };
+    return std::move(reader).consume(
+      fragmented_memory_batch_consumer{}, timeout);
+}
 } // namespace
 
 record_batch_reader make_fragmented_memory_record_batch_reader(
@@ -253,12 +272,28 @@ record_batch_reader make_fragmented_memory_record_batch_reader(
         fragmented_vector<model::record_batch>>(std::move(batches)));
 }
 
+record_batch_reader make_fragmented_memory_record_batch_reader(
+  chunked_vector<model::record_batch> batches) {
+    return make_fragmented_memory_record_batch_reader(
+      make_fragmented_memory_storage_batches<
+        false,
+        chunked_vector<model::record_batch>>(std::move(batches)));
+}
+
 record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
   fragmented_vector<model::record_batch> batches) {
     return make_fragmented_memory_record_batch_reader(
       make_fragmented_memory_storage_batches<
         true,
         fragmented_vector<model::record_batch>>(std::move(batches)));
+}
+
+record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
+  chunked_vector<model::record_batch> batches) {
+    return make_fragmented_memory_record_batch_reader(
+      make_fragmented_memory_storage_batches<
+        true,
+        chunked_vector<model::record_batch>>(std::move(batches)));
 }
 
 record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
@@ -297,22 +332,15 @@ ss::future<record_batch_reader::data_t> consume_reader_to_memory(
 ss::future<fragmented_vector<model::record_batch>>
 consume_reader_to_fragmented_memory(
   record_batch_reader reader, timeout_clock::time_point timeout) {
-    class fragmented_memory_batch_consumer {
-    public:
-        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-            _result.push_back(std::move(b));
-            return ss::make_ready_future<ss::stop_iteration>(
-              ss::stop_iteration::no);
-        }
-        fragmented_vector<model::record_batch> end_of_stream() {
-            return std::move(_result);
-        }
+    return consume_reader_to_fragmented_memory<
+      fragmented_vector<model::record_batch>>(std::move(reader), timeout);
+}
 
-    private:
-        fragmented_vector<model::record_batch> _result;
-    };
-    return std::move(reader).consume(
-      fragmented_memory_batch_consumer{}, timeout);
+ss::future<chunked_vector<model::record_batch>>
+consume_reader_to_chunked_vector(
+  record_batch_reader reader, timeout_clock::time_point timeout) {
+    return consume_reader_to_fragmented_memory<
+      chunked_vector<model::record_batch>>(std::move(reader), timeout);
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch_reader& r) {
