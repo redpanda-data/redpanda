@@ -87,16 +87,6 @@ class RBACTest(RBACTestBase):
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
             self.superuser_admin.get_role(role=self.role_name0)
 
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role(role=self.role_name0,
-                                             update=RoleUpdate(
-                                                 self.role_name1))
-
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role(role=self.role_name0,
-                                             update=RoleUpdate(
-                                                 self.role_name1))
-
         res = self.superuser_admin.list_roles(filter='ba',
                                               principal=ALICE.username)
         assert len(RolesList.from_response(res)) == 0, "Unexpected roles"
@@ -118,10 +108,6 @@ class RBACTest(RBACTestBase):
 
         with expect_http_error(403):
             self.user_admin.get_role(role=self.role_name0)
-
-        with expect_http_error(403):
-            self.user_admin.update_role(role=self.role_name0,
-                                        update=RoleUpdate(self.role_name1))
 
         with expect_http_error(403):
             self.user_admin.update_role_members(
@@ -286,70 +272,6 @@ class RBACTest(RBACTestBase):
                    timeout_sec=10,
                    backoff_sec=2,
                    err_msg="Get role hasn't succeeded in time")
-
-    @cluster(num_nodes=3)
-    def test_update_role(self):
-        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
-
-        self.logger.debug("Test that update_role rejects an unknown role")
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role(
-                role=self.role_name0, update=RoleUpdate(role=self.role_name1))
-
-        self.logger.debug(
-            "Test that update_role successfully renames role and maintains members"
-        )
-        self.superuser_admin.update_role_members(role=self.role_name0,
-                                                 add=[alice],
-                                                 create=True)
-
-        res = self.superuser_admin.update_role(
-            role=self.role_name0, update=RoleUpdate(role=self.role_name1))
-        new_role = res.json()['role']
-        assert new_role == self.role_name1, f"Unexpected role name: {new_role} != {self.role_name1}"
-
-        def update_completes_atomically():
-            roles = self._set_of_user_roles()
-            # Abort waiting and fail early if we ever see both roles at the same time
-            assert roles in [{self.role_name0}, {self.role_name1}]
-            return roles == {self.role_name1}
-
-        wait_until(update_completes_atomically,
-                   timeout_sec=10,
-                   backoff_sec=2,
-                   err_msg="Role update hasn't completed in time")
-
-        def update_maintains_members(role_name: str,
-                                     expected_members: list[str] = []):
-            try:
-                res = self.superuser_admin.get_role(role=role_name)
-                role = Role.from_response(res)
-
-                return role.name == role_name and \
-                    len(role.members) == len(expected_members) and \
-                    all(member in role.members for member in expected_members)
-            except HTTPError as e:
-                assert RoleError.from_http_error(e).code == RoleErrorCode.ROLE_NOT_FOUND, \
-                    f"Unexpected error while waiting for get_role to succeed: {e}"
-                return False
-
-        wait_until(lambda: update_maintains_members(self.role_name1,
-                                                    expected_members=[alice]),
-                   timeout_sec=10,
-                   backoff_sec=2,
-                   err_msg="Role update hasn't completed in time")
-
-        self.logger.debug("Test that updated role no longer exists")
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role(
-                role=self.role_name0, update=RoleUpdate(role=self.role_name2))
-
-        self.logger.debug(
-            "Test that update_role rejects renaming to an existing role")
-        self._create_and_wait_for_role(role=self.role_name2)
-        with expect_role_error(RoleErrorCode.ROLE_NAME_CONFLICT):
-            self.superuser_admin.update_role(
-                role=self.role_name1, update=RoleUpdate(role=self.role_name2))
 
     @cluster(num_nodes=3)
     def test_delete_role(self):
