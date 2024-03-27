@@ -10,24 +10,22 @@
  */
 
 #pragma once
-#include "cluster/producer_state_manager.h"
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/timeout_clock.h"
 #include "net/unresolved_address.h"
+#include "raft/consensus.h"
 #include "raft/group_manager.h"
-#include "raft/mux_state_machine.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
-#include "storage/types.h"
 #include "test_utils/async.h"
 
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 
@@ -67,15 +65,6 @@ struct simple_raft_fixture {
         _feature_table
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
-          .get();
-        _producer_state_manager
-          .start(
-            config::mock_binding(std::numeric_limits<uint64_t>::max()),
-            std::chrono::milliseconds::max())
-          .get();
-        _producer_state_manager
-          .invoke_on_all(
-            [](cluster::producer_state_manager& mgr) { return mgr.start(); })
           .get();
 
         _group_mgr
@@ -152,12 +141,13 @@ struct simple_raft_fixture {
             if (_raft) {
                 _raft.release();
             }
-            _producer_state_manager.stop().get();
+
             _connections.stop().get();
             _storage.stop().get();
             _feature_table.stop().get();
             _as.stop().get();
         }
+        _started = false;
     }
 
     storage::log_config default_log_cfg() {
@@ -205,13 +195,12 @@ struct simple_raft_fixture {
 
     ss::logger _test_logger{"mux-test-logger"};
     ss::sstring _data_dir;
-    cluster::consensus_ptr _raft;
+    ss::lw_shared_ptr<raft::consensus> _raft;
     ss::sharded<ss::abort_source> _as;
     ss::sharded<rpc::connection_cache> _connections;
     ss::sharded<storage::api> _storage;
     ss::sharded<features::feature_table> _feature_table;
     ss::sharded<raft::group_manager> _group_mgr;
     ss::sharded<raft::coordinated_recovery_throttle> _recovery_throttle;
-    ss::sharded<cluster::producer_state_manager> _producer_state_manager;
     bool _started = false;
 };

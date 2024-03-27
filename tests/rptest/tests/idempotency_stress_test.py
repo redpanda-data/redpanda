@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import math
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -65,19 +67,19 @@ class IdempotencyStressTest(PreallocNodesTest):
     def throughput(self):
         return 64 * MB if self.is_scale_test else 5 * MB
 
-    def _create_producer(self):
+    def _create_producer(self, topic, custom_node=None):
         self.logger.info(
             f"starting producer with: message_size: {self.msg_size}, message count: {self.msg_cnt}, throughput: {self.throughput}, total bytes: {self.total_bytes}, messages per producer: {self.msgs_per_producer}"
         )
         return KgoVerifierProducer(
             self.test_context,
             self.redpanda,
-            self.topic_name,
+            topic,
             msg_size=self.msg_size,
             # we use an arbitrary large number here, test scale is controlled by
             # total_bytes property, producer is stopped after desired number of bytes is sent
             msg_count=10000000000,
-            custom_node=[self.preallocated_nodes[0]],
+            custom_node=custom_node,
             rate_limit_bps=self.throughput,
             debug_logs=False,
             msgs_per_producer_id=self.msgs_per_producer)
@@ -108,10 +110,55 @@ class IdempotencyStressTest(PreallocNodesTest):
                       partition_count=self.partition_count,
                       segment_bytes=self.segment_size))
 
-        producer = self._create_producer()
+        producer = self._create_producer(self.topic_name,
+                                         [self.preallocated_nodes[0]])
         producer.start()
         producer.wait_for_acks(self.msg_cnt, 600, 1)
         producer.stop()
+
+        wait_until(
+            lambda: self.validate_metrics(max_producer_ids),
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg=
+            f"Idempotent producer cache size exceeded {max_producer_ids}")
+
+    @cluster(num_nodes=6)
+    @matrix(min_per_vcluster=[20, 33, 50])
+    @skip_debug_mode
+    def producer_id_stress_namespaces_test(self, min_per_vcluster):
+        max_producer_ids = 100
+        v_clusters = 3
+        topics = [f"id-stress-{i}" for i in range(v_clusters)]
+        clusters = [f"000000000{i}0000000000" for i in range(v_clusters)]
+
+        self.redpanda.set_cluster_config({
+            "max_concurrent_producer_ids": max_producer_ids,
+            "virtual_cluster_min_producer_ids": min_per_vcluster,
+            "enable_mpx_extensions": True,
+        })
+        rpk = RpkTool(self.redpanda)
+        for topic, vcluster in zip(topics, clusters):
+            rpk.create_topic(topic,
+                             partitions=3,
+                             replicas=3,
+                             config={"redpanda.virtual.cluster.id": vcluster})
+
+        producers = []
+        for i in range(v_clusters):
+            producer = self._create_producer(topic=topics[i])
+            try:
+                producers[i].start()
+                if i >= math.floor(max_producer_ids / min_per_vcluster):
+                    assert False, f"Producer {i} should not start as it would exceed the total number of allowed producers"
+                producers.append(producer)
+            except:
+                pass
+
+        for p in producers:
+
+            p.wait_for_acks(self.msg_cnt, 600, 1)
+            p.stop()
 
         wait_until(
             lambda: self.validate_metrics(max_producer_ids),

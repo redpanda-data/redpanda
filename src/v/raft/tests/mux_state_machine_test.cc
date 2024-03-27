@@ -7,19 +7,15 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "base/outcome.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "raft/mux_state_machine.h"
 #include "raft/tests/simple_raft_fixture.h"
-#include "raft/types.h"
-#include "random/generators.h"
 #include "reflection/adl.h"
-#include "serde/serde.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/abort_source.hh>
@@ -30,8 +26,6 @@
 
 #include <boost/range/irange.hpp>
 #include <boost/test/tools/old/interface.hpp>
-
-#include <thread>
 
 using namespace std::chrono_literals;
 

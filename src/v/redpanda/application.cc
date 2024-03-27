@@ -1431,7 +1431,11 @@ void application::wire_up_redpanda_services(
       ss::sharded_parameter([]() {
           return config::shard_local_cfg().max_concurrent_producer_ids.bind();
       }),
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
+      config::shard_local_cfg().transactional_id_expiration_ms.value(),
+      ss::sharded_parameter([]() {
+          return config::shard_local_cfg()
+            .virtual_cluster_min_producer_ids.bind();
+      }))
       .get();
 
     producer_manager.invoke_on_all(&cluster::producer_state_manager::start)
@@ -2558,7 +2562,8 @@ void application::start_runtime_services(
             config::shard_local_cfg().enable_idempotence.value(),
             tx_gateway_frontend,
             producer_manager,
-            feature_table);
+            feature_table,
+            controller->get_topics_state());
           pm.register_factory<cluster::log_eviction_stm_factory>(
             storage.local().kvs());
           pm.register_factory<cluster::archival_metadata_stm_factory>(

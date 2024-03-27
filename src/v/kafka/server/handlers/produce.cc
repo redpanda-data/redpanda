@@ -146,6 +146,8 @@ static error_code map_produce_error_code(std::error_code ec) {
             return error_code::out_of_order_sequence_number;
         case cluster::errc::invalid_request:
             return error_code::invalid_request;
+        case cluster::errc::producer_ids_vcluster_limit_exceeded:
+            return error_code::policy_violation;
         case cluster::errc::generic_tx_error:
             return error_code::unknown_server_error;
         default:
