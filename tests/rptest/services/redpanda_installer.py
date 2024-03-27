@@ -184,13 +184,13 @@ class RedpandaInstaller:
         # (i.e. root_for_version(), etc).
         self._install_lock_fd = None
 
-        self._installed_version = self.HEAD
+        self._installed_version: RedpandaVersion = self.HEAD
 
         # memoize result of self.arch()
         self._arch = None
 
     @property
-    def installed_version(self):
+    def installed_version(self) -> RedpandaVersion:
         return self._installed_version
 
     def _acquire_install_lock(self, timeout_sec=600):
@@ -286,6 +286,8 @@ class RedpandaInstaller:
             assert initial_version == vers, \
                 f"Mismatch version {node.account.hostname} has {vers}, {nodes[0].account.hostname} has {initial_version}"
             node.account.ssh_output(f"mkdir -p {self.INSTALLER_ROOT}")
+
+        assert initial_version
 
         try:
             self._acquire_install_lock()

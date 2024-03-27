@@ -42,11 +42,6 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
     def __init__(self, test_ctx, *args):
         self._ctx = test_ctx
         self.initial_partition_count = 3
-        self.si_settings = SISettings(
-            test_ctx,
-            cloud_storage_segment_max_upload_interval_sec=1,
-            fast_uploads=True,
-        )
         super(ConsumerOffsetsRecoveryTest, self).__init__(
             test_ctx,
             num_brokers=3,
@@ -59,7 +54,11 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
                 "cloud_storage_cluster_metadata_upload_interval_ms": 1000,
             },
             node_prealloc_count=1,
-            si_settings=self.si_settings)
+            si_settings=SISettings(
+                test_ctx,
+                cloud_storage_segment_max_upload_interval_sec=1,
+                fast_uploads=True,
+            ))
 
     def describe_all_groups(self,
                             num_groups: int = 1

@@ -45,19 +45,16 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
     ]
 
     def __init__(self, test_context):
-        self.si_settings = SISettings(
-            test_context,
-            log_segment_size=self.log_segment_size,
-            cloud_storage_housekeeping_interval_ms=2000,
-            fast_uploads=True)
-
         extra_rp_conf = dict(log_compaction_interval_ms=2000,
                              compacted_log_segment_size=self.log_segment_size)
 
-        super(CloudStorageUsageTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf,
-                             si_settings=self.si_settings)
+        super(CloudStorageUsageTest, self).__init__(
+            test_context=test_context,
+            extra_rp_conf=extra_rp_conf,
+            si_settings=SISettings(test_context,
+                                   log_segment_size=self.log_segment_size,
+                                   cloud_storage_housekeeping_interval_ms=2000,
+                                   fast_uploads=True))
 
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)

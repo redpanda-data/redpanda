@@ -198,23 +198,23 @@ class ArchivalTest(RedpandaTest):
                         replication_factor=3), )
 
     def __init__(self, test_context):
-        self.si_settings = SISettings(test_context,
-                                      cloud_storage_max_connections=5,
-                                      log_segment_size=self.log_segment_size)
-        self.s3_bucket_name = self.si_settings.cloud_storage_bucket
+        si_settings = SISettings(test_context,
+                                 cloud_storage_max_connections=5,
+                                 log_segment_size=self.log_segment_size)
+        self.s3_bucket_name = si_settings.cloud_storage_bucket
 
         extra_rp_conf = dict(
             log_compaction_interval_ms=self.log_compaction_interval_ms,
             log_segment_size=self.log_segment_size)
 
         if test_context.function_name == "test_timeboxed_uploads":
-            self.si_settings.log_segment_size = 1024 * 1024 * 1024
+            si_settings.log_segment_size = 1024 * 1024 * 1024
             extra_rp_conf.update(
                 cloud_storage_segment_max_upload_interval_sec=1)
 
         super().__init__(test_context=test_context,
                          extra_rp_conf=extra_rp_conf,
-                         si_settings=self.si_settings)
+                         si_settings=si_settings)
 
         self._s3_port = self.si_settings.cloud_storage_api_endpoint_port
 

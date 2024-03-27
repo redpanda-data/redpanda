@@ -367,9 +367,6 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
     housekeeping_interval_ms = 1000 * 60 * 30
 
     def __init__(self, test_context):
-        self.si_settings = SISettings(test_context,
-                                      log_segment_size=1024 * 1024,
-                                      fast_uploads=True)
         super().__init__(
             test_context=test_context,
             # Use all nodes as brokers: enables each test to set num_nodes
@@ -391,7 +388,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                 # This test will manually set spillover.
                 "cloud_storage_spillover_manifest_size": None,
             },
-            si_settings=self.si_settings)
+            si_settings=SISettings(test_context,
+                                   log_segment_size=1024 * 1024,
+                                   fast_uploads=True))
 
         self._s3_port = self.si_settings.cloud_storage_api_endpoint_port
 
