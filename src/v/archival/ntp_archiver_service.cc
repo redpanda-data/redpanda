@@ -369,13 +369,10 @@ ss::future<> ntp_archiver::upload_until_abort() {
         }
         vlog(_rtclog.debug, "upload loop synced in term {}", _start_term);
 
-        co_await ss::with_scheduling_group(
-          _conf->upload_scheduling_group,
-          [this] { return upload_until_term_change(); })
-          .handle_exception_type([](const ss::abort_requested_exception&) {})
-          .handle_exception_type([](const ss::gate_closed_exception&) {})
-          .handle_exception_type([](const ss::broken_semaphore&) {})
-          .handle_exception_type([](const ss::broken_named_semaphore&) {})
+        co_await ssx::ignore_shutdown_exceptions(
+          ss::with_scheduling_group(
+            _conf->upload_scheduling_group,
+            [this] { return upload_until_term_change(); }))
           .handle_exception_type([this](const ss::semaphore_timed_out& e) {
               vlog(
                 _rtclog.warn,

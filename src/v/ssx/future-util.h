@@ -268,19 +268,6 @@ struct background_t {
 } // namespace detail
 inline constexpr detail::background_t background;
 
-/// \brief Create a new future, handling common shutdown exception types.
-inline seastar::future<>
-ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
-    try {
-        co_await std::move(fut);
-    } catch (const seastar::abort_requested_exception&) {
-    } catch (const seastar::gate_closed_exception&) {
-    } catch (const seastar::broken_semaphore&) {
-    } catch (const seastar::broken_promise&) {
-    } catch (const seastar::broken_condition_variable&) {
-    }
-}
-
 /// \brief Check if the exception is a commonly ignored shutdown exception.
 inline bool is_shutdown_exception(const std::exception_ptr& e) {
     try {
@@ -295,9 +282,29 @@ inline bool is_shutdown_exception(const std::exception_ptr& e) {
         return true;
     } catch (const seastar::broken_condition_variable&) {
         return true;
+    } catch (const seastar::nested_exception& e) {
+        return is_shutdown_exception(e.outer) && is_shutdown_exception(e.inner);
     } catch (...) {
     }
     return false;
+}
+
+/// \brief Create a new future, handling common shutdown exception types.
+inline seastar::future<>
+ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
+    try {
+        co_await std::move(fut);
+    } catch (const seastar::abort_requested_exception&) {
+    } catch (const seastar::gate_closed_exception&) {
+    } catch (const seastar::broken_semaphore&) {
+    } catch (const seastar::broken_promise&) {
+    } catch (const seastar::broken_condition_variable&) {
+    } catch (const seastar::nested_exception& e) {
+        if (!(is_shutdown_exception(e.outer)
+              && is_shutdown_exception(e.inner))) {
+            throw e;
+        }
+    }
 }
 
 /// \brief Create a future holding a gate, handling common shutdown exception
