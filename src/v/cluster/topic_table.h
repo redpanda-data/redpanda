@@ -14,6 +14,7 @@
 #include "cluster/commands.h"
 #include "cluster/notification.h"
 #include "cluster/topic_table_probe.h"
+#include "container/chunked_hash_map.h"
 #include "container/contiguous_range_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -245,7 +246,7 @@ public:
 
     using delta = topic_table_delta;
 
-    using underlying_t = absl::node_hash_map<
+    using underlying_t = chunked_hash_map<
       model::topic_namespace,
       topic_metadata_item,
       model::topic_namespace_hash,
@@ -257,7 +258,7 @@ public:
       nt_revision_hash,
       nt_revision_eq>;
 
-    using disabled_partitions_t = absl::node_hash_map<
+    using disabled_partitions_t = chunked_hash_map<
       model::topic_namespace,
       topic_disabled_partitions_set,
       model::topic_namespace_hash,

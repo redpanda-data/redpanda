@@ -17,6 +17,7 @@
 #include "cluster/logger.h"
 #include "cluster/topic_validators.h"
 #include "cluster/types.h"
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "storage/ntp_config.h"
@@ -926,11 +927,11 @@ ss::future<>
 topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
     auto& snap = controller_snap.topics;
     for (const auto& [ns_tp, md_item] : _topics) {
-        absl::node_hash_map<
+        chunked_hash_map<
           model::partition_id,
           controller_snapshot_parts::topics_t::partition_t>
           partitions;
-        absl::node_hash_map<
+        chunked_hash_map<
           model::partition_id,
           controller_snapshot_parts::topics_t::update_t>
           updates;
@@ -1302,8 +1303,7 @@ ss::future<> topic_table::apply_snapshot(
             // For topics that are not present in the new set, simply
             // remove them and generate del deltas.
             co_await applier.delete_topic(ns_tp, md_item);
-            auto to_delete = old_it++;
-            _topics.erase(to_delete);
+            old_it = _topics.erase(old_it);
             _topics_map_revision++;
         }
     }
