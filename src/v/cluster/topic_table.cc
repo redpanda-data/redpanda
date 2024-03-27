@@ -20,6 +20,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "storage/ntp_config.h"
+#include "utils/chunked_hash_map.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/maybe_yield.hh>
@@ -912,11 +913,11 @@ ss::future<>
 topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
     auto& snap = controller_snap.topics;
     for (const auto& [ns_tp, md_item] : _topics) {
-        absl::node_hash_map<
+        chunked_hash_map<
           model::partition_id,
           controller_snapshot_parts::topics_t::partition_t>
           partitions;
-        absl::node_hash_map<
+        chunked_hash_map<
           model::partition_id,
           controller_snapshot_parts::topics_t::update_t>
           updates;
@@ -1275,8 +1276,7 @@ ss::future<> topic_table::apply_snapshot(
             // For topics that are not present in the new set, simply
             // remove them and generate del deltas.
             co_await applier.delete_topic(ns_tp, md_item);
-            auto to_delete = old_it++;
-            _topics.erase(to_delete);
+            old_it = _topics.erase(old_it);
             _topics_map_revision++;
         }
     }
