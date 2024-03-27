@@ -15,7 +15,7 @@ from requests.exceptions import HTTPError
 import json
 
 from ducktape.utils.util import wait_until
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import (Admin, RoleMemberList, RoleUpdate,
                                    RoleErrorCode, RoleError, RolesList,
                                    RoleDescription, RoleMemberUpdateResponse,
@@ -125,10 +125,7 @@ class RBACTest(RBACTestBase):
 
         with expect_http_error(403):
             self.user_admin.update_role_members(
-                role=self.role_name1,
-                add=[
-                    RoleMember(RoleMember.PrincipalType.USER, ALICE.username)
-                ])
+                role=self.role_name1, add=[RoleMember.User(ALICE.username)])
 
         with expect_http_error(403):
             self.user_admin.list_role_members(role=self.role_name1)
@@ -374,8 +371,8 @@ class RBACTest(RBACTestBase):
 
     @cluster(num_nodes=3)
     def test_members_endpoint(self):
-        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
-        bob = RoleMember(RoleMember.PrincipalType.USER, 'bob')
+        alice = RoleMember.User('alice')
+        bob = RoleMember.User('bob')
 
         self.logger.debug(
             "Test that update_role_members can create the role as a side effect"
@@ -394,17 +391,12 @@ class RBACTest(RBACTestBase):
         ) == 0, f"Incorrect 'removed' result: {member_update.removed}"
         assert alice in member_update.added, f"Incorrect member added: {member_update.added[0]}"
 
-        def try_get_members(role):
-            try:
-                res = self.superuser_admin.list_role_members(role=role)
-                return True, res
-            except:
-                return False, None
-
         self.logger.debug("And check that we can query the role we created")
-        res = wait_until_result(lambda: try_get_members(self.role_name0),
-                                timeout_sec=5,
-                                backoff_sec=1)
+        res = wait_until_result(lambda: self.superuser_admin.list_role_members(
+            role=self.role_name0),
+                                timeout_sec=10,
+                                backoff_sec=1,
+                                retry_on_exc=True)
         assert res is not None, f"Failed to get members for newly created role"
 
         assert res.status_code == 200, "Expected 200 (OK)"
@@ -429,22 +421,20 @@ class RBACTest(RBACTestBase):
         def until_members(role,
                           expected: list[RoleMember] = [],
                           excluded: list[RoleMember] = []):
-            try:
-                res = self.superuser_admin.list_role_members(role=role)
-                assert res.status_code == 200, "Expected 200 (OK)"
-                members = RoleMemberList.from_response(res)
-                exp = all(m in members for m in expected)
-                excl = not any(m in members for m in excluded)
-                return exp and excl, members
-            except:
-                return False, None
+            res = self.superuser_admin.list_role_members(role=role)
+            assert res.status_code == 200, "Expected 200 (OK)"
+            members = RoleMemberList.from_response(res)
+            exp = all(m in members for m in expected)
+            excl = not any(m in members for m in excluded)
+            return exp and excl, members
 
         self.logger.debug(
             "And verify that the members list eventually reflects that change")
         members = wait_until_result(
             lambda: until_members(self.role_name0, expected=[alice, bob]),
             timeout_sec=5,
-            backoff_sec=1)
+            backoff_sec=1,
+            retry_on_exc=True)
 
         assert members is not None, "Failed to get members"
         for m in [bob, alice]:
@@ -468,7 +458,8 @@ class RBACTest(RBACTestBase):
         members = wait_until_result(lambda: until_members(
             self.role_name0, expected=[bob], excluded=[alice]),
                                     timeout_sec=5,
-                                    backoff_sec=1)
+                                    backoff_sec=1,
+                                    retry_on_exc=True)
 
         assert members is not None
         assert len(members) == 1, f"Unexpected member: {members}"
@@ -502,8 +493,8 @@ class RBACTest(RBACTestBase):
 
     @cluster(num_nodes=3)
     def test_members_endpoint_errors(self):
-        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
-        bob = RoleMember(RoleMember.PrincipalType.USER, 'bob')
+        alice = RoleMember.User('alice')
+        bob = RoleMember.User('bob')
 
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
             self.superuser_admin.list_role_members(role=self.role_name0)
@@ -543,15 +534,14 @@ class RBACTest(RBACTestBase):
                                                  create=True)
 
         def role_exists(role):
-            try:
-                self.superuser_admin.list_role_members(role=role)
-                return True
-            except:
-                return False
+            self.superuser_admin.list_role_members(role=role)
+            return True
 
-        wait_until(lambda: role_exists(self.role_name0),
+        wait_until(lambda: self.superuser_admin.list_role_members(
+            role=self.role_name0).status_code == 200,
                    timeout_sec=5,
-                   backoff_sec=1)
+                   backoff_sec=1,
+                   retry_on_exc=True)
 
         self.logger.debug("Role members must be JSON objects")
         with expect_role_error(RoleErrorCode.MALFORMED_DEF):
@@ -602,7 +592,7 @@ class RBACTest(RBACTestBase):
     @cluster(num_nodes=3)
     def test_list_user_roles(self):
         username = ALICE.username
-        alice = RoleMember(RoleMember.PrincipalType.USER, username)
+        alice = RoleMember.User(username)
 
         res = self.user_admin.list_user_roles()
         assert res.status_code == 200, f"Unexpected status {res.status_code}"
@@ -619,19 +609,15 @@ class RBACTest(RBACTestBase):
                                                        create=True)
         assert res.status_code == 200, f"Unexpected status {res.status_code}"
 
-        def check_user_roles(expected: list[str] = []):
-            try:
-                res = self.user_admin.list_user_roles()
-                assert res.status_code == 200, f"Unexpected status {res.status_code}"
-                ls = RolesList.from_response(res)
-                return all([RoleDescription(e) in ls for e in expected]), ls
-            except:
-                return False, None
+        def list_roles(n_expected: int):
+            res = self.user_admin.list_user_roles()
+            ls = RolesList.from_response(res)
+            return len(ls) == n_expected, ls
 
-        roles_list = wait_until_result(
-            lambda: check_user_roles([self.role_name0, self.role_name1]),
-            timeout_sec=5,
-            backoff_sec=1)
+        roles_list = wait_until_result(lambda: list_roles(2),
+                                       timeout_sec=5,
+                                       backoff_sec=1,
+                                       retry_on_exc=True)
 
         assert roles_list is not None, "Roles list never resolved"
 
@@ -741,3 +727,134 @@ class RBACLicenseTest(RBACTestBase):
         wait_until(self._has_license_nag,
                    timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
                    err_msg="License nag failed to appear")
+
+
+class RBACEndToEndTest(RBACTestBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.security = SecurityConfig()
+        self.security.enable_sasl = True
+        self.security.kafka_enable_authorization = True
+        self.security.endpoint_authn_method = 'sasl'
+        self.security.require_client_auth = True
+
+        self.su_rpk = RpkTool(self.redpanda,
+                              username=self.superuser.username,
+                              password=self.superuser.password,
+                              sasl_mechanism=self.superuser.algorithm)
+        self.alice_rpk = RpkTool(self.redpanda,
+                                 username=ALICE.username,
+                                 password=ALICE.password,
+                                 sasl_mechanism=ALICE.algorithm)
+
+        self.topic0 = 'some-topic'
+        self.topic1 = 'other-topic'
+
+    def setUp(self):
+        self.redpanda.set_security_settings(self.security)
+        super().setUp()
+
+    def role_for_user(self, role: str, user: RoleMember):
+        res = self.superuser_admin.list_role_members(role=role)
+        return user in RoleMemberList.from_response(res)
+
+    def has_topics(self, client: RpkTool):
+        tps = client.list_topics()
+        return list(tps)
+
+    @cluster(num_nodes=3)
+    def test_rbac(self):
+        alice = RoleMember.User('alice')
+
+        self.logger.debug(
+            f"Create a couple of roles, one with {alice} and one without")
+
+        res = self.superuser_admin.update_role_members(role=self.role_name0,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to create role"
+        res = self.superuser_admin.update_role_members(role=self.role_name1,
+                                                       add=[],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to create role"
+
+        wait_until(lambda: self.role_for_user(self.role_name0, alice),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        self.su_rpk.create_topic(self.topic0)
+        self.su_rpk.create_topic(self.topic1)
+
+        self.logger.debug(
+            "Since No permissions have been added to either role, expect authZ failed"
+        )
+        with expect_exception(RpkException,
+                              lambda e: 'AUTHORIZATION_FAILED' in str(e)):
+            self.alice_rpk.produce(self.topic0, 'foo', 'bar')
+
+        self.logger.debug("Now add topic access rights for user")
+        self.su_rpk.sasl_allow_principal(f"RedpandaRole:{self.role_name0}",
+                                         ['all'], 'topic', '*')
+
+        self.logger.debug(
+            "And a deny ACL to the role which is NOT assigned to the user")
+        self.su_rpk.sasl_deny_principal(f"RedpandaRole:{self.role_name1}",
+                                        ['read'], 'topic', self.topic1)
+
+        topics = wait_until_result(lambda: self.has_topics(self.alice_rpk),
+                                   timeout_sec=10,
+                                   backoff_sec=1,
+                                   retry_on_exc=True)
+
+        assert self.topic0 in topics
+        assert self.topic1 in topics
+
+        self.logger.debug("Confirm that the user can produce to both topics")
+
+        self.alice_rpk.produce(self.topic0, 'foo', 'bar')
+        self.alice_rpk.produce(self.topic1, 'baz', 'qux')
+
+        self.logger.debug("Confirm that the user can consume both topics")
+
+        rec = json.loads(self.alice_rpk.consume(self.topic0, n=1))
+        assert rec['topic'] == self.topic0, f"Unexpected topic {rec['topic']}"
+        assert rec['key'] == 'foo', f"Unexpected key {rec['key']}"
+        assert rec['value'] == 'bar', f"Unexpected value {rec['value']}"
+
+        rec = json.loads(self.alice_rpk.consume(self.topic1, n=1))
+        assert rec['topic'] == self.topic1, f"Unexpected topic {rec['topic']}"
+        assert rec['key'] == 'baz', f"Unexpected key {rec['key']}"
+        assert rec['value'] == 'qux', f"Unexpected value {rec['value']}"
+
+        self.logger.debug(
+            "Now add user to the role with the deny ACL and confirm change in access"
+        )
+
+        res = self.superuser_admin.update_role_members(role=self.role_name1,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to update role"
+
+        wait_until(lambda: self.role_for_user(self.role_name1, alice),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        wait_until(lambda: "DENY" in self.su_rpk.acl_list(),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        with expect_exception(RpkException,
+                              lambda e: 'AUTHORIZATION_FAILED' in str(e)):
+            self.alice_rpk.consume(self.topic1, n=1)
+
+        self.logger.debug(
+            "And finally confirm that the user retains read rights on the other topic"
+        )
+
+        rec = json.loads(self.alice_rpk.consume(self.topic0, n=1))
+        assert rec['topic'] == self.topic0, f"Unexpected topic {rec['topic']}"
+        assert rec['key'] == 'foo', f"Unexpected key {rec['key']}"
+        assert rec['value'] == 'bar', f"Unexpected value {rec['value']}"

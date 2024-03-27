@@ -355,14 +355,15 @@ class RpkTool:
         if not status_line.endswith("OK"):
             raise RpkException(f"Bad status: '{status_line}'")
 
-    def sasl_allow_principal(self,
-                             principal,
-                             operations,
-                             resource,
-                             resource_name,
-                             username: Optional[str] = None,
-                             password: Optional[str] = None,
-                             mechanism: Optional[str] = None):
+    def _sasl_set_principal_access(self,
+                                   principal,
+                                   operations,
+                                   resource,
+                                   resource_name,
+                                   username: Optional[str] = None,
+                                   password: Optional[str] = None,
+                                   mechanism: Optional[str] = None,
+                                   deny=False):
 
         username = username if username is not None else self._username
         password = password if password is not None else self._password
@@ -377,13 +378,21 @@ class RpkTool:
         else:
             raise Exception(f"unknown resource: {resource}")
 
+        perm = '--allow-principal' if not deny else '--deny-principal'
+
         cmd = [
-            "acl", "create", "--allow-principal", principal, "--operation",
+            "acl", "create", perm, principal, "--operation",
             ",".join(operations), resource, resource_name, "--brokers",
             self._redpanda.brokers(), "--user", username, "--password",
             password, "--sasl-mechanism", mechanism
         ] + self._tls_settings()
         return self._run(cmd)
+
+    def sasl_allow_principal(self, *args, **kwargs):
+        self._sasl_set_principal_access(*args, **kwargs, deny=False)
+
+    def sasl_deny_principal(self, *args, **kwargs):
+        self._sasl_set_principal_access(*args, **kwargs, deny=True)
 
     def allow_principal(self, principal, operations, resource, resource_name):
         if resource == "topic":
