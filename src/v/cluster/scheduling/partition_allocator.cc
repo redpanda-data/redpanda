@@ -62,14 +62,18 @@ allocation_constraints partition_allocator::default_constraints(
   const partition_allocation_domain domain) {
     allocation_constraints req;
 
+    // hard constraints
     req.add(distinct_nodes());
     req.add(not_fully_allocated());
     req.add(is_active());
 
-    req.add(max_final_capacity(domain));
+    // soft constraints
     if (_enable_rack_awareness()) {
         req.add(distinct_rack_preferred(_members.local()));
+        req.add_level({});
     }
+    req.add(max_final_capacity(domain));
+
     return req;
 }
 
