@@ -12,7 +12,8 @@ import os
 from typing import Any, Callable, Mapping, Sequence, cast
 
 from ducktape.tests.test import Test, TestContext
-from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud, SISettings, make_redpanda_service, CloudStorageType
+from ducktape.utils.util import wait_until
+from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud, SISettings, make_redpanda_mixed_service, make_redpanda_service, CloudStorageType
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
@@ -316,3 +317,43 @@ class RedpandaTest(RedpandaTestBase):
 
             # We are fully upgraded, yield to whatever the test wants to do in this version
             yield current_version
+
+
+class RedpandaMixedTest(RedpandaTestBase):
+    """
+    Base class for tests which can run either against vanilla infrastructure or
+    against the cloud.
+    """
+    def __init__(self,
+                 test_context: TestContext,
+                 *,
+                 min_brokers: int | None = None):
+        """
+        :param min_brokers: the minimum number of brokers the test requires. The
+        test must be OK with more brokers than the given number (which will occur
+        in cloud tests, as the number of brokers is already set at cloud cluster
+        creation time). None indicates that the test does not care how many brokers
+        are created (there will always be at least 1!).
+        """
+        super().__init__(test_context=test_context)
+        self.redpanda = make_redpanda_mixed_service(test_context,
+                                                    min_brokers=min_brokers)
+
+        self._client = DefaultClient(self.redpanda)
+
+    def setup(self):
+        super().setup()
+        if (cloud := self.as_cloud()):
+            wait_until(lambda: cloud.cluster_healthy(),
+                       timeout_sec=20,
+                       backoff_sec=5,
+                       err_msg='cluster unhealthy before start of test')
+
+    def as_cloud(self):
+        """A convenience method which returns self.redpanda if it is a RedpandaServiceCloud
+        or None otherwise."""
+        return self.redpanda if isinstance(self.redpanda,
+                                           RedpandaServiceCloud) else None
+
+    def client(self):
+        return self._client
