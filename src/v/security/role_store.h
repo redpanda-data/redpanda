@@ -89,7 +89,7 @@ public:
     template<typename T>
     requires std::ranges::range<T>
              && std::convertible_to<std::ranges::range_value_t<T>, role_member>
-    bool put(role_name name, T&& role) {
+    bool put(role_name name, const T& role) {
         auto [it, inserted] = _roles.insert(std::move(name));
         if (inserted) {
             for (const auto& m : role) {
