@@ -146,6 +146,8 @@ public:
 
     fragmented_vector copy() const noexcept { return *this; }
 
+    auto get_allocator() const { return _frags.get_allocator(); }
+
     void swap(fragmented_vector& other) noexcept {
         std::swap(_size, other._size);
         std::swap(_capacity, other._capacity);
