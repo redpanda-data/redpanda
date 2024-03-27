@@ -1562,4 +1562,35 @@ BOOST_AUTO_TEST_CASE(role_authz_user_same_name) {
     BOOST_CHECK_EQUAL(result.role, role_name1);
 }
 
+BOOST_AUTO_TEST_CASE(role_authz_remove_binding_multiple_match) {
+    role_name role_n{"role"};
+    acl_principal role_p = role::to_principal(role_n());
+    acl_principal user_p{principal_type::user, "user"};
+
+    role_store roles;
+    roles.put(role_n, std::vector<role_member>{});
+    auto auth = make_test_instance(authorizer::allow_empty_matches::no, &roles);
+
+    static const acl_entry allow_read_acl(
+      role_p, acl_wildcard_host, acl_operation::read, acl_permission::allow);
+
+    static const acl_entry allow_write_acl(
+      user_p, acl_wildcard_host, acl_operation::write, acl_permission::allow);
+
+    std::vector<acl_binding> bindings;
+    bindings.emplace_back(wildcard_resource, allow_read_acl);
+    bindings.emplace_back(wildcard_resource, allow_write_acl);
+    auth.add_bindings(bindings);
+
+    {
+        std::vector<acl_binding_filter> filters;
+        filters.emplace_back(wildcard_resource, allow_read_acl);
+        filters.emplace_back(wildcard_resource, allow_write_acl);
+        auth.remove_bindings(filters);
+    }
+
+    absl::flat_hash_set<acl_entry> expected{};
+    BOOST_REQUIRE(get_acls(auth, wildcard_resource) == expected);
+}
+
 } // namespace security

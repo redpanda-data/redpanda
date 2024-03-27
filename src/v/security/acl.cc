@@ -17,6 +17,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 #include <container/fragmented_vector.h>
 #include <fmt/format.h>
 
@@ -206,7 +207,8 @@ std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
     }
 
     // deleted binding index of deleted filter that matched
-    absl::flat_hash_map<acl_binding, size_t> deleted;
+    // NOTE: the algorithm below requires pointer stability of the key
+    absl::node_hash_map<acl_binding, size_t> deleted;
     // NOTE(oren): deleted bindings are held in this scope, so
     // non-owning references are safe to use as long as they are
     // accessed exclusively inside the loop body.
@@ -247,7 +249,7 @@ std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
         }
         // ensure that elements won't outlive the corresponding bindings
         // in enclosing scope.
-        maybe_roles.erase_to_end(maybe_roles.begin());
+        maybe_roles.clear();
     }
 
     std::vector<std::vector<acl_binding>> res;
