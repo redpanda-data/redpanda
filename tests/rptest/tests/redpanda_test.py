@@ -357,3 +357,7 @@ class RedpandaMixedTest(RedpandaTestBase):
 
     def client(self):
         return self._client
+
+    def tearDown(self):
+        if (cloud := self.as_cloud()):
+            cloud.clean_cluster()
