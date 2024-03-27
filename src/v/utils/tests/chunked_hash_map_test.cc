@@ -54,3 +54,9 @@ TEST(chunked_hash_map, basic_compile_absl_hash) {
     map[{1, 2}] = 2;
     EXPECT_EQ(map.size(), 1);
 }
+
+TEST(chunked_hash_map, test_move_assignment) {
+    chunked_hash_map<foo_with_absl_hash, int> map;
+    chunked_hash_map<foo_with_absl_hash, int> other_map;
+    other_map = std::move(map);
+}
