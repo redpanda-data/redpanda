@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
 import subprocess
 import tempfile
 from rptest.clients.types import TopicSpec
@@ -45,6 +46,10 @@ class TopicAuthorizationError(AuthorizationError):
 
     def __str__(self):
         return repr(self.message)
+
+
+class KafkaCliToolsError(RuntimeError):
+    pass
 
 
 class KafkaCliTools:
@@ -116,7 +121,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             args += ["--config", f"retention.ms={spec.retention_ms}"]
         if spec.max_message_bytes:
             args += ["--config", f"max.message.bytes={spec.max_message_bytes}"]
-        return self._run("kafka-topics.sh", args)
+        return self._run("kafka-topics.sh", args, desc="create_topic")
 
     def create_topic_partitions(self, topic, partitions):
         self._redpanda.logger.debug("Adding %d partitions to topic: %s",
@@ -124,7 +129,9 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         args = ['--alter']
         args += ["--topic", topic]
         args += ["--partitions", f"{partitions}"]
-        return self._run("kafka-topics.sh", args)
+        return self._run("kafka-topics.sh",
+                         args,
+                         desc="create_topic_partitions")
 
     def create_topic_with_config(self, name, partitions, replication_factor,
                                  configs):
@@ -136,7 +143,9 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         args += ["--replication-factor", str(replication_factor)]
         for it in cfgs:
             args += ["--config", it]
-        return self._run("kafka-topics.sh", args)
+        return self._run("kafka-topics.sh",
+                         args,
+                         desc="create_topic_with_config")
 
     def create_topic_with_assignment(self, name, assignments):
         self._redpanda.logger.debug(
@@ -150,18 +159,20 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         args += ["--topic", name]
         args += ["--replica-assignment", ",".join(partitions)]
 
-        return self._run("kafka-topics.sh", args)
+        return self._run("kafka-topics.sh",
+                         args,
+                         desc="create_topic_with_assignment")
 
     def delete_topic(self, topic):
         self._redpanda.logger.debug("Deleting topic: %s", topic)
         args = ["--delete"]
         args += ["--topic", topic]
-        return self._run("kafka-topics.sh", args)
+        return self._run("kafka-topics.sh", args, desc="delete_topic")
 
     def list_topics(self):
         self._redpanda.logger.debug("Listing topics")
         args = ["--list"]
-        res = self._run("kafka-topics.sh", args)
+        res = self._run("kafka-topics.sh", args, desc="list_topics")
         topics = res.split()
         self._redpanda.logger.debug("Found topics: %s", topics)
         return topics
@@ -169,14 +180,16 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
     def describe_topics(self):
         self._redpanda.logger.debug("Describing topics")
         args = ["--describe"]
-        res = self._run("kafka-topics.sh", args)
+        res = self._run("kafka-topics.sh", args, desc="describe_topics")
         self._redpanda.logger.debug("Describe topics result: %s", res)
         return res
 
     def describe_topic_config(self, topic):
         self._redpanda.logger.debug("Describing topic configs")
         args = ["--describe", "--topic", topic, "--all"]
-        res = self._run("kafka-configs.sh", args).strip()
+        res = self._run("kafka-configs.sh",
+                        args,
+                        desc="describe_topic_configs").strip()
         self._redpanda.logger.debug("Describe topic configs result: %s", res)
         if res is None:
             raise RuntimeError(f"Error describing topic {topic}")
@@ -193,7 +206,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
     def describe_topic(self, topic):
         self._redpanda.logger.debug("Describing topics")
         args = ["--describe", "--topic", topic]
-        res = self._run("kafka-topics.sh", args)
+        res = self._run("kafka-topics.sh", args, desc="describe_topic")
         self._redpanda.logger.debug("Describe topics result: %s", res)
         if res is None:
             raise RuntimeError(f"Error describing topic {topic}")
@@ -235,7 +248,9 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
     def describe_broker_config(self):
         self._redpanda.logger.debug("Describing brokers")
         args = ["--describe", "--entity-type", "brokers", "--all"]
-        res = self._run("kafka-configs.sh", args)
+        res = self._run("kafka-configs.sh",
+                        args,
+                        desc="describe_broker_config")
         self._redpanda.logger.debug("Describe brokers config result: %s", res)
         return res
 
@@ -248,7 +263,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             map(lambda item: f"{item[0]}={item[1]}",
                 configuration_map.items())))
 
-        return self._run("kafka-configs.sh", args)
+        return self._run("kafka-configs.sh", args, desc="alter_topic_config")
 
     def produce(self,
                 topic,
@@ -269,11 +284,11 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             "batch.size=%d" % batch_size,
             "bootstrap.servers=%s" % self._redpanda.brokers()
         ]
-        self._execute(cmd)
+        return self._execute(cmd, "produce")
 
     def list_acls(self):
         args = ["--list"]
-        return self._run("kafka-acls.sh", args)
+        return self._run("kafka-acls.sh", args, desc="list_acls")
 
     def create_cluster_acls(self, username, op, ptype: str = "User"):
         """
@@ -282,11 +297,12 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         args = ["--add"]
         args += ["--allow-principal", f"{ptype}:{username}"]
         args += ["--operation", op, "--cluster"]
-        return self._run("kafka-acls.sh", args)
+        return self._run("kafka-acls.sh", args, desc="create_cluster_acls")
 
     def get_api_versions(self):
         return self._run("kafka-run-class.sh", [],
-                         "kafka.admin.BrokerApiVersionsCommand")
+                         "kafka.admin.BrokerApiVersionsCommand",
+                         desc="get_api_versions")
 
     def reassign_partitions(self,
                             reassignments: dict,
@@ -319,7 +335,9 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
 
             def do_reassign_partitions():
                 nonlocal output
-                output = self._run("kafka-reassign-partitions.sh", args)
+                output = self._run("kafka-reassign-partitions.sh",
+                                   args,
+                                   desc="reassign_partitions")
                 return True if msg_retry is None else msg_retry not in output
 
             wait_until(do_reassign_partitions,
@@ -342,7 +360,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         cmd += ["describe-producers"]
         cmd += ["--topic", topic]
         cmd += ["--partition", str(partition)]
-        res = self._execute(cmd)
+        res = self._execute(cmd, "describe_producers")
 
         producers = []
         split_str = res.split("\n")
@@ -372,7 +390,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         cmd = [self._script("kafka-transactions.sh")]
         cmd += ["--bootstrap-server", self._redpanda.brokers()]
         cmd += ["list"]
-        res = self._execute(cmd)
+        res = self._execute(cmd, "list_transactions")
 
         txs = []
         split_str = res.split("\n")
@@ -405,7 +423,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         cmd += ["--bootstrap-server", self._redpanda.brokers()]
         cmd += ["describe"]
         cmd += ["--transactional-id", str(tx_id)]
-        res = self._execute(cmd)
+        res = self._execute(cmd, "describe_transaction")
         # 0 - keys, 1 - tx info, 2 - empty string
         split_str = res.split("\n")
         assert len(split_str) == 3
@@ -426,7 +444,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             tx[info_key[i]] = tx_info
         return tx
 
-    def _run(self, script, args, classname=None):
+    def _run(self, script, args, classname=None, desc="unspecified operation"):
         cmd = [self._script(script)]
         if classname is not None:
             cmd += [classname]
@@ -434,9 +452,9 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         if self._command_config:
             cmd += ["--command-config", self._command_config.name]
         cmd += args
-        return self._execute(cmd)
+        return self._execute(cmd, description=desc)
 
-    def _execute(self, cmd):
+    def _execute(self, cmd, description="unspecified operation"):
         """
 
         :param cmd: list of strings
@@ -458,7 +476,13 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
                 raise ClusterAuthorizationError(e.output)
             if "TopicAuthorizationException: Not authorized to access topic" in e.output:
                 raise TopicAuthorizationError(e.output)
-            raise
+            # include the last two lines of output in stderr in the exception message and this usually contains
+            # the failure reason and having it in the exception message is handy
+            last_error = re.findall('ERROR .*', str(e.output))[-1:]
+            details = f" Last error: {last_error[0]}" if last_error else ""
+            raise KafkaCliToolsError(
+                f"KafkaCliTools {description} failed. Full output in debug log.{details}"
+            ) from e
 
     def _script(self, script):
         version = self._version or KafkaCliTools.VERSIONS[0]
@@ -481,4 +505,4 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             topic,
             str(num_records),
         ]
-        self._execute(cmd)
+        self._execute(cmd, "oauth_produce")
