@@ -179,7 +179,7 @@ public:
      * Add ACL bindings to the authorizer
      *
      * Returns:
-     *   errc::success
+     *   A vector of cluster::errc, one for each of the requested bindings.
      *
      * May be called from any node; handles routing the underlying controller
      * command to the leader node automatically.
@@ -191,7 +191,8 @@ public:
      * Remove ACL bindings matching the provided filters from the authorizer
      *
      * Returns:
-     *   errc::success
+     *   std::vector<delete_acls_result> (i.e. {cluster::errc, acl_binding})
+     *     one for each binding that matched one of the provided filters
      *
      * May be called from any node; handles routing the underlying controller
      * command to the leader node automatically.
