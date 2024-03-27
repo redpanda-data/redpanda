@@ -568,18 +568,45 @@ def cleanup_entrypoint():
     # Init the cleaner class
     cleaner = CloudCleanup()
 
+    # Arguments parsing. Quick and head on. No fancy argparse needed
+    clean_namespaces = False
+    clean_buckets = False
+    clean_nats = False
+    # Copy the list
+    arguments = sys.argv[:]
+    arguments.pop(0)
+    if len(arguments) == 0:
+        clean_namespaces = True
+    else:
+        while len(arguments) > 0:
+            option = arguments.pop()
+            if option == 'ns':
+                clean_namespaces = True
+            elif option == 'nat':
+                clean_nats = True
+            elif option == 's3':
+                clean_buckets = True
+            else:
+                cleaner.log.error(
+                    f"ERROR: Wrong argument: '{option}'. Accepting "
+                    "only 's3'/'nat' to clean buckets or aws NATs")
+                sys.exit(1)
+
     # Namespaces
-    cleaner.clean_namespaces(ns_name_prefix, 8)
+    if clean_namespaces:
+        cleaner.clean_namespaces(ns_name_prefix, 8)
 
     # NAT Gateways cleaning routine
-    # Enable manually to cleanup redundancies
-    # cleaner.clean_aws_nat()
+    if clean_nats:
+        cleaner.clean_aws_nat()
 
     # Clean buckets for deleted clusters and networks
-    # Enable manually
-    # cleaner.clean_buckets(mask="panda-bucket-")
-    # cleaner.clean_buckets(mask="redpanda-cloud-storage-")
-    # cleaner.clean_buckets(mask="redpanda-network-logs-")
+    if clean_buckets:
+        cleaner.clean_buckets(mask="panda-bucket-")
+        cleaner.clean_buckets(mask="redpanda-cloud-storage-")
+        cleaner.clean_buckets(mask="redpanda-network-logs-")
+
+    cleaner.log.info("\n# Done.")
     return
 
 
