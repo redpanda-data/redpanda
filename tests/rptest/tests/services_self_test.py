@@ -11,7 +11,7 @@ from subprocess import CalledProcessError
 from ducktape.mark import matrix
 from ducktape.tests.test import Test
 
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.redpanda_test import RedpandaMixedTest, RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -79,9 +79,9 @@ class ProducerSwarmSelfTest(RedpandaTest):
         producer.stop()
 
 
-class KgoRepeaterSelfTest(RedpandaTest):
+class KgoRepeaterSelfTest(RedpandaMixedTest):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, num_brokers=3, **kwargs)
+        super().__init__(*args, min_brokers=3, **kwargs)
 
     @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
     @cluster(num_nodes=5)
