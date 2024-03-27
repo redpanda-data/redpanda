@@ -33,6 +33,8 @@
 #include <seastar/http/url.hh>
 #include <seastar/json/json_elements.hh>
 
+#include <absl/container/flat_hash_set.h>
+
 #include <optional>
 #include <sstream>
 
