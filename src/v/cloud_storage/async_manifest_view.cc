@@ -20,6 +20,7 @@
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
 #include "config/configuration.h"
+#include "fmt/chrono.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "resource_mgmt/io_priority.h"

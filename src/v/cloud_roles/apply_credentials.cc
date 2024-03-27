@@ -10,10 +10,10 @@
 
 #include "cloud_roles/apply_credentials.h"
 
-#include "cloud_roles/apply_abs_credentials.h"
-#include "cloud_roles/apply_abs_oauth_credentials.h"
-#include "cloud_roles/apply_aws_credentials.h"
-#include "cloud_roles/apply_gcp_credentials.h"
+#include "apply_abs_credentials.h"
+#include "apply_abs_oauth_credentials.h"
+#include "apply_aws_credentials.h"
+#include "apply_gcp_credentials.h"
 
 namespace cloud_roles {
 apply_credentials make_credentials_applier(credentials creds) {

@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_roles/signature.h"
+#include "../signature.h"
 #include "http/client.h"
 
 #include <seastar/core/temporary_buffer.hh>
