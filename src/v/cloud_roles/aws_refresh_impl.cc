@@ -8,10 +8,10 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_roles/aws_refresh_impl.h"
+#include "aws_refresh_impl.h"
 
 #include "cloud_roles/logger.h"
-#include "cloud_roles/request_response_helpers.h"
+#include "request_response_helpers.h"
 
 namespace cloud_roles {
 

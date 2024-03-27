@@ -8,11 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_roles/azure_vm_refresh_impl.h"
+#include "azure_vm_refresh_impl.h"
 
-#include "cloud_roles/request_response_helpers.h"
 #include "json/ostreamwrapper.h"
 #include "json/schema.h"
+#include "request_response_helpers.h"
 
 #include <rapidjson/error/en.h>
 

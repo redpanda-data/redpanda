@@ -10,6 +10,7 @@ v_cc_library(
     v::http
     v::http_test_utils
     v::model
+    v::cloud_storage_clients
 )
 
 # Regular unit tests that don't open ports and run on a single core

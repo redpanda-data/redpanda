@@ -8,14 +8,14 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_roles/signature.h"
+#include "signature.h"
 
 #include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "cloud_roles/logger.h"
-#include "cloud_roles/request_response_helpers.h"
 #include "config/base_property.h"
 #include "hashing/secure.h"
+#include "request_response_helpers.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
 
