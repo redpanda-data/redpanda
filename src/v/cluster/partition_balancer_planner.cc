@@ -1050,6 +1050,8 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
   double max_disk_usage_ratio) const {
     allocation_constraints constraints;
 
+    // hard constraints
+
     // Add constraint on partition max_disk_usage_ratio overfill
     size_t upper_bound_for_partition_size
       = _sizes.non_reclaimable + _ctx.config().segment_fallocation_step;
@@ -1059,12 +1061,16 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
       _ctx.node_disk_reports));
 
     // Add constraint on unavailable nodes
-    constraints.add(distinct_from(_ctx.timed_out_unavailable_nodes));
+    if (!_ctx.timed_out_unavailable_nodes.empty()) {
+        constraints.add(distinct_from(_ctx.timed_out_unavailable_nodes));
+    }
 
     // Add constraint on decommissioning nodes
     if (!_ctx.decommissioning_nodes.empty()) {
         constraints.add(distinct_from(_ctx.decommissioning_nodes));
     }
+
+    // soft constraints
 
     // Add constraint on least disk usage
     constraints.add(least_disk_filled(
@@ -1219,6 +1225,8 @@ partition_balancer_planner::force_reassignable_partition::
   get_allocation_constraints(double max_disk_usage_ratio) const {
     allocation_constraints constraints;
 
+    constraints.add(distinct_from(_nodes_to_remove));
+
     if (_sizes) {
         // Add constraint on partition max_disk_usage_ratio overfill
         size_t upper_bound_for_partition_size
@@ -1237,9 +1245,9 @@ partition_balancer_planner::force_reassignable_partition::
     }
 
     // Add constraint on unavailable nodes
-    constraints.add(distinct_from(_ctx.timed_out_unavailable_nodes));
-
-    constraints.add(distinct_from(_nodes_to_remove));
+    if (!_ctx.timed_out_unavailable_nodes.empty()) {
+        constraints.add(distinct_from(_ctx.timed_out_unavailable_nodes));
+    }
 
     // Add constraint on decommissioning nodes
     if (!_ctx.decommissioning_nodes.empty()) {
