@@ -21,6 +21,7 @@
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
 namespace cluster {
@@ -341,5 +342,7 @@ struct allocation_request {
 
     friend std::ostream& operator<<(std::ostream&, const allocation_request&);
 };
+
+using node2count_t = absl::flat_hash_map<model::node_id, size_t>;
 
 } // namespace cluster

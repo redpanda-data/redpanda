@@ -140,4 +140,11 @@ distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
 
 soft_constraint distinct_rack_preferred(const members_table&);
 
+/// Scores nodes based on replica count queried from the supplied map (as
+/// opposed to total node count). E.g. if the map represents topic partition
+/// counts, this constraint will implement topic-aware replica placement.
+///
+/// NOTE: counts will be scaled by max node capacity.
+soft_constraint min_count_in_map(std::string_view name, const node2count_t&);
+
 } // namespace cluster

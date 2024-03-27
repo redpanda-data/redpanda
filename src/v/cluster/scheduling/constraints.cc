@@ -333,4 +333,42 @@ soft_constraint distinct_rack_preferred(const members_table& members) {
       [&members](model::node_id id) { return members.get_node_rack_id(id); });
 }
 
+soft_constraint
+min_count_in_map(std::string_view name, const node2count_t& node2count) {
+    struct impl : soft_constraint::impl {
+        explicit impl(std::string_view name, const node2count_t& node2count)
+          : _name(name)
+          , _node2count(node2count) {}
+
+        soft_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id> prev) const final {
+            return [this, prev](const allocation_node& node) {
+                size_t count = 0;
+                if (auto it = _node2count.find(node.id());
+                    it != _node2count.end()) {
+                    count = it->second;
+                }
+                if (node.id() != prev) {
+                    count += 1;
+                }
+
+                if (count > node.max_capacity()()) {
+                    return uint64_t(0);
+                }
+                return soft_constraint::max_score
+                       - count * soft_constraint::max_score
+                           / node.max_capacity();
+            };
+        }
+
+        ss::sstring name() const final { return {_name.begin(), _name.end()}; }
+
+        std::string_view _name;
+        const node2count_t& _node2count;
+    };
+
+    return soft_constraint(std::make_unique<impl>(name, node2count));
+}
+
 } // namespace cluster
