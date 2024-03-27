@@ -48,7 +48,7 @@ class DefaultClient:
     def __init__(self, redpanda):
         self._redpanda = redpanda
 
-    def create_topic(self, specs):
+    def create_topic(self, specs: TopicSpec | typing.Iterable[TopicSpec]):
         if isinstance(specs, TopicSpec):
             specs = [specs]
         client = KafkaCliTools(self._redpanda)
