@@ -444,7 +444,9 @@ class DisablingPartitionsTest(RedpandaTest):
             ts = topics if topic is None else [topic]
             ret = dict()
             for topic in ts:
+                self.logger.info(f"describing {topic}")
                 for p in rpk.describe_topic(topic):
+                    self.logger.info(f"returned partition {p.high_watermark}")
                     ret[f"{topic}/{p.id}"] = p.high_watermark
             return ret
 
@@ -517,6 +519,12 @@ class DisablingPartitionsTest(RedpandaTest):
 
         assert all_disabled_shut_down()
 
+        def hw_is_present():
+            hwms = get_hwms()
+            return "mytopic1/0" in hwms
+
+        wait_until(hw_is_present, 30, 1, "high watermark is not present")
+        self.logger.info(f"current hw: {get_hwms()}, hwms3: {hwms3}")
         assert get_hwms() == hwms3
 
         self.logger.info("enabling partitions back")
