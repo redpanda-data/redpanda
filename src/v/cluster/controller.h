@@ -138,8 +138,12 @@ public:
     }
     ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
 
-    cloud_metadata::uploader& metadata_uploader() {
-        return *_metadata_uploader;
+    std::optional<std::reference_wrapper<cloud_metadata::uploader>>
+    metadata_uploader() {
+        if (_metadata_uploader) {
+            return std::ref<cloud_metadata::uploader>(*_metadata_uploader);
+        }
+        return std::nullopt;
     }
 
     ss::sharded<cluster_recovery_manager>& get_cluster_recovery_manager() {
