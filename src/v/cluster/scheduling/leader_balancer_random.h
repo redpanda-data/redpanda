@@ -25,6 +25,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -119,7 +120,7 @@ public:
      * Find a group reassignment that reduces total error.
      */
     std::optional<reassignment>
-    find_movement(const absl::flat_hash_set<raft::group_id>& skip) override {
+    find_movement(const leader_balancer_types::muted_groups_t& skip) override {
         for (;;) {
             auto reassignment_opt = _reassignments.generate_reassignment();
 
@@ -129,7 +130,7 @@ public:
 
             auto reassignment = *reassignment_opt;
             if (
-              skip.contains(reassignment.group)
+              skip.contains(static_cast<uint64_t>(reassignment.group))
               || _mi->muted_nodes().contains(reassignment.from.node_id)
               || _mi->muted_nodes().contains(reassignment.to.node_id)) {
                 continue;

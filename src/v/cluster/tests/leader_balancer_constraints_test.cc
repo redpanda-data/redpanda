@@ -8,6 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include <cstdint>
 #define BOOST_TEST_MODULE leader_balancer_constraints
 
 #include "cluster/scheduling/leader_balancer_constraints.h"
@@ -510,7 +511,7 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
     auto rhc = lbt::random_hill_climbing_strategy(
       shard_index.shards(), g_id_to_t_id, lbt::muted_index{{}, {}});
 
-    absl::flat_hash_set<raft::group_id> muted_groups{};
+    cluster::leader_balancer_types::muted_groups_t muted_groups{};
 
     auto pre_topic_error = even_topic_con.error();
     auto pre_shard_error = even_shard_con.error();
@@ -524,7 +525,7 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
         rhc.apply_movement(*movement_opt);
         even_shard_con.update_index(*movement_opt);
         even_topic_con.update_index(*movement_opt);
-        muted_groups.insert(movement_opt->group);
+        muted_groups.add(static_cast<uint64_t>(movement_opt->group));
 
         auto new_error = rhc.error();
         BOOST_REQUIRE(new_error <= current_error);

@@ -68,7 +68,7 @@ class muted_index final : public index {
 public:
     muted_index(
       absl::flat_hash_set<model::node_id> muted_nodes,
-      absl::flat_hash_set<raft::group_id> muted_groups)
+      leader_balancer_types::muted_groups_t muted_groups)
       : _muted_nodes(std::move(muted_nodes))
       , _muted_groups(std::move(muted_groups)) {}
 
@@ -80,11 +80,11 @@ public:
         return _muted_nodes;
     }
 
-    const absl::flat_hash_set<raft::group_id>& muted_groups() const {
+    const leader_balancer_types::muted_groups_t& muted_groups() const {
         return _muted_groups;
     }
 
-    absl::flat_hash_set<raft::group_id>& muted_groups() {
+    leader_balancer_types::muted_groups_t& muted_groups() {
         return _muted_groups;
     }
 
@@ -92,13 +92,13 @@ public:
         // nothing to do here.
     }
 
-    void update_muted_groups(absl::flat_hash_set<raft::group_id> new_groups) {
+    void update_muted_groups(leader_balancer_types::muted_groups_t new_groups) {
         _muted_groups = std::move(new_groups);
     }
 
 private:
     absl::flat_hash_set<model::node_id> _muted_nodes;
-    absl::flat_hash_set<raft::group_id> _muted_groups;
+    leader_balancer_types::muted_groups_t _muted_groups;
 };
 
 /*

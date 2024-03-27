@@ -115,7 +115,8 @@ even_topic_distributon_constraint::recommended_reassignment() {
                 const auto& replicas = g_info.replicas;
 
                 // Don't try moving any groups that are currently muted.
-                if (mi().muted_groups().contains(group)) {
+                if (mi().muted_groups().contains(
+                      static_cast<uint64_t>(group))) {
                     continue;
                 }
 
@@ -269,7 +270,8 @@ even_shard_load_constraint::recommended_reassignment() {
         // Consider each group from high load core, and record the
         // reassignment involving the lowest load "to" core.
         for (const auto& group : from->second) {
-            if (mi().muted_groups().contains(group.first)) {
+            if (mi().muted_groups().contains(
+                  static_cast<uint64_t>(group.first))) {
                 continue;
             }
 

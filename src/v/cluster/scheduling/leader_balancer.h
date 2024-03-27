@@ -106,7 +106,7 @@ private:
     leader_balancer_types::group_id_to_topic_revision_t
     build_group_id_to_topic_rev() const;
     index_type build_index();
-    absl::flat_hash_set<raft::group_id> muted_groups() const;
+    leader_balancer_types::muted_groups_t muted_groups() const;
     absl::flat_hash_set<model::node_id> muted_nodes() const;
 
     ss::future<bool> do_transfer(reassignment);

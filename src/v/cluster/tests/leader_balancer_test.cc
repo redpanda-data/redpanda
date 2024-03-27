@@ -8,6 +8,9 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "cluster/scheduling/leader_balancer_types.h"
+
+#include <cstdint>
 #define BOOST_TEST_MODULE leader_balancer
 
 #include "absl/container/flat_hash_map.h"
@@ -152,7 +155,7 @@ static auto from_spec(
 bool no_movement(
   const cluster_spec& spec,
   const absl::flat_hash_set<int>& muted = {},
-  const absl::flat_hash_set<raft::group_id>& skip = {}) {
+  const cluster::leader_balancer_types::muted_groups_t& skip = {}) {
     auto [_, balancer] = from_spec(spec, muted);
     return !balancer.find_movement(skip);
 }
@@ -206,12 +209,10 @@ ss::sstring expect_movement(
   const absl::flat_hash_set<int>& skip = {}) {
     auto [index, balancer] = from_spec(spec, muted);
 
-    absl::flat_hash_set<raft::group_id> skip_typed;
-    std::transform(
-      skip.begin(),
-      skip.end(),
-      std::inserter(skip_typed, skip_typed.begin()),
-      [](auto groupid) { return raft::group_id{groupid}; });
+    cluster::leader_balancer_types::muted_groups_t skip_typed;
+    for (auto s : skip) {
+        skip_typed.add(static_cast<uint64_t>(s));
+    }
 
     auto reassignment = balancer.find_movement(skip_typed);
 
@@ -357,7 +358,6 @@ BOOST_AUTO_TEST_CASE(greedy_skip) {
       expect_movement(spec, re(5, 1, 2), {}, {1, 2, 3, 4}), "");
 
     // mute node 0 and skip all groups on node 1, no movement
-    absl::flat_hash_set<raft::group_id> skip{
-      raft::group_id(5), raft::group_id(6)};
+    cluster::leader_balancer_types::muted_groups_t skip{5, 6};
     BOOST_REQUIRE(no_movement(spec, {0}, skip));
 }
