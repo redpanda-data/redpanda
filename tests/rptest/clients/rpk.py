@@ -325,7 +325,11 @@ class RpkTool:
 
         self._tls_cert = tls_cert
 
-    def create_topic(self, topic, partitions=1, replicas=None, config=None):
+    def create_topic(self,
+                     topic: str,
+                     partitions: int = 1,
+                     replicas: int | None = None,
+                     config=None):
         def create_topic():
             try:
                 cmd = ["create", topic]
