@@ -363,7 +363,8 @@ class RpkTool:
                                    username: Optional[str] = None,
                                    password: Optional[str] = None,
                                    mechanism: Optional[str] = None,
-                                   deny=False):
+                                   deny=False,
+                                   ptype: str = "principal"):
 
         username = username if username is not None else self._username
         password = password if password is not None else self._password
@@ -378,7 +379,7 @@ class RpkTool:
         else:
             raise Exception(f"unknown resource: {resource}")
 
-        perm = '--allow-principal' if not deny else '--deny-principal'
+        perm = f'--allow-{ptype}' if not deny else f'--deny-{ptype}'
 
         cmd = [
             "acl", "create", perm, principal, "--operation",
@@ -393,6 +394,18 @@ class RpkTool:
 
     def sasl_deny_principal(self, *args, **kwargs):
         self._sasl_set_principal_access(*args, **kwargs, deny=True)
+
+    def sasl_allow_role(self, *args, **kwargs):
+        self._sasl_set_principal_access(*args,
+                                        **kwargs,
+                                        deny=False,
+                                        ptype="role")
+
+    def sasl_deny_role(self, *args, **kwargs):
+        self._sasl_set_principal_access(*args,
+                                        **kwargs,
+                                        deny=True,
+                                        ptype="role")
 
     def allow_principal(self, principal, operations, resource, resource_name):
         if resource == "topic":
@@ -1224,7 +1237,7 @@ class RpkTool:
         flags += self._tls_settings()
         return flags
 
-    def acl_list(self, request_timeout_overhead=None):
+    def acl_list(self, flags: list[str] = [], request_timeout_overhead=None):
         """
         Run `rpk acl list` and return the results.
 
@@ -1239,7 +1252,7 @@ class RpkTool:
             self._rpk_binary(),
             "acl",
             "list",
-        ] + self._kafka_conn_settings()
+        ] + flags + self._kafka_conn_settings()
 
         # How long rpk will wait for a response from the broker, default is 5s
         if request_timeout_overhead is not None:
