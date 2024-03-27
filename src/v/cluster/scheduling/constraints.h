@@ -62,6 +62,7 @@ soft_constraint max_final_capacity(partition_allocation_domain);
  */
 soft_constraint least_disk_filled(
   const double max_disk_usage_ratio,
+  const size_t partition_size,
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 

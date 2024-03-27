@@ -1050,10 +1050,6 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
   double max_disk_usage_ratio) const {
     allocation_constraints constraints;
 
-    // Add constraint on least disk usage
-    constraints.add(
-      least_disk_filled(max_disk_usage_ratio, _ctx.node_disk_reports));
-
     // Add constraint on partition max_disk_usage_ratio overfill
     size_t upper_bound_for_partition_size
       = _sizes.non_reclaimable + _ctx.config().segment_fallocation_step;
@@ -1069,6 +1065,12 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
     if (!_ctx.decommissioning_nodes.empty()) {
         constraints.add(distinct_from(_ctx.decommissioning_nodes));
     }
+
+    // Add constraint on least disk usage
+    constraints.add(least_disk_filled(
+      max_disk_usage_ratio,
+      upper_bound_for_partition_size,
+      _ctx.node_disk_reports));
 
     return constraints;
 }
@@ -1217,16 +1219,18 @@ partition_balancer_planner::force_reassignable_partition::
   get_allocation_constraints(double max_disk_usage_ratio) const {
     allocation_constraints constraints;
 
-    // Add constraint on least disk usage
-    constraints.add(
-      least_disk_filled(max_disk_usage_ratio, _ctx.node_disk_reports));
-
     if (_sizes) {
         // Add constraint on partition max_disk_usage_ratio overfill
         size_t upper_bound_for_partition_size
           = _sizes.value().non_reclaimable
             + _ctx.config().segment_fallocation_step;
         constraints.add(disk_not_overflowed_by_partition(
+          max_disk_usage_ratio,
+          upper_bound_for_partition_size,
+          _ctx.node_disk_reports));
+
+        // Add constraint on least disk usage
+        constraints.add(least_disk_filled(
           max_disk_usage_ratio,
           upper_bound_for_partition_size,
           _ctx.node_disk_reports));

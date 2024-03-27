@@ -1526,10 +1526,6 @@ partition_constraints get_partition_constraints(
   const topics_frontend::capacity_info& info) {
     allocation_constraints allocation_constraints;
 
-    // Add constraint on least disk usage
-    allocation_constraints.add(
-      least_disk_filled(max_disk_usage_ratio, info.node_disk_reports));
-
     auto partition_size_it = info.ntp_sizes.find(id);
     if (partition_size_it == info.ntp_sizes.end()) {
         return {id, new_replication_factor, std::move(allocation_constraints)};
@@ -1537,6 +1533,10 @@ partition_constraints get_partition_constraints(
 
     // Add constraint on partition max_disk_usage_ratio overfill
     allocation_constraints.add(disk_not_overflowed_by_partition(
+      max_disk_usage_ratio, partition_size_it->second, info.node_disk_reports));
+
+    // Add constraint on least disk usage
+    allocation_constraints.add(least_disk_filled(
       max_disk_usage_ratio, partition_size_it->second, info.node_disk_reports));
 
     return {id, new_replication_factor, std::move(allocation_constraints)};
