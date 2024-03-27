@@ -1255,7 +1255,10 @@ class RpkTool:
 
         return output
 
-    def acl_create_allow_cluster(self, username, op):
+    def acl_create_allow_cluster(self,
+                                 username: str,
+                                 op: str,
+                                 principal_type: str = "User"):
         """
         Add allow+describe+cluster ACL
         """
@@ -1264,7 +1267,7 @@ class RpkTool:
             "acl",
             "create",
             "--allow-principal",
-            f"User:{username}",
+            f"{principal_type}:{username}",
             "--operation",
             op,
             "--cluster",
