@@ -1,3 +1,4 @@
+from ducktape.mark import matrix
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
@@ -14,8 +15,15 @@ class SmallBatchesTest(RedpandaTest):
               self).__init__(test_context=ctx,
                              extra_rp_conf={"aggregate_metrics": True})
 
+    def setUp(self):
+        pass
+
     @cluster(num_nodes=6)
-    def omb_test(self):
+    @matrix(write_caching=["on", "off"])
+    def omb_test(self, write_caching):
+        self.redpanda.add_extra_rp_conf({"write_caching": write_caching})
+        self.redpanda.start()
+
         workload = {
             "name": "SmallBatchesWorkload",
             "topics": 1,

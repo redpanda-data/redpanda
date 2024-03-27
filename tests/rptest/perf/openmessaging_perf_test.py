@@ -12,7 +12,7 @@ import statistics
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 
 
 class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
@@ -24,10 +24,14 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
         super(RedPandaOpenMessagingBenchmarkPerf,
               self).__init__(test_context=ctx, num_brokers=3)
 
+    def setUp(self):
+        pass
+
     @cluster(num_nodes=6)
-    @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
-                 workload_idx="RELEASE_CERT_SMOKE_LOAD_625k")
-    def test_perf(self, driver_idx, workload_idx):
+    @matrix(driver_idx=["ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT"],
+            workload_idx=["RELEASE_CERT_SMOKE_LOAD_625k"],
+            write_caching=["on", "off"])
+    def test_perf(self, driver_idx, workload_idx, write_caching):
         """
         This test is run as a part of nightly perf suite to detect
         regressions.
@@ -37,6 +41,9 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
         # run validator metrics are based on a production grade deployment.
         # Check validator for specifics.
         assert self.redpanda.dedicated_nodes
+
+        self.redpanda.add_extra_rp_conf({"write_caching": write_caching})
+        self.redpanda.start()
 
         benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda,
                                            driver_idx, workload_idx)
