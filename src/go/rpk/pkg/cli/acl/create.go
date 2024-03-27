@@ -39,6 +39,8 @@ operation is required to create a single ACL.
 
 Allow all permissions to user bar on topic "foo" and group "g":
     --allow-principal bar --operation all --topic foo --group g
+Allow all permissions to role bar on topic "foo" and group "g":
+    --allow-role bar --operation all --topic foo --group g
 Allow read permissions to all users on topics biz and baz:
     --allow-principal '*' --operation read --topic biz,baz
 Allow write permissions to user buzz to transactional id "txn":
@@ -98,7 +100,9 @@ func (a *acls) addCreateFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "Operation to grant (repeatable)")
 
 	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "Principals for which these permissions will be granted (repeatable)")
+	cmd.Flags().StringSliceVar(&a.allowRoles, allowRoleFlag, nil, "Roles for which these permissions will be granted (repeatable)")
 	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "Hosts from which access will be granted (repeatable)")
 	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "Principal for which these permissions will be denied (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyRoles, denyRoleFlag, nil, "Role for which these permissions will be denied (repeatable)")
 	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "Hosts from from access will be denied (repeatable)")
 }

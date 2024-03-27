@@ -54,8 +54,8 @@ When using SASL, ACLs allow or deny you access to certain requests. The
 
 An ACL is made up of five components:
 
-  * a principal (the user)
-  * a host the principal is allowed or denied requests from
+  * a principal (the user) or role
+  * a host, which the principal (or role) is allowed or denied requests from
   * what resource to access (topic name, group ID, ...)
   * the operation (read, write, ...)
   * the permission: whether to allow or deny the above
@@ -72,16 +72,28 @@ group.
 
 PRINCIPALS
 
-All ACLs require a principal. A principal is composed of two parts: the type
-and the name. Within Redpanda, only one type is supported, "User". The reason
-for the prefix is that a potential future authorizer may add support for
-authorizing by Group or anything else.
+All ACLs require a principal or a role. A principal is composed of a user
+and a type. Within Redpanda, only the "User" type is supported. Having
+prefixes for new types ensures that potential future authorizers can add
+authorization using other types, such as "Group".
 
 When you create a user, you need to add ACLs for it before it can be used. You
 can create / delete / list ACLs for that user with either "User:bar" or "bar"
 in the --allow-principal and --deny-principal flags. This command will add the
 "User:" prefix for you if it is missing. The wildcard '*' matches any user.
 Creating an ACL with user '*' grants or denies the permission for all users.
+
+ROLES
+
+You can bind ACLs to a role. A role has only one part: the name. In contrast
+to principals, there is no need to supply the type. If a type-like prefix is
+present, it is treated as text rather than as principal type information.
+
+When you create a role, you must bind or associate ACLs to it before it can be
+used. You can create / delete / list ACLs for that role with "<name>" in the
+--allow-role and --deny-role flags. Note that the wildcard role name '*' is not
+permitted here. For example 'rpk acl create --allow-role '*' ...' will produce
+an error.
 
 HOSTS
 
