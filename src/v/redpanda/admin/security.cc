@@ -308,6 +308,13 @@ inline std::unique_ptr<ss::http::reply> make_json_response(
     return rep;
 }
 
+bool parse_bool_nocase(ss::sstring param) {
+    bool result = false;
+    absl::c_transform(param, param.begin(), ::tolower);
+    std::istringstream(param) >> std::boolalpha >> result;
+    return result;
+}
+
 } // namespace
 
 void admin_server::register_security_routes() {
@@ -691,13 +698,8 @@ admin_server::update_role_members_handler(
         throw_role_exception(role_errc::invalid_name);
     }
 
-    bool create_if_not_found = false;
-    if (const auto it = req->query_parameters.find("create");
-        it != req->query_parameters.end()) {
-        auto param = it->second;
-        absl::c_transform(param, param.begin(), ::tolower);
-        std::istringstream(param) >> std::boolalpha >> create_if_not_found;
-    }
+    bool create_if_not_found = parse_bool_nocase(
+      req->get_query_param("create"));
 
     auto doc = co_await parse_json_body(req.get());
     if (!doc.IsObject()) {
