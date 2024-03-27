@@ -8,13 +8,13 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_roles/gcp_refresh_impl.h"
+#include "gcp_refresh_impl.h"
 
 #include "bytes/streambuf.h"
 #include "cloud_roles/logger.h"
-#include "cloud_roles/request_response_helpers.h"
 #include "json/document.h"
 #include "json/istreamwrapper.h"
+#include "request_response_helpers.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>

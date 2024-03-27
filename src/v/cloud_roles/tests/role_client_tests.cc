@@ -8,11 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_roles/aws_refresh_impl.h"
-#include "cloud_roles/aws_sts_refresh_impl.h"
-#include "cloud_roles/gcp_refresh_impl.h"
-#include "cloud_roles/tests/test_definitions.h"
+#include "../aws_refresh_impl.h"
+#include "../aws_sts_refresh_impl.h"
+#include "../gcp_refresh_impl.h"
 #include "http/tests/http_imposter.h"
+#include "test_definitions.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/file.hh>
