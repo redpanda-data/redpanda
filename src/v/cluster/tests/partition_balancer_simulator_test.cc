@@ -25,19 +25,6 @@ static constexpr size_t recovery_batch_size = 512_KiB;
 static constexpr size_t recovery_throttle_burst = 100_MiB;
 static constexpr size_t recovery_throttle_ticks_between_refills = 10;
 
-/// If a value is a sum of a large number of random variables that with some
-/// probability add item_size to the value and the result has a mean of `mean`
-/// (example: producing to a topic, randomly choosing the partition for each
-/// produced batch), the distribution will be approximately gaussian with stddev
-/// sqrt(mean number of items). We use this function to calculate partition size
-/// jitter.
-static size_t add_sqrt_jitter(size_t mean, size_t item_size) {
-    std::normal_distribution<> dist(0, sqrt(double(mean) / item_size));
-    auto jitter = std::min(
-      int(mean), int(item_size * dist(random_generators::internal::gen)));
-    return mean + jitter;
-}
-
 class partition_balancer_sim_fixture {
 public:
     void add_node(
@@ -90,16 +77,32 @@ public:
       const ss::sstring& name,
       int partitions,
       int16_t replication_factor,
-      size_t mean_partition_size) {
+      size_t mean_partition_size,
+      std::optional<double> stddev = std::nullopt) {
         auto tp_ns = model::topic_namespace(test_ns, model::topic(name));
         auto topic_conf = _workers.make_tp_configuration(
           name, partitions, replication_factor);
         _workers.dispatch_topic_command(
           cluster::create_topic_cmd(tp_ns, topic_conf));
+
+        if (!stddev) {
+            /// If a value is a sum of a large number of random variables that
+            /// with some probability add item_size to the value and the result
+            /// has a mean of `mean` (example: producing to a topic, randomly
+            /// choosing the partition for each produced batch), the
+            /// distribution will be approximately gaussian with stddev
+            /// sqrt(mean number of items).
+            stddev = produce_batch_size
+                     * sqrt(double(mean_partition_size) / produce_batch_size);
+        }
+
+        std::normal_distribution<> dist(0, 1);
         for (const auto& as : topic_conf.assignments) {
             model::ntp ntp{tp_ns.ns, tp_ns.tp, as.id};
-            auto size = add_sqrt_jitter(
-              mean_partition_size, produce_batch_size);
+            auto jitter = std::max(
+              -int64_t(mean_partition_size),
+              int64_t(*stddev * dist(random_generators::internal::gen)));
+            auto size = mean_partition_size + jitter;
             auto partition = ss::make_lw_shared<partition_state>(ntp, size);
             _partitions.emplace(ntp, partition);
 
@@ -719,4 +722,20 @@ FIXTURE_TEST(
     for (const auto& [id, node] : nodes()) {
         BOOST_REQUIRE(double(node.used) / node.total < 0.8);
     }
+}
+
+FIXTURE_TEST(test_smol, partition_balancer_sim_fixture) {
+    for (size_t i = 0; i < 4; ++i) {
+        add_node(model::node_id{i}, 100_GiB);
+    }
+
+    add_topic("topic_1", 3, 3, 1_GiB, 100_MiB);
+    add_topic("topic_2", 3, 3, 1_GiB, 100_MiB);
+
+    for (size_t i = 4; i < 6; ++i) {
+        add_node(model::node_id{i}, 100_GiB);
+        add_node_to_rebalance(model::node_id{i});
+    }
+
+    BOOST_REQUIRE(run_to_completion(10));
 }
