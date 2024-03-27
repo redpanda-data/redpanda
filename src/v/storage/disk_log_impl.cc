@@ -195,7 +195,7 @@ ss::future<>
 disk_log_impl::start(std::optional<truncate_prefix_config> truncate_cfg) {
     auto is_new = is_new_log();
     co_await offset_translator().start(
-      raft::offset_translator::must_reset{is_new});
+      storage::offset_translator::must_reset{is_new});
     if (truncate_cfg.has_value()) {
         co_await truncate_prefix(truncate_cfg.value());
     }

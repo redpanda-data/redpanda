@@ -26,7 +26,7 @@
 
 #include <absl/container/btree_map.h>
 
-namespace raft {
+namespace storage {
 
 /// See also comments for storage::offset_translator_state.
 ///
@@ -155,4 +155,4 @@ private:
     storage::storage_resources& _resources;
 };
 
-} // namespace raft
+} // namespace storage

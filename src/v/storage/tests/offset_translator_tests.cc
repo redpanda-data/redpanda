@@ -77,8 +77,8 @@ struct base_fixture {
           storage::make_sanitized_file_config());
     }
 
-    raft::offset_translator make_offset_translator() {
-        return raft::offset_translator{
+    storage::offset_translator make_offset_translator() {
+        return storage::offset_translator{
           {model::record_batch_type::raft_configuration,
            model::record_batch_type::checkpoint},
           raft::group_id(0),
@@ -100,7 +100,7 @@ struct base_fixture {
 };
 
 void validate_translation(
-  raft::offset_translator& tr,
+  storage::offset_translator& tr,
   model::offset log_offset,
   model::offset kafka_offset) {
     BOOST_REQUIRE_EQUAL(tr.state()->from_log_offset(log_offset), kafka_offset);
@@ -110,7 +110,7 @@ void validate_translation(
 struct offset_translator_fixture : base_fixture {
     offset_translator_fixture()
       : tr(make_offset_translator()) {
-        tr.start(raft::offset_translator::must_reset::yes).get();
+        tr.start(storage::offset_translator::must_reset::yes).get();
     }
 
     void validate_offset_translation(
@@ -118,7 +118,7 @@ struct offset_translator_fixture : base_fixture {
         validate_translation(tr, log_offset, kafka_offset);
     }
 
-    raft::offset_translator tr;
+    storage::offset_translator tr;
 };
 
 FIXTURE_TEST(test_translating_to_kafka_offsets, offset_translator_fixture) {
@@ -317,13 +317,13 @@ collect_base_offsets(ss::shared_ptr<storage::log> log) {
 struct fuzz_checker {
     fuzz_checker(
       ss::shared_ptr<storage::log> log,
-      std::function<raft::offset_translator()>&& make_offset_translator)
+      std::function<storage::offset_translator()>&& make_offset_translator)
       : _make_offset_translator(std::move(make_offset_translator))
       , _log(std::move(log)) {}
 
     ss::future<> start() {
         _tr.emplace(_make_offset_translator());
-        co_await _tr->start(raft::offset_translator::must_reset::yes);
+        co_await _tr->start(storage::offset_translator::must_reset::yes);
         co_await _tr->sync_with_log(*_log, std::nullopt);
     }
 
@@ -474,7 +474,7 @@ struct fuzz_checker {
             _tr.emplace(_make_offset_translator());
             _gate = ss::gate{};
 
-            co_await _tr->start(raft::offset_translator::must_reset::no);
+            co_await _tr->start(storage::offset_translator::must_reset::no);
             co_await _tr->prefix_truncate(
               _snapshot_offset, model::offset_delta(_snapshot_delta));
             co_await _tr->sync_with_log(*_log, std::nullopt);
@@ -522,9 +522,9 @@ struct fuzz_checker {
 
     static const std::vector<model::record_batch_type> all_batch_types;
 
-    std::function<raft::offset_translator()> _make_offset_translator;
+    std::function<storage::offset_translator()> _make_offset_translator;
 
-    std::optional<raft::offset_translator> _tr;
+    std::optional<storage::offset_translator> _tr;
     ss::gate _gate;
 
     ss::shared_ptr<storage::log> _log;
@@ -615,7 +615,7 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
       // data batch @ 9 -> kafka 3
     };
     auto local_ot = make_offset_translator();
-    local_ot.start(raft::offset_translator::must_reset::yes).get();
+    local_ot.start(storage::offset_translator::must_reset::yes).get();
     for (auto o : batch_offsets) {
         local_ot.process(
           create_batch(model::record_batch_type::raft_configuration, o));
@@ -641,7 +641,7 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
     // use last available shard
     auto target_shard = ss::smp::count - 1;
     // move state to target shard
-    raft::offset_translator::move_persistent_state(
+    storage::offset_translator::move_persistent_state(
       raft::group_id(0), ss::this_shard_id(), target_shard, _api)
       .get();
 
@@ -649,14 +649,14 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
     ss::smp::submit_to(
       target_shard,
       [&api = _api, ntp = test_ntp]() -> ss::future<> {
-          auto remote_ot = raft::offset_translator{
+          auto remote_ot = storage::offset_translator{
             {model::record_batch_type::raft_configuration,
              model::record_batch_type::checkpoint},
             raft::group_id(0),
             ntp,
             api.local()};
           return ss::do_with(std::move(remote_ot), [](auto& remote_ot) {
-              return remote_ot.start(raft::offset_translator::must_reset::no)
+              return remote_ot.start(storage::offset_translator::must_reset::no)
                 .then([&remote_ot] {
                     validate_translation(
                       remote_ot, model::offset(0), model::offset(0));
