@@ -471,7 +471,7 @@ class InfiniteRetentionTest(PreallocNodesTest):
         """
         Main infinite retention test function.
         input:
-        - failure_injection_enabled: Flag to enable failure injection 
+        - failure_injection_enabled: Flag to enable failure injection
             routines
         - batchtypes: failure injection batch types to use
         - rolling_restarts: Flag that enables rolling restarts
@@ -498,7 +498,7 @@ class InfiniteRetentionTest(PreallocNodesTest):
 
           - Stop and free producer and then consumer
             Note: Strictly no cleaning to preserve logs
-          - If this is the last iteration, start GroupConsumer 
+          - If this is the last iteration, start GroupConsumer
             to consume all messages from start to finish
           - Conduct metrics check (self explanatory names)
           - Do storage scrub

@@ -309,7 +309,11 @@ class RpkTool:
             self._username, self._password, self._sasl_mechanism = redpanda._superuser
             self._tls_enabled = True
 
-    def create_topic(self, topic, partitions=1, replicas=None, config=None):
+    def create_topic(self,
+                     topic: str,
+                     partitions: int = 1,
+                     replicas: int | None = None,
+                     config=None):
         def create_topic():
             try:
                 cmd = ["create", topic]
