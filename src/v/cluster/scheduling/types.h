@@ -41,11 +41,13 @@ using hard_constraint_evaluator
 using soft_constraint_evaluator
   = ss::noncopyable_function<uint64_t(const allocation_node&)>;
 
+class allocated_partition;
+
 class hard_constraint {
 public:
     struct impl {
         virtual hard_constraint_evaluator make_evaluator(
-          const model::ntp&, const replicas_t& current_replicas) const
+          const allocated_partition&, std::optional<model::node_id> prev) const
           = 0;
 
         virtual ss::sstring name() const = 0;
@@ -64,8 +66,9 @@ public:
     ~hard_constraint() noexcept = default;
 
     hard_constraint_evaluator make_evaluator(
-      const model::ntp& ntp, const replicas_t& current_replicas) const {
-        return _impl->make_evaluator(ntp, current_replicas);
+      const allocated_partition& partition,
+      std::optional<model::node_id> prev) const {
+        return _impl->make_evaluator(partition, prev);
     }
 
     ss::sstring name() const { return _impl->name(); }
@@ -82,8 +85,9 @@ class soft_constraint final {
 public:
     static constexpr uint64_t max_score = 10'000'000;
     struct impl {
-        virtual soft_constraint_evaluator
-        make_evaluator(const replicas_t& current_replicas) const
+        virtual soft_constraint_evaluator make_evaluator(
+          const allocated_partition& partition,
+          std::optional<model::node_id> prev) const
           = 0;
         virtual ss::sstring name() const = 0;
         virtual ~impl() = default;
@@ -100,9 +104,10 @@ public:
 
     ~soft_constraint() noexcept = default;
 
-    soft_constraint_evaluator
-    make_evaluator(const replicas_t& current_replicas) const {
-        return _impl->make_evaluator(current_replicas);
+    soft_constraint_evaluator make_evaluator(
+      const allocated_partition& partition,
+      std::optional<model::node_id> prev) const {
+        return _impl->make_evaluator(partition, prev);
     }
 
     ss::sstring name() const { return _impl->name(); }
@@ -244,9 +249,7 @@ private:
 /// Note: shard ids for original replicas are preserved.
 class allocated_partition {
 public:
-    const std::vector<model::broker_shard>& replicas() const {
-        return _replicas;
-    }
+    const replicas_t& replicas() const { return _replicas; }
 
     const model::ntp& ntp() const { return _ntp; }
 
@@ -284,11 +287,11 @@ private:
     void cancel_move(const previous_replica&);
 
     // used to move the allocation to allocation_units
-    std::vector<model::broker_shard> release_new_partition();
+    replicas_t release_new_partition();
 
 private:
     model::ntp _ntp;
-    std::vector<model::broker_shard> _replicas;
+    replicas_t _replicas;
     std::optional<absl::flat_hash_map<model::node_id, uint32_t>>
       _original_node2shard;
     partition_allocation_domain _domain;

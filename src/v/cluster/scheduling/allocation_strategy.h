@@ -21,11 +21,10 @@ class allocation_state;
 class allocation_strategy {
 public:
     result<model::node_id> choose_node(
-      const model::ntp& ntp,
-      const replicas_t& current_replicas,
-      const allocation_constraints& ac,
-      allocation_state& state,
-      const partition_allocation_domain domain);
+      const allocation_state&,
+      const allocation_constraints&,
+      const allocated_partition&,
+      std::optional<model::node_id> prev);
 };
 
 } // namespace cluster

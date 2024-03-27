@@ -28,10 +28,11 @@ namespace cluster {
 hard_constraint not_fully_allocated() {
     class impl : public hard_constraint::impl {
     public:
-        hard_constraint_evaluator
-        make_evaluator(const model::ntp& ntp, const replicas_t&) const final {
-            return [&ntp](const allocation_node& node) {
-                return !node.is_full(ntp);
+        hard_constraint_evaluator make_evaluator(
+          const allocated_partition& partition,
+          std::optional<model::node_id>) const final {
+            return [&partition](const allocation_node& node) {
+                return !node.is_full(partition.ntp());
             };
         }
 
@@ -46,8 +47,9 @@ hard_constraint not_fully_allocated() {
 hard_constraint is_active() {
     class impl : public hard_constraint::impl {
     public:
-        hard_constraint_evaluator
-        make_evaluator(const model::ntp&, const replicas_t&) const final {
+        hard_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [](const allocation_node& node) { return node.is_active(); };
         }
 
@@ -63,8 +65,9 @@ hard_constraint on_node(model::node_id id) {
         explicit impl(model::node_id id)
           : _id(id) {}
 
-        hard_constraint_evaluator
-        make_evaluator(const model::ntp&, const replicas_t&) const final {
+        hard_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id>) const final {
             return
               [this](const allocation_node& node) { return node.id() == _id; };
         }
@@ -90,8 +93,9 @@ hard_constraint on_nodes(const std::vector<model::node_id>& ids) {
                 _ids.emplace(id);
             }
         }
-        hard_constraint_evaluator
-        make_evaluator(const model::ntp&, const replicas_t&) const final {
+        hard_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [this](const allocation_node& node) {
                 return _ids.contains(node.id());
             };
@@ -126,8 +130,9 @@ hard_constraint distinct_from(const replicas_t& replicas) {
         explicit impl(const std::vector<model::broker_shard>& r)
           : _replicas(r) {}
 
-        hard_constraint_evaluator
-        make_evaluator(const model::ntp&, const replicas_t&) const final {
+        hard_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [this](const allocation_node& node) {
                 return std::all_of(
                   _replicas.begin(),
@@ -153,11 +158,12 @@ hard_constraint distinct_nodes() {
     class impl : public hard_constraint::impl {
     public:
         hard_constraint_evaluator make_evaluator(
-          const model::ntp&, const replicas_t& current_replicas) const final {
-            return [&current_replicas](const allocation_node& node) {
+          const allocated_partition& partition,
+          std::optional<model::node_id>) const final {
+            return [&partition](const allocation_node& node) {
                 return std::all_of(
-                  current_replicas.begin(),
-                  current_replicas.end(),
+                  partition.replicas().begin(),
+                  partition.replicas().end(),
                   [&node](const model::broker_shard& bs) {
                       return bs.node_id != node.id();
                   });
@@ -188,8 +194,9 @@ hard_constraint disk_not_overflowed_by_partition(
           , _partition_size(partition_size)
           , _node_disk_reports(node_disk_reports) {}
 
-        hard_constraint_evaluator
-        make_evaluator(const model::ntp&, const replicas_t&) const final {
+        hard_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [this](const allocation_node& node) {
                 auto disk_it = _node_disk_reports.find(node.id());
                 if (disk_it == _node_disk_reports.end()) {
@@ -226,8 +233,9 @@ soft_constraint max_final_capacity(partition_allocation_domain domain) {
         explicit impl(partition_allocation_domain domain_)
           : domain(domain_) {}
 
-        soft_constraint_evaluator
-        make_evaluator(const replicas_t&) const final {
+        soft_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [this](const allocation_node& node) {
                 auto count = domain == partition_allocation_domains::common
                                ? node.final_partitions()
@@ -263,8 +271,9 @@ soft_constraint least_disk_filled(
           : _max_disk_usage_ratio(max_disk_usage_ratio)
           , _node_disk_reports(node_disk_reports) {}
 
-        soft_constraint_evaluator
-        make_evaluator(const replicas_t&) const final {
+        soft_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [this](const allocation_node& node) -> uint64_t {
                 // we return 0 for node filled more or equal to
                 // max_disk_usage_ratio

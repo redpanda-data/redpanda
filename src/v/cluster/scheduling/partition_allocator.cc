@@ -393,11 +393,7 @@ result<reallocation_step> partition_allocator::do_allocate_replica(
     });
 
     auto node = _allocation_strategy.choose_node(
-      partition._ntp,
-      partition._replicas,
-      effective_constraints,
-      *_state,
-      partition._domain);
+      *_state, effective_constraints, partition, prev_node);
     if (!node) {
         return node.error();
     }

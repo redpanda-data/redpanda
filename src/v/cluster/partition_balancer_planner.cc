@@ -45,8 +45,9 @@ distinct_from(const absl::flat_hash_set<model::node_id>& nodes) {
         explicit impl(const absl::flat_hash_set<model::node_id>& nodes)
           : _nodes(nodes) {}
 
-        hard_constraint_evaluator
-        make_evaluator(const model::ntp&, const replicas_t&) const final {
+        hard_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [this](const allocation_node& node) {
                 return !_nodes.contains(node.id());
             };

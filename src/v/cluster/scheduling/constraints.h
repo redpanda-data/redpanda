@@ -86,11 +86,12 @@ distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
           : _label_name(label_name)
           , _mapper(std::forward<Mapper>(mapper)) {}
 
-        soft_constraint_evaluator
-        make_evaluator(const replicas_t& current_replicas) const final {
+        soft_constraint_evaluator make_evaluator(
+          const allocated_partition& partition,
+          std::optional<model::node_id>) const final {
             absl::flat_hash_map<T, size_t> frequency_map;
 
-            for (auto& r : current_replicas) {
+            for (auto& r : partition.replicas()) {
                 auto const l = _mapper(r.node_id);
                 if (!l) {
                     continue;
