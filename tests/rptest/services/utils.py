@@ -4,7 +4,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Generator, Optional
 
-from rptest.clients.kubectl import KubectlTool
+from rptest.clients.kubectl import KubectlTool, KubeNodeShell
 
 
 class BadLogLines(Exception):
@@ -180,19 +180,25 @@ class LogSearchCloud(LogSearch):
 
     def _capture_log(self, pod, expr) -> Generator[str, None, None]:
         # Load log, output is in binary form
-        _out = b""
+        loglines = []
         pod_name = self._get_hostname(pod)
-        try:
-            _out = self.kubectl.cmd(f"logs -n redpanda {pod_name} |"
-                                    f" grep {expr}")
-        except Exception as e:
-            self.logger.warning(f"Failed to get logs from {pod_name}: {e}")
-        else:
-            _size = len(_out)
-            self.logger.debug(f"Received {_size}B of data from {pod_name}")
-        # decode to str
-        _out = _out.decode()
-        for line in _out.splitlines():
+        node_name = pod['spec']['nodeName']
+        with KubeNodeShell(self.kubectl, node_name) as ksh:
+            try:
+                logfiles = ksh(f"find /var/log/pods -type f")
+                for logfile in logfiles:
+                    if pod_name in logfile and \
+                        'redpanda-configurator' not in logfile:
+                        self.logger.info(f"Inspecting '{logfile}'")
+                        lines = ksh(f"cat {logfile} | grep {expr}")
+                        loglines += lines
+            except Exception as e:
+                self.logger.warning(f"Error getting logs for {pod_name}: {e}")
+            else:
+                _size = len(loglines)
+                self.logger.debug(f"Received {_size}B of data from {pod_name}")
+
+        for line in loglines:
             yield line
 
     def _get_hostname(self, host) -> str:
