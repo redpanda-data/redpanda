@@ -39,6 +39,7 @@ enum class errc : int16_t {
     replicate_batcher_cache_error,
     group_not_exists,
     replicate_first_stage_exception,
+    invalid_input_records,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -93,6 +94,8 @@ struct errc_category final : public std::error_category {
         case errc::replicate_first_stage_exception:
             return "unable to finish replicate since exception was thrown in "
                    "first phase";
+        case errc::invalid_input_records:
+            return "attempt to replicate invalid input records";
         }
         return "cluster::errc::unknown";
     }

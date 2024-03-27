@@ -197,6 +197,14 @@ replicate_entries_stm::append_to_self() {
       })
       .then([this](storage::append_result res) {
           vlog(_ctxlog.trace, "Leader append result: {}", res);
+          if (
+            // no batches, nothing was appended
+            res.last_offset == model::offset{}
+            // no records, valid header, invalid input per kafka protocol.
+            || res.last_offset < res.base_offset) {
+              return result<storage::append_result>(
+                errc::invalid_input_records);
+          }
           // only update visibility upper bound if all quorum
           // replicated entries are committed already
           if (
@@ -288,7 +296,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
     _units = ss::make_lw_shared<units_t>(std::move(u));
     _append_result = co_await append_to_self();
 
-    if (!_append_result) {
+    if (!_append_result || _append_result->has_error()) {
         co_return build_replicate_result();
     }
     _dirty_offset = _append_result->value().last_offset;

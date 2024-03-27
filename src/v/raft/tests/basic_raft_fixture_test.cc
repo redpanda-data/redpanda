@@ -53,6 +53,33 @@ TEST_F_CORO(raft_fixture, test_multi_nodes_cluster_can_elect_leader) {
     });
 }
 
+// Empty writes should return an error rather than passing silently
+// with incorrect results.
+TEST_F_CORO(raft_fixture, test_empty_writes) {
+    co_await create_simple_group(5);
+    auto leader = co_await wait_for_leader(10s);
+
+    auto replicate = [&](auto reader) {
+        return node(leader).raft()->replicate(
+          std::move(reader), replicate_options{consistency_level::quorum_ack});
+    };
+
+    // no records
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    auto reader = model::make_memory_record_batch_reader(
+      std::move(builder).build());
+
+    auto result = co_await replicate(std::move(reader));
+    ASSERT_TRUE_CORO(result.has_error());
+    ASSERT_EQ_CORO(result.error(), errc::invalid_input_records);
+
+    // empty batch.
+    result = co_await replicate(make_batches({}));
+    ASSERT_TRUE_CORO(result.has_error());
+    ASSERT_EQ_CORO(result.error(), errc::invalid_input_records);
+}
+
 struct test_parameters {
     consistency_level c_lvl;
     bool write_caching;

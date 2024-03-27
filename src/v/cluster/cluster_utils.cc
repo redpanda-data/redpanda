@@ -145,6 +145,7 @@ cluster::errc map_update_interruption_error_code(std::error_code ec) {
         case raft::errc::replicate_batcher_cache_error:
         case raft::errc::group_not_exists:
         case raft::errc::replicate_first_stage_exception:
+        case raft::errc::invalid_input_records:
             return errc::replication_error;
         }
         __builtin_unreachable();
