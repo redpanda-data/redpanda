@@ -305,6 +305,8 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> cloud_storage_api_endpoint;
     enum_property<model::cloud_credentials_source>
       cloud_storage_credentials_source;
+    property<std::optional<ss::sstring>>
+      cloud_storage_azure_managed_identity_id;
     property<std::chrono::milliseconds>
       cloud_storage_roles_operation_timeout_ms;
     deprecated_property cloud_storage_reconciliation_ms;

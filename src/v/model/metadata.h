@@ -461,6 +461,8 @@ enum class cloud_credentials_source {
     aws_instance_metadata = 1,
     sts = 2,
     gcp_instance_metadata = 3,
+    azure_aks_oidc_federation = 4,
+    azure_vm_instance_metadata = 5,
 };
 
 std::ostream& operator<<(std::ostream& os, const cloud_credentials_source& cs);

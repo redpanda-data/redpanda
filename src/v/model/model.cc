@@ -407,6 +407,10 @@ std::ostream& operator<<(std::ostream& os, const cloud_credentials_source& cs) {
         return os << "sts";
     case cloud_credentials_source::gcp_instance_metadata:
         return os << "gcp_instance_metadata";
+    case cloud_credentials_source::azure_aks_oidc_federation:
+        return os << "azure_aks_oidc_federation";
+    case cloud_credentials_source::azure_vm_instance_metadata:
+        return os << "azure_vm_instance_metadata";
     }
 }
 

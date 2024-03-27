@@ -13,6 +13,7 @@
 #include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "cloud_roles/logger.h"
+#include "cloud_roles/request_response_helpers.h"
 #include "config/base_property.h"
 #include "hashing/secure.h"
 #include "ssx/sformat.h"
@@ -135,42 +136,12 @@ inline void tolower(ss::sstring& str) {
     }
 }
 
-inline void append_hex_utf8(ss::sstring& result, char ch) {
-    bytes b = {static_cast<uint8_t>(ch)};
-    result.append("%", 1);
-    auto h = to_hex(b);
-    result.append(h.data(), h.size());
-}
-
 ss::sstring time_source::format(auto fmt) const {
     const auto point = _gettime_fn();
     const std::time_t time = std::chrono::system_clock::to_time_t(point);
     const std::tm gm = fmt::gmtime(time);
 
     return fmt::format(fmt, gm);
-}
-
-ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
-    // The function defined here:
-    //     https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
-    ss::sstring result;
-    for (auto ch : input) {
-        if (
-          (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
-          || (ch >= '0' && ch <= '9') || (ch == '_') || (ch == '-')
-          || (ch == '~') || (ch == '.')) {
-            result.append(&ch, 1);
-        } else if (ch == '/') {
-            if (encode_slash) {
-                result.append("%2F", 3);
-            } else {
-                result.append(&ch, 1);
-            }
-        } else {
-            append_hex_utf8(result, ch);
-        }
-    }
-    return result;
 }
 
 struct target_parts {

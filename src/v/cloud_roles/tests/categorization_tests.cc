@@ -56,6 +56,23 @@ SEASTAR_THREAD_TEST_CASE(test_refresh_client_built_according_to_source) {
           ssx::sformat("{}", rc));
     }
 
+    {
+        setenv("AZURE_CLIENT_ID", "client_id", 1);
+        setenv("AZURE_TENANT_ID", "tenant_id", 1);
+        setenv("AZURE_FEDERATED_TOKEN_FILE", "file_path", 1);
+        setenv("AZURE_AUTHORITY_HOST", "host.test.contoso.com", 1);
+
+        auto rc = cloud_roles::make_refresh_credentials(
+          model::cloud_credentials_source::azure_aks_oidc_federation,
+          as,
+          [](auto) { return ss::now(); },
+          region);
+        BOOST_REQUIRE_EQUAL(
+          "azure_aks_refresh_impl{address:{host: host.test.contoso.com, port: "
+          "443}}",
+          ssx::sformat("{}", rc));
+    }
+
     BOOST_REQUIRE_THROW(
       cloud_roles::make_refresh_credentials(
         model::cloud_credentials_source::config_file,
@@ -79,5 +96,12 @@ SEASTAR_THREAD_TEST_CASE(
         auto applier = cloud_roles::make_credentials_applier(std::move(ac));
         BOOST_REQUIRE_EQUAL(
           "apply_aws_credentials", ssx::sformat("{}", applier));
+    }
+
+    {
+        cloud_roles::abs_oauth_credentials akc{};
+        auto applier = cloud_roles::make_credentials_applier(std::move(akc));
+        BOOST_REQUIRE_EQUAL(
+          "apply_abs_oauth_credentials", ssx::sformat("{}", applier));
     }
 }

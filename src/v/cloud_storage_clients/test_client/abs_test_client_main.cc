@@ -11,6 +11,7 @@
 #include "base/seastarx.h"
 #include "base/vlog.h"
 #include "bytes/iobuf.h"
+#include "cloud_roles/refresh_credentials.h"
 #include "cloud_roles/types.h"
 #include "cloud_storage_clients/abs_client.h"
 #include "http/client.h"
@@ -65,15 +66,17 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
       po::value<std::string>()->default_value("test-container"),
       "ABS Container");
 
-    opt(
-      "shared-key",
-      po::value<std::string>()->default_value(""),
-      "ABS Shared Key");
+    opt("shared-key", po::value<std::string>(), "ABS Shared Key");
 
     opt(
-      "in",
-      po::value<std::string>()->default_value(""),
-      "file to read data for ABS blob");
+      "client-id",
+      po::value<std::string>(),
+      "Azure vm user-assigned managed identity for ABS"),
+
+      opt(
+        "in",
+        po::value<std::string>()->default_value(""),
+        "file to read data for ABS blob");
 
     opt(
       "out",
@@ -107,6 +110,7 @@ struct test_conf {
     std::vector<cloud_storage_clients::object_key> blobs;
 
     cloud_storage_clients::abs_configuration client_cfg;
+    std::optional<ss::sstring> managed_identity_client_id;
 
     std::string in;
     std::string out;
@@ -132,8 +136,16 @@ struct fmt::formatter<test_conf> : public fmt::formatter<std::string_view> {
 };
 
 test_conf cfg_from(boost::program_options::variables_map& m) {
-    auto shared_key = cloud_roles::private_key_str(
-      m["shared-key"].as<std::string>());
+    auto maybe_shared_key
+      = m.contains("shared-key")
+          ? std::optional<cloud_roles::private_key_str>{m["shared-key"]
+                                                          .as<std::string>()}
+          : std::optional<cloud_roles::private_key_str>{std::nullopt};
+    auto maybe_client_id
+      = m.contains("client-id")
+          ? std::optional<ss::sstring>{m["client-id"].as<std::string>()}
+          : std::optional<ss::sstring>{std::nullopt};
+
     auto storage_acc = cloud_roles::storage_account(
       m["storage-account"].as<std::string>());
     auto container = cloud_storage_clients::bucket_name(
@@ -147,7 +159,7 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
 
     cloud_storage_clients::abs_configuration client_cfg
       = cloud_storage_clients::abs_configuration::make_configuration(
-          shared_key,
+          maybe_shared_key,
           storage_acc,
           cloud_storage_clients::default_overrides{
             .endpoint =
@@ -188,6 +200,7 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
             return out;
         }(),
       .client_cfg = std::move(client_cfg),
+      .managed_identity_client_id = maybe_client_id,
       .in = m["in"].as<std::string>(),
       .out = m["out"].as<std::string>(),
       .delete_blob = m.count("delete") > 0,
@@ -217,6 +230,11 @@ make_credentials(const cloud_storage_clients::abs_configuration& cfg) {
       cloud_roles::make_credentials_applier(cloud_roles::abs_credentials{
         cfg.storage_account_name, cfg.shared_key.value()}));
 }
+static ss::lw_shared_ptr<cloud_roles::apply_credentials>
+make_credentials(cloud_roles::credentials creds) {
+    return ss::make_lw_shared(
+      cloud_roles::make_credentials_applier(std::move(creds)));
+}
 
 static ss::output_stream<char>
 get_output_file_as_stream(const std::filesystem::path& path) {
@@ -240,8 +258,58 @@ int main(int args, char** argv, char** env) {
             cloud_storage_clients::abs_configuration abs_cfg = lcfg.client_cfg;
             vlog(test_log.info, "config:{}", lcfg);
             vlog(test_log.info, "constructing client");
-            auto credentials_applier = make_credentials(abs_cfg);
-            client.start(abs_cfg, credentials_applier).get();
+            if (abs_cfg.shared_key.has_value()) {
+                auto credentials_applier = make_credentials(abs_cfg);
+                client.start(abs_cfg, credentials_applier).get();
+            } else {
+                auto cred_src = model::cloud_credentials_source{};
+                if (lcfg.managed_identity_client_id.has_value()) {
+                    // try to get an oauth token from IMDSv2 on Azure VM via
+                    // user-assigned managed identity set client-id for
+                    // refresher
+                    config::shard_local_cfg()
+                      .cloud_storage_azure_managed_identity_id.set_value(
+                        lcfg.managed_identity_client_id);
+                    cred_src = model::cloud_credentials_source::
+                      azure_vm_instance_metadata;
+                } else {
+                    // try AKS OIDC authentication (available only inside azure
+                    // kubernetes)
+                    cred_src = model::cloud_credentials_source::
+                      azure_aks_oidc_federation;
+                }
+                // create and start a refresher
+                auto as = ss::abort_source{};
+                auto creds = std::optional<cloud_roles::credentials>{};
+                auto refresher = cloud_roles::make_refresh_credentials(
+                  cred_src,
+                  as,
+                  [&](cloud_roles::credentials c) {
+                      creds = std::move(c);
+                      return ss::now();
+                  },
+                  {});
+                refresher.start();
+
+                // wait for data to be available
+                auto start = ss::lowres_clock::now();
+                while (ss::lowres_clock::now() < start + 20s) {
+                    if (creds.has_value()) {
+                        break;
+                    }
+                    ss::sleep(1s).get();
+                }
+
+                vassert(
+                  creds.has_value(),
+                  "failed to get oauth token from Azure VM via user-assigned "
+                  "managed identity");
+                as.abort_requested();
+                refresher.stop().get();
+
+                client.start(abs_cfg, make_credentials(creds.value())).get();
+            }
+
             vlog(test_log.info, "connecting");
             client
               .invoke_on(

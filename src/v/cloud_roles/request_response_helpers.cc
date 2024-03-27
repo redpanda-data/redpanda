@@ -14,7 +14,11 @@
 #include "bytes/streambuf.h"
 #include "config/configuration.h"
 #include "json/istreamwrapper.h"
+#include "json/ostreamwrapper.h"
+#include "json/schema.h"
 #include "logger.h"
+
+#include <rapidjson/error/en.h>
 
 namespace cloud_roles {
 
@@ -166,6 +170,51 @@ json::Document parse_json_response(iobuf resp) {
     return doc;
 }
 
+validate_and_parse_res
+parse_json_response_and_validate(std::string_view schema, iobuf resp) {
+    auto schema_doc = json::Document{};
+    schema_doc.Parse(schema.data(), schema.size());
+    if (schema_doc.HasParseError()) {
+        return api_response_parse_error{ssx::sformat(
+          "schema generated parsing errors: {} @{}",
+          rapidjson::GetParseError_En(schema_doc.GetParseError()),
+          schema_doc.GetErrorOffset())};
+    }
+
+    auto success_schema = json::SchemaDocument{schema_doc};
+    auto jresp = parse_json_response(std::move(resp));
+
+    auto validator = json::SchemaValidator{success_schema};
+    jresp.Accept(validator);
+
+    if (validator.IsValid()) {
+        // successful validation
+        return jresp;
+    }
+
+    auto& err_obj = validator.GetError();
+    if (auto m_it = err_obj.FindMember("required");
+        m_it != err_obj.MemberEnd()) {
+        // some missing fields, return a list (note, this might hide other
+        // problems. but missing fields is likely more important)
+        auto missing_fields_array = m_it->value["missing"].GetArray();
+        auto err_resp = malformed_api_response_error{};
+        err_resp.missing_fields.reserve(missing_fields_array.Size());
+        for (auto& jf : missing_fields_array) {
+            err_resp.missing_fields.emplace_back(
+              jf.GetString(), jf.GetStringLength());
+        }
+        return err_resp;
+    }
+
+    // generic validation error. render error to json and return it
+    auto oss = std::ostringstream{};
+    auto joss = json::OStreamWrapper{oss};
+    auto writer = json::Writer<json::OStreamWrapper>{joss};
+    err_obj.Accept(writer);
+    return api_response_parse_error{oss.str()};
+}
+
 ss::future<api_response> request_with_payload(
   http::client client,
   http::client::request_header req,
@@ -207,4 +256,33 @@ std::chrono::system_clock::time_point parse_timestamp(std::string_view sv) {
     return std::chrono::system_clock::from_time_t(timegm(&tm));
 }
 
+inline void append_hex_utf8(ss::sstring& result, char ch) {
+    bytes b = {static_cast<uint8_t>(ch)};
+    result.append("%", 1);
+    auto h = to_hex(b);
+    result.append(h.data(), h.size());
+}
+
+ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
+    // The function defined here:
+    //     https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+    ss::sstring result;
+    for (auto ch : input) {
+        if (
+          (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
+          || (ch >= '0' && ch <= '9') || (ch == '_') || (ch == '-')
+          || (ch == '~') || (ch == '.')) {
+            result.append(&ch, 1);
+        } else if (ch == '/') {
+            if (encode_slash) {
+                result.append("%2F", 3);
+            } else {
+                result.append(&ch, 1);
+            }
+        } else {
+            append_hex_utf8(result, ch);
+        }
+    }
+    return result;
+}
 } // namespace cloud_roles
