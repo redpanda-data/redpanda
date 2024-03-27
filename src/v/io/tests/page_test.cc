@@ -49,6 +49,23 @@ TEST(Page, SetData) {
     EXPECT_EQ(p.data(), d1);
 }
 
+TEST(Page, Clear) {
+    constexpr auto size = 10;
+
+    auto d0 = make_random_data(size).get();
+    io::page p(1, d0.share());
+
+    EXPECT_EQ(p.size(), size);
+    EXPECT_EQ(p.data().size(), size);
+    EXPECT_EQ(p.data(), d0);
+
+    p.clear();
+
+    EXPECT_EQ(p.size(), 10); // page remembers its size
+    EXPECT_EQ(p.data().size(), 0);
+    EXPECT_EQ(p.data(), make_random_data(0).get());
+}
+
 TEST(Page, Flags) {
     io::page p(1, {});
 
@@ -66,4 +83,46 @@ TEST(Page, Flags) {
     p.clear_flag(io::page::flags::write);
     EXPECT_FALSE(p.test_flag(io::page::flags::write));
     EXPECT_FALSE(p.test_flag(io::page::flags::read));
+}
+
+TEST(Page, EvictionCheck) {
+    auto p = seastar::make_lw_shared<io::page>(
+      1, seastar::temporary_buffer<char>());
+    EXPECT_TRUE(p->may_evict());
+
+    p->set_flag(io::page::flags::faulting);
+    EXPECT_FALSE(p->may_evict());
+
+    p->clear_flag(io::page::flags::faulting);
+    p->set_flag(io::page::flags::dirty);
+    EXPECT_FALSE(p->may_evict());
+
+    p->clear_flag(io::page::flags::dirty);
+    EXPECT_TRUE(p->may_evict());
+
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+    [[maybe_unused]] auto p2 = p;
+    EXPECT_FALSE(p->may_evict());
+}
+
+TEST(Page, Waiters) {
+    io::page::waiter w0;
+    io::page::waiter w1;
+
+    io::page p(1, {});
+    p.add_waiter(w0);
+    p.add_waiter(w1);
+
+    auto f0 = w0.ready.get_future();
+    auto f1 = w1.ready.get_future();
+
+    EXPECT_FALSE(f0.available());
+    EXPECT_FALSE(f1.available());
+
+    p.signal_waiters();
+
+    EXPECT_TRUE(f0.available());
+    EXPECT_TRUE(f1.available());
+    EXPECT_FALSE(f0.failed());
+    EXPECT_FALSE(f1.failed());
 }
