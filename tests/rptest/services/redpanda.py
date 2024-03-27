@@ -877,7 +877,12 @@ class AuditLogConfig(TlsConfig):
         self.listener_authn_method = listener_authn_method
 
 
-class RedpandaServiceABC(ABC):
+class RedpandaServiceConstants:
+    SUPERUSER_CREDENTIALS: SaslCredentials = SaslCredentials(
+        "admin", "admin", "SCRAM-SHA-256")
+
+
+class RedpandaServiceABC(ABC, RedpandaServiceConstants):
     """A base class for all Redpanda services. This lowest-common denominator
     class has both implementation and abstract methods, only for methods which
     can be implemented by all services. Any methods which the service should
@@ -1129,8 +1134,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     RAISE_ON_ERRORS_KEY = "raise_on_error"
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"
-    SUPERUSER_CREDENTIALS: SaslCredentials = SaslCredentials(
-        "admin", "admin", "SCRAM-SHA-256")
     COV_KEY = "enable_cov"
     DEFAULT_COV_OPT = "OFF"
 
@@ -1149,7 +1152,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         'join_retry_timeout_ms': 200,
         'default_topic_partitions': 4,
         'enable_metrics_reporter': False,
-        'superusers': [SUPERUSER_CREDENTIALS[0]],
+        'superusers': [RedpandaServiceConstants.SUPERUSER_CREDENTIALS[0]],
         # Disable segment size jitter to make tests more deterministic if they rely on
         # inspecting storage internals (e.g. number of segments after writing a certain
         # amount of data).
