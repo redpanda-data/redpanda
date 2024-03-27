@@ -245,10 +245,7 @@ struct partition_balancer_planner_fixture {
         auto& members_table = workers.members.local();
 
         std::vector<model::broker> new_brokers;
-        for (auto [id, nm] : members_table.nodes()) {
-            new_brokers.push_back(nm.broker);
-        }
-
+        new_brokers.reserve(nodes_amount);
         for (size_t i = 0; i < nodes_amount; ++i) {
             std::optional<model::rack_id> rack_id;
             if (!rack_ids.empty()) {
@@ -257,7 +254,7 @@ struct partition_balancer_planner_fixture {
 
             workers.allocator.local().register_node(
               create_allocation_node(model::node_id(last_node_idx), 4));
-            new_brokers.push_back(model::broker(
+            new_brokers.emplace_back(
               model::node_id(last_node_idx),
               net::unresolved_address{},
               net::unresolved_address{},
@@ -265,7 +262,7 @@ struct partition_balancer_planner_fixture {
               model::broker_properties{
                 .cores = 4,
                 .available_memory_gb = 2,
-                .available_disk_gb = 100}));
+                .available_disk_gb = 100});
             last_node_idx++;
         }
         for (auto& b : new_brokers) {
