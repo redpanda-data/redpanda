@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "cluster/logger.h"
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "raft/fundamental.h"
@@ -122,13 +123,13 @@ private:
      */
 
     // kafka index
-    absl::node_hash_map<
+    chunked_hash_map<
       model::ntp,
       shard_revision,
       model::ktp_hash_eq,
       model::ktp_hash_eq>
       _ntp_idx;
     // raft index
-    absl::node_hash_map<raft::group_id, shard_revision> _group_idx;
+    chunked_hash_map<raft::group_id, shard_revision> _group_idx;
 };
 } // namespace cluster
