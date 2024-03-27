@@ -60,6 +60,8 @@ public:
 
     void segments_to_delete(int64_t count) { _segments_to_delete = count; };
 
+    void cloud_log_size(uint64_t size) { _cloud_log_size = size; }
+
 private:
     /// Uploaded offsets
     uint64_t _uploaded = 0;
@@ -75,6 +77,8 @@ private:
     int64_t _segments_in_manifest = 0;
     /// Number of segments awaiting deletion
     int64_t _segments_to_delete = 0;
+    /// size in byted of the user-visible log
+    uint64_t _cloud_log_size = 0;
 
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
