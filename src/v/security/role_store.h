@@ -123,6 +123,7 @@ public:
         _members_store.clear();
         _roles.clear();
     }
+    size_t size() const { return _roles.size(); }
 
     // Retrieve a list of role_names that satisfy some predicate
     //
