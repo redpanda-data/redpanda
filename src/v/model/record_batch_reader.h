@@ -274,6 +274,9 @@ record_batch_reader
 record_batch_reader make_fragmented_memory_record_batch_reader(
   fragmented_vector<model::record_batch>);
 
+record_batch_reader make_fragmented_memory_record_batch_reader(
+  chunked_vector<model::record_batch>);
+
 inline record_batch_reader
 make_memory_record_batch_reader(model::record_batch b) {
     record_batch_reader::data_t batches;
@@ -319,6 +322,9 @@ record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
   fragmented_vector<model::record_batch>);
 
 record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
+  chunked_vector<model::record_batch>);
+
+record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
   ss::chunked_fifo<model::record_batch>);
 
 record_batch_reader make_fragmented_memory_record_batch_reader(
@@ -333,6 +339,10 @@ ss::future<record_batch_reader::data_t> consume_reader_to_memory(
 ss::future<fragmented_vector<model::record_batch>>
 consume_reader_to_fragmented_memory(
   record_batch_reader, timeout_clock::time_point timeout);
+
+ss::future<chunked_vector<model::record_batch>>
+consume_reader_to_chunked_vector(
+  record_batch_reader reader, timeout_clock::time_point timeout);
 
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
 record_batch_reader make_foreign_record_batch_reader(record_batch_reader&&);
