@@ -181,13 +181,6 @@ auth_result authorizer::authorized(
         return std::move(result).value();
     }
 
-    // NOTE(oren): We know there isn't a match at this point, but I've left
-    // this as an opt_acl_match to preserve semantics, namely that this
-    // will return a non-authorized result irrespective of the
-    // allow_empty_matches flag. On the other hand, switching to an
-    // empty_match_result _should_ alter semantics but doesn't break any
-    // tests. Not clear whether this is a bug, intended behavior, a gap
-    // in test coverage, or a combination.
     return auth_result::opt_acl_match(
       principal, host, operation, resource_name, std::nullopt);
 }

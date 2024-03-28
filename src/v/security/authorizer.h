@@ -292,6 +292,8 @@ private:
         }
     }
 
+    // NOTE: _allow_empty_matches is used for testing purposes only. In normal
+    // operation, an empty match result is ALWAYS unauthorized.
     allow_empty_matches _allow_empty_matches;
     const role_store* _role_store;
 };
