@@ -18,6 +18,8 @@
 namespace ai {
 
 bool readline(std::string& line) {
+    fflush(stdout);
+    fflush(stderr);
     std::cout << "> ";
     return bool(std::getline(std::cin, line));
 }
@@ -36,7 +38,8 @@ ss::future<> run(const boost::program_options::variables_map& cfg) {
     std::string line;
     while (readline(line)) {
         auto response = co_await s.local().generate_text(line, opts);
-        std::cout << response << std::endl;
+        std::cout << response << "\n";
+        fflush(stdout);
     }
     co_await s.stop();
 }

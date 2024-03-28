@@ -11,7 +11,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "ssx/fwd.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
@@ -53,7 +52,6 @@ private:
     ss::future<ss::sstring>
     do_generate_text(ss::sstring prompt, generate_text_options);
 
-    std::unique_ptr<ssx::singleton_thread_worker> _worker;
     std::unique_ptr<model> _model;
 };
 
