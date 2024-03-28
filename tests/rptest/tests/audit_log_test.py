@@ -23,7 +23,7 @@ from typing import Any, Optional
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail_fips
 from keycloak import KeycloakOpenID
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
@@ -661,6 +661,7 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
                  and record['app']['feature']['name'] == feature) or
                 (feature is None and 'feature' not in record['app']))
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_app_lifecycle(self):
         _ = self.find_matching_record(
@@ -674,6 +675,7 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
                     True), lambda record_count: record_count == 3,
             "Single redpanda start event per node")
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_drain_on_audit_disabled(self):
         """
@@ -701,6 +703,7 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
             filter_unique_stop_events, lambda record_count: record_count == 3,
             "Three more stop events observed per node")
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_recovery_mode(self):
         """
@@ -766,6 +769,7 @@ class AuditLogTestAdminApi(AuditLogTestBase):
                                                           'trace'
                                                       }))
 
+    @ok_to_fail_fips
     @cluster(num_nodes=4)
     def test_config_rejected(self):
         """
@@ -786,6 +790,7 @@ class AuditLogTestAdminApi(AuditLogTestBase):
         except requests.HTTPError:
             pass
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_audit_log_functioning(self):
         """
@@ -848,6 +853,7 @@ class AuditLogTestAdminApi(AuditLogTestBase):
         self.logger.debug("Finished 500 api calls with management disabled")
         _ = number_of_records_matching(api_keys, 1000)
 
+    @ok_to_fail_fips
     @cluster(num_nodes=4)
     def test_audit_log_metrics(self):
         """
@@ -934,6 +940,7 @@ class AuditLogTestAdminAuthApi(AuditLogTestBase):
         self.admin.create_user(self.ignored_user, self.ignored_pass,
                                self.algorithm)
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_excluded_principal(self):
         self.setup_cluster()
@@ -1004,6 +1011,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                        sasl_mechanism=mechanism)
         self.default_client = DefaultClient(self.redpanda)
 
+    @ok_to_fail_fips
     @cluster(num_nodes=4)
     def test_audit_topic_protections(self):
         """Validates audit topic protections
@@ -1015,6 +1023,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
             if 'TOPIC_AUTHORIZATION_FAILED' not in e.stderr:
                 raise
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_excluded_topic(self):
         """
@@ -1067,6 +1076,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
         except TimeoutError:
             pass
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_management(self):
         """Validates management messages
@@ -1217,6 +1227,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
             _ = self.find_matching_record(test.filter_function,
                                           test.valid_count, test.desc())
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_produce(self):
         """Validates produce audit messages
@@ -1269,6 +1280,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
             _ = self.find_matching_record(test.filter_function,
                                           test.valid_count, test.desc())
 
+    @ok_to_fail_fips
     @cluster(num_nodes=4, log_allow_list=AUDIT_LOG_ALLOW_LIST)
     def test_no_auth_enabled(self):
         """The expected behavior of the system when working with no auth
@@ -1336,6 +1348,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
         if exc is not None:
             raise exc
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_consume(self):
         """
@@ -1443,6 +1456,7 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
             'name'] == service_name and record['actor']['user'][
                 'name'] == username
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_excluded_principal(self):
         """
@@ -1507,6 +1521,7 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         except TimeoutError:
             pass
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_authn_messages(self):
         """Verifies that authentication messages are audited
@@ -1526,6 +1541,7 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         assert len(
             records) == 1, f"Expected only one record got {len(records)}"
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_authn_failure_messages(self):
         """Validates that failed authentication messages are audited
@@ -1552,6 +1568,7 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         assert len(
             records) == 1, f'Expected only one record, got {len(records)}'
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_no_audit_user_authn(self):
         """
@@ -1649,6 +1666,7 @@ class AuditLogTestKafkaTlsApi(AuditLogTestBase):
                         == protocol_name) and record[
                             'status_id'] == 1 and record['user']['uid'] == dn
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_mtls(self):
         """
@@ -1750,6 +1768,7 @@ class AuditLogTestOauth(AuditLogTestBase):
                         'name': role
                     }] if role is not None else True)
 
+    @ok_to_fail_fips
     @cluster(num_nodes=6)
     @matrix(authz_match=[AuthorizationMatch.ACL, AuthorizationMatch.RBAC])
     def test_kafka_oauth(self, authz_match):
@@ -1821,6 +1840,7 @@ class AuditLogTestOauth(AuditLogTestBase):
         assert 1 == len(
             records), f"Expected one record but received {len(records)}"
 
+    @ok_to_fail_fips
     @cluster(num_nodes=6)
     def test_admin_oauth(self):
         """
@@ -1893,6 +1913,7 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
     def setup_cluster(self):
         self.admin.create_user(self.username, self.password, self.algorithm)
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_sr_audit(self):
         self.setup_cluster()
@@ -1934,6 +1955,7 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
                                             sr_audit_svc_name, 1, record),
             lambda record_count: record_count == 1, 'authn attempt in sr')
 
+    @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_sr_audit_bad_authn(self):
         r = get_subjects(self.redpanda.nodes,
