@@ -315,6 +315,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
           return create_partitions_topic_result{
             .name = std::move(r.tp_ns.tp),
             .error_code = map_topic_error_code(r.ec),
+            .error_message = cluster::make_error_code(r.ec).message(),
           };
       });
 
