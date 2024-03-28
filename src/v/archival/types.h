@@ -199,4 +199,50 @@ struct adjacent_segment_run {
 
 std::ostream& operator<<(std::ostream& o, const adjacent_segment_run& run);
 
+enum class error_outcome {
+    unexpected_failure,
+    timed_out,
+    out_of_range,
+    offset_not_found,
+    scan_failed,
+    shutting_down,
+    not_enough_data,
+};
+
+struct error_outcome_category final : public std::error_category {
+    const char* name() const noexcept final {
+        return "archival::error_outcome";
+    }
+
+    std::string message(int c) const final {
+        switch (static_cast<error_outcome>(c)) {
+        case error_outcome::unexpected_failure:
+            return "archival_unexpected_failure";
+        case error_outcome::timed_out:
+            return "archival_timed_out";
+        case error_outcome::out_of_range:
+            return "archival_out_of_range";
+        case error_outcome::offset_not_found:
+            return "archival_offset_not_found";
+        case error_outcome::scan_failed:
+            return "archival_scan_failed";
+        case error_outcome::shutting_down:
+            return "archival_shutting_down";
+        case error_outcome::not_enough_data:
+            return "archival_not_enough_data";
+        default:
+            return "archival_unknown_error";
+        }
+    }
+};
+
+inline const std::error_category& error_category() noexcept {
+    static error_outcome_category e;
+    return e;
+}
+
+inline std::error_code make_error_code(error_outcome e) noexcept {
+    return {static_cast<int>(e), error_category()};
+}
+
 } // namespace archival

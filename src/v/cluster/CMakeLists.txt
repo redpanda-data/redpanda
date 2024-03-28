@@ -196,6 +196,7 @@ v_cc_library(
     ../archival/purger.cc
     ../archival/scrubber.cc
     ../archival/archiver_manager.cc
+    ../archival/async_data_uploader.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc

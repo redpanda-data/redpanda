@@ -13,6 +13,7 @@ else()
         ntp_archiver_reupload_test.cc 
         retention_strategy_test.cc
         archival_metadata_stm_test.cc
+        async_data_uploader_test.cc
       DEFINITIONS BOOST_TEST_DYN_LINK
       LIBRARIES 
         v::seastar_testing_main 
@@ -22,6 +23,7 @@ else()
         v::storage_test_utils 
         v::cloud_roles
         v::http_test_utils
+        v::kafka_test_utils
       ARGS "-- -c 1"
       LABELS archival
     )
