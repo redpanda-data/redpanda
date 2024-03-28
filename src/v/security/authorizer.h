@@ -58,28 +58,7 @@ struct auth_result {
     // If found, the role that was matched to provide authZ decision
     std::optional<security::role_name> role;
 
-    friend std::ostream& operator<<(std::ostream& os, const auth_result& a) {
-        fmt::print(
-          os,
-          "{{authorized:{}, authorization_disabled:{}, is_superuser:{}, "
-          "operation: {}, empty_matches:{}, principal:{}, role:{}, host:{}, "
-          "resource_type:{}, "
-          "resource_name:{}, resource_pattern:{}, acl:{}}}",
-          a.authorized,
-          a.authorization_disabled,
-          a.is_superuser,
-          a.operation,
-          a.empty_matches,
-          a.principal,
-          a.role,
-          a.host,
-          a.resource_type,
-          a.resource_name,
-          a.resource_pattern,
-          a.acl);
-
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream& os, const auth_result& a);
 
     explicit operator bool() const noexcept { return is_authorized(); }
 
