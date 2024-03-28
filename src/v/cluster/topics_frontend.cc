@@ -76,7 +76,8 @@ topics_frontend::topics_frontend(
   plugin_table& plugin_table,
   metadata_cache& metadata_cache,
   config::binding<unsigned> hard_max_disk_usage_ratio,
-  config::binding<int16_t> minimum_topic_replication)
+  config::binding<int16_t> minimum_topic_replication,
+  config::binding<bool> partition_autobalancing_topic_aware)
   : _self(self)
   , _stm(s)
   , _allocator(pal)
@@ -93,7 +94,9 @@ topics_frontend::topics_frontend(
   , _pm(pm)
   , _shard_table(shard_table)
   , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio)
-  , _minimum_topic_replication(minimum_topic_replication) {
+  , _minimum_topic_replication(minimum_topic_replication)
+  , _partition_autobalancing_topic_aware(
+      std::move(partition_autobalancing_topic_aware)) {
     if (ss::this_shard_id() == 0) {
         _minimum_topic_replication.watch(
           [this]() { print_rf_warning_message(); });
@@ -341,8 +344,8 @@ make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
     return topic_result(tp_ns, errc::topic_operation_error);
 }
 
-allocation_request
-make_allocation_request(const custom_assignable_topic_configuration& ca_cfg) {
+static allocation_request make_allocation_request(
+  const custom_assignable_topic_configuration& ca_cfg, bool topic_aware) {
     // no custom assignments, lets allocator decide based on partition count
     const auto& tp_ns = ca_cfg.cfg.tp_ns;
     allocation_request req(tp_ns, get_allocation_domain(tp_ns));
@@ -361,6 +364,9 @@ make_allocation_request(const custom_assignable_topic_configuration& ca_cfg) {
             req.partitions.emplace_back(
               cas.id, cas.replicas.size(), std::move(constraints));
         }
+    }
+    if (topic_aware) {
+        req.existing_replica_counts = node2count_t{};
     }
     return req;
 }
@@ -496,8 +502,11 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     }
 
     auto units = co_await _allocator.invoke_on(
-      partition_allocator::shard, [assignable_config](partition_allocator& al) {
-          return al.allocate(make_allocation_request(assignable_config));
+      partition_allocator::shard,
+      [assignable_config, topic_aware = _partition_autobalancing_topic_aware()](
+        partition_allocator& al) {
+          return al.allocate(
+            make_allocation_request(assignable_config, topic_aware));
       });
 
     if (!units) {
@@ -1269,13 +1278,15 @@ topics_frontend::validate_shard(model::node_id node, uint32_t shard) const {
       });
 }
 
-allocation_request make_allocation_request(
+static allocation_request make_allocation_request(
   int16_t replication_factor,
   const int32_t current_partitions_count,
+  std::optional<node2count_t> existing_replica_counts,
   const create_partitions_configuration& cfg) {
     const auto new_partitions_cnt = cfg.new_total_partition_count
                                     - current_partitions_count;
     allocation_request req(cfg.tp_ns, get_allocation_domain(cfg.tp_ns));
+    req.existing_replica_counts = std::move(existing_replica_counts);
     req.partitions.reserve(new_partitions_cnt);
     for (auto p = 0; p < new_partitions_cnt; ++p) {
         req.partitions.emplace_back(model::partition_id(p), replication_factor);
@@ -1301,12 +1312,30 @@ ss::future<topic_result> topics_frontend::do_create_partition(
         co_return make_error_result(p_cfg.tp_ns, errc::topic_disabled);
     }
 
+    std::optional<node2count_t> existing_replica_counts;
+    if (_partition_autobalancing_topic_aware()) {
+        auto md_ref = _topics.local().get_topic_metadata_ref(p_cfg.tp_ns);
+        if (!md_ref) {
+            co_return make_error_result(p_cfg.tp_ns, errc::topic_not_exists);
+        }
+
+        node2count_t node2count;
+        for (const auto& p_as : md_ref->get().get_assignments()) {
+            for (const auto& r : p_as.replicas) {
+                node2count[r.node_id] += 1;
+            }
+        }
+        existing_replica_counts = std::move(node2count);
+    }
+
     auto units = co_await _allocator.invoke_on(
       partition_allocator::shard,
       [p_cfg,
        current = tp_cfg->partition_count,
-       rf = replication_factor.value()](partition_allocator& al) {
-          return al.allocate(make_allocation_request(rf, current, p_cfg));
+       existing_rc = std::move(existing_replica_counts),
+       rf = replication_factor.value()](partition_allocator& al) mutable {
+          return al.allocate(make_allocation_request(
+            rf, current, std::move(existing_rc), p_cfg));
       });
 
     // no assignments, error

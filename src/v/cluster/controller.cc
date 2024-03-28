@@ -374,6 +374,10 @@ ss::future<> controller::start(
             ss::sharded_parameter([] {
                 return config::shard_local_cfg()
                   .minimum_topic_replication.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .partition_autobalancing_topic_aware.bind();
             }));
       })
       .then([this] {
