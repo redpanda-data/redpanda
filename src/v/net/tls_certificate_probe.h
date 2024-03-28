@@ -44,26 +44,30 @@ public:
     void setup_metrics(std::string_view area, std::string_view detail);
 
 private:
+    struct cert {
+        const clock_type::time_point expiry{clock_type::time_point::min()};
+        const tls_serial_number serial{};
+        bool expired(clock_type::time_point now) const { return expiry <= now; }
+    };
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
     clock_type::time_point _load_time{};
-    clock_type::time_point _cert_expiry_time{clock_type::time_point::max()};
-    clock_type::time_point _ca_expiry_time{clock_type::time_point::max()};
-    tls_serial_number _cert_serial;
-    tls_serial_number _ca_serial;
+    std::optional<cert> _cert;
+    std::optional<cert> _ca;
     bool _cert_loaded{false};
 
     bool cert_valid() const {
         auto now = clock_type::now();
-        return _cert_loaded && now < _ca_expiry_time && now < _cert_expiry_time;
+        return (
+          _cert_loaded //
+          && (!_cert.value_or(cert{}).expired(now))
+          && (!_ca.value_or(cert{}).expired(now)));
     }
 
     void reset() {
         _cert_loaded = false;
-        _cert_expiry_time = clock_type::time_point::max();
-        _ca_expiry_time = clock_type::time_point::max();
-        _cert_serial = {};
-        _ca_serial = {};
+        _cert.reset();
+        _ca.reset();
     }
 
     friend std::ostream&

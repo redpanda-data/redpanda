@@ -380,9 +380,9 @@ build_reloadable_credentials_with_probe(
 void tls_certificate_probe::loaded(
   const ss::tls::certificate_credentials& creds, std::exception_ptr ex) {
     _load_time = clock_type::now();
+    reset();
 
     if (ex) {
-        reset();
         return;
     }
 
@@ -394,31 +394,28 @@ void tls_certificate_probe::loaded(
         return tls_serial_number{result};
     };
 
-    _cert_loaded = true;
-
     auto certs_info = creds.get_cert_info();
     auto ts_info = creds.get_trust_list_info();
 
     if (!certs_info.has_value() || !ts_info.has_value()) {
-        reset();
         return;
     }
+
+    _cert_loaded = true;
 
     for (auto& info : certs_info.value()) {
         auto exp = clock_type::from_time_t(info.expiry);
         auto srl = to_tls_serial(info.serial);
-        if (exp < _cert_expiry_time) {
-            _cert_expiry_time = exp;
-            _cert_serial = srl;
+        if (!_cert || exp < _cert->expiry) {
+            _cert.emplace(cert{.expiry = exp, .serial = srl});
         }
     }
 
     for (auto& info : ts_info.value()) {
         auto exp = clock_type::from_time_t(info.expiry);
         auto srl = to_tls_serial(info.serial);
-        if (exp < _ca_expiry_time) {
-            _ca_expiry_time = exp;
-            _ca_serial = srl;
+        if (!_ca || exp < _ca->expiry) {
+            _ca.emplace(cert{.expiry = exp, .serial = srl});
         }
     }
 }
@@ -443,7 +440,9 @@ void tls_certificate_probe::setup_metrics(
         defs.emplace_back(
           sm::make_gauge(
             "truststore_expires_at_timestamp_seconds",
-            [this] { return _ca_expiry_time.time_since_epoch() / 1s; },
+            [this] {
+                return _ca.value_or(cert{}).expiry.time_since_epoch() / 1s;
+            },
             sm::description(
               "Expiry time of the shortest-lived CA in the truststore"
               "(seconds since epoch)"),
@@ -452,7 +451,9 @@ void tls_certificate_probe::setup_metrics(
         defs.emplace_back(
           sm::make_gauge(
             "certificate_expires_at_timestamp_seconds",
-            [this] { return _cert_expiry_time.time_since_epoch() / 1s; },
+            [this] {
+                return _cert.value_or(cert{}).expiry.time_since_epoch() / 1s;
+            },
             sm::description(
               "Expiry time of the server certificate (seconds since epoch)"),
             labels)
@@ -460,7 +461,7 @@ void tls_certificate_probe::setup_metrics(
         defs.emplace_back(
           sm::make_gauge(
             "certificate_serial",
-            [this] { return _cert_serial; },
+            [this] { return _cert.value_or(cert{}).serial; },
             sm::description("Least significant four bytes of the server "
                             "certificate serial number"),
             labels)
