@@ -225,7 +225,7 @@ std::error_code partition_allocator::check_cluster_limits(
         const uint64_t memory_limit = effective_cluster_memory
                                       / memory_per_partition_replica.value();
 
-        if (memory_limit > 0 && proposed_total_partitions > memory_limit) {
+        if (proposed_total_partitions > memory_limit) {
             vlog(
               clusterlog.warn,
               "Refusing to create {} new partitions as total partition count "
