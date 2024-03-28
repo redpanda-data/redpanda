@@ -106,9 +106,18 @@ def read_topic_properties_serde(rdr: Reader, version):
 
     if version >= 8:
         topic_properties |= {
-            'write_caching': rdr.read_optional(Reader.read_serde_enum),
-            'flush_ms': rdr.read_optional(Reader.read_int64),
-            'flush_bytes': rdr.read_optional(Reader.read_int64)
+            'write_caching':
+            rdr.read_optional(Reader.read_serde_enum),
+            'flush_ms':
+            rdr.read_optional(Reader.read_int64),
+            'flush_bytes':
+            rdr.read_optional(Reader.read_int64),
+            'recovery_checks':
+            rdr.read_optional(lambda rdr: rdr.read_envelope(
+                lambda rdr, _: {
+                    'mode': rdr.read_serde_enum(),
+                    'max_segment_depth': rdr.read_uint16()
+                }))
         }
 
     return topic_properties

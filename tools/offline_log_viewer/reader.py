@@ -3,6 +3,7 @@ from enum import Enum
 import struct
 import collections
 from io import BufferedReader, BytesIO
+from typing import Any, Callable
 
 SERDE_ENVELOPE_FORMAT = "<BBI"
 SERDE_ENVELOPE_SIZE = struct.calcsize(SERDE_ENVELOPE_FORMAT)
@@ -111,7 +112,10 @@ class Reader:
             ret.append(type_read(self))
         return ret
 
-    def read_envelope(self, type_read=None, max_version=0):
+    def read_envelope(self,
+                      type_read: Callable[['Reader', int], dict[str, Any]]
+                      | None = None,
+                      max_version=0):
         header = self.read_bytes(SERDE_ENVELOPE_SIZE)
         envelope = SerdeEnvelope(*struct.unpack(SERDE_ENVELOPE_FORMAT, header))
         if type_read is not None:

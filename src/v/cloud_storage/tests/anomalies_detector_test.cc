@@ -280,7 +280,7 @@ public:
     }
 
     cloud_storage::anomalies_detector::result run_detector(
-      archival::run_quota_t quota,
+      cloud_storage::anomalies_detector::quota_limit quota,
       std::optional<model::offset> start_from = std::nullopt) {
         BOOST_REQUIRE(_detector.has_value());
 
@@ -545,6 +545,41 @@ FIXTURE_TEST(test_missing_segments, bucket_view_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       result.detected, flatten_partial_results(partial_results).detected);
+}
+
+FIXTURE_TEST(test_segment_depth_limit, bucket_view_fixture) {
+    // test that a segment limit is respected, by removing a segment and
+    // checking results
+    init_view(
+      stm_manifest, {spillover_manifest_at_0, spillover_manifest_at_20});
+    // precondition check: this test will limit the depth to 5 segments and
+    // remove the 6th, so check that the layout is as expected
+    BOOST_REQUIRE_EQUAL(get_stm_manifest().size(), 2);
+    BOOST_REQUIRE_EQUAL(get_spillover_manifests().at(0).size(), 2);
+    BOOST_REQUIRE_EQUAL(get_spillover_manifests().at(1).size(), 2);
+
+    // check that with depth 0 we still process at least 1 segment
+    auto fwd_progress_res = run_detector(
+      cloud_storage::anomalies_detector::segment_depth_t{0});
+    BOOST_CHECK_EQUAL(fwd_progress_res.detected.missing_segments.size(), 0);
+    BOOST_CHECK_EQUAL(fwd_progress_res.segments_visited, 1);
+
+    // remove the 6th segment
+    remove_segment(
+      get_spillover_manifests().at(0),
+      *get_spillover_manifests().at(0).begin());
+
+    // the check with depth limit of 5 should pass
+    auto pass_result = run_detector(
+      cloud_storage::anomalies_detector::segment_depth_t{5});
+    BOOST_CHECK_EQUAL(pass_result.detected.missing_segments.size(), 0);
+    BOOST_CHECK_EQUAL(pass_result.segments_visited, 5);
+
+    // the check with depth limit of 6 should detect an anomaly
+    auto fail_result = run_detector(
+      cloud_storage::anomalies_detector::segment_depth_t{6});
+    BOOST_CHECK_GT(fail_result.detected.missing_segments.size(), 0);
+    BOOST_CHECK_EQUAL(fail_result.segments_visited, 6);
 }
 
 FIXTURE_TEST(test_missing_spillover_manifest, bucket_view_fixture) {

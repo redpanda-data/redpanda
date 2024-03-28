@@ -418,7 +418,7 @@ enum class download_type { object, segment_index, inventory_report_manifest };
 
 std::ostream& operator<<(std::ostream&, download_type);
 
-enum class existence_check_type { object, segment };
+enum class existence_check_type { object, segment, manifest };
 
 std::ostream& operator<<(std::ostream&, existence_check_type);
 

@@ -275,7 +275,7 @@ partition_manager::maybe_download_log(
     vlog(
       clusterlog.debug,
       "Logs can't be downloaded because cloud storage is not configured. "
-      "Continue creating {} witout downloading the logs.",
+      "Continue creating {} without downloading the logs.",
       ntp_cfg);
     co_return cloud_storage::log_recovery_result{};
 }

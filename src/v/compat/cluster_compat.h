@@ -355,6 +355,7 @@ struct compat_check<cluster::topic_properties> {
           wr, "write_caching", obj.write_caching);
         json_write(flush_ms);
         json_write(flush_bytes);
+        json_write(recovery_checks);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -390,6 +391,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(write_caching);
         json_read(flush_ms);
         json_read(flush_bytes);
+        json_read(recovery_checks);
         return obj;
     }
 
@@ -420,6 +422,7 @@ struct compat_check<cluster::topic_properties> {
         obj.write_caching = std::nullopt;
         obj.flush_bytes = std::nullopt;
         obj.flush_ms = std::nullopt;
+        obj.recovery_checks = std::nullopt;
 
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -501,6 +504,7 @@ struct compat_check<cluster::topic_configuration> {
         obj.properties.flush_ms = std::nullopt;
 
         obj.properties.mpx_virtual_cluster_id = std::nullopt;
+        obj.properties.recovery_checks = std::nullopt;
 
         if (cfg != obj) {
             throw compat_error(fmt::format(
@@ -568,10 +572,11 @@ struct compat_check<cluster::create_topics_request> {
             topic.properties.write_caching = std::nullopt;
             topic.properties.flush_bytes = std::nullopt;
             topic.properties.flush_ms = std::nullopt;
+            topic.properties.recovery_checks = std::nullopt;
         }
         if (req != obj) {
             throw compat_error(fmt::format(
-              "Verify of {{cluster::create_toics_request}} decoding "
+              "Verify of {{cluster::create_topics_request}} decoding "
               "failed:\n Expected: {}\nDecoded: {}",
               obj,
               req));
@@ -634,10 +639,11 @@ struct compat_check<cluster::create_topics_reply> {
             topic.properties.write_caching = std::nullopt;
             topic.properties.flush_bytes = std::nullopt;
             topic.properties.flush_ms = std::nullopt;
+            topic.properties.recovery_checks = std::nullopt;
         }
         if (reply != obj) {
             throw compat_error(fmt::format(
-              "Verify of {{cluster::create_toics_reply}} decoding "
+              "Verify of {{cluster::create_topics_reply}} decoding "
               "failed:\n Expected: {}\nDecoded: {}",
               obj,
               reply));

@@ -33,6 +33,8 @@ BOOST_AUTO_TEST_CASE(test_no_additional_options) {
       cluster_tp_config.cfg.partition_count, no_options.num_partitions);
     BOOST_REQUIRE_EQUAL(
       cluster_tp_config.cfg.replication_factor, no_options.replication_factor);
+    BOOST_REQUIRE(
+      cluster_tp_config.cfg.properties.recovery_checks == std::nullopt);
 }
 
 BOOST_AUTO_TEST_CASE(test_with_custom_assignments) {
@@ -84,6 +86,7 @@ BOOST_AUTO_TEST_CASE(test_all_additional_options) {
         {"retention.bytes", "-1"},
         {"retention.ms", "86400000"},
         {"compaction.strategy", "header"},
+        {"recovery.checks.depth", "23"},
       }};
 
     auto cluster_tp_config = to_cluster_type(all_options);
@@ -108,4 +111,63 @@ BOOST_AUTO_TEST_CASE(test_all_additional_options) {
       cluster_tp_config.cfg.properties.cleanup_policy_bitflags,
       model::cleanup_policy_bitflags::compaction
         | model::cleanup_policy_bitflags::deletion);
+
+    auto rc_val = cluster::recovery_checks{
+      .mode
+      = model::recovery_validation_mode::check_manifest_and_segment_metadata,
+      .max_segment_depth = 23};
+    BOOST_REQUIRE(cluster_tp_config.cfg.properties.recovery_checks == rc_val);
+}
+
+BOOST_AUTO_TEST_CASE(test_recovery_validation_modes) {
+    auto all_set = creatable_topic{
+      .name = model::topic_view{"test_tp"},
+      .num_partitions = 5,
+      .replication_factor = 5,
+      .configs = {
+        {"recovery.checks.depth", "23"},
+        {"recovery.checks.mode", "check_manifest_existence"},
+      }};
+    auto rc_all_set = cluster::recovery_checks{
+      .mode = model::recovery_validation_mode::check_manifest_existence,
+      .max_segment_depth = 23};
+    BOOST_REQUIRE(
+      to_cluster_type(all_set).cfg.properties.recovery_checks == rc_all_set);
+
+    auto none_set = creatable_topic{
+      .name = model::topic_view{"test_tp"},
+      .num_partitions = 5,
+      .replication_factor = 5,
+      .configs = {}};
+    BOOST_REQUIRE(
+      to_cluster_type(none_set).cfg.properties.recovery_checks == std::nullopt);
+
+    auto depth_set = creatable_topic{
+      .name = model::topic_view{"test_tp"},
+      .num_partitions = 5,
+      .replication_factor = 5,
+      .configs = {
+        {"recovery.checks.depth", "23"},
+      }};
+    auto rc_depth_set = cluster::recovery_checks{
+      .mode
+      = model::recovery_validation_mode::check_manifest_and_segment_metadata,
+      .max_segment_depth = 23};
+    BOOST_REQUIRE(
+      to_cluster_type(depth_set).cfg.properties.recovery_checks
+      == rc_depth_set);
+
+    auto mode_set = creatable_topic{
+      .name = model::topic_view{"test_tp"},
+      .num_partitions = 5,
+      .replication_factor = 5,
+      .configs = {
+        {"recovery.checks.mode", "no_check"},
+      }};
+    auto rc_mode_set = cluster::recovery_checks{
+      .mode = model::recovery_validation_mode::no_check,
+      .max_segment_depth = config::shard_local_cfg()
+                             .cloud_storage_recovery_topic_validation_depth};
+    BOOST_REQUIRE(
+      to_cluster_type(mode_set).cfg.properties.recovery_checks == rc_mode_set);
 }

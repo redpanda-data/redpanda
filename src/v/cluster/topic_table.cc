@@ -900,6 +900,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(properties.write_caching, overrides.write_caching);
     incremental_update(properties.flush_ms, overrides.flush_ms);
     incremental_update(properties.flush_bytes, overrides.flush_bytes);
+    incremental_update(properties.recovery_checks, overrides.recovery_checks);
     // no configuration change, no need to generate delta
     if (properties == properties_snapshot) {
         co_return errc::success;

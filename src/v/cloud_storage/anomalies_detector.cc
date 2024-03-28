@@ -32,10 +32,10 @@ anomalies_detector::anomalies_detector(
 
 ss::future<anomalies_detector::result> anomalies_detector::run(
   retry_chain_node& rtc_node,
-  archival::run_quota_t quota,
+  quota_limit quota_total,
   std::optional<model::offset> scrub_from) {
     _result = result{};
-    _received_quota = quota;
+    _received_quota = quota_total;
 
     vlog(_logger.debug, "Downloading partition manifest ...");
 
@@ -102,14 +102,14 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
         first_seg_previous_manifest = *manifest.begin();
     }
 
-    for (size_t i = 0; i < spill_manifest_paths.size(); ++i) {
+    for (auto const& spill_path : spill_manifest_paths) {
         if (should_stop()) {
             _result.status = scrub_status::partial;
             co_return _result;
         }
 
         const auto spill = co_await download_spill_manifest(
-          spill_manifest_paths[i], rtc_node);
+          spill_path, rtc_node);
         if (spill) {
             // Check adjacent segments which have a manifest
             // boundary between them.
@@ -132,9 +132,7 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
                 first_seg_previous_manifest = *spill->begin();
             } else {
                 vlog(
-                  _logger.warn,
-                  "Empty spillover manifest at {}",
-                  spill_manifest_paths[i]);
+                  _logger.warn, "Empty spillover manifest at {}", spill_path);
             }
         } else {
             _result.status = scrub_status::partial;
@@ -195,7 +193,29 @@ anomalies_detector::check_manifest(
         co_return stop_detector::no;
     }
 
-    auto seg_iter = manifest.begin();
+    // limit the total number (per partition) of visited segments in a run:
+    // first compute how many segments we can visit with the
+    // get_visitable_segments(),
+    auto visitable_tail_segments = std::min(
+      manifest.size(), get_visitable_segments());
+    // to visit only the last #visitable_tail_segments,
+    // take begin iterator and skip the first `size() - visitable_tail_segments`
+    // elements.
+    auto start_index = manifest.size() - visitable_tail_segments;
+    auto seg_iter = std::next(manifest.begin(), ptrdiff_t(start_index));
+    if (seg_iter.is_end()) {
+        // can't visit any segments. this probably means that we already had
+        // some progress and we terminated the quota. stop early
+        vlog(
+          _logger.debug,
+          "Manifest with offset range [{}, {}] num segments {} ({}) skipped, "
+          "not enough object quota to visit any segment. Skipping ...",
+          manifest.get_start_offset(),
+          manifest.get_last_offset(),
+          manifest.size(),
+          manifest.get_manifest_path());
+        co_return stop_detector::no;
+    }
     std::optional<segment_meta> previous_seg_meta;
     if (scrub_from && manifest.get_last_offset() > scrub_from) {
         if (auto iter = manifest.segment_containing(*scrub_from);
@@ -217,6 +237,7 @@ anomalies_detector::check_manifest(
         const auto exists_result = co_await _remote.segment_exists(
           _bucket, segment_path, rtc_node);
         _result.ops += 1;
+        _result.segments_visited += 1;
 
         if (exists_result == download_result::notfound) {
             _result.detected.missing_segments.emplace(seg_meta);
@@ -242,8 +263,19 @@ anomalies_detector::check_manifest(
       _logger.debug,
       "Finished checking manifest {}",
       manifest.get_manifest_path());
-
     co_return stop_detector::no;
+}
+
+size_t anomalies_detector::get_visitable_segments() const {
+    if (!_result.last_scrubbed_offset.has_value()) {
+        // Allow the scrubbing of one segment even if that means
+        // going above the quota in order to ensure some forward
+        // progress in all quota cases.
+        return size_t(std::max(
+          1, _received_quota.max_num_segments() - _result.segments_visited));
+    }
+    return size_t(std::max(
+      0, _received_quota.max_num_segments() - _result.segments_visited));
 }
 
 bool anomalies_detector::should_stop() const {
@@ -251,7 +283,10 @@ bool anomalies_detector::should_stop() const {
         return true;
     }
 
-    if (archival::run_quota_t{_result.ops} > _received_quota) {
+    if (
+      archival::run_quota_t{_result.ops} > _received_quota.max_num_operations
+      || segment_depth_t{_result.segments_visited}
+           >= _received_quota.max_num_segments) {
         // Allow the scrubbing of one segment even if that means
         // going above the quota in order to ensure some forward
         // progress in all quota cases.
@@ -275,6 +310,7 @@ anomalies_detector::result::operator+=(anomalies_detector::result&& other) {
     }
 
     ops += other.ops;
+    segments_visited += other.segments_visited;
     last_scrubbed_offset = other.last_scrubbed_offset;
     detected += std::move(other.detected);
 

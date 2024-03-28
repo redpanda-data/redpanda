@@ -97,6 +97,26 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
+inline void read_value(json::Value const& rd, cluster::recovery_checks& rc) {
+    read_member(rd, "mode", rc.mode);
+    read_member(rd, "max_segment_depth", rc.max_segment_depth);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::recovery_checks& rc) {
+    w.StartObject();
+    // TODO investigate the reason. seems like a manually casting to uint16_t of
+    // rc.mode enum is needed, otherwise we get an assertion at decoding time,
+    // when we try to read an unsigned but the json value is not tagged as
+    // unsigned
+    write_member(
+      w,
+      "mode",
+      static_cast<std::underlying_type_t<decltype(rc.mode)>>(rc.mode));
+    write_member(w, "max_segment_depth", rc.max_segment_depth);
+    w.EndObject();
+}
+
 inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const cluster::config_status& s) {
     w.StartObject();
@@ -608,6 +628,7 @@ inline void rjson_serialize(
     write_exceptional_member_type(w, "write_caching", tps.write_caching);
     write_member(w, "flush_bytes", tps.flush_bytes);
     write_member(w, "flush_ms", tps.flush_ms);
+    write_member(w, "recovery_checks", tps.recovery_checks);
     w.EndObject();
 }
 
@@ -674,6 +695,7 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
     read_member(rd, "write_caching", obj.write_caching);
     read_member(rd, "flush_bytes", obj.flush_bytes);
     read_member(rd, "flush_ms", obj.flush_ms);
+    read_member(rd, "recovery_checks", obj.recovery_checks);
 }
 
 inline void rjson_serialize(
