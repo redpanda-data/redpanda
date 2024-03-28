@@ -12,7 +12,7 @@ import functools
 
 from confluent_kafka import Consumer, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
-from typing import Optional
+from typing import Any, Optional
 from rptest.services import tls
 from rptest.services.keycloak import OAuthConfig
 
@@ -24,9 +24,9 @@ class PythonLibrdkafka:
     def __init__(self,
                  redpanda,
                  *,
-                 username=None,
-                 password=None,
-                 algorithm=None,
+                 username: str | None = None,
+                 password: str | None = None,
+                 algorithm: str | None = None,
                  tls_cert: Optional[tls.Certificate] = None,
                  oauth_config: Optional[OAuthConfig] = None):
         self._redpanda = redpanda
@@ -74,7 +74,7 @@ class PythonLibrdkafka:
         self._redpanda.logger.debug(f"{producer_conf}")
         return Producer(producer_conf)
 
-    def get_consumer(self, extra_config: Optional[dict] = None):
+    def get_consumer(self, extra_config: dict[str, Any] = {}):
         conf = self._get_config()
         conf.update(extra_config)
         self._redpanda.logger.debug(f"{conf}")
