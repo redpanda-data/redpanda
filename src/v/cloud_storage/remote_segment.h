@@ -27,7 +27,7 @@
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
-#include <seastar/core/circular_buffer.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/expiring_fifo.hh>
 #include <seastar/core/io_priority_class.hh>
@@ -344,6 +344,7 @@ class remote_segment_batch_reader final {
     friend class remote_segment_batch_consumer;
 
 public:
+    using data_t = ss::chunked_fifo<model::record_batch>;
     remote_segment_batch_reader(
       ss::lw_shared_ptr<remote_segment>,
       const storage::log_reader_config& config,
@@ -365,7 +366,7 @@ public:
       = delete;
     ~remote_segment_batch_reader() noexcept;
 
-    ss::future<result<ss::circular_buffer<model::record_batch>>> read_some(
+    ss::future<result<data_t>> read_some(
       model::timeout_clock::time_point, storage::offset_translator_state&);
 
     ss::future<> stop();
@@ -414,7 +415,7 @@ private:
     storage::log_reader_config _config;
     partition_probe& _probe;
     ts_read_path_probe& _ts_probe;
-    ss::circular_buffer<model::record_batch> _ringbuf;
+    data_t _ringbuf;
     std::optional<std::reference_wrapper<storage::offset_translator_state>>
       _cur_ot_state;
     size_t _total_size{0};
