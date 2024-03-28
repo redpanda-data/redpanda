@@ -9,6 +9,7 @@
 
 #include "redpanda/application.h"
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/archiver_manager.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/purger.h"
@@ -39,6 +40,7 @@
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/id_allocator_stm.h"
+#include "cluster/log_eviction_stm.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"

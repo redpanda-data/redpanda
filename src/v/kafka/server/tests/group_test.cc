@@ -20,6 +20,7 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
+using namespace std::chrono_literals;
 namespace kafka {
 
 static auto split_member_id(const ss::sstring& m) {

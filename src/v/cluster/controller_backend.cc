@@ -9,6 +9,7 @@
 
 #include "cluster/controller_backend.h"
 
+#include "archival/archival_metadata_stm.h"
 #include "base/outcome.h"
 #include "base/vassert.h"
 #include "cluster/cluster_utils.h"

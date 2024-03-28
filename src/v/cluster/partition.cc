@@ -9,21 +9,23 @@
 
 #include "cluster/partition.h"
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/upload_housekeeping_service.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
+#include "cluster/id_allocator_stm.h"
+#include "cluster/log_eviction_stm.h"
 #include "cluster/logger.h"
 #include "cluster/rm_stm.h"
-#include "cluster/tm_stm_cache_manager.h"
+#include "cluster/tm_stm.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
@@ -31,8 +33,6 @@
 #include <seastar/core/shared_ptr_incomplete.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
-
-#include <exception>
 
 namespace cluster {
 
@@ -82,8 +82,6 @@ partition::partition(
         }
     }
 }
-
-partition::~partition() {}
 
 ss::future<std::error_code> partition::prefix_truncate(
   model::offset rp_start_offset,
@@ -1205,9 +1203,257 @@ partition::get_cloud_storage_manifest_view() {
     return _cloud_storage_manifest_view;
 }
 
+ss::future<result<model::offset, std::error_code>>
+partition::sync_kafka_start_offset_override(
+  model::timeout_clock::duration timeout) {
+    if (_log_eviction_stm && !is_read_replica_mode_enabled()) {
+        auto offset_res
+          = co_await _log_eviction_stm->sync_start_offset_override(timeout);
+        if (offset_res.has_failure()) {
+            co_return offset_res.as_failure();
+        }
+        // The eviction STM only keeps track of DeleteRecords truncations
+        // as Raft offsets. Translate if possible.
+        if (
+          offset_res.value() != model::offset{}
+          && _raft->start_offset() < offset_res.value()) {
+            auto start_kafka_offset = log()->from_log_offset(
+              offset_res.value());
+            co_return start_kafka_offset;
+        }
+        // If a start override is no longer in the offset translator state,
+        // it may have been uploaded and persisted in the manifest.
+    }
+    if (_archival_meta_stm) {
+        auto term = _raft->term();
+        if (!co_await _archival_meta_stm->sync(timeout)) {
+            if (term != _raft->term()) {
+                co_return errc::not_leader;
+            } else {
+                co_return errc::timeout;
+            }
+        }
+        auto start_kafka_offset
+          = _archival_meta_stm->manifest().get_start_kafka_offset_override();
+        if (start_kafka_offset != kafka::offset{}) {
+            co_return kafka::offset_cast(start_kafka_offset);
+        }
+    }
+    co_return model::offset{};
+}
+
+model::offset partition::last_stable_offset() const {
+    if (_rm_stm) {
+        return _rm_stm->last_stable_offset();
+    }
+
+    return high_watermark();
+}
+
+std::optional<model::offset> partition::eviction_requested_offset() {
+    if (_log_eviction_stm) {
+        return _log_eviction_stm->eviction_requested_offset();
+    } else {
+        return std::nullopt;
+    }
+}
+
+ss::shared_ptr<cluster::id_allocator_stm> partition::id_allocator_stm() const {
+    return _raft->stm_manager()->get<cluster::id_allocator_stm>();
+}
+
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }
+ss::shared_ptr<cluster::tm_stm> partition::tm_stm() {
+    return _raft->stm_manager()->get<cluster::tm_stm>();
+}
+
+ss::future<fragmented_vector<rm_stm::tx_range>>
+partition::aborted_transactions(model::offset from, model::offset to) {
+    if (!_rm_stm) {
+        return ss::make_ready_future<fragmented_vector<rm_stm::tx_range>>(
+          fragmented_vector<rm_stm::tx_range>());
+    }
+    return _rm_stm->aborted_transactions(from, to);
+}
+
+model::producer_id partition::highest_producer_id() {
+    auto pid = _rm_stm ? _rm_stm->highest_producer_id() : model::producer_id{};
+    if (_archival_meta_stm) {
+        // It's possible this partition is a recovery partition, in which
+        // case the archival metadata may be higher than what's in the
+        // rm_stm.
+        return std::max(
+          pid, _archival_meta_stm->manifest().highest_producer_id());
+    }
+    return pid;
+}
+
+const ss::shared_ptr<cluster::archival_metadata_stm>&
+partition::archival_meta_stm() const {
+    return _archival_meta_stm;
+}
+
+std::optional<model::offset> partition::kafka_start_offset_override() const {
+    if (_log_eviction_stm && !is_read_replica_mode_enabled()) {
+        auto o = _log_eviction_stm->start_offset_override();
+        if (o != model::offset{} && _raft->start_offset() < o) {
+            auto start_kafka_offset = log()->from_log_offset(o);
+            return start_kafka_offset;
+        }
+        // If a start override is no longer in the offset translator state,
+        // it may have been uploaded and persisted in the manifest.
+    }
+    if (_archival_meta_stm) {
+        auto o
+          = _archival_meta_stm->manifest().get_start_kafka_offset_override();
+        if (o != kafka::offset{}) {
+            return kafka::offset_cast(o);
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::reference_wrapper<cluster::topic_configuration>>
+partition::get_topic_config() {
+    if (_topic_cfg) {
+        return std::ref(*_topic_cfg);
+    } else {
+        return std::nullopt;
+    }
+}
+
+ss::sharded<features::feature_table>& partition::feature_table() const {
+    return _feature_table;
+}
+
+ss::shared_ptr<const cloud_storage::remote_partition>
+partition::remote_partition() const {
+    return _cloud_storage_partition;
+}
+
+ss::future<model::record_batch_reader> partition::make_reader(
+  storage::log_reader_config config,
+  std::optional<model::timeout_clock::time_point> debounce_deadline) {
+    return _raft->make_reader(std::move(config), debounce_deadline);
+}
+
+model::term_id partition::term() const { return _raft->term(); }
+
+bool partition::is_read_replica_mode_enabled() const {
+    const auto& cfg = _raft->log_config();
+    return cfg.is_read_replica_mode_enabled();
+}
+
+model::offset partition::raft_start_offset() const {
+    return _raft->start_offset();
+}
+
+model::offset partition::committed_offset() const {
+    return _raft->committed_offset();
+}
+model::offset partition::high_watermark() const {
+    return model::next_offset(_raft->last_visible_index());
+}
+model::offset partition::leader_high_watermark() const {
+    return model::next_offset(_raft->last_leader_visible_index());
+}
+model::offset partition::dirty_offset() const {
+    return _raft->log()->offsets().dirty_offset;
+}
+
+const model::ntp& partition::ntp() const { return _raft->ntp(); }
+
+ss::shared_ptr<storage::log> partition::log() const { return _raft->log(); }
+
+bool partition::is_elected_leader() const { return _raft->is_elected_leader(); }
+bool partition::is_leader() const { return _raft->is_leader(); }
+bool partition::has_followers() const { return _raft->has_followers(); }
+void partition::block_new_leadership() const {
+    return _raft->block_new_leadership();
+}
+void partition::unblock_new_leadership() const {
+    return _raft->unblock_new_leadership();
+}
+
+ss::future<result<model::offset>> partition::linearizable_barrier() {
+    return _raft->linearizable_barrier();
+}
+
+ss::future<std::error_code> partition::update_replica_set(
+  std::vector<raft::broker_revision> brokers,
+  model::revision_id new_revision_id) {
+    return _raft->replace_configuration(std::move(brokers), new_revision_id);
+}
+
+ss::future<std::error_code> partition::update_replica_set(
+  std::vector<raft::vnode> nodes,
+  model::revision_id new_revision_id,
+  std::optional<model::offset> learner_start_offset) {
+    return _raft->replace_configuration(
+      std::move(nodes), new_revision_id, learner_start_offset);
+}
+
+ss::future<std::error_code> partition::force_update_replica_set(
+  std::vector<raft::vnode> voters,
+  std::vector<raft::vnode> learners,
+  model::revision_id new_revision_id) {
+    return _raft->force_replace_configuration_locally(
+      std::move(voters), std::move(learners), new_revision_id);
+}
+
+raft::group_configuration partition::group_configuration() const {
+    return _raft->config();
+}
+
+model::revision_id partition::get_revision_id() const {
+    return _raft->config().revision_id();
+}
+model::revision_id partition::get_log_revision_id() const {
+    return _raft->log_config().get_revision();
+}
+
+std::optional<model::node_id> partition::get_leader_id() const {
+    return _raft->get_leader_id();
+}
+
+std::optional<uint8_t> partition::get_under_replicated() const {
+    return _raft->get_under_replicated();
+}
+
+model::offset partition::get_latest_configuration_offset() const {
+    return _raft->get_latest_configuration_offset();
+}
+
+ss::lw_shared_ptr<const storage::offset_translator_state>
+partition::get_offset_translator_state() const {
+    return _raft->log()->get_offset_translator_state();
+}
+
+size_t partition::size_bytes() const { return _raft->log()->size_bytes(); }
+size_t partition::reclaimable_size_bytes() const {
+    return _raft->log()->reclaimable_size_bytes();
+}
+
+const storage::ntp_config& partition::get_ntp_config() const {
+    return _raft->log_config();
+}
+model::term_id partition::get_term(model::offset o) const {
+    return _raft->get_term(o);
+}
+
+ss::future<std::error_code>
+partition::cancel_replica_set_update(model::revision_id rev) {
+    return _raft->cancel_configuration_change(rev);
+}
+
+ss::future<std::error_code>
+partition::force_abort_replica_set_update(model::revision_id rev) {
+    return _raft->abort_configuration_change(rev);
+}
+consensus_ptr partition::raft() const { return _raft; }
+
 } // namespace cluster
 
 namespace seastar {
