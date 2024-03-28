@@ -3149,6 +3149,10 @@ class RedpandaService(RedpandaServiceBase):
                 f"Creating S3 bucket: {self._si_settings.cloud_storage_bucket}"
             )
         elif self._si_settings.cloud_storage_type == CloudStorageType.ABS:
+            # Make sure that use_bucket_cleanup_policy if False for ABS
+            self.logger.warning("Turning off use_bucket_cleanup_policy "
+                                "as it is not implemented for Azure/ABS")
+            self._si_settings.use_bucket_cleanup_policy = False
             self.cloud_storage_client = ABSClient(
                 logger=self.logger,
                 storage_account=self._si_settings.
