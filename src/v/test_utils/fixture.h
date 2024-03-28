@@ -14,6 +14,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/test/unit_test.hpp>
@@ -45,3 +46,27 @@
         BOOST_TEST_CHECKPOINT("~" << #klass << "::" << #method << "()");       \
     }                                                                          \
     void ::__FIXTURE_JOIN(klass, method)::fixture_test()
+
+namespace test_utils {
+
+class setenv_helper {
+public:
+    using overwrite = seastar::bool_class<struct overwrite_tag>;
+    setenv_helper(
+      std::string_view name,
+      std::string_view value,
+      overwrite ovr = overwrite::no)
+      : _name(name) {
+        setenv(name.data(), value.data(), ovr ? 1 : 0);
+    }
+    ~setenv_helper() { unsetenv(_name.c_str()); }
+    setenv_helper(const setenv_helper&) = delete;
+    setenv_helper& operator=(const setenv_helper&) = delete;
+    setenv_helper(setenv_helper&&) = delete;
+    setenv_helper& operator=(setenv_helper&&) = delete;
+
+private:
+    seastar::sstring _name;
+};
+
+} // namespace test_utils

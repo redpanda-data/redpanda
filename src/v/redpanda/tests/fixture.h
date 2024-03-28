@@ -831,6 +831,9 @@ public:
         return b;
     }
 
+    test_utils::setenv_helper se{
+      "RP_FIXTURE_ENV", "1", test_utils::setenv_helper::overwrite::no};
+
     application app;
     uint16_t proxy_port;
     uint16_t schema_reg_port;

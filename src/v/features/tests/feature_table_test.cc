@@ -22,20 +22,17 @@ using namespace cluster;
 using namespace features;
 using action_t = feature_update_action::action_t;
 
-class setenv_helper {
-public:
-    setenv_helper() { setenv("__REDPANDA_TEST_FEATURES", "TRUE", 1); }
-    ~setenv_helper() { unsetenv("__REDPANDA_TEST_FEATURES"); }
-};
-
 namespace features {
 class feature_table_fixture {
 public:
-    feature_table_fixture() {}
+    feature_table_fixture() = default;
 
     ~feature_table_fixture() { as.request_abort(); }
 
-    setenv_helper setenv_hack;
+    test_utils::setenv_helper setenv_hack{
+      "__REDPANDA_TEST_FEATURES",
+      "TRUE",
+      test_utils::setenv_helper::overwrite::yes};
     feature_table ft;
     ss::abort_source as;
     void set_active_version(cluster_version v) { ft.set_active_version(v); }
