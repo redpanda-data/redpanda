@@ -45,7 +45,7 @@ class RpkException(Exception):
         self.returncode = returncode
         # Useful for when its desired to still propogate parsed stdout
         # to caller when when rpk exits 1
-        self.parsed_output = None
+        self.parsed_output: list[RpkOffsetDeleteResponsePartition] | None = None
 
     def __str__(self):
         if self.stderr:
@@ -108,10 +108,10 @@ class RpkGroupPartition(typing.NamedTuple):
     log_end_offset: Optional[int]
     lag: Optional[int]
     member_id: str
-    instance_id: str
+    instance_id: str | None
     client_id: str
     host: str
-    error: str
+    error: str | None
 
 
 class RpkGroup(typing.NamedTuple):
@@ -149,12 +149,12 @@ class RpkClusterInfoNode:
 class RpkMaintenanceStatus(typing.NamedTuple):
     node_id: int
     enabled: bool
-    finished: bool
-    errors: bool
-    partitions: int
-    eligible: int
-    transferring: int
-    failed: int
+    finished: bool | None
+    errors: bool | None
+    partitions: int | None
+    eligible: int | None
+    transferring: int | None
+    failed: int | None
 
 
 class RpkOffsetDeleteResponsePartition(typing.NamedTuple):
@@ -293,9 +293,9 @@ class RpkTool:
     """
     def __init__(self,
                  redpanda,
-                 username: str = None,
-                 password: str = None,
-                 sasl_mechanism: str = None,
+                 username: str | None = None,
+                 password: str | None = None,
+                 sasl_mechanism: str | None = None,
                  tls_cert: Optional[tls.Certificate] = None,
                  tls_enabled: Optional[bool] = None):
         self._redpanda = redpanda
@@ -1244,6 +1244,8 @@ class RpkTool:
             "brokers=" + self._redpanda.brokers(),
         ]
         if self._username:
+            # u, p and mechanism must always be all set or all unset
+            assert self._password and self._sasl_mechanism
             flags += [
                 "-X",
                 "user=" + self._username,
@@ -1379,16 +1381,14 @@ class RpkTool:
             regex = re.compile(
                 r"\s*(?P<topic>\S*)\s*(?P<partition>\d*)\s*(?P<status>\w+):?(?P<error>.*)"
             )
-            matched = [regex.match(x) for x in output]
-            failed_matches = any([x for x in matched if x is None])
-            if failed_matches:
-                raise RuntimeError("Failed to parse offset-delete output")
-            return [
-                RpkOffsetDeleteResponsePartition(x['topic'],
-                                                 int(x['partition']),
-                                                 x['status'], x['error'])
-                for x in matched
-            ]
+
+            def make(x: re.Match[str] | None):
+                if not x:
+                    raise RuntimeError("Failed to parse offset-delete output")
+                return RpkOffsetDeleteResponsePartition(
+                    x['topic'], int(x['partition']), x['status'], x['error'])
+
+            return [make(regex.match(x)) for x in output]
 
         def try_offset_delete(retries=5):
             while retries > 0:
@@ -1550,6 +1550,7 @@ class RpkTool:
             "registry.hosts=" + self._schema_registry_host(),
         ]
         if self._username:
+            assert self._password and self._sasl_mechanism
             flags += [
                 "-X",
                 "user=" + self._username,
