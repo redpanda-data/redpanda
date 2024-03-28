@@ -2,8 +2,10 @@
 
 #include <archival/arrow_writer.h>
 
+#include <filesystem>
+
 ss::future<bool> datalake::write_parquet(
-  std::filesystem::path path,
+  std::filesystem::path inner_path,
   ss::shared_ptr<storage::log> log,
   model::offset starting_offset,
   model::offset ending_offset) {
@@ -18,8 +20,13 @@ ss::future<bool> datalake::write_parquet(
       std::nullopt);
 
     auto reader = co_await log->make_reader(reader_cfg);
-    arrow_writing_consumer consumer(
-      "/tmp/parquet_files/" + std::filesystem::path(path).string());
+
+    std::string_view topic_name = model::topic_view(
+      log->config().ntp().tp.topic);
+
+    std::filesystem::path path = std::filesystem::path("/tmp/parquet_files")
+                                 / topic_name / inner_path;
+    arrow_writing_consumer consumer(path);
     arrow::Status result = co_await reader.consume(
       std::move(consumer), model::no_timeout);
     co_return result.ok();
