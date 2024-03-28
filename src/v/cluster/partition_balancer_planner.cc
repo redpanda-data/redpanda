@@ -1116,7 +1116,15 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
 
     // soft constraints
 
-    // Add constraint for balanced replica counts
+    if (_ctx.config().topic_aware) {
+        // Add constraint for balanced topic-wise replica counts
+        constraints.add(min_count_in_map(
+          "min topic-wise count",
+          _ctx._topic2node_counts.at(model::topic_namespace_view(ntp()))));
+    }
+
+    // Add constraint for balanced total replica counts
+    constraints.ensure_new_level();
     constraints.add(max_final_capacity(get_allocation_domain(ntp())));
 
     // Add constraint on least disk usage
@@ -1811,16 +1819,46 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         co_return;
     }
 
-    auto scaled_count =
-      [&](model::node_id id, partition_allocation_domain domain) {
-          auto it = ctx.allocation_nodes().find(id);
-          if (it == ctx.allocation_nodes().end()) {
-              throw balancer_tick_aborted_exception{
-                fmt::format("node id: {} disappeared", id)};
-          }
-          return double(it->second->domain_final_partitions(domain))
-                 / it->second->max_capacity();
-      };
+    // {topic-wise count, total count}
+    using scores_t = std::array<double, 2>;
+
+    // lower score is better
+    auto calc_scores = [&](const model::ntp& ntp, model::node_id id) {
+        auto node_it = ctx.allocation_nodes().find(id);
+        if (node_it == ctx.allocation_nodes().end()) {
+            throw balancer_tick_aborted_exception{
+              fmt::format("node id: {} disappeared", id)};
+        }
+        const auto& alloc_node = *node_it->second;
+
+        double topic_count = 0;
+        if (ctx.config().topic_aware) {
+            const auto& counts = ctx._topic2node_counts.at(
+              model::topic_namespace_view(ntp));
+            topic_count = double(counts.at(id)) / alloc_node.max_capacity();
+        }
+
+        auto total_count = double(alloc_node.domain_final_partitions(
+                             get_allocation_domain(ntp)))
+                           / alloc_node.max_capacity();
+
+        return scores_t{topic_count, total_count};
+    };
+
+    auto scores_cmp_less = [](const scores_t& left, const scores_t& right) {
+        for (size_t i = 0; i < left.size(); ++i) {
+            auto l = left[i];
+            auto r = right[i];
+            if (l < r - 1e-8) {
+                return true;
+            }
+            if (l > r + 1e-8) {
+                return false;
+            }
+        }
+        // (approximately) equal
+        return false;
+    };
 
     // Reaches its minimum of 1.0 when replica counts (scaled by the node
     // capacity) are equal across all nodes.
@@ -1828,7 +1866,13 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         double sum = 0;
         double sum_sq = 0;
         for (const auto& id : ctx.all_nodes) {
-            auto count = scaled_count(id, domain);
+            auto it = ctx.allocation_nodes().find(id);
+            if (it == ctx.allocation_nodes().end()) {
+                throw balancer_tick_aborted_exception{
+                  fmt::format("node id: {} disappeared", id)};
+            }
+            auto count = double(it->second->domain_final_partitions(domain))
+                         / it->second->max_capacity();
             sum += count;
             sum_sq += count * count;
         }
@@ -1864,9 +1908,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                       continue;
                   }
 
-                  auto domain = get_allocation_domain(part.ntp());
-
-                  double count_before = scaled_count(bs.node_id, domain);
+                  auto scores_before = calc_scores(part.ntp(), bs.node_id);
 
                   auto res = part.move_replica(
                     bs.node_id,
@@ -1877,11 +1919,11 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                   }
 
                   if (res.value().current().node_id != bs.node_id) {
-                      double count_after = scaled_count(
-                        res.value().current().node_id, domain);
+                      auto scores_after = calc_scores(
+                        part.ntp(), res.value().current().node_id);
 
-                      if (count_after + 1e-8 > count_before) {
-                          // unnecessary move, doesn't improve the objective
+                      if (!scores_cmp_less(scores_after, scores_before)) {
+                          // unnecessary move, doesn't improve the scores
                           // (probably moved to another node with the same
                           // number of partitions)
                           part.revert(res.value());
