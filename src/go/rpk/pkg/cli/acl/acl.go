@@ -54,8 +54,8 @@ When using SASL, ACLs allow or deny you access to certain requests. The
 
 An ACL is made up of five components:
 
-  * a principal (the user)
-  * a host the principal is allowed or denied requests from
+  * a principal (the user) or role
+  * a host the principal (or role) is allowed or denied requests from
   * what resource to access (topic name, group ID, ...)
   * the operation (read, write, ...)
   * the permission: whether to allow or deny the above
@@ -82,6 +82,21 @@ can create / delete / list ACLs for that user with either "User:bar" or "bar"
 in the --allow-principal and --deny-principal flags. This command will add the
 "User:" prefix for you if it is missing. The wildcard '*' matches any user.
 Creating an ACL with user '*' grants or denies the permission for all users.
+
+ROLES
+
+Alternatively, an ACL may be bound to a role. To create a role-bound ACL,
+follow the same procedure used to create a user ACL, but use the --allow-role
+and --deny-role flags to specify the role(s) to which the ACL should apply.
+
+You should be aware of a few key differences when creating a role ACL:
+
+  * Wildcard matching role names is not allowed. So --allow-role '*' is illegal.
+  * The type prefix is not necessary. The flag fully specifies that the
+    following name should refer to a role.
+
+Aside from that, the procedures and semantics for creating and managing ACLs
+apply equally to role ACLs and user ACLs.
 
 HOSTS
 
