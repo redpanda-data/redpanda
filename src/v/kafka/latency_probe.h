@@ -58,29 +58,6 @@ public:
           },
           {},
           {sm::shard_label});
-
-        auto add_plan_and_execute_metric =
-          [this, &labels](const std::string& fetch_label, hist_t& hist) {
-              auto fetch_labels = labels;
-              auto fetch_result_label = sm::label("fetch_result")(fetch_label);
-              fetch_labels.push_back(fetch_result_label);
-              _metrics.add_group(
-                prometheus_sanitize::metrics_name("fetch_stats"),
-                {// Measures latency off creating the fetch plan and
-                 // subsequently executing it - aka "one poll loop"
-                 sm::make_histogram(
-                   "plan_and_execute_latency_us",
-                   sm::description("Latency of fetch planning and excution"),
-                   fetch_labels,
-                   [&hist] { return hist.internal_histogram_logform(); })},
-                {},
-                {sm::shard_label});
-          };
-
-        add_plan_and_execute_metric(
-          "non-empty", _fetch_plan_and_execute_latency);
-        add_plan_and_execute_metric(
-          "empty", _fetch_plan_and_execute_latency_empty);
     }
 
     void setup_public_metrics() {
@@ -115,20 +92,9 @@ public:
         _fetch_latency.record(micros.count());
     }
 
-    void record_fetch_plan_and_execute_measurement(
-      std::chrono::microseconds micros, bool empty) {
-        if (empty) {
-            _fetch_plan_and_execute_latency_empty.record(micros.count());
-        } else {
-            _fetch_plan_and_execute_latency.record(micros.count());
-        }
-    }
-
 private:
     hist_t _produce_latency;
     hist_t _fetch_latency;
-    hist_t _fetch_plan_and_execute_latency;
-    hist_t _fetch_plan_and_execute_latency_empty;
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
 };
