@@ -123,6 +123,13 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
          sm::description("Total number of segments pending deletion from the "
                          "cloud for the topic"),
          labels)
+         .aggregate(aggregate_labels),
+       sm::make_gauge(
+         "cloud_log_size",
+         [this] { return _cloud_log_size; },
+         sm::description(
+           "Total size in bytes of the user-visible log for the topic"),
+         labels)
          .aggregate(aggregate_labels)});
 }
 
