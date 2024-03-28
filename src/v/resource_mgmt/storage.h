@@ -241,6 +241,116 @@ public:
     ss::future<> stop();
 
 private:
+    class probe {
+    public:
+        explicit probe(disk_space_manager*);
+
+        void setup_metrics();
+
+        /*
+         * The total amount of data usage from the perspective of space
+         * management. This is generally a bit different from the total amount
+         * of space that redpanda is using because space management only
+         * considers data that it may eventually be able to reclaim. This value
+         * should reflect the total disk usage for both cloud and non-cloud
+         * enabled topics.
+         */
+        void set_total_usage(size_t usage) noexcept { _total_usage = usage; }
+
+        /*
+         * This is the amount of data that is currently reclaimable by the
+         * normal retention policy. Space management only kicks in when it needs
+         * to reclaim more data than is available through the normal retention
+         * mechanism.
+         */
+        void set_retention_reclaimable(size_t size) noexcept {
+            _retention_reclaimable = size;
+        }
+
+        /*
+         * The total available amount for reclaim by space management is the
+         * amount of data reclaimable by normal retention policy plus the amount
+         * of data has been uploaded into the cloud, and thus safe to remove if
+         * necessary to meet the configured usage target.
+         */
+        void set_available_reclaimable(size_t size) noexcept {
+            _available_reclaimable = size;
+        }
+
+        /*
+         * The total amount of data that can be safely reclaimed and which if
+         * reclaimed would not violate the local retention policy.
+         */
+        void set_local_retention_reclaimable(size_t size) noexcept {
+            _local_retention_reclaimable = size;
+        }
+
+        /*
+         * The amount of data usage above the target threshold. when space
+         * management runs if this value is positive then space management will
+         * try to ensure this much data is reclaimed, if that is by applying
+         * normal retention policy or applying space management over policy.
+         */
+        void set_target_excess(size_t size) noexcept { _target_excess = size; }
+
+        /*
+         * The amount of data estimated to be reclaimed by the currently
+         * installed space management schedule that is above the local retention
+         * policy setting.
+         */
+        void set_reclaim_local(size_t size) noexcept { _reclaim_local = size; }
+
+        /*
+         * The amount of data estimated to be reclaimed by the currently
+         * installed space management schedule that is above the non-hinted
+         * low-space threshold setting.
+         */
+        void set_reclaim_low_non_hinted(size_t size) noexcept {
+            _reclaim_low_non_hinted = size;
+        }
+
+        /*
+         * The amount of data estimated to be reclaimed by the currently
+         * installed space management schedule that is above the hinted
+         * low-space threshold setting.
+         */
+        void set_reclaim_low_hinted(size_t size) noexcept {
+            _reclaim_low_hinted = size;
+        }
+
+        /*
+         * The amount of data estimated to be reclaimed by the currently
+         * installed space management schedule that is above the active segment.
+         */
+        void set_reclaim_active_segment(size_t size) noexcept {
+            _reclaim_active_segment = size;
+        }
+
+        /*
+         * The amount of data that the latest reclaim schedule has estimated
+         * will be reclaimed. A positive value means that space management is
+         * trying to reclaim data that would othewise not be reclaimed by the
+         * normal retention policy.
+         */
+        void set_reclaim_estimate(size_t size) noexcept {
+            _reclaim_estimate = size;
+        }
+
+    private:
+        disk_space_manager* _sm;
+        metrics::internal_metric_groups _metrics;
+        size_t _total_usage{0};
+        size_t _retention_reclaimable{0};
+        size_t _available_reclaimable{0};
+        size_t _local_retention_reclaimable{0};
+        size_t _target_excess{0};
+        size_t _reclaim_local{0};
+        size_t _reclaim_low_non_hinted{0};
+        size_t _reclaim_low_hinted{0};
+        size_t _reclaim_active_segment{0};
+        size_t _reclaim_estimate{0};
+    };
+
     config::binding<bool> _enabled;
     config::binding<bool> _enabled_override;
     ss::sharded<cluster::node::local_monitor>* _local_monitor;
@@ -269,6 +379,7 @@ private:
     ss::future<> run_loop();
     ssx::semaphore _control_sem{0, "resource_mgmt::space_manager"};
     bool _previous_reclaim{false};
+    probe _probe;
 };
 
 } // namespace storage
