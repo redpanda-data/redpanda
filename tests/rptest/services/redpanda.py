@@ -58,6 +58,7 @@ from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.services import redpanda_types, tls
+from rptest.services.redpanda_types import KafkaClientSecurity
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.redpanda_cloud import CloudCluster, CloudTierName, get_config_profile_name
@@ -892,6 +893,12 @@ class RedpandaServiceABC(ABC):
     def all_up(self):
         pass
 
+    @abstractmethod
+    def kafka_client_security(self) -> KafkaClientSecurity:
+        """Return a KafkaClientSecurity object suitable for connecting to the Kafka API
+         on this broker."""
+        pass
+
     def wait_until(self, fn, timeout_sec, backoff_sec, err_msg: str = None):
         """
         Cluster-aware variant of wait_until, which will fail out
@@ -1468,6 +1475,22 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     def security_config(self):
         return self._security_config
 
+    def kafka_client_security(self):
+        if self._security_config:
+
+            def get_str(key: str):
+                v = self._security_config[key]
+                assert isinstance(v, str)
+                return v
+
+            creds = SaslCredentials(username=get_str('sasl_plain_username'),
+                                    password=get_str('sasl_plain_password'),
+                                    algorithm=get_str('sasl_mechanism'))
+        else:
+            creds = None
+
+        return KafkaClientSecurity(creds, tls_enabled=False)
+
     def set_skip_if_no_redpanda_log(self, v: bool):
         self._skip_if_no_redpanda_log = v
 
@@ -1788,6 +1811,9 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                     sasl_plain_username=self._superuser.username,
                     sasl_plain_password=self._superuser.password,
                     enable_tls=True)
+
+    def kafka_client_security(self):
+        return KafkaClientSecurity(self._superuser, True)
 
     def rebuild_pods_classes(self):
         """Querry pods and create Classes fresh
