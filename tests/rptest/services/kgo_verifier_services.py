@@ -833,6 +833,7 @@ class ProduceStatus:
                  topic=None,
                  sent=0,
                  acked=0,
+                 committed=0,
                  bad_offsets=0,
                  max_offsets_produced=dict(),
                  restarts=0,
