@@ -181,7 +181,8 @@ pager::get_page(uint64_t offset) noexcept {
             if (page->test_flag(page::flags::faulting)) {
                 page::waiter waiter;
                 page->add_waiter(waiter);
-                co_await waiter.ready.get_future();
+                auto fut = waiter.ready.get_future();
+                co_await std::move(fut);
                 continue;
             }
             vassert(
