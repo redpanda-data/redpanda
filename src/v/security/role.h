@@ -89,7 +89,7 @@ public:
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     operator role_member_view() const { return role_member_view{_type, _name}; }
 
-    std::string_view name() const { return _name; }
+    const ss::sstring& name() const { return _name; }
     role_member_type type() const { return _type; }
 
     auto serde_fields() { return std::tie(_type, _name); }
@@ -129,7 +129,7 @@ public:
       : _members(std::move(members)) {}
 
     const container_type& members() const& { return _members; }
-    container_type&& members() && { return std::move(_members); }
+    container_type members() && { return std::move(_members); }
 
     auto serde_fields() { return std::tie(_members); }
 
