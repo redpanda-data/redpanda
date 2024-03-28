@@ -4175,20 +4175,6 @@ struct upsert_role_cmd_data
       = default;
 };
 
-struct rename_role_cmd_data
-  : serde::
-      envelope<rename_role_cmd_data, serde::version<0>, serde::version<0>> {
-    using rpc_adl_exempt = std::true_type;
-    security::role_name from_name;
-    security::role_name to_name;
-
-    auto serde_fields() { return std::tie(from_name, to_name); }
-
-    friend bool
-    operator==(const rename_role_cmd_data&, const rename_role_cmd_data&)
-      = default;
-};
-
 struct delete_role_cmd_data
   : serde::
       envelope<delete_role_cmd_data, serde::version<0>, serde::version<0>> {

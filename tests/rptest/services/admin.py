@@ -1033,11 +1033,6 @@ class Admin:
         params = None if delete_acls is None else dict(delete_acls=delete_acls)
         return self._request("delete", f"security/roles/{role}", params=params)
 
-    def update_role(self, role: str, update: RoleUpdate):
-        return self._request("put",
-                             f"security/roles/{role}",
-                             json=update._asdict())
-
     def list_roles(self,
                    filter: Optional[str] = None,
                    principal: Optional[str] = None,

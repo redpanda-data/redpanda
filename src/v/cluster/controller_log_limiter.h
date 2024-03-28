@@ -91,10 +91,7 @@ public:
           std::is_same_v<Cmd, delete_acls_cmd> || //
           std::is_same_v<Cmd, create_role_cmd> || //
           std::is_same_v<Cmd, delete_role_cmd> || //
-          std::is_same_v<Cmd, update_role_cmd> || //
-          std::is_same_v<Cmd, rename_role_cmd>) {
-            // TODO(oren): maybe we shouldn't go under ACLs and users quota, but
-            // it does fit
+          std::is_same_v<Cmd, update_role_cmd>) {
             return _acls_and_users_operations_limiter.try_throttle();
         } else if constexpr (
           std::is_same_v<Cmd, create_data_policy_cmd> ||   //

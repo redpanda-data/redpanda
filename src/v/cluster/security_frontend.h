@@ -35,7 +35,6 @@ namespace cluster {
  *   - create_role_cmd
  *   - delete_role_cmd
  *   - update_role_cmd
- *   - rename_role_cmd
  *
  * ACL management:
  *   - create_acls_cmd
@@ -154,25 +153,6 @@ public:
     ss::future<std::error_code> update_role(
       security::role_name name,
       security::role role,
-      model::timeout_clock::time_point tout);
-
-    /**
-     * Rename a Redpanda Role.
-     *
-     * Returns:
-     *   errc::role_does_not_exist
-     *     if the target role was not present in the store
-     *   errc::role_exists
-     *     if a role with the new name was already present in the store
-     *   errc::success
-     *     otherwise
-     *
-     * Should be called ONLY on the controller leader node, but may be called
-     * from any shard
-     */
-    ss::future<std::error_code> rename_role(
-      security::role_name name,
-      security::role_name new_name,
       model::timeout_clock::time_point tout);
 
     /**

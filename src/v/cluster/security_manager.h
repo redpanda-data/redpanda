@@ -37,8 +37,7 @@ public:
       delete_acls_cmd,
       create_role_cmd,
       delete_role_cmd,
-      update_role_cmd,
-      rename_role_cmd>();
+      update_role_cmd>();
 
     ss::future<std::error_code> apply_update(model::record_batch);
 

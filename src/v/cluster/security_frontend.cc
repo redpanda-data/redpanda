@@ -158,21 +158,6 @@ ss::future<std::error_code> security_frontend::update_role(
     co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), tout);
 }
 
-ss::future<std::error_code> security_frontend::rename_role(
-  security::role_name from_name,
-  security::role_name to_name,
-  model::timeout_clock::time_point tout) {
-    if (!_features.local().is_active(
-          features::feature::role_based_access_control)) {
-        vlog(clusterlog.warn, "RBAC feature is not yet active");
-        co_return cluster::errc::feature_disabled;
-    }
-    rename_role_cmd_data data{
-      .from_name = std::move(from_name), .to_name = std::move(to_name)};
-    rename_role_cmd cmd(0 /*unused*/, std::move(data));
-    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), tout);
-}
-
 ss::future<std::vector<errc>> security_frontend::create_acls(
   std::vector<security::acl_binding> bindings,
   model::timeout_clock::duration timeout) {
