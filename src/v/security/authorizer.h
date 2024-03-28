@@ -12,8 +12,6 @@
 #include "base/seastarx.h"
 #include "base/vlog.h"
 #include "config/property.h"
-#include "kafka/types.h"
-#include "model/fundamental.h"
 #include "security/acl.h"
 #include "security/acl_entry_set.h"
 #include "security/fwd.h"
@@ -25,8 +23,6 @@
 
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
-
-#include <assert.h>
 
 namespace security {
 
