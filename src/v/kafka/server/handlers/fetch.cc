@@ -991,13 +991,6 @@ private:
     ss::future<> progress_conditions(op_context& octx) {
         ss::promise<> timeout_pr, abort_pr;
 
-        // A connection can close and stop the sharded abort source before we
-        // can subscribe to it. So we check here if that is the case and return
-        // if so.
-        if (!octx.rctx.abort_source().local_is_initialized()) {
-            co_return;
-        }
-
         auto abort_sub_opt = octx.rctx.abort_source().subscribe(
           [&abort_pr]() noexcept { abort_pr.set_value(); });
 
