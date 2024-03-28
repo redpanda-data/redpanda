@@ -324,6 +324,8 @@ struct partition_constraints {
     operator<<(std::ostream&, const partition_constraints&);
 };
 
+using node2count_t = absl::flat_hash_map<model::node_id, size_t>;
+
 struct allocation_request {
     allocation_request() = delete;
     explicit allocation_request(
@@ -339,10 +341,11 @@ struct allocation_request {
     model::topic_namespace _nt;
     ss::chunked_fifo<partition_constraints> partitions;
     partition_allocation_domain domain;
+    // if present, new partitions will be allocated using topic-aware counts
+    // objective.
+    std::optional<node2count_t> existing_replica_counts;
 
     friend std::ostream& operator<<(std::ostream&, const allocation_request&);
 };
-
-using node2count_t = absl::flat_hash_map<model::node_id, size_t>;
 
 } // namespace cluster
