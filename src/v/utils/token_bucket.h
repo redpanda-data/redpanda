@@ -44,15 +44,26 @@ public:
       , _refresh_timer([this] { handle_refresh(); }) {}
 
     ss::future<> throttle(size_t size, ss::abort_source& as) {
+        return maybe_throttle(size, as).discard_result();
+    }
+
+    struct throttle_outcome {
+        size_t deficiency{0};
+        clock_type::duration throttle_duration;
+    };
+
+    /// Return nullopt if throttling is not applied or deficiency value
+    ss::future<std::optional<throttle_outcome>>
+    maybe_throttle(size_t size, ss::abort_source& as) {
+        using res_t = std::optional<throttle_outcome>;
         _refresh_timer.cancel();
         refresh();
-
         /*
          * when try_wait succeeds it implies that there are no waiters so there
          * is no risk in returning without arming the refresh timer.
          */
         if (_sem.try_wait(size)) {
-            return ss::now();
+            return ss::make_ready_future<res_t>(std::nullopt);
         }
 
         auto elapsed = clock_type::now() - _last_refresh;
@@ -62,7 +73,21 @@ public:
             _refresh_timer.arm(refresh_interval - elapsed);
         }
 
-        return _sem.wait(as, size);
+        auto deficiency = size - _sem.available_units();
+        auto start_time = clock_type::now();
+        return _sem.wait(as, size).then([deficiency, start_time] {
+            auto end_time = clock_type::now();
+            auto duration = typename clock_type::duration(0);
+            if (end_time > start_time) {
+                // Return 0 in case if the clock is monotonic and
+                // the end_time is actually before the start_time.
+                duration = end_time - start_time;
+            }
+            return ss::make_ready_future<res_t>(throttle_outcome{
+              .deficiency = deficiency,
+              .throttle_duration = duration,
+            });
+        });
     }
 
     bool try_throttle(size_t size) {
