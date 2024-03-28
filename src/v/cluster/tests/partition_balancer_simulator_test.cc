@@ -745,3 +745,25 @@ FIXTURE_TEST(test_smol, partition_balancer_sim_fixture) {
 
     BOOST_REQUIRE(run_to_completion(10));
 }
+
+FIXTURE_TEST(test_heterogeneous_topics, partition_balancer_sim_fixture) {
+    for (size_t i = 0; i < 9; ++i) {
+        add_node(model::node_id{i}, 300_GiB);
+    }
+
+    // Add 2 topics with drastically different partition sizes.
+    // We expect the result to be nevertheless balanced thanks to topic-aware
+    // balancing.
+    add_topic("topic_1", 200, 3, 2_GiB, 200_MiB);
+    add_topic("topic_2", 800, 3, 10_MiB, 1_MiB);
+
+    for (size_t i = 9; i < 12; ++i) {
+        add_node(model::node_id{i}, 300_GiB);
+        add_node_to_rebalance(model::node_id{i});
+    }
+
+    BOOST_REQUIRE(run_to_completion(1000));
+
+    validate_even_topic_distribution();
+    validate_even_replica_distribution();
+}
