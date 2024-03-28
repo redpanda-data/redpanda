@@ -1155,11 +1155,22 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
-    co_await datalake::write_parquet(
-      std::filesystem::path(path),
-      _parent.log(),
-      candidate.starting_offset,
-      candidate.final_offset);
+    if (datalake::is_datalake_topic(_parent)) {
+        vlog(
+          _rtclog.debug,
+          "Uploading datalake topic {}",
+          model::topic_view(_parent.log()->config().ntp().tp.topic));
+        co_await datalake::write_parquet(
+          std::filesystem::path(path),
+          _parent.log(),
+          candidate.starting_offset,
+          candidate.final_offset);
+    } else {
+        vlog(
+          _rtclog.debug,
+          "Not uploading non-datalake topic {}",
+          model::topic_view(_parent.log()->config().ntp().tp.topic));
+    }
 
     auto lazy_abort_source = cloud_storage::lazy_abort_source{
       [this]() { return upload_should_abort(); },

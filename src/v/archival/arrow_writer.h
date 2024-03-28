@@ -1,3 +1,4 @@
+#include "cluster/partition.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "storage/log.h"
@@ -22,6 +23,11 @@ ss::future<bool> write_parquet(
   ss::shared_ptr<storage::log> log,
   model::offset starting_offset,
   model::offset ending_offset);
+
+/** Is this a datalake topic? Should we write it to Iceberg/Parquet?
+ */
+
+bool is_datalake_topic(cluster::partition& partition);
 
 class arrow_writing_consumer {
     /** Consumes logs and writes the results out to a Parquet file.

@@ -1,3 +1,5 @@
+#include "cluster/partition.h"
+
 #include <archival/arrow_writer.h>
 
 ss::future<bool> datalake::write_parquet(
@@ -21,6 +23,13 @@ ss::future<bool> datalake::write_parquet(
     arrow::Status result = co_await reader.consume(
       std::move(consumer), model::no_timeout);
     co_return result.ok();
+}
+
+bool datalake::is_datalake_topic(cluster::partition& partition) {
+    std::string_view topic = model::topic_view(
+      partition.log()->config().ntp().tp.topic);
+
+    return topic.starts_with("experimental_datalake_");
 }
 
 ss::future<ss::stop_iteration>
