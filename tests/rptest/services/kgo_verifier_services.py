@@ -448,7 +448,8 @@ class ValidatorStatus:
     differ per-worker, although at time of writing they don't.
     """
     def __init__(self, name: str, valid_reads: int, invalid_reads: int,
-                 out_of_scope_invalid_reads: int, max_offsets_consumed: int):
+                 out_of_scope_invalid_reads: int, max_offsets_consumed: int,
+                 lost_offsets: int):
         # Validator name is just a unique name per worker thread in kgo-verifier: useful in logging
         # but we mostly don't care
         self.name = name
@@ -457,6 +458,7 @@ class ValidatorStatus:
         self.invalid_reads = invalid_reads
         self.out_of_scope_invalid_reads = out_of_scope_invalid_reads
         self.max_offsets_consumed = max_offsets_consumed
+        self.lost_offsets = lost_offsets
 
     @property
     def total_reads(self):
@@ -468,12 +470,16 @@ class ValidatorStatus:
         # Clear name if we are merging multiple statuses together, to avoid confusion.
         self.name = ""
 
+        # Clear other fields we aren't interested in, to avoid confusion.
+        self.max_offsets_consumed = None
+        self.lost_offsets = None
+
         self.valid_reads += rhs.valid_reads
         self.invalid_reads += rhs.invalid_reads
         self.out_of_scope_invalid_reads += rhs.out_of_scope_invalid_reads
 
     def __str__(self):
-        return f"ValidatorStatus<{self.valid_reads} {self.invalid_reads} {self.out_of_scope_invalid_reads}>"
+        return f"ValidatorStatus<{self.valid_reads} {self.invalid_reads} {self.out_of_scope_invalid_reads} {self.lost_offsets}>"
 
 
 class ConsumerStatus:
@@ -493,7 +499,8 @@ class ConsumerStatus:
                 'invalid_reads': 0,
                 'out_of_scope_invalid_reads': 0,
                 'name': "",
-                'max_offsets_consumed': dict()
+                'max_offsets_consumed': dict(),
+                'lost_offsets': dict()
             }
 
         self.validator = ValidatorStatus(**validator)
