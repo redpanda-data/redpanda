@@ -12,13 +12,73 @@
 #include "security/authorizer.h"
 
 #include "acl_store.h"
+#include "metrics/metrics.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "security/role.h"
 #include "security/role_store.h"
 
 #include <optional>
 #include <ranges>
 
+namespace {
+
+enum class authz_result { empty = 0, deny, allow };
+
+constexpr std::string_view as_string_view(authz_result r) {
+    switch (r) {
+    case authz_result::empty:
+        return "empty";
+    case authz_result::deny:
+        return "deny";
+    case authz_result::allow:
+        return "allow";
+    }
+}
+
+} // namespace
+
 namespace security {
+
+class authorizer::probe {
+    using authz_results = std::array<size_t, 3>;
+
+public:
+    void setup_metrics() {
+        namespace sm = ss::metrics;
+        auto add_group = [this](metrics::metric_groups_base& metrics) {
+            const auto make_counter = [this](authz_result r) {
+                return sm::make_counter(
+                         "result",
+                         _authz_results[static_cast<size_t>(r)],
+                         sm::description(
+                           "Total number of authorization results by type"),
+                         {sm::label("type")(as_string_view(r))})
+                  .aggregate({sm::shard_label});
+            };
+            metrics.add_group(
+              prometheus_sanitize::metrics_name("authorization"),
+              {make_counter(authz_result::empty),
+               make_counter(authz_result::deny),
+               make_counter(authz_result::allow)});
+        };
+
+        if (!config::shard_local_cfg().disable_metrics()) {
+            add_group(_metrics);
+        }
+        if (!config::shard_local_cfg().disable_public_metrics()) {
+            add_group(_public_metrics);
+        }
+    }
+
+    constexpr void record_authz_result(authz_result r) {
+        ++_authz_results[static_cast<size_t>(r)];
+    }
+
+private:
+    authz_results _authz_results{};
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
+};
 
 authorizer::~authorizer() = default;
 
@@ -33,7 +93,9 @@ authorizer::authorizer(
   : _store(std::make_unique<acl_store>())
   , _superusers_conf(std::move(superusers))
   , _allow_empty_matches(allow)
-  , _role_store(roles) {
+  , _role_store(roles)
+  , _probe(std::make_unique<probe>()) {
+    _probe->setup_metrics();
     update_superusers();
     _superusers_conf.watch([this]() { update_superusers(); });
 }
@@ -72,6 +134,20 @@ const acl_store& authorizer::store() const& { return *_store; }
 
 template<typename T>
 auth_result authorizer::authorized(
+  const T& resource_name,
+  acl_operation operation,
+  const acl_principal& principal,
+  const acl_host& host) const {
+    auth_result r = do_authorized(resource_name, operation, principal, host);
+    _probe->record_authz_result(
+      r.is_authorized() ? authz_result::allow
+      : r.empty_matches ? authz_result::empty
+                        : authz_result::deny);
+    return r;
+}
+
+template<typename T>
+auth_result authorizer::do_authorized(
   const T& resource_name,
   acl_operation operation,
   const acl_principal& principal,

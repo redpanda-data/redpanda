@@ -264,6 +264,13 @@ public:
     const acl_store& store() const&;
 
 private:
+    template<typename T>
+    auth_result do_authorized(
+      const T& resource_name,
+      acl_operation operation,
+      const acl_principal& principal,
+      const acl_host& host) const;
+
     /*
      * Compute whether the specified operation is allowed based on the implied
      * operations.
@@ -294,6 +301,8 @@ private:
 
     allow_empty_matches _allow_empty_matches;
     const role_store* _role_store;
+    class probe;
+    std::unique_ptr<probe> _probe;
 };
 
 } // namespace security
