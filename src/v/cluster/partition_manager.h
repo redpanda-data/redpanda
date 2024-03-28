@@ -16,6 +16,7 @@
 #include "cluster/fwd.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
+#include "cluster/state_machine_registry.h"
 #include "cluster/types.h"
 #include "config/property.h"
 #include "container/intrusive_list_helpers.h"

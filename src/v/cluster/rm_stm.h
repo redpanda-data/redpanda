@@ -26,7 +26,6 @@
 #include "model/record.h"
 #include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
-#include "raft/types.h"
 #include "storage/snapshot.h"
 #include "utils/available_promise.h"
 #include "utils/mutex.h"

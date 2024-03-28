@@ -14,6 +14,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_balancer_backend.h"
 #include "cluster/partition_manager.h"
+#include "cluster/rm_stm.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "container/fragmented_vector.h"

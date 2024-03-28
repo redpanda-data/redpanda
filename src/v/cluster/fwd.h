@@ -79,6 +79,9 @@ class state_machine_registry;
 class tx_topic_manager;
 class shard_placement_table;
 class shard_balancer;
+class id_allocator_stm;
+class tm_stm;
+class rm_stm;
 
 namespace node {
 class local_monitor;

@@ -12,6 +12,7 @@
 
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
+#include "cluster/rm_stm.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/logger.h"
