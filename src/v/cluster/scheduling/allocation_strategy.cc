@@ -28,28 +28,19 @@
 
 namespace cluster {
 
-inline bool contains_node_already(
-  const std::vector<model::broker_shard>& current_allocations,
-  model::node_id id) {
-    auto it = std::find_if(
-      current_allocations.cbegin(),
-      current_allocations.cend(),
-      [id](const model::broker_shard& replica) {
-          return replica.node_id == id;
-      });
-
-    return it != current_allocations.end();
-}
+namespace {
 
 std::vector<model::node_id> solve_hard_constraints(
-  const model::ntp& ntp,
-  const std::vector<model::broker_shard>& current_replicas,
+  const allocation_state::underlying_t& nodes,
   const std::vector<hard_constraint_ptr>& constraints,
-  const allocation_state::underlying_t& nodes) {
+  const allocated_partition& partition,
+  std::optional<model::node_id> prev) {
+    vlog(clusterlog.trace, "applying hard constraints: {}", constraints);
+
     std::vector<hard_constraint_evaluator> evaluators;
     evaluators.reserve(constraints.size());
     for (auto& c : constraints) {
-        evaluators.push_back(c->make_evaluator(ntp, current_replicas));
+        evaluators.push_back(c->make_evaluator(partition, prev));
     }
 
     // empty hard constraints, all nodes are eligible
@@ -68,10 +59,22 @@ std::vector<model::node_id> solve_hard_constraints(
 
     for (auto& p : nodes) {
         auto& node = p.second;
-        auto result = std::all_of(
-          evaluators.begin(),
-          evaluators.end(),
-          [&node](const hard_constraint_evaluator& ev) { return ev(*node); });
+        bool result = true;
+        for (size_t i = 0; i < constraints.size(); ++i) {
+            auto res = evaluators[i](*node);
+            if (clusterlog.is_enabled(ss::log_level::trace)) {
+                vlog(
+                  clusterlog.trace,
+                  "{}(node: {}) = {}",
+                  constraints[i]->name(),
+                  node->id(),
+                  res);
+            }
+            if (!res) {
+                result = false;
+                break;
+            }
+        }
 
         if (result) {
             possible_nodes.push_back(p.first);
@@ -84,14 +87,24 @@ std::vector<model::node_id> solve_hard_constraints(
  * for a given level of constraints
  */
 std::vector<model::node_id> optimize_constraints(
-  const std::vector<model::node_id>& possible_nodes,
+  const allocation_state::underlying_t& allocation_nodes,
+  std::vector<model::node_id> possible_nodes,
   const soft_constraints_level& constraints,
-  const std::vector<model::broker_shard>& current_replicas,
-  const allocation_state::underlying_t& allocation_nodes) {
+  const allocated_partition& partition,
+  std::optional<model::node_id> prev) {
+    vlog(
+      clusterlog.trace, "optimizing soft constraints level: {}", constraints);
+
+    if (possible_nodes.size() <= 1) {
+        // nothing to optimize, choose the only node available after solving
+        // hard constraints.
+        return possible_nodes;
+    }
+
     std::vector<soft_constraint_evaluator> evaluators;
     evaluators.reserve(constraints.size());
     for (auto& c : constraints) {
-        evaluators.push_back(c->make_evaluator(current_replicas));
+        evaluators.push_back(c->make_evaluator(partition, prev));
     }
 
     uint32_t best_score = 0;
@@ -102,20 +115,27 @@ std::vector<model::node_id> optimize_constraints(
         if (it == allocation_nodes.end()) {
             continue;
         }
+        const auto& node = *it->second;
+
+        uint32_t score = 0;
+        for (size_t i = 0; i < constraints.size(); ++i) {
+            const auto current_score = evaluators[i](node);
+            if (clusterlog.is_enabled(ss::log_level::trace)) {
+                vlog(
+                  clusterlog.trace,
+                  "{}(node: {}) = {} ({})",
+                  constraints[i]->name(),
+                  node.id(),
+                  current_score,
+                  (double)current_score / soft_constraint::max_score);
+            }
+            score += current_score;
+        }
+
         /**
          * Score is normalized so that it is always in range [0, max_score_size]
          */
-        uint32_t score = std::accumulate(
-                           evaluators.begin(),
-                           evaluators.end(),
-                           uint32_t{0},
-                           [&node = it->second](
-                             uint32_t score,
-                             const soft_constraint_evaluator& ev) {
-                               const auto current_score = ev(*node);
-                               return score + current_score;
-                           })
-                         / constraints.size();
+        score /= constraints.size();
 
         vlog(
           clusterlog.trace,
@@ -140,59 +160,45 @@ std::vector<model::node_id> optimize_constraints(
     return best_fits;
 }
 
-model::node_id find_best_fit(
-  const std::vector<model::broker_shard>& current_replicas,
-  const soft_constraints_hierarchy& constraints,
-  std::vector<model::node_id> possible_nodes,
-  const allocation_state::underlying_t& allocation_nodes) {
-    std::vector<model::node_id> to_optimize = std::move(possible_nodes);
-    // this loop optimizes each level of constrains and then move on to the next
-    // one leaving the previous error at the minimum
+} // namespace
 
-    for (const auto& lvl : constraints) {
-        to_optimize = optimize_constraints(
-          to_optimize, lvl, current_replicas, allocation_nodes);
+result<model::node_id> allocation_strategy::choose_node(
+  const allocation_state& state,
+  const allocation_constraints& request,
+  const allocated_partition& partition,
+  std::optional<model::node_id> prev) {
+    const auto& allocation_nodes = state.allocation_nodes();
+    /**
+     * evaluate hard constraints
+     */
+    std::vector<model::node_id> possible_nodes = solve_hard_constraints(
+      allocation_nodes, request.hard_constraints, partition, prev);
+
+    vlog(
+      clusterlog.trace,
+      "after applying hard constraints, eligible nodes: {}",
+      possible_nodes);
+
+    if (possible_nodes.empty()) {
+        return errc::no_eligible_allocation_nodes;
     }
 
-    return random_generators::random_choice(to_optimize);
+    /**
+     * soft constraints
+     */
+
+    // this loop optimizes each level of constrains and then move on to the next
+    // one leaving the previous error at the minimum
+    for (const auto& lvl : request.soft_constraints) {
+        possible_nodes = optimize_constraints(
+          allocation_nodes, std::move(possible_nodes), lvl, partition, prev);
+        vlog(
+          clusterlog.trace,
+          "after optimizing soft constraints level, eligible nodes: {}",
+          possible_nodes);
+    }
+
+    return random_generators::random_choice(possible_nodes);
 }
-
-allocation_strategy simple_allocation_strategy() {
-    class impl : public allocation_strategy::impl {
-    public:
-        result<model::node_id> choose_node(
-          const model::ntp& ntp,
-          const std::vector<model::broker_shard>& current_replicas,
-          const allocation_constraints& request,
-          allocation_state& state,
-          const partition_allocation_domain) final {
-            const auto& nodes = state.allocation_nodes();
-            /**
-             * evaluate hard constraints
-             */
-            std::vector<model::node_id> possible_nodes = solve_hard_constraints(
-              ntp,
-              current_replicas,
-              request.hard_constraints,
-              state.allocation_nodes());
-
-            if (possible_nodes.empty()) {
-                return errc::no_eligible_allocation_nodes;
-            }
-
-            /**
-             * soft constraints
-             */
-            auto best_fit = find_best_fit(
-              current_replicas,
-              request.soft_constraints,
-              possible_nodes,
-              nodes);
-
-            return best_fit;
-        }
-    };
-    return make_allocation_strategy<impl>();
-};
 
 } // namespace cluster

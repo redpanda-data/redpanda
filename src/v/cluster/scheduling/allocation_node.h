@@ -124,7 +124,7 @@ public:
     bool empty() const {
         return _allocated_partitions == allocation_capacity{0};
     }
-    bool is_full(const model::ntp&) const;
+    bool is_full(const model::ntp&, bool will_add_allocation) const;
     ss::shard_id allocate(partition_allocation_domain);
 
 private:

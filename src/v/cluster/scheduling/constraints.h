@@ -48,18 +48,12 @@ hard_constraint disk_not_overflowed_by_partition(
     node_disk_reports);
 
 /*
- * scores nodes based on partition count after all moves have been finished
- * returning `0` for fully allocated nodes and `max_capacity` for empty nodes
+ * Scores nodes based on partition count after all moves have been finished
+ * returning `0` for fully allocated nodes and `max_capacity` for empty nodes.
+ * If partition_allocation_domain != common, takes into account only counts
+ * in this domain.
  */
-soft_constraint max_final_capacity();
-
-/*
- * scores nodes based on partition counts of priority partitions after all moves
- * have been finished, returning `0` for nodes fully allocated for priority
- * partitions and `max_capacity` for nodes without any priority partitions.
- * non-priority partition allocations are ignored.
- */
-soft_constraint max_final_capacity_in_domain(partition_allocation_domain);
+soft_constraint max_final_capacity(partition_allocation_domain);
 
 /*
  * constraint scores nodes on free disk space
@@ -68,6 +62,7 @@ soft_constraint max_final_capacity_in_domain(partition_allocation_domain);
  */
 soft_constraint least_disk_filled(
   const double max_disk_usage_ratio,
+  const size_t partition_size,
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 
@@ -92,31 +87,41 @@ distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
           : _label_name(label_name)
           , _mapper(std::forward<Mapper>(mapper)) {}
 
-        soft_constraint_evaluator
-        make_evaluator(const replicas_t& current_replicas) const final {
+        soft_constraint_evaluator make_evaluator(
+          const allocated_partition& partition,
+          std::optional<model::node_id> prev) const final {
             absl::flat_hash_map<T, size_t> frequency_map;
+            std::optional<T> prev_label;
 
-            for (auto& r : current_replicas) {
+            for (auto& r : partition.replicas()) {
                 auto const l = _mapper(r.node_id);
                 if (!l) {
                     continue;
                 }
-                auto [it, _] = frequency_map.try_emplace(*l, 0);
-                it->second += 1;
+                if (r.node_id == prev) {
+                    prev_label = l;
+                }
+                frequency_map[*l] += 1;
             }
 
-            return [this, frequency_map = std::move(frequency_map)](
+            return [this, frequency_map = std::move(frequency_map), prev_label](
                      const allocation_node& candidate_node) -> uint64_t {
                 auto node_label = _mapper(candidate_node.id());
                 if (!node_label) {
                     return (uint64_t)0;
                 }
-                auto it = frequency_map.find(*node_label);
 
+                auto it = frequency_map.find(*node_label);
                 if (it == frequency_map.end()) {
                     return (uint64_t)soft_constraint::max_score;
                 }
-                return (uint64_t)soft_constraint::max_score / (it->second + 1);
+
+                auto count = it->second;
+                if (node_label != prev_label) {
+                    count += 1;
+                }
+
+                return (uint64_t)soft_constraint::max_score / count;
             };
         }
 
@@ -134,5 +139,12 @@ distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
 }
 
 soft_constraint distinct_rack_preferred(const members_table&);
+
+/// Scores nodes based on replica count queried from the supplied map (as
+/// opposed to total node count). E.g. if the map represents topic partition
+/// counts, this constraint will implement topic-aware replica placement.
+///
+/// NOTE: counts will be scaled by max node capacity.
+soft_constraint min_count_in_map(std::string_view name, const node2count_t&);
 
 } // namespace cluster

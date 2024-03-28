@@ -18,34 +18,26 @@ namespace cluster {
 
 class members_backend {
 public:
-    enum class reallocation_state {
-        initial,
-        reassigned,
-        requested,
-        finished,
+    enum class cancellation_state {
         request_cancel,
-        cancelled
+        cancelled,
+        finished,
     };
 
     struct partition_reallocation {
-        explicit partition_reallocation(
-          model::partition_id p_id, uint16_t replication_factor)
-          : constraints(partition_constraints(p_id, replication_factor)) {}
+        partition_reallocation(
+          replicas_t current_rs, replicas_t new_rs, cancellation_state state)
+          : current_replica_set(std::move(current_rs))
+          , new_replica_set(std::move(new_rs))
+          , state(state) {}
 
-        partition_reallocation() = default;
-        void set_new_replicas(allocated_partition units) {
-            allocated = std::move(units);
-            new_replica_set = allocated->replicas();
-        }
+        replicas_t current_replica_set;
+        replicas_t new_replica_set;
+        // Currently members_backend only dispatches cancellations after node
+        // recommission, other required partition movements are dispatched by
+        // partition_balancer.
+        cancellation_state state;
 
-        void release_allocated() { allocated.reset(); }
-
-        std::optional<partition_constraints> constraints;
-        absl::node_hash_set<model::node_id> replicas_to_remove;
-        std::optional<allocated_partition> allocated;
-        std::vector<model::broker_shard> new_replica_set;
-        std::vector<model::broker_shard> current_replica_set;
-        reallocation_state state = reallocation_state::initial;
         friend std::ostream&
         operator<<(std::ostream&, const partition_reallocation&);
     };
@@ -56,35 +48,12 @@ public:
         explicit update_meta(members_manager::node_update update)
           : update(update) {}
 
-        // on demand rebalance request
-        explicit update_meta() noexcept = default;
-
         members_manager::node_update update;
         // it is ok to use a flat hash map here as it it will be limited in
         // size by the max concurrent reallocations batch size
         absl::flat_hash_map<model::ntp, partition_reallocation>
           partition_reallocations;
         bool finished = false;
-        // unevenness error is normalized to be at most 1.0, set to max
-        absl::flat_hash_map<partition_allocation_domain, double>
-          last_unevenness_error;
-    };
-
-    struct reallocation_strategy {
-        reallocation_strategy() = default;
-        reallocation_strategy(const reallocation_strategy&) = default;
-        reallocation_strategy(reallocation_strategy&&) = default;
-        reallocation_strategy& operator=(const reallocation_strategy&)
-          = default;
-        reallocation_strategy& operator=(reallocation_strategy&&) = default;
-        virtual ~reallocation_strategy() = default;
-        virtual void reallocations_for_even_partition_count(
-          size_t batch_size,
-          partition_allocator&,
-          topic_table&,
-          update_meta&,
-          partition_allocation_domain)
-          = 0;
     };
 
     members_backend(
@@ -147,7 +116,6 @@ private:
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<members_frontend>& _members_frontend;
     ss::sharded<features::feature_table>& _features;
-    std::unique_ptr<reallocation_strategy> _reallocation_strategy;
     consensus_ptr _raft0;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _bg;
@@ -163,6 +131,6 @@ private:
     config::binding<size_t> _max_concurrent_reallocations;
 };
 std::ostream&
-operator<<(std::ostream&, const members_backend::reallocation_state&);
+operator<<(std::ostream&, const members_backend::cancellation_state&);
 
 } // namespace cluster

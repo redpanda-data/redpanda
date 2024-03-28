@@ -50,7 +50,8 @@ allocation_node::allocation_node(
     });
 }
 
-bool allocation_node::is_full(const model::ntp& ntp) const {
+bool allocation_node::is_full(
+  const model::ntp& ntp, bool will_add_allocation) const {
     // Internal topics are excluded from checks to prevent allocation failures
     // when creating them. This is okay because they are fairly small in number
     // compared to kafka user topic partitions.
@@ -67,7 +68,12 @@ bool allocation_node::is_full(const model::ntp& ntp) const {
                                [&ntp](const ss::sstring& topic) {
                                    return topic == ntp.tp.topic();
                                });
-    return !is_internal_topic && _allocated_partitions >= _max_capacity;
+
+    auto count = _allocated_partitions;
+    if (will_add_allocation) {
+        count += 1;
+    }
+    return !is_internal_topic && count > _max_capacity;
 }
 
 ss::shard_id

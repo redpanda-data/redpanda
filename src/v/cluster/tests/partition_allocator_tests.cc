@@ -350,7 +350,8 @@ FIXTURE_TEST(decommission_node, partition_allocator_fixture) {
 cluster::hard_constraint make_throwing_hard_evaluator() {
     struct impl : cluster::hard_constraint::impl {
         cluster::hard_constraint_evaluator make_evaluator(
-          const model::ntp&, const cluster::replicas_t&) const final {
+          const cluster::allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [](const cluster::allocation_node&) -> bool {
                 throw std::runtime_error("evaluation exception");
             };
@@ -366,7 +367,8 @@ cluster::hard_constraint make_throwing_hard_evaluator() {
 cluster::hard_constraint make_false_evaluator() {
     struct impl : cluster::hard_constraint::impl {
         cluster::hard_constraint_evaluator make_evaluator(
-          const model::ntp&, const cluster::replicas_t&) const final {
+          const cluster::allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [](const cluster::allocation_node&) { return true; };
         }
         ss::sstring name() const final {
@@ -380,7 +382,8 @@ cluster::hard_constraint make_false_evaluator() {
 cluster::hard_constraint make_nop_evaluator() {
     struct impl : cluster::hard_constraint::impl {
         cluster::hard_constraint_evaluator make_evaluator(
-          const model::ntp&, const cluster::replicas_t&) const final {
+          const cluster::allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [](const cluster::allocation_node&) { return true; };
         }
         ss::sstring name() const final { return "NOP evaluator"; }
@@ -960,7 +963,8 @@ static cluster::allocation_constraints on_node(model::node_id id) {
           : _id(id) {}
 
         cluster::hard_constraint_evaluator make_evaluator(
-          const model::ntp&, const cluster::replicas_t&) const final {
+          const cluster::allocated_partition&,
+          std::optional<model::node_id>) const final {
             return [this](const cluster::allocation_node& node) {
                 return node.id() == _id;
             };

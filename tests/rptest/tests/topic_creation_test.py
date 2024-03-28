@@ -764,3 +764,64 @@ class RecreateTopicMetadataTest(RedpandaTest):
             return True
 
         wait_until(metadata_consistent, 45, backoff_sec=2)
+
+
+class CreateTopicReplicaDistributionTest(RedpandaTest):
+    def __init__(self, test_context):
+        super(CreateTopicReplicaDistributionTest, self).__init__(
+            test_context=test_context,
+            num_brokers=5,
+            extra_rp_conf={'partition_autobalancing_mode': 'off'})
+
+    def setUp(self):
+        # start the nodes manually
+        pass
+
+    @cluster(num_nodes=5)
+    def test_topic_aware_distribution(self):
+        """
+        Test that replicas for newly created topic are distributed evenly, 
+        even though there is an imbalance in existing replica distribution.
+        """
+
+        self.redpanda.start(nodes=self.redpanda.nodes[0:3])
+
+        # Create first topic, replicas should be distributed evenly across 3 first nodes.
+        self.client().create_topic(
+            TopicSpec(name="topic1", partition_count=10, replication_factor=3))
+
+        # Start other 2 nodes, they will be empty until topic2 is created
+        self.redpanda.start(nodes=self.redpanda.nodes[3:5])
+        self.redpanda.wait_for_membership(first_start=True)
+
+        # Create second topic
+        self.client().create_topic(
+            TopicSpec(name="topic2", partition_count=20, replication_factor=3))
+
+        # Calculate the replica distribution
+        node2total_count = dict()
+        topic2node_counts = dict()
+        kafkakat = KafkaCat(self.redpanda)
+        md = kafkakat.metadata()
+        self.logger.debug(f"metadata: {md}")
+        for topic in md['topics']:
+            for p in topic['partitions']:
+                for r in p['replicas']:
+                    node_id = r['id']
+                    node2total_count[node_id] = node2total_count.setdefault(
+                        node_id, 0) + 1
+                    topic_counts = topic2node_counts.setdefault(
+                        topic['topic'], dict())
+                    topic_counts[node_id] = topic_counts.setdefault(
+                        node_id, 0) + 1
+                    topic2node_counts[topic['topic']] = topic_counts
+
+        self.logger.info(f"node counts: {sorted(node2total_count.items())}")
+        for topic, counts in topic2node_counts.items():
+            self.logger.info(
+                f"topic '{topic}' counts: {sorted(counts.items())}")
+
+        # Check topic2 counts
+        counts = topic2node_counts['topic2']
+        expected_count = int(sum(counts.values()) / 5)
+        assert all(v == expected_count for v in counts.values())
