@@ -8,11 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_roles/aws_sts_refresh_impl.h"
+#include "aws_sts_refresh_impl.h"
 
 #include "bytes/streambuf.h"
 #include "cloud_roles/logger.h"
-#include "cloud_roles/request_response_helpers.h"
+#include "request_response_helpers.h"
 #include "utils/file_io.h"
 
 #include <boost/algorithm/string/trim.hpp>

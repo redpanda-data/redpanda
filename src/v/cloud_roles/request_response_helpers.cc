@@ -8,15 +8,15 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_roles/request_response_helpers.h"
+#include "request_response_helpers.h"
 
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
+#include "cloud_roles/logger.h"
 #include "config/configuration.h"
 #include "json/istreamwrapper.h"
 #include "json/ostreamwrapper.h"
 #include "json/schema.h"
-#include "logger.h"
 
 #include <rapidjson/error/en.h>
 

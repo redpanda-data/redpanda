@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "cloud_roles/types.h"
 #include "cloud_storage_clients/client_probe.h"
 #include "cloud_storage_clients/types.h"
 #include "net/transport.h"
