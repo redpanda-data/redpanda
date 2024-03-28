@@ -18,6 +18,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "test_utils/randoms.h"
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -38,11 +39,8 @@ using namespace cloud_storage;
 
 // update manifest, serialize, compare jsons
 
-static const manifest_topic_configuration cfg{
-  .tp_ns = model::topic_namespace(
-    model::ns("cfg-test-namespace"), model::topic("cfg-test-topic")),
-  .partition_count = 32,
-  .replication_factor = 3};
+static const cluster::topic_configuration cfg{
+  model::ns("cfg-test-namespace"), model::topic("cfg-test-topic"), 32, 3};
 
 static constexpr std::string_view min_topic_manifest_json = R"json({
     "version": 1,
@@ -85,7 +83,7 @@ static constexpr std::string_view missing_partition_count = R"json({
 })json";
 
 static constexpr std::string_view wrong_version = R"json({
-    "version": 2,
+    "version": 99,
     "namespace": "full-test-namespace",
     "topic": "full-test-topic",
     "partition_count": 64,
@@ -144,8 +142,8 @@ SEASTAR_THREAD_TEST_CASE(manifest_type_topic) {
 }
 
 SEASTAR_THREAD_TEST_CASE(create_topic_manifest_correct_path) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
-    auto path = m.get_manifest_path();
+    auto path = topic_manifest::get_topic_manifest_path(
+      cfg.tp_ns.ns, cfg.tp_ns.tp);
     BOOST_REQUIRE_EQUAL(
       path,
       "50000000/meta/cfg-test-namespace/cfg-test-topic/topic_manifest.json");
@@ -160,7 +158,8 @@ SEASTAR_THREAD_TEST_CASE(update_topic_manifest_correct_path) {
 }
 
 SEASTAR_THREAD_TEST_CASE(construct_serialize_update_same_object) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
+    auto local_ft = features::feature_table{};
+    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -238,37 +237,67 @@ SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
     BOOST_REQUIRE_EQUAL(
       topic_config.properties.retention_duration.value(),
       std::chrono::milliseconds(36000000000));
+
+    // ensure that for v1 topic_manifest, tristates that were not serialized
+    // keep their default value
+    BOOST_REQUIRE_EQUAL(
+      topic_config.properties.initial_retention_local_target_bytes,
+      cluster::topic_properties{}.initial_retention_local_target_bytes);
 }
 
 SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
-    manifest_topic_configuration min_cfg{cfg};
-    min_cfg.properties.retention_bytes = tristate<size_t>(
-      std::numeric_limits<size_t>::min());
-    min_cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
-      std::chrono::milliseconds::min());
-    min_cfg.properties.segment_size = std::make_optional(
-      std::numeric_limits<size_t>::min());
-    topic_manifest m(min_cfg, model::initial_revision_id{0});
-    auto [is, size] = m.serialize().get();
-    iobuf buf;
-    auto os = make_iobuf_ref_output_stream(buf);
-    ss::copy(is, os).get();
+    auto runner = [](features::feature_table const& local_ft) {
+        auto min_cfg = cfg;
+        min_cfg.properties.retention_bytes = tristate<size_t>(
+          std::numeric_limits<size_t>::min());
+        min_cfg.properties.retention_duration
+          = tristate<std::chrono::milliseconds>(
+            std::chrono::milliseconds::min());
+        min_cfg.properties.segment_size = std::make_optional(
+          std::numeric_limits<size_t>::min());
 
-    auto rstr = make_iobuf_input_stream(std::move(buf));
-    topic_manifest restored;
-    restored.update(std::move(rstr)).get();
-    BOOST_REQUIRE(m == restored);
+        topic_manifest m(min_cfg, model::initial_revision_id{0}, local_ft);
+        auto [is, size] = m.serialize().get();
+        iobuf buf;
+        auto os = make_iobuf_ref_output_stream(buf);
+        ss::copy(is, os).get();
+
+        auto rstr = make_iobuf_input_stream(std::move(buf));
+        topic_manifest restored;
+        restored.update(std::move(rstr)).get();
+        BOOST_CHECK_EQUAL(m.get_revision(), restored.get_revision());
+        auto restored_cfg = restored.get_topic_config().value();
+        // as a safety net, negative values for retention_duration are converted
+        // to disabled tristate (infinite retention)
+        BOOST_CHECK(restored_cfg.properties.retention_duration.is_disabled());
+
+        BOOST_CHECK_EQUAL(
+          restored_cfg.properties.retention_bytes,
+          min_cfg.properties.retention_bytes);
+        BOOST_CHECK_EQUAL(
+          restored_cfg.properties.segment_size,
+          min_cfg.properties.segment_size);
+    };
+    BOOST_TEST_CONTEXT("topic_manifest v1") {
+        runner(features::feature_table{});
+    }
+    BOOST_TEST_CONTEXT("topic_manifest v2") {
+        auto local_ft = features::feature_table{};
+        local_ft.testing_activate_all();
+        runner(local_ft);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
-    manifest_topic_configuration max_cfg{cfg};
+    auto max_cfg = cfg;
     max_cfg.properties.retention_bytes = tristate<size_t>(
       std::numeric_limits<size_t>::max());
     max_cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
       std::chrono::milliseconds::max());
     max_cfg.properties.segment_size = std::make_optional(
       std::numeric_limits<size_t>::max());
-    topic_manifest m(max_cfg, model::initial_revision_id{0});
+    auto local_ft = features::feature_table{};
+    topic_manifest m(max_cfg, model::initial_revision_id{0}, local_ft);
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -286,9 +315,8 @@ SEASTAR_THREAD_TEST_CASE(missing_required_fields_throws) {
       m.update(make_manifest_stream(missing_partition_count)).get(),
       std::runtime_error,
       [](std::runtime_error ex) {
-          return std::string(ex.what()).find(
-                   "Missing _partition_count value in "
-                   "parsed topic manifest")
+          return std::string(ex.what()).find("Missing partition_count value in "
+                                             "parsed topic manifest")
                  != std::string::npos;
       });
 }
@@ -300,24 +328,16 @@ SEASTAR_THREAD_TEST_CASE(wrong_version_throws) {
       std::runtime_error,
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
-                   "topic manifest version {2} is not supported")
+                   "topic manifest version 99 is not supported")
                  != std::string::npos;
       });
 }
 
 SEASTAR_THREAD_TEST_CASE(wrong_compaction_strategy_throws) {
     topic_manifest m;
-    BOOST_REQUIRE_EXCEPTION(
+    BOOST_REQUIRE_THROW(
       m.update(make_manifest_stream(wrong_compaction_strategy)).get(),
-      std::runtime_error,
-      [](std::runtime_error ex) {
-          return std::string(ex.what()).find(
-                   "Failed to parse topic manifest "
-                   "\"30000000/meta/full-test-namespace/full-test-topic/"
-                   "topic_manifest.json\": Invalid compaction_strategy: "
-                   "wrong_value")
-                 != std::string::npos;
-      });
+      std::runtime_error);
 }
 
 SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {
@@ -337,7 +357,8 @@ SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {
 }
 
 SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
+    auto local_ft = features::feature_table{};
+    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
     m.update(make_manifest_stream(full_topic_manifest_json)).get();
     auto [is, size] = m.serialize().get();
     iobuf buf;
@@ -352,18 +373,17 @@ SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
-    topic_manifest m(cfg, model::initial_revision_id(0));
+    auto local_ft = features::feature_table{};
+    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
     m.update(make_manifest_stream(negative_properties_manifest)).get();
     auto tp_cfg = m.get_topic_config();
     BOOST_REQUIRE(tp_cfg.has_value());
     BOOST_REQUIRE_EQUAL(64, tp_cfg->partition_count);
     BOOST_REQUIRE_EQUAL(6, tp_cfg->replication_factor);
     auto tp_props = tp_cfg->properties;
-    BOOST_REQUIRE(tp_props.retention_duration.has_optional_value());
-    BOOST_REQUIRE_EQUAL(
-      tp_props.retention_duration.value().count(), -36000000000);
 
-    // The usigned types that were passed in negative values shouldn't be set.
+    // The unsigned types that were passed in negative values shouldn't be set.
+    BOOST_REQUIRE(tp_props.retention_duration.is_disabled());
     BOOST_REQUIRE(tp_props.retention_bytes.is_disabled());
     BOOST_REQUIRE(!tp_props.segment_size.has_value());
 }
@@ -378,7 +398,9 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
     test_cfg.properties.retention_bytes = tristate<size_t>{disable_tristate};
     test_cfg.properties.retention_duration
       = tristate<std::chrono::milliseconds>{disable_tristate};
-    auto m = topic_manifest{test_cfg, model::initial_revision_id{0}};
+
+    auto local_ft = features::feature_table{};
+    auto m = topic_manifest{test_cfg, model::initial_revision_id{0}, local_ft};
 
     auto serialized = m.serialize().get().stream;
     auto buf = iobuf{};
@@ -395,8 +417,146 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
       test_cfg.properties == reconstructed_props,
       fmt::format(
         "test_cfg: {} reconstructed_cfg: {}",
-        reflection::to_tuple(test_cfg.properties),
-        reflection::to_tuple(reconstructed_props)));
+        test_cfg.properties,
+        reconstructed_props));
 
     BOOST_CHECK(test_cfg == reconstructed.get_topic_config());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_v2_new_properties) {
+    // test random values for new properties mapped in v2
+    auto test_cfg = cfg;
+    auto modified_properties = std::tuple{
+      // v1 properties:
+      test_cfg.properties.compression = tests::random_optional([] {
+          using enum model::compression;
+          return random_generators::random_choice(
+            {gzip, lz4, none, producer, snappy, zstd});
+      }),
+      test_cfg.properties.cleanup_policy_bitflags = tests::random_optional([] {
+          using enum model::cleanup_policy_bitflags;
+          return random_generators::random_choice(
+            {none, compaction, deletion, compaction | deletion});
+      }),
+      test_cfg.properties.compaction_strategy = tests::random_optional([] {
+          using enum model::compaction_strategy;
+          return random_generators::random_choice({header, offset, timestamp});
+      }),
+      test_cfg.properties.timestamp_type = tests::random_optional([] {
+          using enum model::timestamp_type;
+          return random_generators::random_choice({append_time, create_time});
+      }),
+      test_cfg.properties.segment_size = tests::random_optional(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.retention_bytes = tests::random_tristate(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.retention_duration = tests::random_tristate(
+        tests::random_duration_ms),
+
+      // v2 new properties:
+      test_cfg.properties.recovery = tests::random_optional(tests::random_bool),
+      test_cfg.properties.shadow_indexing = tests::random_optional([] {
+          using enum model::shadow_indexing_mode;
+          return random_generators::random_choice({archival, fetch, full});
+      }),
+      test_cfg.properties.read_replica = tests::random_optional(
+        tests::random_bool),
+      test_cfg.properties.read_replica_bucket = tests::random_optional(
+        [] { return tests::random_named_string<ss::sstring>(); }),
+      test_cfg.properties.remote_topic_properties = tests::random_optional([] {
+          return cluster::remote_topic_properties{
+            tests::random_named_int<model::initial_revision_id>(),
+            random_generators::get_int<int32_t>()};
+      }),
+      test_cfg.properties.batch_max_bytes = tests::random_optional(
+        [] { return random_generators::get_int<uint32_t>(); }),
+      test_cfg.properties.retention_local_target_bytes = tests::random_tristate(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.retention_local_target_ms = tests::random_tristate(
+        tests::random_duration_ms),
+      test_cfg.properties.remote_delete = tests::random_bool(),
+      test_cfg.properties.segment_ms = tests::random_tristate(
+        tests::random_duration_ms),
+      test_cfg.properties.record_key_schema_id_validation
+      = tests::random_optional(tests::random_bool),
+      test_cfg.properties.record_key_schema_id_validation_compat
+      = tests::random_optional(tests::random_bool),
+      test_cfg.properties.record_key_subject_name_strategy
+      = tests::random_optional([] {
+            using enum pandaproxy::schema_registry::subject_name_strategy;
+            return random_generators::random_choice(
+              {topic_record_name, topic_name, record_name});
+        }),
+      test_cfg.properties.record_key_subject_name_strategy_compat
+      = tests::random_optional([] {
+            using enum pandaproxy::schema_registry::subject_name_strategy;
+            return random_generators::random_choice(
+              {topic_record_name, topic_name, record_name});
+        }),
+      test_cfg.properties.record_value_schema_id_validation
+      = tests::random_optional(tests::random_bool),
+      test_cfg.properties.record_value_schema_id_validation_compat
+      = tests::random_optional(tests::random_bool),
+      test_cfg.properties.record_value_subject_name_strategy
+      = tests::random_optional([] {
+            using enum pandaproxy::schema_registry::subject_name_strategy;
+            return random_generators::random_choice(
+              {topic_record_name, topic_name, record_name});
+        }),
+      test_cfg.properties.record_value_subject_name_strategy_compat
+      = tests::random_optional([] {
+            using enum pandaproxy::schema_registry::subject_name_strategy;
+            return random_generators::random_choice(
+              {topic_record_name, topic_name, record_name});
+        }),
+      test_cfg.properties.initial_retention_local_target_bytes
+      = tests::random_tristate(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.initial_retention_local_target_ms
+      = tests::random_tristate(tests::random_duration_ms),
+      test_cfg.properties.mpx_virtual_cluster_id = tests::random_optional([] {
+          auto raw_data = tests::random_vector(
+            [] { return random_generators::get_int<uint8_t>(); },
+            std::tuple_size_v<xid::data_t>);
+          auto data = xid::data_t{};
+          std::ranges::copy(raw_data, data.begin());
+          return model::vcluster_id{xid{data}};
+      }),
+      test_cfg.properties.write_caching = tests::random_optional([] {
+          using enum model::write_caching_mode;
+          return random_generators::random_choice({on, off, disabled});
+      }),
+      test_cfg.properties.flush_bytes = tests::random_optional(
+        [] { return random_generators::get_int<size_t>(); }),
+      test_cfg.properties.flush_ms = tests::random_optional(
+        tests::random_duration_ms),
+    };
+
+    BOOST_CHECK_MESSAGE(
+      std::tuple_size_v<decltype(modified_properties)>
+        == std::tuple_size_v<
+          decltype(cluster::topic_properties{}.serde_fields())>,
+      "Some fields of cluster::topic_properties are not fuzzed. Add the new "
+      "fields to `modified_properties` to make sure that the coverage of the "
+      "json serialization is complete");
+
+    auto local_ft = features::feature_table{};
+    local_ft.testing_activate_all();
+    BOOST_CHECK(local_ft.is_active(features::feature::topic_manifest_v2));
+    auto manifest = topic_manifest{
+      test_cfg, model::initial_revision_id{}, local_ft};
+    auto serialized = manifest.serialize().get().stream;
+    auto buf = iobuf{};
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(serialized, os).get();
+
+    auto ibp = iobuf_parser{buf.copy()};
+    auto manifest_json = ibp.read_string(ibp.bytes_left());
+    BOOST_TEST_INFO(manifest_json);
+
+    auto reconstructed = topic_manifest{};
+    reconstructed.update(make_iobuf_input_stream(std::move(buf))).get();
+    BOOST_REQUIRE_EQUAL(
+      reconstructed.get_topic_config().value(),
+      manifest.get_topic_config().value());
 }

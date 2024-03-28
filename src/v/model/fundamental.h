@@ -438,6 +438,7 @@ static_assert(
   == shadow_indexing_mode::disabled);
 
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
+std::istream& operator>>(std::istream&, shadow_indexing_mode&);
 
 using client_address_t = named_type<ss::sstring, struct client_address_tag>;
 

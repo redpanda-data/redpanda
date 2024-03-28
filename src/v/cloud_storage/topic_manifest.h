@@ -12,7 +12,8 @@
 
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
-#include "json/document.h"
+#include "cluster/types.h"
+#include "features/feature_table.h"
 
 #include <optional>
 
@@ -21,9 +22,19 @@ namespace cloud_storage {
 struct topic_manifest_handler;
 class topic_manifest final : public base_manifest {
 public:
+    using version_t = named_type<int32_t, struct topic_manifest_version_tag>;
+    constexpr static auto first_version = version_t{1};
+    // this version introduces the serialization of
+    // cluster::topic_configuration, with all its field
+    constexpr static auto cluster_topic_configuration_version = version_t{2};
+
+    constexpr static auto current_version = cluster_topic_configuration_version;
+
     /// Create manifest for specific ntp
     explicit topic_manifest(
-      const manifest_topic_configuration& cfg, model::initial_revision_id rev);
+      const cluster::topic_configuration& cfg,
+      model::initial_revision_id rev,
+      const features::feature_table&);
 
     /// Create empty manifest that supposed to be updated later
     topic_manifest();
@@ -56,9 +67,15 @@ public:
     /// Change topic-manifest revision
     void set_revision(model::initial_revision_id id) noexcept { _rev = id; }
 
-    std::optional<manifest_topic_configuration> const&
+    std::optional<cluster::topic_configuration> const&
     get_topic_config() const noexcept {
         return _topic_config;
+    }
+
+    /// return the version of the decoded manifest. useful to decide if to fill
+    /// a field that was not encoded in a previous version
+    version_t get_manifest_version() const noexcept {
+        return _manifest_version;
     }
 
     bool operator==(const topic_manifest& other) const {
@@ -67,11 +84,8 @@ public:
     };
 
 private:
-    /// Update manifest content from json document that supposed to be generated
-    /// from manifest.json file
-    void do_update(const topic_manifest_handler& handler);
-
-    std::optional<manifest_topic_configuration> _topic_config;
+    std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;
+    version_t _manifest_version{first_version};
 };
 } // namespace cloud_storage

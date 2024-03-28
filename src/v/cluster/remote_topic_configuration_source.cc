@@ -86,8 +86,7 @@ remote_topic_configuration_source::set_remote_properties_in_config(
 
 /// If property is set in source apply it to target.
 static void apply_retention_defaults(
-  topic_properties& target,
-  const cloud_storage::manifest_topic_configuration::topic_properties& source) {
+  topic_properties& target, const topic_properties& source) {
     // If the retention properties are not set explicitly by the command we
     // should apply them from topic_manifest.
     if (!target.cleanup_policy_bitflags) {
@@ -99,6 +98,42 @@ static void apply_retention_defaults(
     if (!target.retention_duration.has_optional_value()) {
         target.retention_duration = source.retention_duration;
     }
+}
+
+/// target = source if not source.is_empty()
+template<typename T>
+static void copy_if_empty(std::optional<T>& target, std::optional<T> source) {
+    if (!target.has_value()) {
+        target = std::move(source);
+    }
+}
+
+template<typename T>
+static void copy_if_empty(tristate<T>& target, tristate<T> source) {
+    if (target.is_empty()) {
+        target = std::move(source);
+    }
+}
+
+template<typename T>
+static void copy_if_empty(T&, T const&) {
+    // do nothing, a value is always set
+}
+
+/// Copy properties from source to target, if not empty in target.
+/// Presumably, if a property in target is set (either to a value or disabled)
+/// it's because the user wants the recovered topic to have that specific value
+static void
+copy_non_empty_properties(topic_properties& target, topic_properties source) {
+    // apply copy_if_empty to all the fields of cluster::topic_properties
+    auto target_fields = target.serde_fields();
+    auto source_fields = source.serde_fields();
+
+    [&]<size_t... N>(std::index_sequence<N...>) {
+        (copy_if_empty(
+           std::get<N>(target_fields), std::move(std::get<N>(source_fields))),
+         ...);
+    }(std::make_index_sequence<std::tuple_size_v<decltype(target_fields)>>());
 }
 
 ss::future<errc>
@@ -120,18 +155,26 @@ remote_topic_configuration_source::set_recovered_topic_properties(
           "Topic manifest {} doesn't contain topic config",
           key);
         co_return errc::topic_operation_error;
-    } else {
-        // Update all topic properties
-        const auto& rc = manifest.get_topic_config();
-        cfg.cfg.partition_count = rc->partition_count;
-        apply_retention_defaults(cfg.cfg.properties, rc->properties);
-
-        // Use remote_topic_properties to pass revision id from the
-        // topic_manifest.json
-        cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
-          manifest.get_revision(),
-          manifest.get_topic_config()->partition_count);
     }
+
+    auto rc = manifest.get_topic_config();
+    cfg.cfg.partition_count = rc->partition_count;
+    // Update all topic properties
+    if (
+      manifest.get_manifest_version()
+      < cloud_storage::topic_manifest::cluster_topic_configuration_version) {
+        // before cluster_topic_configuration_version, we can only recover a
+        // small subset of all the topic properties, and have to provide the
+        // rest from the cluster configuration
+        apply_retention_defaults(cfg.cfg.properties, rc->properties);
+    } else {
+        copy_non_empty_properties(
+          cfg.cfg.properties, std::move(rc->properties));
+    }
+    // Use remote_topic_properties to pass revision id from the
+    // topic_manifest.json
+    cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
+      manifest.get_revision(), manifest.get_topic_config()->partition_count);
     co_return errc::success;
 }
 } // namespace cluster
