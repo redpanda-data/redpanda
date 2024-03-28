@@ -9,6 +9,7 @@
 
 #include "raft/replicate_batcher.h"
 
+#include "container/fragmented_vector.h"
 #include "raft/consensus.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/types.h"
@@ -110,7 +111,7 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
   std::optional<model::term_id> expected_term,
   model::record_batch_reader r,
   replicate_options opts) {
-    auto batches = co_await model::consume_reader_to_memory(
+    auto batches = co_await model::consume_reader_to_chunked_vector(
       std::move(r),
       opts.timeout ? model::timeout_clock::now() + opts.timeout.value()
                    : model::no_timeout);
@@ -129,7 +130,7 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
 ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache_with_backpressure(
   std::optional<model::term_id> expected_term,
-  ss::circular_buffer<model::record_batch> batches,
+  chunked_vector<model::record_batch> batches,
   size_t bytes,
   replicate_options opts) {
     /**
@@ -156,7 +157,7 @@ replicate_batcher::do_cache_with_backpressure(
     }
 
     size_t record_count = 0;
-    std::vector<model::record_batch> data;
+    chunked_vector<model::record_batch> data;
     data.reserve(batches.size());
     for (auto& b : batches) {
         record_count += b.record_count();
