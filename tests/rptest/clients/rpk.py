@@ -18,6 +18,7 @@ from collections import namedtuple
 from typing import Iterator, Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.types import TopicSpec
+from rptest.services.redpanda_types import SSL_SECURITY, KafkaClientSecurity, check_username_password
 from rptest.util import wait_until_result
 from rptest.services import tls
 from ducktape.errors import TimeoutError
@@ -298,16 +299,31 @@ class RpkTool:
                  tls_cert: Optional[tls.Certificate] = None,
                  tls_enabled: Optional[bool] = None):
         self._redpanda = redpanda
-        self._username = username
-        self._password = password
-        self._sasl_mechanism = sasl_mechanism
-        self._tls_cert = tls_cert
-        self._tls_enabled = tls_enabled
 
-        # if testing redpanda cloud, override with default superuser
-        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
-            self._username, self._password, self._sasl_mechanism = redpanda._superuser
-            self._tls_enabled = True
+        check_username_password(username, password)
+
+        sasl_set = any(
+            [v is not None for v in (username, password, sasl_mechanism)])
+
+        if tls_cert:
+            assert tls_enabled is not False, 'using tls_cert implies tls_enabled'
+            tls_enabled = True
+
+        default_security: KafkaClientSecurity = redpanda.kafka_client_security(
+        )
+
+        if not sasl_set and tls_cert:
+            # By convention, if none of the SASL properties are set and tls_cert
+            # is set, we treat this as using mTLS authentication & mapping and so
+            # do not merge in in the default SASL credentials.
+            self._security = SSL_SECURITY
+        else:
+            # integrate any provided credentials with the default redpanda ones
+            self._security = default_security.override(username, password,
+                                                       sasl_mechanism,
+                                                       tls_enabled)
+
+        self._tls_cert = tls_cert
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         def create_topic():
@@ -1767,6 +1783,22 @@ class RpkTool:
         else:
             cmd += ["-X", "admin.hosts=" + self._admin_host()]
         return self._execute(cmd)
+
+    @property
+    def _username(self):
+        return self._security.username
+
+    @property
+    def _password(self):
+        return self._security.password
+
+    @property
+    def _sasl_mechanism(self):
+        return self._security.mechanism
+
+    @property
+    def _tls_enabled(self):
+        return self._security.tls_enabled
 
     def create_role(self, role_name):
         return self._run_role(["create", role_name])
