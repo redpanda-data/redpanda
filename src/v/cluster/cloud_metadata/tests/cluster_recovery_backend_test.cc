@@ -183,7 +183,7 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     // Write a controller snapshot and upload it.
     RPTEST_REQUIRE_EVENTUALLY(
       5s, [this] { return controller_stm.maybe_write_snapshot(); });
-    auto& uploader = app.controller->metadata_uploader();
+    auto& uploader = app.controller->metadata_uploader().value().get();
     retry_chain_node retry_node(never_abort, 30s, 1s);
     cluster_metadata_manifest manifest;
     manifest.cluster_uuid = cluster_uuid;
@@ -370,7 +370,7 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoverMissingTopicManifest) {
               .local()
               .maybe_write_snapshot();
         });
-        auto& uploader = app.controller->metadata_uploader();
+        auto& uploader = app.controller->metadata_uploader().value().get();
         retry_chain_node retry_node(never_abort, 30s, 1s);
         cluster_metadata_manifest manifest;
         manifest.cluster_uuid = cluster_uuid;
@@ -463,7 +463,7 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoverFailedDownload) {
     // Upload the controller snapshot to set up a failure to create the table.
     RPTEST_REQUIRE_EVENTUALLY(
       5s, [this] { return controller_stm.maybe_write_snapshot(); });
-    auto& uploader = app.controller->metadata_uploader();
+    auto& uploader = app.controller->metadata_uploader().value().get();
     retry_chain_node retry_node(never_abort, 60s, 1s);
     cluster_metadata_manifest manifest;
     manifest.cluster_uuid = cluster_uuid;
