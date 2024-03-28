@@ -189,8 +189,7 @@ private:
       std::optional<model::node_id> previous,
       const allocation_constraints&);
 
-    allocation_constraints
-    default_constraints(const partition_allocation_domain);
+    allocation_constraints default_constraints();
 
     std::unique_ptr<allocation_state> _state;
     allocation_strategy _allocation_strategy;

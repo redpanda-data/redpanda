@@ -58,8 +58,7 @@ partition_allocator::partition_allocator(
   , _internal_kafka_topics(std::move(internal_kafka_topics))
   , _enable_rack_awareness(std::move(enable_rack_awareness)) {}
 
-allocation_constraints partition_allocator::default_constraints(
-  const partition_allocation_domain domain) {
+allocation_constraints partition_allocator::default_constraints() {
     allocation_constraints req;
 
     // hard constraints
@@ -70,9 +69,7 @@ allocation_constraints partition_allocator::default_constraints(
     // soft constraints
     if (_enable_rack_awareness()) {
         req.add(distinct_rack_preferred(_members.local()));
-        req.add_level({});
     }
-    req.add(max_final_capacity(domain));
 
     return req;
 }
@@ -93,7 +90,9 @@ result<allocated_partition> partition_allocator::allocate_new_partition(
         return errc::topic_invalid_replication_factor;
     }
 
-    auto effective_constraints = default_constraints(domain);
+    auto effective_constraints = default_constraints();
+    effective_constraints.ensure_new_level();
+    effective_constraints.add(max_final_capacity(domain));
     effective_constraints.add(p_constraints.constraints);
 
     model::ntp ntp{
@@ -330,7 +329,9 @@ result<allocated_partition> partition_allocator::reallocate_partition(
         return res;
     }
 
-    auto effective_constraints = default_constraints(domain);
+    auto effective_constraints = default_constraints();
+    effective_constraints.ensure_new_level();
+    effective_constraints.add(max_final_capacity(domain));
     effective_constraints.add(std::move(p_constraints.constraints));
 
     // first, move existing replicas
@@ -373,7 +374,7 @@ result<reallocation_step> partition_allocator::reallocate_replica(
       partition.replicas(),
       constraints);
 
-    auto effective_constraints = default_constraints(partition._domain);
+    auto effective_constraints = default_constraints();
     effective_constraints.add(std::move(constraints));
 
     return do_allocate_replica(partition, prev_node, effective_constraints);

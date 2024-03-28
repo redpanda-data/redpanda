@@ -163,6 +163,12 @@ struct allocation_constraints {
         return soft_constraints.push_back(std::move(c));
     }
 
+    void ensure_new_level() {
+        if (!soft_constraints.empty() && !soft_constraints.back().empty()) {
+            soft_constraints.emplace_back();
+        }
+    }
+
     void add(hard_constraint c) {
         return hard_constraints.push_back(
           ss::make_lw_shared<hard_constraint>(std::move(c)));

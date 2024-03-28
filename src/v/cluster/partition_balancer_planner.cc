@@ -1072,7 +1072,11 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
 
     // soft constraints
 
+    // Add constraint for balanced replica counts
+    constraints.add(max_final_capacity(get_allocation_domain(ntp())));
+
     // Add constraint on least disk usage
+    constraints.ensure_new_level();
     constraints.add(least_disk_filled(
       max_disk_usage_ratio,
       upper_bound_for_partition_size,
