@@ -7,6 +7,7 @@ v_cc_library(
     Seastar::seastar
     absl::strings
     llama
+    v::metrics
 )
 
 add_subdirectory(tests)

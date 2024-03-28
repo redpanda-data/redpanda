@@ -14,8 +14,10 @@
 #include "ai/llama_bindings.h"
 #include "base/vassert.h"
 #include "base/vlog.h"
+#include "metrics/metrics.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/metrics.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/thread_impl.hh>
@@ -25,6 +27,7 @@
 
 #include <absl/container/fixed_array.h>
 
+#include <atomic>
 #include <exception>
 #include <memory>
 #include <stdexcept>
@@ -70,12 +73,31 @@ class model final
 
 public:
     explicit model(size_t max_parallel_requests)
-      : _max_parallel_requests(max_parallel_requests) {}
+      : _max_parallel_requests(max_parallel_requests) {
+        namespace sm = ss::metrics;
+        _internal_metrics.add_group(
+          "ai_service",
+          {
+            sm::make_counter(
+              "prompt_tokens_processed_count",
+              [this] { return prompt_tokens_processed(); },
+              sm::description("number of prompt tokens processed"))
+              .aggregate({sm::shard_label}),
+            sm::make_counter(
+              "response_tokens_processed_count",
+              [this] { return response_tokens_processed(); },
+              sm::description("number of response tokens processed"))
+              .aggregate({sm::shard_label}),
+          });
+    }
     model(const model&) = delete;
     model(model&&) = delete;
     model& operator=(const model&) = delete;
     model& operator=(model&&) = delete;
     ~model() final = default;
+
+    int64_t prompt_tokens_processed() const { return _prompt_tokens; }
+    int64_t response_tokens_processed() const { return _response_tokens; }
 
 protected:
     void initialize(model_parameters p) noexcept final {
@@ -163,6 +185,7 @@ private:
             }
             auto param = item->take_parameter();
             auto tokens = _llm->tokenize(param.prompt);
+            _prompt_tokens += int64_t(tokens.size());
             slot = {
               .id = slot.id,
               .sampled = llama::token(-1),
@@ -243,6 +266,7 @@ private:
                     candidates.add(token_id, logits[token_id], 0.0f);
                 }
                 auto new_token_id = candidates.greedy_sample();
+                ++_response_tokens;
                 if (new_token_id == _llm->eos() || slot.tokens_remaining <= 0) {
                     send_response(slot.item, {std::move(slot.output)});
                     slot.state = slot::state::free;
@@ -261,6 +285,9 @@ private:
     llama::batch _batch;
     llama::backend _backend;
     std::unique_ptr<llama::model> _llm;
+    std::atomic_int64_t _prompt_tokens;
+    std::atomic_int64_t _response_tokens;
+    metrics::internal_metric_groups _internal_metrics;
 };
 
 service::service() noexcept = default;
