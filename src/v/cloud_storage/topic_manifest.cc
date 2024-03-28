@@ -123,9 +123,12 @@ struct topic_manifest_handler
                 _properties.retention_bytes = tristate<size_t>{
                   disable_tristate};
             } else if (_key == "retention_duration") {
+                // even though a negative number is valid for milliseconds,
+                // interpret any negative value as a request for infinite
+                // retention, that translates to a disabled tristate (like for
+                // retention_bytes)
                 _properties.retention_duration
-                  = tristate<std::chrono::milliseconds>(
-                    std::chrono::milliseconds(i));
+                  = tristate<std::chrono::milliseconds>(disable_tristate);
             } else {
                 return false;
             }
@@ -207,32 +210,47 @@ struct topic_manifest_handler
     std::optional<model::initial_revision_id> _revision_id{};
 
     // optional fields
-    manifest_topic_configuration::topic_properties _properties{
-      .retention_bytes = tristate<size_t>(disable_tristate),
-      .retention_duration = tristate<std::chrono::milliseconds>(
-        disable_tristate)};
+    cluster::topic_properties _properties{};
     std::optional<ss::sstring> compaction_strategy_sv;
     std::optional<ss::sstring> timestamp_type_sv;
     std::optional<ss::sstring> compression_sv;
     std::optional<ss::sstring> cleanup_policy_bitflags_sv;
     std::optional<ss::sstring> virtual_cluster_id_sv;
+
+    topic_manifest_handler() noexcept {
+        // tristate decoding requires that the default starting value is
+        // `disabled_tristate`
+        _properties.retention_bytes = tristate<size_t>(disable_tristate),
+        _properties.retention_duration = tristate<std::chrono::milliseconds>(
+          disable_tristate);
+    };
 };
 
+// use feature table to decide if to encode with serde
 topic_manifest::topic_manifest(
-  const manifest_topic_configuration& cfg, model::initial_revision_id rev)
+  const cluster::topic_configuration& cfg,
+  model::initial_revision_id rev,
+  const features::feature_table& ft)
   : _topic_config(cfg)
-  , _rev(rev) {}
+  , _rev(rev)
+  , _manifest_version(
+      ft.is_active(features::feature::cluster_topic_manifest_format_v2)
+        ? serde_version
+        : first_version) {}
 
 topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
 
 void topic_manifest::do_update(const topic_manifest_handler& handler) {
-    if (handler._version != topic_manifest_version) {
+    if (handler._version != topic_manifest::first_version) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "topic manifest version {} is not supported",
           handler._version));
     }
+
+    _manifest_version = topic_manifest::first_version;
+
     _rev = handler._revision_id.value();
 
     if (!handler._version) {
@@ -262,12 +280,12 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
           fmt::format, "Missing _revision_id value in parsed topic manifest"));
     }
 
-    _topic_config = manifest_topic_configuration{
-      .tp_ns = model::topic_namespace(
-        handler._namespace.value(), handler._topic.value()),
-      .partition_count = handler._partition_count.value(),
-      .replication_factor = handler._replication_factor.value(),
-      .properties = handler._properties};
+    _topic_config = cluster::topic_configuration{
+      model::ns(handler._namespace.value()),
+      model::topic(handler._topic.value()),
+      handler._partition_count.value(),
+      handler._replication_factor.value()};
+    _topic_config->properties = handler._properties;
 
     if (handler.compaction_strategy_sv) {
         try {
@@ -328,7 +346,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
 
     if (handler.virtual_cluster_id_sv) {
         try {
-            _topic_config->properties.virtual_cluster_id
+            _topic_config->properties.mpx_virtual_cluster_id
               = boost::lexical_cast<model::vcluster_id>(
                 handler.virtual_cluster_id_sv.value());
         } catch (const std::runtime_error& e) {
@@ -342,53 +360,94 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
     }
 }
 
-ss::future<> topic_manifest::update(ss::input_stream<char> is) {
+ss::future<>
+topic_manifest::update(manifest_format format, ss::input_stream<char> is) {
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
     co_await ss::copy(is, os);
-    iobuf_istreambuf ibuf(result);
-    std::istream stream(&ibuf);
 
-    json::IStreamWrapper wrapper(stream);
-    json::Reader reader;
-    topic_manifest_handler handler;
-    if (reader.Parse(wrapper, handler)) {
-        vlog(cst_log.debug, "Parsed successfully!");
-        topic_manifest::do_update(handler);
-    } else {
-        rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
-        size_t o = reader.GetErrorOffset();
+    vlog(cst_log.debug, "Parsing topic manifest with format {}", format);
 
-        if (_topic_config) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest {}: {} at offset {}",
-              get_manifest_path(),
-              rapidjson::GetParseError_En(e),
-              o));
+    switch (format) {
+    case manifest_format::json: {
+        iobuf_istreambuf ibuf(result);
+        std::istream stream(&ibuf);
+
+        json::IStreamWrapper wrapper(stream);
+        json::Reader reader;
+        topic_manifest_handler handler;
+        if (reader.Parse(wrapper, handler)) {
+            vlog(cst_log.debug, "Parsed successfully!");
+            topic_manifest::do_update(handler);
         } else {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Failed to parse topic manifest: {} at offset {}",
-              rapidjson::GetParseError_En(e),
-              o));
+            rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
+            size_t o = reader.GetErrorOffset();
+
+            if (_topic_config) {
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format,
+                  "Failed to parse topic manifest {}: {} at offset {}",
+                  get_manifest_path(),
+                  rapidjson::GetParseError_En(e),
+                  o));
+            } else {
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format,
+                  "Failed to parse topic manifest: {} at offset {}",
+                  rapidjson::GetParseError_En(e),
+                  o));
+            }
         }
+        break;
     }
+    case manifest_format::serde:
+        // serde format is straightforward: the buffer is a
+        // cluster::topic_configuration and _rev is inside
+        // remote_topic_properties
+        _topic_config = serde::from_iobuf<cluster::topic_configuration>(
+          std::move(result));
+        _rev = _topic_config->properties.remote_topic_properties.value()
+                 .remote_revision;
+        _manifest_version = topic_manifest::serde_version;
+        break;
+    }
+
     co_return;
 }
 
 ss::future<serialized_data_stream> topic_manifest::serialize() const {
-    iobuf serialized;
-    iobuf_ostreambuf obuf(serialized);
-    std::ostream os(&obuf);
-    serialize(os);
-    if (!os.good()) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "could not serialize topic manifest {}",
-          get_manifest_path()));
+    if (!_topic_config.has_value()) {
+        ss::throw_with_backtrace<std::runtime_error>(
+          "_topic_config is not initialized");
     }
-    size_t size_bytes = serialized.size_bytes();
+
+    if (_manifest_version == first_version) {
+        // serialize in json format
+        iobuf serialized;
+        iobuf_ostreambuf obuf(serialized);
+        std::ostream os(&obuf);
+        serialize(os);
+        if (!os.good()) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "could not serialize topic manifest {}",
+              get_manifest_path()));
+        }
+        size_t size_bytes = serialized.size_bytes();
+        co_return serialized_data_stream{
+          .stream = make_iobuf_input_stream(std::move(serialized)),
+          .size_bytes = size_bytes};
+    }
+
+    // serialize in binary format
+    auto to_serialize = _topic_config.value();
+    // insert _rev into remote_topic_properties, to be able to extract it when
+    // deserializing it
+    to_serialize.properties.remote_topic_properties
+      = cluster::remote_topic_properties(_rev, to_serialize.partition_count);
+
+    auto serialized = serde::to_iobuf(std::move(to_serialize));
+    auto size_bytes = serialized.size_bytes();
     co_return serialized_data_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
@@ -399,7 +458,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     json::Writer<json::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
-    w.Int(static_cast<int>(topic_manifest_version));
+    w.Int(static_cast<int>(topic_manifest::first_version()));
     w.Key("namespace");
     w.String(_topic_config->tp_ns.ns());
     w.Key("topic");
@@ -472,28 +531,48 @@ void topic_manifest::serialize(std::ostream& out) const {
         }
     }
 
-    if (_topic_config->properties.virtual_cluster_id) {
+    // do not serialize fields that are not deserializable by previous versions
+    // of redpanda
+    if (
+      _manifest_version > first_version
+      && _topic_config->properties.mpx_virtual_cluster_id) {
         w.Key("virtual_cluster_id");
         w.String(fmt::format(
-          "{}", _topic_config->properties.virtual_cluster_id.value()));
+          "{}", _topic_config->properties.mpx_virtual_cluster_id.value()));
     }
     w.EndObject();
 }
 
-remote_manifest_path
-topic_manifest::get_topic_manifest_path(model::ns ns, model::topic topic) {
-    // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
+remote_manifest_path topic_manifest::get_topic_manifest_path(
+  model::ns ns, model::topic topic, manifest_format format) {
+    // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json or
+    // topic_manifest.bin depending on format
     constexpr uint32_t bitmask = 0xF0000000;
     auto path = fmt::format("{}/{}", ns(), topic());
     uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
-    return remote_manifest_path(
-      fmt::format("{:08x}/meta/{}/topic_manifest.json", hash, path));
+    // use format to decide if the path is json or bin
+    return remote_manifest_path(fmt::format(
+      "{:08x}/meta/{}/topic_manifest.{}",
+      hash,
+      path,
+      format == manifest_format::json ? "json" : "bin"));
 }
 
 remote_manifest_path topic_manifest::get_manifest_path() const {
     // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
     vassert(_topic_config, "Topic config is not set");
     return get_topic_manifest_path(
-      _topic_config->tp_ns.ns, _topic_config->tp_ns.tp);
+      _topic_config->tp_ns.ns,
+      _topic_config->tp_ns.tp,
+      _manifest_version == first_version ? manifest_format::json
+                                         : manifest_format::serde);
+}
+
+std::pair<manifest_format, remote_manifest_path>
+topic_manifest::get_manifest_format_and_path() const {
+    return std::make_pair(
+      _manifest_version == first_version ? manifest_format::json
+                                         : manifest_format::serde,
+      get_manifest_path());
 }
 } // namespace cloud_storage

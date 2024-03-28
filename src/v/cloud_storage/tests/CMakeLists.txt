@@ -20,7 +20,6 @@ rp_test(
     s3_imposter.cc
     directory_walker_test.cc
     partition_manifest_test.cc
-    topic_manifest_test.cc
     tx_range_manifest_test.cc
     remote_segment_index_test.cc
     recovery_request_test.cc
@@ -31,6 +30,15 @@ rp_test(
   LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::cloud_storage v::storage_test_utils v::cloud_roles v::raft
   ARGS "-- -c 1"
   LABELS cloud_storage
+)
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME topic_manifest
+  SOURCES topic_manifest_test.cc
+  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::cluster
+  ARGS "-- -c 1"
+  LABELS cluster
 )
 
 # Unit tests that rely on doing remote I/O via s3_imposter
