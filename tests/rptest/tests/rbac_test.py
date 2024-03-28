@@ -14,7 +14,9 @@ from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 import json
 
+import ducktape.errors
 from ducktape.utils.util import wait_until
+from ducktape.mark import parametrize
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import (Admin, RoleMemberList, RoleUpdate,
                                    RoleErrorCode, RoleError, RolesList,
@@ -755,8 +757,8 @@ class RBACEndToEndTest(RBACTestBase):
         super().setUp()
 
     def role_for_user(self, role: str, user: RoleMember):
-        res = self.superuser_admin.list_role_members(role=role)
-        return user in RoleMemberList.from_response(res)
+        res = self.superuser_admin.list_roles(principal=user.name)
+        return RoleDescription(role) in RolesList.from_response(res)
 
     def has_topics(self, client: RpkTool):
         tps = client.list_topics()
@@ -858,3 +860,73 @@ class RBACEndToEndTest(RBACTestBase):
         assert rec['topic'] == self.topic0, f"Unexpected topic {rec['topic']}"
         assert rec['key'] == 'foo', f"Unexpected key {rec['key']}"
         assert rec['value'] == 'bar', f"Unexpected value {rec['value']}"
+
+    @cluster(num_nodes=3)
+    @parametrize(delete_acls=True)
+    @parametrize(delete_acls=False)
+    @parametrize(delete_acls=None)
+    def test_delete_role_acls(self, delete_acls):
+        alice = RoleMember.User('alice')
+        r0_principal = f"RedpandaRole:{self.role_name0}"
+        r1_principal = f"RedpandaRole:{self.role_name1}"
+
+        res = self.superuser_admin.update_role_members(role=self.role_name0,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to create role"
+        res = self.superuser_admin.update_role_members(role=self.role_name1,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to create role"
+
+        self.su_rpk.sasl_allow_principal(r0_principal, ['read'], 'topic', '*')
+        self.su_rpk.sasl_allow_principal(r0_principal, ['all'], 'group', '*')
+        self.su_rpk.acl_create_allow_cluster(username=self.role_name0,
+                                             op='all',
+                                             principal_type="RedpandaRole")
+        self.su_rpk.sasl_allow_principal(r0_principal, ['all'],
+                                         'transactional-id', '*')
+        self.su_rpk.sasl_allow_principal(r1_principal, ['write'], 'topic', '*')
+
+        for r in [self.role_name0, self.role_name1]:
+            wait_until(lambda: self.role_for_user(r, alice),
+                       timeout_sec=10,
+                       backoff_sec=1,
+                       retry_on_exc=True)
+
+        def acl_list():
+            return list(
+                filter(lambda l: l != '' and 'PRINCIPAL' not in l,
+                       self.su_rpk.acl_list().split('\n')))
+
+        wait_until(lambda: len(acl_list()) == 5,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        self.superuser_admin.delete_role(role=self.role_name0,
+                                         delete_acls=delete_acls)
+
+        wait_until(lambda: not self.role_for_user(self.role_name0, alice),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        def expect_acls_deleted():
+            return wait_until_result(lambda:
+                                     (len(acl_list()) == 1, acl_list()),
+                                     timeout_sec=10,
+                                     backoff_sec=1,
+                                     retry_on_exc=True)
+
+        if delete_acls:
+            acls = expect_acls_deleted()
+            assert not any(r0_principal in a for a in acls)
+        else:
+            with expect_exception(ducktape.errors.TimeoutError,
+                                  lambda e: True):
+                expect_acls_deleted()
+
+        roles = RolesList.from_response(self.superuser_admin.list_roles())
+
+        assert len(roles) == 1, f"Wrong number of roles {str(roles)}"

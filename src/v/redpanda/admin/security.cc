@@ -33,6 +33,8 @@
 #include <seastar/http/url.hh>
 #include <seastar/json/json_elements.hh>
 
+#include <absl/container/flat_hash_set.h>
+
 #include <optional>
 #include <sstream>
 
@@ -306,6 +308,13 @@ inline std::unique_ptr<ss::http::reply> make_json_response(
     rep->write_body(
       "json", ss::json::formatter::to_json(std::forward<T>(body)));
     return rep;
+}
+
+bool parse_bool_nocase(ss::sstring param) {
+    bool result = false;
+    absl::c_transform(param, param.begin(), ::tolower);
+    std::istringstream(param) >> std::boolalpha >> result;
+    return result;
 }
 
 } // namespace
@@ -691,13 +700,8 @@ admin_server::update_role_members_handler(
         throw_role_exception(role_errc::invalid_name);
     }
 
-    bool create_if_not_found = false;
-    if (const auto it = req->query_parameters.find("create");
-        it != req->query_parameters.end()) {
-        auto param = it->second;
-        absl::c_transform(param, param.begin(), ::tolower);
-        std::istringstream(param) >> std::boolalpha >> create_if_not_found;
-    }
+    bool create_if_not_found = parse_bool_nocase(
+      req->get_query_param("create"));
 
     auto doc = co_await parse_json_body(req.get());
     if (!doc.IsObject()) {
@@ -866,6 +870,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_role_handler(
     }
 
     auto role_name = parse_role_name(*req);
+    bool delete_acls = parse_bool_nocase(req->get_query_param("delete_acls"));
 
     auto err
       = co_await _controller->get_security_frontend().local().delete_role(
@@ -879,7 +884,47 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_role_handler(
           ss::http::reply::status_type::no_content,
           ss::json::json_void{});
     }
+
     co_await throw_on_error(*req, err, model::controller_ntp);
+
+    if (delete_acls) {
+        security::acl_binding_filter role_binding_filter{
+          security::resource_pattern_filter::any(),
+          security::acl_entry_filter{
+            security::role::to_principal(role_name()),
+            std::nullopt,
+            std::nullopt,
+            std::nullopt}};
+
+        auto results
+          = co_await _controller->get_security_frontend().local().delete_acls(
+            {std::move(role_binding_filter)}, 5s);
+
+        size_t n_deleted = 0;
+        size_t n_failed = 0;
+        for (const auto& r : results) {
+            if (r.error == cluster::errc::success) {
+                n_deleted += 1;
+            } else {
+                n_failed += 1;
+                auto ec = make_error_code(r.error);
+                vlog(
+                  adminlog.warn,
+                  "Error while deleting ACLs for {} - {}:{}",
+                  role_name,
+                  ec,
+                  ec.message());
+            }
+        }
+
+        vlog(
+          adminlog.debug,
+          "Deleted {} ACL bindings for role {} ({} failed)",
+          n_deleted,
+          role_name,
+          n_failed);
+    }
+
     co_return make_json_response(
       std::move(rep),
       ss::http::reply::status_type::no_content,
