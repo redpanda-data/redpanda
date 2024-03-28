@@ -24,6 +24,22 @@ BOOST_AUTO_TEST_CASE(error_mapping_test) {
       kafka::error_code::invalid_partitions);
     BOOST_REQUIRE_EQUAL(
       kafka::map_topic_error_code(
+        cluster::errc::topic_invalid_partitions_core_limit),
+      kafka::error_code::invalid_partitions);
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_topic_error_code(
+        cluster::errc::topic_invalid_partitions_memory_limit),
+      kafka::error_code::invalid_partitions);
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_topic_error_code(
+        cluster::errc::topic_invalid_partitions_fd_limit),
+      kafka::error_code::invalid_partitions);
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_topic_error_code(
+        cluster::errc::topic_invalid_partitions_decreased),
+      kafka::error_code::invalid_partitions);
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_topic_error_code(
         cluster::errc::topic_invalid_replication_factor),
       kafka::error_code::invalid_replication_factor);
     BOOST_REQUIRE_EQUAL(

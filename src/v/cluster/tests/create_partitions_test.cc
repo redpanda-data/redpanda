@@ -80,5 +80,6 @@ FIXTURE_TEST(test_error_handling, rebalancing_tests_fixture) {
     BOOST_REQUIRE_EQUAL(res.size(), 1);
     BOOST_REQUIRE_EQUAL(
       res[0].ec,
-      cluster::make_error_code(cluster::errc::topic_invalid_partitions));
+      cluster::make_error_code(
+        cluster::errc::topic_invalid_partitions_decreased));
 }

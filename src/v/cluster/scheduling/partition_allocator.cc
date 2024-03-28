@@ -213,7 +213,7 @@ std::error_code partition_allocator::check_cluster_limits(
           create_count,
           proposed_total_partitions,
           effective_cpu_count * _partitions_per_shard());
-        return errc::topic_invalid_partitions;
+        return errc::topic_invalid_partitions_core_limit;
     }
 
     // Refuse to create partitions that would violate the configured
@@ -225,7 +225,7 @@ std::error_code partition_allocator::check_cluster_limits(
         const uint64_t memory_limit = effective_cluster_memory
                                       / memory_per_partition_replica.value();
 
-        if (memory_limit > 0 && proposed_total_partitions > memory_limit) {
+        if (proposed_total_partitions > memory_limit) {
             vlog(
               clusterlog.warn,
               "Refusing to create {} new partitions as total partition count "
@@ -234,7 +234,7 @@ std::error_code partition_allocator::check_cluster_limits(
               create_count,
               proposed_total_partitions,
               memory_limit);
-            return errc::topic_invalid_partitions;
+            return errc::topic_invalid_partitions_memory_limit;
         }
     }
 
@@ -256,7 +256,7 @@ std::error_code partition_allocator::check_cluster_limits(
                       create_count,
                       proposed_total_partitions,
                       fds_limit);
-                    return errc::topic_invalid_partitions;
+                    return errc::topic_invalid_partitions_fd_limit;
                 }
             }
         } else {

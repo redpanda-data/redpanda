@@ -69,7 +69,11 @@ struct instance_generator<cluster::errc> {
            cluster::errc::feature_disabled,
            cluster::errc::invalid_request,
            cluster::errc::no_update_in_progress,
-           cluster::errc::unknown_update_interruption_error});
+           cluster::errc::unknown_update_interruption_error,
+           cluster::errc::topic_invalid_partitions_core_limit,
+           cluster::errc::topic_invalid_partitions_memory_limit,
+           cluster::errc::topic_invalid_partitions_fd_limit,
+           cluster::errc::topic_invalid_partitions_decreased});
     }
 
     static std::vector<cluster::errc> limits() { return {}; }

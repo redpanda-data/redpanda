@@ -27,26 +27,14 @@
 
 #include <seastar/core/chunked_fifo.hh>
 
+#include <limits>
+
 struct partition_allocator_fixture {
     static constexpr uint32_t partitions_per_shard = 1000;
     static constexpr uint32_t partitions_reserve_shard0 = 2;
 
     partition_allocator_fixture()
-      : allocator(
-        std::ref(members),
-        config::mock_binding<std::optional<size_t>>(std::nullopt),
-        config::mock_binding<std::optional<int32_t>>(std::nullopt),
-        config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
-        config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
-        kafka_internal_topics.bind(),
-        config::mock_binding<bool>(true)) {
-        members.start().get0();
-        ss::smp::invoke_on_all([] {
-            config::shard_local_cfg()
-              .get("partition_autobalancing_mode")
-              .set_value(model::partition_autobalancing_mode::node_add);
-        }).get0();
-    }
+      : partition_allocator_fixture(std::nullopt, std::nullopt) {}
 
     ~partition_allocator_fixture() { members.stop().get0(); }
 
@@ -139,4 +127,43 @@ struct partition_allocator_fixture {
     cluster::partition_allocator allocator;
 
     fast_prng prng;
+
+protected:
+    explicit partition_allocator_fixture(
+      std::optional<size_t> memory_per_partition,
+      std::optional<int32_t> fds_per_partition)
+      : allocator(
+        std::ref(members),
+        config::mock_binding<std::optional<size_t>>(
+          std::optional<size_t>{memory_per_partition}),
+        config::mock_binding<std::optional<int32_t>>(
+          std::optional<int32_t>{fds_per_partition}),
+        config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
+        config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+        kafka_internal_topics.bind(),
+        config::mock_binding<bool>(true)) {
+        members.start().get0();
+        ss::smp::invoke_on_all([] {
+            config::shard_local_cfg()
+              .get("partition_autobalancing_mode")
+              .set_value(model::partition_autobalancing_mode::node_add);
+        }).get0();
+    }
+};
+
+struct partition_allocator_memory_limited_fixture
+  : public partition_allocator_fixture {
+    static constexpr size_t memory_per_partition
+      = std::numeric_limits<size_t>::max();
+    partition_allocator_memory_limited_fixture()
+      : partition_allocator_fixture(memory_per_partition, std::nullopt) {}
+};
+
+struct partition_allocator_fd_limited_fixture
+  : public partition_allocator_fixture {
+    static constexpr int32_t fds_per_partition
+      = std::numeric_limits<int32_t>::max();
+
+    partition_allocator_fd_limited_fixture()
+      : partition_allocator_fixture(std::nullopt, fds_per_partition) {}
 };

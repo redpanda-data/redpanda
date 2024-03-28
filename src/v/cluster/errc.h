@@ -68,6 +68,10 @@ enum class errc : int16_t {
     no_partition_assignments,
     failed_to_create_partition,
     partition_operation_failed,
+    topic_invalid_partitions_core_limit,
+    topic_invalid_partitions_memory_limit,
+    topic_invalid_partitions_fd_limit,
+    topic_invalid_partitions_decreased,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -85,7 +89,7 @@ struct errc_category final : public std::error_category {
         case errc::topic_invalid_replication_factor:
             return "Unable to allocate topic with given replication factor";
         case errc::topic_invalid_config:
-            return "Topic configuration is either bogus or not supported";
+            return "Configuration is invalid";
         case errc::not_leader_controller:
             return "This node is not raft-0 leader. i.e is not leader "
                    "controller";
@@ -195,6 +199,14 @@ struct errc_category final : public std::error_category {
         case errc::partition_operation_failed:
             return "Generic failure occurred during partition operation "
                    "execution";
+        case errc::topic_invalid_partitions_core_limit:
+            return "Can not increase partition count due to core limit";
+        case errc::topic_invalid_partitions_memory_limit:
+            return "Can not increase partition count due to memory limit";
+        case errc::topic_invalid_partitions_fd_limit:
+            return "Can not increase partition count due to FD limit";
+        case errc::topic_invalid_partitions_decreased:
+            return "Can not decrease the number of partitions";
         }
         return "cluster::errc::unknown";
     }
