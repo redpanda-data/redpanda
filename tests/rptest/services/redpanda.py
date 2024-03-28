@@ -440,7 +440,7 @@ class SISettings:
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
                  bypass_bucket_creation: bool = False,
-                 use_bucket_cleanup_policy: bool = False,
+                 use_bucket_cleanup_policy: bool = True,
                  cloud_storage_housekeeping_interval_ms: Optional[int] = None,
                  cloud_storage_spillover_manifest_max_segments: Optional[
                      int] = None,
