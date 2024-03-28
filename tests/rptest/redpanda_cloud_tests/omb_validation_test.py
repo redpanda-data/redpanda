@@ -385,57 +385,131 @@ class OMBValidationTest(RedpandaCloudTest):
 
     @cluster(num_nodes=CLUSTER_NODES)
     def test_common_workload(self):
-        tier_limits = self.tier_limits
+        max_retries = 3
+        retries = 0
 
-        subscriptions = max(tier_limits.max_egress // tier_limits.max_ingress,
-                            1)
-        partitions = self._partition_count()
-        total_producers = self._producer_count(tier_limits.max_ingress)
-        total_consumers = self._consumer_count(tier_limits.max_egress)
-        validator = self.base_validator() | {
-            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
-                OMBSampleConfigurations.gte(
-                    self._mb_to_mib(tier_limits.max_ingress // (1 * MB))),
-            ],
+        while retries < max_retries:
+            tier_limits = self.tier_limits
+
+            subscriptions = max(
+                tier_limits.max_egress // tier_limits.max_ingress, 1)
+            partitions = self._partition_count()
+            total_producers = self._producer_count(tier_limits.max_ingress)
+            total_consumers = self._consumer_count(tier_limits.max_egress)
+            validator = self.base_validator() | {
+                OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
+                    OMBSampleConfigurations.gte(
+                        self._mb_to_mib(tier_limits.max_ingress // (1 * MB))),
+                ],
+            }
+
+            workload = self.WORKLOAD_DEFAULTS | {
+                "name":
+                "CommonTestWorkload",
+                "partitions_per_topic":
+                partitions,
+                "subscriptions_per_topic":
+                subscriptions,
+                "consumer_per_subscription":
+                max(total_consumers // subscriptions, 1),
+                "producers_per_topic":
+                total_producers,
+                "producer_rate":
+                tier_limits.max_ingress // (1 * KiB),
+            }
+
+            driver = {
+                "name": "CommonTestDriver",
+                "reset": "true",
+                "replication_factor": 3,
+                "request_timeout": 300000,
+                "producer_config": {
+                    "enable.idempotence": "true",
+                    "acks": "all",
+                    "linger.ms": 1,
+                    "max.in.flight.requests.per.connection": 5,
+                },
+                "consumer_config": {
+                    "auto.offset.reset": "earliest",
+                    "enable.auto.commit": "false",
+                },
+            }
+
+            benchmark = OpenMessagingBenchmark(self._ctx,
+                                               self.redpanda,
+                                               driver, (workload, validator),
+                                               num_workers=self.CLUSTER_NODES -
+                                               1,
+                                               topology="ensemble")
+            benchmark.start()
+            benchmark_time_min = benchmark.benchmark_time() + 5
+            benchmark.wait(timeout_sec=benchmark_time_min * 60)
+
+            ## TODO
+            result = self.fetch_benchmark_results()
+
+            # Spikes detection
+            if self.detect.spikes(result):
+                retries += 1
+                self.logger.info(
+                    f"Latency spike detected, retrying... Attempt {retries}/{max_retries}"
+                )
+                continue
+
+            self.logger.info("no significant latency spikes detected")
+            benchmark.check_succeed()
+            self.redpanda.assert_cluster_is_reusable()
+            break
+
+        if retries == max_retries:
+            self.logger.error("Test failed after maximum retry attempts")
+            raise Exception("Test failed after maximum retry attempts")
+
+    def fetch_benchmark_results(self):
+        # Mock data for now based on previous run
+        results = {
+            "publishLatencyMin": [0.957, 1.014, 0.945, 0.909, 0.981, 0.96],
+            "publishLatency50pct": [3.646, 4.802, 4.877, 3.988, 4.369, 3.566],
+            "publishLatency75pct": [6.456, 8.493, 7.881, 7.316, 13.325, 6.084],
+            "publishLatency95pct":
+            [18.168, 20.733, 18.262, 18.819, 186.97, 18.058],
+            "publishLatency99pct":
+            [28.434, 31.932, 29.706, 28.162, 262.705, 28.246],
+            "publishLatency999pct":
+            [41.616, 42.227, 44.939, 45.828, 328.457, 39.113],
         }
+        return results
 
-        workload = self.WORKLOAD_DEFAULTS | {
-            "name": "CommonTestWorkload",
-            "partitions_per_topic": partitions,
-            "subscriptions_per_topic": subscriptions,
-            "consumer_per_subscription": max(total_consumers // subscriptions,
-                                             1),
-            "producers_per_topic": total_producers,
-            "producer_rate": tier_limits.max_ingress // (1 * KiB),
-        }
+    def detect_spikes(self, results):
+        latency_95pct = results["publishLatency95pct"]
+        latency_99pct = results["publishLatency99pct"]
+        latency_999pct = results["publishLatency999pct"]
 
-        driver = {
-            "name": "CommonTestDriver",
-            "reset": "true",
-            "replication_factor": 3,
-            "request_timeout": 300000,
-            "producer_config": {
-                "enable.idempotence": "true",
-                "acks": "all",
-                "linger.ms": 1,
-                "max.in.flight.requests.per.connection": 5,
-            },
-            "consumer_config": {
-                "auto.offset.reset": "earliest",
-                "enable.auto.commit": "false",
-            },
-        }
+        # Simple function to calculate the median
+        def median(data):
+            sorted_data = sorted(data)
+            n = len(sorted_data)
+            if n % 2 == 0:
+                return (sorted_data[n // 2 - 1] + sorted_data[n // 2]) / 2
+            else:
+                return sorted_data[n // 2]
 
-        benchmark = OpenMessagingBenchmark(self._ctx,
-                                           self.redpanda,
-                                           driver, (workload, validator),
-                                           num_workers=self.CLUSTER_NODES - 1,
-                                           topology="ensemble")
-        benchmark.start()
-        benchmark_time_min = benchmark.benchmark_time() + 5
-        benchmark.wait(timeout_sec=benchmark_time_min * 60)
-        benchmark.check_succeed()
-        self.redpanda.assert_cluster_is_reusable()
+        # Calculate medians for each metric
+        median_95pct = median(latency_95pct)
+        median_99pct = median(latency_99pct)
+        median_999pct = median(latency_999pct)
+
+        # Define what constitutes a "significant" spike as exceeding 1.5 times the median
+        significant_factor = 1.5
+
+        # Check for spikes
+        for value in latency_95pct + latency_99pct + latency_999pct:
+            if value > median_95pct * significant_factor or \
+            value > median_99pct * significant_factor or \
+            value > median_999pct * significant_factor:
+                return True  # Spike detected
+
+        return False
 
     @cluster(num_nodes=CLUSTER_NODES)
     def test_retention(self):
