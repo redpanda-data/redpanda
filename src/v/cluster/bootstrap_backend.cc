@@ -203,7 +203,14 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd, model::offset offset) {
           [o = offset,
            m = cmd.value.recovery_state->manifest,
            b = cmd.value.recovery_state->bucket](auto& recovery_table) {
-              recovery_table.apply(o, m, b, wait_for_nodes::yes);
+              auto ec = recovery_table.apply(o, m, b, wait_for_nodes::yes);
+              if (ec) {
+                  throw std::runtime_error(fmt_with_ctx(
+                    fmt::format,
+                    "Failed to apply recovery state: {} ({})",
+                    ec.message(),
+                    ec));
+              }
           });
     }
 

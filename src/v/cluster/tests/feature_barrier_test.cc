@@ -60,7 +60,8 @@ struct barrier_fixture {
               model::broker_properties{}));
         }
         for (auto& br : brokers) {
-            members.apply(model::offset(0), cluster::add_node_cmd(br.id(), br));
+            BOOST_REQUIRE(!members.apply(
+              model::offset(0), cluster::add_node_cmd(br.id(), br)));
         }
     }
 
