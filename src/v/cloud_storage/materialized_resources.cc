@@ -706,13 +706,21 @@ public:
 
 private:
     ss::future<> maybe_throttle(size_t buffer_size) {
-        auto available = _parent._throughput_limit.available();
-        if (available < buffer_size) {
-            // The throttling will be applied. Register the amount.
-            _parent._read_path_probe.download_throttled(
-              buffer_size - available);
+        auto throttled = co_await _parent._throughput_limit.maybe_throttle(
+          buffer_size, _as);
+        if (throttled) {
+            // This path is taken only when the download is throttled. In case
+            // of concurrency every `maybe_throttle` call will return the
+            // precise value for deficiency and sleep time.
+            auto duration
+              = std::chrono::duration_cast<std::chrono::milliseconds>(
+                throttled.value());
+            _parent._read_path_probe.download_throttled(duration.count());
+            vlog(
+              cst_log.trace,
+              "Download throttled: sleep time is {} ms",
+              duration.count());
         }
-        return _parent._throughput_limit.throttle(buffer_size, _as);
     }
     ss::data_source _src;
     materialized_resources& _parent;
