@@ -41,15 +41,6 @@ std::ostream& operator<<(std::ostream& os, const std::variant<T...>& v) {
     return os;
 }
 
-inline std::ostream&
-operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
-    fmt::print(
-      o,
-      "{}",
-      std::chrono::duration_cast<std::chrono::milliseconds>(d).count());
-    return o;
-}
-
 } // namespace std
 
 template<typename T, size_t chunk_size>
