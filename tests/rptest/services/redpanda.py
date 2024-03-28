@@ -440,7 +440,7 @@ class SISettings:
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
                  bypass_bucket_creation: bool = False,
-                 use_bucket_cleanup_policy: bool = False,
+                 use_bucket_cleanup_policy: bool = True,
                  cloud_storage_housekeeping_interval_ms: Optional[int] = None,
                  cloud_storage_spillover_manifest_max_segments: Optional[
                      int] = None,
@@ -3149,6 +3149,10 @@ class RedpandaService(RedpandaServiceBase):
                 f"Creating S3 bucket: {self._si_settings.cloud_storage_bucket}"
             )
         elif self._si_settings.cloud_storage_type == CloudStorageType.ABS:
+            # Make sure that use_bucket_cleanup_policy if False for ABS
+            self.logger.warning("Turning off use_bucket_cleanup_policy "
+                                "as it is not implemented for Azure/ABS")
+            self._si_settings.use_bucket_cleanup_policy = False
             self.cloud_storage_client = ABSClient(
                 logger=self.logger,
                 storage_account=self._si_settings.
