@@ -109,15 +109,6 @@ private:
     ss::sstring _name;
 };
 
-/**
- * Require that some type 'T' provide the role_member{_view} interface.
- */
-template<typename T>
-concept RoleMember = requires(T m) {
-    { m.name() } -> std::convertible_to<std::string_view>;
-    { m.type() } -> std::convertible_to<role_member_type>;
-};
-
 class role
   : public serde::envelope<role, serde::version<0>, serde::compat_version<0>> {
 public:
@@ -153,6 +144,15 @@ private:
     friend std::ostream& operator<<(std::ostream&, const role&);
 
     container_type _members;
+};
+
+/**
+ * Require that some type 'T' provide the role_member{_view} interface.
+ */
+template<typename T>
+concept RoleMember = requires(T m) {
+    { m.name() } -> std::convertible_to<std::string_view>;
+    { m.type() } -> std::convertible_to<role_member_type>;
 };
 
 } // namespace security

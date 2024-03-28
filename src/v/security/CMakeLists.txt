@@ -28,6 +28,7 @@ v_cc_library(
     krb5_configurator.cc
     gssapi_principal_mapper.cc
     role.cc
+    authorizer.cc
   DEPS
     v::http
     v::security_config
