@@ -352,27 +352,31 @@ public:
             double total_replicas = static_cast<double>(
               total_topic_replicas[tp]);
             for (auto& [id, alloc_node] : allocation_nodes()) {
-                auto expected_replicas = ceil(
-                  total_replicas * alloc_node->max_capacity() / total_capacity);
-
                 auto it = node_replicas.find(id);
                 const auto replicas_on_node = it == node_replicas.end()
                                                 ? 0
                                                 : it->second;
+
+                auto expected = ceil(
+                  total_replicas * alloc_node->max_capacity() / total_capacity);
+
                 logger.info(
-                  "topic {} has {} replicas on {}, expected: {} total "
-                  "replicas: {}",
+                  "topic {} has {} replicas on {}, expected: {}, "
+                  "total replicas: {}",
                   tp,
                   replicas_on_node,
                   id,
-                  expected_replicas,
+                  expected,
                   total_replicas);
-                // Expected variance should be proportional to
-                // sqrt(expected_replicas). Assert that it is not more than 3x
-                // that.
-                auto err = std::abs(expected_replicas - replicas_on_node)
-                           / sqrt(expected_replicas);
-                BOOST_REQUIRE_LE(err, 3.0);
+
+                static constexpr double max_skew = 0.03;
+                auto expected_min = expected - ceil(max_skew * expected);
+                auto expected_max = expected + ceil(max_skew * expected);
+                BOOST_CHECK_MESSAGE(
+                  replicas_on_node >= expected_min
+                    && replicas_on_node <= expected_max,
+                  "topic " << tp.tp() << ": unexpected replicas count on node "
+                           << id);
             }
         }
     }
