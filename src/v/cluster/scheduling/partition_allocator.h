@@ -182,7 +182,8 @@ private:
     result<allocated_partition> allocate_new_partition(
       model::topic_namespace nt,
       partition_constraints,
-      partition_allocation_domain);
+      partition_allocation_domain,
+      const std::optional<node2count_t>& node2count);
 
     result<reallocation_step> do_allocate_replica(
       allocated_partition&,

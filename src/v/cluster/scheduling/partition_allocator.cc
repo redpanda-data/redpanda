@@ -77,7 +77,8 @@ allocation_constraints partition_allocator::default_constraints() {
 result<allocated_partition> partition_allocator::allocate_new_partition(
   model::topic_namespace nt,
   partition_constraints p_constraints,
-  const partition_allocation_domain domain) {
+  const partition_allocation_domain domain,
+  const std::optional<node2count_t>& node2count) {
     vlog(
       clusterlog.trace,
       "allocating new partition with constraints: {}",
@@ -91,6 +92,11 @@ result<allocated_partition> partition_allocator::allocate_new_partition(
     }
 
     auto effective_constraints = default_constraints();
+    if (node2count) {
+        effective_constraints.ensure_new_level();
+        effective_constraints.add(
+          min_count_in_map("min topic-wise count", *node2count));
+    }
     effective_constraints.ensure_new_level();
     effective_constraints.add(max_final_capacity(domain));
     effective_constraints.add(p_constraints.constraints);
@@ -279,11 +285,16 @@ partition_allocator::allocate(allocation_request request) {
     intermediate_allocation assignments(
       *_state, request.partitions.size(), request.domain);
 
+    std::optional<node2count_t> node2count;
+    if (request.existing_replica_counts) {
+        node2count = std::move(*request.existing_replica_counts);
+    }
+
     const auto& nt = request._nt;
     for (auto& p_constraints : request.partitions) {
         auto const partition_id = p_constraints.partition_id;
         auto allocated = allocate_new_partition(
-          nt, std::move(p_constraints), request.domain);
+          nt, std::move(p_constraints), request.domain, node2count);
         if (!allocated) {
             co_return allocated.error();
         }
@@ -291,6 +302,13 @@ partition_allocator::allocate(allocation_request request) {
           _state->next_group_id(),
           partition_id,
           allocated.value().release_new_partition());
+
+        if (node2count) {
+            for (const auto& bs : assignments.get().back().replicas) {
+                (*node2count)[bs.node_id] += 1;
+            }
+        }
+
         co_await ss::coroutine::maybe_yield();
     }
 
