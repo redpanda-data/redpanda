@@ -255,8 +255,7 @@ metrics_reporter::build_metrics_snapshot() {
     snapshot.has_oidc = config::oidc_is_enabled_kafka()
                         || config::oidc_is_enabled_http();
 
-    snapshot.has_rbac
-      = !_role_store.local().range([](auto const&) { return true; }).empty();
+    snapshot.has_rbac = _role_store.local().size() > 0;
 
     auto env_value = std::getenv("REDPANDA_ENVIRONMENT");
     if (env_value) {

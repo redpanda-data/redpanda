@@ -122,7 +122,7 @@ public:
 };
 
 /*
- * A lightweight container of references to ACL entries. An instance of this
+ * A lightweight view of references to ACL entries. An instance of this
  * object is created when authorizing and contains ACL matches for the
  * authorization request. Then authorization step searches through the matches
  * based on configured policies and type of authorization request.

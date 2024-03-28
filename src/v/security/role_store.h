@@ -18,6 +18,8 @@
 #include "security/role.h"
 #include "security/types.h"
 
+#include <seastar/util/noncopyable_function.hh>
+
 #include <absl/algorithm/container.h>
 #include <boost/range/iterator_range.hpp>
 
@@ -77,7 +79,7 @@ class role_store {
       detail::role_member_eq>;
     using role_accessor = std::pair<
       role_name_view, /* role_name */
-      std::function<const members_store_type&(void)>>;
+      ss::noncopyable_function<const members_store_type&(void)>>;
     using range_query_container_type = fragmented_vector<role_name_view>;
 
 public:
@@ -121,6 +123,7 @@ public:
         _members_store.clear();
         _roles.clear();
     }
+    size_t size() const { return _roles.size(); }
 
     // Retrieve a list of role_names that satisfy some predicate
     //
@@ -141,7 +144,7 @@ public:
 
     static constexpr auto has_member =
       [](const role_accessor& e, const RoleMember auto& member) {
-          const auto [name, get_ms] = e;
+          const auto& [name, get_ms] = e;
           const auto& ms = get_ms();
           if (auto it = ms.find(member); it != ms.end()) {
               return it->second.contains(name);
