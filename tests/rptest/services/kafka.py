@@ -1,9 +1,10 @@
 from ducktape.utils.util import wait_until
+from rptest.services.redpanda_types import PLAINTEXT_SECURITY, KafkaClientSecurity
 
 
 class KafkaServiceAdapter:
     '''
-        Simple adapter to match KafkaService interface with 
+        Simple adapter to match KafkaService interface with
         what is required by Redpanda test clients
     '''
     def __init__(self, test_context, kafka_service):
@@ -33,6 +34,12 @@ class KafkaServiceAdapter:
             return object.__getattribute__(self, name)
         except AttributeError:
             return getattr(self._kafka_service, name)
+
+    # required for RpkTool constructor, though we don't actually
+    # try to return the cluster's security settings, just assume
+    # they are plain text
+    def kafka_client_security(self) -> KafkaClientSecurity:
+        return PLAINTEXT_SECURITY
 
     # required for rpk
     def find_binary(self, name):
