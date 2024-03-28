@@ -7,7 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-
+#include "archival/archival_metadata_stm.h"
 #include "cloud_storage/remote_file.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tests/manual_fixture.h"
