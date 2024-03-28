@@ -58,7 +58,7 @@ public:
         add_cleanup_file(file_);
         storage()->create(file_.string()).get()->close().get();
 
-        io::page_cache::config cache_config{
+        const io::page_cache::config cache_config{
           .cache_size = 2_MiB, .small_size = 1_MiB};
         cache_ = std::make_unique<io::page_cache>(cache_config);
 
