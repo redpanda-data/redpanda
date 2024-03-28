@@ -12,6 +12,7 @@
 #include "base/units.h"
 #include "base/vassert.h"
 #include "bytes/bytes.h"
+#include "compression/lz4_decompression_buffers.h"
 #include "static_deleter_fn.h"
 
 #include <seastar/core/temporary_buffer.hh>
@@ -59,13 +60,17 @@ using lz4_decompression_ctx = std::unique_ptr<
     &LZ4F_freeDecompressionContext>>;
 
 static lz4_decompression_ctx make_decompression_context() {
-    LZ4F_dctx* c = nullptr;
-    LZ4F_errorCode_t code = LZ4F_createDecompressionContext(&c, LZ4F_VERSION);
-    check_lz4_error("LZ4F_createDecompressionContext error: {}", code);
+    LZ4F_dctx* c = LZ4F_createDecompressionContext_advanced(
+      lz4_decompression_buffers_instance().custom_mem_alloc(), LZ4F_VERSION);
+    if (c == nullptr) {
+        throw std::runtime_error("Failed to initialize decompression context");
+    }
+
     return lz4_decompression_ctx(c);
 }
 
-iobuf lz4_frame_compressor::compress(const iobuf& b) {
+iobuf lz4_frame_compressor::compress(
+  const iobuf& b, std::optional<LZ4F_blockSizeID_t> block_size_id) {
     auto ctx_ptr = make_compression_context();
     LZ4F_compressionContext_t ctx = ctx_ptr.get();
     /* Required by Kafka */
@@ -73,9 +78,15 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
     std::memset(&prefs, 0, sizeof(prefs));
     prefs.compressionLevel = 1; // default
     prefs.frameInfo = {
-      .blockMode = LZ4F_blockIndependent, .contentSize = b.size_bytes()};
+      .blockMode = LZ4F_blockIndependent,
+      .contentSize = b.size_bytes(),
+    };
 
-    const size_t max_chunk_size = details::io_allocation_size::max_chunk_size;
+    if (block_size_id.has_value()) {
+        prefs.frameInfo.blockSizeID = block_size_id.value();
+    }
+
+    const size_t max_chunk_size = 8 * 1024 * 1024;
 
     const size_t compress_bound = LZ4F_compressBound(b.size_bytes(), &prefs);
     check_lz4_error("lz4_compressbound error:{}", compress_bound);
