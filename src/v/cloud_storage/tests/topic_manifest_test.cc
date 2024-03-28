@@ -257,7 +257,17 @@ SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
     auto rstr = make_iobuf_input_stream(std::move(buf));
     topic_manifest restored;
     restored.update(std::move(rstr)).get();
-    BOOST_REQUIRE(m == restored);
+    BOOST_CHECK_EQUAL(m.get_revision(), restored.get_revision());
+    auto restored_cfg = restored.get_topic_config().value();
+    // as a safety net, negative values for retention_duration are converted to
+    // disabled tristate (infinite retention)
+    BOOST_CHECK(restored_cfg.properties.retention_duration.is_disabled());
+
+    BOOST_CHECK_EQUAL(
+      restored_cfg.properties.retention_bytes,
+      min_cfg.properties.retention_bytes);
+    BOOST_CHECK_EQUAL(
+      restored_cfg.properties.segment_size, min_cfg.properties.segment_size);
 }
 
 SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
@@ -359,11 +369,9 @@ SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
     BOOST_REQUIRE_EQUAL(64, tp_cfg->partition_count);
     BOOST_REQUIRE_EQUAL(6, tp_cfg->replication_factor);
     auto tp_props = tp_cfg->properties;
-    BOOST_REQUIRE(tp_props.retention_duration.has_optional_value());
-    BOOST_REQUIRE_EQUAL(
-      tp_props.retention_duration.value().count(), -36000000000);
 
-    // The usigned types that were passed in negative values shouldn't be set.
+    // The unsigned types that were passed in negative values shouldn't be set.
+    BOOST_REQUIRE(tp_props.retention_duration.is_disabled());
     BOOST_REQUIRE(tp_props.retention_bytes.is_disabled());
     BOOST_REQUIRE(!tp_props.segment_size.has_value());
 }
