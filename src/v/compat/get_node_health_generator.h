@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "cluster/health_monitor_types.h"
 #include "cluster/tests/randoms.h"
 #include "cluster/types.h"
 #include "compat/generator.h"
@@ -22,9 +23,9 @@ template<>
 struct instance_generator<cluster::get_node_health_request> {
     static cluster::get_node_health_request random() {
         return cluster::get_node_health_request{
-          {},
-          cluster::random_node_report_filter(),
-          random_generators::get_int<int8_t>()};
+          .filter = cluster::random_node_report_filter(),
+          .use_columnar_format = cluster::columnar_version(
+            tests::random_bool())};
     }
     static std::vector<cluster::get_node_health_request> limits() { return {}; }
 };
@@ -36,6 +37,8 @@ struct instance_generator<cluster::get_node_health_reply> {
           .error = instance_generator<cluster::errc>::random(),
           .report = tests::random_optional(
             [] { return cluster::random_node_health_report(); }),
+          .columnar_report = tests::random_optional(
+            [] { return cluster::random_columnar_node_health_report(); }),
         };
     }
     static std::vector<cluster::get_node_health_reply> limits() { return {}; }

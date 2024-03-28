@@ -12,6 +12,7 @@
 
 #include "base/vlog.h"
 #include "cluster/cluster_utils.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/node_status_table.h"
@@ -379,7 +380,18 @@ ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
   const cluster_health_report& health_report, request_context& ctx) {
     for (const auto& node_report : health_report.node_reports) {
         for (const auto& tp_ns : node_report.topics) {
+            vlog(
+              clusterlog.trace,
+              "node: {} report topic: {}",
+              node_report.id,
+              tp_ns.tp_ns);
             for (const auto& partition : tp_ns.partitions) {
+                vlog(
+                  clusterlog.trace,
+                  "node: {} report topic: {}, partition: {}",
+                  node_report.id,
+                  tp_ns.tp_ns,
+                  partition);
                 model::ntp ntp{tp_ns.tp_ns.ns, tp_ns.tp_ns.tp, partition.id};
                 size_t reclaimable = partition.reclaimable_size_bytes.value_or(
                   0);
@@ -1759,7 +1771,6 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                   }
 
                   auto domain = get_allocation_domain(part.ntp());
-
                   double count_before = scaled_count(bs.node_id, domain);
 
                   auto res = part.move_replica(
@@ -1784,6 +1795,9 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                       }
                   }
               }
+          },
+          [](immutable_partition& part) {
+              part.report_failure(change_reason::partition_count_rebalancing);
           },
           [](auto&) {});
 

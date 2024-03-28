@@ -20,8 +20,14 @@ namespace compat {
 
 GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::get_node_health_request,
-  { json_write(filter); },
-  { json_read(filter); });
+  {
+      json_write(filter);
+      json_write(use_columnar_format);
+  },
+  {
+      json_read(filter);
+      json_read(use_columnar_format);
+  });
 
 template<>
 struct compat_check<cluster::get_node_health_reply> {
@@ -36,18 +42,20 @@ struct compat_check<cluster::get_node_health_reply> {
       json::Writer<json::StringBuffer>& wr) {
         json_write(error);
         json_write(report);
+        json_write(columnar_report);
     }
 
     static cluster::get_node_health_reply from_json(json::Value& rd) {
         cluster::get_node_health_reply obj;
         json_read(error);
         json_read(report);
+        json_read(columnar_report);
         return obj;
     }
 
     static std::vector<compat_binary>
     to_binary(cluster::get_node_health_reply obj) {
-        return {compat_binary::serde(obj)};
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void

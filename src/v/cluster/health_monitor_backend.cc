@@ -27,6 +27,7 @@
 #include "model/metadata.h"
 #include "raft/fwd.h"
 #include "rpc/connection_cache.h"
+#include "ssx/async_algorithm.h"
 #include "storage/types.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -38,6 +39,7 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_timeout.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
@@ -154,19 +156,30 @@ cluster_health_report health_monitor_backend::build_cluster_report(
 }
 
 chunked_vector<topic_status> filter_topic_status(
-  const chunked_vector<topic_status>& topics, const partitions_filter& filter) {
+  const topics_store& topics, const partitions_filter& filter) {
     // empty filter matches all
     if (filter.namespaces.empty()) {
         chunked_vector<topic_status> copy;
         copy.reserve(topics.size());
-        std::copy(topics.cbegin(), topics.cend(), std::back_inserter(copy));
+        for (const auto& topic : topics) {
+            partition_statuses_t partitions;
+            partitions.reserve(topic.partitions.size());
+            std::copy(
+              topic.partitions.begin(),
+              topic.partitions.end(),
+              std::back_inserter(partitions));
+
+            copy.emplace_back(
+              model::topic_namespace(topic.tp_ns), std::move(partitions));
+        }
         return copy;
     }
 
     chunked_vector<topic_status> filtered;
 
     for (auto& tl : topics) {
-        topic_status filtered_topic_status(tl.tp_ns, {});
+        topic_status filtered_topic_status(
+          model::topic_namespace(tl.tp_ns), {});
         for (auto& pl : tl.partitions) {
             if (filter.matches(tl.tp_ns, pl.id)) {
                 filtered_topic_status.partitions.push_back(pl);
@@ -354,7 +367,7 @@ health_monitor_backend::maybe_refresh_cluster_health(
     co_return errc::success;
 }
 
-ss::future<result<node_health_report>>
+ss::future<result<health_monitor_backend::report_variant_t>>
 health_monitor_backend::collect_remote_node_health(model::node_id id) {
     const auto timeout = model::timeout_clock::now() + max_metadata_age();
     return _connections.local()
@@ -365,7 +378,10 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
         max_metadata_age(),
         [timeout](controller_client_protocol client) mutable {
             return client.collect_node_health_report(
-              get_node_health_request{.filter = node_report_filter{}},
+              get_node_health_request{
+                .filter = node_report_filter{},
+                .use_columnar_format = columnar_version::yes,
+              },
               rpc::client_opts(timeout));
         })
       .then(&rpc::get_ctx_data<get_node_health_reply>)
@@ -374,18 +390,46 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
       });
 }
 
-result<node_health_report>
-map_reply_result(result<get_node_health_reply> reply) {
-    if (!reply) {
-        return {reply.error()};
+namespace {
+result<std::variant<node_health_report, columnar_node_health_report>>
+map_reply_result(result<get_node_health_reply> reply_result) {
+    if (!reply_result) {
+        return {reply_result.error()};
     }
-    if (!reply.value().report.has_value()) {
-        return {reply.value().error};
+    auto& reply = reply_result.value();
+
+    if (reply.columnar_report) {
+        return {std::move(*reply.columnar_report)};
     }
-    return {std::move(*reply.value().report)};
+
+    if (reply.report) {
+        return {*reply.report};
+    }
+
+    return {reply.error};
 }
 
-result<node_health_report> health_monitor_backend::process_node_reply(
+ss::future<columnar_node_health_report>
+build_columnar_node_health_report(node_health_report report) {
+    columnar_node_health_report ret;
+    ret.id = report.id;
+    ret.local_state = report.local_state;
+    ssx::async_counter cnt;
+    co_await ssx::async_for_each_counter(
+      cnt,
+      report.topics.begin(),
+      report.topics.end(),
+      [&cnt, &ret](topic_status& tp_status) {
+          cnt.count += tp_status.partitions.size();
+          ret.topics.append(std::move(tp_status.tp_ns), tp_status.partitions);
+      });
+    co_return ret;
+}
+
+} // namespace
+
+result<health_monitor_backend::report_variant_t>
+health_monitor_backend::process_node_reply(
   model::node_id id, result<get_node_health_reply> reply) {
     auto res = map_reply_result(std::move(reply));
     auto [status_it, _] = _status.try_emplace(id);
@@ -410,19 +454,20 @@ result<node_health_report> health_monitor_backend::process_node_reply(
         return res.error();
     }
 
-    // TODO serialize storage_space_alert, instead of recomputing here.
-    auto& s = res.value().local_state;
-    node::local_monitor::update_alert(s.data_disk);
-    if (
-      !status_it->second.is_alive
-      && clusterlog.is_enabled(ss::log_level::info)) {
-        vlog(
-          clusterlog.info,
-          "received node {} health report, marking node as up",
-          id);
-    }
-    status_it->second.last_reply_timestamp = ss::lowres_clock::now();
-    status_it->second.is_alive = alive::yes;
+    ss::visit(res.value(), [&status_it, id](auto& report) {
+        auto& s = report.local_state;
+        node::local_monitor::update_alert(s.data_disk);
+        if (
+          !status_it->second.is_alive
+          && clusterlog.is_enabled(ss::log_level::info)) {
+            vlog(
+              clusterlog.info,
+              "received node {} health report, marking node as up",
+              id);
+        }
+        status_it->second.last_reply_timestamp = ss::lowres_clock::now();
+        status_it->second.is_alive = alive::yes;
+    });
 
     return res;
 }
@@ -437,47 +482,72 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
           if (id == _self) {
-              return collect_current_node_health(node_report_filter{});
+              return collect_current_node_health().then(
+                [](columnar_node_health_report r) {
+                    return result<report_variant_t>(std::move(r));
+                });
           }
           return collect_remote_node_health(id);
       });
 
+    co_return co_await process_health_reports(std::move(reports));
+}
+
+ss::future<std::error_code> health_monitor_backend::process_health_reports(
+  std::vector<result<report_variant_t>> report_variants) {
     auto old_reports = std::exchange(_reports, {});
 
     // update nodes reports and cache cluster-level disk health
     storage::disk_space_alert cluster_disk_health
       = storage::disk_space_alert::ok;
-    for (auto& r : reports) {
-        if (r) {
-            const auto id = r.value().id;
-            vlog(
-              clusterlog.debug,
-              "collected node {} health report: {}",
-              id,
-              r.value());
-
-            std::optional<std::reference_wrapper<const node_health_report>>
-              old_report;
-            if (auto old_i = old_reports.find(id); old_i != old_reports.end()) {
-                vlog(
-                  clusterlog.debug,
-                  "(previous node report from {}: {})",
-                  id,
-                  old_i->second);
-                old_report = old_i->second;
-            } else {
-                vlog(clusterlog.debug, "(initial node report from {})", id);
-            }
-
-            for (auto& cb : _node_callbacks) {
-                cb.second(r.value(), old_report);
-            }
-            cluster_disk_health = storage::max_severity(
-              r.value().local_state.get_disk_alert(), cluster_disk_health);
-
-            _reports.emplace(id, std::move(r.value()));
+    for (auto& r : report_variants) {
+        if (!r) {
+            continue;
         }
+        auto report = std::move(r.value());
+        columnar_node_health_report final_report = co_await ss::visit(
+          report,
+          [](node_health_report& legacy_report) {
+              vlog(
+                clusterlog.debug,
+                "collected node {} legacy health report: {}",
+                legacy_report.id,
+                legacy_report);
+              return build_columnar_node_health_report(
+                std::move(legacy_report));
+          },
+          [](columnar_node_health_report& report) {
+              vlog(
+                clusterlog.debug,
+                "collected node {} columnar health report: {}",
+                report.id,
+                report);
+              return ss::make_ready_future<columnar_node_health_report>(
+                std::move(report));
+          });
+        model::node_id id = final_report.id;
+        std::optional<std::reference_wrapper<const columnar_node_health_report>>
+          old_report;
+        if (auto old_i = old_reports.find(id); old_i != old_reports.end()) {
+            vlog(
+              clusterlog.trace,
+              "(previous node report from node {}: {})",
+              id,
+              old_report);
+            old_report = old_i->second;
+        } else {
+            vlog(clusterlog.debug, "(initial node report from {})", id);
+        }
+
+        for (auto& cb : _node_callbacks) {
+            cb.second(final_report, old_report);
+        }
+        cluster_disk_health = storage::max_severity(
+          final_report.local_state.get_disk_alert(), cluster_disk_health);
+
+        _reports.emplace(id, std::move(final_report));
     }
+
     _reports_disk_health = cluster_disk_health;
 
     if (config::shard_local_cfg().enable_usage()) {
@@ -538,6 +608,26 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
 
     co_return ret;
 }
+
+ss::future<columnar_node_health_report>
+health_monitor_backend::collect_current_node_health() {
+    vlog(clusterlog.debug, "collecting current node health report");
+    columnar_node_health_report ret;
+    ret.id = _self;
+
+    ret.local_state = _local_monitor.local().get_state_cached();
+    ret.local_state.logical_version
+      = features::feature_table::get_latest_logical_version();
+
+    ret.drain_status = co_await _drain_manager.local().status();
+    ret.topics = co_await collect_topic_status();
+    auto [it, _] = _status.try_emplace(ret.id);
+    it->second.is_alive = alive::yes;
+    it->second.last_reply_timestamp = ss::lowres_clock::now();
+    vlog(clusterlog.debug, "current node health: {}", ret);
+    co_return ret;
+}
+
 namespace {
 
 struct ntp_report {
@@ -626,7 +716,21 @@ health_monitor_backend::collect_topic_status(partitions_filter filters) {
 
     co_return topics;
 }
+ss::future<topics_store> health_monitor_backend::collect_topic_status() {
+    auto reports_map = co_await _partition_manager.map_reduce0(
+      [](partition_manager& pm) {
+          return collect_shard_local_reports(pm, partitions_filter{});
+      },
+      reports_acc_t{},
+      &reduce_reports_map);
 
+    topics_store topics;
+    for (auto& [tp_ns, partitions] : reports_map) {
+        topics.append(tp_ns, partitions);
+    }
+
+    co_return topics;
+}
 std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
     return config::shard_local_cfg().health_monitor_max_metadata_age();
 }
@@ -682,7 +786,9 @@ health_monitor_backend::aggregate_reports(report_cache_t& reports) {
 
         absl::node_hash_map<
           model::topic_namespace,
-          absl::node_hash_set<model::partition_id>>
+          absl::node_hash_set<model::partition_id>,
+          model::topic_namespace_hash,
+          model::topic_namespace_eq>
           t_to_p;
     };
 
@@ -694,7 +800,9 @@ health_monitor_backend::aggregate_reports(report_cache_t& reports) {
             auto& urp_this_topic = urp.t_to_p[tp_ns];
 
             for (const auto& partition : partitions) {
-                if (!partition.leader_id.has_value()) {
+                if (
+                  !partition.leader_id.has_value()
+                  || partition.leader_id == model::node_id(-1)) {
                     leaderless_this_topic.emplace(partition.id);
                 }
                 if (partition.under_replicated_replicas.value_or(0) > 0) {
@@ -784,7 +892,7 @@ health_monitor_backend::get_cluster_health_overview(
     }
 
     ret.bytes_in_cloud_storage = _bytes_in_cloud_storage;
-
+    vlog(clusterlog.debug, "current cluster health overview: {}", ret);
     co_return ret;
 }
 

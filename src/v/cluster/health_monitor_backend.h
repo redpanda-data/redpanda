@@ -31,8 +31,8 @@
 namespace cluster {
 
 using health_node_cb_t = ss::noncopyable_function<void(
-  node_health_report const&,
-  std::optional<std::reference_wrapper<const node_health_report>>)>;
+  columnar_node_health_report const&,
+  std::optional<std::reference_wrapper<const columnar_node_health_report>>)>;
 
 /**
  * Health monitor backend is responsible for collecting cluster health status
@@ -70,6 +70,12 @@ public:
 
     ss::future<result<node_health_report>>
       collect_current_node_health(node_report_filter);
+
+    /**
+     * Collects current node health and returns the report using columnar
+     * format.
+     */
+    ss::future<columnar_node_health_report> collect_current_node_health();
 
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);
@@ -109,13 +115,16 @@ private:
         alive is_alive = alive::no;
     };
 
+    using report_variant_t
+      = std::variant<node_health_report, columnar_node_health_report>;
+
     using status_cache_t = absl::node_hash_map<model::node_id, reply_status>;
     using report_cache_t
-      = absl::node_hash_map<model::node_id, node_health_report>;
+      = absl::node_hash_map<model::node_id, columnar_node_health_report>;
 
     void tick();
     ss::future<std::error_code> collect_cluster_health();
-    ss::future<result<node_health_report>>
+    ss::future<result<report_variant_t>>
       collect_remote_node_health(model::node_id);
     ss::future<std::error_code> maybe_refresh_cluster_health(
       force_refresh, model::timeout_clock::time_point);
@@ -128,9 +137,13 @@ private:
 
     ss::future<chunked_vector<topic_status>>
       collect_topic_status(partitions_filter);
+    ss::future<topics_store> collect_topic_status();
 
-    result<node_health_report>
+    result<report_variant_t>
       process_node_reply(model::node_id, result<get_node_health_reply>);
+
+    ss::future<std::error_code>
+      process_health_reports(std::vector<result<report_variant_t>>);
 
     std::chrono::milliseconds max_metadata_age();
     void abort_current_refresh();

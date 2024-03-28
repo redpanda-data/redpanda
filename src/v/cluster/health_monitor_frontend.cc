@@ -10,6 +10,8 @@
  */
 #include "cluster/health_monitor_frontend.h"
 
+#include "cluster/health_monitor_backend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "model/timeout_clock.h"
 
@@ -62,6 +64,13 @@ health_monitor_frontend::collect_node_health(node_report_filter f) {
       [f = std::move(f)](health_monitor_backend& be) mutable {
           return be.collect_current_node_health(std::move(f));
       });
+}
+
+ss::future<columnar_node_health_report>
+health_monitor_frontend::collect_node_health() {
+    return dispatch_to_backend([](health_monitor_backend& be) mutable {
+        return be.collect_current_node_health();
+    });
 }
 
 // Return status of single node

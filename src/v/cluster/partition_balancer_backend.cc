@@ -10,6 +10,7 @@
 
 #include "cluster/partition_balancer_backend.h"
 
+#include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
@@ -234,8 +235,9 @@ void partition_balancer_backend::on_topic_table_update() {
 }
 
 void partition_balancer_backend::on_health_monitor_update(
-  node_health_report const& report,
-  std::optional<std::reference_wrapper<const node_health_report>> old_report) {
+  columnar_node_health_report const& report,
+  std::optional<std::reference_wrapper<const columnar_node_health_report>>
+    old_report) {
     if (!old_report) {
         vlog(
           clusterlog.debug,

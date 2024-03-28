@@ -11,19 +11,19 @@
 
 #pragma once
 
-#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "model/fundamental.h"
 
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/util/log.hh>
 
-#include <concepts>
+#include <serde/envelope.h>
+#include <serde/serde.h>
+#include <ssx/sformat.h>
+
 #include <cstddef>
-#include <cstdint>
 #include <span>
 #include <type_traits>
-#include <variant>
 
 namespace details {
 static constexpr uint32_t FOR_buffer_depth = 16;
@@ -257,6 +257,10 @@ struct deltafor_stream_pos_t
     uint32_t offset;
     /// Number of rows before the next row
     uint32_t num_rows;
+
+    friend bool
+    operator==(const deltafor_stream_pos_t&, const deltafor_stream_pos_t&)
+      = default;
 
     auto serde_fields() { return std::tie(initial, offset, num_rows); }
 };
@@ -511,7 +515,7 @@ private:
                         = decom[Is].second;
                       for (auto& e : input) {
                           end_iter = serialize_little_endian<bytes_to_save>(
-                            std::make_unsigned_t<TVal>(e)
+                            static_cast<uint64_t>(e)
                               >> shift_of_to_save_section,
                             end_iter);
                       }
@@ -582,7 +586,8 @@ public:
       : _initial(initial_value)
       , _total{cnt}
       , _pos{0}
-      , _data(std::move(data))
+      , _data(ss::make_lw_shared<iobuf>(std::move(data)))
+      , _parser(*_data)
       , _delta(delta) {}
 
     using row_t = std::array<TVal, row_width>;
@@ -592,7 +597,7 @@ public:
         if (_pos == _total) {
             return false;
         }
-        auto nbits = _data.consume_type<uint8_t>();
+        auto nbits = _parser.consume_type<uint8_t>();
         unpack(row, nbits);
         _initial = _delta.decode(_initial, row);
         _pos++;
@@ -601,12 +606,32 @@ public:
 
     /// Skip rows
     void skip(const deltafor_stream_pos_t<TVal>& st) {
-        _data.skip(st.offset);
+        _parser.skip(st.offset);
         _initial = st.initial;
         _pos = st.num_rows;
     }
 
+    deltafor_decoder copy() const {
+        deltafor_decoder ret(_initial, _total, _data, _delta);
+        ret._pos = _pos;
+        ret._parser.skip(_parser.bytes_consumed());
+
+        return ret;
+    }
+
 private:
+    deltafor_decoder(
+      TVal initial_value,
+      uint32_t cnt,
+      ss::lw_shared_ptr<iobuf> data,
+      DeltaStep delta)
+      : _initial(initial_value)
+      , _total{cnt}
+      , _pos{0}
+      , _data(std::move(data))
+      , _parser(*_data)
+      , _delta(delta) {}
+
     template<size_t N_BITS>
     void unpack(std::span<TVal, row_width> output) {
         std::ranges::fill(output, TVal{0});
@@ -614,7 +639,7 @@ private:
             using namespace details::decomp;
 
             std::array<uint8_t, serialized_size<N_BITS, row_width>> tmp_buffer;
-            _data.consume_to(tmp_buffer.size(), tmp_buffer.begin());
+            _parser.consume_to(tmp_buffer.size(), tmp_buffer.begin());
 
             auto end_it = tmp_buffer.cbegin();
             // step 1: deserialize whole bytes and paste them in place,
@@ -629,7 +654,7 @@ private:
                           auto tmp = std::make_unsigned_t<TVal>{};
                           end_it = deserialize_little_endian<bytes_to_restore>(
                             end_it, tmp);
-                          e |= tmp << shift_of_restored;
+                          e |= static_cast<uint64_t>(tmp) << shift_of_restored;
                       }
                   }(),
                   ...);
@@ -668,7 +693,8 @@ private:
     TVal _initial;
     uint32_t _total;
     uint32_t _pos;
-    iobuf_parser _data;
+    ss::lw_shared_ptr<iobuf> _data;
+    iobuf_const_parser _parser;
     DeltaStep _delta;
 };
 
@@ -701,6 +727,30 @@ public:
             _read_buf = _head;
         }
     }
+    deltafor_frame_const_iterator&
+    operator=(const deltafor_frame_const_iterator& other) {
+        _read_buf = other._read_buf;
+        _head = other._head;
+        _decoder = other._decoder ? std::make_optional(other._decoder->copy())
+                                  : std::nullopt;
+        _pos = other._pos;
+        _size = other._size;
+        _frame_initial = other._frame_initial;
+        return *this;
+    }
+
+    deltafor_frame_const_iterator(const deltafor_frame_const_iterator& other)
+      : _read_buf(other._read_buf)
+      , _head(other._head)
+      , _decoder(
+          other._decoder ? std::make_optional(other._decoder->copy())
+                         : std::nullopt)
+      , _pos(other._pos)
+      , _size(other._size)
+      , _frame_initial(other._frame_initial) {}
+    deltafor_frame_const_iterator(deltafor_frame_const_iterator&&) = default;
+    deltafor_frame_const_iterator& operator=(deltafor_frame_const_iterator&&)
+      = default;
 
     /// Create iterator that points to the end
     deltafor_frame_const_iterator() = default;
@@ -992,6 +1042,26 @@ public:
         return tmp;
     }
 
+    deltafor_frame copy() const {
+        deltafor_frame f;
+        f._head = _head;
+        f._last_row = _last_row;
+        f._size = _size;
+        if (_tail) {
+            encoder_t enc(
+              _tail->get_initial_value(),
+              _tail->get_row_count(),
+              _tail->get_last_value(),
+              _tail->copy());
+            f._tail = std::move(enc);
+        }
+
+        return f;
+    }
+
+    friend bool operator==(const deltafor_frame&, const deltafor_frame&)
+      = default;
+
 private:
     template<class PredT>
     const_iterator pred_search(value_t value) const {
@@ -1160,6 +1230,123 @@ private:
     // Current position inside the column
     size_t _ix_column{0};
 };
+/**
+ * This lightweight version of deltafor column iterator is copyable and do not
+ * create snapshot of frame iterators. Hence it is not safe to be used when
+ * underlying column is being modified with asynchronous operations.
+ */
+template<class value_t, auto delta_alg>
+class lw_deltafor_column_const_iterator
+  : public boost::iterator_facade<
+      lw_deltafor_column_const_iterator<value_t, delta_alg>,
+      value_t const,
+      boost::iterators::forward_traversal_tag> {
+    friend class boost::iterator_core_access;
+
+public:
+    using frame_t = deltafor_frame<value_t, delta_alg>;
+    using frame_iter_t = typename frame_t::const_iterator;
+    using hint_t = typename frame_t::hint_t;
+
+private:
+    using frame_list_t = std::list<frame_t>;
+    using outer_iter_t = typename frame_list_t::const_iterator;
+
+    const value_t& dereference() const {
+        vassert(!is_end(), "Can't dereference iterator");
+        return *_inner_it;
+    }
+
+    void increment() {
+#ifndef NDEBUG
+        vassert(!is_end(), "can't increment iterator");
+#endif
+        ++_ix_column;
+        ++_inner_it;
+        if (_inner_it == _inner_end) {
+            ++_outer_it;
+            _inner_it = _outer_it == _outer_end ? frame_iter_t()
+                                                : _outer_it->begin();
+        }
+    }
+
+    bool equal(const auto& other) const {
+        ssize_t idx = is_end() ? -1 : index();
+        ssize_t oth_idx = other.is_end() ? -1 : other.index();
+        return idx == oth_idx;
+    }
+
+public:
+    lw_deltafor_column_const_iterator()
+      : _inner_it(frame_iter_t{}) {}
+
+    lw_deltafor_column_const_iterator(outer_iter_t current, outer_iter_t end)
+      : _outer_it(current)
+      , _outer_end(end)
+      , _inner_it(_outer_it == _outer_end ? frame_iter_t{} : current->begin()) {
+    }
+
+    // Create iterator that points to the middle of the column
+    lw_deltafor_column_const_iterator(
+      outer_iter_t current,
+      outer_iter_t end,
+      uint32_t intra_frame_ix,
+      uint32_t column_ix)
+      : _outer_it(current)
+      , _outer_end(end)
+      , _inner_it(
+          current != end ? current->at_index(intra_frame_ix) : _inner_end)
+      , _ix_column(column_ix) {}
+
+    lw_deltafor_column_const_iterator(
+      outer_iter_t current,
+      outer_iter_t end,
+      uint32_t intra_frame_ix,
+      const hint_t& row,
+      uint32_t column_ix)
+      : _outer_it(current)
+      , _outer_end(end)
+      , _inner_it(
+          current != end ? current->at_index(intra_frame_ix, row) : _inner_end)
+      , _ix_column(column_ix) {}
+
+    lw_deltafor_column_const_iterator(
+      lw_deltafor_column_const_iterator&&) noexcept
+      = default;
+
+    lw_deltafor_column_const_iterator(const lw_deltafor_column_const_iterator&)
+      = default;
+
+    lw_deltafor_column_const_iterator&
+    operator=(const lw_deltafor_column_const_iterator&)
+      = default;
+
+    lw_deltafor_column_const_iterator&
+    operator=(lw_deltafor_column_const_iterator&&) noexcept
+      = default;
+
+    ~lw_deltafor_column_const_iterator() = default;
+    // Current index
+    size_t index() const { return _ix_column; }
+
+    bool is_end() const {
+        // Invariant: _inner_it is never equal to _inner_end
+        // unless the iterator points to the end.de
+        return _inner_it == _inner_end;
+    }
+
+    auto get_frame_initial_value() const noexcept {
+        return _outer_it->get_frame_initial_value();
+    }
+
+private:
+    outer_iter_t _outer_it;
+    outer_iter_t _outer_end;
+    frame_iter_t _inner_it{};
+    frame_iter_t _inner_end{};
+    // Current position inside the column
+    size_t _ix_column{0};
+};
 
 /// Column that represents a single field
 ///
@@ -1215,6 +1402,8 @@ public:
     using hint_t = typename frame_t::hint_t;
 
     using const_iterator = deltafor_column_const_iterator<value_t, delta_alg>;
+    using lw_const_iterator
+      = lw_deltafor_column_const_iterator<value_t, delta_alg>;
 
     deltafor_column_impl() = default;
 
@@ -1370,6 +1559,14 @@ public:
 
     const_iterator end() const { return const_iterator(); }
 
+    lw_const_iterator lw_begin() const {
+        return lw_const_iterator(_frames.begin(), _frames.end());
+    }
+
+    lw_const_iterator lw_end() const {
+        return lw_const_iterator(_frames.end(), _frames.end());
+    }
+
     const_iterator find(value_t value) const {
         return to_underlying().pred_search(value, std::equal_to<>{});
     }
@@ -1455,6 +1652,10 @@ public:
         return tmp;
     }
 
+    friend bool
+    operator==(const deltafor_column_impl&, const deltafor_column_impl&)
+      = default;
+
 protected:
     auto get_frame_iterator_by_element_index(size_t ix) const {
         return std::find_if(
@@ -1494,6 +1695,15 @@ public:
     using delta_alg = details::delta_xor;
     using base_t::base_t;
     using typename base_t::const_iterator;
+    using typename base_t::lw_const_iterator;
+
+    deltafor_column copy() const {
+        deltafor_column column;
+        for (const auto& f : this->_frames) {
+            column._frames.push_back(f.copy());
+        }
+        return column;
+    }
 
     /// Find first value that matches the predicate
     const_iterator pred_search(
@@ -1531,6 +1741,15 @@ public:
     using delta_alg = details::delta_delta<value_t>;
     using base_t::base_t;
     using typename base_t::const_iterator;
+    using typename base_t::lw_const_iterator;
+
+    deltafor_column copy() const {
+        deltafor_column column;
+        for (const auto& f : this->_frames) {
+            column._frames.push_back(f.copy());
+        }
+        return column;
+    }
 
     const_iterator pred_search(
       value_t value, std::regular_invocable<value_t, value_t> auto pred) const {

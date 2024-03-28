@@ -98,18 +98,6 @@ class NodeDecommissionWaiter():
             node_id
         ] if decommissioned_node_ids == None else decommissioned_node_ids
 
-    def _nodes_with_decommission_progress_api(self):
-        def has_decommission_progress_api(node):
-            v = int_tuple(
-                VERSION_RE.findall(self.redpanda.get_version(node))[0])
-            # decommission progress api is available since v22.3.12
-            return v[0] >= 23 or (v[0] == 22 and v[1] == 3 and v[2] >= 12)
-
-        return [
-            n for n in self.redpanda.started_nodes()
-            if has_decommission_progress_api(n)
-        ]
-
     def _dump_partition_move_available_bandwidth(self):
         def get_metric(self, node):
             try:
@@ -134,7 +122,7 @@ class NodeDecommissionWaiter():
 
     def _not_decommissioned_node(self):
         return random.choice([
-            n for n in self._nodes_with_decommission_progress_api()
+            n for n in self.redpanda.started_nodes()
             if self.redpanda.node_id(n) not in self.decommissioned_node_ids
         ])
 

@@ -8,27 +8,12 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/health_monitor_types.h"
+#include "cluster/tests/health_monitor_test_utils.h"
+#include "container/fragmented_vector.h"
+#include "model/metadata.h"
 
 #include <seastar/testing/perf_tests.hh>
-
-cluster::topic_status make_topic_status(size_t id, size_t num_partitions) {
-    cluster::topic_status ts;
-    ts.tp_ns = model::topic_namespace(
-      model::ns("foo"), model::topic("bar" + std::to_string(id)));
-
-    for (size_t i = 0; i < num_partitions; ++i) {
-        cluster::partition_status part_status;
-        part_status.id = model::partition_id(i);
-        part_status.leader_id = model::node_id(1);
-        part_status.reclaimable_size_bytes = 100;
-        part_status.revision_id = model::revision_id(1);
-        part_status.term = model::term_id(1);
-
-        ts.partitions.push_back(part_status);
-    }
-
-    return ts;
-}
+using namespace cluster;
 
 cluster::node_health_report
 make_node_health_report(size_t num_topics, size_t partitions_per_topic) {
@@ -45,7 +30,7 @@ make_node_health_report(size_t num_topics, size_t partitions_per_topic) {
     hr.local_state.data_disk.free = 500;
 
     for (size_t i = 0; i < num_topics; ++i) {
-        hr.topics.push_back(make_topic_status(i, partitions_per_topic));
+        hr.topics.push_back(make_topic_status(partitions_per_topic));
     }
 
     return hr;
@@ -80,6 +65,22 @@ PERF_TEST(node_health_report, serialize_many_topics) {
 PERF_TEST(node_health_report, serialize_many_topics_replicated_partitions) {
     bench_serialize_node_health_report(50000, 3, make_node_health_report);
 }
+PERF_TEST(columnar_node_health_report, serialize_many_partitions) {
+    bench_serialize_node_health_report(
+      10, 5000, make_columnar_node_health_report);
+}
+
+PERF_TEST(columnar_node_health_report, serialize_many_topics) {
+    bench_serialize_node_health_report(
+      50000, 1, make_columnar_node_health_report);
+}
+
+PERF_TEST(
+  columnar_node_health_report, serialize_many_topics_replicated_partitions) {
+    bench_serialize_node_health_report(
+      50000, 3, make_columnar_node_health_report);
+}
+
 template<typename T>
 [[gnu::noinline]] T do_bench_deserialize_node_health_report(iobuf buf) {
     return serde::from_iobuf<T>(std::move(buf));
@@ -87,7 +88,7 @@ template<typename T>
 template<typename GenFunc>
 void bench_deserialize_node_health_report(
   size_t num_topics, size_t partitions_per_topic, GenFunc& f) {
-    auto hr = make_node_health_report(num_topics, partitions_per_topic);
+    auto hr = f(num_topics, partitions_per_topic);
     auto buf = iobuf();
     serde::write(buf, std::move(hr));
 
@@ -108,4 +109,52 @@ PERF_TEST(node_health_report, deserialize_many_topics) {
 
 PERF_TEST(node_health_report, deserialize_many_topics_replicated_partitions) {
     bench_deserialize_node_health_report(50000, 3, make_node_health_report);
+}
+
+PERF_TEST(columnar_node_health_report, deserialize_many_partitions) {
+    bench_deserialize_node_health_report(
+      10, 5000, make_columnar_node_health_report);
+}
+
+PERF_TEST(columnar_node_health_report, deserialize_many_topics) {
+    bench_deserialize_node_health_report(
+      50000, 1, make_columnar_node_health_report);
+}
+
+PERF_TEST(
+  columnar_node_health_report, deserialize_many_topics_replicated_partitions) {
+    bench_deserialize_node_health_report(
+      50000, 3, make_columnar_node_health_report);
+}
+
+template<typename GenFunc>
+size_t bench_iterate_health_report(
+  size_t num_topics, size_t partitions_per_topic, GenFunc& f) {
+    auto hr = f(num_topics, partitions_per_topic);
+
+    perf_tests::start_measuring_time();
+    for (const auto& t : hr.topics) {
+        for (const auto& p : t.partitions) {
+            perf_tests::do_not_optimize(p);
+        }
+    }
+    perf_tests::stop_measuring_time();
+    return num_topics * partitions_per_topic;
+}
+
+PERF_TEST(node_health_report, iterate_health_report_many_partitions) {
+    return bench_iterate_health_report(30, 5000, make_node_health_report);
+}
+PERF_TEST(columnar_node_health_report, iterate_health_report_many_partitions) {
+    return bench_iterate_health_report(
+      30, 5000, make_columnar_node_health_report);
+}
+
+PERF_TEST(node_health_report, iterate_health_report_many_topics) {
+    return bench_iterate_health_report(50000, 3, make_node_health_report);
+}
+
+PERF_TEST(columnar_node_health_report, iterate_health_report_many_topics) {
+    return bench_iterate_health_report(
+      50000, 3, make_columnar_node_health_report);
 }

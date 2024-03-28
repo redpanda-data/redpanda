@@ -516,30 +516,31 @@ void clear_partition_sizes(node_health_report& report) {
         }
     }
 }
+
 } // namespace
 
 ss::future<get_node_health_reply>
 service::do_collect_node_health_report(get_node_health_request req) {
-    auto res = co_await _hm_frontend.local().collect_node_health(
-      std::move(req.filter));
-    if (res.has_error()) {
+    if (!req.use_columnar_format) [[unlikely]] {
+        auto res = co_await _hm_frontend.local().collect_node_health(
+          std::move(req.filter));
+        if (res.has_error()) {
+            co_return get_node_health_reply{
+              .error = map_health_monitor_error_code(res.error())};
+        }
         co_return get_node_health_reply{
-          .error = map_health_monitor_error_code(res.error())};
+          .error = errc::success,
+          .report = std::move(res.value()),
+        };
     }
-    auto report = std::move(res.value());
-    // clear all revision ids to prevent sending them to old versioned redpanda
-    // nodes
-    if (req.decoded_version > get_node_health_request::revision_id_version) {
-        clear_partition_revisions(report);
-    }
-    // clear all partition sizes to prevent sending them to old versioned
-    // redpanda nodes
-    if (req.decoded_version > get_node_health_request::size_bytes_version) {
-        clear_partition_sizes(report);
-    }
+
+    /**
+     * By default collect the columnar node health report
+     */
+    auto res = co_await _hm_frontend.local().collect_node_health();
     co_return get_node_health_reply{
       .error = errc::success,
-      .report = std::move(report),
+      .columnar_report = std::move(res),
     };
 }
 

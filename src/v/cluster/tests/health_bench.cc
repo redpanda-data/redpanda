@@ -66,8 +66,9 @@ struct health_bench : health_report_accessor {
         constexpr int nodes = 32;
 
         // genreate a random health report
-        absl::node_hash_map<model::node_id, cluster::node_health_report>
-          reports;
+        absl::
+          node_hash_map<model::node_id, cluster::columnar_node_health_report>
+            reports;
 
         for (int topic = 0; topic < topic_count; topic++) {
             std::vector<topic_status> statuses;
@@ -92,7 +93,8 @@ struct health_bench : health_report_accessor {
             }
 
             for (model::node_id node{0}; node < nodes; node++) {
-                reports[node].topics.emplace_back(statuses.at(node));
+                reports[node].topics.append(
+                  statuses.at(node).tp_ns, statuses.at(node).partitions);
             }
         }
 
