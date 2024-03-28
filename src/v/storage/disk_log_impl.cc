@@ -1771,7 +1771,7 @@ disk_log_impl::make_unchecked_reader(log_reader_config config) {
     return _lock_mngr.range_lock(config).then(
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
           return model::make_record_batch_reader<log_reader>(
-            std::move(lease), cfg, *_probe);
+            std::move(lease), cfg, *_probe, get_offset_translator_state());
       });
 }
 
@@ -1786,7 +1786,8 @@ disk_log_impl::make_cached_reader(log_reader_config config) {
     }
     return _lock_mngr.range_lock(config)
       .then([this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
-          return std::make_unique<log_reader>(std::move(lease), cfg, *_probe);
+          return std::make_unique<log_reader>(
+            std::move(lease), cfg, *_probe, get_offset_translator_state());
       })
       .then([this](auto rdr) { return _readers_cache->put(std::move(rdr)); });
 }
@@ -2316,7 +2317,7 @@ disk_log_impl::make_reader(log_reader_config config) {
     if (config.start_offset > config.max_offset) {
         auto lease = std::make_unique<lock_manager::lease>(segment_set({}));
         auto empty = model::make_record_batch_reader<log_reader>(
-          std::move(lease), config, *_probe);
+          std::move(lease), config, *_probe, get_offset_translator_state());
         return ss::make_ready_future<model::record_batch_reader>(
           std::move(empty));
     }
@@ -2376,7 +2377,7 @@ disk_log_impl::make_reader(timequery_config config) {
             cfg.time,
             cfg.abort_source);
           return model::make_record_batch_reader<log_reader>(
-            std::move(lease), config, *_probe);
+            std::move(lease), config, *_probe, get_offset_translator_state());
       });
 }
 

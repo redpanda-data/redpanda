@@ -465,7 +465,7 @@ model::record_batch_reader create_segment_full_reader(
       segment_set(std::move(set)));
     lease->locks.push_back(std::move(h));
     return model::make_record_batch_reader<log_reader>(
-      std::move(lease), reader_cfg, pb);
+      std::move(lease), reader_cfg, pb, nullptr);
 }
 
 ss::future<> do_swap_data_file_handles(

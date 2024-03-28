@@ -361,6 +361,15 @@ struct log_reader_config {
     // terms boundaries.
     bool fill_gaps{false};
 
+    // If set to true, the offsets returned will be translated from Redpanda
+    // offset to its data offset, as dictated by the underlying log's offset
+    // translator types.
+    //
+    // NOTE: the translation refers only to the returned batches, not to the
+    // input min/max offset bounds. Callers are expected to account for inputs
+    // separately.
+    bool translate_offsets{false};
+
     log_reader_config(
       model::offset start_offset,
       model::offset max_offset,
