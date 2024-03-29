@@ -51,13 +51,17 @@ model::underlying load_underlying(const std::filesystem::path& model_file) {
     return model;
 }
 
-model::context initialize_context(llama_model* model) {
+model::context
+initialize_context(llama_model* model, const model::config& cfg) {
     llama_context_params ctx_params = llama_context_default_params();
 
     ctx_params.seed = -1; // Use RNG
-    // ctx_params.n_ctx = 0; // Use the model's context window
-    ctx_params.n_threads = std::thread::hardware_concurrency();
+    ctx_params.n_ctx = cfg.context_window;
+    ctx_params.n_threads = cfg.nthreads;
     ctx_params.n_threads_batch = ctx_params.n_threads; // use n_threads
+    ctx_params.n_seq_max = cfg.max_sequences;
+    ctx_params.n_batch = cfg.max_logical_batch_size;
+    ctx_params.n_ubatch = cfg.max_physical_batch_size;
     // TODO: Figure out the other parameters here.
     model::context ctx{llama_new_context_with_model(model, ctx_params)};
     if (!ctx) {
@@ -138,10 +142,10 @@ void model::append_decoded_token(token id, seastar::sstring* output) const {
     output->append(decoded_str.data(), decoded_str.size());
 }
 
-model backend::load(const std::filesystem::path& model_file) {
+model backend::load(const model::config& cfg) {
     model m;
-    m._underlying = load_underlying(model_file);
-    m._context = initialize_context(m._underlying.get());
+    m._underlying = load_underlying(cfg.model_file);
+    m._context = initialize_context(m._underlying.get(), cfg);
     return m;
 }
 

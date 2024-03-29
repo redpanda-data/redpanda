@@ -41,6 +41,14 @@ class token_vector;
 // Representation of a LLM with the llama architecture.
 class model {
 public:
+    struct config {
+        std::filesystem::path model_file;
+        size_t nthreads;
+        size_t context_window;
+        size_t max_sequences;
+        size_t max_logical_batch_size;
+        size_t max_physical_batch_size;
+    };
     using underlying = handle<llama_model, llama_free_model>;
     using context = handle<llama_context, llama_free>;
 
@@ -99,7 +107,7 @@ public:
     void shutdown();
 
     /* Load a model from a file on the filesystem (using mmap). */
-    model load(const std::filesystem::path& model_file);
+    model load(const model::config&);
 };
 
 // A vector of tokens with helpers to sample the vector.

@@ -8,6 +8,7 @@ v_cc_library(
     absl::strings
     llama
     v::metrics
+    v::config
 )
 
 add_subdirectory(tests)

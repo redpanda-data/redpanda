@@ -34,15 +34,15 @@ using namespace std::chrono_literals;
 
 configuration::configuration()
   : log_segment_size(
-    *this,
-    "log_segment_size",
-    "Default log segment size in bytes for topics which do not set "
-    "segment.bytes",
-    {.needs_restart = needs_restart::no,
-     .example = "2147483648",
-     .visibility = visibility::tunable},
-    128_MiB,
-    {.min = 1_MiB})
+      *this,
+      "log_segment_size",
+      "Default log segment size in bytes for topics which do not set "
+      "segment.bytes",
+      {.needs_restart = needs_restart::no,
+       .example = "2147483648",
+       .visibility = visibility::tunable},
+      128_MiB,
+      {.min = 1_MiB})
   , log_segment_size_min(
       *this,
       "log_segment_size_min",
@@ -3194,7 +3194,43 @@ configuration::configuration()
       "internal-only configuration and should be enabled only after consulting "
       "with Redpanda Support or engineers.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
-      false) {}
+      false)
+  , parallel_requests(
+      *this,
+      "ai_parallel_requests",
+      "TODO",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      8)
+  , n_threads(
+      *this,
+      "ai_nthreads",
+      "TODO",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      std::thread::hardware_concurrency())
+  , context_window(
+      *this,
+      "ai_context_window",
+      "TODO",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      512)
+  , max_seqs(
+      *this,
+      "ai_max_seqs",
+      "TODO",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      1)
+  , nbatch(
+      *this,
+      "ai_nbatch",
+      "logical batch size",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      2048)
+  , ubatch(
+      *this,
+      "ai_ubatch",
+      "physical batch size",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      512) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

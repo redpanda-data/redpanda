@@ -14,6 +14,7 @@
 #include "ai/llama_bindings.h"
 #include "base/vassert.h"
 #include "base/vlog.h"
+#include "config/configuration.h"
 #include "metrics/metrics.h"
 
 #include <seastar/core/future.hh>
@@ -40,7 +41,7 @@ namespace {
 static seastar::logger logger("ai");
 
 struct model_parameters {
-    std::filesystem::path model_file;
+    llama::model::config config;
 };
 
 struct generate_text_request {
@@ -101,9 +102,9 @@ public:
 
 protected:
     void initialize(model_parameters p) noexcept final {
-        vlog(logger.info, "initializing model at {}", p.model_file);
+        vlog(logger.info, "initializing model at {}", p.config.model_file);
         _backend.initialize();
-        _llm = std::make_unique<llama::model>(_backend.load(p.model_file));
+        _llm = std::make_unique<llama::model>(_backend.load(p.config));
         _batch = llama::batch({
           .n_tokens = _llm->n_batch(),
           .embd = 0,
@@ -300,11 +301,20 @@ ss::future<> service::start(config cfg) {
         co_return;
     }
     vlog(logger.info, "starting AI model...");
-    _model = std::make_unique<model>(/*max_parallel_requests=*/8);
+    const auto& cluster_cfg = ::config::shard_local_cfg();
+    _model = std::make_unique<model>(
+      /*max_parallel_requests=*/cluster_cfg.parallel_requests);
     _model->start({
          .name = "ai",
          .parameters = {
-             .model_file = std::move(cfg.model_file),
+             .config = {
+                .model_file = std::move(cfg.model_file),
+                .nthreads = cluster_cfg.n_threads,
+                .context_window = cluster_cfg.context_window,
+                .max_sequences = cluster_cfg.max_seqs,
+                .max_logical_batch_size = cluster_cfg.nbatch,
+                .max_physical_batch_size = cluster_cfg.ubatch,
+            },
          },
      });
 }

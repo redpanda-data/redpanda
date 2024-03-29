@@ -592,6 +592,14 @@ struct configuration final : public config_store {
     // temporary - to be deprecated
     property<bool> unsafe_enable_consumer_offsets_delete_retention;
 
+    // AI
+    property<size_t> parallel_requests;
+    property<size_t> n_threads;
+    property<size_t> context_window;
+    property<size_t> max_seqs;
+    property<size_t> nbatch;
+    property<size_t> ubatch;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
