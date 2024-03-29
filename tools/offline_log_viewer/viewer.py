@@ -6,6 +6,7 @@ from os.path import join
 from controller import ControllerLog
 from consumer_groups import GroupsLog
 from consumer_offsets import OffsetsLog
+from topic_manifest import decode_topic_manifest, decode_topic_manifest_to_legacy_v1_json
 from tx_coordinator import TxLog
 
 import itertools
@@ -58,6 +59,17 @@ def print_controller(store, bin_dump: bool):
                 SerializableGenerator(ctrl))
             for j in iter_json:
                 print(j, end='')
+
+
+def print_topic_manifest(serde_file_path, legacy_json: bool):
+    if not os.path.exists(serde_file_path):
+        logger.error(f"File doesn't exist {serde_file_path}")
+        sys.exit(1)
+
+    res = decode_topic_manifest_to_legacy_v1_json(
+        serde_file_path) if legacy_json else decode_topic_manifest(
+            serde_file_path)
+    print(json.dumps(res, indent=2))
 
 
 def print_kafka(store, topic, headers_only):
@@ -150,7 +162,8 @@ def main():
                             choices=[
                                 'controller', 'kvstore', 'kafka',
                                 'consumer_offsets', 'legacy-group',
-                                'kafka_records', 'tx_coordinator'
+                                'kafka_records', 'tx_coordinator',
+                                'topic_manifest', 'topic_manifest_legacy'
                             ],
                             required=True,
                             help='operation to execute')
@@ -171,6 +184,12 @@ def main():
 
     parser = generate_options()
     options, _ = parser.parse_known_args()
+
+    if options.type in ["topic_manifest", "topic_manifest_legacy"]:
+        print_topic_manifest(
+            options.path, legacy_json=options.type == "topic_manifest_legacy")
+        sys.exit(0)
+
     if options.verbose:
         logging.basicConfig(level="DEBUG")
     else:
