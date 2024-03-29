@@ -2503,6 +2503,7 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
       [this] {
           auto ptr = _segs.front();
           _segs.pop_front();
+          _probe->add_bytes_prefix_truncated(ptr->file_size());
           return remove_segment_permanently(ptr, "remove_prefix_full_segments");
       });
 }
