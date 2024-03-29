@@ -64,7 +64,7 @@ public:
     /// first_version are serialized
     ///
     /// \param out output stream that should be used to output the json
-    void serialize(std::ostream& out) const;
+    void serialize_v1_json(std::ostream& out) const;
 
     manifest_type get_manifest_type() const override {
         return manifest_type::topic;

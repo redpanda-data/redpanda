@@ -446,7 +446,7 @@ ss::future<serialized_data_stream> topic_manifest::serialize() const {
         iobuf serialized;
         iobuf_ostreambuf obuf(serialized);
         std::ostream os(&obuf);
-        serialize(os);
+        serialize_v1_json(os);
         if (!os.good()) {
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,
@@ -468,7 +468,7 @@ ss::future<serialized_data_stream> topic_manifest::serialize() const {
       .size_bytes = size_bytes};
 }
 
-void topic_manifest::serialize(std::ostream& out) const {
+void topic_manifest::serialize_v1_json(std::ostream& out) const {
     json::OStreamWrapper wrapper(out);
     json::Writer<json::OStreamWrapper> w(wrapper);
     w.StartObject();
