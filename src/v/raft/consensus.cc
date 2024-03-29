@@ -1955,19 +1955,26 @@ consensus::do_append_entries(append_entries_request&& r) {
           truncate_at);
         _probe->log_truncated();
 
+        _majority_replicated_index = std::min(
+          model::prev_offset(truncate_at), _majority_replicated_index);
+        _last_quorum_replicated_index = std::min(
+          model::prev_offset(truncate_at), _last_quorum_replicated_index);
+        // update flushed offset since truncation may happen to already
+        // flushed entries
+        _flushed_offset = std::min(
+          model::prev_offset(truncate_at), _flushed_offset);
         // We are truncating the offset translator before truncating the log
         // because if saving offset translator state fails, we will retry and
         // eventually log and offset translator will become consistent. OTOH if
         // log truncation were first and saving offset translator state failed,
         // we wouldn't retry and log and offset translator could diverge.
+
         return _offset_translator.truncate(truncate_at)
           .then([this, truncate_at] {
               return _log->truncate(storage::truncate_config(
                 truncate_at, _scheduling.default_iopc));
           })
           .then([this, truncate_at] {
-              _last_quorum_replicated_index = std::min(
-                model::prev_offset(truncate_at), _last_quorum_replicated_index);
               // update flushed offset since truncation may happen to already
               // flushed entries
               _flushed_offset = std::min(
