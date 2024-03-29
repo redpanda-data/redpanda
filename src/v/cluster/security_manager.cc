@@ -64,9 +64,6 @@ security_manager::apply_update(model::record_batch batch) {
           },
           [this](update_role_cmd cmd) {
               return dispatch_updates_to_cores(std::move(cmd), _roles);
-          },
-          [this](rename_role_cmd cmd) {
-              return dispatch_updates_to_cores(std::move(cmd), _roles);
           });
     });
 }
@@ -122,23 +119,6 @@ do_apply(create_user_cmd cmd, security::credential_store& store) {
         return errc::user_exists;
     }
     store.put(cmd.key, std::move(cmd.value));
-    return errc::success;
-}
-
-/*
- * handle: rename role command
- */
-std::error_code do_apply(rename_role_cmd cmd, security::role_store& store) {
-    auto data = std::move(cmd.value);
-    if (store.contains(data.to_name)) {
-        return errc::role_exists;
-    }
-    auto role = store.get(data.from_name);
-    auto removed = store.remove(data.from_name);
-    if (!role || !removed) {
-        return errc::role_does_not_exist;
-    }
-    store.put(std::move(data.to_name), role.value().members());
     return errc::success;
 }
 
