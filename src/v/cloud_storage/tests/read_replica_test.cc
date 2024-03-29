@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/ntp_archiver_service.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/produce_utils.h"

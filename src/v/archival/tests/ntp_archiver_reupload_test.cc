@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/tests/service_fixture.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/read_path_probes.h"

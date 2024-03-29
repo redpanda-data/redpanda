@@ -13,6 +13,7 @@
 #include "cluster/tests/topic_properties_generator.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "raft/consensus.h"
 #include "security/acl.h"
 #include "storage/types.h"
 
