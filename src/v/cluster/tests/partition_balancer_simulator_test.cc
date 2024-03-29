@@ -25,19 +25,6 @@ static constexpr size_t recovery_batch_size = 512_KiB;
 static constexpr size_t recovery_throttle_burst = 100_MiB;
 static constexpr size_t recovery_throttle_ticks_between_refills = 10;
 
-/// If a value is a sum of a large number of random variables that with some
-/// probability add item_size to the value and the result has a mean of `mean`
-/// (example: producing to a topic, randomly choosing the partition for each
-/// produced batch), the distribution will be approximately gaussian with stddev
-/// sqrt(mean number of items). We use this function to calculate partition size
-/// jitter.
-static size_t add_sqrt_jitter(size_t mean, size_t item_size) {
-    std::normal_distribution<> dist(0, sqrt(double(mean) / item_size));
-    auto jitter = std::min(
-      int(mean), int(item_size * dist(random_generators::internal::gen)));
-    return mean + jitter;
-}
-
 class partition_balancer_sim_fixture {
 public:
     void add_node(
@@ -90,16 +77,32 @@ public:
       const ss::sstring& name,
       int partitions,
       int16_t replication_factor,
-      size_t mean_partition_size) {
+      size_t mean_partition_size,
+      std::optional<double> stddev = std::nullopt) {
         auto tp_ns = model::topic_namespace(test_ns, model::topic(name));
         auto topic_conf = _workers.make_tp_configuration(
           name, partitions, replication_factor);
         _workers.dispatch_topic_command(
           cluster::create_topic_cmd(tp_ns, topic_conf));
+
+        if (!stddev) {
+            /// If a value is a sum of a large number of random variables that
+            /// with some probability add item_size to the value and the result
+            /// has a mean of `mean` (example: producing to a topic, randomly
+            /// choosing the partition for each produced batch), the
+            /// distribution will be approximately gaussian with stddev
+            /// sqrt(mean number of items).
+            stddev = produce_batch_size
+                     * sqrt(double(mean_partition_size) / produce_batch_size);
+        }
+
+        std::normal_distribution<> dist(0, 1);
         for (const auto& as : topic_conf.assignments) {
             model::ntp ntp{tp_ns.ns, tp_ns.tp, as.id};
-            auto size = add_sqrt_jitter(
-              mean_partition_size, produce_batch_size);
+            auto jitter = std::max(
+              -int64_t(mean_partition_size),
+              int64_t(*stddev * dist(random_generators::internal::gen)));
+            auto size = mean_partition_size + jitter;
             auto partition = ss::make_lw_shared<partition_state>(ntp, size);
             _partitions.emplace(ntp, partition);
 
@@ -111,6 +114,12 @@ public:
             }
 
             elect_leader(ntp);
+
+            logger.info(
+              "added ntp {}, replicas {}, size {}",
+              ntp,
+              as.replicas,
+              human::bytes(size));
         }
     }
 
@@ -349,27 +358,31 @@ public:
             double total_replicas = static_cast<double>(
               total_topic_replicas[tp]);
             for (auto& [id, alloc_node] : allocation_nodes()) {
-                auto expected_replicas = ceil(
-                  total_replicas * alloc_node->max_capacity() / total_capacity);
-
                 auto it = node_replicas.find(id);
                 const auto replicas_on_node = it == node_replicas.end()
                                                 ? 0
                                                 : it->second;
+
+                auto expected = ceil(
+                  total_replicas * alloc_node->max_capacity() / total_capacity);
+
                 logger.info(
-                  "topic {} has {} replicas on {}, expected: {} total "
-                  "replicas: {}",
+                  "topic {} has {} replicas on {}, expected: {}, "
+                  "total replicas: {}",
                   tp,
                   replicas_on_node,
                   id,
-                  expected_replicas,
+                  expected,
                   total_replicas);
-                // Expected variance should be proportional to
-                // sqrt(expected_replicas). Assert that it is not more than 3x
-                // that.
-                auto err = std::abs(expected_replicas - replicas_on_node)
-                           / sqrt(expected_replicas);
-                BOOST_REQUIRE_LE(err, 3.0);
+
+                static constexpr double max_skew = 0.03;
+                auto expected_min = expected - ceil(max_skew * expected);
+                auto expected_max = expected + ceil(max_skew * expected);
+                BOOST_CHECK_MESSAGE(
+                  replicas_on_node >= expected_min
+                    && replicas_on_node <= expected_max,
+                  "topic " << tp.tp() << ": unexpected replicas count on node "
+                           << id);
             }
         }
     }
@@ -420,7 +433,9 @@ private:
             .max_concurrent_actions = 50,
             .node_availability_timeout_sec = std::chrono::minutes(1),
             .segment_fallocation_step = 16_MiB,
-            .node_responsiveness_timeout = std::chrono::seconds(10)},
+            .node_responsiveness_timeout = std::chrono::seconds(10),
+            .topic_aware = true,
+          },
           _workers.state.local(),
           _workers.allocator.local());
     }
@@ -719,4 +734,77 @@ FIXTURE_TEST(
     for (const auto& [id, node] : nodes()) {
         BOOST_REQUIRE(double(node.used) / node.total < 0.8);
     }
+}
+
+FIXTURE_TEST(test_smol, partition_balancer_sim_fixture) {
+    for (size_t i = 0; i < 4; ++i) {
+        add_node(model::node_id{i}, 100_GiB);
+    }
+
+    add_topic("topic_1", 3, 3, 1_GiB, 100_MiB);
+    add_topic("topic_2", 3, 3, 1_GiB, 100_MiB);
+
+    for (size_t i = 4; i < 6; ++i) {
+        add_node(model::node_id{i}, 100_GiB);
+        add_node_to_rebalance(model::node_id{i});
+    }
+
+    BOOST_REQUIRE(run_to_completion(10));
+}
+
+FIXTURE_TEST(test_heterogeneous_topics, partition_balancer_sim_fixture) {
+    for (size_t i = 0; i < 9; ++i) {
+        add_node(model::node_id{i}, 300_GiB);
+    }
+
+    // Add 2 topics with drastically different partition sizes.
+    // We expect the result to be nevertheless balanced thanks to topic-aware
+    // balancing.
+    add_topic("topic_1", 200, 3, 2_GiB, 200_MiB);
+    add_topic("topic_2", 800, 3, 10_MiB, 1_MiB);
+
+    for (size_t i = 9; i < 12; ++i) {
+        add_node(model::node_id{i}, 300_GiB);
+        add_node_to_rebalance(model::node_id{i});
+    }
+
+    BOOST_REQUIRE(run_to_completion(1000));
+
+    validate_even_topic_distribution();
+    validate_even_replica_distribution();
+}
+
+FIXTURE_TEST(test_many_topics, partition_balancer_sim_fixture) {
+    for (size_t i = 0; i < 4; ++i) {
+        add_node(model::node_id{i}, 100_GiB);
+    }
+
+    for (size_t i = 0; i < 100; ++i) {
+        // Many topics, each with just a few partitions - this is the hard case
+        // for topic-aware balancing. We expect overall replica distribution to
+        // be even anyway.
+
+        auto n_partitions = random_generators::get_int(2, 5);
+
+        // take mean topic partition sizes from a bimodal distribution - 20% of
+        // the topics will be big.
+        auto partition_size = random_generators::get_int(0, 4) == 0 ? 1_GiB
+                                                                    : 10_MiB;
+
+        add_topic(
+          ssx::sformat("topic_{}", i),
+          n_partitions,
+          3,
+          partition_size,
+          partition_size / 10);
+    }
+
+    for (size_t i = 4; i < 6; ++i) {
+        add_node(model::node_id{i}, 100_GiB);
+        add_node_to_rebalance(model::node_id{i});
+    }
+
+    BOOST_REQUIRE(run_to_completion(1000));
+
+    validate_even_replica_distribution();
 }

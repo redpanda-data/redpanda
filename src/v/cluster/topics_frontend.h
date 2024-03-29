@@ -60,8 +60,9 @@ public:
       ss::sharded<shard_table>&,
       plugin_table&,
       metadata_cache&,
-      config::binding<unsigned>,
-      config::binding<int16_t>);
+      config::binding<unsigned> hard_max_disk_usage_ratio,
+      config::binding<int16_t> minimum_topic_replication,
+      config::binding<bool> partition_autobalancing_topic_aware);
 
     ss::future<std::vector<topic_result>> create_topics(
       custom_assignable_topic_configuration_vector,
@@ -282,6 +283,7 @@ private:
 
     config::binding<unsigned> _hard_max_disk_usage_ratio;
     config::binding<int16_t> _minimum_topic_replication;
+    config::binding<bool> _partition_autobalancing_topic_aware;
 
     static constexpr std::chrono::seconds _get_health_report_timeout = 10s;
 };
