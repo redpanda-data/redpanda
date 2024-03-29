@@ -40,6 +40,7 @@ enum class validation_result {
 /// Returns a map partition->validation_result that can be used to drive further
 /// decisions. In the future, the value of the map can be extended to contain
 /// the partition_manifest and other data.
+/// if the map is empty, it has to be interpreted as "validation ok"
 ss::future<absl::flat_hash_map<model::partition_id, validation_result>>
 maybe_validate_recovery_topic(
   custom_assignable_topic_configuration const& assignable_config,
