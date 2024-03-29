@@ -515,8 +515,8 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::fetch_tx(
       txlog.trace,
       "[tx_id={}] fetching transactions from partition: {} in term: {}",
       tx_id,
-      term,
-      tm);
+      tm,
+      term);
 
     auto outcome = ss::make_lw_shared<
       available_promise<checked<tm_transaction, tx_errc>>>();
