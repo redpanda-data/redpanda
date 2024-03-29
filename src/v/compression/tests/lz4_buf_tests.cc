@@ -9,7 +9,9 @@
  * by the Apache License, Version 2.0
  */
 
+#include "compression/internal/lz4_frame_compressor.h"
 #include "compression/lz4_decompression_buffers.h"
+#include "random/generators.h"
 #include "units.h"
 
 #include <gmock/gmock.h>
@@ -87,4 +89,23 @@ TEST(MaxBufSizeDeathTest, CustomAllocator) {
       { allocator.customAlloc(allocator.opaqueState, b.buffer_size() + 1); },
       "Request to allocate 4194305 bytes which is more than max buffer size "
       "available: 4194304 bytes");
+}
+
+TEST(CustomAllocDisabled, Configuration) {
+    compression::reset_lz4_decompression_buffers();
+    compression::init_lz4_decompression_buffers(4_MiB, 128_KiB + 1, true);
+    const auto data = random_generators::gen_alphanum_string(512);
+    iobuf input;
+    input.append(data.data(), data.size());
+
+    using compression::internal::lz4_frame_compressor;
+    auto& instance = compression::lz4_decompression_buffers_instance();
+    auto compressed = lz4_frame_compressor::compress(input);
+    auto uncompressed = lz4_frame_compressor::uncompress(compressed);
+    auto stats = instance.allocation_stats();
+    EXPECT_EQ(stats.allocs, 0);
+    EXPECT_EQ(stats.deallocs, 0);
+    EXPECT_EQ(stats.pass_through_allocs, 0);
+    EXPECT_EQ(stats.pass_through_deallocs, 0);
+    instance.reset_stats();
 }

@@ -19,7 +19,7 @@ rp_test(
   GTEST
   BINARY_NAME lz4_buf_tests
   SOURCES lz4_buf_tests.cc
-  LIBRARIES v::compression v::gtest_main
+  LIBRARIES v::compression v::gtest_main v::rprandom
   LABELS compression
   ARGS "-- -c 1"
 )
