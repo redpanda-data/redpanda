@@ -1160,11 +1160,42 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
           _rtclog.debug,
           "Uploading datalake topic {}",
           model::topic_view(_parent.log()->config().ntp().tp.topic));
-        co_await datalake::write_parquet(
+        // FIXME: add a return type enum, there are 3 general outcomes:
+        // 1. Some kind of error
+        // 2. No error, but no data was written
+        // 3. Success, and we created a parquet file
+        // For now 1 and 2 are treated the same.
+        bool write_success = co_await datalake::write_parquet(
           std::filesystem::path(path),
           _parent.log(),
           candidate.starting_offset,
           candidate.final_offset);
+
+        if (write_success) {
+            std::string_view topic_name = model::topic_view(
+              _parent.log()->config().ntp().tp.topic);
+
+            cloud_storage::upload_result ret
+              = co_await datalake::put_parquet_file(
+                get_bucket_name(),
+                topic_name,
+                std::filesystem::path(path),
+                _remote,
+                fib, _rtclog);
+
+            if (ret == cloud_storage::upload_result::success) {
+                vlog(
+                  _rtclog.debug,
+                  "Uploaded datalake topic {} successfully.",
+                  model::topic_view(_parent.log()->config().ntp().tp.topic));
+            } else {
+                vlog(
+                  _rtclog.debug,
+                  "Uploading datalake topic {} failed: {}",
+                  model::topic_view(_parent.log()->config().ntp().tp.topic),
+                  ret);
+            }
+        }
     } else {
         vlog(
           _rtclog.debug,
