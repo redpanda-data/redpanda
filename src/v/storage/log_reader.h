@@ -15,6 +15,7 @@
 #include "model/limits.h"
 #include "model/record_batch_reader.h"
 #include "storage/lock_manager.h"
+#include "storage/offset_translator_state.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
 #include "storage/segment.h"
@@ -135,7 +136,10 @@ public:
     using storage_t = model::record_batch_reader::storage_t;
 
     log_reader(
-      std::unique_ptr<lock_manager::lease>, log_reader_config, probe&) noexcept;
+      std::unique_ptr<lock_manager::lease>,
+      log_reader_config,
+      probe&,
+      ss::lw_shared_ptr<const storage::offset_translator_state>) noexcept;
 
     ~log_reader() final {
         vassert(!_iterator.reader, "log reader destroyed with live reader");
@@ -245,6 +249,8 @@ private:
     std::optional<model::offset> _expected_next;
     probe& _probe;
     ss::abort_source::subscription _as_sub;
+
+    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };
 
 /**
