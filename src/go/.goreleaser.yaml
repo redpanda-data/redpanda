@@ -1,5 +1,25 @@
 project_name: rpk
 builds:
+  # rpk-windows-and-linux is deprecated; will be replaced by rpk-windows, rpk-linux, rpk-linux-microsoft-go
+  - id: rpk-windows-and-linux
+    dir: ./rpk/
+    main: ./cmd/rpk
+    binary: rpk
+    ldflags:
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.version={{.Tag}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.rev={{.ShortCommit}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.buildTime={{.Date}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.hostOs={{.Os}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.hostArch={{.Arch}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common.tag={{.Tag}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+      - linux
+    goarch:
+      - amd64
+      - arm64
   - id: rpk-linux-microsoft-go
     dir: ./rpk/
     main: ./cmd/rpk
@@ -87,8 +107,7 @@ builds:
 archives:
   - id: rpk-zip
     builds:
-      - rpk-linux
-      - rpk-windows
+      - rpk-windows-and-linux
       - rpk-darwin
     format: zip
     name_template: "rpk-{{ .Os }}-{{ .Arch }}"
