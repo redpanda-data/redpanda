@@ -1406,7 +1406,11 @@ void admin_server::register_config_routes() {
             name,
             cur_level,
             new_level,
-            expires_v / 1s > 0 ? ss::to_sstring(expires_v) : "NEVER");
+            expires_v / 1s > 0 ? fmt::format(
+              "{}s",
+              std::chrono::duration_cast<std::chrono::seconds>(expires_v)
+                .count())
+                               : "NEVER");
 
           ss::global_logger_registry().set_logger_level(name, new_level);
 
