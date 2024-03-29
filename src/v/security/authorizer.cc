@@ -132,6 +132,29 @@ authorizer::reset_bindings(const fragmented_vector<acl_binding>& bindings) {
 acl_store& authorizer::store() & { return *_store; }
 const acl_store& authorizer::store() const& { return *_store; }
 
+std::ostream& operator<<(std::ostream& os, const auth_result& a) {
+    fmt::print(
+      os,
+      "{{authorized:{}, authorization_disabled:{}, is_superuser:{}, "
+      "operation: {}, empty_matches:{}, principal:{}, role:{}, host:{}, "
+      "resource_type:{}, "
+      "resource_name:{}, resource_pattern:{}, acl:{}}}",
+      a.authorized,
+      a.authorization_disabled,
+      a.is_superuser,
+      a.operation,
+      a.empty_matches,
+      a.principal,
+      a.role,
+      a.host,
+      a.resource_type,
+      a.resource_name,
+      a.resource_pattern,
+      a.acl);
+
+    return os;
+}
+
 template<typename T>
 auth_result authorizer::authorized(
   const T& resource_name,
