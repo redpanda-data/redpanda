@@ -13,3 +13,13 @@ rp_test(
   LABELS compression
   ARGS "-- -c 1"
   )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME lz4_buf_tests
+  SOURCES lz4_buf_tests.cc
+  LIBRARIES v::compression v::gtest_main
+  LABELS compression
+  ARGS "-- -c 1"
+)
