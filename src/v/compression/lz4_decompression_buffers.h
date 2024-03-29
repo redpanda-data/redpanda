@@ -81,6 +81,7 @@ public:
         size_t deallocs{0};
         size_t pass_through_allocs{0};
         size_t pass_through_deallocs{0};
+        bool operator==(const stats&) const = default;
     };
 
     void allocated() { _allocation_stats.allocs += 1; }
