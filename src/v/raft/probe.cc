@@ -79,9 +79,15 @@ void probe::setup_metrics(const model::ntp& ntp) {
           labels),
         sm::make_counter(
           "replicate_ack_all_requests",
-          [this] { return _replicate_requests_ack_all; },
-          sm::description(
-            "Number of replicate requests with quorum ack consistency"),
+          [this] { return _replicate_requests_ack_all_with_flush; },
+          sm::description("Number of replicate requests with quorum ack "
+                          "consistency and explicit flush."),
+          labels),
+        sm::make_counter(
+          "replicate_ack_all_requests_no_flush",
+          [this] { return _replicate_requests_ack_all_without_flush; },
+          sm::description("Number of replicate requests with quorum ack "
+                          "consistency but without an explicit flush."),
           labels),
         sm::make_counter(
           "replicate_ack_leader_requests",

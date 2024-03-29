@@ -11,7 +11,10 @@ from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.rpk_producer import RpkProducer
 from enum import Enum
+from random import randint
+from rptest.services.metrics_check import MetricCheck
 
 
 # no StrEnum support in test python version
@@ -148,3 +151,60 @@ class WriteCachingPropertiesTest(RedpandaTest):
         self.set_cluster_config(write_caching_conf, "on")
         self.set_topic_properties(self.WRITE_CACHING_PROP, "on")
         self.validate_topic_configs(WriteCachingMode.ON, 200, 32768)
+
+
+class WriteCachingMetricsTest(RedpandaTest):
+    def __init__(self, test_context):
+        super(WriteCachingMetricsTest,
+              self).__init__(test_context=test_context, num_brokers=1)
+        self._ctx = test_context
+        self.topic_name = "test"
+        self.topics = [TopicSpec(name=self.topic_name, replication_factor=1)]
+
+    @cluster(num_nodes=2)
+    def test_request_metrics(self):
+        def produce_events(num: int):
+            producer = RpkProducer(self._ctx,
+                                   self.redpanda,
+                                   self.topic,
+                                   16384,
+                                   num,
+                                   acks=-1)
+            producer.start()
+            producer.stop()
+            producer.free()
+
+        self.rpk = RpkTool(self.redpanda)
+
+        metric_flush = 'vectorized_raft_replicate_ack_all_requests_total'
+        metric_no_flush = 'vectorized_raft_replicate_ack_all_requests_no_flush_total'
+
+        checker = MetricCheck(self.redpanda.logger,
+                              self.redpanda,
+                              self.redpanda.partitions(self.topic)[0].leader,
+                              [metric_flush, metric_no_flush],
+                              labels={
+                                  'namespace': 'kafka',
+                                  'topic': self.topic,
+                                  'partition': '0',
+                              },
+                              reduce=sum)
+
+        def validators(value_flush: int, value_no_flush: int):
+            nonlocal metric_flush
+            nonlocal metric_no_flush
+            return [(metric_flush, lambda _, metric: metric == value_flush),
+                    (metric_no_flush,
+                     lambda _, metric: metric == value_no_flush)]
+
+        # produce some events without write caching
+        num_events_with_flush = randint(99, 299)
+        produce_events(num_events_with_flush)
+        checker.evaluate(validators(num_events_with_flush, 0))
+
+        # Enable write caching
+        self.rpk.cluster_config_set("write_caching", "on")
+
+        num_events_without_flush = randint(199, 299)
+        checker.evaluate(
+            validators(num_events_with_flush, num_events_without_flush))
