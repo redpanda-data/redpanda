@@ -66,6 +66,11 @@ static lz4_decompression_ctx make_decompression_context() {
 }
 
 iobuf lz4_frame_compressor::compress(const iobuf& b) {
+    return compress_with_block_size(b, std::nullopt);
+}
+
+iobuf lz4_frame_compressor::compress_with_block_size(
+  const iobuf& b, std::optional<LZ4F_blockSizeID_t> block_size_id) {
     auto ctx_ptr = make_compression_context();
     LZ4F_compressionContext_t ctx = ctx_ptr.get();
     /* Required by Kafka */
@@ -73,7 +78,13 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
     std::memset(&prefs, 0, sizeof(prefs));
     prefs.compressionLevel = 1; // default
     prefs.frameInfo = {
-      .blockMode = LZ4F_blockIndependent, .contentSize = b.size_bytes()};
+      .blockMode = LZ4F_blockIndependent,
+      .contentSize = b.size_bytes(),
+    };
+
+    if (block_size_id.has_value()) {
+        prefs.frameInfo.blockSizeID = block_size_id.value();
+    }
 
     const size_t max_chunk_size = details::io_allocation_size::max_chunk_size;
 
@@ -101,8 +112,8 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
 
     // We do not consume entire input chunks at once, to avoid
     // max_chunk_size input chunks resulting in >max_chunk_size output
-    // chunks.  A half-sized input chunk never results in a LZ4F_compressBound
-    // that exceeds a the max output chunk.
+    // chunks.  A half-sized input chunk never results in a
+    // LZ4F_compressBound that exceeds a the max output chunk.
     const size_t max_input_chunk_size = max_chunk_size / 2;
 
     iobuf ret;
