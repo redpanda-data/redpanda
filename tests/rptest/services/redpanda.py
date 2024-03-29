@@ -4587,7 +4587,10 @@ class RedpandaService(RedpandaServiceBase):
         # insist on Redpanda completing its own scrub before
         # we externally validate
         # (https://github.com/redpanda-data/redpanda/issues/9072)
-        permitted_anomalies = {"segments_outside_manifest"}
+        # see https://github.com/redpanda-data/redpanda/issues/17502 for ntr_no_topic_manifest, remove it as soon as it's fixed
+        permitted_anomalies = {
+            "segments_outside_manifest", "ntr_no_topic_manifest"
+        }
 
         # Whether any anomalies were found
         any_anomalies = any(len(v) for v in report['anomalies'].values())
