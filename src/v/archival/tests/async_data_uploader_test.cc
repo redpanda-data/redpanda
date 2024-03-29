@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/async_data_uploader.h"
 #include "bytes/iostream.h"
 #include "cluster/types.h"
