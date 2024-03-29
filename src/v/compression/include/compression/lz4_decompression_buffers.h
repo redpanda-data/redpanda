@@ -34,7 +34,8 @@ public:
         // A typical transition cycle for this set of buffers is:
         // no_buffers_allocated -> input_buffer_allocated ->
         // output_buffer_allocated -> both_buffers_allocated
-        // During deallocation/free the reverse states are expected.
+        // During deallocation/free the states are: both_buffers_allocated ->
+        // output_buffer_allocated -> no_buffers_allocated
         enum class allocation_state : uint8_t {
             // No buffers have been allocated to the LZ4 decompression routine.
             // The buffers are effectively not in use.
@@ -67,6 +68,10 @@ public:
     // size are passed through to `malloc()`.
     [[nodiscard]] size_t min_alloc_threshold() const;
 
+    // Returns a struct usable by LZ4 memory allocation API. The struct holds a
+    // pointer to this object as its state field.
+    [[nodiscard]] LZ4F_CustomMem custom_mem_alloc();
+
     struct stats {
         size_t allocs{0};
         size_t deallocs{0};
@@ -90,7 +95,10 @@ public:
 
     void reset_stats() { _allocation_stats = {}; }
 
+    [[nodiscard]] size_t buffer_size() const { return _buffer_size; }
+
 private:
+    size_t _buffer_size;
     size_t _min_alloc_threshold;
     bool _disabled{false};
 
@@ -102,3 +110,18 @@ std::ostream& operator<<(
   std::ostream&, lz4_decompression_buffers::alloc_ctx::allocation_state);
 
 } // namespace compression
+
+extern "C" {
+// Allocates buffers for decompression out of static pool. Accepts
+// `lz4_decompression_buffers` as the state pointer. The buffers must first have
+// been reserved for use via `lz4_decompression_buffers::reserve_buffers`. May
+// also be called for objects which will not be allocated out of the static
+// pool, in which case it falls back to `malloc()`.
+void* alloc_lz4_obj(void* state, size_t size);
+
+// Manages updating state for the buffers used for decompression. This function
+// may also be called for objects not allocated out of the static pool, in which
+// case it falls back to using `free()`. For managed buffers only the state
+// flags are updated.
+void free_lz4_obj(void* state, void* address);
+}
