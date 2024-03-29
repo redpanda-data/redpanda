@@ -9,9 +9,8 @@
 
 #include "compression/internal/lz4_frame_compressor.h"
 
-#include "base/units.h"
 #include "base/vassert.h"
-#include "bytes/bytes.h"
+#include "compression/lz4_decompression_buffers.h"
 #include "static_deleter_fn.h"
 
 #include <seastar/core/temporary_buffer.hh>
@@ -59,9 +58,12 @@ using lz4_decompression_ctx = std::unique_ptr<
     &LZ4F_freeDecompressionContext>>;
 
 static lz4_decompression_ctx make_decompression_context() {
-    LZ4F_dctx* c = nullptr;
-    LZ4F_errorCode_t code = LZ4F_createDecompressionContext(&c, LZ4F_VERSION);
-    check_lz4_error("LZ4F_createDecompressionContext error: {}", code);
+    LZ4F_dctx* c = LZ4F_createDecompressionContext_advanced(
+      lz4_decompression_buffers_instance().custom_mem_alloc(), LZ4F_VERSION);
+    if (c == nullptr) {
+        throw std::runtime_error("Failed to initialize decompression context");
+    }
+
     return lz4_decompression_ctx(c);
 }
 

@@ -91,21 +91,61 @@ TEST(MaxBufSizeDeathTest, CustomAllocator) {
       "available: 4194304 bytes");
 }
 
-TEST(CustomAllocDisabled, Configuration) {
-    compression::reset_lz4_decompression_buffers();
-    compression::init_lz4_decompression_buffers(4_MiB, 128_KiB + 1, true);
+class StaticInstanceTest : public ::testing::Test {
+public:
+    void SetUp() override { compression::reset_lz4_decompression_buffers(); }
+    void TearDown() override {
+        compression::lz4_decompression_buffers_instance().reset_stats();
+    }
+};
+
+void test_decompression_calls(
+  compression::lz4_decompression_buffers::stats expected,
+  bool disable_prealloc = false,
+  std::optional<LZ4F_blockSizeID_t> blocksize = std::nullopt) {
+    if (disable_prealloc) {
+        compression::init_lz4_decompression_buffers(
+          4_MiB, 128_KiB + 1, disable_prealloc);
+    }
+
     const auto data = random_generators::gen_alphanum_string(512);
+
     iobuf input;
     input.append(data.data(), data.size());
 
     using compression::internal::lz4_frame_compressor;
     auto& instance = compression::lz4_decompression_buffers_instance();
-    auto compressed = lz4_frame_compressor::compress(input);
+    auto compressed = blocksize.has_value()
+                        ? lz4_frame_compressor::compress_with_block_size(
+                          input, blocksize.value())
+                        : lz4_frame_compressor::compress(input);
     auto uncompressed = lz4_frame_compressor::uncompress(compressed);
-    auto stats = instance.allocation_stats();
-    EXPECT_EQ(stats.allocs, 0);
-    EXPECT_EQ(stats.deallocs, 0);
-    EXPECT_EQ(stats.pass_through_allocs, 0);
-    EXPECT_EQ(stats.pass_through_deallocs, 0);
-    instance.reset_stats();
+    EXPECT_EQ(instance.allocation_stats(), expected);
+}
+
+TEST_F(StaticInstanceTest, DecompressLargeBlocks) {
+    test_decompression_calls(
+      {.allocs = 2,
+       .deallocs = 2,
+       .pass_through_allocs = 1,
+       .pass_through_deallocs = 3},
+      false,
+      LZ4F_max4MB);
+}
+
+TEST_F(StaticInstanceTest, DecompressPassThroughBlocks) {
+    test_decompression_calls(
+      {.allocs = 0,
+       .deallocs = 0,
+       .pass_through_allocs = 3,
+       .pass_through_deallocs = 5});
+}
+
+TEST_F(StaticInstanceTest, CustomAllocDisabled) {
+    test_decompression_calls(
+      {.allocs = 0,
+       .deallocs = 0,
+       .pass_through_allocs = 0,
+       .pass_through_deallocs = 0},
+      true);
 }

@@ -14,8 +14,6 @@
 #include "model/compression.h"
 #include "model/record.h"
 #include "model/record_utils.h"
-#include "reflection/adl.h"
-#include "storage/logger.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/coroutine.hh>
