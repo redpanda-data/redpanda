@@ -1,11 +1,19 @@
+#include "bytes/iobuf.h"
+#include "bytes/iostream.h"
+#include "cloud_storage/remote.h"
+#include "cloud_storage/types.h"
 #include "cluster/partition.h"
+#include "model/fundamental.h"
+
+#include <seastar/util/file.hh>
 
 #include <archival/arrow_writer.h>
 
 #include <filesystem>
+#include <string_view>
 
 ss::future<bool> datalake::write_parquet(
-  std::filesystem::path inner_path,
+  const std::filesystem::path inner_path,
   ss::shared_ptr<storage::log> log,
   model::offset starting_offset,
   model::offset ending_offset) {
@@ -37,6 +45,44 @@ bool datalake::is_datalake_topic(cluster::partition& partition) {
       partition.log()->config().ntp().tp.topic);
 
     return topic.starts_with("experimental_datalake_");
+}
+
+ss::future<cloud_storage::upload_result> datalake::put_parquet_file(
+  const cloud_storage_clients::bucket_name bucket,
+  const std::string_view topic_name,
+  const std::filesystem::path inner_path,
+  cloud_storage::remote& remote,
+  retry_chain_node& rtc) {
+    std::filesystem::path local_path
+      = std::filesystem::path("/tmp/parquet_files") / topic_name / inner_path;
+
+    std::filesystem::path remote_path = std::filesystem::path(
+                                          "experimental/parquet_files")
+                                        / topic_name / inner_path;
+
+    // TODO: Check that the file exists. If not, we get an assertion error and
+    // crash Redpanda!
+
+    iobuf file_buf;
+    ss::output_stream<char> iobuf_ostream = make_iobuf_ref_output_stream(
+      file_buf);
+
+    // FIXME: this currently fails with an assertion error if the file does not
+    // exist.
+    co_await ss::util::with_file_input_stream(
+      local_path,
+      [&iobuf_ostream](ss::input_stream<char>& file_istream) -> ss::future<> {
+          return ss::copy<char>(file_istream, iobuf_ostream);
+      });
+    co_await iobuf_ostream.close();
+
+    auto ret = co_await remote.upload_object(
+      {.transfer_details
+       = {.bucket = bucket, .key = cloud_storage_clients::object_key(remote_path), .parent_rtc = rtc},
+       .type = cloud_storage::upload_type::object,
+       .payload = std::move(file_buf)});
+
+    co_return ret;
 }
 
 ss::future<ss::stop_iteration>
@@ -110,7 +156,7 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
 }
 
 arrow::Status datalake::arrow_writing_consumer::write_file() {
-    if (!_ok.ok() || _key_vector.size() == 0 || _rows == 0) {
+    if (!_ok.ok()) {
         return _ok;
     }
     // Create a ChunkedArray
@@ -129,6 +175,7 @@ arrow::Status datalake::arrow_writing_consumer::write_file() {
     // to support other arrow-compatible output formats like ORC.
     std::filesystem::create_directories(_local_file_name.parent_path());
     std::shared_ptr<arrow::io::FileOutputStream> outfile;
+
     ARROW_ASSIGN_OR_RAISE(
       outfile, arrow::io::FileOutputStream::Open(_local_file_name));
     PARQUET_THROW_NOT_OK(parquet::arrow::WriteTable(
@@ -140,6 +187,12 @@ arrow::Status datalake::arrow_writing_consumer::write_file() {
 ss::future<arrow::Status> datalake::arrow_writing_consumer::end_of_stream() {
     if (!_ok.ok()) {
         co_return _ok;
+    }
+    if (_key_vector.size() == 0 || _rows == 0) {
+        // FIXME: use a different return type for this.
+        // See the note in ntp_archiver_service::do_upload_segment when
+        // calling write_parquet.
+        co_return arrow::Status::UnknownError("No Data");
     }
     // FIXME: Creating and destroying sharded_thread_workers is supposed
     // to be rare. The docs for the class suggest doing creating it once

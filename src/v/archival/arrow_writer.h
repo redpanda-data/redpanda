@@ -19,15 +19,21 @@ namespace datalake {
 /** High-level interface to write a log segment out as Parquet.
  */
 ss::future<bool> write_parquet(
-  std::filesystem::path inner_path,
+  const std::filesystem::path inner_path,
   ss::shared_ptr<storage::log> log,
   model::offset starting_offset,
   model::offset ending_offset);
 
 /** Is this a datalake topic? Should we write it to Iceberg/Parquet?
  */
-
 bool is_datalake_topic(cluster::partition& partition);
+
+ss::future<cloud_storage::upload_result> put_parquet_file(
+  const cloud_storage_clients::bucket_name bucket,
+  const std::string_view topic_name,
+  const std::filesystem::path inner_path,
+  cloud_storage::remote& remote,
+  retry_chain_node& rtc);
 
 class arrow_writing_consumer {
     /** Consumes logs and writes the results out to a Parquet file.
