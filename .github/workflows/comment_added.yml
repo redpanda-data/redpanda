@@ -1,0 +1,30 @@
+name: Add comment to JIRA Issue
+on:
+    issue_comment:
+        types:
+            - created
+
+jobs:
+    add_jira_comment:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with:
+                python-version: '3.9'
+                cache: 'pip'
+            - name: install dependencies
+              if: ${{ !github.event.issue.pull_request }}
+              env:
+                SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
+              run: pip install -r ${SCRIPT_DIR}/requirements.txt
+            - name: Add comment to JIRA Issue
+              if: ${{ !github.event.issue.pull_request }}
+              env:
+                SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
+                JIRA_TOKEN: ${{ secrets.JIRA_TOKEN  }}
+                JIRA_USER: ${{ secrets.JIRA_USER  }}
+                ISSUE_URL: ${{ github.event.issue.html_url }}
+                GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                ISSUE_COMMENT: ${{ github.event.comment.body }}
+              run: python ${SCRIPT_DIR}/jira_helper.py UPDATE_COMMENT --verbose
