@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "base/units.h"
 
 #include <seastar/core/aligned_buffer.hh>
 #include <seastar/core/semaphore.hh>
@@ -24,6 +25,9 @@ namespace compression {
 
 class lz4_decompression_buffers {
 public:
+    static constexpr auto bufsize{4_MiB + 128_KiB};
+    static constexpr auto min_threshold{128_KiB + 1};
+
     explicit lz4_decompression_buffers(
       size_t buffer_size, size_t min_alloc_threshold, bool disabled = false);
 
@@ -108,6 +112,22 @@ private:
 
 std::ostream& operator<<(
   std::ostream&, lz4_decompression_buffers::alloc_ctx::allocation_state);
+
+// Initializes the buffer instance. If preallocation is disabled the instance
+// will pass through all calls to malloc and free. Two buffers of size
+// buffer_size are allocated. Calls below the min_alloc_threshold are passed
+// through to malloc.
+void init_lz4_decompression_buffers(
+  size_t buffer_size,
+  size_t min_alloc_threshold,
+  bool prealloc_disabled = false);
+
+// Resets the buffer instance, for use in tests.
+void reset_lz4_decompression_buffers();
+
+// Returns the static shard specific preallocated buffer instance. If the
+// instance is not created yet it will be initialized first.
+lz4_decompression_buffers& lz4_decompression_buffers_instance();
 
 } // namespace compression
 

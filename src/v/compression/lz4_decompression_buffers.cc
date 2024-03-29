@@ -11,6 +11,7 @@
 
 #include "compression/lz4_decompression_buffers.h"
 
+#include "base/units.h"
 #include "base/vassert.h"
 
 #include <seastar/coroutine/all.hh>
@@ -76,6 +77,33 @@ LZ4F_CustomMem lz4_decompression_buffers::custom_mem_alloc() {
       .customCalloc = nullptr,
       .customFree = free_lz4_obj,
       .opaqueState = this};
+}
+
+static thread_local std::unique_ptr<lz4_decompression_buffers>
+  _buffers_instance;
+
+void init_lz4_decompression_buffers(
+  size_t buffer_size, size_t min_alloc_threshold, bool prealloc_disabled) {
+    if (!_buffers_instance) {
+        _buffers_instance = std::make_unique<lz4_decompression_buffers>(
+          buffer_size, min_alloc_threshold, prealloc_disabled);
+    }
+}
+
+void reset_lz4_decompression_buffers() {
+    if (_buffers_instance) {
+        _buffers_instance.reset();
+    }
+}
+
+lz4_decompression_buffers& lz4_decompression_buffers_instance() {
+    if (unlikely(!_buffers_instance)) {
+        init_lz4_decompression_buffers(
+          lz4_decompression_buffers::bufsize,
+          lz4_decompression_buffers::min_threshold);
+    }
+
+    return *_buffers_instance;
 }
 
 } // namespace compression

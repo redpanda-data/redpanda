@@ -70,6 +70,7 @@
 #include "cluster/tx_topic_manager.h"
 #include "cluster/types.h"
 #include "compression/async_stream_zstd.h"
+#include "compression/lz4_decompression_buffers.h"
 #include "compression/stream_zstd.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
@@ -534,6 +535,11 @@ void application::initialize(
 
         compression::initialize_async_stream_zstd(
           config::shard_local_cfg().zstd_decompress_workspace_bytes());
+
+        compression::init_lz4_decompression_buffers(
+          compression::lz4_decompression_buffers::bufsize,
+          compression::lz4_decompression_buffers::min_threshold,
+          config::shard_local_cfg().lz4_decompress_reusable_buffers_disabled());
     }).get0();
 
     if (config::shard_local_cfg().enable_pid_file()) {
