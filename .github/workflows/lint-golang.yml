@@ -51,3 +51,8 @@ jobs:
       run: |
         go mod tidy
         git diff --exit-code -- go.mod go.sum
+
+    - name: Check goreleaser configuration file
+      uses: goreleaser/goreleaser-action@v5
+      with:
+        args: check src/go/.goreleaser.yaml
