@@ -35,6 +35,9 @@ class TopicSpec:
     PROPERTY_RETENTION_LOCAL_TARGET_MS = "retention.local.target.ms"
     PROPERTY_REMOTE_DELETE = "redpanda.remote.delete"
     PROPERTY_SEGMENT_MS = "segment.ms"
+    PROPERTY_WRITE_CACHING = "write.caching"
+    PROPERTY_FLUSH_MS = "flush.ms"
+    PROPERTY_FLUSH_BYTES = "flush.bytes"
 
     class CompressionTypes(str, Enum):
         """

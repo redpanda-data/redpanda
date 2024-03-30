@@ -267,6 +267,9 @@ storage::ntp_config topic_configuration::make_ntp_config(
             = properties.initial_retention_local_target_bytes,
             .initial_retention_local_target_ms
             = properties.initial_retention_local_target_ms,
+            .write_caching = properties.write_caching,
+            .flush_ms = properties.flush_ms,
+            .flush_bytes = properties.flush_bytes,
           });
     }
     return {

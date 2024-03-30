@@ -28,9 +28,6 @@ class WriteCachingMode(str, Enum):
 
 
 class WriteCachingPropertiesTest(RedpandaTest):
-    WRITE_CACHING_PROP = "write.caching"
-    FLUSH_MS_PROP = "flush.ms"
-    FLUSH_BYTES_PROP = "flush.bytes"
 
     WRITE_CACHING_DEBUG_KEY = "write_caching_enabled"
     FLUSH_MS_DEBUG_KEY = "flush_ms"
@@ -39,8 +36,6 @@ class WriteCachingPropertiesTest(RedpandaTest):
     def __init__(self, test_context):
         super(WriteCachingPropertiesTest,
               self).__init__(test_context=test_context, num_brokers=3)
-        self.topic_name = "test"
-        self.topics = [TopicSpec(name=self.topic_name)]
 
     def configs_converged(self, write_caching: WriteCachingMode, flush_ms: int,
                           flush_bytes: int):
@@ -49,14 +44,14 @@ class WriteCachingPropertiesTest(RedpandaTest):
         assert self.admin
 
         configs = self.rpk.describe_topic_configs(self.topic_name)
-        assert self.WRITE_CACHING_PROP in configs.keys(), configs
-        assert self.FLUSH_MS_PROP in configs.keys(), configs
-        assert self.FLUSH_BYTES_PROP in configs.keys(), configs
+        assert TopicSpec.PROPERTY_WRITE_CACHING in configs.keys(), configs
+        assert TopicSpec.PROPERTY_FLUSH_MS in configs.keys(), configs
+        assert TopicSpec.PROPERTY_FLUSH_BYTES in configs.keys(), configs
 
-        properties_check = configs[self.WRITE_CACHING_PROP][0] == str(
-            write_caching) and configs[self.FLUSH_MS_PROP][0] == str(
-                flush_ms) and configs[self.FLUSH_BYTES_PROP][0] == str(
-                    flush_bytes)
+        properties_check = configs[TopicSpec.PROPERTY_WRITE_CACHING][0] == str(
+            write_caching) and configs[TopicSpec.PROPERTY_FLUSH_MS][0] == str(
+                flush_ms) and configs[
+                    TopicSpec.PROPERTY_FLUSH_BYTES][0] == str(flush_bytes)
 
         if not properties_check:
             return False
@@ -104,12 +99,31 @@ class WriteCachingPropertiesTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_properties(self):
-        self.admin = self.redpanda._admin
-        self.rpk = RpkTool(self.redpanda)
-
         write_caching_conf = "write_caching"
         flush_ms_conf = "raft_replica_max_flush_delay_ms"
         flush_bytes_conf = "raft_replica_max_pending_flush_bytes"
+
+        self.admin = self.redpanda._admin
+        self.rpk = RpkTool(self.redpanda)
+
+        # Topic with custom properties at creation.
+        topic = TopicSpec()
+        self.topic_name = topic.name
+        self.rpk.create_topic(topic=topic.name,
+                              partitions=1,
+                              replicas=3,
+                              config={
+                                  TopicSpec.PROPERTY_WRITE_CACHING: "on",
+                                  TopicSpec.PROPERTY_FLUSH_MS: 123,
+                                  TopicSpec.PROPERTY_FLUSH_BYTES: 9999
+                              })
+
+        self.validate_topic_configs(WriteCachingMode.ON, 123, 9999)
+
+        # New topic with defaults
+        topic = TopicSpec()
+        self.topic_name = topic.name
+        self.rpk.create_topic(topic=topic.name, partitions=1, replicas=3)
 
         # Validate cluster defaults
         self.validate_topic_configs(WriteCachingMode.OFF, 100, 262144)
@@ -123,13 +137,13 @@ class WriteCachingPropertiesTest(RedpandaTest):
         self.validate_topic_configs(WriteCachingMode.ON, 200, 32768)
 
         # Turn off write caching at topic level
-        self.set_topic_properties(self.WRITE_CACHING_PROP, "off")
+        self.set_topic_properties(TopicSpec.PROPERTY_WRITE_CACHING, "off")
         self.validate_topic_configs(WriteCachingMode.OFF, 200, 32768)
 
         # Turn off write caching at cluster level but enable at topic level
         # topic properties take precedence
         self.set_cluster_config(write_caching_conf, "off")
-        self.set_topic_properties(self.WRITE_CACHING_PROP, "on")
+        self.set_topic_properties(TopicSpec.PROPERTY_WRITE_CACHING, "on")
         self.validate_topic_configs(WriteCachingMode.ON, 200, 32768)
 
         # Kill switch test, disable write caching feature globally,
@@ -139,12 +153,12 @@ class WriteCachingPropertiesTest(RedpandaTest):
 
         # Try to update the topic property now, should throw an error
         try:
-            self.set_topic_properties(self.WRITE_CACHING_PROP, "on")
+            self.set_topic_properties(TopicSpec.PROPERTY_WRITE_CACHING, "on")
             assert False, "No exception thrown when updating topic propertes in disabled mode."
         except RpkException as e:
             assert "INVALID_CONFIG" in str(e)
 
         # Enable again
         self.set_cluster_config(write_caching_conf, "on")
-        self.set_topic_properties(self.WRITE_CACHING_PROP, "on")
+        self.set_topic_properties(TopicSpec.PROPERTY_WRITE_CACHING, "on")
         self.validate_topic_configs(WriteCachingMode.ON, 200, 32768)

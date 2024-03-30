@@ -76,6 +76,17 @@ get_config_value(const config_map_t& config, std::string_view key) {
     return std::nullopt;
 }
 
+template<class T>
+requires std::
+  is_same_v<T, std::chrono::duration<typename T::rep, typename T::period>>
+  static std::optional<T>
+  get_duration_value(const config_map_t& config, std::string_view key) {
+    if (auto it = config.find(key); it != config.end()) {
+        return T{boost::lexical_cast<typename T::rep>(it->second)};
+    }
+    return std::nullopt;
+}
+
 static std::optional<ss::sstring>
 get_string_value(const config_map_t& config, std::string_view key) {
     if (auto it = config.find(key); it != config.end()) {
@@ -146,6 +157,18 @@ get_tristate_value(const config_map_t& config, std::string_view key) {
     return tristate<T>(std::make_optional<T>(*v));
 }
 
+template<typename T>
+static std::optional<T>
+get_enum_value(const config_map_t& config, std::string_view key) {
+    T ret;
+    auto s_opt = get_string_value(config, key);
+    if (!s_opt) {
+        return std::nullopt;
+    }
+    std::istringstream(*s_opt) >> ret;
+    return ret;
+}
+
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t) {
     auto cfg = cluster::topic_configuration(
@@ -204,6 +227,15 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.mpx_virtual_cluster_id
       = get_config_value<model::vcluster_id>(
         config_entries, topic_property_mpx_virtual_cluster_id);
+
+    cfg.properties.write_caching = get_enum_value<model::write_caching_mode>(
+      config_entries, topic_property_write_caching);
+
+    cfg.properties.flush_ms = get_duration_value<std::chrono::milliseconds>(
+      config_entries, topic_property_flush_ms);
+
+    cfg.properties.flush_bytes = get_config_value<size_t>(
+      config_entries, topic_property_flush_bytes);
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
