@@ -9,14 +9,16 @@
 import collections
 import json
 import io
+import os
 import pprint
 import struct
 import time
 from dataclasses import dataclass
 from collections import defaultdict, namedtuple
 from enum import Enum
-from typing import Sequence, Optional, NewType, NamedTuple, Iterator
+from typing import Literal, Sequence, Optional, NewType, NamedTuple, Iterator
 
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 import xxhash
 
 from rptest.archival.s3_client import ObjectMetadata, S3Client
@@ -423,12 +425,14 @@ def verify_file_layout(baseline_per_host,
             f" The original is {orig_ntp_size} bytes which {delta} bytes larger."
 
 
-def gen_topic_manifest_path(topic: NT):
+def gen_topic_manifest_path(topic: NT,
+                            manifest_format: Literal['json', 'bin'] = 'bin'):
+    assert manifest_format in ['json', 'bin']
     x = xxhash.xxh32()
     path = f"{topic.ns}/{topic.topic}"
     x.update(path.encode('ascii'))
     hash = x.hexdigest()[0] + '0000000'
-    return f"{hash}/meta/{path}/topic_manifest.json"
+    return f"{hash}/meta/{path}/topic_manifest.{manifest_format}"
 
 
 def gen_topic_lifecycle_marker_path(topic: NT):
@@ -1203,14 +1207,20 @@ class BucketView:
         else:
             return None
 
-    def _load_topic_manifest(self, topic: NT, path: str):
+    def _load_topic_manifest(self, topic: NT, path: str,
+                             manifest_format: Literal['json', 'bin']):
         try:
             data = self.client.get_object_data(self.bucket, path)
         except Exception as e:
             self.logger.debug(f"Exception loading {path}: {e}")
             raise KeyError(f"Manifest for topic {topic} not found")
 
-        manifest = json.loads(data)
+        manifest = {}
+        if manifest_format == 'bin':
+            manifest = OfflineLogViewer(self.redpanda).read_bin_topic_manifest(
+                data, return_legacy_format=True)
+        else:
+            manifest = json.loads(data)
 
         self.logger.debug(
             f"Loaded topic manifest {topic}: {pprint.pformat(manifest)}")
@@ -1222,8 +1232,16 @@ class BucketView:
         if topic in self._state.topic_manifests:
             return self._state.topic_manifests[topic]
 
-        path = gen_topic_manifest_path(topic)
-        return self._load_topic_manifest(topic, path)
+        try:
+            path = gen_topic_manifest_path(topic, manifest_format='bin')
+            return self._load_topic_manifest(topic,
+                                             path,
+                                             manifest_format='bin')
+        except KeyError:
+            path = gen_topic_manifest_path(topic, manifest_format='json')
+            return self._load_topic_manifest(topic,
+                                             path,
+                                             manifest_format='json')
 
     def get_lifecycle_marker_objects(self, topic: NT) -> list[ObjectMetadata]:
         """
