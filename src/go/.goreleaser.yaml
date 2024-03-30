@@ -75,7 +75,6 @@ builds:
     goarch:
       - amd64
       - arm64
-  # we need separate build for darwin to sign/notarize using quill
   - id: rpk-darwin
     dir: ./rpk/
     main: ./cmd/rpk
