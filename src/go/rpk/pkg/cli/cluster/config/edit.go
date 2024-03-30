@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/kballard/go-shellquote"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -107,7 +108,12 @@ func executeEdit(
 		}
 	}
 
-	child := exec.Command(editor, filename)
+	// Fix: Issue #17386
+	eArgs, err := editorAndArguments(editor, filename)
+	if err != nil {
+		return fmt.Errorf("error opening file %s on editor %s: %v", filename, editor, err)
+	}
+	child := exec.Command(eArgs[0], eArgs[1:]...)
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
 	child.Stdin = os.Stdin
@@ -122,4 +128,17 @@ func executeEdit(
 		return fmt.Errorf("error updating config: %v", err)
 	}
 	return nil
+}
+
+// Split the editor environment variable to see if it has editor options e.g. code -w, where editor is "code" and its options is "-w"
+// TODO: Open up this method in case other modules require to open the editor and options
+
+func editorAndArguments(editor string, filename string) ([]string, error) {
+	eArgs, err := shellquote.Split(editor)
+	if err != nil {
+		return nil, err
+	}
+	eArgs = append(eArgs, filename)
+
+	return eArgs, err
 }
