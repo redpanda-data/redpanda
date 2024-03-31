@@ -79,10 +79,20 @@ get_config_value(const config_map_t& config, std::string_view key) {
 template<class T>
 requires std::
   is_same_v<T, std::chrono::duration<typename T::rep, typename T::period>>
-  static std::optional<T>
-  get_duration_value(const config_map_t& config, std::string_view key) {
+  static std::optional<T> get_duration_value(
+    const config_map_t& config,
+    std::string_view key,
+    bool clamp_to_duration_max = false) {
     if (auto it = config.find(key); it != config.end()) {
-        return T{boost::lexical_cast<typename T::rep>(it->second)};
+        auto parsed = boost::lexical_cast<typename T::rep>(it->second);
+        // Certain Kafka clients have LONG_MAX duration to represent
+        // maximum duration but that overflows during serde serialization
+        // to nanos. Clamping to max allowed duration gives the same
+        // desired behavior of no timeout without having to fail the request.
+        constexpr auto max = std::chrono::duration_cast<T>(
+          std::chrono::nanoseconds::max());
+        auto v = clamp_to_duration_max ? std::min(parsed, max.count()) : parsed;
+        return T{v};
     }
     return std::nullopt;
 }
@@ -232,7 +242,7 @@ to_cluster_type(const creatable_topic& t) {
       config_entries, topic_property_write_caching);
 
     cfg.properties.flush_ms = get_duration_value<std::chrono::milliseconds>(
-      config_entries, topic_property_flush_ms);
+      config_entries, topic_property_flush_ms, true);
 
     cfg.properties.flush_bytes = get_config_value<size_t>(
       config_entries, topic_property_flush_bytes);

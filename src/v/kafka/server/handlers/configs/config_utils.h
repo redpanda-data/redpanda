@@ -390,9 +390,10 @@ struct flush_ms_validator {
             return std::nullopt;
         }
         auto value = maybe_value.value();
-        if (value < 1ms) {
+        if (value < 1ms || value > serde::max_serializable_ms) {
             return fmt::format(
-              "config value too low, expected to be atleast 1ms");
+              "flush.ms value invalid, expected to be in range [1, {}]",
+              serde::max_serializable_ms);
         }
         return std::nullopt;
     }
@@ -487,7 +488,8 @@ inline void parse_and_set_optional_duration(
   cluster::property_update<std::optional<Dur>>& property,
   const std::optional<ss::sstring>& value,
   config_resource_operation op,
-  Validator validator = noop_validator<Dur>{}) {
+  Validator validator = noop_validator<Dur>{},
+  bool clamp_to_duration_max = false) {
     // remove property value
     if (op == config_resource_operation::remove) {
         property.op = cluster::incremental_update_operation::remove;
@@ -497,7 +499,16 @@ inline void parse_and_set_optional_duration(
     if (op == config_resource_operation::set && value) {
         property.op = cluster::incremental_update_operation::set;
         try {
-            auto v = Dur(boost::lexical_cast<typename Dur::rep>(*value));
+            auto parsed = boost::lexical_cast<typename Dur::rep>(*value);
+            // Certain Kafka clients have LONG_MAX duration to represent
+            // maximum duration but that overflows during serde serialization
+            // to nanos. Clamping to max allowed duration gives the same
+            // desired behavior of no timeout without having to fail the
+            // request.
+            constexpr auto max = std::chrono::duration_cast<Dur>(
+              std::chrono::nanoseconds::max());
+            auto v = clamp_to_duration_max ? Dur(std::min(parsed, max.count()))
+                                           : Dur(parsed);
             auto v_error = validator(*value, v);
             if (v_error) {
                 throw validation_error(*v_error);

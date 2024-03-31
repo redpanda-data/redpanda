@@ -398,8 +398,11 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100ms,
       [](auto const& v) -> std::optional<ss::sstring> {
-          if (v < 1ms) {
-              return "flush delay should be atleast 1ms";
+          // maximum duration imposed by serde serialization.
+          if (v < 1ms || v > serde::max_serializable_ms) {
+              return fmt::format(
+                "flush delay should be in range: [1, {}]",
+                serde::max_serializable_ms);
           }
           return std::nullopt;
       })
