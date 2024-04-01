@@ -2444,6 +2444,11 @@ class RedpandaService(RedpandaServiceBase):
         else:
             self.logger.debug(f'{LSAN_SUPPRESSIONS_FILE} does not exist')
 
+        # ubsan, halt at first violation and include a stack trace
+        # in the logs.
+        self._environment[
+            'UBSAN_OPTIONS'] = 'print_stacktrace=1:halt_on_error=1:abort_on_error=1'
+
         if environment is not None:
             self._environment.update(environment)
 
