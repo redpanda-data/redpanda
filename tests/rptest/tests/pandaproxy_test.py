@@ -231,11 +231,7 @@ class PandaProxyEndpoints(RedpandaTest):
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
 
     def _get_kafka_cli_tools(self):
-        sasl_enabled = self.redpanda.sasl_enabled()
-        cfg = self.redpanda.security_config() if sasl_enabled else {}
-        return KafkaCliTools(self.redpanda,
-                             user=cfg.get('sasl_plain_username'),
-                             passwd=cfg.get('sasl_plain_password'))
+        return KafkaCliTools(self.redpanda)
 
     def _base_uri(self, hostname=None, tls_enabled: bool = False):
         hostname = hostname if hostname else self.redpanda.nodes[
