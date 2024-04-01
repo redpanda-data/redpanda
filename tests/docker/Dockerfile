@@ -276,6 +276,9 @@ COPY --chown=0:0 --chmod=0755 tests/rptest/remote_scripts /opt/remote
 # copy lsan suppressions file
 COPY --chown=0:0 --chmod=0644 lsan_suppressions.txt /opt/lsan_suppressions.txt
 
+# copy ubsan suppressions file
+COPY --chown=0:0 --chmod=0644 ubsan_suppressions.txt /opt/ubsan_suppressions.txt
+
 # expose port 8080 for any http examples within clients
 EXPOSE 8080
 
