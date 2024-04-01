@@ -147,8 +147,7 @@ consensus::consensus(
   , _append_requests_buffer(*this, 256)
   , _write_caching_enabled(log_config().write_caching())
   , _max_pending_flush_bytes(log_config().flush_bytes())
-  , _max_flush_delay_ms(
-      flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}.next_duration())
+  , _max_flush_delay_ms(compute_max_flush_delay())
   , _replication_monitor(this) {
     setup_metrics();
     setup_public_metrics();
@@ -3926,12 +3925,15 @@ std::optional<model::offset> consensus::get_learner_start_offset() const {
     return std::nullopt;
 }
 
+std::chrono::milliseconds consensus::compute_max_flush_delay() const {
+    return flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
+      .next_duration();
+}
+
 void consensus::notify_config_update() {
     _write_caching_enabled = log_config().write_caching();
     _max_pending_flush_bytes = log_config().flush_bytes();
-    _max_flush_delay_ms
-      = flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
-          .next_duration();
+    _max_flush_delay_ms = compute_max_flush_delay();
     // let the flusher know that the tunables have changed, this may result
     // in an extra flush but that should be ok since this this is a rare
     // operation.

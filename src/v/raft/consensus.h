@@ -763,6 +763,7 @@ private:
         return _features.is_active(features::feature::raft_config_serde);
     }
 
+    std::chrono::milliseconds compute_max_flush_delay() const;
     ss::future<> maybe_flush_log();
     ss::future<> background_flusher();
 
