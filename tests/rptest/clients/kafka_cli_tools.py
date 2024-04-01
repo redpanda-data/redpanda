@@ -132,18 +132,6 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         args += ["--partitions", f"{partitions}"]
         return self._run("kafka-topics.sh", args)
 
-    def create_topic_with_config(self, name, partitions, replication_factor,
-                                 configs):
-        cfgs = [f"{k}={v}" for k, v in configs.items()]
-        self._redpanda.logger.debug("Creating topic: %s", name)
-        args = ["--create"]
-        args += ["--topic", name]
-        args += ["--partitions", str(partitions)]
-        args += ["--replication-factor", str(replication_factor)]
-        for it in cfgs:
-            args += ["--config", it]
-        return self._run("kafka-topics.sh", args)
-
     def create_topic_with_assignment(self, name, assignments):
         self._redpanda.logger.debug(
             f"Creating topic: {name}, custom assignment: {assignments}")
