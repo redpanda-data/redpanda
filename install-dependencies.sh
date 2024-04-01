@@ -58,6 +58,8 @@ fedora_deps=(
   libzstd-static
   llvm
   lld
+  lz4-devel
+  lz4-static
   pkg-config
   procps
   python3-jinja2
