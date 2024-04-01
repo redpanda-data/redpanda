@@ -190,8 +190,33 @@ class KafkaClientSecurity:
             ret.tls_enabled = tls_enabled
         return ret
 
-    def _require_simple(self):
-        """Check that auth is simple, otherwise throw then returns SaslCredentials if SASL is enabled
+    def to_dict(self) -> dict[str, str | int]:
+        """Return the security configuration as a dictionary suitable for use by kafka-python.
+
+        This supports only SASL disabled (returns an empty dict) or simple SASL (SCRAM) mechanisms
+        and throws otherwise.
+
+        This is here for some existing use cases but try not to use this.
+        """
+
+        if (c := self.simple_credentials()):
+            return dict(security_protocol=self.security_protocol.name,
+                        sasl_mechanism=c.mechanism,
+                        sasl_plain_username=c.username,
+                        sasl_plain_password=c.password,
+                        request_timeout_ms=30000,
+                        api_version_auto_timeout_ms=3000)
+        else:
+            # by convention we return an empty dict when we are using PLAINTEXT
+            # since clients default to this protocol and so don't require an
+            # explicit security protocol configuration in that case
+            return dict(security_protocol=self.security_protocol.name
+                        ) if self.tls_enabled else {}
+
+    def simple_credentials(self) -> SaslCredentials | None:
+        """Return SaslCredentials for this configuration if possible.
+
+        Throws an exception if auth is not simple, otherwise returns SaslCredentials if SASL is enabled
         or None if SASL is disabled."""
         if not self.is_simple:
             raise RuntimeError(
