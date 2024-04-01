@@ -31,6 +31,7 @@ deb_deps=(
   git
   golang-go
   libkrb5-dev
+  liblz4-dev
   libgssapi-krb5-2
   libsnappy-dev
   libxxhash-dev
@@ -58,6 +59,8 @@ fedora_deps=(
   libzstd-static
   llvm
   lld
+  lz4-devel
+  lz4-static
   pkg-config
   procps
   python3-jinja2
