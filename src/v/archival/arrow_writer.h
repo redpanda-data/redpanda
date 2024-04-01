@@ -58,10 +58,13 @@ private:
     uint32_t _uncompressed_batches = 0;
     uint32_t _rows = 0;
     arrow::Status _ok = arrow::Status::OK();
-    std::shared_ptr<arrow::Field> _field_key, _field_value;
+    std::shared_ptr<arrow::Field> _field_key, _field_value, _field_timestamp,
+      _field_offset;
     std::shared_ptr<arrow::Schema> _schema;
     arrow::ArrayVector _key_vector;
     arrow::ArrayVector _value_vector;
+    arrow::ArrayVector _timestamp_vector;
+    arrow::ArrayVector _offset_vector;
 };
 
 } // namespace datalake
