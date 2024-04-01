@@ -12,11 +12,13 @@ import tempfile
 from rptest.clients.types import TopicSpec
 import json
 from ducktape.utils.util import wait_until
-from typing import Optional
+from typing import Any, Optional, Sequence, cast
 import os
 
 from rptest.services.keycloak import OAuthConfig
-from rptest.services.redpanda_types import KafkaClientSecurity, RedpandaServiceForClients, check_username_password
+from rptest.services.redpanda_types import RedpandaServiceForClients, check_username_password
+
+# pyright: strict
 
 
 class AuthenticationError(Exception):
@@ -44,13 +46,14 @@ class KafkaCliTools:
     VERSIONS = ("3.0.0", "2.7.0", "2.5.0", "2.4.1", "2.3.1")
 
     def __init__(self,
-                 redpanda,
-                 version=None,
-                 user=None,
-                 passwd=None,
-                 protocol='SASL_PLAINTEXT',
-                 oauth_cfg: Optional[OAuthConfig] = None):
+                 redpanda: RedpandaServiceForClients,
+                 version: str | None = None,
+                 user: str | None = None,
+                 passwd: str | None = None,
+                 protocol: str = 'SASL_PLAINTEXT',
+                 oauth_cfg: OAuthConfig | None = None):
         self._redpanda = redpanda
+        self.logger = redpanda.logger
         self._version = version
         assert self._version is None or \
                 self._version in KafkaCliTools.VERSIONS
@@ -65,8 +68,7 @@ class KafkaCliTools:
         if self._oauth_cfg is None:
             # plain or SASL authn: start with the redpanda default client credentials
             # and then apply any passed-in overrides
-            security = cast(KafkaClientSecurity,
-                            redpanda.kafka_client_security())
+            security = redpanda.kafka_client_security()
             if user:
                 security = security.override(user,
                                              passwd,
@@ -99,8 +101,11 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
 
     @classmethod
     def instances(cls):
-        def make_factory(version):
-            return lambda redpanda: cls(redpanda, version)
+        def make_factory(version: str):
+            def factory(redpanda: RedpandaServiceForClients):
+                return cls(redpanda, version)
+
+            return factory
 
         return list(map(make_factory, cls.VERSIONS))
 
@@ -124,7 +129,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             args += ["--config", f"max.message.bytes={spec.max_message_bytes}"]
         return self._run("kafka-topics.sh", args)
 
-    def create_topic_partitions(self, topic, partitions):
+    def create_topic_partitions(self, topic: str, partitions: int):
         self._redpanda.logger.debug("Adding %d partitions to topic: %s",
                                     partitions, topic)
         args = ['--alter']
@@ -132,11 +137,12 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         args += ["--partitions", f"{partitions}"]
         return self._run("kafka-topics.sh", args)
 
-    def create_topic_with_assignment(self, name, assignments):
+    def create_topic_with_assignment(self, name: str,
+                                     assignments: Sequence[Sequence[int]]):
         self._redpanda.logger.debug(
             f"Creating topic: {name}, custom assignment: {assignments}")
 
-        partitions = []
+        partitions: list[str] = []
         for assignment in assignments:
             partitions.append(":".join(str(r) for r in assignment))
 
@@ -146,7 +152,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
 
         return self._run("kafka-topics.sh", args)
 
-    def delete_topic(self, topic):
+    def delete_topic(self, topic: str):
         self._redpanda.logger.debug("Deleting topic: %s", topic)
         args = ["--delete"]
         args += ["--topic", topic]
@@ -167,16 +173,14 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         self._redpanda.logger.debug("Describe topics result: %s", res)
         return res
 
-    def describe_topic_config(self, topic):
+    def describe_topic_config(self, topic: str):
         self._redpanda.logger.debug("Describing topic configs")
         args = ["--describe", "--topic", topic, "--all"]
         res = self._run("kafka-configs.sh", args).strip()
         self._redpanda.logger.debug("Describe topic configs result: %s", res)
-        if res is None:
-            raise RuntimeError(f"Error describing topic {topic}")
 
         # parse/extract the topic configuration
-        configs = {}
+        configs: dict[str, str] = {}
         config_lines = res.split("\n")[1:]
         for line in config_lines:
             config = line.strip().split(" ")[0].split("=")
@@ -184,13 +188,11 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
 
         return configs
 
-    def describe_topic(self, topic):
+    def describe_topic(self, topic: str):
         self._redpanda.logger.debug("Describing topics")
         args = ["--describe", "--topic", topic]
         res = self._run("kafka-topics.sh", args)
         self._redpanda.logger.debug("Describe topics result: %s", res)
-        if res is None:
-            raise RuntimeError(f"Error describing topic {topic}")
 
         # parse/extract the topic configuration
         configs = None
@@ -206,12 +208,14 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             if part.startswith("Configs:"):
                 configs = part[8:]
 
-        def maybe_int(key, value):
+        assert configs is not None, "didn't find Configs: section"
+
+        def maybe_int(key: str, value: str):
             if key in ["retention_ms", "retention_bytes", 'segment_bytes']:
-                value = int(value)
+                return int(value)
             return value
 
-        def fix_key(key):
+        def fix_key(key: str):
             return key.replace(".", "_")
 
         self._redpanda.logger.debug(f"Describe topics configs: {configs}")
@@ -224,7 +228,12 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         configs = {kv[0]: maybe_int(kv[0], kv[1]) for kv in configs.items()}
         configs["replication_factor"] = replication_factor
         configs["partition_count"] = partitions
-        return TopicSpec(name=topic, **configs)
+        # The cast below is needed because a dict cannot be unpacked as keyword args
+        # unless all keyword args have the same type and the dictionary values have
+        # the same type: that's not the case for TopicSpec, so this unpacking will
+        # just have to be checked at runtime. TypedDict is the right way to do this,
+        # but more work.
+        return TopicSpec(name=topic, **cast(dict[str, Any], configs))
 
     def describe_broker_config(self):
         self._redpanda.logger.debug("Describing brokers")
@@ -233,7 +242,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         self._redpanda.logger.debug("Describe brokers config result: %s", res)
         return res
 
-    def alter_topic_config(self, topic, configuration_map):
+    def alter_topic_config(self, topic: str, configuration_map: dict[str,
+                                                                     Any]):
         self._redpanda.logger.debug("Altering topic %s configuration with %s",
                                     topic, configuration_map)
         args = ["--topic", topic, "--alter"]
@@ -245,12 +255,12 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         return self._run("kafka-configs.sh", args)
 
     def produce(self,
-                topic,
-                num_records,
-                record_size,
-                acks=-1,
-                throughput=-1,
-                batch_size=81960):
+                topic: str,
+                num_records: int,
+                record_size: int,
+                acks: int = -1,
+                throughput: int = -1,
+                batch_size: int = 81960):
         self._redpanda.logger.debug("Producing to topic: %s", topic)
         cmd = [self._script("kafka-producer-perf-test.sh")]
         cmd += ["--topic", topic]
@@ -269,7 +279,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         args = ["--list"]
         return self._run("kafka-acls.sh", args)
 
-    def create_cluster_acls(self, username, op, ptype: str = "User"):
+    def create_cluster_acls(self, username: str, op: str, ptype: str = "User"):
         """
         Add allow+describe+cluster ACL
         """
@@ -283,7 +293,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
                          "kafka.admin.BrokerApiVersionsCommand")
 
     def reassign_partitions(self,
-                            reassignments: dict,
+                            reassignments: dict[str, Any],
                             operation: str,
                             msg_retry: Optional[str] = None,
                             timeout_s: int = 10):
@@ -291,7 +301,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         assert reassignments["version"] == 1
         assert "partitions" in reassignments
 
-        args = []
+        args: list[str] = []
         if operation == "execute":
             args.append("--execute")
         elif operation == "verify":
@@ -324,7 +334,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
 
         return output
 
-    def describe_producers(self, topic, partition):
+    def describe_producers(self, topic: str, partition: int):
         expected_columns = [
             "ProducerId", "ProducerEpoch", "LatestCoordinatorEpoch",
             "LastSequence", "LastTimestamp", "CurrentTransactionStartOffset"
@@ -338,7 +348,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         cmd += ["--partition", str(partition)]
         res = self._execute(cmd)
 
-        producers = []
+        producers: list[dict[str, str]] = []
         split_str = res.split("\n")
         info_str = split_str[0]
         info_key = info_str.strip().split("\t")
@@ -350,7 +360,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         for line in lines:
             producer_raw = line.strip().split("\t")
             assert len(producer_raw) == len(expected_columns)
-            producer = {}
+            producer: dict[str, str] = {}
             for i in range(len(info_key)):
                 producer_info = producer_raw[i].strip()
                 producer[info_key[i]] = producer_info
@@ -368,7 +378,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         cmd += ["list"]
         res = self._execute(cmd)
 
-        txs = []
+        txs: list[dict[str, str]] = []
         split_str = res.split("\n")
         info_str = split_str[0]
         info_key = info_str.strip().split("\t")
@@ -380,14 +390,14 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         for line in lines:
             tx_raw = line.strip().split("\t")
             assert len(tx_raw) == len(expected_columns)
-            tx = {}
+            tx: dict[str, str] = {}
             for i in range(len(info_key)):
                 tx_info = tx_raw[i].strip()
                 tx[info_key[i]] = tx_info
             txs.append(tx)
         return txs
 
-    def describe_transaction(self, tx_id):
+    def describe_transaction(self, tx_id: int):
         expected_columns = [
             "CoordinatorId", "TransactionalId", "ProducerId", "ProducerEpoch",
             "TransactionState", "TransactionTimeoutMs",
@@ -414,13 +424,13 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         tx_raw = line.strip().split("\t")
         assert len(tx_raw) == len(expected_columns)
 
-        tx = {}
+        tx: dict[str, str] = {}
         for i in range(len(info_key)):
             tx_info = tx_raw[i].strip()
             tx[info_key[i]] = tx_info
         return tx
 
-    def _run(self, script, args, classname=None):
+    def _run(self, script: str, args: list[str], classname: str | None = None):
         cmd = [self._script(script)]
         if classname is not None:
             cmd += [classname]
@@ -430,7 +440,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         cmd += args
         return self._execute(cmd)
 
-    def _execute(self, cmd):
+    def _execute(self, cmd: list[str]):
         """
 
         :param cmd: list of strings
@@ -454,11 +464,11 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
                 raise TopicAuthorizationError(e.output)
             raise
 
-    def _script(self, script):
+    def _script(self, script: str):
         version = self._version or KafkaCliTools.VERSIONS[0]
         return "/opt/kafka-{}/bin/{}".format(version, script)
 
-    def oauth_produce(self, topic: str, num_records: int, acks=-1):
+    def oauth_produce(self, topic: str, num_records: int, acks: int = -1):
         path = "/opt/strimzi-kafka-oauth/examples/producer"
         assert self._oauth_cfg is not None, "Must provide an OAuthConfig at construction"
         cmd = [
