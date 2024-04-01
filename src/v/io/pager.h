@@ -88,6 +88,8 @@ public:
     seastar::future<std::vector<seastar::lw_shared_ptr<page>>>
     read(read_config cfg) noexcept;
 
+    size_t size() const { return size_; }
+
 private:
     static seastar::lw_shared_ptr<page> alloc_page(
       uint64_t offset, std::optional<cache_hook> hook = std::nullopt) noexcept;
