@@ -73,7 +73,8 @@ public:
         for (auto& file : cleanup_files_) {
             try {
                 seastar::remove_file(file.string()).get();
-            } catch (...) {
+            } catch (const std::exception& ex) {
+                std::ignore = ex;
             }
         }
     }
