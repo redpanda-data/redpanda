@@ -1,7 +1,8 @@
 from copy import copy
 from dataclasses import astuple, dataclass
 from enum import Enum, auto
-from typing import Iterator
+from logging import Logger
+from typing import Iterator, Protocol
 
 # pyright: strict
 
@@ -211,3 +212,23 @@ PLAINTEXT_SECURITY = KafkaClientSecurity(None, False)
 # A KafkaClientSecurity constant presenting "SSL" security,
 # i.e., SASL and TLS enabled.
 SSL_SECURITY = KafkaClientSecurity(None, True)
+
+
+class RedpandaServiceForClients(Protocol):
+    """A protocol encoding some basic functionality of RedpandaService and similar
+    Service classes (like RedpandaCloudService), such that clients that take a
+    redpanda service object can be property typed, without depending on the full
+    class definitions (which might introduce a circular dependency in the typing
+    and which is otherwise undesirable since it would make the tool classes
+    more tightly tied to the service.
+
+    Method documentation lives on the service implementations themselves and is
+    not repeated here."""
+
+    logger: Logger
+
+    def kafka_client_security(self) -> KafkaClientSecurity:
+        ...
+
+    def brokers(self) -> str:
+        ...
