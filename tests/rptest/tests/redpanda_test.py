@@ -69,14 +69,7 @@ class RedpandaTestBase(ABC, Test):
         return os.environ.get('CI', None) != 'false'
 
     def _create_initial_topics(self):
-        config = self.__redpanda.security_config()
-        user = config.get("sasl_plain_username")
-        passwd = config.get("sasl_plain_password")
-        protocol = config.get("security_protocol", "SASL_PLAINTEXT")
-        client = KafkaCliTools(self.__redpanda,
-                               user=user,
-                               passwd=passwd,
-                               protocol=protocol)
+        client = KafkaCliTools(self.__redpanda)
         for spec in self.topics:
             self.logger.debug(f"Creating initial topic {spec}")
             client.create_topic(spec)
