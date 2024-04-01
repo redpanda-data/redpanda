@@ -147,7 +147,7 @@ consensus::consensus(
   , _append_requests_buffer(*this, 256)
   , _write_caching_enabled(log_config().write_caching())
   , _max_pending_flush_bytes(log_config().flush_bytes())
-  , _max_flush_delay_ms(compute_max_flush_delay())
+  , _max_flush_delay(compute_max_flush_delay())
   , _replication_monitor(this) {
     setup_metrics();
     setup_public_metrics();
@@ -3897,7 +3897,7 @@ ss::future<> consensus::maybe_flush_log() {
     // detect it and flush log.
     if (
       _pending_flush_bytes < _max_pending_flush_bytes
-      && time_since_last_flush() < _max_flush_delay_ms) {
+      && time_since_last_flush() < flush_ms()) {
         co_return;
     }
     try {
@@ -3925,15 +3925,42 @@ std::optional<model::offset> consensus::get_learner_start_offset() const {
     return std::nullopt;
 }
 
-std::chrono::milliseconds consensus::compute_max_flush_delay() const {
-    return flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
-      .next_duration();
+consensus::flush_delay_t consensus::compute_max_flush_delay() const {
+    auto delay = flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
+                   .next_duration();
+    if (delay > std::chrono::years{1}) {
+        // For large delays (eg: long max), the condition variable waiting
+        // on this delay runs into a UB because of an overflow. A total
+        // hack here is to convert it to a larger duration type so the
+        // integral value of the duration is much smaller thus avoiding
+        // the overflow. This is a pretty bad hack but needed to
+        // workaround seastar's inability to wait for arbitrary large yet
+        // valid durations supposedly used for indefinite waits.
+        auto delay_years = std::chrono::duration_cast<std::chrono::years>(
+          delay);
+        return flush_delay_t{delay_years};
+    }
+    return flush_delay_t{delay};
+}
+
+std::chrono::milliseconds consensus::flush_ms() const {
+    return std::visit(
+      [](auto&& delay) {
+          using T = std::decay_t<decltype(delay)>;
+          if constexpr (std::is_same_v<T, std::chrono::milliseconds>) {
+              return delay;
+          } else {
+              return std::chrono::duration_cast<std::chrono::milliseconds>(
+                delay);
+          }
+      },
+      _max_flush_delay);
 }
 
 void consensus::notify_config_update() {
     _write_caching_enabled = log_config().write_caching();
     _max_pending_flush_bytes = log_config().flush_bytes();
-    _max_flush_delay_ms = compute_max_flush_delay();
+    _max_flush_delay = compute_max_flush_delay();
     // let the flusher know that the tunables have changed, this may result
     // in an extra flush but that should be ok since this this is a rare
     // operation.
@@ -3943,7 +3970,11 @@ void consensus::notify_config_update() {
 ss::future<> consensus::background_flusher() {
     while (!_bg.is_closed()) {
         try {
-            co_await _background_flusher.wait(_max_flush_delay_ms);
+            co_await std::visit(
+              [&](auto&& flush_delay) {
+                  return _background_flusher.wait(flush_delay);
+              },
+              _max_flush_delay);
         } catch (const ss::condition_variable_timed_out&) {
         }
         co_await maybe_flush_log().handle_exception(
