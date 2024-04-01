@@ -3941,7 +3941,7 @@ void consensus::notify_config_update() {
 ss::future<> consensus::background_flusher() {
     while (!_bg.is_closed()) {
         try {
-            co_await _background_flusher.wait(log_config().flush_ms());
+            co_await _background_flusher.wait(_max_flush_delay_ms);
         } catch (const ss::condition_variable_timed_out&) {
         }
         co_await maybe_flush_log().handle_exception(
