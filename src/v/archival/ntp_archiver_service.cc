@@ -1195,6 +1195,11 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
                   model::topic_view(_parent.log()->config().ntp().tp.topic),
                   ret);
             }
+        } else {
+            vlog(
+              _rtclog.debug,
+              "Writing datalake topic failed {}.",
+              model::topic_view(_parent.log()->config().ntp().tp.topic));
         }
     } else {
         vlog(

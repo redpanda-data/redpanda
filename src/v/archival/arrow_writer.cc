@@ -4,7 +4,9 @@
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
 #include "model/fundamental.h"
+#include "model/record.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/util/file.hh>
 
 #include <archival/arrow_writer.h>
@@ -22,7 +24,7 @@ ss::future<bool> datalake::write_parquet(
       starting_offset,
       ending_offset,
       0,
-      4096,
+      10ll * 1024ll * 1024ll * 1024ll, // FIXME(jcipar): 10 GiB is probably too much.
       ss::default_priority_class(),
       model::record_batch_type::raft_data,
       std::nullopt,
@@ -142,6 +144,9 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
             return ss::stop_iteration::yes;
         }
 
+        // FIXME(jcipar): this is not the correct way to compute offsets. The
+        // new log reader config has a `translate_offsets` options that
+        // automatically does the translation. After rebasing, use that.
         _ok = offset_builder.Append(
           int64_t(batch.header().base_offset) + record.offset_delta());
         if (!_ok.ok()) {
