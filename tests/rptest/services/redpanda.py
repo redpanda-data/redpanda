@@ -1479,9 +1479,6 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     def validate_controller_log(self):
         pass
 
-    def security_config(self):
-        return self._security_config
-
     def kafka_client_security(self):
         if self._security_config:
 
