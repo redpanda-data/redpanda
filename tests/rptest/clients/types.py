@@ -9,6 +9,9 @@
 from enum import Enum
 import random
 import string
+from typing import Literal
+
+# pyright: strict
 
 
 class TopicSpec:
@@ -60,6 +63,8 @@ class TopicSpec:
     TIMESTAMP_CREATE_TIME = "CreateTime"
     TIMESTAMP_LOG_APPEND_TIME = "LogAppendTime"
 
+    TIMESTAMP_TYPE = Literal["CreateTime", "LogAppendTime"]
+
     class SubjectNameStrategy(str, Enum):
         TOPIC_NAME = "TopicNameStrategy"
         RECORD_NAME = "RecordNameStrategy"
@@ -84,33 +89,38 @@ class TopicSpec:
     PROPERTY_INITIAL_RETENTION_LOCAL_TARGET_MS = "initial.retention.local.target.ms"
     PROPERTY_VIRTUAL_CLUSTER_ID = "redpanda.virtual.cluster.id"
 
-    def __init__(self,
-                 *,
-                 name: str | None = None,
-                 partition_count: int = 1,
-                 replication_factor: int = 3,
-                 cleanup_policy: str = CLEANUP_DELETE,
-                 compression_type: CompressionTypes = COMPRESSION_PRODUCER,
-                 message_timestamp_type=TIMESTAMP_CREATE_TIME,
-                 segment_bytes=None,
-                 retention_bytes=None,
-                 retention_ms=None,
-                 redpanda_remote_read=None,
-                 redpanda_remote_write=None,
-                 redpanda_remote_delete=None,
-                 segment_ms=None,
-                 max_message_bytes=None,
-                 record_key_schema_id_validation=None,
-                 record_key_schema_id_validation_compat=None,
-                 record_key_subject_name_strategy=None,
-                 record_key_subject_name_strategy_compat=None,
-                 record_value_schema_id_validation=None,
-                 record_value_schema_id_validation_compat=None,
-                 record_value_subject_name_strategy=None,
-                 record_value_subject_name_strategy_compat=None,
-                 initial_retention_local_target_bytes=None,
-                 initial_retention_local_target_ms=None,
-                 virtual_cluster_id=None):
+    def __init__(
+            self,
+            *,
+            name: str | None = None,
+            partition_count: int = 1,
+            replication_factor: int = 3,
+            cleanup_policy: str = CLEANUP_DELETE,
+            compression_type: CompressionTypes = COMPRESSION_PRODUCER,
+            message_timestamp_type: TIMESTAMP_TYPE = TIMESTAMP_CREATE_TIME,
+            segment_bytes: int | None = None,
+            retention_bytes: int | None = None,
+            retention_ms: int | None = None,
+            redpanda_remote_read: bool | None = None,
+            redpanda_remote_write: bool | None = None,
+            redpanda_remote_delete: bool | None = None,
+            segment_ms: int | None = None,
+            max_message_bytes: int | None = None,
+            record_key_schema_id_validation: bool | None = None,
+            record_key_schema_id_validation_compat: bool | None = None,
+            record_key_subject_name_strategy: SubjectNameStrategy
+        | None = None,
+            record_key_subject_name_strategy_compat: SubjectNameStrategyCompat
+        | None = None,
+            record_value_schema_id_validation: bool | None = None,
+            record_value_schema_id_validation_compat: bool | None = None,
+            record_value_subject_name_strategy: SubjectNameStrategy
+        | None = None,
+            record_value_subject_name_strategy_compat: SubjectNameStrategyCompat
+        | None = None,
+            initial_retention_local_target_bytes: int | None = None,
+            initial_retention_local_target_ms: int | None = None,
+            virtual_cluster_id: str | None = None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
@@ -140,7 +150,7 @@ class TopicSpec:
     def __str__(self):
         return self.name
 
-    def __eq__(self, other):
+    def __eq__(self, other: object):
         if not isinstance(other, TopicSpec):
             return False
         return self.name == other.name and \
@@ -148,6 +158,6 @@ class TopicSpec:
                 self.replication_factor == other.replication_factor and \
                 self.cleanup_policy == other.cleanup_policy
 
-    def _random_topic_suffix(self, size=10):
+    def _random_topic_suffix(self, size: int = 10):
         return "".join(
             random.choice(string.ascii_lowercase) for _ in range(size))
