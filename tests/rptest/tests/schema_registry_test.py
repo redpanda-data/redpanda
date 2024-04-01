@@ -190,12 +190,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8081"
 
     def _get_rpk_tools(self):
-        sasl_enabled = self.redpanda.sasl_enabled()
-        cfg = self.redpanda.security_config() if sasl_enabled else {}
-        return RpkTool(self.redpanda,
-                       username=cfg.get('sasl_plain_username'),
-                       password=cfg.get('sasl_plain_password'),
-                       sasl_mechanism=cfg.get('sasl_mechanism'))
+        return RpkTool(self.redpanda)
 
     def _get_serde_client(
             self,
@@ -208,8 +203,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
             payload_class: Optional[str] = None,
             compression_type: Optional[TopicSpec.CompressionTypes] = None):
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
-        sasl_enabled = self.redpanda.sasl_enabled()
-        sec_cfg = self.redpanda.security_config() if sasl_enabled else None
+        sec_cfg = self.redpanda.kafka_client_security().to_dict()
 
         return SerdeClient(self.test_context,
                            self.redpanda.brokers(),
@@ -218,7 +212,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
                            client_type,
                            count,
                            topic=topic,
-                           security_config=sec_cfg,
+                           security_config=sec_cfg if sec_cfg else None,
                            skip_known_types=skip_known_types,
                            subject_name_strategy=subject_name_strategy,
                            payload_class=payload_class,
