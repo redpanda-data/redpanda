@@ -19,32 +19,19 @@ from rptest.services.keycloak import OAuthConfig
 
 
 class AuthenticationError(Exception):
-    def __init__(self, message):
-        self.message = message
-
-    def __str__(self):
-        return repr(self.message)
+    pass
 
 
 class AuthorizationError(Exception):
-    def __init__(self, message):
-        self.message = message
+    pass
 
 
 class ClusterAuthorizationError(AuthorizationError):
-    def __init__(self, message):
-        super().__init__(message)
-
-    def __str__(self):
-        return repr(self.message)
+    pass
 
 
 class TopicAuthorizationError(AuthorizationError):
-    def __init__(self, message):
-        super().__init__(message)
-
-    def __str__(self):
-        return repr(self.message)
+    pass
 
 
 class KafkaCliTools:
