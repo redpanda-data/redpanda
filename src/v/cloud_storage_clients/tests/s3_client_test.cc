@@ -12,7 +12,6 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
-#include "cloud_roles/signature.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/s3_client.h"
 #include "hashing/secure.h"

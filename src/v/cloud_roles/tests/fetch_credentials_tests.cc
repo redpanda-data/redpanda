@@ -10,9 +10,9 @@
 
 #include "cloud_roles/logger.h"
 #include "cloud_roles/refresh_credentials.h"
-#include "cloud_roles/tests/test_definitions.h"
 #include "config/configuration.h"
 #include "http/tests/http_imposter.h"
+#include "test_definitions.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/scoped_config.h"

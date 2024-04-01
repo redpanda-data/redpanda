@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
@@ -28,7 +29,6 @@
 
 namespace cluster {
 class partition_manager;
-class archival_metadata_stm;
 
 /// holds cluster logic that is not raft related
 /// all raft logic is proxied transparently
