@@ -97,7 +97,7 @@ connection_context::connection_context(
   , _server(s)
   , conn(conn)
   , _protocol_state()
-  , _as()
+  , _as(_server.abort_source())
   , _sasl(std::move(sasl))
   // tests may build a context without a live connection
   , _client_addr(conn ? conn->addr.addr() : ss::net::inet_address{})
@@ -111,7 +111,6 @@ connection_context::connection_context(
 connection_context::~connection_context() noexcept = default;
 
 ss::future<> connection_context::start() {
-    co_await _as.start(_server.abort_source());
     if (conn) {
         ssx::background
           = conn->wait_for_input_shutdown()
@@ -130,6 +129,7 @@ ss::future<> connection_context::start() {
     if (_hook) {
         _hook.value().get().push_back(*this);
     }
+    return ss::now();
 }
 
 ss::future<> connection_context::stop() {

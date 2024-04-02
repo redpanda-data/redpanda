@@ -53,21 +53,19 @@ struct fixture {
         };
     }
 
-    auto start() { return sas.start(as); }
     auto stop() { return sas.stop(); }
 
     std::atomic_size_t count{0};
     std::atomic_size_t expected_count{0};
 
     ss::abort_source as;
-    ssx::sharded_abort_source sas;
+    ssx::sharded_abort_source sas{as};
 };
 
 SEASTAR_THREAD_TEST_CASE(ssx_sharded_abort_source_test_abort_parent) {
     BOOST_REQUIRE(ss::smp::count > 1);
 
     fixture f;
-    f.start().get();
 
     auto fas_sub_1 = ss::smp::submit_to(ss::shard_id{1}, [&f]() {
                          return f.sas.subscribe(f.make_incrementor());
@@ -91,7 +89,6 @@ SEASTAR_THREAD_TEST_CASE(ssx_sharded_abort_source_test_no_abort_parent) {
     BOOST_REQUIRE(ss::smp::count > 1);
 
     fixture f;
-    f.start().get();
 
     auto fas_sub_1 = ss::smp::submit_to(ss::shard_id{1}, [&f]() {
                          return f.sas.subscribe(f.make_incrementor());
@@ -108,7 +105,6 @@ SEASTAR_THREAD_TEST_CASE(ssx_sharded_abort_source_test_no_abort_parent) {
 
 SEASTAR_THREAD_TEST_CASE(ssx_sharded_abort_source_subscribe_test) {
     fixture f;
-    f.start().get();
 
     // Ensure that sync and async functions are called;
     auto s0 = f.sas.subscribe(f.make_incrementor());
