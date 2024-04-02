@@ -194,8 +194,9 @@ ss::future<> processor::poll_sleep() {
     try {
         co_await ss::sleep_abortable<ss::lowres_clock>(
           jitter.next_duration(), _as);
-    } catch (const ss::sleep_aborted&) {
+    } catch (const ss::sleep_aborted& ex) {
         // do nothing, the caller will handle exiting properly.
+        std::ignore = ex;
     }
 }
 
