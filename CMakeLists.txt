@@ -43,55 +43,56 @@ if(Redpanda_ENABLE_CCACHE OR Redpanda_ENABLE_CCACHE STREQUAL "AUTO")
   endif()
 endif()
 
-# make "lld" be the default since a full statically linked build using "ld" will
-# often fail due to being oom killed at the end of the build when many large
-# targets are being linked in parallel.
-include(CheckLinkerFlag)
-set(Redpanda_LINKER "lld" CACHE STRING "Linker to use")
-set(Redpanda_LINKER_FLAGS "-fuse-ld=${Redpanda_LINKER}")
-check_linker_flag(CXX ${Redpanda_LINKER_FLAGS} HAVE_Redpanda_LINKER_FLAGS)
-if(NOT HAVE_Redpanda_LINKER_FLAGS)
-  message(FATAL_ERROR "Linker ${Redpanda_LINKER} not found or not supported")
-endif()
-add_link_options(${Redpanda_LINKER_FLAGS})
-
-# enable sanitizers. will propogate to all targets, including dependencies
-option(Redpanda_ENABLE_SANITIZERS "Enable sanitizers (address, leak, undefined)" OFF)
-if(Redpanda_ENABLE_SANITIZERS)
-  add_link_options(-fsanitize=address,leak,undefined)
-  add_compile_options(-fsanitize=address,leak,undefined)
-endif()
-
-include(dependencies)
-include(v_library)
-include(testing)
-
-option(Redpanda_ENABLE_COVERAGE "Enable coverage" OFF)
-if(Redpanda_ENABLE_COVERAGE)
-  add_compile_options(-O0 -g --coverage)
-  add_link_options(--coverage)
-endif()
-
 #
-# Configure clang-tidy checks. By default checks will be enabled if the
-# clang-tidy tool is found. Otherwise, it can be explicitly disabled. It's
-# recommended to use FORCE_ON in contexts such as CI where we want to fail
-# configuration if clang-tidy is not available.
+## make "lld" be the default since a full statically linked build using "ld" will
+## often fail due to being oom killed at the end of the build when many large
+## targets are being linked in parallel.
+#include(CheckLinkerFlag)
+#set(Redpanda_LINKER "lld" CACHE STRING "Linker to use")
+#set(Redpanda_LINKER_FLAGS "-fuse-ld=${Redpanda_LINKER}")
+#check_linker_flag(CXX ${Redpanda_LINKER_FLAGS} HAVE_Redpanda_LINKER_FLAGS)
+#if(NOT HAVE_Redpanda_LINKER_FLAGS)
+#  message(FATAL_ERROR "Linker ${Redpanda_LINKER} not found or not supported")
+#endif()
+#add_link_options(${Redpanda_LINKER_FLAGS})
 #
-set(Redpanda_ENABLE_CLANG_TIDY "ON" CACHE STRING
-  "Enable clang-tidy checks if available. Can be ON, OFF, or FORCE_ON")
-
-if(NOT Redpanda_ENABLE_CLANG_TIDY STREQUAL OFF)
-  if(Redpanda_ENABLE_CLANG_TIDY STREQUAL FORCE_ON)
-    find_program(CLANG_TIDY_COMMAND clang-tidy REQUIRED)
-  else()
-    find_program(CLANG_TIDY_COMMAND clang-tidy)
-  endif()
-  if(CLANG_TIDY_COMMAND)
-    set(Redpanda_ENABLE_CLANG_TIDY ON)
-  else()
-    set(Redpanda_ENABLE_CLANG_TIDY OFF)
-  endif()
-endif()
-
-add_subdirectory(src)
+## enable sanitizers. will propogate to all targets, including dependencies
+#option(Redpanda_ENABLE_SANITIZERS "Enable sanitizers (address, leak, undefined)" OFF)
+#if(Redpanda_ENABLE_SANITIZERS)
+#  add_link_options(-fsanitize=address,leak,undefined)
+#  add_compile_options(-fsanitize=address,leak,undefined)
+#endif()
+#
+#include(dependencies)
+#include(v_library)
+#include(testing)
+#
+#option(Redpanda_ENABLE_COVERAGE "Enable coverage" OFF)
+#if(Redpanda_ENABLE_COVERAGE)
+#  add_compile_options(-O0 -g --coverage)
+#  add_link_options(--coverage)
+#endif()
+#
+##
+## Configure clang-tidy checks. By default checks will be enabled if the
+## clang-tidy tool is found. Otherwise, it can be explicitly disabled. It's
+## recommended to use FORCE_ON in contexts such as CI where we want to fail
+## configuration if clang-tidy is not available.
+##
+#set(Redpanda_ENABLE_CLANG_TIDY "ON" CACHE STRING
+#  "Enable clang-tidy checks if available. Can be ON, OFF, or FORCE_ON")
+#
+#if(NOT Redpanda_ENABLE_CLANG_TIDY STREQUAL OFF)
+#  if(Redpanda_ENABLE_CLANG_TIDY STREQUAL FORCE_ON)
+#    find_program(CLANG_TIDY_COMMAND clang-tidy REQUIRED)
+#  else()
+#    find_program(CLANG_TIDY_COMMAND clang-tidy)
+#  endif()
+#  if(CLANG_TIDY_COMMAND)
+#    set(Redpanda_ENABLE_CLANG_TIDY ON)
+#  else()
+#    set(Redpanda_ENABLE_CLANG_TIDY OFF)
+#  endif()
+#endif()
+#
+#add_subdirectory(src)
