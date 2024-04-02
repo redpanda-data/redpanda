@@ -274,6 +274,7 @@ ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
     try {
         co_await std::move(fut);
     } catch (const seastar::abort_requested_exception&) {
+    } catch (const seastar::sleep_aborted&) {
     } catch (const seastar::gate_closed_exception&) {
     } catch (const seastar::broken_semaphore&) {
     } catch (const seastar::broken_promise&) {
@@ -286,6 +287,8 @@ inline bool is_shutdown_exception(const std::exception_ptr& e) {
     try {
         std::rethrow_exception(e);
     } catch (const seastar::abort_requested_exception&) {
+        return true;
+    } catch (const seastar::sleep_aborted&) {
         return true;
     } catch (const seastar::gate_closed_exception&) {
         return true;
