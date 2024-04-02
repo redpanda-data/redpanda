@@ -139,3 +139,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace github.com/hamba/avro/v2 v2.20.0 => github.com/andrewhsu/avro/v2 v2.0.0-20240402144933-b98137d83858
