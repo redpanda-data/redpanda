@@ -24,7 +24,8 @@ if(REDPANDA_RUN_CLANG_TIDY)
         bugprone-stringview-nullptr
         bugprone-unused-return-value
         bugprone-suspicious-string-compare
-        cppcoreguidelines-rvalue-reference-param-not-moved
+        # TODO: Reenable this after fixing all the noise (and nuking ADL)
+        # cppcoreguidelines-rvalue-reference-param-not-moved
         misc-unused-using-decls
         misc-unused-alias-decls
         modernize-redundant-void-arg

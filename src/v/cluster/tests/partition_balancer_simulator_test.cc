@@ -45,8 +45,8 @@ public:
             .available_disk_gb = uint32_t(total_size / 1_GiB),
             .available_memory_bytes = 2 * 1_GiB});
 
-        _workers.members.local().apply(
-          model::offset{}, cluster::add_node_cmd(id, broker));
+        BOOST_REQUIRE(!_workers.members.local().apply(
+          model::offset{}, cluster::add_node_cmd(id, broker)));
         _workers.allocator.local().register_node(
           std::make_unique<cluster::allocation_node>(
             id,
