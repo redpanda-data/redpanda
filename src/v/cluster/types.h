@@ -1158,31 +1158,6 @@ struct find_coordinator_request
     auto serde_fields() { return std::tie(tid); }
 };
 
-// TODO: remove
-struct describe_tx_registry_reply {
-    repartitioning_id id;
-    absl::flat_hash_map<model::partition_id, hosted_txs> mapping;
-    tx_errc ec{};
-
-    describe_tx_registry_reply() noexcept = default;
-
-    describe_tx_registry_reply(tx_errc ec)
-      : ec(ec) {}
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const describe_tx_registry_reply& r);
-};
-
-struct describe_tx_registry_request {
-    using reply = describe_tx_registry_reply;
-    static constexpr const std::string_view name = "describe_tx_registry";
-
-    describe_tx_registry_request() noexcept = default;
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const describe_tx_registry_request& r);
-};
-
 struct join_node_request
   : serde::
       envelope<join_node_request, serde::version<1>, serde::compat_version<0>> {
