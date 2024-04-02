@@ -35,7 +35,6 @@ set(srcs
     rm_stm_tests.cc
     rm_stm_compatibility_test.cc
     id_allocator_stm_test.cc
-    topic_configuration_compat_test.cc
     local_monitor_test.cc
     tx_compaction_tests.cc
     producer_state_tests.cc

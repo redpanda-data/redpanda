@@ -17,6 +17,8 @@
 #include "compat/model_json.h"
 #include "test_utils/randoms.h"
 
+#include <vector>
+
 namespace compat {
 
 /*
@@ -43,10 +45,10 @@ struct compat_check<cluster::init_tm_tx_request> {
     }
     static std::vector<compat_binary>
     to_binary(cluster::init_tm_tx_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
     static void check(cluster::init_tm_tx_request obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -71,10 +73,10 @@ struct compat_check<cluster::init_tm_tx_reply> {
         return obj;
     }
     static std::vector<compat_binary> to_binary(cluster::init_tm_tx_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
     static void check(cluster::init_tm_tx_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
