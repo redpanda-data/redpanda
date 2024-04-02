@@ -587,9 +587,12 @@ class PathMatcher:
         self.expected_topics = expected_topics
         if self.expected_topics is not None:
             self.topic_names = {t.name for t in self.expected_topics}
+            # topic_manifest can end in .json for redpanda before v24.1, and .bin for redpanda after v24.1.
             self.topic_manifest_paths = {
-                f'/{t}/topic_manifest.json'
+                manifest_key
                 for t in self.topic_names
+                for manifest_key in (f'/{t}/topic_manifest.json',
+                                     f'/{t}/topic_manifest.bin')
             }
         else:
             self.topic_names = None
