@@ -264,6 +264,11 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             cloud_storage_enable_segment_merging=True,
             cloud_storage_cache_chunk_size=self.chunk_size,
             cloud_storage_spillover_manifest_size=None)
+        if "googleapis" in self.si_settings.cloud_storage_api_endpoint:
+            # If the test is running on GCS we shouldn't retry earlier than
+            # after 1s. GCS throttles uploads if they happen once per sencond
+            # or faster (per object).
+            extra_rp_conf['cloud_storage_initial_backoff_ms'] = 1000
 
         super(CloudStorageTimingStressTest,
               self).__init__(test_context=test_context,
