@@ -606,13 +606,17 @@ class RBACTelemetryTest(RBACTestBase):
             self.logger.debug(f'New report: {self.metrics.reports()[-1]}')
             return self.metrics.reports()[-1]
 
-        assert wait_for_new_report()['has_rbac'] is False
+        assert wait_for_new_report()['rbac_role_count'] == 0
 
-        self.superuser_admin.create_role(role=self.role_name0)
+        names = ['a', 'b', 'c', 'd', 'e', 'f']
 
-        wait_until(lambda: wait_for_new_report()['has_rbac'] is True,
-                   timeout_sec=20,
-                   backoff_sec=1)
+        for n in names:
+            self.superuser_admin.create_role(role=n)
+
+        wait_until(
+            lambda: wait_for_new_report()['rbac_role_count'] == len(names),
+            timeout_sec=20,
+            backoff_sec=1)
         self.metrics.stop()
 
 

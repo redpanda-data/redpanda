@@ -22,7 +22,8 @@
 #include <seastar/util/bool_class.hh>
 
 #include <absl/container/flat_hash_set.h>
-#include <fmt/core.h>
+
+#include <iosfwd>
 
 namespace security {
 

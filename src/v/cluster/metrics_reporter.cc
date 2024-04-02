@@ -255,7 +255,7 @@ metrics_reporter::build_metrics_snapshot() {
     snapshot.has_oidc = config::oidc_is_enabled_kafka()
                         || config::oidc_is_enabled_http();
 
-    snapshot.has_rbac = _role_store.local().size() > 0;
+    snapshot.rbac_role_count = _role_store.local().size();
 
     auto env_value = std::getenv("REDPANDA_ENVIRONMENT");
     if (env_value) {
@@ -518,8 +518,8 @@ void rjson_serialize(
     w.Key("has_oidc");
     w.Bool(snapshot.has_oidc);
 
-    w.Key("has_rbac");
-    w.Bool(snapshot.has_rbac);
+    w.Key("rbac_role_count");
+    w.Int(snapshot.rbac_role_count);
 
     w.Key("config");
     config::shard_local_cfg().to_json_for_metrics(w);

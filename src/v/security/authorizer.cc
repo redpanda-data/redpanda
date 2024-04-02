@@ -17,6 +17,8 @@
 #include "security/role.h"
 #include "security/role_store.h"
 
+#include <fmt/core.h>
+
 #include <optional>
 #include <ranges>
 
