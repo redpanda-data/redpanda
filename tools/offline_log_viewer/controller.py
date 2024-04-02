@@ -101,7 +101,9 @@ def read_topic_properties_serde(rdr: Reader, version):
         }
     if version >= 7:
         topic_properties |= {
-            'mpx_virtual_cluster_id': rdr.read_optional(Reader.read_bytes),
+            'mpx_virtual_cluster_id':
+            rdr.read_optional(
+                lambda rdr: rdr.read_serde_vector(Reader.read_uint8)),
         }
 
     if version >= 8:
