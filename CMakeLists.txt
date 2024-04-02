@@ -17,6 +17,32 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+#
+# Configure ccache. Uses a tristate AUTO(default),ON,OFF. When set to AUTO,
+# ccache will be preferred if a compiler launcher is not already configured.
+# When set to ON, configuration will fail unless ccache will be used.
+#
+set(Redpanda_ENABLE_CCACHE AUTO CACHE STRING "Enable ccache")
+set_property(CACHE Redpanda_ENABLE_CCACHE PROPERTY STRINGS AUTO ON OFF)
+if(Redpanda_ENABLE_CCACHE OR Redpanda_ENABLE_CCACHE STREQUAL "AUTO")
+  # handle compiler launcher already being set
+  if(CMAKE_C_COMPILER_LAUNCHER OR CMAKE_CXX_COMPILER_LAUNCHER)
+    if (Redpanda_ENABLE_CCACHE)
+      message(FATAL_ERROR "Enabling ccache (ON): compiler launcher set")
+    else()
+      message(WARNING "Enabling ccache (AUTO): compiler launcher set")
+    endif()
+  endif()
+  find_program(CCACHE_EXECUTABLE ccache)
+  if (CCACHE_EXECUTABLE)
+    message(STATUS "Building with ccache: ${CCACHE_EXECUTABLE}, CCACHE_DIR=$ENV{CCACHE_DIR}")
+    list(PREPEND CMAKE_C_COMPILER_LAUNCHER "${CCACHE_EXECUTABLE}")
+    list(PREPEND CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_EXECUTABLE}")
+  elseif(Redpanda_ENABLE_CCACHE)
+    message(FATAL_ERROR "Enabling ccache (ON): could not find ccache")
+  endif()
+endif()
+
 # make "lld" be the default since a full statically linked build using "ld" will
 # often fail due to being oom killed at the end of the build when many large
 # targets are being linked in parallel.
