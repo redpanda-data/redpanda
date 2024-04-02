@@ -16,6 +16,8 @@
 #include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table_snapshot.h"
+#include "security/role.h"
+#include "security/types.h"
 #include "serde/envelope.h"
 
 #include <absl/container/btree_map.h>
@@ -196,6 +198,11 @@ struct security_t
       envelope<security_t, serde::version<0>, serde::compat_version<0>> {
     fragmented_vector<user_and_credential> user_credentials;
     fragmented_vector<security::acl_binding> acls;
+    struct named_role {
+        security::role_name name;
+        security::role role;
+    };
+    chunked_vector<named_role> roles;
 
     friend bool operator==(const security_t&, const security_t&) = default;
 
