@@ -231,11 +231,12 @@ class BaseCase:
         keys = [
             key for key in self._list_objects()
             if key.endswith('topic_manifest.json')
+            or key.endswith('topic_manifest.bin')
         ]
+        view = BucketView(self._redpanda)
         for key in keys:
-            j = self._s3.get_object_data(self._bucket, key)
-            m = json.loads(j)
-            self.logger.info(f"Topic manifest found at {key}, content:\n{j}")
+            m = view.get_topic_manifest_from_path(key)
+            self.logger.info(f"Topic manifest found at {key}, content:\n{m}")
             yield (key, m)
 
     def _restore_topic(self,
