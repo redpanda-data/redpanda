@@ -8,12 +8,12 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "io/pager.h"
+#include "pager.h"
 
 #include "base/vassert.h"
-#include "io/page.h"
-#include "io/page_cache.h"
-#include "io/scheduler.h"
+#include "page.h"
+#include "page_cache.h"
+#include "scheduler.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/coroutine.hh>

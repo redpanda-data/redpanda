@@ -8,7 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "io/logger.h"
+#include "logger.h"
 
 /*
  * named `iox` because Seastar already has a logger named `io`.
