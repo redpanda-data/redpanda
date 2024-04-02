@@ -1238,6 +1238,24 @@ class BucketView:
         self._state.topic_manifests[topic] = manifest
         return manifest
 
+    def get_topic_manifest_from_path(self, path: str) -> dict:
+        """
+        Download the object at `path` and decode it as topic_manifest.
+        supports bin and json formats.
+        """
+        try:
+            data = self.client.get_object_data(self.bucket, path)
+        except Exception as e:
+            self.logger.debug(f"Exception loading {path}: {e}")
+            raise KeyError(f"Manifest @path={path} not found")
+
+        manifest = self._load_manifest_v1_from_data(
+            data, manifest_format='bin' if path.endswith('bin') else 'json')
+        self.logger.debug(
+            f"Loaded topic manifest from {path} for {manifest['topic']}: {pprint.pformat(manifest)}"
+        )
+        return manifest
+
     def get_topic_manifest(self, topic: NT) -> dict:
         """
         try to download a topic_manifest.bin for topic. if no object is found, fallback to topic_manifest.json
