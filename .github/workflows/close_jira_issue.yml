@@ -1,0 +1,28 @@
+name: Close JIRA Issue
+on:
+    issues:
+      types:
+        - closed
+        - deleted
+
+jobs:
+    close_jira_issue:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v5
+            with:
+              python-version: '3.9'
+              cache: 'pip'
+          - name: install dependencies
+            env:
+              SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
+            run: pip install -r ${SCRIPT_DIR}/requirements.txt
+          - name: Close JIRA Issue
+            env:
+              SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
+              JIRA_TOKEN: ${{ secrets.JIRA_TOKEN  }}
+              JIRA_USER: ${{ secrets.JIRA_USER  }}
+              ISSUE_URL: ${{ github.event.issue.html_url }}
+              GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            run: python ${SCRIPT_DIR}/jira_helper.py CLOSE_ISSUE --verbose
