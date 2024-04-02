@@ -28,7 +28,6 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 		before  func(afero.Fs, []string)
 		grubCfg []string
 		opt     []string
-		wantErr bool
 		check   func(afero.Fs, []string)
 	}{
 		{
@@ -42,8 +41,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap rd.lvm.lv=fedora/root\"",
 				"GRUB_DISABLE_SUBMENU=true",
 			},
-			opt:     []string{"noht"},
-			wantErr: false,
+			opt: []string{"noht"},
 			check: func(fs afero.Fs, grubCfg []string) {
 				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
@@ -68,8 +66,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap rd.lvm.lv=fedora/root\"",
 				"GRUB_DISABLE_SUBMENU=true",
 			},
-			opt:     []string{"some_opt=2"},
-			wantErr: false,
+			opt: []string{"some_opt=2"},
 			check: func(fs afero.Fs, grubCfg []string) {
 				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
@@ -93,8 +90,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap noht rd.lvm.lv=fedora/root\"",
 				"GRUB_DISABLE_SUBMENU=true",
 			},
-			opt:     []string{"noht"},
-			wantErr: false,
+			opt: []string{"noht"},
 			check: func(fs afero.Fs, grubCfg []string) {
 				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
@@ -117,8 +113,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap some_opt=1 rd.lvm.lv=fedora/root\"",
 				"GRUB_DISABLE_SUBMENU=true",
 			},
-			opt:     []string{"some_opt=2"},
-			wantErr: false,
+			opt: []string{"some_opt=2"},
 			check: func(fs afero.Fs, grubCfg []string) {
 				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
@@ -139,10 +134,6 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			grub := NewGrub(nil, nil, fs, executors.NewDirectExecutor(), time.Duration(10)*time.Second)
 			tt.before(fs, tt.grubCfg)
 			err := grub.AddCommandLineOptions(tt.opt)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
 			require.NoError(t, err)
 			tt.check(fs, tt.grubCfg)
 		})
