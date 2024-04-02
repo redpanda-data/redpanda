@@ -2024,11 +2024,11 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 3
     if (request_metadata.prev_log_index < last_log_offset) {
-        if (unlikely(request_metadata.prev_log_index < last_visible_index())) {
+        if (unlikely(request_metadata.prev_log_index < _commit_index)) {
             reply.result = reply_result::success;
             // clamp dirty offset to the current commit index not to allow
             // leader reasoning about follower log beyond that point
-            reply.last_dirty_log_index = last_visible_index();
+            reply.last_dirty_log_index = _commit_index;
             reply.last_flushed_log_index = _commit_index;
             vlog(
               _ctxlog.info,
@@ -2054,15 +2054,22 @@ consensus::do_append_entries(append_entries_request&& r) {
           truncate_at);
         _probe->log_truncated();
 
+        _majority_replicated_index = std::min(
+          model::prev_offset(truncate_at), _majority_replicated_index);
+        _last_quorum_replicated_index_with_flush = std::min(
+          model::prev_offset(truncate_at),
+          _last_quorum_replicated_index_with_flush);
+        // update flushed offset since truncation may happen to already
+        // flushed entries
+        _flushed_offset = std::min(
+          model::prev_offset(truncate_at), _flushed_offset);
         return _log
           ->truncate(
             storage::truncate_config(truncate_at, _scheduling.default_iopc))
           .then([this, truncate_at] {
-              _last_quorum_replicated_index_with_flush = std::min(
-                model::prev_offset(truncate_at),
-                _last_quorum_replicated_index_with_flush);
-              // update flushed offset since truncation may happen to already
-              // flushed entries
+              // update flushed offset once again after truncation as flush is
+              // executed concurrently to append entries and it may race with
+              // the truncation
               _flushed_offset = std::min(
                 model::prev_offset(truncate_at), _flushed_offset);
 
