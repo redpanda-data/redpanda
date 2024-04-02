@@ -19,10 +19,10 @@ import ducktape.errors
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.admin import (Admin, RoleMemberList, RoleUpdate,
-                                   RoleErrorCode, RoleError, RolesList,
-                                   RoleDescription, RoleMemberUpdateResponse,
-                                   RoleMember, Role)
+from rptest.services.admin import (Admin, RedpandaNode, RoleMemberList,
+                                   RoleUpdate, RoleErrorCode, RoleError,
+                                   RolesList, RoleDescription,
+                                   RoleMemberUpdateResponse, RoleMember, Role)
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -860,8 +860,28 @@ class RBACEndToEndTest(RBACTestBase):
 
 
 class RolePersistenceTest(RBACTestBase):
+    def _wait_for_everything_snapshotted(self, nodes: list, admin: Admin):
+        controller_max_offset = max(
+            admin.get_controller_status(n)['committed_index'] for n in nodes)
+        self.logger.debug(f"controller max offset is {controller_max_offset}")
+
+        for n in nodes:
+            self.redpanda.wait_for_controller_snapshot(
+                node=n, prev_start_offset=(controller_max_offset - 1))
+
+        return controller_max_offset
+
     @cluster(num_nodes=3)
     def test_role_survives_restart(self):
+        self.redpanda.set_feature_active('controller_snapshots',
+                                         True,
+                                         timeout_sec=10)
+
+        self.redpanda.set_cluster_config(
+            {'controller_snapshot_max_age_sec': 1})
+
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
         admin = self.superuser_admin
 
         names = [
@@ -906,6 +926,8 @@ class RolePersistenceTest(RBACTestBase):
             retry_on_exc=True)
 
         assert r.name == rand_role
+
+        self._wait_for_everything_snapshotted(self.redpanda.nodes, admin)
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
