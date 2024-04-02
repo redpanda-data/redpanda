@@ -26,6 +26,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
@@ -651,6 +652,14 @@ service::deploy_transform(model::transform_metadata meta, iobuf binary) {
     auto [key, offset] = result.value();
     meta.uuid = key;
     meta.source_ptr = offset;
+    meta.offset_options = model::transform_offset_options{
+      // Set the transform to start processing new records starting now,
+      // this is the default expectations for developers, as once deploy
+      // completes, they should be able to produce without waiting for the
+      // vm to start. If we start from the end of the log, then records produced
+      // between now and the vm start would be skipped.
+      .position = model::new_timestamp(),
+    };
     vlog(
       tlog.debug,
       "stored wasm binary for transform {} at offset {}",
