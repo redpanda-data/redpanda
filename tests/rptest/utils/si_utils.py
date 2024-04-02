@@ -1209,6 +1209,18 @@ class BucketView:
         else:
             return None
 
+    def _load_manifest_v1_from_data(
+            self, data, manifest_format: Literal['json', 'bin']) -> dict:
+        """
+        Either decode a bin topic_manifest or json load a json topic_manifest.
+        the result is a dict of only the fields that were serialized in v1 of topic_manifest
+        """
+        if manifest_format == 'bin':
+            return OfflineLogViewer(self.redpanda).read_bin_topic_manifest(
+                data, return_legacy_format=True)
+        else:
+            return json.loads(data)
+
     def _load_topic_manifest(self, topic: NT, path: str,
                              manifest_format: Literal['json', 'bin']):
         try:
@@ -1217,12 +1229,8 @@ class BucketView:
             self.logger.debug(f"Exception loading {path}: {e}")
             raise KeyError(f"Manifest for topic {topic} not found")
 
-        manifest = {}
-        if manifest_format == 'bin':
-            manifest = OfflineLogViewer(self.redpanda).read_bin_topic_manifest(
-                data, return_legacy_format=True)
-        else:
-            manifest = json.loads(data)
+        manifest = self._load_manifest_v1_from_data(
+            data, manifest_format=manifest_format)
 
         self.logger.debug(
             f"Loaded topic manifest {topic}: {pprint.pformat(manifest)}")
@@ -1231,6 +1239,9 @@ class BucketView:
         return manifest
 
     def get_topic_manifest(self, topic: NT) -> dict:
+        """
+        try to download a topic_manifest.bin for topic. if no object is found, fallback to topic_manifest.json
+        """
         if topic in self._state.topic_manifests:
             return self._state.topic_manifests[topic]
 
