@@ -12,3 +12,4 @@
 !tests/rptest/remote_scripts
 !tests/protobuf
 !lsan_suppressions.txt
+!ubsan_suppressions.txt
