@@ -219,7 +219,7 @@ ss::future<> metadata_cache::refresh_health_monitor() {
     co_await _health_monitor.local().refresh_info();
 }
 
-cluster::partition_leaders_table::leaders_info_t
+ss::future<cluster::partition_leaders_table::leaders_info_t>
 metadata_cache::get_leaders() const {
     return _leaders.local().get_leaders();
 }

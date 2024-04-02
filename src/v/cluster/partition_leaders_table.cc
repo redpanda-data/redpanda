@@ -371,25 +371,39 @@ void partition_leaders_table::reset() {
     ++_topic_map_version;
 }
 
-partition_leaders_table::leaders_info_t
+ss::future<partition_leaders_table::leaders_info_t>
 partition_leaders_table::get_leaders() const {
     leaders_info_t ans;
     ans.reserve(_topic_leaders.size());
-    for (const auto& [tp_ns, partition_leaders] : _topic_leaders) {
-        for (const auto& [p_id, leader_info] : partition_leaders) {
-            leader_info_t info{
-              .tp_ns = tp_ns,
-              .pid = model::partition_id(p_id),
-              .current_leader = leader_info.current_leader,
-              .previous_leader = leader_info.previous_leader,
-              .last_stable_leader_term = leader_info.last_stable_leader_term,
-              .update_term = leader_info.update_term,
-              .partition_revision = leader_info.partition_revision,
-            };
-            ans.push_back(std::move(info));
-        }
+    auto version_snapshot = _version;
+    ssx::async_counter counter;
+    for (auto& [tp_ns, partition_leaders] : _topic_leaders) {
+        co_await ssx::async_for_each_counter(
+          counter,
+          partition_leaders.begin(),
+          partition_leaders.end(),
+          [this, &tp_ns, &ans, version_snapshot](
+            const partition_leaders::value_type& p) mutable {
+              const auto& [p_id, leader_info] = p;
+              /**
+               * Modification validation must happen before accessing the
+               * element as previous iteration might have yield
+               */
+              throw_if_modified(version_snapshot);
+              leader_info_t info{
+                .tp_ns = tp_ns,
+                .pid = model::partition_id(p_id),
+                .current_leader = leader_info.current_leader,
+                .previous_leader = leader_info.previous_leader,
+                .last_stable_leader_term = leader_info.last_stable_leader_term,
+                .update_term = leader_info.update_term,
+                .partition_revision = leader_info.partition_revision,
+              };
+              ans.push_back(std::move(info));
+          });
+        throw_if_modified(version_snapshot);
     }
-    return ans;
+    co_return ans;
 }
 
 notification_id_type

@@ -14,6 +14,7 @@
 #include "cluster/controller_stm.h"
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/partition_leaders_table.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
@@ -29,6 +30,7 @@
 #include "storage/kvstore.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/http/httpd.hh>
 #include <seastar/json/json_elements.hh>
 
 namespace {
@@ -247,29 +249,36 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::http::request>) {
           vlog(adminlog.info, "Request to get leaders info");
           using result_t = ss::httpd::debug_json::leader_info;
-          // TODO(rockwood): get_leaders can lead to a reactor stall, fix to use
-          // an async version
-          auto leaders_info = _metadata_cache.local().get_leaders();
-          return ss::make_ready_future<ss::json::json_return_type>(
-            ss::json::stream_range_as_array(
-              admin::lw_shared_container(std::move(leaders_info)),
-              [](const auto& leader_info) {
-                  result_t info;
-                  info.ns = leader_info.tp_ns.ns;
-                  info.topic = leader_info.tp_ns.tp;
-                  info.partition_id = leader_info.pid;
-                  info.leader = leader_info.current_leader.has_value()
-                                  ? leader_info.current_leader.value()
-                                  : -1;
-                  info.previous_leader = leader_info.previous_leader.has_value()
-                                           ? leader_info.previous_leader.value()
-                                           : -1;
-                  info.last_stable_leader_term
-                    = leader_info.last_stable_leader_term;
-                  info.update_term = leader_info.update_term;
-                  info.partition_revision = leader_info.partition_revision;
-                  return info;
-              }));
+          using leaders = cluster::partition_leaders_table::leaders_info_t;
+          using cme
+            = cluster::partition_leaders_table::concurrent_modification_error;
+          return _metadata_cache.local()
+            .get_leaders()
+            .handle_exception_type([](const cme& ex) -> ss::future<leaders> {
+                throw ss::httpd::base_exception(
+                  ex.what(), ss::http::reply::status_type::service_unavailable);
+            })
+            .then([](leaders leaders_info) {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::stream_range_as_array(
+                    admin::lw_shared_container(std::move(leaders_info)),
+                    [](const auto& leader_info) {
+                        result_t info;
+                        info.ns = leader_info.tp_ns.ns;
+                        info.topic = leader_info.tp_ns.tp;
+                        info.partition_id = leader_info.pid;
+                        info.leader = leader_info.current_leader.value_or(
+                          model::node_id(-1));
+                        info.previous_leader = leader_info.previous_leader
+                                                 .value_or(model::node_id(-1));
+                        info.last_stable_leader_term
+                          = leader_info.last_stable_leader_term;
+                        info.update_term = leader_info.update_term;
+                        info.partition_revision
+                          = leader_info.partition_revision;
+                        return info;
+                    }));
+            });
       });
 
     register_route<user>(
