@@ -18,6 +18,7 @@ v_cc_library(
     absl::btree
     absl::flat_hash_map
     v::container
+    v::ssx
 )
 
 add_subdirectory(tests)

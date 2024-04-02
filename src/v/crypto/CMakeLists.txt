@@ -18,6 +18,7 @@ v_cc_library(
     DEPS
       absl::node_hash_set
       v::bytes
+      v::ssx
       OpenSSL::SSL
 )
 
