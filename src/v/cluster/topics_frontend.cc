@@ -1099,7 +1099,8 @@ ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
 ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
   model::ntp ntp,
   std::vector<model::broker_shard> new_replica_set,
-  model::timeout_clock::time_point tout) {
+  model::timeout_clock::time_point tout,
+  dispatch_to_leader dispatch) {
     auto leader = _leaders.local().get_leader(model::controller_ntp);
 
     // no leader available
@@ -1107,17 +1108,24 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
         return ss::make_ready_future<std::error_code>(
           errc::no_leader_controller);
     }
-    // optimization: if update is not in progress return early
-    if (!_topics.local().is_update_in_progress(ntp)) {
-        return ss::make_ready_future<std::error_code>(
-          errc::no_update_in_progress);
-    }
+
     // current node is a leader, just replicate
     if (leader == _self) {
+        // optimization: if update is not in progress return early
+        if (!_topics.local().is_update_in_progress(ntp)) {
+            return ss::make_ready_future<std::error_code>(
+              errc::no_update_in_progress);
+        }
+
         finish_moving_partition_replicas_cmd cmd(
           std::move(ntp), std::move(new_replica_set));
 
         return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+    }
+
+    if (!dispatch) {
+        return ss::make_ready_future<std::error_code>(
+          errc::not_leader_controller);
     }
 
     return _connections.local()
