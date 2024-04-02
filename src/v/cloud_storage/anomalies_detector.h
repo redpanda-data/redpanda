@@ -49,14 +49,38 @@ public:
         std::optional<model::offset> last_scrubbed_offset;
         anomalies detected;
         int32_t ops{0};
+        int32_t segments_visited{0};
 
         result& operator+=(result&&);
     };
 
+    using segment_depth_t = named_type<int32_t, struct segment_depth_tag>;
+    struct quota_limit {
+        // max num of GET/HEAD request allowed in a run
+        archival::run_quota_t max_num_operations = archival::run_quota_t::max();
+        // max num of segment_meta to check in a run
+        segment_depth_t max_num_segments = segment_depth_t::max();
+
+        constexpr quota_limit() noexcept = default;
+
+        constexpr quota_limit(archival::run_quota_t q) noexcept
+          : max_num_operations(q) {}
+        constexpr quota_limit(
+          archival::run_quota_t q, segment_depth_t a) noexcept
+          : max_num_operations{q}
+          , max_num_segments{a} {}
+        constexpr quota_limit(segment_depth_t a) noexcept
+          : max_num_segments{a} {}
+    };
+
+    /// \brief run validation up to quota_limit then return
+    /// \param quota_total reprensent the total number of GET request to perform
+    /// (0 will still download some objects, to ensure forward progress) \param
+    /// scrub_from it's the starting offset for the scan
     ss::future<result> run(
       retry_chain_node&,
-      archival::run_quota_t,
-      std::optional<model::offset> = std::nullopt);
+      quota_limit quota_total,
+      std::optional<model::offset> scrub_from = std::nullopt);
 
 private:
     ss::future<std::optional<spillover_manifest>> download_spill_manifest(
@@ -71,6 +95,10 @@ private:
 
     bool should_stop() const;
 
+    /// compute how many segments can be visited, based on _received_quota and
+    /// _result
+    size_t get_visitable_segments() const;
+
     cloud_storage_clients::bucket_name _bucket;
     model::ntp _ntp;
     model::initial_revision_id _initial_rev;
@@ -80,7 +108,7 @@ private:
     ss::abort_source& _as;
 
     result _result;
-    archival::run_quota_t _received_quota;
+    quota_limit _received_quota;
 };
 
 } // namespace cloud_storage

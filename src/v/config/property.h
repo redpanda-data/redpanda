@@ -643,6 +643,9 @@ consteval std::string_view property_type_name() {
         return "string";
     } else if constexpr (std::is_same_v<type, model::write_caching_mode>) {
         return "string";
+    } else if constexpr (std::
+                           is_same_v<type, model::recovery_validation_mode>) {
+        return "recovery_validation_mode";
     } else {
         static_assert(
           utils::unsupported_type<T>::value, "Type name not defined");

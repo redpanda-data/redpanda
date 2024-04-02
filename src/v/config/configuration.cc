@@ -1913,6 +1913,25 @@ configuration::configuration()
       "Retention in bytes for topics created during automated recovery",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_GiB)
+  , cloud_storage_recovery_topic_validation_mode(
+      *this,
+      "cloud_storage_recovery_topic_validation_mode",
+      "Validation mode performed before recovering a topic from cloud storage",
+      {.needs_restart = needs_restart::no,
+       .example = "check_manifest_existence",
+       .visibility = visibility::tunable},
+      model::recovery_validation_mode::check_manifest_existence,
+      {model::recovery_validation_mode::check_manifest_existence,
+       model::recovery_validation_mode::check_manifest_and_segment_metadata,
+       model::recovery_validation_mode::no_check})
+  , cloud_storage_recovery_topic_validation_depth(
+      *this,
+      "cloud_storage_recovery_topic_validation_depth",
+      "Number of segment metadata to validate, from newest to oldest, when "
+      "`cloud_storage_recovery_topic_validation_mode` is "
+      "`check_manifest_and_segment_metadata`",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10)
   , cloud_storage_segment_size_target(
       *this,
       "cloud_storage_segment_size_target",

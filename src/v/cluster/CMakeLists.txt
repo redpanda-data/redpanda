@@ -85,6 +85,8 @@ rpcgen(
 
 v_cc_library(
   NAME cluster
+  HDRS
+    topic_recovery_validator.h
   SRCS
     metadata_cache.cc
     partition_manager.cc
@@ -207,6 +209,7 @@ v_cc_library(
     tx_topic_manager.cc
     shard_placement_table.cc
     shard_balancer.cc
+    topic_recovery_validator.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
