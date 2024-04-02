@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
+#include "hashing/crc32.h"
 #include "metrics/metrics.h"
 #include "net/client_probe.h"
 #include "net/server_probe.h"
@@ -340,15 +341,17 @@ ss::future<ss::shared_ptr<T>> build_reloadable_credentials_with_probe(
   ss::sstring detail,
   ss::tls::reload_callback cb) {
     auto probe = ss::make_lw_shared<net::tls_certificate_probe>();
-    auto wrap_cb = [probe, cb = std::move(cb)](
-                     const std::unordered_set<ss::sstring>& updated,
-                     const ss::tls::certificate_credentials& creds,
-                     const std::exception_ptr& eptr) {
-        if (cb) {
-            cb(updated, eptr);
-        }
-        probe->loaded(creds, eptr);
-    };
+    auto wrap_cb =
+      [probe, cb = std::move(cb)](
+        const std::unordered_set<ss::sstring>& updated,
+        const ss::tls::certificate_credentials& creds,
+        const std::exception_ptr& eptr,
+        std::optional<ss::tls::blob> trust_file_contents = std::nullopt) {
+          if (cb) {
+              cb(updated, eptr);
+          }
+          probe->loaded(creds, eptr, trust_file_contents);
+      };
 
     ss::shared_ptr<T> cred;
     if constexpr (std::is_same<T, ss::tls::server_credentials>::value) {
@@ -359,7 +362,7 @@ ss::future<ss::shared_ptr<T>> build_reloadable_credentials_with_probe(
     }
 
     probe->setup_metrics(std::move(area), std::move(detail));
-    probe->loaded(*cred, nullptr);
+    probe->loaded(*cred, nullptr, builder.get_trust_file_blob());
     co_return cred;
 }
 
@@ -378,7 +381,9 @@ build_reloadable_credentials_with_probe(
   ss::tls::reload_callback cb);
 
 void tls_certificate_probe::loaded(
-  const ss::tls::certificate_credentials& creds, std::exception_ptr ex) {
+  const ss::tls::certificate_credentials& creds,
+  std::exception_ptr ex,
+  std::optional<ss::tls::blob> trust_file_contents) {
     _load_time = clock_type::now();
     reset();
 
@@ -418,6 +423,17 @@ void tls_certificate_probe::loaded(
             _ca.emplace(cert{.expiry = exp, .serial = srl});
         }
     }
+
+    _trust_file_crc32c = [&trust_file_contents]() -> uint32_t {
+        if (!trust_file_contents.has_value()) {
+            return 0u;
+        }
+        crc::crc32c hash;
+        hash.extend(
+          trust_file_contents.value().data(),
+          trust_file_contents.value().size());
+        return hash.value();
+    }();
 }
 
 void tls_certificate_probe::setup_metrics(
@@ -480,6 +496,16 @@ void tls_certificate_probe::setup_metrics(
             [this] { return cert_valid() ? 1 : 0; },
             sm::description("The value is one if the certificate is valid with "
                             "the given truststore, otherwise zero."),
+            labels)
+            .aggregate(aggregate_labels));
+        defs.emplace_back(
+          sm::make_gauge(
+            "trust_file_crc32c",
+            [this] { return cert_valid() ? _trust_file_crc32c : 0; },
+            sm::description(
+              "crc32c calculated from the contents of the trust "
+              "file if loaded certificate is valid and trust store "
+              "is present, otherwise zero."),
             labels)
             .aggregate(aggregate_labels));
         return defs;
