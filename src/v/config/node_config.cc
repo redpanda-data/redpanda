@@ -190,6 +190,35 @@ node_config::node_config() noexcept
       {.visibility = visibility::tunable},
       std::nullopt,
       {.min = 1s})
+  , fips_mode(
+      *this,
+      "fips_mode",
+      "Controls whether or not Redpanda starts in FIPS mode.  In the FIPS "
+      "mode of operation, Redpanda first verifies that the operating system "
+      "is enabled for FIPS by checking /proc/sys/crypto/fips_enabled.  If the "
+      "file does not exist or does not return '1', Redpanda immediately "
+      "exits.  After the check is complete, Redpanda loads the "
+      "OpenSSL FIPS provider into the OpenSSL library.  After this is "
+      "complete, Redpanda is operating in FIPS mode.  This means that the "
+      "available TLS cipher suites available to users are limited to TLSv1.2 "
+      "and TLSv1.3, and of those, only the ones that use NIST-approved "
+      "cryptographic methods.  For more information about FIPS, refer to "
+      "Redpanda documentation.",
+      {.visibility = visibility::user},
+      false)
+  , openssl_config_file(
+      *this,
+      "openssl_config_file",
+      "Path to the configuration file used by OpenSSL to propertly load the "
+      "FIPS-compliant module.",
+      {.visibility = visibility::user},
+      std::nullopt)
+  , openssl_module_directory(
+      *this,
+      "openssl_module_directory",
+      "Path to the directory that contains the OpenSSL FIPS-compliant module.",
+      {.visibility = visibility::user},
+      std::nullopt)
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",
