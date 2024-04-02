@@ -30,6 +30,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/weak_ptr.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <boost/beast/http/error.hpp>
@@ -1299,36 +1300,27 @@ ss::future<upload_result> remote::delete_objects_sequentially(
             .node = std::make_unique<retry_chain_node>(&parent)};
       });
 
-    auto results = co_await ss::do_with(
-      bucket,
-      std::move(key_nodes),
-      std::vector<upload_result>{},
-      [this, ctxlog](auto& bucket, auto& key_nodes, auto& results) {
-          results.reserve(key_nodes.size());
-          return ss::max_concurrent_for_each(
-                   key_nodes.begin(),
-                   key_nodes.end(),
-                   concurrency(),
-                   [this, &bucket, &results, ctxlog](auto& kn) -> ss::future<> {
-                       vlog(ctxlog.trace, "Deleting key {}", kn.key);
-                       return delete_object(bucket, kn.key, *kn.node)
-                         .then([&results](auto result) {
-                             results.push_back(result);
-                         });
-                   })
-            .handle_exception_type([ctxlog](const std::exception& ex) {
-                if (ssx::is_shutdown_exception(std::make_exception_ptr(ex))) {
-                    vlog(
-                      ctxlog.debug,
-                      "Failed to delete keys during shutdown: {}",
-                      ex.what());
-
-                } else {
-                    vlog(ctxlog.error, "Failed to delete keys: {}", ex.what());
-                }
-            })
-            .then([&results] { return results; });
-      });
+    std::vector<upload_result> results;
+    results.reserve(key_nodes.size());
+    auto fut = co_await ss::coroutine::as_future(ss::max_concurrent_for_each(
+      key_nodes.begin(),
+      key_nodes.end(),
+      concurrency(),
+      [this, &bucket, &results, ctxlog](auto& kn) -> ss::future<> {
+          vlog(ctxlog.trace, "Deleting key {}", kn.key);
+          return delete_object(bucket, kn.key, *kn.node)
+            .then([&results](auto result) { results.push_back(result); });
+      }));
+    if (fut.failed()) {
+        std::exception_ptr eptr = fut.get_exception();
+        if (ssx::is_shutdown_exception(eptr)) {
+            vlog(
+              ctxlog.debug, "Failed to delete keys during shutdown: {}", eptr);
+        } else {
+            vlog(ctxlog.error, "Failed to delete keys: {}", eptr);
+        }
+        co_return upload_result::failed;
+    }
 
     if (results.empty()) {
         vlog(ctxlog.error, "No keys were deleted");
