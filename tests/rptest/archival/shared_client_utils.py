@@ -1,7 +1,8 @@
 import re
 from typing import Optional
 
-expr = re.compile(r'.+/(.+)/(.+)/(\d+_\d+/|topic_manifest.json)')
+expr: re.Pattern[str] = re.compile(
+    r'.+/(.+)/(.+)/(\d+_\d+/|topic_manifest\.json|topic_manifest\.bin)')
 
 
 def key_to_topic(key: str) -> Optional[str]:
