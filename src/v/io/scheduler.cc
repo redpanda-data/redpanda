@@ -8,10 +8,10 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "io/scheduler.h"
+#include "scheduler.h"
 
-#include "io/logger.h"
-#include "io/persistence.h"
+#include "logger.h"
+#include "persistence.h"
 
 #include <seastar/core/coroutine.hh>
 

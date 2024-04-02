@@ -8,11 +8,11 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "io/io_queue.h"
+#include "io_queue.h"
 
 #include "base/vassert.h"
 #include "base/vlog.h"
-#include "io/logger.h"
+#include "logger.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>

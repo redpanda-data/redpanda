@@ -96,10 +96,10 @@ add_subdirectory(strings)
 add_subdirectory(crypto)
 add_subdirectory(cloud_roles)
 add_subdirectory(syschecks)
+add_subdirectory(io)
 
 # libraries
 add_subdirectory(test_utils)
-add_subdirectory(io)
 add_subdirectory(ssx)
 add_subdirectory(finjector)
 add_subdirectory(utils)
