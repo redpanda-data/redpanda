@@ -61,6 +61,26 @@ kafka::offset fake_source::latest_offset() {
     return _batches.rbegin()->first;
 }
 
+ss::future<kafka::offset>
+fake_source::offset_at_timestamp(model::timestamp ts, ss::abort_source*) {
+    // Walk through the batches from most recent and look for the first batch
+    // where the timestamp bounds is inclusive of `ts`.
+    for (const auto& batch : _batches) {
+        const auto& header = batch.second.header();
+        if (header.max_timestamp >= ts) {
+            auto delta = (header.first_timestamp - ts).value();
+            for (const auto& r : batch.second.copy_records()) {
+                if (r.timestamp_delta() >= delta) {
+                    co_return kafka::offset(
+                      header.base_offset() + r.offset_delta());
+                }
+            }
+            co_return model::offset_cast(batch.second.header().last_offset());
+        }
+    }
+    co_return kafka::offset{};
+}
+
 ss::future<model::record_batch_reader>
 fake_source::read_batch(kafka::offset offset, ss::abort_source* as) {
     auto sub = as->subscribe([this]() noexcept { _cond_var.broadcast(); });

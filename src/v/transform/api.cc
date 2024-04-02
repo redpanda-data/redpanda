@@ -56,6 +56,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <boost/range/irange.hpp>
 
+#include <optional>
 #include <system_error>
 
 namespace transform {
@@ -143,6 +144,21 @@ public:
               kafka::make_error_code(result.error()).message());
         }
         return model::offset_cast(model::prev_offset(result.value()));
+    }
+
+    ss::future<kafka::offset>
+    offset_at_timestamp(model::timestamp ts, ss::abort_source* as) final {
+        auto result = co_await _partition.timequery(storage::timequery_config(
+          ts,
+          model::offset::max(),
+          /*iop=*/wasm_read_priority(),
+          /*type_filter=*/std::nullopt,
+          /*as=*/*as,
+          /*client_addr=*/std::nullopt));
+        if (!result.has_value()) {
+            co_return kafka::offset::min();
+        }
+        co_return model::offset_cast(result->offset);
     }
 
     ss::future<model::record_batch_reader>

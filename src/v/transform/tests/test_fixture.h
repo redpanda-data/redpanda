@@ -13,6 +13,7 @@
 
 #include "model/record.h"
 #include "model/tests/randoms.h"
+#include "model/timestamp.h"
 #include "model/transform.h"
 #include "ssx/semaphore.h"
 #include "transform/io.h"
@@ -76,6 +77,8 @@ public:
     ss::future<> start() override;
     ss::future<> stop() override;
     kafka::offset latest_offset() override;
+    ss::future<kafka::offset>
+    offset_at_timestamp(model::timestamp, ss::abort_source*) override;
     ss::future<model::record_batch_reader>
     read_batch(kafka::offset offset, ss::abort_source* as) override;
 
