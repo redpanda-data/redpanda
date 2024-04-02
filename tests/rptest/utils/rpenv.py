@@ -39,20 +39,3 @@ class IsCIOrNotEmpty:
 
     def __eq__(self, other: str) -> bool:
         return bool(other) or self.is_ci
-
-
-def skip_if_cloud_type_is(disallowed_values):
-    """
-    Skip a test if the CLOUD_TYPE environment variable matches one of the disallowed values.
-
-    :param disallowed_values: List of string values. The test is skipped if CLOUD_TYPE's value is in this list.
-    
-    Example: @skip_if_cloud_type_is('CLOUD_TYPE_FMC')
-    """
-    def decorator(test_function):
-        # Directly check the 'CLOUD_TYPE' environment variable
-        if os.getenv('CLOUD_TYPE') in disallowed_values:
-            return ignore(test_function)
-        return test_function
-
-    return decorator
