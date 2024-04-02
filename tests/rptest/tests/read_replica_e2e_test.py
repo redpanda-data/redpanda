@@ -299,16 +299,19 @@ class TestReadReplicaService(EndToEndTest):
 
         def check_lwm(new_lwm):
             topics_info = list(rpk.describe_topic(self.topic_name))
+            self.logger.info(f"{self.topic_name} topics_info: {topics_info}")
+            if len(topics_info) == 0:
+                return False
             topic_info = topics_info[0]
             for t in topics_info:
                 if t.id == 0:
                     topic_info = t
                     break
-            assert topic_info.start_offset == new_lwm, topic_info
+            return topic_info.start_offset == new_lwm, topic_info
 
-        check_lwm(0)
+        wait_until(lambda: check_lwm(0), timeout_sec=10, backoff_sec=1)
         set_lwm(5)
-        check_lwm(5)
+        wait_until(lambda: check_lwm(5), timeout_sec=10, backoff_sec=1)
 
         def clusters_report_identical_lwms():
             return lwms_are_identical(self.logger, self.redpanda,
