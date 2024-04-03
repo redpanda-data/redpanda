@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "bytes/iostream.h"
 #include "bytes/scattered_message.h"
+#include "kafka/client/logger.h"
 #include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/delete_records.h"
 #include "kafka/protocol/flex_versions.h"
@@ -120,7 +121,7 @@ public:
     transport(
       net::base_transport::configuration c,
       std::optional<ss::sstring> client_id)
-      : net::base_transport(c)
+      : net::base_transport(c, &kclog)
       , _client_id(std::move(client_id)) {}
 
     /*

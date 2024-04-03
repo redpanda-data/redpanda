@@ -71,7 +71,7 @@ client::client(
   const ss::abort_source* as,
   ss::shared_ptr<client_probe> probe,
   ss::lowres_clock::duration max_idle_time)
-  : net::base_transport(cfg)
+  : net::base_transport(cfg, &http_log)
   , _host_with_port(
       fmt::format("{}:{}", cfg.server_addr.host(), cfg.server_addr.port()))
   , _connect_gate()
