@@ -626,6 +626,17 @@ health_monitor_backend::collect_current_node_health() {
     co_return ret;
 }
 
+ss::future<columnar_node_health_report>
+health_monitor_backend::get_current_node_health() {
+    vlog(clusterlog.debug, "getting current node health");
+    auto it = _reports.find(_self);
+    if (it != _reports.end()) {
+        co_return it->second.copy();
+    }
+
+    co_return co_await collect_current_node_health();
+}
+
 namespace {
 
 struct ntp_report {
