@@ -9,13 +9,13 @@
  * by the Apache License, Version 2.0
  */
 
-#include "rpc_client.h"
+#include "transform/logging/rpc_client.h"
 
 #include "cluster/metadata_cache.h"
 #include "hashing/murmur.h"
+#include "logger.h"
 #include "model/namespace.h"
-#include "transform/logging/logger.h"
-#include "transform/logging/record_batcher.h"
+#include "record_batcher.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/coroutine/as_future.hh>

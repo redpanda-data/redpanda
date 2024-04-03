@@ -12,14 +12,12 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "metrics/metrics.h"
+#include "io.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
 #include "model/transform.h"
-#include "transform/io.h"
-#include "transform/probe.h"
-#include "transform/transfer_queue.h"
+#include "probe.h"
+#include "transfer_queue.h"
 #include "utils/prefix_logger.h"
 #include "wasm/fwd.h"
 

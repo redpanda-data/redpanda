@@ -13,14 +13,12 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "base/vassert.h"
-#include "config/configuration.h"
-#include "model/namespace.h"
+#include "event.h"
+#include "logger.h"
+#include "probes.h"
 #include "random/simple_time_jitter.h"
 #include "strings/utf8.h"
 #include "transform/logging/errc.h"
-#include "transform/logging/io.h"
-#include "transform/logging/logger.h"
-#include "transform/logging/probes.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/manual_clock.hh>

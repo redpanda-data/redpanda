@@ -9,10 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
-#include "transform/transform_offsets_stm.h"
+#include "transform_offsets_stm.h"
 
+#include "logger.h"
 #include "model/metadata.h"
-#include "transform/logger.h"
 
 namespace transform {
 

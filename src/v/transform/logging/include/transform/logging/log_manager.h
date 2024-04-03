@@ -14,7 +14,6 @@
 #include "config/property.h"
 #include "model/transform.h"
 #include "ssx/semaphore.h"
-#include "transform/logging/event.h"
 #include "transform/logging/fwd.h"
 #include "transform/logging/io.h"
 #include "utils/absl_sstring_hash.h"
@@ -22,8 +21,6 @@
 #include <seastar/core/lowres_clock.hh>
 
 #include <absl/container/btree_map.h>
-
-#include <utility>
 
 namespace transform::logging {
 

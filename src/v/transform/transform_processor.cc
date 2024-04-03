@@ -8,19 +8,17 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "transform/transform_processor.h"
+#include "transform_processor.h"
 
 #include "base/units.h"
+#include "logger.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "model/transform.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
-#include "transform/logger.h"
 #include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
@@ -33,7 +31,6 @@
 #include <seastar/util/variant_utils.hh>
 
 #include <algorithm>
-#include <iterator>
 #include <optional>
 
 namespace transform {

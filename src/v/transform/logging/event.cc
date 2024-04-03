@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "transform/logging/event.h"
+#include "event.h"
 
 #include "bytes/streambuf.h"
 #include "json/json.h"

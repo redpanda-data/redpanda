@@ -9,12 +9,6 @@ rpcgen(
 
 v_cc_library(
   NAME transform_rpc
-  HDRS
-    client.h
-    logger.h
-    serde.h
-    service.h
-    deps.h
   SRCS
     client.cc
     logger.cc

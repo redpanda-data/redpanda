@@ -100,6 +100,7 @@ add_subdirectory(syschecks)
 add_subdirectory(io)
 add_subdirectory(ssx)
 add_subdirectory(wasm)
+add_subdirectory(transform)
 
 # libraries
 add_subdirectory(test_utils)
@@ -127,7 +128,6 @@ add_subdirectory(compat)
 add_subdirectory(rp_util)
 add_subdirectory(resource_mgmt)
 add_subdirectory(migrations)
-add_subdirectory(transform)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 

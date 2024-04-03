@@ -1,13 +1,5 @@
 v_cc_library(
   NAME transform
-  HDRS
-    api.h
-    probe.h
-    logger.h
-    transform_processor.h
-    transform_manager.h
-    commit_batcher.h
-    io.h
   SRCS
     api.cc
     probe.cc

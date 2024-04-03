@@ -20,11 +20,10 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/partition_proxy.h"
+#include "logger.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
-#include "model/namespace.h"
 #include "model/transform.h"
-#include "transform/rpc/logger.h"
 #include "transform/transform_offsets_stm.h"
 
 #include <seastar/core/do_with.hh>
