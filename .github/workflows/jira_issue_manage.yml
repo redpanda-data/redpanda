@@ -1,11 +1,18 @@
-name: Create JIRA Issue
+name: Manage JIRA Issue
 on:
   issues:
     types:
       - opened
+      - reopened
+      - edited
+      - closed
+      - deleted
+      - labeled
+      - unlabeled
+
 
 jobs:
-  create_jira_issue:
+  manage_jira_issue:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,7 +24,7 @@ jobs:
         env:
           SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
         run: pip install -r ${SCRIPT_DIR}/requirements.txt
-      - name: Create JIRA Issue
+      - name: Manage JIRA Issue
         env:
           SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN  }}
@@ -27,4 +34,6 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_LABELS: ${{ join(github.event.issue.labels.*.name) }}
-        run: python ${SCRIPT_DIR}/jira_helper.py CREATE_ISSUE --verbose
+          ISSUE_STATE: ${{ github.event.issue.state }}
+          EVENT_NAME: ${{ github.event.action }}
+        run: python ${SCRIPT_DIR}/jira_helper.py ISSUE --verbose
