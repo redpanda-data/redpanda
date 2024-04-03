@@ -67,6 +67,7 @@ The flag '--no-confirm' can be used to avoid the confirmation prompt.
 			}
 		},
 	}
+	p.InstallKafkaFlags(cmd)
 	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt")
 	return cmd
 }

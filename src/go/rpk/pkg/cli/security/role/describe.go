@@ -115,9 +115,13 @@ func describeAndPrintRole(ctx context.Context, admCl *adminapi.AdminAPI, kafkaAd
 	if err != nil {
 		return fmt.Errorf("unable to retrieve role members of role %q: %v", roleName, err)
 	}
-
+	// Do this to avoid printing `null` in --format json
+	members := []adminapi.RoleMember{}
+	if r.Members != nil {
+		members = r.Members
+	}
 	described := describeResponse{
-		Members:     r.Members,
+		Members:     members,
 		Permissions: describedToRoleAcl(results),
 	}
 
@@ -168,7 +172,7 @@ func describeAndPrintRole(ctx context.Context, admCl *adminapi.AdminAPI, kafkaAd
 }
 
 func describedToRoleAcl(results kadm.DescribeACLsResults) []roleACl {
-	var ret []roleACl
+	ret := []roleACl{}
 	for _, f := range results {
 		for _, d := range f.Described {
 			ret = append(ret, roleACl{
