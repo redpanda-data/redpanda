@@ -86,6 +86,10 @@ public:
     void segment_compacted() { ++_segment_compacted; }
     auto get_segments_compacted() const { return _segment_compacted; }
 
+    void add_compaction_removed_bytes(ssize_t bytes) {
+        _compaction_removed_bytes += bytes;
+    }
+
     void batch_write_error(const std::exception_ptr& e) {
         stlog.error("Error writing record batch {}", e);
         ++_batch_write_errors;
@@ -136,6 +140,9 @@ private:
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
     double _compaction_ratio = 1.0;
+
+    ssize_t _compaction_removed_bytes = 0;
+
     metrics::internal_metric_groups _metrics;
 };
 } // namespace storage
