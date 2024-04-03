@@ -10,9 +10,6 @@
 package system
 
 import (
-	"crypto/md5"
-	"encoding/hex"
-	"fmt"
 	"testing"
 	"time"
 
@@ -41,8 +38,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			},
 			opt: []string{"noht"},
 			check: func(fs afero.Fs, grubCfg []string) {
-				md5 := calcMd5(grubCfg)
-				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
+				backupName := "/etc/default/grub.vectorized.2c349a84043328ae3a9f2d021ff143c3.bk"
 				backup, err := utils.ReadFileLines(fs, backupName)
 				require.Nil(t, err)
 				require.Equal(t, grubCfg, backup)
@@ -65,8 +61,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			},
 			opt: []string{"some_opt=2"},
 			check: func(fs afero.Fs, grubCfg []string) {
-				md5 := calcMd5(grubCfg)
-				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
+				backupName := "/etc/default/grub.vectorized.2c349a84043328ae3a9f2d021ff143c3.bk"
 				backup, err := utils.ReadFileLines(fs, backupName)
 				require.Nil(t, err)
 				require.Equal(t, grubCfg, backup)
@@ -88,8 +83,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			},
 			opt: []string{"noht"},
 			check: func(fs afero.Fs, grubCfg []string) {
-				md5 := calcMd5(grubCfg)
-				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
+				backupName := "/etc/default/grub.vectorized.58af885fa59687a5d6184d34945e05c1.bk"
 				backupPresent, _ := afero.Exists(fs, backupName)
 				require.Equal(t, backupPresent, false)
 				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
@@ -110,8 +104,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			},
 			opt: []string{"some_opt=2"},
 			check: func(fs afero.Fs, grubCfg []string) {
-				md5 := calcMd5(grubCfg)
-				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
+				backupName := "/etc/default/grub.vectorized.fc4df103de9bce221b735953fc36d4ad.bk"
 				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
 				backup, err := utils.ReadFileLines(fs, backupName)
 				require.Nil(t, err)
@@ -176,13 +169,4 @@ func getGrubCmdLineOptsLine(configLines []string) []string {
 		}
 	}
 	return nil
-}
-
-func calcMd5(lines []string) string {
-	var data []byte
-	for _, line := range lines {
-		data = append(data, []byte(line+"\n")...)
-	}
-	hash := md5.Sum(data)
-	return hex.EncodeToString(hash[:16])
 }
