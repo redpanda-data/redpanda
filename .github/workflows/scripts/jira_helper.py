@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from atlassian import Jira
 import argparse
 from enum import Enum
 import json
@@ -21,24 +22,24 @@ class MultipleJiraIssuesFound(Exception):
 
 
 class Command(Enum):
-    CREATE_ISSUE = 1
+    ISSUE = 1
     UPDATE_COMMENT = 2
-    REOPEN_ISSUE = 3
-    CLOSE_ISSUE = 4
 
 
 class JiraHelper():
     _base_url = 'https://redpandadata.atlassian.net'
-    _api_version = 2
-    _issue_url = f'{_base_url}/rest/api/{_api_version}/issue'
     _project_key = 'CORE'
-    _done_transition_id = 41
-    _backlog_transition_id = 11
+    _done_status_name = 'DONE'
+    _backlog_status_name = 'BACKLOG'
 
     def __init__(self, command: Command, logger: logging.Logger):
         self.logger: logging.Logger = logger
         self.command: Command = command
         self._check_env()
+        self._jira = Jira(url=self._base_url,
+                          username=os.environ['JIRA_USER'],
+                          password=os.environ['JIRA_TOKEN'],
+                          cloud=True)
 
     @staticmethod
     def _get_auth() -> HTTPBasicAuth:
@@ -57,30 +58,55 @@ class JiraHelper():
         self._check_env_val('JIRA_USER')
         self._check_env_val('JIRA_TOKEN')
 
-        if self.command == Command.CREATE_ISSUE or self.command == Command.REOPEN_ISSUE:
+        if self.command == Command.ISSUE:
             self._check_env_val('ISSUE_BODY')
             self._check_env_val('ISSUE_URL')
             self._check_env_val('ISSUE_TITLE')
             self._check_env_val('ISSUE_LABELS')
+            self._check_env_val('ISSUE_STATE')
+            self._check_env_val('EVENT_NAME')
         elif self.command == Command.UPDATE_COMMENT:
             self._check_env_val('ISSUE_URL')
             self._check_env_val('ISSUE_COMMENT')
-        elif self.command == Command.CLOSE_ISSUE:
-            self._check_env_val('ISSUE_URL')
         else:
             raise NotImplementedError(
                 f"Command {self.command} is not implemented")
 
+    def _get_gh_issue_comments(self, url):
+        return json.loads(
+            self._get_gh_output(f'gh issue view {url} --json comments'))
+
+    def _issue_helper(self):
+        event_name = os.environ['EVENT_NAME']
+        # Make sure the issue is closed
+        issue_is_closed = event_name == "closed" or event_name == "deleted"
+        # If re-opened, then the issue should transition to backlog
+        issue_reopened = event_name == "reopened"
+        issue_edited = event_name == "edited" or event_name == "labeled" or event_name == "unlabeled"
+
+        issue_id = self._find_or_create_issue()
+        self.logger.debug(f'Issue ID: {issue_id}')
+
+        if issue_edited:
+            self.logger.debug(f'Issue {issue_id} has been edited, update it')
+            self._update_issue(issue_id)
+        elif issue_reopened:
+            self.logger.debug(
+                f'Issue {issue_id} reopened... transitioning to {self._backlog_status_name}'
+            )
+            self._reopen_issue(issue_id)
+        elif issue_is_closed:
+            self.logger.debug(
+                f'Issue {issue_id} has been closed, transitioning to {self._done_status_name}'
+            )
+            self._close_issue(issue_id)
+
     def execute(self):
         self.logger.debug(f'Executing command {self.command}')
-        if self.command == Command.CREATE_ISSUE:
-            self._create_issue()
+        if self.command == Command.ISSUE:
+            self._issue_helper()
         elif self.command == Command.UPDATE_COMMENT:
             self._update_comment()
-        elif self.command == Command.REOPEN_ISSUE:
-            self._reopen_issue()
-        elif self.command == Command.CLOSE_ISSUE:
-            self._close_issue()
         else:
             raise NotImplementedError(
                 f'Command {self.command} not yet implemented')
@@ -88,50 +114,44 @@ class JiraHelper():
     def _get_gh_output(self, command) -> str:
         return subprocess.check_output(command.split(' ')).decode()
 
-    def _transition_issue(self, issue_id, transition_id):
-        headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-        payload = json.dumps({"transition": {"id": transition_id}})
-        self._submit_request(method="POST",
-                             endpoint=f'issue/{issue_id}/transitions',
-                             headers=headers,
-                             parameters=None,
-                             data=payload)
-
-    def _close_issue(self):
+    def _transition_issue(self, issue_id, status_name):
         try:
-            issue_id = self._find_jira_issue_by_gh_issue_url()
-            self.logger.debug(f'Closing issue {issue_id}')
-            self._transition_issue(issue_id, self._done_transition_id)
-            self._add_comment_to_issue(
-                issue_id,
-                f"Closing JIRA issue from GitHub issue {os.environ['ISSUE_URL']}"
-            )
+            self._jira.issue_transition(issue_key=issue_id, status=status_name)
+        except Exception as e:
+            if "Issue does not exist" in str(e):
+                raise NoJiraIssueFound()
+            else:
+                raise e
 
-        except NoJiraIssueFound:
-            self.logger.debug(
-                'Did not find JIRA issue matching URL, nothing to do')
+    def _close_issue(self, issue_id):
+        self._transition_issue(issue_id, self._done_status_name)
+        self._add_comment_to_issue(
+            issue_id,
+            f"Closing JIRA issue from GitHub issue {os.environ['ISSUE_URL']}")
 
-    def _reopen_issue(self):
-
+    def _find_or_create_issue(self):
         try:
-            issue_id = self._find_jira_issue_by_gh_issue_url()
-            self.logger.debug(f'Found issue {issue_id}')
-            self._transition_issue(issue_id, self._backlog_transition_id)
-            self._add_comment_to_issue(issue_id, "Reopened issue")
+            return self._find_jira_issue_by_gh_issue_url()
         except NoJiraIssueFound:
-            self.logger.debug(
-                'Did not find JIRA issue matching URL, creating it')
-            issue_id = self._create_issue()
-            issue_comments = json.loads(
-                self._get_gh_output(
-                    f"gh issue view {os.environ['ISSUE_URL']} --json comments")
-            )
-            self.logger.debug(f'Comments: {issue_comments}')
-            for comment in issue_comments['comments']:
-                self._add_comment_to_issue(issue_id, comment['body'])
+            pass
+
+        self.logger.debug("issue doesn't exist... creating it")
+
+        issue_id = self._create_issue()
+        self.logger.debug(f'Created issue {issue_id}, now adding comments')
+        issue_comments = self._get_gh_issue_comments(os.environ['ISSUE_URL'])
+        self.logger.debug(f'Comments: {issue_comments}')
+        for comment in issue_comments['comments']:
+            self._add_comment_to_issue(issue_id, comment['body'])
+
+        return issue_id
+
+    def _reopen_issue(self, issue_id):
+        self._transition_issue(issue_id, self._backlog_status_name)
+        self._add_comment_to_issue(
+            issue_id,
+            f"Reopening JIRA issue from Github issue {os.environ['ISSUE_URL']}"
+        )
 
     def _get_issue_type(self, labels) -> str:
         if 'kind/bug' in labels:
@@ -139,45 +159,38 @@ class JiraHelper():
         else:
             return 'Task'
 
-    def _create_issue(self):
+    def _get_gh_issue_labels(self):
         try:
             labels = os.environ['ISSUE_LABELS']
             self.logger.debug(f'Labels: {labels}')
+            return labels.split(',')
         except Exception:
-            pass
-        headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
+            return []
+
+    def _create_issue(self):
         issue_body = os.environ['ISSUE_BODY']
         issue_url = os.environ['ISSUE_URL']
         issue_title = os.environ['ISSUE_TITLE']
-        labels = os.environ['ISSUE_LABELS'].split(',')
+        labels = self._get_gh_issue_labels()
         issue_type = self._get_issue_type(labels)
-        self.logger.debug(f"Creating an issue of type {issue_type}")
 
-        payload = json.dumps({
-            "fields": {
-                "description": f"{issue_body}",
-                "summary": f"{issue_title}",
-                "issuetype": {
-                    "name": f"{issue_type}"
-                },
-                "labels": labels,
-                "project": {
-                    "key": f"{self._project_key}"
-                },
-                "customfield_10052": f"{issue_url}"
-            }
-        })
-        response = self._submit_request(method="POST",
-                                        endpoint="issue",
-                                        data=payload,
-                                        headers=headers)
-
-        resp_json = json.loads(response.text)
-        issue_key = resp_json['key']
-        issue_id = resp_json['id']
+        fields = {
+            "description": f"{issue_body}",
+            "summary": f"{issue_title}",
+            "issuetype": {
+                "name": f"{issue_type}"
+            },
+            "labels": labels,
+            "project": {
+                "key": f"{self._project_key}"
+            },
+            "customfield_10052": f"{issue_url}"
+        }
+        self.logger.debug(
+            f"Creating an issue of type {issue_type} with fields {fields}")
+        new_issue = self._jira.issue_create(fields=fields)
+        issue_key = new_issue['key']
+        issue_id = new_issue['id']
 
         message = """
 JIRA Issue created from GitHub issue.  Any updates in JIRA will _not_ be pushed back
@@ -203,41 +216,16 @@ issue that triggered this issue's creation.
 
         return issue_id
 
-    def _submit_request(self,
-                        method: str,
-                        endpoint: str,
-                        headers: str,
-                        data=None,
-                        parameters=None,
-                        api_ver: int = 2) -> requests.Response:
-        url = f'{self._base_url}/rest/api/{api_ver}/{endpoint}'
-
-        self.logger.debug(
-            f'Sending {method} request to {url} {f"containing {data}" if data is not None else "with no data"} {f"with parameters {parameters}" if parameters is not None else ""}'
-        )
-
-        resp = requests.request(method=method,
-                                url=url,
-                                data=data if data is not None else None,
-                                headers=headers,
-                                params=parameters if not None else None,
-                                auth=self._get_auth())
-        self.logger.debug(f'Response: {resp.text}')
-        return resp
-
     def _add_comment_to_issue(self, issue_id, comment):
         self.logger.debug(
             f'Updating issue {issue_id} with comment "{comment}"')
-        payload = json.dumps({"body": comment})
-        headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-        self._submit_request(method="POST",
-                             endpoint=f"issue/{issue_id}/comment",
-                             headers=headers,
-                             parameters=None,
-                             data=payload)
+        try:
+            self._jira.issue_add_comment(issue_key=issue_id, comment=comment)
+        except Exception as e:
+            if "Issue does not exist" in str(e):
+                raise NoJiraIssueFound()
+            else:
+                raise e
 
     def _update_comment(self):
         issue_id = self._find_jira_issue_by_gh_issue_url()
@@ -245,30 +233,47 @@ issue that triggered this issue's creation.
         self.logger.debug(f'Found issue with ID {issue_id}')
         self._add_comment_to_issue(issue_id, comment_body)
 
+    def _update_issue(self, issue_id):
+        gh_issue_title = os.environ['ISSUE_TITLE']
+        gh_issue_labels = self._get_gh_issue_labels()
+        gh_issue_labels.sort()
+        self.logger.debug(f'GH Labels: {gh_issue_labels}')
+
+        fields = {}
+        jira_issue_summary = self._jira.issue_field_value(issue_id,
+                                                          field='summary')
+        if jira_issue_summary != gh_issue_title:
+            self.logger.debug(
+                f'Jira issue {issue_id} has a different title: "{jira_issue_summary}" != "{gh_issue_title}")'
+            )
+            fields['summary'] = gh_issue_title
+
+        jira_issue_labels = self._jira.issue_field_value(issue_id,
+                                                         field='labels')
+        jira_issue_labels.sort()
+        if jira_issue_labels != gh_issue_labels:
+            self.logger.debug(
+                f'Jira issue {issue_id} labels do not match GH issue: "{jira_issue_labels}" != "{gh_issue_labels}"'
+            )
+            fields['labels'] = gh_issue_labels
+
+        if len(fields) == 0:
+            self.logger.debug('No updates necessary')
+        else:
+            self.logger.debug(f'Submitting update: {fields}')
+            self._jira.update_issue_field(issue_id, fields, notify_users=True)
+
     def _find_jira_issue_by_gh_issue_url(self) -> str:
         issue_url = os.environ['ISSUE_URL']
-
-        query = {
-            'jql':
-            f'project = {self._project_key} and "External GitHub Issue[URL Field]" = "{issue_url}"',
-            'fields': 'summary'
-        }
-
-        headers = {'Accept': 'application/json'}
-
-        resp = json.loads(
-            self._submit_request(method="GET",
-                                 endpoint="search",
-                                 data=None,
-                                 parameters=query,
-                                 headers=headers).text)
-        total_issues = resp["total"]
-        if total_issues == 0:
+        jql_request = f'project = {self._project_key} and "External GitHub Issue[URL Field]" = "{issue_url}"'
+        issues = self._jira.jql(jql=jql_request, fields='summary')
+        issues = issues['issues']
+        if len(issues) == 0:
             raise NoJiraIssueFound()
-        elif total_issues > 1:
+        elif len(issues) > 1:
             raise MultipleJiraIssuesFound()
-
-        return resp["issues"][0]["id"]
+        else:
+            return issues[0]["id"]
 
 
 def parse_args() -> Tuple[Command, bool]:
