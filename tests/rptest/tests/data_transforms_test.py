@@ -13,6 +13,7 @@ import random
 import string
 import json
 from typing import Optional
+import concurrent.futures
 
 from requests.exceptions import RequestException
 
@@ -337,6 +338,40 @@ class DataTransformsChainingTest(BaseDataTransformsTest):
                                                      timeout_sec=60)
         self.logger.info(f"{consumer_status}")
         assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+
+
+class DataTransformsMultipleOutputTopicsTest(BaseDataTransformsTest):
+    """
+    Tests related to WebAssembly powered data transforms that write to multiple output topics.
+    """
+    topics = [TopicSpec(partition_count=3) for i in range(9)]
+
+    @cluster(num_nodes=6)
+    def test_multiple_output_topics(self):
+        """
+        Test that we write to all output topics (using a tee transform) with each output topic being valid.
+        """
+        self._deploy_wasm("tee-xform",
+                          input_topic=self.topics[0],
+                          output_topic=self.topics[1:],
+                          file="tinygo/tee.wasm")
+        producer_status = self._produce_input_topic(topic=self.topics[0])
+
+        def validate_output(topic: TopicSpec,
+                            producer_status: TransformVerifierProduceStatus):
+            consumer_status = self._consume_output_topic(
+                topic=topic, status=producer_status, timeout_sec=60)
+            self.logger.info(f"{topic.name}={consumer_status}")
+            assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records for topic {topic.name}: {consumer_status}"
+
+        # Limit concurrency to the number of available nodes that we have to schedule on.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            tasks = [
+                executor.submit(validate_output, topic, producer_status)
+                for topic in self.topics[1:]
+            ]
+            for task in concurrent.futures.as_completed(tasks):
+                task.result()  # Will throw if failed
 
 
 class Move(typing.NamedTuple):
