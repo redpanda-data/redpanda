@@ -263,4 +263,24 @@ std::ostream& operator<<(std::ostream& o, const get_cluster_health_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const cluster_health_overview& ho) {
+    fmt::print(
+      o,
+      "{{controller_id: {}, nodes: {}, unhealthy_reasons: {}, nodes_down: {}, "
+      "nodes_in_recovery_mode: {}, bytes_in_cloud_storage: {}, "
+      "leaderless_count: {}, under_replicated_count: {}, "
+      "leaderless_partitions: {}, under_replicated_partitions: {}}}",
+      ho.controller_id,
+      ho.all_nodes,
+      ho.unhealthy_reasons,
+      ho.nodes_down,
+      ho.nodes_in_recovery_mode,
+      ho.bytes_in_cloud_storage,
+      ho.leaderless_count,
+      ho.under_replicated_count,
+      ho.leaderless_partitions,
+      ho.under_replicated_partitions);
+    return o;
+}
+
 } // namespace cluster
