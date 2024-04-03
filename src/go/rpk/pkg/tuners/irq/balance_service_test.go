@@ -66,7 +66,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 		initFilename   string
 		backupFilename string
 		before         func(afero.Fs)
-		assert         func(afero.Fs, string, []string, []string)
+		assert         func(afero.Fs, string, []string)
 	}{
 		{
 			name: "Shall update the config and then restart IRQ " +
@@ -85,7 +85,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			backupFilename: "/etc/sysconfig/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
 			before: func(fs afero.Fs) {
 			},
-			assert: func(fs afero.Fs, initFilename string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
 				fileContent, err := utils.ReadFileLines(fs, initFilename)
@@ -114,7 +114,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			backupFilename: "/etc/sysconfig/irqbalance.vectorized.c4ba5602ec37edc880b3716f834f5d0a.bk",
 			before: func(fs afero.Fs) {
 			},
-			assert: func(fs afero.Fs, initFilename string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
 				require.Equal(t, 3, len(backupContent))
 				// Check if IRQs were banned in the file
 				fileContent, err := utils.ReadFileLines(fs, initFilename)
@@ -144,7 +144,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			backupFilename: "/etc/sysconfig/irqbalance.vectorized.c4ba5602ec37edc880b3716f834f5d0a.bk",
 			before: func(fs afero.Fs) {
 			},
-			assert: func(fs afero.Fs, initFilename string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
 				require.Equal(t, 3, len(backupContent))
 				// Check if IRQs were banned in the file
 				fileContent, err := utils.ReadFileLines(fs, initFilename)
@@ -171,7 +171,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs, []string{"systemd"}, "/proc/1/comm")
 			},
-			assert: func(fs afero.Fs, initFilename string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
 				fileContent, err := utils.ReadFileLines(fs, initFilename)
@@ -198,7 +198,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs, []string{"init"}, "/proc/1/comm")
 			},
-			assert: func(fs afero.Fs, initFilename string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
 				fileContent, err := utils.ReadFileLines(fs, initFilename)
@@ -225,7 +225,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			// Check if backup is created
 			backupFileContent, err := utils.ReadFileLines(fs, tt.backupFilename)
 			require.NoError(t, err)
-			tt.assert(fs, tt.initFilename, tt.configFile, backupFileContent)
+			tt.assert(fs, tt.initFilename, backupFileContent)
 		})
 	}
 }
