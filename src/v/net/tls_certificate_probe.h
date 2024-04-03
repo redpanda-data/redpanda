@@ -39,7 +39,9 @@ public:
     ~tls_certificate_probe() = default;
 
     void loaded(
-      const ss::tls::certificate_credentials& creds, std::exception_ptr ex);
+      const ss::tls::certificate_credentials& creds,
+      std::exception_ptr ex,
+      std::optional<ss::tls::blob> trust_file_contents);
 
     void setup_metrics(std::string_view area, std::string_view detail);
 
@@ -55,6 +57,7 @@ private:
     std::optional<cert> _cert;
     std::optional<cert> _ca;
     bool _cert_loaded{false};
+    uint32_t _trust_file_crc32c;
 
     bool cert_valid() const {
         auto now = clock_type::now();
@@ -66,6 +69,7 @@ private:
 
     void reset() {
         _cert_loaded = false;
+        _trust_file_crc32c = 0;
         _cert.reset();
         _ca.reset();
     }

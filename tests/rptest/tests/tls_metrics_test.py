@@ -12,6 +12,7 @@ import socket
 import time
 from datetime import datetime, timedelta
 from typing import Optional, Callable
+import crc32c
 
 from ducktape.cluster.cluster import ClusterNode
 
@@ -70,6 +71,7 @@ class TLSMetricsTestBase(RedpandaTest):
         'loaded_at_timestamp_seconds',
         'certificate_valid',
         'certificate_serial',
+        'trust_file_crc32c',
     ]
 
     EXPECTED_LABELS: list[str] = [
@@ -299,6 +301,39 @@ class TLSMetricsTest(TLSMetricsTestBase):
             'loaded'], f"Unexpected status after reload: {json.dumps(status_after)}"
         assert status_before['expiry'] + five_days < status_after[
             'expiry'], f"Unexpected status after reload: {json.dumps(status_after)}"
+
+    @cluster(num_nodes=3)
+    def test_crc32c(self):
+        node = self.redpanda.nodes[0]
+
+        def check_crc():
+            metrics_samples = self._get_metrics_from_node(
+                node, ['trust_file_crc32c'])
+            assert metrics_samples is not None, "Failed to get metrics"
+            vals = self._unpack_samples(metrics_samples)['trust_file_crc32c']
+
+            assert len(vals) > 0, "Missing crc metrics for some reason"
+
+            expected = crc32c.crc32c(
+                open(self.security.tls_provider.ca.crt, 'rb').read())
+
+            for v in vals:
+                got = int(v['value'])
+                assert got == expected, f"Expected {expected}; Got {got}"
+
+            return expected
+
+        original = check_crc()
+
+        self.security.tls_provider = FaketimeTLSProvider(
+            tls=tls.TLSCertManager(self.logger, cert_expiry_days=10))
+
+        self.redpanda.set_security_settings(self.security)
+        self.redpanda.write_tls_certs()
+
+        reloaded = check_crc()
+
+        assert original != reloaded, f"Checksums unexpectedly equal"
 
 
 class TLSMetricsTestChain(TLSMetricsTestBase):
