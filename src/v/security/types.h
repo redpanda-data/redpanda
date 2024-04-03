@@ -24,4 +24,6 @@ using credential_password
 
 using role_name = named_type<ss::sstring, struct role_name_type>;
 
+static constexpr std::string_view default_role_name = "Users";
+
 } // namespace security

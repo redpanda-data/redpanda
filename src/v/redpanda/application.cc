@@ -90,6 +90,7 @@
 #include "kafka/server/snc_quota_manager.h"
 #include "kafka/server/usage_manager.h"
 #include "migrations/migrators.h"
+#include "migrations/rbac_migrator.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "net/dns.h"
@@ -2464,6 +2465,8 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         _migrators.push_back(
           std::make_unique<features::migrators::cloud_storage_config>(
             *controller));
+        _migrators.push_back(
+          std::make_unique<features::migrators::rbac_migrator>(*controller));
     }
 
     if (cd.is_cluster_founder().get()) {

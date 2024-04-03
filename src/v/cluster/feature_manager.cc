@@ -19,6 +19,7 @@
 #include "cluster/members_table.h"
 #include "config/configuration.h"
 #include "config/validators.h"
+#include "features/feature_state.h"
 #include "features/feature_table.h"
 #include "model/timeout_clock.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
