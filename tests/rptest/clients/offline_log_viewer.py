@@ -8,6 +8,8 @@
 # by the Apache License, Version 2.0
 
 import json
+import subprocess
+import uuid
 
 
 class OfflineLogViewer:
@@ -42,3 +44,24 @@ class OfflineLogViewer:
 
     def read_consumer_offsets(self, node):
         return self._json_cmd(node, "--type consumer_offsets")
+
+    def read_bin_topic_manifest(self, bin_data, return_legacy_format=True):
+        """
+        copy bin_data to a local file, invoke the tool with it and 
+        return a dict with the decoded result. 
+        return_legacy_format=True produces an output like the original 
+        topic_manifest.json
+        """
+        path = f"/tmp/{str(uuid.uuid4())}.topic_manifest.bin"
+        with open(path, "wb") as f:
+            f.write(bin_data)
+
+        cmd = f"python3 /opt/scripts/offline_log_viewer/viewer.py --type { 'topic_manifest_legacy' if return_legacy_format else 'topic_manifest' } --path {path}"
+        json_out = subprocess.Popen(cmd, shell=True,
+                                    stdout=subprocess.PIPE).stdout.read()
+        try:
+            return json.loads(json_out)
+        except json.decoder.JSONDecodeError:
+            # Log the bad output before re-raising
+            self._redpanda.logger.error(f"Invalid JSON output: {json_out}")
+            raise

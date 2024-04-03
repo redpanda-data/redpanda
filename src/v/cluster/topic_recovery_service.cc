@@ -32,7 +32,7 @@
 namespace {
 
 const std::regex manifest_path_expr{
-  R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest.json)REGEX"};
+  R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest\.(json|bin))REGEX"};
 
 // Possible prefix for a path which contains a topic manifest file
 const std::regex prefix_expr{"[a-fA-F0-9]0000000/"};
@@ -394,7 +394,8 @@ static cluster::topic_configuration make_topic_config(
     topic_properties.timestamp_type = manifest_props.timestamp_type;
     topic_properties.shadow_indexing = model::shadow_indexing_mode::full;
     topic_properties.recovery = true;
-    topic_properties.mpx_virtual_cluster_id = manifest_props.virtual_cluster_id;
+    topic_properties.mpx_virtual_cluster_id
+      = manifest_props.mpx_virtual_cluster_id;
 
     if (request.retention_bytes().has_value()) {
         topic_properties.retention_local_target_bytes = tristate<size_t>{
@@ -495,13 +496,21 @@ ss::future<result<cloud_storage::topic_manifest, recovery_error_ctx>>
 topic_recovery_service::download_manifest(ss::sstring path) {
     cloud_storage::topic_manifest m;
     auto fib = make_rtc(_as, _config);
+    auto expected_format = path.ends_with("json") ? manifest_format::json
+                                                  : manifest_format::serde;
     try {
         auto download_r = co_await _remote.local().download_manifest(
-          _config.bucket, remote_manifest_path{path}, m, fib);
+          _config.bucket,
+          {expected_format, remote_manifest_path{path}},
+          m,
+          fib);
         if (download_r != download_result::success) {
             auto error = recovery_error_ctx::make(
               fmt::format(
-                "failed to download manifest from {}: {}", path, download_r),
+                "failed to download manifest from {} format {}: {}",
+                path,
+                expected_format,
+                download_r),
               recovery_error_code::error_downloading_manifest);
             vlog(cst_log.error, "{}", error.context);
             co_return error;
@@ -511,7 +520,10 @@ topic_recovery_service::download_manifest(ss::sstring path) {
     } catch (const std::exception& ex) {
         auto error = recovery_error_ctx::make(
           fmt::format(
-            "failed to download manifest from {}: {}", path, ex.what()),
+            "failed to download manifest from {} format {}: {}",
+            path,
+            expected_format,
+            ex.what()),
           recovery_error_code::error_downloading_manifest);
         vlog(cst_log.error, "{}", error.context);
         co_return error;

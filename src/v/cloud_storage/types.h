@@ -93,8 +93,6 @@ enum class tx_range_manifest_version : int32_t {
     compat_version = v1,
 };
 
-static constexpr int32_t topic_manifest_version = 1;
-
 std::ostream& operator<<(std::ostream& o, const download_result& r);
 
 std::ostream& operator<<(std::ostream& o, const upload_result& r);
@@ -104,26 +102,6 @@ struct offset_range {
     kafka::offset end;
     model::offset begin_rp;
     model::offset end_rp;
-};
-
-/// Topic configuration substitute for the manifest
-struct manifest_topic_configuration {
-    model::topic_namespace tp_ns;
-    int32_t partition_count;
-    int32_t replication_factor;
-    struct topic_properties {
-        std::optional<model::compression> compression;
-        std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
-        std::optional<model::compaction_strategy> compaction_strategy;
-        std::optional<model::timestamp_type> timestamp_type;
-        std::optional<size_t> segment_size;
-        tristate<size_t> retention_bytes{std::nullopt};
-        tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
-        std::optional<model::vcluster_id> virtual_cluster_id;
-        bool operator==(const topic_properties& other) const = default;
-    };
-    topic_properties properties;
-    bool operator==(const manifest_topic_configuration& other) const = default;
 };
 
 struct segment_meta {
