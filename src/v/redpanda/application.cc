@@ -2131,9 +2131,11 @@ void application::wire_up_and_start_crypto_services() {
     construct_service(
       ossl_context_service,
       std::ref(*thread_worker),
-      ss::sstring{},
-      ss::sstring{},
-      crypto::is_fips_mode::no)
+      ss::sstring{config::node_config().openssl_config_file().value_or("")},
+      ss::sstring{
+        config::node_config().openssl_module_directory().value_or("")},
+      config::node_config().fips_mode() ? crypto::is_fips_mode::yes
+                                        : crypto::is_fips_mode::no)
       .get();
     ossl_context_service.invoke_on_all(&crypto::ossl_context_service::start)
       .get();
