@@ -55,4 +55,5 @@ jobs:
     - name: Check goreleaser configuration file
       uses: goreleaser/goreleaser-action@v5
       with:
+        version: v1.24.0
         args: check src/go/.goreleaser.yaml
