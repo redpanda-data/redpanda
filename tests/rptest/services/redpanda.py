@@ -29,7 +29,7 @@ import zipfile
 import pathlib
 import shlex
 from enum import Enum, IntEnum
-from typing import Callable, Mapping, Optional, Protocol, Tuple, Any, Type, cast
+from typing import Callable, List, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
 
 import yaml
 from ducktape.services.service import Service
@@ -2394,7 +2394,7 @@ class RedpandaService(RedpandaServiceBase):
                 'seastar_memory': 'debug'
             })
 
-        self._started = []
+        self._started: Set[ClusterNode] = set()
 
         self._raise_on_errors = self._context.globals.get(
             self.RAISE_ON_ERRORS_KEY, True)
@@ -2575,11 +2575,10 @@ class RedpandaService(RedpandaServiceBase):
 
     def wait_for_membership(self, first_start, timeout_sec=30):
         self.logger.info("Waiting for all brokers to join cluster")
-        expected = set(self._started)
 
         wait_until(lambda: {n
                             for n in self._started
-                            if self.registered(n)} == expected,
+                            if self.registered(n)} == self._started,
                    timeout_sec=timeout_sec,
                    backoff_sec=self._startup_poll_interval(first_start),
                    err_msg="Cluster membership did not stabilize")
@@ -3026,7 +3025,7 @@ class RedpandaService(RedpandaServiceBase):
         self.logger.debug(f"Node status prior to redpanda startup:")
         self.start_service(node, start_rp)
         if not expect_fail:
-            self._started.append(node)
+            self._started.add(node)
 
     def start_node_with_rpk(self, node, additional_args="", clean_node=True):
         """
@@ -3071,7 +3070,7 @@ class RedpandaService(RedpandaServiceBase):
 
         self.logger.debug(f"Node status prior to redpanda startup:")
         self.start_service(node, start_rp)
-        self._started.append(node)
+        self._started.add(node)
 
         # We need to manually read the config from the file and add it
         # to _node_configs since we use rpk to write the file instead of
@@ -3691,8 +3690,7 @@ class RedpandaService(RedpandaServiceBase):
             self._started.remove(node)
 
     def add_to_started_nodes(self, node):
-        if node not in self._started:
-            self._started.append(node)
+        self._started.add(node)
 
     def clean(self, **kwargs):
         super().clean(**kwargs)
@@ -3771,8 +3769,8 @@ class RedpandaService(RedpandaServiceBase):
 
             raise e
 
-    def started_nodes(self):
-        return self._started
+    def started_nodes(self) -> List[ClusterNode]:
+        return list(self._started)
 
     def render(self, path, **kwargs):
         with self.config_file_lock:
@@ -4248,7 +4246,8 @@ class RedpandaService(RedpandaServiceBase):
                      limit=None,
                      listener: str = "dnslistener") -> list[str]:
         brokers = [
-            self.broker_address(n, listener) for n in self._started[:limit]
+            self.broker_address(n, listener)
+            for n in list(self._started)[:limit]
         ]
         brokers = [b for b in brokers if b is not None]
         random.shuffle(brokers)
@@ -4256,7 +4255,8 @@ class RedpandaService(RedpandaServiceBase):
 
     def schema_reg(self, limit=None) -> str:
         schema_reg = [
-            f"http://{n.account.hostname}:8081" for n in self._started[:limit]
+            f"http://{n.account.hostname}:8081"
+            for n in list(self._started)[:limit]
         ]
         return ",".join(schema_reg)
 
