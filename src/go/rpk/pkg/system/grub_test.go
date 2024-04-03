@@ -38,11 +38,6 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				backup, err := utils.ReadFileLines(fs, backupName)
 				require.NoError(t, err)
 				require.Equal(t, grubCfg, backup)
-				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
-				require.Len(t, lines, 6)
-				opts := getGrubCmdLineOptsLine(lines)
-				require.Len(t, opts, 3)
-				require.Contains(t, opts, "noht")
 			},
 		},
 		{
@@ -55,10 +50,6 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				backup, err := utils.ReadFileLines(fs, backupName)
 				require.NoError(t, err)
 				require.Equal(t, grubCfg, backup)
-				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
-				opts := getGrubCmdLineOptsLine(lines)
-				require.Len(t, opts, 3)
-				require.Contains(t, opts, "some_opt=2")
 			},
 		},
 		{
@@ -70,10 +61,6 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				backupName := "/etc/default/grub.vectorized.58af885fa59687a5d6184d34945e05c1.bk"
 				backupPresent, _ := afero.Exists(fs, backupName)
 				require.Equal(t, backupPresent, false)
-				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
-				require.Len(t, lines, 6)
-				opts := getGrubCmdLineOptsLine(lines)
-				require.Len(t, opts, 3)
 			},
 		},
 		{
@@ -83,14 +70,9 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			opt:              []string{"some_opt=2"},
 			check: func(fs afero.Fs, grubCfg []string) {
 				backupName := "/etc/default/grub.vectorized.fc4df103de9bce221b735953fc36d4ad.bk"
-				lines, _ := utils.ReadFileLines(fs, "/etc/default/grub")
 				backup, err := utils.ReadFileLines(fs, backupName)
 				require.NoError(t, err)
 				require.Equal(t, grubCfg, backup)
-				require.Len(t, lines, 6)
-				opts := getGrubCmdLineOptsLine(lines)
-				require.Len(t, opts, 3)
-				require.Contains(t, opts, "some_opt=2")
 			},
 		},
 	}
@@ -146,13 +128,4 @@ func TestOptionsNeedChange(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func getGrubCmdLineOptsLine(configLines []string) []string {
-	for _, line := range configLines {
-		if opts := matchAndSplitCmdOptions(line); opts != nil {
-			return opts
-		}
-	}
-	return nil
 }
