@@ -861,6 +861,8 @@ void application::hydrate_config(const po::variables_map& cfg) {
 }
 
 void application::check_environment() {
+    static constexpr std::string_view fips_enabled_file
+      = "/proc/sys/crypto/fips_enabled";
     syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
     syschecks::memory(config::node().developer_mode());
@@ -883,6 +885,26 @@ void application::check_environment() {
               "expected filesystem mounted?",
               strict_data_dir_file));
         }
+    }
+
+    if (config::node().fips_mode()) {
+        if (!ss::file_exists(fips_enabled_file).get()) {
+            throw std::runtime_error(fmt::format(
+              "File '{}' does not exist.  Redpanda cannot start in FIPS mode",
+              fips_enabled_file));
+        }
+
+        auto fd = ss::file_desc::open(fips_enabled_file.data(), O_RDONLY);
+        char buf[1];
+        fd.read(buf, 1);
+        if (buf[0] != '1') {
+            throw std::runtime_error(fmt::format(
+              "File '{}' not reporting '1': '{}'.  Redpanda cannot start in "
+              "FIPS mode",
+              fips_enabled_file,
+              std::string(&buf[0], 1)));
+        }
+        syschecks::systemd_message("Starting Redpanda in FIPS mode").get();
     }
 }
 
