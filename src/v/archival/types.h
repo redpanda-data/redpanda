@@ -200,7 +200,7 @@ struct adjacent_segment_run {
 std::ostream& operator<<(std::ostream& o, const adjacent_segment_run& run);
 
 enum class error_outcome {
-    unexpected_failure,
+    unexpected_failure = 1,
     timed_out,
     out_of_range,
     offset_not_found,
@@ -246,3 +246,8 @@ inline std::error_code make_error_code(error_outcome e) noexcept {
 }
 
 } // namespace archival
+
+namespace std {
+template<>
+struct is_error_code_enum<archival::error_outcome> : true_type {};
+} // namespace std
