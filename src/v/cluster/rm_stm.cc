@@ -1108,6 +1108,8 @@ ss::future<result<kafka_result>> rm_stm::do_sync_and_transactional_replicate(
           bid.first_seq,
           bid.last_seq);
         if (result.error() == errc::sequence_out_of_order) {
+            // no need to hold while the barrier is in progress.
+            units.return_all();
             auto barrier = co_await _raft->linearizable_barrier();
             if (!barrier) {
                 co_return errc::not_leader;
@@ -1257,6 +1259,10 @@ ss::future<result<kafka_result>> rm_stm::do_sync_and_idempotent_replicate(
           bid.first_seq,
           bid.last_seq);
         if (result.error() == errc::sequence_out_of_order) {
+            // release the lock so it is not held for the duration of the
+            // barrier, other requests can make progress if they are
+            // in the right sequence.
+            units.return_all();
             // Ensure we are actually the leader and request didn't
             // ooosn on a stale state. If we are not the leader return
             // a retryable error code to the client.
