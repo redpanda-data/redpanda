@@ -34,7 +34,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			grubWantFilename: "testdata/grub-00-want",
 			opt:              []string{"noht"},
 			check: func(fs afero.Fs, grubCfg []string) {
-				backupName := "/etc/default/grub.vectorized.2c349a84043328ae3a9f2d021ff143c3.bk"
+				backupName := "/etc/default/grub.vectorized.9be9f2dfe19f13b03e09fcc75648d4ec.bk"
 				backup, err := utils.ReadFileLines(fs, backupName)
 				require.NoError(t, err)
 				require.Equal(t, grubCfg, backup)
@@ -46,7 +46,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			grubWantFilename: "testdata/grub-01-want",
 			opt:              []string{"some_opt=2"},
 			check: func(fs afero.Fs, grubCfg []string) {
-				backupName := "/etc/default/grub.vectorized.2c349a84043328ae3a9f2d021ff143c3.bk"
+				backupName := "/etc/default/grub.vectorized.9be9f2dfe19f13b03e09fcc75648d4ec.bk"
 				backup, err := utils.ReadFileLines(fs, backupName)
 				require.NoError(t, err)
 				require.Equal(t, grubCfg, backup)
@@ -58,7 +58,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			grubWantFilename: "testdata/grub-02-want",
 			opt:              []string{"noht"},
 			check: func(fs afero.Fs, grubCfg []string) {
-				backupName := "/etc/default/grub.vectorized.58af885fa59687a5d6184d34945e05c1.bk"
+				backupName := "/etc/default/grub.vectorized.dc06cc27c72e64f17e5dd411d5f2b1b2.bk"
 				backupPresent, _ := afero.Exists(fs, backupName)
 				require.Equal(t, backupPresent, false)
 			},
@@ -69,7 +69,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			grubWantFilename: "testdata/grub-03-want",
 			opt:              []string{"some_opt=2"},
 			check: func(fs afero.Fs, grubCfg []string) {
-				backupName := "/etc/default/grub.vectorized.fc4df103de9bce221b735953fc36d4ad.bk"
+				backupName := "/etc/default/grub.vectorized.f88adb8d4d821d657e1d24d1d87a854e.bk"
 				backup, err := utils.ReadFileLines(fs, backupName)
 				require.NoError(t, err)
 				require.Equal(t, grubCfg, backup)

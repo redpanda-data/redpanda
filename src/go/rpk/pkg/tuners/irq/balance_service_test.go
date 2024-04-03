@@ -83,7 +83,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			bannedIRQs:            []int{5, 12, 15},
 			testadataInitFilename: "testdata/irqbalance-00-init",
 			configFilename:        "/etc/sysconfig/irqbalance",
-			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
+			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.911727b5a516f8e315b36f97e54facda.bk",
 			before: func(fs afero.Fs) {
 			},
 			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
@@ -108,7 +108,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			bannedIRQs:            []int{12, 15},
 			testadataInitFilename: "testdata/irqbalance-01-init",
 			configFilename:        "/etc/sysconfig/irqbalance",
-			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.c4ba5602ec37edc880b3716f834f5d0a.bk",
+			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.0716a9160d4e30cc6d859900076c4dc8.bk",
 			before: func(fs afero.Fs) {
 			},
 			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
@@ -133,7 +133,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			bannedIRQs:            []int{5, 12, 15},
 			testadataInitFilename: "testdata/irqbalance-02-init",
 			configFilename:        "/etc/sysconfig/irqbalance",
-			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.c4ba5602ec37edc880b3716f834f5d0a.bk",
+			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.0716a9160d4e30cc6d859900076c4dc8.bk",
 			before: func(fs afero.Fs) {
 			},
 			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
@@ -159,7 +159,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			bannedIRQs:            []int{5, 12, 15},
 			testadataInitFilename: "testdata/irqbalance-03-init",
 			configFilename:        "/etc/conf.d/irqbalance",
-			backupFilename:        "/etc/conf.d/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
+			backupFilename:        "/etc/conf.d/irqbalance.vectorized.911727b5a516f8e315b36f97e54facda.bk",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs, []string{"systemd"}, "/proc/1/comm")
 			},
@@ -186,7 +186,7 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			bannedIRQs:            []int{5, 12, 15},
 			testadataInitFilename: "testdata/irqbalance-04-init",
 			configFilename:        "/etc/conf.d/irqbalance",
-			backupFilename:        "/etc/conf.d/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
+			backupFilename:        "/etc/conf.d/irqbalance.vectorized.911727b5a516f8e315b36f97e54facda.bk",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs, []string{"init"}, "/proc/1/comm")
 			},
