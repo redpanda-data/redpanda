@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "wasm/schema_registry.h"
+#include "schema_registry.h"
 
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/service.h"

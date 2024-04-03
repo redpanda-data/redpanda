@@ -18,7 +18,6 @@
 #include "transform/logging/fwd.h"
 #include "transform/logging/io.h"
 #include "utils/absl_sstring_hash.h"
-#include "wasm/logger.h"
 
 #include <seastar/core/lowres_clock.hh>
 

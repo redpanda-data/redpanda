@@ -20,8 +20,6 @@
 
 #include <absl/container/btree_set.h>
 
-#include <type_traits>
-
 namespace wasm {
 
 /**

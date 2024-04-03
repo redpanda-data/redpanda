@@ -8,12 +8,9 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "wasm/allocator.h"
+#include "allocator.h"
 
 #include "base/vassert.h"
-#include "base/vlog.h"
-#include "ssx/future-util.h"
-#include "wasm/logger.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/aligned_buffer.hh>
@@ -27,8 +24,6 @@
 
 #include <sys/mman.h>
 
-#include <span>
-#include <stdexcept>
 #include <unistd.h>
 
 namespace wasm {
