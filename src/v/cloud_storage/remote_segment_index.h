@@ -197,6 +197,8 @@ struct segment_record_stats {
     model::timestamp base_timestamp;
     // Last timestamp
     model::timestamp last_timestamp;
+
+    auto operator<=>(const segment_record_stats&) const noexcept = default;
 };
 
 class remote_segment_index_builder : public storage::batch_consumer {
