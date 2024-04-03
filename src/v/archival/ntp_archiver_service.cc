@@ -1067,6 +1067,11 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
     auto result = co_await _remote.upload_manifest(
       get_bucket_name(), manifest(), fib);
 
+    // now that manifest() is updated in cloud, updated the
+    // compacted_away_cloud_bytes metric
+    _probe->compacted_replaced_bytes(
+      _parent.archival_meta_stm()->get_compacted_replaced_bytes());
+
     if (result == cloud_storage::upload_result::success) {
         _last_manifest_upload_time = ss::lowres_clock::now();
         _projected_manifest_clean_at = upload_insync_offset;
