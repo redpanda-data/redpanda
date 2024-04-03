@@ -1,4 +1,4 @@
-enable_clang_tidy()
+#enable_clang_tidy()
 
 v_cc_library(
   NAME mvlog
