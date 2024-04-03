@@ -28,6 +28,7 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
 #include "utils/rwlock.h"
 
@@ -644,7 +645,7 @@ public:
 
     // remove offsets associated with topic partitions
     ss::future<>
-    remove_topic_partitions(const std::vector<model::topic_partition>& tps);
+    remove_topic_partitions(const chunked_vector<model::topic_partition>& tps);
 
     const ss::lw_shared_ptr<cluster::partition> partition() const {
         return _partition;
