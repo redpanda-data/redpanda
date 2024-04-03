@@ -1,0 +1,65 @@
+# Copyright 2024 Redpanda Data, Inc.
+#
+# Licensed as a Redpanda Enterprise file under the Redpanda Community
+# License (the "License"); you may not use this file except in compliance with
+# the License. You may obtain a copy of the License at
+#
+# https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+
+from rptest.services.admin import Admin, Role, RoleMember
+from rptest.util import wait_until_result
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda_installer import wait_for_num_versions
+
+
+class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
+    """
+    Verify that the default role gets created when the RBAC feature is enabled
+    """
+
+    DEFAULT_ROLE_NAME = "Users"
+
+    def __init__(self, test_ctx, **kwargs):
+        super().__init__(test_ctx, **kwargs)
+        self.installer = self.redpanda._installer
+        self.admin = Admin(self.redpanda)
+
+    def setUp(self):
+        # 24.1.x is when license went live, so start with a 23.3.x version
+        self.installer.install(self.redpanda.nodes, (23, 3))
+        super().setUp()
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_rbac_migration(self):
+        # Create some users to add to the default role
+        self.admin.create_user("alice")
+        self.admin.create_user("bob")
+
+        # Update all nodes to newest version
+        self.installer.install(self.redpanda.nodes, (24, 1))
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        _ = wait_for_num_versions(self.redpanda, 1)
+
+        def default_role_created():
+            res = self.admin.get_role(self.DEFAULT_ROLE_NAME)
+            role = Role.from_response(res)
+
+            expected_users = [
+                RoleMember.User("alice"),
+                RoleMember.User("bob"),
+                RoleMember.User("admin"),
+            ]
+
+            for member in expected_users:
+                assert member in role.members,\
+                    f"'{member}' missing from role members: {role.members}"
+            return True
+
+        wait_until_result(
+            default_role_created,
+            timeout_sec=30,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg="Timeout waiting for default role to be created")
