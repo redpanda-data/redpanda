@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/members_table.h"
+#include "cluster/node_status_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
@@ -58,7 +59,8 @@ public:
       ss::sharded<topic_table>&,
       ss::sharded<members_table>&,
       ss::sharded<partition_leaders_table>&,
-      ss::sharded<health_monitor_frontend>&);
+      ss::sharded<health_monitor_frontend>&,
+      ss::sharded<node_status_table>&);
 
     ss::future<> stop() { return ss::now(); }
 
@@ -218,6 +220,7 @@ private:
     ss::sharded<members_table>& _members_table;
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<health_monitor_frontend>& _health_monitor;
+    ss::sharded<node_status_table>& _node_status_table;
 
     bool _is_node_isolated{false};
 };

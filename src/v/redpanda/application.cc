@@ -1623,7 +1623,8 @@ void application::wire_up_redpanda_services(
       std::ref(controller->get_topics_state()),
       std::ref(controller->get_members_table()),
       std::ref(controller->get_partition_leaders()),
-      std::ref(controller->get_health_monitor()))
+      std::ref(controller->get_health_monitor()),
+      std::ref(node_status_table))
       .get();
 
     syschecks::systemd_message("Creating isolation node watcher").get();

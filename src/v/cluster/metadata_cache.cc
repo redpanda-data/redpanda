@@ -12,6 +12,7 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/members_table.h"
+#include "cluster/node_status_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
@@ -38,11 +39,13 @@ metadata_cache::metadata_cache(
   ss::sharded<topic_table>& tp,
   ss::sharded<members_table>& m,
   ss::sharded<partition_leaders_table>& leaders,
-  ss::sharded<health_monitor_frontend>& health_monitor)
+  ss::sharded<health_monitor_frontend>& health_monitor,
+  ss::sharded<node_status_table>& status_table)
   : _topics_state(tp)
   , _members_table(m)
   , _leaders(leaders)
-  , _health_monitor(health_monitor) {}
+  , _health_monitor(health_monitor)
+  , _node_status_table(status_table) {}
 
 std::vector<model::topic_namespace> metadata_cache::all_topics() const {
     return _topics_state.local().all_topics();
@@ -121,34 +124,18 @@ size_t metadata_cache::node_count() const {
 
 ss::future<std::vector<node_metadata>> metadata_cache::alive_nodes() const {
     std::vector<node_metadata> brokers;
-    auto res = co_await _health_monitor.local().get_nodes_status(
-      config::shard_local_cfg().metadata_status_wait_timeout_ms()
-      + model::timeout_clock::now());
-    if (!res) {
-        // if we were not able to refresh the cache, return all brokers
-        // (controller may be unreachable)
-        co_return _members_table.local().node_list();
-    }
 
-    std::set<model::node_id> brokers_with_health;
-    for (auto& st : res.value()) {
-        brokers_with_health.insert(st.id);
-        if (st.is_alive) {
-            auto broker = _members_table.local().get_node_metadata(st.id);
-            if (broker) {
-                brokers.push_back(std::move(*broker));
-            }
-        }
-    }
+    constexpr auto missed_heartbeats_to_be_considered_dead = 7;
+    const auto time_treshold_for_dead
+      = model::timeout_clock::now()
+        - (config::shard_local_cfg().node_status_interval() * missed_heartbeats_to_be_considered_dead);
 
-    // Corner case during node joins:
-    // If a node appears in the members table but not in the health report,
-    // presume it is newly added and assume it is alive.  This avoids
-    // newly added nodes being inconsistently excluded from metadata
-    // responses until all nodes' health caches update.
-    for (const auto& [id, broker] : _members_table.local().nodes()) {
-        if (!brokers_with_health.contains(id)) {
-            brokers.push_back(broker);
+    for (auto& b : _members_table.local().node_list()) {
+        auto md = _node_status_table.local().get_node_status(b.broker.id());
+
+        auto node_available = md && md->last_seen > time_treshold_for_dead;
+        if (node_available) {
+            brokers.push_back(b);
         }
     }
 
