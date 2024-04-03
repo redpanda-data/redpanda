@@ -23,6 +23,9 @@ import (
 // These are the host functions that go allows for wasm functions that are imported.
 // See: https://github.com/golang/go/issues/59149
 
+//go:wasmimport redpanda_schema_registry check_abi_version_0
+func checkAbi()
+
 //go:wasmimport redpanda_schema_registry get_schema_definition_len
 func getSchemaDefinitionLen(schemaId schemaId, length unsafe.Pointer) int32
 
