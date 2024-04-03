@@ -282,6 +282,12 @@ inline void rjson_serialize(
     rjson_serialize(w, f.revision_id);
     w.Key("size_bytes");
     rjson_serialize(w, f.size_bytes);
+    w.Key("under_replicated_replicas");
+    rjson_serialize(w, f.under_replicated_replicas);
+    w.Key("reclaimable_size_bytes");
+    rjson_serialize(w, f.reclaimable_size_bytes);
+    w.Key("shard");
+    rjson_serialize(w, f.shard);
     w.EndObject();
 }
 
@@ -389,14 +395,29 @@ inline void read_value(json::Value const& rd, cluster::partition_status& obj) {
     std::optional<model::node_id> leader_id;
     model::revision_id revision_id;
     size_t size_bytes;
+    std::optional<uint8_t> under_replicated_replicas;
+    std::optional<size_t> reclaimable_size_bytes;
+    uint32_t shard;
 
     read_member(rd, "id", id);
     read_member(rd, "term", term);
     read_member(rd, "leader_id", leader_id);
     read_member(rd, "revision_id", revision_id);
     read_member(rd, "size_bytes", size_bytes);
+    read_member(rd, "under_replicated_replicas", under_replicated_replicas);
+    read_member(rd, "reclaimable_size_bytes", reclaimable_size_bytes);
+    read_member(rd, "shard", shard);
+
     obj = cluster::partition_status{
-      {}, id, term, leader_id, revision_id, size_bytes};
+      .id = id,
+      .term = term,
+      .leader_id = leader_id,
+      .revision_id = revision_id,
+      .size_bytes = size_bytes,
+      .under_replicated_replicas = under_replicated_replicas,
+      .reclaimable_size_bytes = reclaimable_size_bytes,
+      .shard = shard,
+    };
 }
 
 inline void read_value(json::Value const& rd, cluster::topic_status& obj) {
