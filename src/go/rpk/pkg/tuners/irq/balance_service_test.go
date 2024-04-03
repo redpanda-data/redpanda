@@ -10,6 +10,7 @@
 package irq
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -209,8 +210,8 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for i, tt := range tests {
+		t.Run(fmt.Sprintf("test %02d %s", i, tt.name), func(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			_ = utils.WriteFileLines(fs, tt.configFile, tt.initFilename)
 			tt.before(fs)
