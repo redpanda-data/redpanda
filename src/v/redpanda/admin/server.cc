@@ -922,6 +922,7 @@ get_brokers(cluster::controller* const controller) {
               b.maintenance_status = fill_maintenance_status(nm.state);
               b.internal_rpc_address = nm.broker.rpc_address().host();
               b.internal_rpc_port = nm.broker.rpc_address().port();
+              b.in_fips_mode = nm.broker.properties().in_fips_mode;
 
               broker_map[id] = b;
           }

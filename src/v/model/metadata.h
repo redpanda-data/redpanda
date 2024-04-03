@@ -65,7 +65,7 @@ using shard_revision_id
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
 struct broker_properties
   : serde::
-      envelope<broker_properties, serde::version<1>, serde::compat_version<0>> {
+      envelope<broker_properties, serde::version<2>, serde::compat_version<0>> {
     uint32_t cores;
     uint32_t available_memory_gb;
     uint32_t available_disk_gb;
@@ -73,6 +73,7 @@ struct broker_properties
     // key=value properties in /etc/redpanda/machine_properties.yaml
     std::unordered_map<ss::sstring, ss::sstring> etc_props;
     uint64_t available_memory_bytes = 0;
+    bool in_fips_mode = false;
 
     bool operator==(const broker_properties& other) const = default;
 
@@ -86,7 +87,8 @@ struct broker_properties
           available_disk_gb,
           mount_paths,
           etc_props,
-          available_memory_bytes);
+          available_memory_bytes,
+          in_fips_mode);
     }
 };
 
@@ -673,6 +675,7 @@ struct hash<model::broker_properties> {
             boost::hash_combine(h, std::hash<ss::sstring>()(k));
             boost::hash_combine(h, std::hash<ss::sstring>()(v));
         }
+        boost::hash_combine(h, std::hash<bool>()(b.in_fips_mode));
         return h;
     }
 };
