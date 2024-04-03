@@ -16,6 +16,7 @@ import threading
 import requests
 from typing import Any, Dict, Optional
 
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -147,7 +148,7 @@ class KgoVerifierService(Service):
 
         debug = '--debug' if self._debug_logs else ''
         trace = '--trace' if self._trace_logs else ''
-        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} {debug} {trace}> {self.log_path} 2>&1 & echo $!"
+        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} {debug} {trace}>> {self.log_path} 2>&1 & echo $!"
         self.logger.debug(f"spawn {self.who_am_i()}: {wrapped_cmd}")
         pid_str = node.account.ssh_output(wrapped_cmd, timeout_sec=10)
         self.logger.debug(
@@ -209,13 +210,14 @@ class KgoVerifierService(Service):
             if b"No such process" not in e.msg:
                 raise
 
+        self._pid = None
         self._release_port()
 
-    def clean_node(self, node):
+    def clean_node(self, node: ClusterNode):
         self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
         node.account.kill_process("kgo-verifier", clean_shutdown=False)
         node.account.remove("valid_offsets*json", True)
-        node.account.remove(f"/tmp/{self.__class__.__name__}*")
+        node.account.remove(f"/tmp/{self.__class__.__name__}*", True)
 
     def _remote(self, node, action, timeout=60):
         """
