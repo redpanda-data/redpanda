@@ -55,15 +55,18 @@ class BaseDataTransformsTest(RedpandaTest):
     def _deploy_wasm(self,
                      name: str,
                      input_topic: TopicSpec,
-                     output_topic: TopicSpec,
+                     output_topic: TopicSpec | list[TopicSpec],
                      file="tinygo/identity.wasm"):
         """
         Deploy a wasm transform and wait for all processors to be running.
         """
+        if not isinstance(output_topic, list):
+            output_topic = [output_topic]
+
         def do_deploy():
             self._rpk.deploy_wasm(name,
                                   input_topic.name,
-                                  output_topic.name,
+                                  [o.name for o in output_topic],
                                   file=file)
             return True
 
@@ -207,7 +210,7 @@ class BaseDataTransformsTest(RedpandaTest):
             try:
                 self._rpk.deploy_wasm("invalid",
                                       self.topics[0].name,
-                                      self.topics[1].name,
+                                      [self.topics[1].name],
                                       file=file)
                 raise AssertionError(
                     "Unexpectedly was able to deploy transform")
