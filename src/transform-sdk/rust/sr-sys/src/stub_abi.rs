@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub(crate) fn check() {
+    panic!();
+}
+
 pub(crate) fn get_schema_definition_len(_schema_id: i32, _len: *mut i32) -> i32 {
     panic!();
 }

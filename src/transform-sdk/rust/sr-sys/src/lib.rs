@@ -35,6 +35,7 @@ pub struct AbiSchemaRegistryClient {}
 
 impl AbiSchemaRegistryClient {
     pub fn new() -> AbiSchemaRegistryClient {
+        abi::check();
         Self {}
     }
 }
