@@ -408,7 +408,7 @@ get_node_health_reply get_node_health_reply::copy() const {
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_status& tl) {
-    fmt::print(o, "{{topic: {}, leaders: {}}}", tl.tp_ns, tl.partitions);
+    fmt::print(o, "{{topic: {}, partitions: {}}}", tl.tp_ns, tl.partitions);
     return o;
 }
 
