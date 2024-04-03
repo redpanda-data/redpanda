@@ -41,7 +41,7 @@ func (c *backupFileCommand) Execute() error {
 }
 
 func (c *backupFileCommand) RenderScript(w *bufio.Writer) error {
-	fmt.Fprintf(w, "md_5=$(md5sum %s | awk '{print $1}')\n", c.path)
-	fmt.Fprintf(w, "cp %s %s.vectorized.${md_5}.bk\n", c.path, c.path)
+	fmt.Fprintf(w, "file_hash=$(sha256sum %s | cut -c -32)\n", c.path)
+	fmt.Fprintf(w, "cp %s %s.vectorized.${file_hash}.bk\n", c.path, c.path)
 	return w.Flush()
 }
