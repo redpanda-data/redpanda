@@ -1600,6 +1600,7 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
         size_t used_memory;
         wasm::heap_allocator* allocator;
     };
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     memory_ret->env = new linear_memory{
       .underlying = *std::move(memory),
       .used_memory = req.minimum,
