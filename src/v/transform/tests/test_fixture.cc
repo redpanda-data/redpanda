@@ -37,8 +37,15 @@ ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
     _cond_var.broadcast();
 }
 
+class read_timed_out : public ss::condition_variable_timed_out {
+    const char* what() const noexcept override {
+        return "waiting for read timed out";
+    }
+};
+
 ss::future<model::record> fake_sink::read() {
-    co_await _cond_var.wait(1s, [this] { return !_records.empty(); });
+    co_await _cond_var.wait(1s, [this] { return !_records.empty(); })
+      .handle_exception([](auto) { throw read_timed_out(); });
     auto record = std::move(_records.front());
     _records.pop_front();
     co_return record;
@@ -165,12 +172,22 @@ fake_offset_tracker::load_committed_offsets() {
     co_return _committed;
 }
 
+class commit_wait_timed_out : public ss::condition_variable_timed_out {
+    const char* what() const noexcept override {
+        return "waiting for committed offset timed out";
+    }
+};
+
 ss::future<> fake_offset_tracker::wait_for_committed_offset(
   model::output_topic_index index, kafka::offset o) {
-    return _cond_var.wait(1s, [this, index, o] {
-        auto it = _committed.find(index);
-        return it != _committed.end() && it->second >= o;
-    });
+    return _cond_var
+      .wait(
+        1s,
+        [this, index, o] {
+            auto it = _committed.find(index);
+            return it != _committed.end() && it->second >= o;
+        })
+      .handle_exception([](auto) { throw commit_wait_timed_out(); });
 }
 
 ss::future<> fake_offset_tracker::wait_for_previous_flushes(ss::abort_source*) {
