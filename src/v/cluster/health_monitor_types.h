@@ -276,6 +276,9 @@ struct cluster_health_overview {
     std::vector<model::ntp> under_replicated_partitions;
     size_t under_replicated_count{};
     std::optional<size_t> bytes_in_cloud_storage;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const cluster_health_overview&);
 };
 
 using include_partitions_info = ss::bool_class<struct include_partitions_tag>;
