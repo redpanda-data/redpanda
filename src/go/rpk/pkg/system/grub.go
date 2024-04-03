@@ -12,6 +12,7 @@ package system
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -187,6 +188,7 @@ func toGrubOptionsLine(options map[string]string) string {
 	for key, val := range options {
 		resultOpts = append(resultOpts, joinGrubOption(key, val))
 	}
+	slices.Sort(resultOpts) // ensure final string is deterministic
 	return strings.Join(resultOpts, " ")
 }
 
