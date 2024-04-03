@@ -60,14 +60,14 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 		return true
 	}
 	tests := []struct {
-		name           string
-		proc           os.Proc
-		configFile     []string
-		bannedIRQs     []int
-		initFilename   string
-		backupFilename string
-		before         func(afero.Fs)
-		assert         func(afero.Fs, string, []string)
+		name                  string
+		proc                  os.Proc
+		bannedIRQs            []int
+		testadataInitFilename string
+		configFilename        string
+		backupFilename        string
+		before                func(afero.Fs)
+		assert                func(afero.Fs, string, []string)
 	}{
 		{
 			name: "Shall update the config and then restart IRQ " +
@@ -80,16 +80,16 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile:     []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-			bannedIRQs:     []int{5, 12, 15},
-			initFilename:   "/etc/sysconfig/irqbalance",
-			backupFilename: "/etc/sysconfig/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
+			bannedIRQs:            []int{5, 12, 15},
+			testadataInitFilename: "testdata/irqbalance-00-init",
+			configFilename:        "/etc/sysconfig/irqbalance",
+			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
 			before: func(fs afero.Fs) {
 			},
-			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, initFilename)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -105,20 +105,16 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile: []string{
-				"ONE_SHOT=true",
-				"#IRQBALANCE_BANNED_CPUS=",
-				"IRQBALANCE_ARGS=\" --banirq=5\"",
-			},
-			bannedIRQs:     []int{12, 15},
-			initFilename:   "/etc/sysconfig/irqbalance",
-			backupFilename: "/etc/sysconfig/irqbalance.vectorized.c4ba5602ec37edc880b3716f834f5d0a.bk",
+			bannedIRQs:            []int{12, 15},
+			testadataInitFilename: "testdata/irqbalance-01-init",
+			configFilename:        "/etc/sysconfig/irqbalance",
+			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.c4ba5602ec37edc880b3716f834f5d0a.bk",
 			before: func(fs afero.Fs) {
 			},
-			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 3, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, initFilename)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -134,21 +130,16 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile: []string{
-				"ONE_SHOT=true",
-				"#IRQBALANCE_BANNED_CPUS=",
-				// IRQ 5 is already banned
-				"IRQBALANCE_ARGS=\" --banirq=5\"",
-			},
-			bannedIRQs:     []int{5, 12, 15},
-			initFilename:   "/etc/sysconfig/irqbalance",
-			backupFilename: "/etc/sysconfig/irqbalance.vectorized.c4ba5602ec37edc880b3716f834f5d0a.bk",
+			bannedIRQs:            []int{5, 12, 15},
+			testadataInitFilename: "testdata/irqbalance-02-init",
+			configFilename:        "/etc/sysconfig/irqbalance",
+			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.c4ba5602ec37edc880b3716f834f5d0a.bk",
 			before: func(fs afero.Fs) {
 			},
-			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 3, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, initFilename)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -165,17 +156,17 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile:     []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-			bannedIRQs:     []int{5, 12, 15},
-			initFilename:   "/etc/conf.d/irqbalance",
-			backupFilename: "/etc/conf.d/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
+			bannedIRQs:            []int{5, 12, 15},
+			testadataInitFilename: "testdata/irqbalance-03-init",
+			configFilename:        "/etc/conf.d/irqbalance",
+			backupFilename:        "/etc/conf.d/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs, []string{"systemd"}, "/proc/1/comm")
 			},
-			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, initFilename)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_OPTS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -192,17 +183,17 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile:     []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-			bannedIRQs:     []int{5, 12, 15},
-			initFilename:   "/etc/conf.d/irqbalance",
-			backupFilename: "/etc/conf.d/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
+			bannedIRQs:            []int{5, 12, 15},
+			testadataInitFilename: "testdata/irqbalance-04-init",
+			configFilename:        "/etc/conf.d/irqbalance",
+			backupFilename:        "/etc/conf.d/irqbalance.vectorized.18446761ee4368f3b50f092e5ddfe994.bk",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs, []string{"init"}, "/proc/1/comm")
 			},
-			assert: func(fs afero.Fs, initFilename string, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, initFilename)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_OPTS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -213,7 +204,11 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 	for i, tt := range tests {
 		t.Run(fmt.Sprintf("test %02d %s", i, tt.name), func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			_ = utils.WriteFileLines(fs, tt.configFile, tt.initFilename)
+			osfs := afero.NewOsFs()
+			testdataLines, err := utils.ReadFileLines(osfs, tt.testadataInitFilename)
+			require.NoError(t, err)
+			err = utils.WriteFileLines(fs, testdataLines, tt.configFilename)
+			require.NoError(t, err)
 			tt.before(fs)
 			balanceService := NewBalanceService(
 				fs,
@@ -221,12 +216,12 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 				executors.NewDirectExecutor(),
 				time.Duration(10)*time.Second,
 			)
-			err := balanceService.BanIRQsAndRestart(tt.bannedIRQs)
+			err = balanceService.BanIRQsAndRestart(tt.bannedIRQs)
 			require.NoError(t, err)
 			// Check if backup is created
 			backupFileContent, err := utils.ReadFileLines(fs, tt.backupFilename)
 			require.NoError(t, err)
-			tt.assert(fs, tt.initFilename, backupFileContent)
+			tt.assert(fs, tt.configFilename, backupFileContent)
 		})
 	}
 }
