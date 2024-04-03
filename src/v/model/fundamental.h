@@ -295,6 +295,8 @@ struct topic_partition {
                || (topic == other.topic && partition < other.partition);
     }
 
+    auto operator<=>(const topic_partition& other) const noexcept = default;
+
     operator topic_partition_view() {
         return topic_partition_view(topic, partition);
     }
