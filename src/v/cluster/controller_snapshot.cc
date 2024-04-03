@@ -11,6 +11,28 @@
 
 #include "cluster/controller_snapshot.h"
 
+#include "security/types.h"
+#include "serde/rw/rw.h"
+
+namespace serde {
+void tag_invoke(
+  tag_t<write_tag>,
+  iobuf& out,
+  cluster::controller_snapshot_parts::security_t::named_role t) {
+    write(out, std::move(t.name));
+    write(out, std::move(t.role));
+}
+
+void tag_invoke(
+  tag_t<read_tag>,
+  iobuf_parser& in,
+  cluster::controller_snapshot_parts::security_t::named_role& t,
+  std::size_t const bytes_left_limit) {
+    t.name = read_nested<security::role_name>(in, bytes_left_limit);
+    t.role = read_nested<security::role>(in, bytes_left_limit);
+}
+} // namespace serde
+
 namespace cluster {
 
 namespace controller_snapshot_parts {
@@ -157,6 +179,7 @@ topics_t::serde_async_read(iobuf_parser& in, serde::header const h) {
 ss::future<> security_t::serde_async_write(iobuf& out) {
     co_await write_vector_async(out, std::move(user_credentials));
     co_await write_vector_async(out, std::move(acls));
+    co_await write_vector_async(out, std::move(roles));
 }
 
 ss::future<>
@@ -166,6 +189,10 @@ security_t::serde_async_read(iobuf_parser& in, serde::header const h) {
         in, h._bytes_left_limit);
     acls = co_await read_vector_async_nested<decltype(acls)>(
       in, h._bytes_left_limit);
+    if (h._version > 0) {
+        roles = co_await read_vector_async_nested<decltype(roles)>(
+          in, h._bytes_left_limit);
+    }
 
     if (in.bytes_left() > h._bytes_left_limit) {
         in.skip(in.bytes_left() - h._bytes_left_limit);

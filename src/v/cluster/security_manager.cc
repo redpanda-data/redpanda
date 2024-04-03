@@ -20,6 +20,7 @@
 #include "security/role_store.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <iterator>
@@ -214,6 +215,13 @@ security_manager::fill_snapshot(controller_snapshot& controller_snap) const {
 
     snapshot.acls = co_await _authorizer.local().all_bindings();
 
+    auto roles = _roles.local().range([](const auto&) { return true; });
+    snapshot.roles.reserve(roles.size());
+    for (const auto& role : roles) {
+        security::role_name name{role};
+        snapshot.roles.emplace_back(name, *_roles.local().get(name));
+    }
+
     co_return;
 }
 
@@ -233,6 +241,13 @@ ss::future<> security_manager::apply_snapshot(
     co_await _authorizer.invoke_on_all(
       [&snapshot](security::authorizer& authorizer) {
           return authorizer.reset_bindings(snapshot.acls);
+      });
+
+    co_await _roles.invoke_on_all(
+      [&snapshot](security::role_store& role_store) {
+          return ss::do_for_each(snapshot.roles, [&role_store](const auto& r) {
+              role_store.put(r.name, security::role{r.role});
+          });
       });
 }
 
