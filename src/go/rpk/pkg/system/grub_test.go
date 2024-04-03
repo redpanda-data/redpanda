@@ -24,12 +24,14 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 	tests := []struct {
 		name             string
 		grubInitFilename string
+		grubWantFilename string
 		opt              []string
 		check            func(afero.Fs, []string)
 	}{
 		{
 			name:             "Shall add new value only flag to GRUB cfg",
 			grubInitFilename: "testdata/grub-00-init",
+			grubWantFilename: "testdata/grub-00-want",
 			opt:              []string{"noht"},
 			check: func(fs afero.Fs, grubCfg []string) {
 				backupName := "/etc/default/grub.vectorized.2c349a84043328ae3a9f2d021ff143c3.bk"
@@ -46,6 +48,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 		{
 			name:             "Shall add new key/value pair flag to GRUB cfg",
 			grubInitFilename: "testdata/grub-01-init",
+			grubWantFilename: "testdata/grub-01-want",
 			opt:              []string{"some_opt=2"},
 			check: func(fs afero.Fs, grubCfg []string) {
 				backupName := "/etc/default/grub.vectorized.2c349a84043328ae3a9f2d021ff143c3.bk"
@@ -61,6 +64,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 		{
 			name:             "Shall not add the same value only flag twice",
 			grubInitFilename: "testdata/grub-02-init",
+			grubWantFilename: "testdata/grub-02-want",
 			opt:              []string{"noht"},
 			check: func(fs afero.Fs, grubCfg []string) {
 				backupName := "/etc/default/grub.vectorized.58af885fa59687a5d6184d34945e05c1.bk"
@@ -75,6 +79,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 		{
 			name:             "Shall update the option value if it is already present",
 			grubInitFilename: "testdata/grub-03-init",
+			grubWantFilename: "testdata/grub-03-want",
 			opt:              []string{"some_opt=2"},
 			check: func(fs afero.Fs, grubCfg []string) {
 				backupName := "/etc/default/grub.vectorized.fc4df103de9bce221b735953fc36d4ad.bk"
@@ -100,6 +105,11 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			err = grub.AddCommandLineOptions(tt.opt)
 			require.NoError(t, err)
 			tt.check(fs, grubCfg)
+			grubGot, err := utils.ReadFileLines(fs, "/etc/default/grub")
+			require.NoError(t, err)
+			grubWant, err := utils.ReadFileLines(osfs, tt.grubWantFilename)
+			require.NoError(t, err)
+			require.Equal(t, grubWant, grubGot)
 		})
 	}
 }
