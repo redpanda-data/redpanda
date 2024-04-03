@@ -20,7 +20,7 @@ namespace compat {
 /*
  * cluster::begin_group_tx_request
  */
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::begin_group_tx_request,
   {
       json_write(ntp);
@@ -42,7 +42,7 @@ GEN_COMPAT_CHECK(
 /*
  * cluster::begin_group_tx_reply
  */
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::begin_group_tx_reply,
   {
       json_write(etag);

@@ -1069,16 +1069,6 @@ std::ostream& operator<<(std::ostream& o, const find_coordinator_reply& r) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const describe_tx_registry_request&) {
-    fmt::print(o, "{{}}");
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const describe_tx_registry_reply& r) {
-    fmt::print(o, "{{ec: {}}}", r.ec);
-    return o;
-}
-
 std::ostream&
 operator<<(std::ostream& o, const configuration_update_request& cr) {
     fmt::print(o, "{{broker: {} target_node: {}}}", cr.node, cr.target_node);
@@ -1390,45 +1380,6 @@ cluster::topic_result adl<cluster::topic_result>::from(iobuf_parser& in) {
     return cluster::topic_result(std::move(tp_ns), ec);
 }
 
-void adl<cluster::create_topics_request>::to(
-  iobuf& out, cluster::create_topics_request&& r) {
-    reflection::serialize(out, std::move(r.topics), r.timeout);
-}
-
-cluster::create_topics_request
-adl<cluster::create_topics_request>::from(iobuf io) {
-    return reflection::from_iobuf<cluster::create_topics_request>(
-      std::move(io));
-}
-
-cluster::create_topics_request
-adl<cluster::create_topics_request>::from(iobuf_parser& in) {
-    using underlying_t = cluster::topic_configuration_vector;
-    auto configs = adl<underlying_t>().from(in);
-    auto timeout = adl<model::timeout_clock::duration>().from(in);
-    return cluster::create_topics_request{
-      .topics = std::move(configs), .timeout = timeout};
-}
-
-void adl<cluster::create_topics_reply>::to(
-  iobuf& out, cluster::create_topics_reply&& r) {
-    reflection::serialize(
-      out, std::move(r.results), std::move(r.metadata), std::move(r.configs));
-}
-
-cluster::create_topics_reply adl<cluster::create_topics_reply>::from(iobuf io) {
-    return reflection::from_iobuf<cluster::create_topics_reply>(std::move(io));
-}
-
-cluster::create_topics_reply
-adl<cluster::create_topics_reply>::from(iobuf_parser& in) {
-    auto results = adl<std::vector<cluster::topic_result>>().from(in);
-    auto md = adl<std::vector<model::topic_metadata>>().from(in);
-    auto cfg = adl<cluster::topic_configuration_vector>().from(in);
-    return cluster::create_topics_reply{
-      std::move(results), std::move(md), std::move(cfg)};
-}
-
 void adl<cluster::configuration_invariants>::to(
   iobuf& out, cluster::configuration_invariants&& r) {
     reflection::serialize(out, r.version, r.node_id, r.core_count);
@@ -1731,42 +1682,6 @@ adl<cluster::delete_acls_cmd_data>::from(iobuf_parser& in) {
     return cluster::delete_acls_cmd_data{
       .filters = std::move(filters),
     };
-}
-
-void adl<cluster::delete_acls_result>::to(
-  iobuf& out, cluster::delete_acls_result&& result) {
-    serialize(out, result.error, std::move(result.bindings));
-}
-
-cluster::delete_acls_result
-adl<cluster::delete_acls_result>::from(iobuf_parser& in) {
-    auto error = adl<cluster::errc>{}.from(in);
-    auto bindings = adl<std::vector<security::acl_binding>>().from(in);
-    return cluster::delete_acls_result{
-      .error = error,
-      .bindings = std::move(bindings),
-    };
-}
-
-void adl<cluster::ntp_reconciliation_state>::to(
-  iobuf& b, cluster::ntp_reconciliation_state&& state) {
-    auto ntp = state.ntp();
-    reflection::serialize(
-      b,
-      std::move(ntp),
-      state.pending_operations(),
-      state.status(),
-      state.cluster_errc());
-}
-
-cluster::ntp_reconciliation_state
-adl<cluster::ntp_reconciliation_state>::from(iobuf_parser& in) {
-    auto ntp = adl<model::ntp>{}.from(in);
-    auto ops = adl<ss::chunked_fifo<cluster::backend_operation>>{}.from(in);
-    auto status = adl<cluster::reconciliation_status>{}.from(in);
-    auto error = adl<cluster::errc>{}.from(in);
-
-    return {std::move(ntp), std::move(ops), status, error};
 }
 
 void adl<cluster::create_partitions_configuration>::to(
@@ -2092,45 +2007,6 @@ adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
     auto logical_version = adl<cluster::cluster_version>{}.from(in);
     auto actions = adl<std::vector<cluster::feature_update_action>>{}.from(in);
     return {.logical_version = logical_version, .actions = std::move(actions)};
-}
-
-void adl<cluster::set_maintenance_mode_request>::to(
-  iobuf& out, cluster::set_maintenance_mode_request&& r) {
-    reflection::serialize(out, r.current_version, r.id, r.enabled);
-}
-
-cluster::set_maintenance_mode_request
-adl<cluster::set_maintenance_mode_request>::from(iobuf_parser& parser) {
-    auto version = adl<uint8_t>{}.from(parser);
-    vassert(
-      version == cluster::set_maintenance_mode_request::current_version,
-      "Unexpected version: {} (expected {})",
-      version,
-      cluster::set_maintenance_mode_request::current_version);
-
-    auto id = adl<model::node_id>{}.from(parser);
-    auto enabled = adl<bool>{}.from(parser);
-
-    return cluster::set_maintenance_mode_request{.id = id, .enabled = enabled};
-}
-
-void adl<cluster::set_maintenance_mode_reply>::to(
-  iobuf& out, cluster::set_maintenance_mode_reply&& r) {
-    reflection::serialize(out, r.current_version, r.error);
-}
-
-cluster::set_maintenance_mode_reply
-adl<cluster::set_maintenance_mode_reply>::from(iobuf_parser& parser) {
-    auto version = adl<uint8_t>{}.from(parser);
-    vassert(
-      version == cluster::set_maintenance_mode_reply::current_version,
-      "Unexpected version: {} (expected {})",
-      version,
-      cluster::set_maintenance_mode_reply::current_version);
-
-    auto error = adl<cluster::errc>{}.from(parser);
-
-    return cluster::set_maintenance_mode_reply{.error = error};
 }
 
 void adl<cluster::partition_assignment>::to(
