@@ -513,11 +513,29 @@ operator<<(std::ostream& o, const columnar_node_health_report& report) {
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const topic_status_view& store) {
+    fmt::print(o, "{{tp_ns: {}, partitions: [", store.tp_ns);
+    print_range(o, store.partitions);
+    fmt::print(o, "]}}");
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const cluster_health_overview& ho) {
     fmt::print(
       o,
-      "{{tp_ns: {}, partitions: [{}]}}",
-      store.tp_ns,
-      fmt::join(store.partitions.begin(), store.partitions.end(), ","));
+      "{{controller_id: {}, nodes: {}, unhealthy_reasons: {}, nodes_down: {}, "
+      "nodes_in_recovery_mode: {}, bytes_in_cloud_storage: {}, "
+      "leaderless_count: {}, under_replicated_count: {}, "
+      "leaderless_partitions: {}, under_replicated_partitions: {}}}",
+      ho.controller_id,
+      ho.all_nodes,
+      ho.unhealthy_reasons,
+      ho.nodes_down,
+      ho.nodes_in_recovery_mode,
+      ho.bytes_in_cloud_storage,
+      ho.leaderless_count,
+      ho.under_replicated_count,
+      ho.leaderless_partitions,
+      ho.under_replicated_partitions);
     return o;
 }
 
