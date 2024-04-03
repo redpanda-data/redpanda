@@ -65,7 +65,7 @@ from rptest.services.cloud_broker import CloudBroker
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
-from rptest.services.utils import BadLogLines, NodeCrash
+from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 
@@ -187,9 +187,6 @@ FAILURE_INJECTION_LOG_ALLOW_LIST = [
     re.compile("finject - .* flush called concurrently with other operations")
 ]
 
-# Largest allocation allowed in during a test
-MAX_ALLOCATION_SIZE = 400 * 1024  # 400KiB
-
 
 class RemoteClusterNode(Protocol):
     account: RemoteAccount
@@ -222,6 +219,20 @@ class CloudStorageType(IntEnum):
     S3 = 1
     # Use Azure ABS on dedicated nodes, or azurite in docker
     ABS = 2
+
+
+def prepare_allow_list(allow_list):
+    if allow_list is None:
+        allow_list = DEFAULT_LOG_ALLOW_LIST
+    else:
+        combined_allow_list = DEFAULT_LOG_ALLOW_LIST.copy()
+        # Accept either compiled or string regexes
+        for a in allow_list:
+            if should_compile(a):
+                a = re.compile(a)
+            combined_allow_list.append(a)
+        allow_list = combined_allow_list
+    return allow_list
 
 
 def one_or_many(value):
@@ -1472,98 +1483,24 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         Raise a BadLogLines exception if any nodes' logs contain errors
         not permitted by `allow_list`
 
-        :param logger: the test's logger, so that reports of bad lines are
-                       prefixed with test name.
         :param allow_list: list of compiled regexes, or None for default
         :return: None
         """
+        allow_list = prepare_allow_list(allow_list)
 
-        if allow_list is None:
-            allow_list = DEFAULT_LOG_ALLOW_LIST
-        else:
-            combined_allow_list = DEFAULT_LOG_ALLOW_LIST.copy()
-            # Accept either compiled or string regexes
-            for a in allow_list:
-                if should_compile(a):
-                    a = re.compile(a)
-                combined_allow_list.append(a)
-            allow_list = combined_allow_list
-
-        test_name = self._context.function_name
-
-        bad_lines = collections.defaultdict(list)
+        _searchable_nodes = []
         for node in self.nodes:
-
             if self._skip_if_no_redpanda_log and not node.account.exists(
                     RedpandaServiceBase.STDOUT_STDERR_CAPTURE):
                 self.logger.info(
                     f"{RedpandaServiceBase.STDOUT_STDERR_CAPTURE} not found on {node.account.hostname}. Skipping log scan."
                 )
                 continue
+            _searchable_nodes.append(node)
 
-            self.logger.info(
-                f"Scanning node {node.account.hostname} log for errors...")
-
-            # List of regexes that will fail the test on if they appear in the log
-            match_terms = [
-                "Segmentation fault",
-                "[Aa]ssert",
-                "Exceptional future ignored",
-                "UndefinedBehaviorSanitizer",
-                "Aborting on shard",
-                "libc++abi: terminating due to uncaught exception",
-                "oversized allocation",
-            ]
-            if self._raise_on_errors:
-                match_terms.append("^ERROR")
-            match_expr = " ".join(f"-e \"{t}\"" for t in match_terms)
-
-            for line in node.account.ssh_capture(
-                    f"grep {match_expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
-                    timeout_sec=60):
-                line = line.strip()
-
-                allowed = False
-                for a in allow_list:
-                    if a.search(line) is not None:
-                        self.logger.warn(
-                            f"Ignoring allow-listed log line '{line}'")
-                        allowed = True
-                        break
-
-                if 'LeakSanitizer' in line:
-                    # Special case for LeakSanitizer errors, where tiny leaks
-                    # are permitted, as they can occur during Seastar shutdown.
-                    # See https://github.com/redpanda-data/redpanda/issues/3626
-                    for summary_line in node.account.ssh_capture(
-                            f"grep -e \"SUMMARY: AddressSanitizer:\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
-                            timeout_sec=60):
-                        m = re.match(
-                            "SUMMARY: AddressSanitizer: (\d+) byte\(s\) leaked in (\d+) allocation\(s\).",
-                            summary_line.strip())
-                        if m and int(m.group(1)) < 1024:
-                            self.logger.warn(
-                                f"Ignoring memory leak, small quantity: {summary_line}"
-                            )
-                            allowed = True
-                            break
-
-                if "oversized allocation" in line:
-                    m = re.search("oversized allocation: (\d+) byte", line)
-                    if m and int(m.group(1)) <= MAX_ALLOCATION_SIZE:
-                        self.logger.warn(
-                            f"Ignoring oversized allocation, {m.group(1)} is less than the max allowable allocation size of {MAX_ALLOCATION_SIZE} bytes"
-                        )
-                        allowed = True
-
-                if not allowed:
-                    bad_lines[node].append(line)
-                    self.logger.warn(
-                        f"[{test_name}] Unexpected log line on {node.account.hostname}: {line}"
-                    )
-
-        if bad_lines:
-            raise BadLogLines(bad_lines)
+        lsearcher = LogSearchLocal(self._context, allow_list, self.logger,
+                                   RedpandaServiceBase.STDOUT_STDERR_CAPTURE)
+        lsearcher.search_logs(_searchable_nodes)
 
     def raise_on_crash(self,
                        log_allow_list: list[str | re.Pattern] | None = None):
@@ -2344,6 +2281,20 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def cluster_healthy(self) -> bool:
         return self.cluster_unhealthy_reason is not None
+
+    def raise_on_bad_logs(self, allow_list=None):
+        """
+        Raise a BadLogLines exception if any nodes' logs contain errors
+        not permitted by `allow_list`
+
+        :param allow_list: list of compiled regexes, or None for default
+        :return: None
+        """
+        allow_list = prepare_allow_list(allow_list)
+
+        lsearcher = LogSearchCloud(self._context, allow_list, self.logger,
+                                   self.kubectl)
+        lsearcher.search_logs(self.get_redpanda_pods())
 
 
 class RedpandaService(RedpandaServiceBase):

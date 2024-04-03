@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
 from logging import Logger
 import os
 import subprocess
@@ -310,3 +311,104 @@ class KubectlTool:
         res = subprocess.run(cmd, capture_output=True, text=True)
         self._redpanda.logger.debug(res.stdout)
         return res
+
+
+class KubeNodeShell():
+    def __init__(self, kubectl: KubectlTool, node_name: str) -> None:
+        self.kubectl = kubectl
+        self.node_name = node_name
+        # It is bad, but it works
+        self.logger = self.kubectl._redpanda.logger
+        self.current_context = self.kubectl.cmd(
+            f"config current-context").decode().strip()
+        self.pod_name = f"{node_name}-priviledged-shell"
+
+        # In case of concurrent tests, just reuse existing pod
+        self.pod_reused = True if self._is_shell_running() else False
+
+    def _is_shell_running(self):
+        # Check if such pod exists
+        try:
+            _out = self.kubectl.cmd(f"get pods -A | grep {self.pod_name}")
+            return len(_out) > 0
+        except:
+            # Above command fails only when pod is not found
+            return False
+
+    def _build_overrides(self):
+        return {
+            "spec": {
+                "nodeName":
+                self.node_name,
+                "hostPID":
+                True,
+                "hostNetwork":
+                True,
+                "containers": [{
+                    "securityContext": {
+                        "privileged": True
+                    },
+                    "image":
+                    "docker.io/library/alpine",
+                    "name":
+                    "nsenter",
+                    "stdin":
+                    True,
+                    "stdinOnce":
+                    True,
+                    "tty":
+                    True,
+                    "command": [
+                        "nsenter", "--target", "1", "--mount", "--uts",
+                        "--ipc", "--net", "--pid", "bash", "-l"
+                    ],
+                    "resources": {},
+                    "volumeMounts": []
+                }],
+                "tolerations": [{
+                    "key": "CriticalAddonsOnly",
+                    "operator": "Exists"
+                }, {
+                    "effect": "NoExecute",
+                    "operator": "Exists"
+                }],
+                "volumes": []
+            }
+        }
+
+    def __enter__(self):
+        if not self.pod_reused:
+            # Init node shell
+            overrides = self._build_overrides()
+            _out = self.kubectl.cmd([
+                f"--context={self.current_context}",
+                "run",
+                "--image docker.io/library/alpine",
+                "--restart=Never",
+                f"--overrides='{json.dumps(overrides)}'",
+                # "--pod-running-timeout=1m",
+                f"{self.pod_name}"
+            ])
+            self.logger.debug(f"Response: {_out.decode()}")
+        return self
+
+    def __call__(self, cmd: list[str] | str) -> list:
+        self.logger.info(f"Running command inside node '{self.node_name}'")
+        # Prefix for running inside proper pod
+        _kcmd = ["exec", self.pod_name, "--"]
+        # Universal for list and str
+        _cmd = cmd if isinstance(cmd, list) else cmd.split()
+        _kcmd += _cmd
+        # exception handler is inside subclass
+        _out = self.kubectl.cmd(_kcmd)
+        return _out.decode().splitlines()
+
+    def __exit__(self, *args, **kwargs):
+        # If this instance created this pod, delete it
+        if not self.pod_reused:
+            try:
+                self.kubectl.cmd(f"delete pod {self.pod_name}")
+            except Exception as e:
+                self.logger.warning("Failed to delete node shell pod "
+                                    f"'{self.pod_name}': {e}")
+        return
