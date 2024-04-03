@@ -31,8 +31,8 @@
 namespace cluster {
 
 using health_node_cb_t = ss::noncopyable_function<void(
-  node_health_report const&,
-  std::optional<std::reference_wrapper<const node_health_report>>)>;
+  columnar_node_health_report const&,
+  std::optional<std::reference_wrapper<const columnar_node_health_report>>)>;
 
 /**
  * Health monitor backend is responsible for collecting cluster health status
@@ -120,7 +120,7 @@ private:
 
     using status_cache_t = absl::node_hash_map<model::node_id, reply_status>;
     using report_cache_t
-      = absl::node_hash_map<model::node_id, node_health_report>;
+      = absl::node_hash_map<model::node_id, columnar_node_health_report>;
 
     void tick();
     ss::future<std::error_code> collect_cluster_health();

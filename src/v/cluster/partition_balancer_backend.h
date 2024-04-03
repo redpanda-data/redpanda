@@ -26,7 +26,7 @@
 
 namespace cluster {
 
-struct node_health_report;
+struct columnar_node_health_report;
 
 class partition_balancer_backend {
 public:
@@ -82,8 +82,8 @@ private:
     void on_members_update(model::node_id, model::membership_state);
     void on_topic_table_update();
     void on_health_monitor_update(
-      node_health_report const&,
-      std::optional<std::reference_wrapper<const node_health_report>>);
+      columnar_node_health_report const&,
+      std::optional<std::reference_wrapper<const columnar_node_health_report>>);
     size_t get_min_partition_size_threshold() const;
 
 private:

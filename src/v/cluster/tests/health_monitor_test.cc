@@ -388,11 +388,14 @@ make_ts(ss::sstring name, const std::vector<part_status>& status_list) {
     return {{model::kafka_namespace, topic{name}}, std::move(statuses)};
 }
 
-node_health_report
+columnar_node_health_report
 make_nhr(int nid, const std::vector<topic_status>& statuses) {
-    node_health_report nhr;
+    columnar_node_health_report nhr;
     nhr.id = node_id{nid};
-    std::move(statuses.begin(), statuses.end(), std::back_inserter(nhr.topics));
+    for (auto& s : statuses) {
+        nhr.topics.append(s.tp_ns, s.partitions);
+    }
+
     return nhr;
 };
 
@@ -453,7 +456,7 @@ FIXTURE_TEST(test_aggregate, health_report_unit) {
     model::ntp ntp1_b{model::kafka_namespace, topic_b, 1};
     model::ntp ntp2_b{model::kafka_namespace, topic_b, 2};
 
-    report_cache_t empty_reports{{model::node_id(0), {}}};
+    report_cache_t empty_reports;
 
     {
         // empty input, empty report
@@ -469,7 +472,7 @@ FIXTURE_TEST(test_aggregate, health_report_unit) {
     }
 
     {
-        // 1 node, 1 topic, HL
+        // 1 node, 1 topic, H
         auto input_reports = make_reports({{0, {healthy_leaderless_a}}});
         auto result = aggregate(input_reports);
         aggregated_report expected = {
