@@ -34,6 +34,7 @@ public:
     static constexpr std::string_view name = "redpanda_schema_registry";
 
     // Start ABI exports
+    void check_abi_version_0();
 
     ss::future<int32_t> get_schema_definition_len(
       pandaproxy::schema_registry::schema_id, uint32_t*);
