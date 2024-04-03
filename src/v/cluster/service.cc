@@ -211,7 +211,9 @@ service::do_finish_partition_update(finish_partition_update_request req) {
         req.ntp,
         req.new_replica_set,
         config::shard_local_cfg().replicate_append_timeout_ms()
-          + model::timeout_clock::now());
+          + model::timeout_clock::now(),
+        topics_frontend::dispatch_to_leader::no);
+
     finish_partition_update_reply reply{.result = errc::success};
     if (ec) {
         if (ec.category() == cluster::error_category()) {
