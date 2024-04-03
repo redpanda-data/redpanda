@@ -67,6 +67,7 @@ else()
       BINARY_NAME gtest_archival
       SOURCES
         archival_metadata_stm_gtest.cc
+        data_upload_workflow_gtest.cc
       LIBRARIES
         v::raft
         v::raft_fixture
