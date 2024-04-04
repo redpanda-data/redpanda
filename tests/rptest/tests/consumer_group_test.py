@@ -26,6 +26,7 @@ from rptest.utils.mode_checks import skip_debug_mode
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
 from kafka import KafkaConsumer, TopicPartition
+from kafka import errors as kerr
 from kafka.admin import KafkaAdminClient
 from kafka.protocol.commit import OffsetFetchRequest_v3
 from kafka.protocol.api import Request, Response
@@ -592,6 +593,10 @@ class KafkaTestAdminClient():
         return self._admin._send_request_to_node(coordinator, request)
 
     def _list_offsets_send_process_response(self, response):
+        error_type = kerr.for_code(response.error_code)
+        if error_type is not kerr.NoError:
+            raise error_type("Error in list_offsets response")
+
         offsets = {}
         for topic, partitions in response.topics:
             for partition, offset, leader_epoch, metadata, error_code in partitions:
