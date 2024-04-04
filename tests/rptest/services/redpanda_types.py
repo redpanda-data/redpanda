@@ -130,19 +130,19 @@ class KafkaClientSecurity:
         return lookup[(self.tls_enabled, self.sasl_enabled)]
 
     @property
-    def username(self):
+    def username(self) -> str | None:
         """The SASL username or None if SASL is not enabled or the SASL mechanism does not use a username."""
         return self._sasl_credentials.username if isinstance(
             self._sasl_credentials, SaslCredentials) else None
 
     @property
-    def password(self):
+    def password(self) -> str | None:
         """The SASL password or None if SASL is not enabled or the SASL mechanism does not use a password."""
         return self._sasl_credentials.password if isinstance(
             self._sasl_credentials, SaslCredentials) else None
 
     @property
-    def mechanism(self):
+    def mechanism(self) -> str | None:
         """The SASL mechanism or None if SASL is not enabled."""
         return None if isinstance(
             self._sasl_credentials,
