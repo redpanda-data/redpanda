@@ -219,6 +219,21 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       ss::httpd::schema_registry_json::get_mode, wrap(gate, es, get_mode)});
 
     routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::put_mode, wrap(gate, es, put_mode)});
+
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::get_mode_subject,
+      wrap(gate, es, get_mode_subject)});
+
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::put_mode_subject,
+      wrap(gate, es, put_mode_subject)});
+
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::delete_mode_subject,
+      wrap(gate, es, delete_mode_subject)});
+
+    routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_schemas_types,
       wrap(gate, es, get_schemas_types)});
 

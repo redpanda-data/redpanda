@@ -89,5 +89,17 @@
           "compatibility": {
             "type": "string"
           }
+        }
+      },
+      "mode": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "READWRITE",
+            "READONLY"
+          ]
+        },
       }
     }
