@@ -57,8 +57,8 @@ class FakeContext():
 class CloudCleanup():
     # At this point all is disabled except namespaces
     delete_clusters = True
-    delete_peerings = False
-    delete_networks = False
+    delete_peerings = True
+    delete_networks = True
     delete_namespaces = True
 
     def __init__(self, log_level=logging.INFO):
