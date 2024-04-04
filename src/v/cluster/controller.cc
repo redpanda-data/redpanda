@@ -577,7 +577,14 @@ ss::future<> controller::start(
             std::ref(_partition_leaders),
             std::ref(_tp_state));
       })
-      .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
+      .then([this] {
+          return _hm_frontend.start(
+            std::ref(_hm_backend),
+            std::ref(_node_status_table),
+            ss::sharded_parameter([]() {
+                return config::shard_local_cfg().alive_timeout_ms.bind();
+            }));
+      })
       .then([this] {
           return _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
       })
