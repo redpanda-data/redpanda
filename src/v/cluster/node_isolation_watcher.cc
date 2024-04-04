@@ -77,30 +77,6 @@ ss::future<bool> node_isolation_watcher::is_node_isolated() {
         co_return false;
     }
 
-    auto nodes_status_res = co_await _health_monitor.local().get_nodes_status(
-      config::shard_local_cfg().metadata_status_wait_timeout_ms()
-      + model::timeout_clock::now());
-
-    if (nodes_status_res.has_value()) {
-        auto& nodes_status = nodes_status_res.value();
-
-        // All nodes from health report should be not alive for isolation
-        bool is_one_of_node_not_alive = std::any_of(
-          nodes_status.begin(),
-          nodes_status.end(),
-          [](const node_state& node_state) {
-              // Current node should not influence on answer.
-              if (config::node().node_id() == node_state.id) {
-                  return cluster::alive::no;
-              }
-              return node_state.is_alive;
-          });
-
-        if (is_one_of_node_not_alive) {
-            co_return false;
-        }
-    }
-
     co_return true;
 }
 
