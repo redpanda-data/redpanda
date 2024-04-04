@@ -312,22 +312,28 @@ struct subject_version {
 };
 
 // Very similar to topic_key_type, separate to avoid intermingling storage code
-enum class seq_marker_key_type { invalid = 0, schema, delete_subject, config };
+enum class seq_marker_key_type {
+    invalid = 0,
+    schema,
+    delete_subject,
+    config,
+    mode
+};
 
 constexpr std::string_view to_string_view(seq_marker_key_type v) {
     switch (v) {
     case seq_marker_key_type::schema:
         return "schema";
-        break;
     case seq_marker_key_type::delete_subject:
         return "delete_subject";
-        break;
     case seq_marker_key_type::config:
         return "config";
+    case seq_marker_key_type::mode:
+        return "mode";
+    case seq_marker_key_type::invalid:
         break;
-    default:
-        return "invalid";
     }
+    return "invalid";
 }
 
 // Record the sequence+node where updates were made to a subject,
