@@ -235,7 +235,7 @@ class KafkaClientSecurity:
 PLAINTEXT_SECURITY = KafkaClientSecurity(None, False)
 
 # A KafkaClientSecurity constant presenting "SSL" security,
-# i.e., SASL and TLS enabled.
+# i.e., no SASL and TLS enabled.
 SSL_SECURITY = KafkaClientSecurity(None, True)
 
 
