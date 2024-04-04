@@ -13,6 +13,7 @@
 #include "base/vlog.h"
 #include "kafka/client/client_fetch_batch_reader.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
@@ -82,8 +83,13 @@ struct batch_builder : public storage::record_batch_builder {
             auto key = config_key{.seq{s.seq}, .node{s.node}, .sub{sub}};
             add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
         } break;
-        default:
+        case seq_marker_key_type::mode: {
+            auto key = mode_key{.seq{s.seq}, .node{s.node}, .sub{sub}};
+            add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
+        } break;
+        case seq_marker_key_type::invalid:
             vassert(false, "Unknown key type");
+            break;
         }
     }
 
@@ -326,6 +332,78 @@ ss::future<bool> seq_writer::delete_config(subject sub) {
       });
 }
 
+ss::future<std::optional<bool>> seq_writer::do_write_mode(
+  std::optional<subject> sub, mode m, force f, model::offset write_at) {
+    vlog(
+      plog.debug,
+      "write_mode sub={} mode={} force={} offset={}",
+      sub,
+      to_string_view(m),
+      f,
+      write_at);
+
+    _store.check_mode_mutability(force::no);
+
+    try {
+        // Check for no-op case
+        mode existing = sub ? co_await _store.get_mode(
+                          sub.value(), default_to_global::no)
+                            : co_await _store.get_mode();
+        if (existing == m) {
+            co_return false;
+        }
+    } catch (const exception& e) {
+        if (e.code() != error_code::mode_not_found) {
+            throw;
+        }
+    }
+
+    batch_builder rb(write_at, sub);
+    rb(
+      mode_key{.seq{write_at}, .node{_node_id}, .sub{sub}},
+      mode_value{.mode = m});
+
+    if (co_await produce_and_apply(write_at, std::move(rb).build())) {
+        co_return true;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
+}
+
+ss::future<bool>
+seq_writer::write_mode(std::optional<subject> sub, mode mode, force f) {
+    return sequenced_write(
+      [sub{std::move(sub)}, mode, f](model::offset write_at, seq_writer& seq) {
+          return seq.do_write_mode(sub, mode, f, write_at);
+      });
+}
+
+ss::future<std::optional<bool>>
+seq_writer::do_delete_mode(subject sub, model::offset write_at) {
+    vlog(plog.debug, "delete mode sub={} offset={}", sub, write_at);
+
+    // Report an error if the mode isn't registered
+    co_await _store.get_mode(sub, default_to_global::no);
+    _store.check_mode_mutability(force::no);
+
+    batch_builder rb{write_at, sub};
+    rb(co_await _store.get_subject_mode_written_at(sub));
+    if (co_await produce_and_apply(std::nullopt, std::move(rb).build())) {
+        co_return true;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
+}
+
+ss::future<bool> seq_writer::delete_mode(subject sub) {
+    return sequenced_write(
+      [sub{std::move(sub)}](model::offset write_at, seq_writer& seq) {
+          return seq.do_delete_mode(sub, write_at);
+      });
+}
+
 /// Impermanent delete: update a version with is_deleted=true
 ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
   subject sub, schema_version version, model::offset write_at) {
@@ -390,6 +468,14 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
     rb(
       delete_subject_key{.seq{write_at}, .node{_node_id}, .sub{sub}},
       delete_subject_value{.sub{sub}});
+
+    try {
+        rb(co_await _store.get_subject_mode_written_at(sub));
+    } catch (exception const& e) {
+        if (e.code() != error_code::subject_not_found) {
+            throw;
+        }
+    }
 
     try {
         rb(co_await _store.get_subject_config_written_at(sub));
