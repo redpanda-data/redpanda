@@ -90,7 +90,7 @@ TEST_P_CORO(monitor_test_fixture, truncation_detection) {
 
     for (auto& [id, node] : nodes()) {
         if (id == leader) {
-            node->on_dispatch([](raft::msg_type t) {
+            node->on_dispatch([](model::node_id, raft::msg_type t) {
                 if (
                   t == raft::msg_type::append_entries
                   || t == raft::msg_type::vote) {

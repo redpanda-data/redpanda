@@ -273,7 +273,7 @@ TEST_P_CORO(
     co_await set_write_caching(params.write_caching);
 
     for (auto& [_, node] : nodes()) {
-        node->on_dispatch([](raft::msg_type t) {
+        node->on_dispatch([](model::node_id, raft::msg_type t) {
             if (
               t == raft::msg_type::append_entries
               && random_generators::get_int(1000) > 800) {
@@ -405,7 +405,7 @@ TEST_P_CORO(quorum_acks_fixture, test_progress_on_truncation) {
     // truncation.
     for (auto& [id, node] : nodes()) {
         if (id == leader_id) {
-            node->on_dispatch([](raft::msg_type t) {
+            node->on_dispatch([](model::node_id, raft::msg_type t) {
                 if (
                   t == raft::msg_type::append_entries
                   || t == raft::msg_type::vote) {
