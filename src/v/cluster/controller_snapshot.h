@@ -193,16 +193,27 @@ struct topics_t
     ss::future<> serde_async_read(iobuf_parser&, serde::header const);
 };
 
+struct named_role_t
+  : public serde::
+      envelope<named_role_t, serde::version<0>, serde::compat_version<0>> {
+    named_role_t() = default;
+    named_role_t(security::role_name name, security::role role)
+      : name(std::move(name))
+      , role(std::move(role)) {}
+    security::role_name name;
+    security::role role;
+
+    friend bool operator==(const named_role_t&, const named_role_t&) = default;
+
+    auto serde_fields() { return std::tie(name, role); }
+};
+
 struct security_t
   : public serde::
       envelope<security_t, serde::version<1>, serde::compat_version<0>> {
     fragmented_vector<user_and_credential> user_credentials;
     fragmented_vector<security::acl_binding> acls;
-    struct named_role {
-        security::role_name name;
-        security::role role;
-    };
-    chunked_vector<named_role> roles;
+    chunked_vector<named_role_t> roles;
 
     friend bool operator==(const security_t&, const security_t&) = default;
 
