@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newRenameToCommand(_ afero.Fs, _ *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:     "rename-to [NAME]",
 		Short:   "Rename the current rpk auth",
