@@ -109,10 +109,20 @@ func (a *AdminAPI) AssignRole(ctx context.Context, roleName string, add []RoleMe
 	return res, a.sendAny(ctx, http.MethodPost, fmt.Sprintf("%v/%v/members", baseRoleEndpoint, roleName), body, &res)
 }
 
-// UnassignRole unasigns the role 'roleName' from the passed members.
+// UnassignRole unassigns the role 'roleName' from the passed members.
 func (a *AdminAPI) UnassignRole(ctx context.Context, roleName string, remove []RoleMember) (PatchRoleResponse, error) {
 	var res PatchRoleResponse
 	body := patchRoleRequest{
+		Remove: remove,
+	}
+	return res, a.sendAny(ctx, http.MethodPost, fmt.Sprintf("%v/%v/members", baseRoleEndpoint, roleName), body, &res)
+}
+
+// UpdateRoleMembership updates the role membership for 'roleName' adding and removing the passed members.
+func (a *AdminAPI) UpdateRoleMembership(ctx context.Context, roleName string, add, remove []RoleMember) (PatchRoleResponse, error) {
+	var res PatchRoleResponse
+	body := patchRoleRequest{
+		Add:    add,
 		Remove: remove,
 	}
 	return res, a.sendAny(ctx, http.MethodPost, fmt.Sprintf("%v/%v/members", baseRoleEndpoint, roleName), body, &res)
