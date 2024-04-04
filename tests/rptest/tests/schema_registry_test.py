@@ -310,6 +310,49 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def _get_mode(self, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET", "mode", headers=headers, **kwargs)
 
+    def _set_mode(self,
+                  data,
+                  force=False,
+                  headers=HTTP_POST_HEADERS,
+                  **kwargs):
+        return self._request("PUT",
+                             f"mode{'?force=true' if force else ''}",
+                             headers=headers,
+                             data=data,
+                             **kwargs)
+
+    def _get_mode_subject(self,
+                          subject,
+                          fallback=False,
+                          headers=HTTP_GET_HEADERS,
+                          **kwargs):
+        return self._request(
+            "GET",
+            f"mode/{subject}{'?defaultToGlobal=true' if fallback else ''}",
+            headers=headers,
+            **kwargs)
+
+    def _set_mode_subject(self,
+                          subject,
+                          data,
+                          force=False,
+                          headers=HTTP_POST_HEADERS,
+                          **kwargs):
+        return self._request("PUT",
+                             f"mode/{subject}{'?force=true' if force else ''}",
+                             headers=headers,
+                             data=data,
+                             **kwargs)
+
+    def _delete_mode_subject(self,
+                             subject,
+                             headers=HTTP_POST_HEADERS,
+                             **kwargs):
+        return self._request("DELETE",
+                             f"mode/{subject}",
+                             headers=headers,
+                             **kwargs)
+
     def _get_schemas_types(self,
                            headers=HTTP_GET_HEADERS,
                            tls_enabled: bool = False,
@@ -984,15 +1027,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )["error_code"] == 40401, f"Wrong err code: {result_raw.json()}"
         assert result_raw.json(
         )["message"] == f"Subject 'foo-key' not found.", f"{json.dumps(result_raw.json(), indent=1)}"
-
-    @cluster(num_nodes=3)
-    def test_mode(self):
-        """
-        Smoketest get_mode endpoint
-        """
-        self.logger.debug("Get initial global mode")
-        result_raw = self._get_mode()
-        assert result_raw.json()["mode"] == "READWRITE"
 
     @cluster(num_nodes=3)
     def test_post_compatibility_subject_version(self):
@@ -1783,6 +1817,162 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             check_each_schema(subject, subjects[subject]["schemas"],
                               subjects[subject]["schema_ids"],
                               subjects[subject]["subject_versions"])
+
+
+class SchemaRegistryModeNotMutableTest(SchemaRegistryEndpoints):
+    """
+    Test that mode cannot be mutated when mode_mutability=False.
+    """
+    def __init__(self, context, **kwargs):
+        self.schema_registry_config = SchemaRegistryConfig()
+        self.schema_registry_config.mode_mutability = False
+
+        super(SchemaRegistryEndpoints, self).__init__(
+            context,
+            schema_registry_config=self.schema_registry_config,
+            **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_mode_immutable(self):
+
+        subject = f"{create_topic_names(1)[0]}-key"
+
+        result_raw = self._get_mode()
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READWRITE"
+
+        result_raw = self._set_mode(data=json.dumps({"mode": "INVALID"}))
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42204
+
+        result_raw = self._set_mode(data=json.dumps({"mode": "READONLY"}))
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42205
+        assert result_raw.json()["message"] == "Mode changes are not allowed"
+
+        # Check that setting it to the same value is still refused
+        result_raw = self._set_mode(data=json.dumps({"mode": "READWRITE"}))
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42205
+        assert result_raw.json()["message"] == "Mode changes are not allowed"
+
+        result_raw = self._set_mode_subject(subject=subject,
+                                            data=json.dumps(
+                                                {"mode": "READONLY"}))
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42205
+        assert result_raw.json()["message"] == "Mode changes are not allowed"
+
+        result_raw = self._delete_mode_subject(subject=subject)
+        assert result_raw.status_code == 404
+        assert result_raw.json()["error_code"] == 40401
+        assert result_raw.json(
+        )["message"] == f"Subject '{subject}' not found."
+
+
+class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
+    """
+    Test schema registry mode against a redpanda cluster.
+    """
+    def __init__(self, context, **kwargs):
+        self.schema_registry_config = SchemaRegistryConfig()
+        self.schema_registry_config.mode_mutability = True
+        super(SchemaRegistryEndpoints, self).__init__(
+            context,
+            schema_registry_config=self.schema_registry_config,
+            **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_mode(self):
+        """
+        Smoketest mode endpoints
+        """
+        subject = f"{create_topic_names(1)[0]}-key"
+        not_subject = f"{create_topic_names(1)[0]}-key"
+
+        self.logger.debug("Get initial global mode")
+        result_raw = self._get_mode()
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READWRITE"
+
+        self.logger.debug("Set invalid global mode")
+        result_raw = self._set_mode(data=json.dumps({"mode": "INVALID"}))
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42204
+
+        self.logger.debug("Set global mode")
+        result_raw = self._set_mode(data=json.dumps({"mode": "READONLY"}))
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READONLY"
+
+        self.logger.debug("Get global mode")
+        result_raw = self._get_mode()
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READONLY"
+
+        self.logger.debug("Get mode for non-existant subject")
+        result_raw = self._get_mode_subject(subject=not_subject)
+        assert result_raw.status_code == 404
+        assert result_raw.json()["error_code"] == 40409
+
+        self.logger.debug("Get mode for non-existant subject, with fallback")
+        result_raw = self._get_mode_subject(subject=not_subject, fallback=True)
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READONLY"
+
+        self.logger.debug("Set mode for non-existant subject (allowed)")
+        result_raw = self._set_mode_subject(subject=subject,
+                                            data=json.dumps(
+                                                {"mode": "READWRITE"}))
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READWRITE"
+
+        self.logger.debug("Set invalid subject mode")
+        result_raw = self._set_mode_subject(subject="test-sub",
+                                            data=json.dumps(
+                                                {"mode": "INVALID"}))
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42204
+
+        self.logger.debug("Get mode for non-existant subject")
+        result_raw = self._get_mode_subject(subject=subject, fallback=False)
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READWRITE"
+
+        self.logger.debug("Delete mode for non-existant subject")
+        result_raw = self._delete_mode_subject(subject=subject)
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READWRITE"
+
+        self.logger.debug("Get mode for non-existant subject")
+        result_raw = self._get_mode_subject(subject=subject, fallback=False)
+        assert result_raw.status_code == 404
+        assert result_raw.json()["error_code"] == 40409
+
+        self.logger.debug("Set global mode to READWRITE")
+        result_raw = self._set_mode(data=json.dumps({"mode": "READWRITE"}))
+        assert result_raw.status_code == 200
+
+        self.logger.debug("Add a schema")
+        result_raw = self._post_subjects_subject_versions(
+            subject=subject, data=json.dumps({"schema": schema1_def}))
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Set global mode to IMPORT")
+        result_raw = self._set_mode(data=json.dumps({"mode": "IMPORT"}))
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42204
+        assert result_raw.json(
+        )["message"] == "Invalid mode. Valid values are READWRITE, READONLY"
+
+        self.logger.debug("Set subject mode to IMPORT")
+        result_raw = self._set_mode_subject(subject="test-sub",
+                                            data=json.dumps({"mode":
+                                                             "IMPORT"}))
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42204
+        assert result_raw.json(
+        )["message"] == "Invalid mode. Valid values are READWRITE, READONLY"
 
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
