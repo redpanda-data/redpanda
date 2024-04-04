@@ -240,8 +240,7 @@ channel& in_memory_test_protocol::get_channel(model::node_id id) {
     return *it->second;
 }
 
-void in_memory_test_protocol::on_dispatch(
-  ss::noncopyable_function<ss::future<>(msg_type)> f) {
+void in_memory_test_protocol::on_dispatch(dispatch_callback_t f) {
     _on_dispatch_handlers.push_back(std::move(f));
 }
 
@@ -301,7 +300,7 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
 
     const auto msg_type = map_msg_type<ReqT>();
     for (const auto& f : _on_dispatch_handlers) {
-        co_await f(msg_type);
+        co_await f(id, msg_type);
     }
 
     try {
@@ -557,8 +556,7 @@ raft_node_instance::random_batch_base_offset(model::offset max) {
     co_return batches.front().base_offset();
 }
 
-void raft_node_instance::on_dispatch(
-  ss::noncopyable_function<ss::future<>(msg_type)> f) {
+void raft_node_instance::on_dispatch(dispatch_callback_t f) {
     _protocol->on_dispatch(std::move(f));
 }
 

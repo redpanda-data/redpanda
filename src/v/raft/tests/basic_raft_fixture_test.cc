@@ -217,7 +217,7 @@ TEST_F_CORO(
     // wait for leader
     co_await wait_for_leader(10s);
     for (auto& [_, node] : nodes()) {
-        node->on_dispatch([](raft::msg_type t) {
+        node->on_dispatch([](model::node_id, raft::msg_type t) {
             if (
               t == raft::msg_type::append_entries
               && random_generators::get_int(1000) > 800) {
