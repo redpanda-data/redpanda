@@ -44,15 +44,40 @@ using application_version = named_type<ss::sstring, struct version_number_tag>;
 struct node_state
   : serde::envelope<node_state, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
+    node_state(
+      model::node_id id,
+      model::membership_state membership_state,
+      alive is_alive);
 
-    model::node_id id;
-    model::membership_state membership_state;
-    alive is_alive;
+    node_state() = default;
+    node_state(const node_state&) = default;
+    node_state(node_state&&) noexcept = default;
+    node_state& operator=(const node_state&) = default;
+    node_state& operator=(node_state&&) noexcept = default;
+    ~node_state() noexcept = default;
+
+    model::node_id id() const { return _id; }
+
+    model::membership_state membership_state() const {
+        return _membership_state;
+    }
+    // clang-format off
+    [[deprecated("please use health_monitor_frontend::is_alive() to query for "
+                 "liveness")]] 
+    alive is_alive() const {
+        return _is_alive;
+    }
+    // clang-format on
     friend std::ostream& operator<<(std::ostream&, const node_state&);
 
     friend bool operator==(const node_state&, const node_state&) = default;
 
-    auto serde_fields() { return std::tie(id, membership_state, is_alive); }
+    auto serde_fields() { return std::tie(_id, _membership_state, _is_alive); }
+
+private:
+    model::node_id _id;
+    model::membership_state _membership_state;
+    alive _is_alive;
 };
 
 struct partition_status

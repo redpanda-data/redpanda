@@ -137,12 +137,10 @@ cluster_health_report health_monitor_backend::build_cluster_report(
 
         auto it = _status.find(node_id);
         if (it != _status.end()) {
-            statuses.push_back(node_state{
-              .id = node_id,
-              .membership_state
-              = node_metadata->get().state.get_membership_state(),
-              .is_alive = it->second.is_alive,
-            });
+            statuses.emplace_back(
+              node_id,
+              node_metadata->get().state.get_membership_state(),
+              it->second.is_alive);
         }
     }
 
