@@ -13,8 +13,8 @@ import (
 	"net/http"
 	"time"
 
+	controlplanev1beta1connect "buf.build/gen/go/redpandadata/cloud/connectrpc/go/redpanda/api/controlplane/v1beta1/controlplanev1beta1connect"
 	"connectrpc.com/connect"
-	"github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/controlplane/v1beta1/controlplanev1beta1connect"
 )
 
 // ControlPlaneClientSet holds the respective service clients to interact with
