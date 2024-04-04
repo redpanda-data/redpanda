@@ -1359,12 +1359,17 @@ void partition_balancer_planner::force_reassignable_partition::
     auto constraints = get_allocation_constraints(max_disk_usage_ratio);
     auto replicas_size = static_cast<uint16_t>(replicas.size());
     model::topic_namespace tn{_ntp.ns, _ntp.tp.topic};
+    node2count_t* node2count = nullptr;
+    if (_ctx.config().topic_aware) {
+        node2count = &_ctx._topic2node_counts.at(tn);
+    }
     _reallocation = _ctx._parent._partition_allocator.reallocate_partition(
       tn,
       {_original_assignment.id, replicas_size, std::move(constraints)},
       _original_assignment,
       get_allocation_domain(tn),
-      replicas_to_remove);
+      replicas_to_remove,
+      node2count);
 
     if (_reallocation.has_error()) {
         if (_ctx.increment_failure_count()) {
@@ -1393,42 +1398,28 @@ void partition_balancer_planner::force_reassignable_partition::
     auto replicas_added = subtract(new_assignment, replicas);
     auto replicas_removed = subtract(replicas, new_assignment);
 
-    // adjust topic node counts
-
-    auto& node_counts = _ctx._topic2node_counts.at(
-      model::topic_namespace_view(ntp()));
-    for (const auto& bs : replicas_removed) {
-        auto& count = node_counts.at(bs.node_id);
-        count -= 1;
-        if (count == 0) {
-            node_counts.erase(bs.node_id);
-        }
-    }
-    for (const auto& bs : replicas_added) {
-        node_counts[bs.node_id] += 1;
-    }
-
-    if (!_sizes) {
-        return;
-    }
-
     // adjust partition disk usage contribution
 
-    auto& sizes = _sizes.value();
-    for (auto& replica : replicas_removed) {
-        auto it = _ctx.node_disk_reports.find(replica.node_id);
-        if (it == _ctx.node_disk_reports.end()) {
-            continue;
+    if (_sizes) {
+        auto& sizes = _sizes.value();
+        for (auto& replica : replicas_removed) {
+            auto it = _ctx.node_disk_reports.find(replica.node_id);
+            if (it == _ctx.node_disk_reports.end()) {
+                continue;
+            }
+            it->second.released += sizes.get_current(replica.node_id);
         }
-        it->second.released += sizes.get_current(replica.node_id);
-    }
-    for (auto& replica : replicas_added) {
-        auto it = _ctx.node_disk_reports.find(replica.node_id);
-        if (it == _ctx.node_disk_reports.end()) {
-            continue;
+        for (auto& replica : replicas_added) {
+            auto it = _ctx.node_disk_reports.find(replica.node_id);
+            if (it == _ctx.node_disk_reports.end()) {
+                continue;
+            }
+            it->second.assigned += sizes.non_reclaimable;
         }
-        it->second.assigned += sizes.non_reclaimable;
     }
+
+    // no need to adjust topic node counts, it has already been done by
+    // partition_allocator::reallocate_partition
 }
 
 /*
