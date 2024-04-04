@@ -10,7 +10,9 @@
 package security
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security/acl"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security/role"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security/user"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -24,7 +26,9 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "Manage Redpanda security",
 	}
 	cmd.AddCommand(
+		acl.NewCommand(fs, p),
 		role.NewCommand(fs, p),
+		user.NewCommand(fs, p),
 	)
 	return cmd
 }
