@@ -1656,19 +1656,16 @@ class RpkTool:
     def deploy_wasm(self,
                     name,
                     input_topic,
-                    output_topic,
+                    output_topics,
                     file="tinygo/identity.wasm"):
-        self._run_wasm([
-            "deploy",
-            "--name",
-            name,
-            "--input-topic",
-            input_topic,
-            "--output-topic",
-            output_topic,
-            "--file",
-            f"/opt/transforms/{file}",
-        ])
+        cmd = [
+            "deploy", "--name", name, "--input-topic", input_topic, "--file",
+            f"/opt/transforms/{file}"
+        ]
+        assert len(output_topics) > 0, "missing output topics"
+        for topic in output_topics:
+            cmd += ["--output-topic", topic]
+        self._run_wasm(cmd)
 
     def delete_wasm(self, name):
         self._run_wasm(["delete", name, "--no-confirm"])
