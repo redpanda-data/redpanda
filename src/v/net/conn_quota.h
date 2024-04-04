@@ -13,6 +13,7 @@
 #include "base/seastarx.h"
 #include "base/vassert.h"
 #include "config/property.h"
+#include "rpc/logger.h"
 #include "seastar/core/gate.hh"
 #include "seastar/core/sharded.hh"
 #include "seastar/net/inet_address.hh"

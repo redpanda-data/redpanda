@@ -58,10 +58,12 @@ transport::transport(
   transport_configuration c,
   std::optional<connection_cache_label> label,
   std::optional<model::node_id> node_id)
-  : base_transport(base_transport::configuration{
-    .server_addr = std::move(c.server_addr),
-    .credentials = std::move(c.credentials),
-  })
+  : base_transport(
+    base_transport::configuration{
+      .server_addr = std::move(c.server_addr),
+      .credentials = std::move(c.credentials),
+    },
+    &rpclog)
   , _memory(c.max_queued_bytes, "rpc/transport-mem")
   , _version(c.version)
   , _default_version(c.version) {

@@ -13,7 +13,6 @@
 #include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
-#include "rpc/logger.h"
 #include "rpc/types.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -61,10 +60,7 @@ public:
 
     void connection_closed() { --_connections; }
 
-    void connection_error(const std::exception_ptr& e) {
-        rpc::rpclog.trace("Connection error: {}", e);
-        ++_connection_errors;
-    }
+    void connection_error() { ++_connection_errors; }
 
     void read_dispatch_error() { ++_read_dispatch_errors; }
 
