@@ -14,25 +14,6 @@
 #include "security/types.h"
 #include "serde/rw/rw.h"
 
-namespace serde {
-void tag_invoke(
-  tag_t<write_tag>,
-  iobuf& out,
-  cluster::controller_snapshot_parts::security_t::named_role t) {
-    write(out, std::move(t.name));
-    write(out, std::move(t.role));
-}
-
-void tag_invoke(
-  tag_t<read_tag>,
-  iobuf_parser& in,
-  cluster::controller_snapshot_parts::security_t::named_role& t,
-  std::size_t const bytes_left_limit) {
-    t.name = read_nested<security::role_name>(in, bytes_left_limit);
-    t.role = read_nested<security::role>(in, bytes_left_limit);
-}
-} // namespace serde
-
 namespace cluster {
 
 namespace controller_snapshot_parts {
