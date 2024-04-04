@@ -21,6 +21,7 @@
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/node_status_backend.h"
 #include "cluster/partition_manager.h"
 #include "cluster/plugin_frontend.h"
 #include "cluster/security_frontend.h"
@@ -56,7 +57,8 @@ service::service(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<health_monitor_frontend>& hm_frontend,
   ss::sharded<rpc::connection_cache>& conn_cache,
-  ss::sharded<partition_manager>& partition_manager)
+  ss::sharded<partition_manager>& partition_manager,
+  ss::sharded<node_status_backend>& node_status_backend)
   : controller_service(sg, ssg)
   , _controller(controller)
   , _topics_frontend(tf)
@@ -72,7 +74,8 @@ service::service(
   , _hm_frontend(hm_frontend)
   , _conn_cache(conn_cache)
   , _partition_manager(partition_manager)
-  , _plugin_frontend(pf) {}
+  , _plugin_frontend(pf)
+  , _node_status_backend(node_status_backend) {}
 
 ss::future<join_node_reply>
 service::join_node(join_node_request req, rpc::streaming_context&) {
@@ -382,6 +385,10 @@ service::hello(hello_request req, rpc::streaming_context&) {
                 peer);
               cache.get(peer)->reset_backoff();
           }
+      });
+    co_await _node_status_backend.invoke_on(
+      0, [peer = req.peer](node_status_backend& backend) {
+          backend.reset_node_backoff(peer);
       });
     co_return hello_reply{.error = errc::success};
 }
