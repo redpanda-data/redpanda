@@ -181,8 +181,8 @@ class CloudCleanup():
 
             # If the cluster in deleleting_agent, we should clean it
             # regardless of time or anything else to clean up quota
+            _message += f"| status: '{_cluster['state']}' "
             if _cluster['state'] in ['deleting_agent']:
-                _message += f"| status: '{_cluster['state']}' "
                 # Login
                 try:
                     _message += "| cloud login "
@@ -208,9 +208,8 @@ class CloudCleanup():
                 _log_deleted(_message)
                 return True
             if _state in ['creating_agent']:
-                _message += f"| status: '{_cluster['state']}' "
                 # Check date, and delete only old ones
-                if _ensure_date(_createdDate):
+                if not _ensure_date(_createdDate):
                     _log_skip(_message)
                     return False
                 # Just delete the cluster resource
@@ -219,7 +218,7 @@ class CloudCleanup():
                 self.log.debug(f"Returned:\n{out}")
                 return True
             # All other states need to wait for 36h
-            if _ensure_date(_createdDate):
+            if not _ensure_date(_createdDate):
                 _log_skip(_message)
                 return False
             # TODO: Implement deletion on rare non-agent statuses
