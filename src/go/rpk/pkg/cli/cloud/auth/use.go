@@ -21,13 +21,13 @@ import (
 func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "use [NAME]",
-		Short: "Select the rpk cloud auth to use",
-		Long: `Select the rpk cloud auth to use.
+		Short: "Select the rpk cloud authentication to use",
+		Long: `Select the rpk cloud authentication to use.
 
-This swaps the current cloud auth to the specified cloud auth. If your current
-profile is a cloud profile, this unsets the current profile (since the auth
-is now different). If your current profile is for a self hosted cluster, the
-profile is kept.
+This swaps the current cloud authentication to the specified cloud
+authentication. If your current profile is a cloud profile, this unsets the
+current profile (since the authentication is now different). If your current
+profile is for a self hosted cluster, the profile is kept.
 `,
 
 		Args:              cobra.ExactArgs(1),
