@@ -6,6 +6,8 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
+import time
+
 from rptest.services.admin import Admin, Role, RoleMember
 from rptest.util import wait_until_result
 from rptest.tests.redpanda_test import RedpandaTest
@@ -20,9 +22,14 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
     """
 
     DEFAULT_ROLE_NAME = "Users"
+    LICENSE_CHECK_INTERVAL_SEC = 1
 
     def __init__(self, test_ctx, **kwargs):
         super().__init__(test_ctx, **kwargs)
+        self.redpanda.set_environment({
+            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
+            f'{self.LICENSE_CHECK_INTERVAL_SEC}'
+        })
         self.installer = self.redpanda._installer
         self.admin = Admin(self.redpanda)
 
@@ -30,6 +37,9 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
         # 24.1.x is when license went live, so start with a 23.3.x version
         self.installer.install(self.redpanda.nodes, (23, 3))
         super().setUp()
+
+    def _has_license_nag(self):
+        return self.redpanda.search_log_any("Enterprise feature(s).*")
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rbac_migration(self):
@@ -63,3 +73,7 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
             backoff_sec=1,
             retry_on_exc=True,
             err_msg="Timeout waiting for default role to be created")
+
+        # Verify that we don't get a license nag for the default role
+        time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        assert not self._has_license_nag()
