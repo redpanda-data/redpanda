@@ -110,7 +110,7 @@ class KafkaClientSecurity:
 
     @property
     def is_simple(self):
-        """Determines if an the contained authentication method is "simple". An instance is simple
+        """Determines if the contained authentication method is "simple". An instance is simple
         if SASL is disabled or if is enabled and is simple SASL mechanisms: i.e., those which can be handled
         by generated configuration properties. Non-simple mechanisms (like OAUTH) require additional
         handling by the client (e.g., registering an OAUTH callback) and this class throws in methods
