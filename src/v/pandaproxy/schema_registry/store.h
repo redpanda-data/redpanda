@@ -287,6 +287,34 @@ public:
         return result;
     }
 
+    /// \brief Return the seq_marker write history of a subject, but only
+    /// mode_keys
+    ///
+    /// \return A vector (possibly empty)
+    result<std::vector<seq_marker>>
+    get_subject_mode_written_at(const subject& sub) const {
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
+
+        // This should never happen (how can a record get into the
+        // store without an originating sequenced record?), but return
+        // an error instead of vasserting out.
+        if (sub_it->second.written_at.empty()) {
+            return not_found(sub);
+        }
+
+        std::vector<seq_marker> result;
+        std::copy_if(
+          sub_it->second.written_at.begin(),
+          sub_it->second.written_at.end(),
+          std::back_inserter(result),
+          [](const auto& sm) {
+              return sm.key_type == seq_marker_key_type::mode;
+          });
+
+        return result;
+    }
+
     /// \brief Return the seq_marker write history of a version.
     ///
     /// \return A vector with at least one element
