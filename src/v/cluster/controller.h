@@ -30,6 +30,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
 
+#include <chrono>
 #include <vector>
 
 namespace cluster {
@@ -178,7 +179,8 @@ public:
       ss::abort_source&,
       ss::shared_ptr<cluster::cloud_metadata::offsets_upload_requestor>,
       ss::shared_ptr<cluster::cloud_metadata::producer_id_recovery_manager>,
-      ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>);
+      ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>,
+      std::chrono::milliseconds application_start_time);
 
     // prevents controller from accepting new requests
     ss::future<> shutdown_input();
