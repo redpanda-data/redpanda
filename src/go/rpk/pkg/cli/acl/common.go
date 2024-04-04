@@ -30,8 +30,10 @@ const (
 	txnIDFlag          = "transactional-id"
 	patternFlag        = "resource-pattern-type"
 	allowPrincipalFlag = "allow-principal"
+	allowRoleFlag      = "allow-role"
 	allowHostFlag      = "allow-host"
 	denyPrincipalFlag  = "deny-principal"
+	denyRoleFlag       = "deny-role"
 	denyHostFlag       = "deny-host"
 	operationFlag      = "operation"
 
@@ -87,6 +89,14 @@ func unptr(str *string) string {
 	return *str
 }
 
+func PrefixRole(roles []string) {
+	for i, u := range roles {
+		if !strings.HasPrefix(u, rolePrefix) {
+			roles[i] = rolePrefix + u
+		}
+	}
+}
+
 // The acls struct contains everything we receive from flags, and one field
 // that stores anything from those flags that needs parsing.
 type acls struct {
@@ -106,8 +116,10 @@ type acls struct {
 	cluster         bool
 	txnIDs          []string
 	allowPrincipals []string
+	allowRoles      []string
 	allowHosts      []string
 	denyPrincipals  []string
+	denyRoles       []string
 	denyHosts       []string
 
 	// create & delete & list flags, to be parsed
@@ -135,8 +147,10 @@ func (a *acls) addDeprecatedFlags(cmd *cobra.Command) {
 func (a *acls) backcompatList() error {
 	// We reject using the new flags with their replacements.
 	if len(a.allowPrincipals) > 0 ||
+		len(a.allowRoles) > 0 ||
 		len(a.allowHosts) > 0 ||
 		len(a.denyPrincipals) > 0 ||
+		len(a.denyRoles) > 0 ||
 		len(a.denyHosts) > 0 {
 		if len(a.listPermissions) > 0 ||
 			len(a.listPrincipals) > 0 ||
@@ -270,6 +284,12 @@ func (a *acls) createCreations() (*kadm.ACLBuilder, error) {
 		return nil, err
 	}
 
+	PrefixRole(a.allowRoles)
+	PrefixRole(a.denyRoles)
+
+	a.allowPrincipals = append(a.allowPrincipals, a.allowRoles...)
+	a.denyPrincipals = append(a.denyPrincipals, a.denyRoles...)
+
 	// Using empty lists / non-Maybe functions when building create ACLs is
 	// fine, since creation does not opt in to "any" when things are empty.
 	b := kadm.NewACLs().
@@ -298,6 +318,12 @@ func (a *acls) createDeletionsAndDescribes(
 	if err := a.parseCommon(); err != nil {
 		return nil, err
 	}
+
+	PrefixRole(a.allowRoles)
+	PrefixRole(a.denyRoles)
+
+	a.allowPrincipals = append(a.allowPrincipals, a.allowRoles...)
+	a.denyPrincipals = append(a.denyPrincipals, a.denyRoles...)
 
 	// Deleting & describing works on a filter basis: empty matches all.
 	// The builder opts in to all when using functions if the input slice
