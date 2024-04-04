@@ -45,6 +45,15 @@ bool contains_invalid_characters(std::string_view str) {
 
 namespace detail {
 
+struct buffer_entry {
+    buffer_entry() = delete;
+    explicit buffer_entry(event event, ssx::semaphore_units units)
+      : event(std::move(event))
+      , units(std::move(units)) {}
+    event event;
+    ssx::semaphore_units units;
+};
+
 template<typename ClockType>
 class flusher {
     static constexpr ClockType::duration jitter_amt{50ms};

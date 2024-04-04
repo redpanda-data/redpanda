@@ -28,9 +28,10 @@
 namespace transform::logging {
 
 namespace detail {
+struct buffer_entry;
 template<typename ClockType>
 class flusher;
-}
+} // namespace detail
 
 /**
  * A class for collecting and publishing log messages emitted by Redpanda Data
@@ -120,19 +121,10 @@ private:
 
     ss::abort_source _as{};
 
-    struct buffer_entry {
-        buffer_entry() = delete;
-        explicit buffer_entry(event event, ssx::semaphore_units units)
-          : event(std::move(event))
-          , units(std::move(units)) {}
-        event event;
-        ssx::semaphore_units units;
-    };
-
     // per @rockwood
     // TODO(oren): Evaluate (and probably substitute) `chunked_vector` once it
     // lands
-    using buffer_t = ss::chunked_fifo<buffer_entry>;
+    using buffer_t = ss::chunked_fifo<detail::buffer_entry>;
     absl::btree_map<ss::sstring, buffer_t, sstring_less> _log_buffers;
     using probe_map_t = absl::
       btree_map<ss::sstring, std::unique_ptr<logger_probe>, sstring_less>;
