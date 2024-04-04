@@ -12,10 +12,9 @@
 #include "transform/rpc/client.h"
 
 #include "cluster/errc.h"
-#include "cluster/partition_leaders_table.h"
-#include "cluster/scheduling/constraints.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "logger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -26,9 +25,7 @@
 #include "rpc/backoff_policy.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
-#include "ssx/semaphore.h"
 #include "transform/rpc/deps.h"
-#include "transform/rpc/logger.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
 #include "utils/type_traits.h"
@@ -54,15 +51,12 @@
 
 #include <algorithm>
 #include <chrono>
-#include <exception>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace transform::rpc {
 

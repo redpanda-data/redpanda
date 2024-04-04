@@ -10,11 +10,9 @@
  */
 
 #include "base/outcome.h"
-#include "cluster/errc.h"
-#include "model/record.h"
+#include "model/transform.h"
 #include "ssx/semaphore.h"
 #include "transform/logging/errc.h"
-#include "transform/logging/event.h"
 
 #pragma once
 

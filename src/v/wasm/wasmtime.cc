@@ -8,30 +8,29 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "wasm/wasmtime.h"
+#include "wasmtime.h"
 
+#include "allocator.h"
 #include "base/vassert.h"
+#include "engine_probe.h"
+#include "ffi.h"
+#include "logger.h"
 #include "metrics/metrics.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "schema_registry_module.h"
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
+#include "transform_module.h"
 #include "utils/human.h"
 #include "utils/type_traits.h"
-#include "wasm/allocator.h"
+#include "wasi.h"
 #include "wasm/api.h"
-#include "wasm/engine_probe.h"
 #include "wasm/errc.h"
-#include "wasm/ffi.h"
-#include "wasm/logger.h"
 #include "wasm/parser/parser.h"
-#include "wasm/schema_registry_module.h"
-#include "wasm/transform_module.h"
 #include "wasm/transform_probe.h"
-#include "wasm/wasi.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/future.hh>
@@ -52,14 +51,12 @@
 #include <wasmtime/store.h>
 
 #include <alloca.h>
-#include <cmath>
 #include <csignal>
 #include <exception>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <pthread.h>
-#include <span>
 #include <unistd.h>
 #include <utility>
 #include <variant>

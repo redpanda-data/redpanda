@@ -119,7 +119,7 @@
 #include "transform/api.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/service.h"
-#include "transform/transform_offsets_stm.h"
+#include "transform/stm/transform_offsets_stm.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
@@ -2621,7 +2621,8 @@ void application::start_runtime_services(
         app_signal.abort_source(),
         std::move(offsets_upload_requestor),
         producer_id_recovery_manager,
-        std::move(offsets_recovery_requestor))
+        std::move(offsets_recovery_requestor),
+        redpanda_start_time)
       .get0();
 
     if (archiver_manager.local_is_initialized()) {

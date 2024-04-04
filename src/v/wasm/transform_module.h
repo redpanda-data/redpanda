@@ -12,13 +12,12 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "ffi.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
-#include "utils/named_type.h"
+#include "wasi.h"
 #include "wasm/api.h"
-#include "wasm/ffi.h"
-#include "wasm/wasi.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/util/noncopyable_function.hh>

@@ -28,9 +28,9 @@
 
 #pragma once
 
+#include "ffi.h"
 #include "model/timestamp.h"
 #include "utils/named_type.h"
-#include "wasm/ffi.h"
 #include "wasm/fwd.h"
 
 #include <seastar/core/sstring.hh>

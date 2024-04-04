@@ -1,9 +1,5 @@
 v_cc_library(
   NAME wasm
-  HDRS
-    api.h
-    fwd.h
-    cache.h
   SRCS
     api.cc
     ffi.cc

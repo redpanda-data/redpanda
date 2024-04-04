@@ -77,6 +77,8 @@
 #include <seastar/core/thread.hh>
 #include <seastar/util/later.hh>
 
+#include <chrono>
+
 namespace cluster {
 
 const bytes controller::invariants_key{"configuration_invariants"};
@@ -196,7 +198,8 @@ ss::future<> controller::start(
   ss::shared_ptr<cluster::cloud_metadata::producer_id_recovery_manager>
     producer_id_recovery,
   ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>
-    offsets_recovery) {
+    offsets_recovery,
+  std::chrono::milliseconds application_start_time) {
     auto initial_raft0_brokers = discovery.founding_brokers();
     std::vector<model::node_id> seed_nodes;
     seed_nodes.reserve(initial_raft0_brokers.size());
@@ -218,7 +221,7 @@ ss::future<> controller::start(
       .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
       .then(
         [this] { return _drain_manager.start(std::ref(_partition_manager)); })
-      .then([this] {
+      .then([this, application_start_time] {
           return _members_manager.start_single(
             _raft0,
             std::ref(_stm),
@@ -229,7 +232,8 @@ ss::future<> controller::start(
             std::ref(_storage),
             std::ref(_drain_manager),
             std::ref(_partition_balancer_state),
-            std::ref(_as));
+            std::ref(_as),
+            application_start_time);
       })
       .then([this] {
           return _feature_backend.start_single(
