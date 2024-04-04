@@ -1765,3 +1765,36 @@ class RpkTool:
         else:
             cmd += ["-X", "admin.hosts=" + self._admin_host()]
         return self._execute(cmd)
+
+    def create_role(self, role_name):
+        return self._run_role(["create", role_name])
+
+    def list_roles(self):
+        return self._run_role(["list"])
+
+    def delete_role(self, role_name):
+        cmd = ["delete", role_name, "--no-confirm"
+               ] + self._kafka_conn_settings()
+        return self._run_role(cmd)
+
+    def assign_role(self, role_name, principals):
+        cmd = ["assign", role_name, "--principal", ",".join(principals)]
+        return self._run_role(cmd)
+
+    def unassign_role(self, role_name, principals):
+        cmd = ["unassign", role_name, "--principal", ",".join(principals)]
+        return self._run_role(cmd)
+
+    def describe_role(self, role_name):
+        return self._run_role(["describe", role_name] +
+                              self._kafka_conn_settings())
+
+    def _run_role(self, cmd, output_format="json"):
+        cmd = [
+            self._rpk_binary(), "security", "role", "--format", output_format,
+            "-X", "admin.hosts=" + self._redpanda.admin_endpoints()
+        ] + cmd
+
+        out = self._execute(cmd)
+
+        return json.loads(out) if output_format == "json" else out
