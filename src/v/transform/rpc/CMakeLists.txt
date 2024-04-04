@@ -21,6 +21,7 @@ v_cc_library(
     v::model
     v::rpc
     v::kafka
+    v::transform_stm
     Seastar::seastar
 )
 

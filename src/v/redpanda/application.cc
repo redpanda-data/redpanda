@@ -119,7 +119,7 @@
 #include "transform/api.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/service.h"
-#include "transform/transform_offsets_stm.h"
+#include "transform/stm/transform_offsets_stm.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"

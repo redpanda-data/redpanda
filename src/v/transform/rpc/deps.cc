@@ -24,7 +24,7 @@
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/transform.h"
-#include "transform/transform_offsets_stm.h"
+#include "transform/stm/transform_offsets_stm.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>

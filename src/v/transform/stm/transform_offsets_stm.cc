@@ -9,12 +9,18 @@
  * by the Apache License, Version 2.0
  */
 
-#include "transform_offsets_stm.h"
+#include "transform/stm/transform_offsets_stm.h"
 
-#include "logger.h"
 #include "model/metadata.h"
 
+#include <seastar/util/log.hh>
+
 namespace transform {
+
+namespace {
+// NOLINTNEXTLINE
+static ss::logger log{"transform/stm"};
+} // namespace
 
 transform_offsets_stm_factory::transform_offsets_stm_factory(
   ss::sharded<cluster::topic_table>& topics)
@@ -36,7 +42,7 @@ void transform_offsets_stm_factory::create(
       "When creating transform stm the topic configuration must exists");
 
     builder.create_stm<transform_offsets_stm_t>(
-      cfg->partition_count, tlog, raft);
+      cfg->partition_count, log, raft);
 }
 
 } // namespace transform
