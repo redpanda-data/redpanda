@@ -70,14 +70,14 @@ public:
 
     self_test_result to_st_result() const {
         return self_test_result{
-          .p50 = (double)_hist.get_value_at(50.0),
-          .p90 = (double)_hist.get_value_at(90.0),
-          .p99 = (double)_hist.get_value_at(99.0),
-          .p999 = (double)_hist.get_value_at(99.9),
-          .max = (double)_hist.get_value_at(100.0),
+          .p50 = static_cast<double>(_hist.get_value_at(50.0)),
+          .p90 = static_cast<double>(_hist.get_value_at(90.0)),
+          .p99 = static_cast<double>(_hist.get_value_at(99.0)),
+          .p999 = static_cast<double>(_hist.get_value_at(99.9)),
+          .max = static_cast<double>(_hist.get_value_at(100.0)),
           .rps = iops(),
           .bps = throughput_bytes_sec(),
-          .timeouts = (uint32_t)_number_of_timeouts,
+          .timeouts = static_cast<uint32_t>(_number_of_timeouts),
           .duration = std::chrono::duration_cast<std::chrono::milliseconds>(
             _total_time)};
     }
