@@ -564,6 +564,9 @@ seastar::future<> raft_fixture::TearDownAsync() {
     co_await seastar::coroutine::parallel_for_each(
       _nodes, [](auto& pair) { return pair.second->stop(); });
 
+    co_await seastar::coroutine::parallel_for_each(
+      _nodes, [](auto& pair) { return pair.second->remove_data(); });
+
     co_await _features.stop();
 }
 seastar::future<> raft_fixture::SetUpAsync() {
