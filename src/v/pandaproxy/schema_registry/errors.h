@@ -76,6 +76,13 @@ inline error_info not_found(const subject& sub) {
       fmt::format("Subject '{}' not found.", sub())};
 }
 
+inline error_info not_found(const subject& sub, mode) {
+    return error_info{
+      error_code::mode_not_found,
+      fmt::format(
+        "Subject '{}' does not have subject-level mode configured.", sub())};
+}
+
 inline error_info not_found(const subject&, schema_version id) {
     return error_info{
       error_code::subject_version_not_found,
