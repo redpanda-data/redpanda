@@ -14,7 +14,7 @@ import time
 import signal
 import threading
 import requests
-from typing import Any, List, Optional
+from typing import Any, Dict, Optional
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -449,10 +449,12 @@ class ValidatorStatus:
     internally to kgo-verifier.  Other parts of consumer status are allowed to
     differ per-worker, although at time of writing they don't.
     """
+    lost_offsets: Dict[str, int]
+
     def __init__(self, name: str, valid_reads: int, invalid_reads: int,
                  out_of_scope_invalid_reads: int,
-                 max_offsets_consumed: Optional[int],
-                 lost_offsets: Optional[List[int]]):
+                 max_offsets_consumed: Optional[int], lost_offsets: Dict[str,
+                                                                         int]):
         # Validator name is just a unique name per worker thread in kgo-verifier: useful in logging
         # but we mostly don't care
         self.name = name
@@ -475,7 +477,7 @@ class ValidatorStatus:
 
         # Clear other fields we aren't interested in, to avoid confusion.
         self.max_offsets_consumed = None
-        self.lost_offsets = None
+        self.lost_offsets = {}
 
         self.valid_reads += rhs.valid_reads
         self.invalid_reads += rhs.invalid_reads
