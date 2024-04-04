@@ -321,7 +321,8 @@ result<allocated_partition> partition_allocator::reallocate_partition(
   partition_constraints p_constraints,
   const partition_assignment& current_assignment,
   const partition_allocation_domain domain,
-  const std::vector<model::node_id>& replicas_to_reallocate) {
+  const std::vector<model::node_id>& replicas_to_reallocate,
+  node2count_t* existing_replica_counts) {
     vlog(
       clusterlog.debug,
       "reallocating {}, current replicas: {}, to move: {}",
@@ -347,7 +348,17 @@ result<allocated_partition> partition_allocator::reallocate_partition(
         return res;
     }
 
+    std::optional<node2count_t> node2count;
+    if (existing_replica_counts) {
+        node2count = *existing_replica_counts;
+    }
+
     auto effective_constraints = default_constraints();
+    if (node2count) {
+        effective_constraints.ensure_new_level();
+        effective_constraints.add(
+          min_count_in_map("min topic-wise count", *node2count));
+    }
     effective_constraints.ensure_new_level();
     effective_constraints.add(max_final_capacity(domain));
     effective_constraints.add(std::move(p_constraints.constraints));
@@ -358,6 +369,14 @@ result<allocated_partition> partition_allocator::reallocate_partition(
         if (!replica) {
             return replica.error();
         }
+        if (node2count) {
+            node2count.value()[replica.value().current().node_id] += 1;
+            size_t& prev_count = node2count.value().at(prev);
+            prev_count -= 1;
+            if (prev_count == 0) {
+                node2count.value().erase(prev);
+            }
+        }
     }
 
     // next, allocate new ones
@@ -367,8 +386,16 @@ result<allocated_partition> partition_allocator::reallocate_partition(
         if (!replica) {
             return replica.error();
         }
+        if (node2count) {
+            node2count.value()[replica.value().current().node_id] += 1;
+        }
     }
 
+    if (existing_replica_counts) {
+        // update only at the very end, after all alocations have been
+        // successful.
+        *existing_replica_counts = std::move(node2count.value());
+    }
     return res;
 }
 
