@@ -21,13 +21,13 @@ import (
 	"strings"
 	"time"
 
+	dataplanev1alpha1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
-	dataplanev1alpha1 "github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/dataplane/v1alpha1"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
