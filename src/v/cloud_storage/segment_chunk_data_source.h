@@ -13,14 +13,20 @@
 
 #include "cloud_storage/segment_chunk_api.h"
 #include "model/fundamental.h"
+#include "storage/types.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
 
 namespace cloud_storage {
 
+class remote_segment_batch_reader;
+
 class chunk_data_source_impl final : public ss::data_source_impl {
 public:
+    using opt_parent_ref
+      = std::optional<std::reference_wrapper<remote_segment_batch_reader>>;
+
     chunk_data_source_impl(
       segment_chunks& chunks,
       remote_segment& segment,
@@ -28,7 +34,8 @@ public:
       kafka::offset end,
       int64_t begin_stream_at,
       ss::file_input_stream_options stream_options,
-      std::optional<uint16_t> prefetch_override = std::nullopt);
+      std::optional<uint16_t> prefetch_override = std::nullopt,
+      opt_parent_ref opt_parent = std::nullopt);
 
     chunk_data_source_impl(const chunk_data_source_impl&) = delete;
     chunk_data_source_impl& operator=(const chunk_data_source_impl&) = delete;
@@ -70,6 +77,7 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     std::optional<uint16_t> _prefetch_override;
+    opt_parent_ref _opt_parent;
 };
 
 } // namespace cloud_storage

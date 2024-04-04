@@ -286,11 +286,11 @@ remote_segment::offset_data_stream(
   kafka::offset end,
   std::optional<model::timestamp> first_timestamp,
   ss::io_priority_class io_priority,
-  storage::opt_abort_source_t as) {
+  remote_segment_batch_reader& parent) {
     vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
 
-    co_await hydrate(as);
+    co_await hydrate(parent.config().abort_source);
 
     std::optional<offset_index::find_result> indexed_pos;
     std::optional<uint16_t> prefetch_override = std::nullopt;
@@ -341,7 +341,8 @@ remote_segment::offset_data_stream(
           end,
           pos.file_pos,
           std::move(options),
-          prefetch_override);
+          prefetch_override,
+          parent);
         data_stream = ss::input_stream<char>{
           ss::data_source{std::move(chunk_ds)}};
     }
@@ -1428,7 +1429,7 @@ remote_segment_batch_reader::init_parser() {
       model::offset_cast(_config.max_offset),
       _config.first_timestamp,
       priority_manager::local().shadow_indexing_priority(),
-      _config.abort_source);
+      *this);
 
     vlog(
       _ctxlog.debug,

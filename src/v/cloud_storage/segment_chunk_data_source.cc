@@ -22,7 +22,8 @@ chunk_data_source_impl::chunk_data_source_impl(
   kafka::offset end,
   int64_t begin_stream_at,
   ss::file_input_stream_options stream_options,
-  std::optional<uint16_t> prefetch_override)
+  std::optional<uint16_t> prefetch_override,
+  opt_parent_ref opt_parent)
   : _chunks(chunks)
   , _segment(segment)
   , _first_chunk_start(_segment.get_chunk_start_for_kafka_offset(start))
@@ -32,7 +33,8 @@ chunk_data_source_impl::chunk_data_source_impl(
   , _stream_options(std::move(stream_options))
   , _rtc{_as}
   , _ctxlog{cst_log, _rtc, _segment.get_segment_path()().native()}
-  , _prefetch_override{prefetch_override} {
+  , _prefetch_override{prefetch_override}
+  , _opt_parent{opt_parent} {
     vlog(
       _ctxlog.trace,
       "chunk data source initialized with file position {} to {}",
@@ -95,10 +97,24 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
     vlog(_ctxlog.debug, "loading stream for chunk starting at {}", chunk_start);
 
     std::exception_ptr eptr;
+    ss::abort_source noop{};
+    auto& as = _opt_parent.has_value()
+                   && _opt_parent->get().config().abort_source.has_value()
+                 ? _opt_parent->get().config().abort_source->get()
+                 : noop;
+
+    auto deadline
+      = ss::lowres_clock::now()
+        + config::shard_local_cfg().cloud_storage_hydration_timeout_ms();
 
     try {
-        co_await load_chunk_handle(chunk_start);
+        co_await ssx::with_timeout_abortable(
+          load_chunk_handle(chunk_start), deadline, as);
     } catch (...) {
+        vlog(
+          _ctxlog.warn,
+          "failed to load chunk handle with error: {}",
+          std::current_exception());
         eptr = std::current_exception();
     }
 

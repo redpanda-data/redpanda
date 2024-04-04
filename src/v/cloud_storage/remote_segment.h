@@ -61,6 +61,8 @@ public:
       : std::runtime_error(m) {}
 };
 
+class remote_segment_batch_reader;
+
 class remote_segment final {
 public:
     remote_segment(
@@ -119,7 +121,7 @@ public:
       kafka::offset end,
       std::optional<model::timestamp>,
       ss::io_priority_class,
-      storage::opt_abort_source_t as);
+      remote_segment_batch_reader&);
 
     /// Hydrates the segment, index or tx-range depending on segment meta
     /// version, returning a future that the caller can use to wait for the
