@@ -29,11 +29,13 @@ using namespace std::chrono_literals; // NOLINT
 struct fixture {
     static kafka::fetch_session_partition make_fetch_partition(
       model::topic topic, model::partition_id p_id, model::offset offset) {
-        return kafka::fetch_session_partition{
-          .topic_partition = {topic, p_id},
-          .max_bytes = 1_MiB,
-          .fetch_offset = offset,
-          .high_watermark = offset};
+        return kafka::fetch_session_partition(
+          topic,
+          kafka::fetch_partition{
+            .partition_index = p_id,
+            .fetch_offset = offset,
+            .max_bytes = 1_MiB,
+          });
     }
 
     static kafka::fetch_request::topic
