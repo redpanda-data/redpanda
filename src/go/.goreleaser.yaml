@@ -33,7 +33,6 @@ builds:
       - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common.tag={{.Tag}}
     env:
       - CGO_ENABLED=1
-      - GOEXPERIMENT=systemcrypto
     goos:
       - linux
     goarch:
