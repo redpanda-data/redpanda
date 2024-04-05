@@ -28,15 +28,6 @@
 
 using namespace std::chrono_literals; // NOLINT
 struct fixture {
-    static kafka::fetch_session_partition make_fetch_sess_partition(
-      model::topic topic, model::partition_id p_id, model::offset offset) {
-        return kafka::fetch_session_partition{
-          .topic_partition = {topic, p_id},
-          .max_bytes = 1_MiB,
-          .fetch_offset = offset,
-          .high_watermark = offset};
-    }
-
     static kafka::fetch_partition
     make_fetch_partition(const model::partition_id p_id) {
         return {
@@ -87,16 +78,18 @@ FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
     expected.reserve(20);
 
     for (int i = 0; i < 20; ++i) {
+        auto req = make_fetch_request_topic(
+          model::topic(random_generators::gen_alphanum_string(5)), 1);
+        req.fetch_partitions[0].partition_index = model::partition_id(
+          random_generators::get_int(i * 10, ((i + 1) * 10) - 1));
+
         expected.push_back(tpo{
           model::ktp{
-            model::topic(random_generators::gen_alphanum_string(5)),
-            model::partition_id(
-              random_generators::get_int(i * 10, ((i + 1) * 10) - 1))},
-          model::offset(random_generators::get_int(10000))});
-
-        auto& t = expected.back();
-        session.partitions().emplace(fixture::make_fetch_sess_partition(
-          t.ktp.get_topic(), t.ktp.get_partition(), t.offset));
+            model::topic(req.name),
+            model::partition_id(req.fetch_partitions[0].partition_index)},
+          model::offset(req.fetch_partitions[0].fetch_offset)});
+        session.partitions().emplace(
+          kafka::fetch_session_partition(req.name, req.fetch_partitions[0]));
     }
 
     BOOST_TEST_MESSAGE("test insertion order iteration");
