@@ -27,9 +27,9 @@ func assignCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "Assign a Redpanda role to a principal",
 		Long: `Assign a Redpanda role to a principal.
 
-The '--principal' flag accepts principals with the format 
-<PrincipalPrefix>:<Principal>. It defaults to 'User:' if PrincipalPrefix is not
-provided.
+The '--principal' flag accepts principals with the format
+'<PrincipalPrefix>:<Principal>'. If 'PrincipalPrefix' is not provided, then
+defaults to 'User:'.
 `,
 		Example: `
 Assign role "redpanda-admin" to user "red"

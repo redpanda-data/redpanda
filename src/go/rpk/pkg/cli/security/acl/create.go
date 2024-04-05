@@ -43,7 +43,7 @@ Allow all permissions to role bar on topic "foo" and group "g":
     --allow-role bar --operation all --topic foo --group g
 Allow read permissions to all users on topics biz and baz:
     --allow-principal '*' --operation read --topic biz,baz
-Allow write permissions to user buzz to transactional id "txn":
+Allow write permissions to user buzz to transactional ID "txn":
     --allow-principal User:buzz --operation write --transactional-id txn
 `,
 

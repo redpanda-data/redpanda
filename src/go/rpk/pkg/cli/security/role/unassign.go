@@ -27,9 +27,9 @@ func unassignCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "Unassign a Redpanda role from a principal",
 		Long: `Unassign a Redpanda role from a principal.
 
-The '--principal' flag accepts principals with the format 
-<PrincipalPrefix>:<Principal>. It defaults to 'User:' if PrincipalPrefix is not
-provided.
+The '--principal' flag accepts principals with the format
+'<PrincipalPrefix>:<Principal>'. If 'PrincipalPrefix' is not provided, then
+defaults to 'User:'.
 `,
 		Example: `
 Unassign role "redpanda-admin" from user "red"

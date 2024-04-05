@@ -54,8 +54,8 @@ An ACL is made up of five components:
 
   * a principal (the user) or role
   * a host, which the principal (or role) is allowed or denied requests from
-  * what resource to access (topic name, group ID, ...)
-  * the operation (read, write, ...)
+  * what resource to access (such as topic name, group ID)
+  * the operation (such as read, write)
   * the permission: whether to allow or deny the above
 
 ACL commands work on a multiplicative basis. If creating, specifying two
