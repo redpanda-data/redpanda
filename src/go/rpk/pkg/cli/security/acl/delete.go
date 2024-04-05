@@ -56,6 +56,7 @@ resource names:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
+			f := p.Formatter // always text for now
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
@@ -68,7 +69,7 @@ resource names:
 
 			var printDeletionsHeader bool
 			if !noConfirm || dry {
-				describeReqResp(adm, printAllFilters, true, b)
+				describeReqResp(adm, printAllFilters, true, b, f)
 				fmt.Println()
 
 				confirmed, err := out.Confirm("Confirm deletion of the above matching ACLs?")
