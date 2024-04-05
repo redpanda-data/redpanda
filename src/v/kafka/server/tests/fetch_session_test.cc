@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/server/fetch_session.h"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/types.h"
@@ -27,13 +28,24 @@
 
 using namespace std::chrono_literals; // NOLINT
 struct fixture {
-    static kafka::fetch_session_partition make_fetch_partition(
+    static kafka::fetch_session_partition make_fetch_sess_partition(
       model::topic topic, model::partition_id p_id, model::offset offset) {
         return kafka::fetch_session_partition{
           .topic_partition = {topic, p_id},
           .max_bytes = 1_MiB,
           .fetch_offset = offset,
           .high_watermark = offset};
+    }
+
+    static kafka::fetch_partition
+    make_fetch_partition(const model::partition_id p_id) {
+        return {
+          .partition_index = p_id,
+          .current_leader_epoch = kafka::leader_epoch(
+            random_generators::get_int(100)),
+          .fetch_offset = model::offset(random_generators::get_int(10000)),
+          .max_bytes = random_generators::get_int(1024, 1024 * 1024),
+        };
     }
 
     static kafka::fetch_request::topic
@@ -45,11 +57,7 @@ struct fixture {
 
         for (int i = 0; i < partitions_count; ++i) {
             fetch_topic.fetch_partitions.push_back(
-              kafka::fetch_request::partition{
-                .partition_index = model::partition_id(i),
-                .fetch_offset = model::offset(i * 10),
-                .max_bytes = 100_KiB,
-              });
+              make_fetch_partition(model::partition_id(i)));
         }
         return fetch_topic;
     }
@@ -87,7 +95,7 @@ FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
           model::offset(random_generators::get_int(10000))});
 
         auto& t = expected.back();
-        session.partitions().emplace(fixture::make_fetch_partition(
+        session.partitions().emplace(fixture::make_fetch_sess_partition(
           t.ktp.get_topic(), t.ktp.get_partition(), t.offset));
     }
 
@@ -157,6 +165,9 @@ FIXTURE_TEST(test_session_operations, fixture) {
               fp.topic_partition.get_partition(),
               req.data.topics[0].fetch_partitions[i].partition_index);
             BOOST_REQUIRE_EQUAL(
+              fp.current_leader_epoch,
+              req.data.topics[0].fetch_partitions[i].current_leader_epoch);
+            BOOST_REQUIRE_EQUAL(
               fp.fetch_offset,
               req.data.topics[0].fetch_partitions[i].fetch_offset);
             BOOST_REQUIRE_EQUAL(
@@ -170,13 +181,14 @@ FIXTURE_TEST(test_session_operations, fixture) {
 
     BOOST_TEST_MESSAGE("test updating session");
     {
+        // Remove and forget about the first partition.
         req.data.topics[0].fetch_partitions.erase(
           std::next(req.data.topics[0].fetch_partitions.begin()));
-        // add 2 partitons from new topic, forget one from the first topic
-        req.data.topics.push_back(
-          make_fetch_request_topic(model::topic("test-new"), 2));
         req.data.forgotten.push_back(kafka::fetch_request::forgotten_topic{
           .name = model::topic("test"), .forgotten_partition_indexes = {1}});
+        // Add 2 partitions from new topic.
+        req.data.topics.push_back(
+          make_fetch_request_topic(model::topic("test-new"), 2));
 
         auto ctx = cache.maybe_get_session(req);
 
@@ -203,6 +215,11 @@ FIXTURE_TEST(test_session_operations, fixture) {
             BOOST_REQUIRE_EQUAL(
               fp.topic_partition.get_partition(),
               req.data.topics[t_idx].fetch_partitions[p_idx].partition_index);
+            BOOST_REQUIRE_EQUAL(
+              fp.current_leader_epoch,
+              req.data.topics[t_idx]
+                .fetch_partitions[p_idx]
+                .current_leader_epoch);
             BOOST_REQUIRE_EQUAL(
               fp.fetch_offset,
               req.data.topics[t_idx].fetch_partitions[p_idx].fetch_offset);
