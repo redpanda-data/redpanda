@@ -36,6 +36,8 @@ void update_fetch_session(fetch_session& session, const fetch_request& req) {
             s_it != session.partitions().end()) {
             s_it->second->partition.max_bytes = partition.max_bytes;
             s_it->second->partition.fetch_offset = partition.fetch_offset;
+            s_it->second->partition.current_leader_epoch
+              = partition.current_leader_epoch;
         } else {
             session.partitions().emplace(
               make_fetch_partition(topic.name, partition));

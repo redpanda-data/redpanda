@@ -186,6 +186,9 @@ FIXTURE_TEST(test_session_operations, fixture) {
           std::make_move_iterator(fp_v.end())};
         req.data.forgotten.push_back(kafka::fetch_request::forgotten_topic{
           .name = model::topic("test"), .forgotten_partition_indexes = {1}});
+        // Update the second partition.
+        req.data.topics[0].fetch_partitions[0] = make_fetch_partition(
+          req.data.topics[0].fetch_partitions[0].partition_index);
         // Add 2 partitions from new topic.
         req.data.topics.push_back(
           make_fetch_request_topic(model::topic("test-new"), 2));
