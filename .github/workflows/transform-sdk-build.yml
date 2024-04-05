@@ -90,6 +90,7 @@ jobs:
           tinygo build -scheduler=none -target=wasi -o identity.wasm ./identity
           tinygo build -scheduler=none -target=wasi -o identity_logging.wasm ./identity_logging
           tinygo build -scheduler=none -target=wasi -o tee.wasm ./tee
+          tinygo build -scheduler=none -target=wasi -o sr.wasm ./schema-registry
       - name: Download integration test suite
         uses: actions/download-artifact@v4
         with:
@@ -101,6 +102,7 @@ jobs:
           IDENTITY: identity.wasm
           LOGGING: identity_logging.wasm
           TEE: tee.wasm
+          SCHEMA_REGISTRY: sr.wasm
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
@@ -154,6 +156,7 @@ jobs:
           IDENTITY: target/wasm32-wasi/release/examples/identity.wasm
           LOGGING: target/wasm32-wasi/release/examples/identity_logging.wasm
           TEE: target/wasm32-wasi/release/examples/tee.wasm
+          SCHEMA_REGISTRY: "@UNIMPLEMENTED@"
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
@@ -207,6 +210,7 @@ jobs:
           IDENTITY: build/identity_transform
           LOGGING: build/identity_logging_transform
           TEE: "@UNIMPLEMENTED@"
+          SCHEMA_REGISTRY: "@UNIMPLEMENTED@"
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v

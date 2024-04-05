@@ -101,7 +101,6 @@ func (cl *AdminAPIClient) DeployTransform(ctx context.Context, metadata Transfor
 }
 
 func isTransformsRunning(transforms []TransformMetadata, name string) bool {
-	fmt.Println("is running:", name, transforms)
 	for _, t := range transforms {
 		if t.Name != name {
 			continue
