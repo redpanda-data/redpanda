@@ -28,13 +28,13 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Create ACLs",
 		Long: `Create ACLs.
 
-See the 'rpk acl' help text for a full write up on ACLs. Following the
+See the 'rpk security acl' help text for a full write up on ACLs. Following the
 multiplying effect of combining flags, the create command works on a
 straightforward basis: every ACL combination is a created ACL.
 
-As mentioned in the 'rpk acl' help text, if no host is specified, an allowed
-principal is allowed access from all hosts. The wildcard principal '*' allows
-all principals. At least one principal, one host, one resource, and one
+As mentioned in the 'rpk security acl' help text, if no host is specified, an
+allowed principal is allowed access from all hosts. The wildcard principal '*'
+allows all principals. At least one principal, one host, one resource, and one
 operation is required to create a single ACL.
 
 Allow all permissions to user bar on topic "foo" and group "g":

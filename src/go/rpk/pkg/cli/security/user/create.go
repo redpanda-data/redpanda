@@ -78,9 +78,9 @@ acl help text for more info.
 			pass = cmd.Flag("password").Value.String()
 			var generated bool
 			// We either run the command without password:
-			//   rpk acl user create foo
+			//   rpk security acl user create foo
 			// Or we run the command with user/password for basic auth:
-			//   rpk acl user create foo --user my_user --pass my_pass
+			//   rpk security acl user create foo --user my_user --pass my_pass
 			// In both cases, we auto-generate a random password:
 			if (newPass == "" && pass == "") || (newPass == "" && userFlag != "" && pass != "") {
 				gen, err := generatePassword(30)

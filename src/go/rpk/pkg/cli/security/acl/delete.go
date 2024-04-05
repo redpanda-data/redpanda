@@ -34,13 +34,14 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Delete ACLs",
 		Long: `Delete ACLs.
 
-See the 'rpk acl' help text for a full write up on ACLs. Delete flags work in a
-similar multiplying effect as creating ACLs, but delete is more advanced:
-deletion works on a filter basis. Any unspecified flag defaults to matching
-everything (all operations, or all allowed principals, etc). To ensure that you
-do not accidentally delete more than you intend, this command prints everything
-that matches your input filters and prompts for a confirmation before the
-delete request is issued. Anything matching more than 10 ACLs doubly confirms.
+See the 'rpk security acl' help text for a full write up on ACLs. Delete flags
+work in a similar multiplying effect as creating ACLs, but delete is more
+advanced: deletion works on a filter basis. Any unspecified flag defaults to
+matching everything (all operations, or all allowed principals, etc). To ensure
+that you do not accidentally delete more than you intend, this command prints
+everything that matches your input filters and prompts for a confirmation before
+the delete request is issued. Anything matching more than 10 ACLs doubly
+confirms.
 
 As mentioned, not specifying flags matches everything. If no resources are
 specified, all resources are matched. If no operations are specified, all

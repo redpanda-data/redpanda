@@ -22,10 +22,10 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Long: `Manage SASL users.
 
 If SASL is enabled, a SASL user is what you use to talk to Redpanda, and ACLs
-control what your user has access to. See 'rpk acl --help' for more information
-about ACLs, and 'rpk acl user create --help' for more information about
-creating SASL users. Using SASL requires setting "enable_sasl: true" in the
-redpanda section of your redpanda.yaml.
+control what your user has access to. See 'rpk security  acl --help' for more
+information about ACLs, and 'rpk security acl user create --help' for more
+information about creating SASL users. Using SASL requires setting "enable_sasl:
+true" in the redpanda section of your redpanda.yaml.
 `,
 	}
 	p.InstallAdminFlags(cmd)

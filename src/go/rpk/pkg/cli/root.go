@@ -132,7 +132,7 @@ func Execute() {
 	// flag. We exec with the flag and then create a bunch of fake cobra
 	// commands within rpk. The plugin now looks like it is a part of rpk.
 	//
-	// We block plugins from overwriting actual rpk commands (rpk acl),
+	// We block plugins from overwriting actual rpk commands (rpk security acl),
 	// unless the plugin is specifically rpk managed.
 	//
 	// Managed plugins are slightly weirder and are documented below.
