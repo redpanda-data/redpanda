@@ -2690,6 +2690,13 @@ configuration::configuration()
       "the data directory. Redpanda will refuse to start if it is not found.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , alive_timeout_ms(
+      *this,
+      "alive_timeout_ms",
+      "Time from the last node status heartbeat after which a node will be "
+      "considered offline and not alive",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5s)
   , memory_abort_on_alloc_failure(
       *this,
       "memory_abort_on_alloc_failure",

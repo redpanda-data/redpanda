@@ -613,7 +613,14 @@ ss::future<> controller::start(
             _raft0);
           return _leader_balancer->start();
       })
-      .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
+      .then([this] {
+          return _hm_frontend.start(
+            std::ref(_hm_backend),
+            std::ref(_node_status_table),
+            ss::sharded_parameter([]() {
+                return config::shard_local_cfg().alive_timeout_ms.bind();
+            }));
+      })
       .then([this] {
           return _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
       })

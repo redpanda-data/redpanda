@@ -56,12 +56,18 @@ bool partitions_filter::matches(
     return false;
 }
 
+node_state::node_state(
+  model::node_id id, model::membership_state membership_state, alive is_alive)
+  : _id(id)
+  , _membership_state(membership_state)
+  , _is_alive(is_alive) {}
+
 std::ostream& operator<<(std::ostream& o, const node_state& s) {
     fmt::print(
       o,
       "{{membership_state: {}, is_alive: {}}}",
-      s.membership_state,
-      s.is_alive);
+      s._membership_state,
+      s._is_alive);
     return o;
 }
 

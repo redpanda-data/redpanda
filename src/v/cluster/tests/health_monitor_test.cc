@@ -92,15 +92,14 @@ void check_states_the_same(
 
     auto by_id = [](
                    const cluster::node_state& lr,
-                   const cluster::node_state& rr) { return lr.id < rr.id; };
+                   const cluster::node_state& rr) { return lr.id() < rr.id(); };
     std::sort(lhs.begin(), lhs.end(), by_id);
     std::sort(rhs.begin(), rhs.end(), by_id);
 
     for (auto i = 0; i < lhs.size(); ++i) {
         auto& lr = lhs[i];
         auto& rr = rhs[i];
-        BOOST_TEST_REQUIRE(lr.is_alive == rr.is_alive);
-        BOOST_TEST_REQUIRE(lr.membership_state == rr.membership_state);
+        BOOST_TEST_REQUIRE(lr.membership_state() == rr.membership_state());
     }
 }
 
@@ -344,25 +343,9 @@ FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
 
     // wait until the node will be reported as not alive
     tests::cooperative_spin_wait_with_timeout(10s, [&n1] {
-        return n1->controller->get_health_monitor()
-          .local()
-          .get_cluster_health(
-            get_all, cluster::force_refresh::yes, model::no_timeout)
-          .then([](result<cluster::cluster_health_report> res) {
-              if (!res) {
-                  return false;
-              }
-              if (res.value().node_reports.empty()) {
-                  return false;
-              }
-              auto it = std::find_if(
-                res.value().node_states.begin(),
-                res.value().node_states.end(),
-                [](cluster::node_state& s) {
-                    return s.id == model::node_id(1);
-                });
-              return it->is_alive == cluster::alive::no;
-          });
+        return n1->controller->get_health_monitor().local().is_alive(
+                 model::node_id(1))
+               == cluster::alive::no;
     }).get();
 }
 

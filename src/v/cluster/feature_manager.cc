@@ -15,6 +15,7 @@
 #include "cluster/commands.h"
 #include "cluster/controller_service.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
@@ -417,25 +418,6 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     // B) All member nodes must be up
     // C) All versions must be >= the new active version
 
-    std::map<model::node_id, node_state> node_status;
-
-    // This call in principle can be a network fetch, but in practice
-    // we're only doing it immediately after cluster health has just
-    // been updated, so do not expect it to go remote.
-    auto node_status_v = co_await _hm_frontend.local().get_nodes_status(
-      model::timeout_clock::now() + 5s);
-    if (node_status_v.has_error()) {
-        // Raise exception to trigger backoff+retry
-        throw std::runtime_error(fmt::format(
-          "Can't update active cluster version, failed to get health "
-          "status: {}",
-          node_status_v.error()));
-    } else {
-        for (const auto& i : node_status_v.value()) {
-            node_status.emplace(i.id, i);
-        }
-    }
-
     // Ensure that our _node_versions contains versions for all
     // nodes in members_table & that they are all sufficiently recent
     const auto& member_table = _members.local();
@@ -461,8 +443,8 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
             co_return;
         }
 
-        auto state_iter = node_status.find(node_id);
-        if (state_iter == node_status.end()) {
+        auto is_alive_opt = _hm_frontend.local().is_alive(node_id);
+        if (!is_alive_opt.has_value()) {
             // Unexpected: the health monitor should be populating
             // state for all known members_table nodes, but this
             // could happen if we raced with a decom or node add.
@@ -474,7 +456,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
               max_version,
               node_id));
 
-        } else if (!state_iter->second.is_alive) {
+        } else if (is_alive_opt == alive::no) {
             // Raise exception to trigger backoff+retry
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,

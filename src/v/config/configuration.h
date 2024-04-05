@@ -490,6 +490,7 @@ struct configuration final : public config_store {
     bounded_property<size_t> storage_space_alert_free_threshold_bytes;
     bounded_property<size_t> storage_min_free_bytes;
     property<bool> storage_strict_data_init;
+    property<std::chrono::milliseconds> alive_timeout_ms;
 
     // memory related settings
     property<bool> memory_abort_on_alloc_failure;
