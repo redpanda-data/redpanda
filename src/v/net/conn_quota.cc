@@ -25,8 +25,7 @@ conn_quota::units::~units() noexcept {
     }
 }
 
-conn_quota::conn_quota(
-  conn_quota::config_fn cfg_f, seastar::logger* log) noexcept
+conn_quota::conn_quota(conn_quota::config_fn cfg_f, ss::logger* log) noexcept
   : _cfg(cfg_f())
   , _log(log) {
     if (ss::this_shard_id() == total_shard) {

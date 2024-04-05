@@ -89,7 +89,7 @@ public:
     };
 
     using config_fn = std::function<conn_quota_config()>;
-    conn_quota(config_fn, seastar::logger*) noexcept;
+    conn_quota(config_fn, ss::logger*) noexcept;
 
     ss::future<units> get(ss::net::inet_address);
     void put(ss::net::inet_address);
@@ -236,7 +236,7 @@ private:
     conn_quota_config _cfg;
 
     ss::gate _gate;
-    seastar::logger* _log;
+    ss::logger* _log;
 };
 
 } // namespace net
