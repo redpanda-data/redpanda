@@ -26,11 +26,21 @@ class Command(Enum):
     UPDATE_COMMENT = 2
 
 
+class IssueState(Enum):
+    open = 1
+    closed = 2
+
+
+def get_issue_state(state: str) -> IssueState:
+    return IssueState[state.lower()]
+
+
 class JiraHelper():
     _base_url = 'https://redpandadata.atlassian.net'
     _project_key = 'CORE'
     _done_status_name = 'DONE'
     _backlog_status_name = 'BACKLOG'
+    _bug_labels = ['kind/bug', 'ci-failure']
 
     def __init__(self, command: Command, logger: logging.Logger):
         self.logger: logging.Logger = logger
@@ -78,28 +88,33 @@ class JiraHelper():
 
     def _issue_helper(self):
         event_name = os.environ['EVENT_NAME']
-        # Make sure the issue is closed
-        issue_is_closed = event_name == "closed" or event_name == "deleted"
-        # If re-opened, then the issue should transition to backlog
-        issue_reopened = event_name == "reopened"
-        issue_edited = event_name == "edited" or event_name == "labeled" or event_name == "unlabeled"
 
-        issue_id = self._find_or_create_issue()
-        self.logger.debug(f'Issue ID: {issue_id}')
-
-        if issue_edited:
-            self.logger.debug(f'Issue {issue_id} has been edited, update it')
-            self._update_issue(issue_id)
-        elif issue_reopened:
-            self.logger.debug(
-                f'Issue {issue_id} reopened... transitioning to {self._backlog_status_name}'
-            )
-            self._reopen_issue(issue_id)
-        elif issue_is_closed:
-            self.logger.debug(
-                f'Issue {issue_id} has been closed, transitioning to {self._done_status_name}'
-            )
-            self._close_issue(issue_id)
+        if event_name == "opened":
+            issue_id = self._find_issue()
+            if issue_id is not None:
+                self.logger.warning(
+                    f"Issue {issue_id} already exists for {os.environ['ISSUE_URL']}"
+                )
+            else:
+                self.logger.debug(
+                    f"Creating issue for {os.environ['ISSUE_URL']}")
+                self._create_issue_and_add_comments()
+        elif event_name == "reopened":
+            issue_id = self._find_issue()
+            self._create_issue_and_add_comments(
+            ) if issue_id is None else self._reopen_issue(issue_id)
+        elif event_name == 'closed' or event_name == 'deleted':
+            issue_id = self._find_issue()
+            self._close_issue(issue_id) if issue_id is not None else None
+        elif event_name == 'edited':
+            issue_id = self._find_issue()
+            self._create_issue_and_add_comments(
+            ) if issue_id is None else self._update_issue(issue_id)
+        elif (event_name == 'labeled' or event_name == 'unlabeled'):
+            issue_id = self._find_issue()
+            self._update_issue(issue_id) if issue_id is not None else None
+        else:
+            self.logger.info(f'No action performed for event {event_name}')
 
     def execute(self):
         self.logger.debug(f'Executing command {self.command}')
@@ -129,22 +144,23 @@ class JiraHelper():
             issue_id,
             f"Closing JIRA issue from GitHub issue {os.environ['ISSUE_URL']}")
 
-    def _find_or_create_issue(self):
+    def _find_issue(self):
         try:
             return self._find_jira_issue_by_gh_issue_url()
         except NoJiraIssueFound:
-            pass
+            return None
 
-        self.logger.debug("issue doesn't exist... creating it")
-
+    def _create_issue_and_add_comments(self):
         issue_id = self._create_issue()
         self.logger.debug(f'Created issue {issue_id}, now adding comments')
+        self._add_comments_to_issue(issue_id)
+        return issue_id
+
+    def _add_comments_to_issue(self, issue_id):
         issue_comments = self._get_gh_issue_comments(os.environ['ISSUE_URL'])
         self.logger.debug(f'Comments: {issue_comments}')
         for comment in issue_comments['comments']:
             self._add_comment_to_issue(issue_id, comment['body'])
-
-        return issue_id
 
     def _reopen_issue(self, issue_id):
         self._transition_issue(issue_id, self._backlog_status_name)
@@ -153,8 +169,11 @@ class JiraHelper():
             f"Reopening JIRA issue from Github issue {os.environ['ISSUE_URL']}"
         )
 
+    def _bug_label(self, labels) -> bool:
+        return any(l in labels for l in self._bug_labels)
+
     def _get_issue_type(self, labels) -> str:
-        if 'kind/bug' in labels:
+        if self._bug_label(labels):
             return 'Bug'
         else:
             return 'Task'
@@ -163,7 +182,7 @@ class JiraHelper():
         try:
             labels = os.environ['ISSUE_LABELS']
             self.logger.debug(f'Labels: {labels}')
-            return labels.split(',')
+            return [l.replace(' ', '-') for l in labels.split(',')]
         except Exception:
             return []
 
@@ -228,10 +247,17 @@ issue that triggered this issue's creation.
                 raise e
 
     def _update_comment(self):
-        issue_id = self._find_jira_issue_by_gh_issue_url()
-        comment_body = os.environ['ISSUE_COMMENT']
-        self.logger.debug(f'Found issue with ID {issue_id}')
-        self._add_comment_to_issue(issue_id, comment_body)
+        try:
+            issue_id = self._find_jira_issue_by_gh_issue_url()
+            comment_body = os.environ['ISSUE_COMMENT']
+            self.logger.debug(f'Found issue with ID {issue_id}')
+            self._add_comment_to_issue(issue_id, comment_body)
+        except NoJiraIssueFound:
+            self.logger.warning(
+                f"No issue found for {os.environ['ISSUE_URL']}")
+        except MultipleJiraIssuesFound:
+            self.logger.warning(
+                f"Multiple issues found for {os.environ['ISSUE_URL']}")
 
     def _update_issue(self, issue_id):
         gh_issue_title = os.environ['ISSUE_TITLE']
