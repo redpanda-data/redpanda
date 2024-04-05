@@ -31,6 +31,7 @@ struct group_recovery_consumer_state {
      * retention feature is activated. see group::offset_metadata for more info.
      */
     bool has_offset_retention_feature_fence{false};
+    model::offset last_read_offset;
 };
 
 class group_recovery_consumer {
