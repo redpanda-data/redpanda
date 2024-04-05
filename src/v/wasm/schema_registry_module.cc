@@ -105,6 +105,8 @@ constexpr int32_t SCHEMA_REGISTRY_ERROR = -2;
 schema_registry_module::schema_registry_module(schema_registry* sr)
   : _sr(sr) {}
 
+void schema_registry_module::check_abi_version_0() {}
+
 ss::future<int32_t> schema_registry_module::get_schema_definition_len(
   pandaproxy::schema_registry::schema_id schema_id, uint32_t* size_out) {
     if (!_sr->is_enabled()) {

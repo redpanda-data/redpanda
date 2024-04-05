@@ -28,8 +28,10 @@ enum class errc {
     engine_shutdown,
     // invalid module without wasi _start
     invalid_module_missing_wasi,
-    // invalid module without abi marker
+    // invalid module without known abi marker
     invalid_module_missing_abi,
+    // invalid module with unsupported schema registry support
+    invalid_module_unsupported_sr,
     // invalid module otherwise
     invalid_module,
 };
@@ -55,11 +57,12 @@ struct errc_category final : public std::error_category {
             return "invalid WebAssembly - not compiled for wasi/wasm32";
         case errc::invalid_module_missing_abi:
             return "invalid WebAssembly - invalid SDK";
+        case errc::invalid_module_unsupported_sr:
+            return "invalid WebAssembly - invalid schema registry SDK";
         case errc::invalid_module:
             return "invalid WebAssembly";
-        default:
-            return "wasm::errc::unknown(" + std::to_string(c) + ")";
         }
+        return "wasm::errc::unknown(" + std::to_string(c) + ")";
     }
 };
 

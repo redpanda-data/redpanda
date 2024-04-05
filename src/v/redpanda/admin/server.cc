@@ -1149,8 +1149,13 @@ ss::future<> admin_server::throw_on_error(
         case wasm::errc::invalid_module_missing_abi:
             throw ss::httpd::bad_request_exception(
               "Invalid WebAssembly - the binary is missing required transform "
-              "functions. Does the broker support this version of the Data "
-              "Transforms SDK?");
+              "functions. Check the broker support for the version of the Data "
+              "Transforms SDK being used.");
+        case wasm::errc::invalid_module_unsupported_sr:
+            throw ss::httpd::bad_request_exception(
+              "Invalid WebAssembly - the binary is using an unsupported Schema "
+              "Registry client. Does the broker support this version of the "
+              "Data Transforms Schema Registry SDK?");
         case wasm::errc::invalid_module_missing_wasi:
             throw ss::httpd::bad_request_exception(
               "invalid WebAssembly - missing required WASI functions");

@@ -1278,6 +1278,7 @@ void register_sr_module(
     // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define REG_HOST_FN(name)                                                      \
     host_function<&schema_registry_module::name>::reg(linker, #name, ssc)
+    REG_HOST_FN(check_abi_version_0);
     REG_HOST_FN(get_schema_definition);
     REG_HOST_FN(get_schema_definition_len);
     REG_HOST_FN(get_subject_schema);
@@ -1600,6 +1601,7 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
         size_t used_memory;
         wasm::heap_allocator* allocator;
     };
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     memory_ret->env = new linear_memory{
       .underlying = *std::move(memory),
       .used_memory = req.minimum,
@@ -1661,6 +1663,23 @@ bool is_transform_abi_check_fn(const parser::module_import& mod_import) {
     });
 }
 
+// Schema registry is optional, so only check that the function is not using an
+// unsupported version.
+bool is_invalid_sr_abi_check_fn(const parser::module_import& mod_import) {
+    if (mod_import.module_name != schema_registry_module::name) {
+        return false;
+    }
+    if (!mod_import.item_name.starts_with("check_abi_version_")) {
+        return false;
+    }
+    const auto void_fn = parser::import_description{
+      parser::declaration::function{}};
+    if (mod_import.description != void_fn) {
+        return true;
+    }
+    return mod_import.item_name != "check_abi_version_0";
+}
+
 ss::future<> wasmtime_runtime::validate(iobuf buf) {
     parser::module_declarations decls;
     try {
@@ -1706,7 +1725,12 @@ ss::future<> wasmtime_runtime::validate(iobuf buf) {
     for (const auto& module_import : decls.imports) {
         if (is_transform_abi_check_fn(module_import)) {
             has_abi_check_fn = true;
-            break;
+        }
+        if (is_invalid_sr_abi_check_fn(module_import)) {
+            vlog(wasm_log.warn, "invalid module: unsupported sr abi function");
+            throw wasm_exception(
+              "invalid module: unsupported schema registry ABI",
+              errc::invalid_module_unsupported_sr);
         }
         co_await ss::coroutine::maybe_yield();
     }

@@ -265,7 +265,8 @@ class DataTransformsTest(BaseDataTransformsTest):
         self._deploy_invalid(
             file="validation/wasi.wasm",
             expected_msg=
-            "Does the broker support this version of the Data Transforms SDK?")
+            "Check the broker support for the version of the Data Transforms SDK being used."
+        )
 
     @cluster(num_nodes=3)
     def test_tracked_offsets_cleaned_up(self):
