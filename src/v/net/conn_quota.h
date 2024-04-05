@@ -13,16 +13,14 @@
 #include "base/seastarx.h"
 #include "base/vassert.h"
 #include "config/property.h"
-#include "rpc/logger.h"
-#include "seastar/core/gate.hh"
-#include "seastar/core/sharded.hh"
-#include "seastar/net/inet_address.hh"
 #include "utils/mutex.h"
+
+#include <seastar/core/gate.hh>
+#include <seastar/core/sharded.hh>
+#include <seastar/net/inet_address.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/hash/hash.h>
-
-#include <stdint.h>
 
 namespace net {
 
@@ -91,7 +89,7 @@ public:
     };
 
     using config_fn = std::function<conn_quota_config()>;
-    conn_quota(config_fn) noexcept;
+    conn_quota(config_fn, seastar::logger*) noexcept;
 
     ss::future<units> get(ss::net::inet_address);
     void put(ss::net::inet_address);
@@ -238,6 +236,7 @@ private:
     conn_quota_config _cfg;
 
     ss::gate _gate;
+    seastar::logger* _log;
 };
 
 } // namespace net

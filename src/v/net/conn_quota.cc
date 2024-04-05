@@ -25,8 +25,10 @@ conn_quota::units::~units() noexcept {
     }
 }
 
-conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
-  : _cfg(cfg_f()) {
+conn_quota::conn_quota(
+  conn_quota::config_fn cfg_f, seastar::logger* log) noexcept
+  : _cfg(cfg_f())
+  , _log(log) {
     if (ss::this_shard_id() == total_shard) {
         if (_cfg.max_connections()) {
             // Initialize state for enforcement of global connection count
@@ -41,13 +43,13 @@ conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
         if (ss::this_shard_id() == total_shard) {
             if (_cfg.max_connections()) {
                 vlog(
-                  rpc::rpclog.info,
+                  _log->info,
                   "Connection count limit updated to {}",
                   _cfg.max_connections().value());
                 update_limit({}, *total_home, _cfg.max_connections().value());
             } else {
                 total_home = ss::make_lw_shared<home_allowance>(0, 0);
-                vlog(rpc::rpclog.info, "Connection count limit disabled");
+                vlog(_log->info, "Connection count limit disabled");
             }
         } else {
             if (!_cfg.max_connections()) {
@@ -62,8 +64,7 @@ conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
         if (!_cfg.max_connections_per_ip()) {
             if (ss::this_shard_id() == 0) {
                 vlog(
-                  rpc::rpclog.info,
-                  "Default connection count per-IP limit disabled");
+                  _log->info, "Default connection count per-IP limit disabled");
             }
 
             if (_cfg.max_connections_overrides().empty()) {
@@ -86,7 +87,7 @@ conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
             auto new_limit = _cfg.max_connections_per_ip().value();
             if (ss::this_shard_id() == 0) {
                 vlog(
-                  rpc::rpclog.info,
+                  _log->info,
                   "Connection count per-IP limit updated to {}",
                   new_limit);
             }
@@ -129,7 +130,7 @@ ss::future<> conn_quota::stop() { return _gate.close(); }
  * to being reached.
  */
 void conn_quota::put(ss::net::inet_address addr) {
-    vlog(rpc::rpclog.trace, "put({})", addr);
+    vlog(_log->trace, "put({})", addr);
 
     // If enforcement was disabled since the token
     // was issued, drop it on the floor.
@@ -141,7 +142,7 @@ void conn_quota::put(ss::net::inet_address addr) {
         do_put(addr);
     }
 
-    vlog(rpc::rpclog.trace, "leaving put({})", addr);
+    vlog(_log->trace, "leaving put({})", addr);
 }
 
 /**
@@ -153,14 +154,14 @@ void conn_quota::put(ss::net::inet_address addr) {
  * limits.
  */
 ss::future<conn_quota::units> conn_quota::get(ss::net::inet_address addr) {
-    vlog(rpc::rpclog.trace, "get({})", addr);
+    vlog(_log->trace, "get({})", addr);
 
     if (_cfg.max_connections()) {
         if (!co_await do_get({})) {
             co_return units();
         };
     } else {
-        vlog(rpc::rpclog.trace, "Global conn limit disabled");
+        vlog(_log->trace, "Global conn limit disabled");
     }
 
     if (_cfg.max_connections_per_ip() || overrides.contains(addr)) {
@@ -190,7 +191,7 @@ ss::future<bool> conn_quota::do_get(ss::net::inet_address addr) {
         auto& allowance = get_remote_allowance(addr);
         if (allowance.borrowed > 0) {
             // Fast path: we have a borrowed token on this shard
-            vlog(rpc::rpclog.trace, "got local borrowed token");
+            vlog(_log->trace, "got local borrowed token");
             allowance.borrowed -= 1;
             return ss::make_ready_future<bool>(true);
         } else {
@@ -216,7 +217,7 @@ void conn_quota::update_limit(
   conn_quota::home_allowance& allowance,
   uint32_t new_limit) {
     vlog(
-      rpc::rpclog.trace,
+      _log->trace,
       "update_limit({}): {} -> {}",
       addr,
       allowance.max,
@@ -227,7 +228,7 @@ void conn_quota::update_limit(
     allowance.max = new_limit;
     if (in_use >= allowance.max) {
         vlog(
-          rpc::rpclog.trace,
+          _log->trace,
           "Connection count limit {} decreased below current ({}) for {}",
           allowance.max,
           in_use,
@@ -260,7 +261,7 @@ conn_quota::get_home_allowance(ss::net::inet_address addr) {
             return found->second;
         } else {
             vlog(
-              rpc::rpclog.trace,
+              _log->trace,
               "Creating default home_allowance for {} (limit {})",
               addr,
               _cfg.max_connections_per_ip().value());
@@ -333,7 +334,7 @@ ss::future<> conn_quota::reclaim_to(
  *                 just grab any borrowed units they have currently.
  */
 uint32_t conn_quota::reclaim_from(ss::net::inet_address addr, bool one_time) {
-    vlog(rpc::rpclog.trace, "reclaim_from({})", addr);
+    vlog(_log->trace, "reclaim_from({})", addr);
     if (addr == ss::net::inet_address()) {
         total_remote.reclaim = !one_time;
         return std::exchange(total_remote.borrowed, 0);
@@ -352,7 +353,7 @@ uint32_t conn_quota::reclaim_from(ss::net::inet_address addr, bool one_time) {
  * is no longer pressure for tokens.
  */
 void conn_quota::cancel_reclaim_from(ss::net::inet_address addr) {
-    vlog(rpc::rpclog.trace, "cancel_reclaim_from({})", addr);
+    vlog(_log->trace, "cancel_reclaim_from({})", addr);
     if (addr == ss::net::inet_address()) {
         total_remote.reclaim = false;
     } else {
@@ -373,13 +374,13 @@ ss::future<bool> conn_quota::home_get_units(ss::net::inet_address addr) {
     assert_on_home(addr);
 
     auto allowance = get_home_allowance(addr);
-    vlog(rpc::rpclog.trace, "home_get_units({}) allowance={}", addr, allowance);
+    vlog(_log->trace, "home_get_units({}) allowance={}", addr, allowance);
 
     // Optimization: early return if allowance has a zero limit, i.e.
     // the administrator is using an override to block a particular client
     if (allowance->max == 0) {
         vlog(
-          rpc::rpclog.debug,
+          _log->debug,
           "home_get_units: client {} is blocked (0 connection limit)",
           addr);
         co_return false;
@@ -389,7 +390,7 @@ ss::future<bool> conn_quota::home_get_units(ss::net::inet_address addr) {
     if (result || allowance->reclaim) {
         // If we got a token, or we didn't and are already in
         // reclaim mode, this is the final answer
-        vlog(rpc::rpclog.trace, "home_get_units: fast path got={}", result);
+        vlog(_log->trace, "home_get_units: fast path got={}", result);
         co_return result;
     }
 
@@ -399,8 +400,7 @@ ss::future<bool> conn_quota::home_get_units(ss::net::inet_address addr) {
     // This can still fail if there were no reclaimable units, but
     // we did our best.
     result = try_get_units(*allowance);
-    vlog(
-      rpc::rpclog.trace, "home_get_units: slow (reclaim) path got={}", result);
+    vlog(_log->trace, "home_get_units: slow (reclaim) path got={}", result);
     co_return result;
 }
 
@@ -435,7 +435,7 @@ void conn_quota::cancel_reclaim_to(
   ss::net::inet_address addr, ss::lw_shared_ptr<home_allowance> allowance) {
     assert_on_home(addr);
 
-    vlog(rpc::rpclog.trace, "cancel_reclaim_to({})", addr);
+    vlog(_log->trace, "cancel_reclaim_to({})", addr);
 
     ssx::spawn_with_gate(_gate, [this, allowance = std::move(allowance), addr] {
         // Re-check conditions are still suitable.
@@ -459,13 +459,13 @@ void conn_quota::cancel_reclaim_to(
 }
 
 void conn_quota::do_put(ss::net::inet_address addr) {
-    vlog(rpc::rpclog.trace, "do_put({})", addr);
+    vlog(_log->trace, "do_put({})", addr);
 
     auto home_shard = addr_to_shard(addr);
     if (home_shard == ss::this_shard_id()) {
         auto allowance = get_home_allowance(addr);
         vlog(
-          rpc::rpclog.trace,
+          _log->trace,
           "do_put: release directly to home allowance={}",
           allowance);
         allowance->put();
@@ -475,10 +475,10 @@ void conn_quota::do_put(ss::net::inet_address addr) {
     } else {
         auto& allowance = get_remote_allowance(addr);
         if (!allowance.reclaim) {
-            vlog(rpc::rpclog.trace, "do_put: release to local borrowed");
+            vlog(_log->trace, "do_put: release to local borrowed");
             allowance.put();
         } else {
-            vlog(rpc::rpclog.trace, "do_put: reclaim, dispatch to home");
+            vlog(_log->trace, "do_put: reclaim, dispatch to home");
 
             ssx::spawn_with_gate(_gate, [this, addr, home_shard]() {
                 return container().invoke_on(
@@ -501,7 +501,7 @@ void conn_quota::apply_overrides() {
             if (ss::this_shard_id() == ss::shard_id{0}) {
                 // Avoid log spam from all shards, only log on shard 0
                 vlog(
-                  rpc::rpclog.warn,
+                  _log->warn,
                   "Invalid entry in kafka_connections_max_overrides: '{}'",
                   o);
             }
@@ -526,7 +526,7 @@ void conn_quota::apply_overrides() {
             update_limit(i.first, *(found->second), i.second);
         } else {
             vlog(
-              rpc::rpclog.trace,
+              _log->trace,
               "Populating override home_allowance for {}",
               i.first);
             ip_home.insert(std::make_pair(

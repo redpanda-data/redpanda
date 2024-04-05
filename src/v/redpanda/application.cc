@@ -1908,7 +1908,7 @@ void application::wire_up_redpanda_services(
             .max_connections_overrides
             = config::shard_local_cfg().kafka_connections_max_overrides.bind(),
           };
-      })
+      }, &kafka::klog)
       .get();
 
     ss::sharded<net::server_configuration> kafka_cfg;

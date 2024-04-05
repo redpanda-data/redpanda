@@ -1,4 +1,11 @@
-
+// Copyright 2024 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
 #include "base/vlog.h"
 #include "config/mock_property.h"
 #include "net/conn_quota.h"
@@ -51,7 +58,7 @@ struct conn_quota_fixture {
                 .max_connections = max_con.local().bind(),
                 .max_connections_per_ip = max_con_per_ip.local().bind(),
                 .max_connections_overrides = max_con_overrides.local().bind()};
-          })
+          }, &logger)
           .get();
     }
 
