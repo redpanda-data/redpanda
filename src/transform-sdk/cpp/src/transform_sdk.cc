@@ -390,6 +390,13 @@ void process_batch(const on_record_written_callback& callback) {
 bytes_view::bytes_view(const bytes& buf)
   : bytes_view(buf.begin(), buf.end()) {}
 
+bytes_view::bytes_view(const std::string& str)
+  : bytes_view(std::string_view{str}) {}
+
+bytes_view::bytes_view(std::string_view str)
+  // NOLINTNEXTLINE(*-reinterpret-cast)
+  : bytes_view(reinterpret_cast<const uint8_t*>(str.data()), str.size()) {}
+
 bytes_view::bytes_view(bytes::const_pointer start, size_t size)
   : bytes_view(start, start + static_cast<std::ptrdiff_t>(size)) {}
 
