@@ -32,7 +32,7 @@ builds:
       - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.hostArch={{.Arch}}
       - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common.tag={{.Tag}}
     env:
-      - CGO_ENABLED=1
+      - 'CGO_ENABLED={{ if index .Env "CGO_ENABLED" }}{{ .Env.CGO_ENABLED }}{{ else }}0{{ end }}'
     goos:
       - linux
     goarch:
