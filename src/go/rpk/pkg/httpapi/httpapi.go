@@ -310,9 +310,13 @@ func (cl *Client) do(ctx context.Context, method, path string, qps url.Values, b
 		for k, v := range cl.headers {
 			req.Header.Set(k, v)
 		}
-		zap.L().Sugar().Debugf("requesting %s", req.URL)
+		zap.L().Sugar().Debugf("requesting %s %s", req.Method, req.URL)
 		resp, err = cl.httpCl.Do(req)
-		zap.L().Sugar().Debugf("got response for %s", req.URL)
+		if resp != nil {
+			zap.L().Sugar().Debugf("got response for %s %s: %v", req.Method, req.URL, resp.Status)
+		} else {
+			zap.L().Sugar().Debugf("got response for %s", req.URL)
+		}
 
 		if isRetryable, err := backoff.maybeDo(ctx, resp, err); err != nil {
 			return err
