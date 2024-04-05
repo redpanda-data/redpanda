@@ -10,6 +10,7 @@
 import subprocess
 import time
 
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SchemaRegistryConfig
@@ -118,7 +119,7 @@ class InternalTopicProtectionTest(RedpandaTest):
             assert False, "Unknown client type"
 
         test_topic = "noproduce_topic"
-        self.kafka_tools.create_topic_with_config(test_topic, 1, 3, {})
+        self.kafka_tools.create_topic(TopicSpec(name=test_topic))
         partition_id = 0
 
         wait_until(lambda: test_topic in self.rpk.list_topics(),
@@ -163,7 +164,8 @@ class InternalTopicProtectionTest(RedpandaTest):
             assert False, "Unknown client type"
 
         test_topic = "nodelete_topic"
-        self.kafka_tools.create_topic_with_config(test_topic, 3, 3, {})
+        self.kafka_tools.create_topic(
+            TopicSpec(name=test_topic, partition_count=3))
 
         wait_until(lambda: test_topic in client.list_topics(),
                    timeout_sec=90,
