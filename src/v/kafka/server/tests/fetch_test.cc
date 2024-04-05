@@ -447,10 +447,9 @@ FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
     auto resp = client.dispatch(std::move(req), kafka::api_version(9)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    // This is a BUG! The fetch request must return an error when the request
-    // epoch is different from the current epoch.
     BOOST_REQUIRE_MESSAGE(
-      resp.data.topics[0].partitions[0].error_code == kafka::error_code::none,
+      resp.data.topics[0].partitions[0].error_code
+        == kafka::error_code::fenced_leader_epoch,
       fmt::format("error: {}", resp.data.topics[0].partitions[0].error_code));
 }
 
