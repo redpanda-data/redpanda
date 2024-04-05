@@ -416,8 +416,9 @@ class RpkTool:
             raise Exception(f"unknown resource: {resource}")
 
         cmd = [
-            "acl", "create", "--allow-principal", principal, "--operation",
-            ",".join(operations), resource, resource_name, "--brokers",
+            "security", "acl", "create", "--allow-principal", principal,
+            "--operation", ",".join(operations), resource, resource_name,
+            "--brokers",
             self._redpanda.brokers()
         ]
         return self._run(cmd)
@@ -431,13 +432,14 @@ class RpkTool:
             raise Exception(f"unknown resource: {resource}")
 
         cmd = [
-            "acl", "delete", "--allow-principal", principal, "--operation",
-            ",".join(operations), resource, resource_name, "--no-confirm"
+            "security", "acl", "delete", "--allow-principal", principal,
+            "--operation", ",".join(operations), resource, resource_name,
+            "--no-confirm"
         ] + self._kafka_conn_settings()
         return self._run(cmd)
 
     def _sasl_create_user_cmd(self, new_username, new_password, mechanism):
-        cmd = ["acl", "user", "create", new_username]
+        cmd = ["security", "user", "create", new_username]
         cmd += ["--api-urls", self._redpanda.admin_endpoints()]
         cmd += ["--mechanism", mechanism]
 
@@ -455,7 +457,7 @@ class RpkTool:
         return self._run(cmd)
 
     def sasl_list_users(self):
-        cmd = ["acl", "user", "list"]
+        cmd = ["security", "user", "list"]
         cmd += ["--api-urls", self._redpanda.admin_endpoints()]
 
         return self._run(cmd)
