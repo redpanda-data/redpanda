@@ -20,6 +20,10 @@ import (
 	"unsafe"
 )
 
+func checkAbi() {
+	panic("stub")
+}
+
 func getSchemaDefinitionLen(schemaId schemaId, length unsafe.Pointer) int32 {
 	panic("stub")
 }
