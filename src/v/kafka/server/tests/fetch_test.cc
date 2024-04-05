@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/protocol/batch_consumer.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/handlers/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -17,6 +18,7 @@
 
 #include <seastar/core/smp.hh>
 
+#include <boost/test/tools/old/interface.hpp>
 #include <fmt/ostream.h>
 
 #include <chrono>
@@ -372,6 +374,78 @@ FIXTURE_TEST(fetch_empty, redpanda_thread_fixture) {
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_REQUIRE(resp_2.data.topics.empty());
+}
+
+FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
+    // create a topic partition with some data
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    auto ntp = make_default_ntp(topic, pid);
+    auto log_config = make_default_config();
+    wait_for_controller_leadership().get0();
+    add_topic(model::topic_namespace_view(ntp)).get();
+
+    wait_for_partition_offset(ntp, model::offset(0)).get0();
+
+    const auto shard = app.shard_table.local().shard_for(ntp);
+    app.partition_manager
+      .invoke_on(
+        *shard,
+        [ntp, this](cluster::partition_manager& mgr) {
+            auto partition = mgr.get(ntp);
+            {
+                auto batches = model::test::make_random_batches(
+                  model::offset(0), 5);
+                auto rdr = model::make_memory_record_batch_reader(
+                  std::move(batches));
+                partition->raft()
+                  ->replicate(
+                    std::move(rdr),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack))
+                  .discard_result()
+                  .get0();
+            }
+            partition->raft()->step_down("trigger epoch change").get0();
+            wait_for_leader(ntp).get0();
+            {
+                auto batches = model::test::make_random_batches(
+                  model::offset(0), 5);
+                auto rdr = model::make_memory_record_batch_reader(
+                  std::move(batches));
+                partition->raft()
+                  ->replicate(
+                    std::move(rdr),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack))
+                  .discard_result()
+                  .get0();
+            }
+        })
+      .get0();
+
+    kafka::fetch_request req;
+    req.data.max_bytes = std::numeric_limits<int32_t>::max();
+    req.data.min_bytes = 1;
+    req.data.max_wait_ms = std::chrono::milliseconds(1000);
+    req.data.topics = {
+      {.name = topic,
+       .fetch_partitions = {{
+         .partition_index = pid,
+         .current_leader_epoch = kafka::leader_epoch(1),
+         .fetch_offset = model::offset(6),
+       }}}};
+
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto resp = client.dispatch(req, kafka::api_version(9)).get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    // This is a BUG! The fetch request must return an error when the request
+    // epoch is different from the current epoch.
+    BOOST_REQUIRE_MESSAGE(
+      resp.data.topics[0].partitions[0].error_code == kafka::error_code::none,
+      fmt::format("error: {}", resp.data.topics[0].partitions[0].error_code));
 }
 
 FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
