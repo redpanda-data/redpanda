@@ -139,6 +139,9 @@ class CloudCleanup():
 
         # Function detects cluster type and deletes it
         _cluster = self.cloudv2.get_resource(handle)
+        if _cluster is None:
+            self.log.warning(f"# Cluster '{handle}' was already deleted")
+            return
         _id = _cluster['id']
         _type = _cluster['spec']['clusterType']
         _state = _cluster['state']
@@ -418,13 +421,41 @@ class CloudCleanup():
 
         return r
 
-    def clean_aws_nat(self):
+    def _delete_vpc(self, vpc):
+        # Delete VPC
+        # self.log.info(f"-> deleting VPC: {vpc['VpcId']}")
+        _start = time.time()
+
+        # - terminate all instances running in the VPC
+        # - delete all security groups associated with the VPC (except the default one)
+        # - delete all route tables associated with the VPC (except the default one)
+
+        r = self.provider.delete_vpc(vpc['VpcId'], clean_dependencies=True)
+        if not r:
+            self.log.info(f"-> VPC {vpc['VpcId']} NOT deleted")
+            return r
+        _now = time.time()
+        # 180 sec timeout
+        while (_now - _start) < 180:
+            try:
+                r = self.provider.get_vpc_by_id(vpc['VpcId'])
+                if r['State'] == 'deleted':
+                    break
+            except:
+                break
+            time.sleep(10)
+        _elapsed = time.time() - _start
+        self.log.info(f"-> VPC {vpc['VpcId']} deleted, {_elapsed:.2f}s")
+
+        return r
+
+    def clean_aws_networks(self):
         """
             Function matched networks in CloudV2 
             for clusters that has been deleted and cleans them up
 
             Steps:
-            - List NATs
+            - List NATs and VPCs
             - filter them according to current CloudV2 API (uuid used)
             - Extract network id and check if it is exists in CloudV2
             - If not query NAT for cleaning
@@ -437,6 +468,75 @@ class CloudCleanup():
                         'network-'):
                     return tag['Value'].split('-')[1]
 
+        def get_date_from_resource(aws_res):
+            if 'CreateTime' in aws_res:
+                return datetime.strftime(aws_res['CreateTime'],
+                                         "%Y-%m-%d %H:%M:%S")
+            else:
+                return "Unknown"
+
+        def check_cloud_network(aws_res):
+            # This resource is created by CloudV2 API
+            _net_id = get_net_id_from_nat(aws_res)
+            # Check if network exists in CloudV2
+            try:
+                # 'quite' is passed all the way to depth of requests module
+                r = self.cloudv2.get_network(_net_id,
+                                             quite=True)  # type: ignore
+                return r
+            except Exception:
+                # If there is no network, it will generate HTTPError
+                # That means that it should be deleted
+                return None
+
+        def filter_nats(nats):
+            _fnats = []
+            for nat in nats:
+                if nat['State'] == 'deleted':
+                    _ips = ", ".join([
+                        a['PublicIp'] + " / " + a['AllocationId']
+                        for a in nat['NatGatewayAddresses']
+                    ])
+                    self.log.info(f"# Nat {nat['NatGatewayId']} deleted, "
+                                  f"IPs: {_ips}'")
+                    continue
+                _date = get_date_from_resource(nat)
+                for _tag in nat['Tags']:
+                    if _tag['Key'] == 'redpanda-org' and _tag['Value'] == _uuid:
+                        # Check if network exists in CloudV2
+                        cloud_net = check_cloud_network(nat)
+                        if cloud_net is None:
+                            _fnats.append(nat)
+                        else:
+                            self.log.warning(
+                                f"# {nat['NatGatewayId']} (create date: {_date}) "
+                                f"skipped: network '{cloud_net['id']}' exists")
+            return _fnats
+
+        def filter_vpcs(vpcs):
+            _fvpcs = []
+            for vpc in vpcs:
+                if vpc['State'] == 'deleted':
+                    self.log.info(f"# VPC {vpc['VpcId']} deleted")
+                    continue
+                _date = get_date_from_resource(vpc)
+                for _tag in vpc['Tags']:
+                    if _tag['Key'] == 'redpanda-org' and _tag['Value'] == _uuid:
+                        # Check if network exists in CloudV2
+                        cloud_net = check_cloud_network(vpc)
+                        if cloud_net is None:
+                            _fvpcs.append(vpc)
+                        else:
+                            self.log.warning(
+                                f"# {vpc['VpcId']} ({_date}) "
+                                f"skipped: network '{cloud_net['id']}' exists")
+            return _fvpcs
+
+        if self.config.provider == "GCP":
+            self.log.warning(
+                "Network resources cleaning not yet supported for GCP")
+            return False
+
         # list AWS networks with specific tag
         _uuids = {
             "https://cloud-api.ppd.cloud.redpanda.com":
@@ -448,35 +548,18 @@ class CloudCleanup():
         _nats = self.provider.list_nat_gateways(tag_key="redpanda-org")
         self.log.info(f"# Found {len(_nats)} NAT Gateways")
 
+        # List VPCs
+        _vpcs = self.provider.list_vpcs(tag_key="redpanda-org")
+        self.log.info(f"# Found {len(_vpcs)} VPCs")
+
         # Filter by CloudV2 API origin
         _uuid = _uuids[self.config.api_url]
-        _nat_filtered = []
-        for _nat in _nats:
-            if _nat['State'] == 'deleted':
-                _ips = ", ".join([
-                    a['PublicIp'] + " / " + a['AllocationId']
-                    for a in _nat['NatGatewayAddresses']
-                ])
-                self.log.info(f"# Nat {_nat['NatGatewayId']} deleted, "
-                              f"IPs: {_ips}'")
-                continue
-            _date = datetime.strftime(_nat['CreateTime'], "%Y-%m-%d %H:%M:%S")
-            for _tag in _nat['Tags']:
-                if _tag['Key'] == 'redpanda-org' and _tag['Value'] == _uuid:
-                    # This is NAT created by this CloudV2 API
-                    _net_id = get_net_id_from_nat(_nat)
-                    # Check if network exists in CloudV2
-                    try:
-                        r = self.cloudv2.get_network(_net_id, quite=True)
-                        self.log.warning(f"# {_nat['NatGatewayId']} ({_date}) "
-                                         f"skipped: network '{r['id']}' "
-                                         "exists")
-                    except Exception:
-                        # If there is no network, it will generate HTTPError
-                        # That means that it should be deleted
-                        _nat_filtered.append(_nat)
+        _nat_filtered = filter_nats(_nats)
+        _vpc_filtered = filter_vpcs(_vpcs)
 
         self.log.info(f"# {len(_nat_filtered)} orphaned NATs "
+                      f"for {self.config.api_url}")
+        self.log.info(f"# {len(_vpc_filtered)} orphaned VPCs "
                       f"for {self.config.api_url}")
 
         # Fancy threading
@@ -485,6 +568,8 @@ class CloudCleanup():
         self.log.info("\n\n# Cleaning up")
         self._pooled_delete(pool, "NAT Gateways", self._delete_nat,
                             _nat_filtered)
+        # VPC deletion will only work if public IPs are not mapped
+        self._pooled_delete(pool, "VPCs", self._delete_vpc, _vpc_filtered)
 
         return
 
@@ -612,8 +697,18 @@ def cleanup_entrypoint():
             else:
                 cleaner.log.error(
                     f"ERROR: Wrong argument: '{option}'. Accepting "
-                    "only 's3'/'nat' to clean buckets or aws NATs")
+                    "only 'ns', 's3' or 'nat' to clean cloud clusters, "
+                    "buckets or aws network resources")
                 sys.exit(1)
+
+    # Cloud cluster resource cleaning order
+    # - Cloud cluster via namespaces/API using rpk
+    # - [not covered here] autoscaling groups (will delete instances)
+    # - [not covered here] EKS clusters (no access from here)
+    # - [not covered here] ELBs (no access from here)
+    # - NAT Gateways cleaning
+    # - VPC Cleaning (including dependencies)
+    # - S3 buckets
 
     # Namespaces
     if clean_namespaces:
@@ -621,7 +716,7 @@ def cleanup_entrypoint():
 
     # NAT Gateways cleaning routine
     if clean_nats:
-        cleaner.clean_aws_nat()
+        cleaner.clean_aws_networks()
 
     # Clean buckets for deleted clusters and networks
     if clean_buckets:

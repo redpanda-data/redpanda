@@ -1,5 +1,6 @@
 import boto3
 import json
+import boto3.exceptions
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
@@ -39,6 +40,7 @@ class EC2Client:
         self._endpoint = endpoint
         self._disable_ssl = disable_ssl
         self._cli = self._make_client()
+        self._ec2 = boto3.resource('ec2', region_name=region)
         self._s3cli = self._make_s3_client()
         self._s3res = self._make_s3_resource()
         self._sts = self._make_sts_client()
@@ -94,6 +96,12 @@ class EC2Client:
     def get_caller_identity(self):
         return self._sts.get_caller_identity()
 
+    def _get_tag_for_resource(self, resource, key):
+        for tag in resource.tags:
+            if tag['Key'] == key:
+                return tag['Value']
+        return None
+
     def create_vpc_peering(self, params):
         """
         Create VPC peering connection in AWS
@@ -108,6 +116,12 @@ class EC2Client:
 
         # Return
         return _r[VPC_PEERING_LABEL][VPC_PEERING_ID_LABEL]
+
+    def get_vpc_by_id(self, vpc_id):
+        """Get aws VPC by its id
+        """
+        _resp = self._cli.describe_vpcs(VpcIds=[vpc_id])
+        return _resp['Vpcs']
 
     def get_vpc_by_network_id(self, network_id, prefix=None):
         """
@@ -147,6 +161,11 @@ class EC2Client:
         # List NATs
         _resp = self._cli.describe_nat_gateways(Filters=_filters)
         return _resp['NatGateways']
+
+    def list_eips_by_network_name(self, network_name):
+        _filters = [{"Name": "tag:Name", "Values": [network_name]}]
+        _resp = self._cli.describe_addresses(Filters=_filters)
+        return _resp['Addresses']
 
     def get_nat_gateway(self, id):
         r = self._cli.describe_nat_gateways(NatGatewayIds=[id])
@@ -475,3 +494,178 @@ class EC2Client:
     def delete_nat(self, natId):
         r = self._cli.delete_nat_gateway(NatGatewayId=natId)
         return r
+
+    def delete_eni_by_vpc_id(self, vpc_id):
+        """Release any Public IPs and delete interface
+        """
+        vpc_resource = self._ec2.Vpc(vpc_id)
+        enis = vpc_resource.network_interfaces.all()
+        if enis:
+            for eni in list(enis):
+                try:
+                    # Just brute force delete
+                    # if there is dependencies, just fail
+                    eni.delete()
+                    self._log.debug(
+                        f"\t{vpc_id}: removed interface '{eni.id}'")
+                except boto3.exceptions.Boto3Error as e:
+                    self._log.error(f"\t{vpc_id}: Failed to Detach/Delete "
+                                    f"network interface of '{eni.id}': {e}")
+        return
+
+    def delete_igw_by_vpc_id(self, vpc_id):
+        """Detach and delete the internet-gateway
+        """
+        vpc_resource = self._ec2.Vpc(vpc_id)
+        internet_gateways = vpc_resource.internet_gateways.all()
+        if internet_gateways:
+            for gateway in list(internet_gateways):
+                try:
+                    network_name = self._get_tag_for_resource(
+                        vpc_resource, 'Name')
+                    eips = self.list_eips_by_network_name(network_name)
+                    if eips:
+                        for eip in eips:
+                            self._log.info(f"Releasing eIP: {eip}")
+                            self._cli.release_address()
+
+                    gateway.detach_from_vpc(VpcId=vpc_id)
+                    self._log.debug(f"\t{vpc_id}: Detached internet gateway "
+                                    f"'{gateway.id}'")
+                    gateway.delete()
+                    self._log.debug(f"\t{vpc_id}: Deleted internet gateway "
+                                    f"'{gateway.id}'")
+                except boto3.exceptions.Boto3Error as e:
+                    self._log.error(f"\t{vpc_id}: Failed to Detach/Delete "
+                                    f"internet gateway of '{gateway.id}': {e}")
+
+        return
+
+    def delete_subnet_by_vpc_id(self, vpc_id):
+        """Delete the subnets using vpc_id
+        """
+        vpc_resource = self._ec2.Vpc(vpc_id)
+        subnets = vpc_resource.subnets.all()
+        # Delete all subnets
+        if subnets:
+            try:
+                for subnet in subnets:
+                    subnet.delete()
+                    self._log.debug(
+                        f"\t{vpc_id}: removed subnet '{subnet.id}'")
+            except boto3.exceptions.Boto3Error as e:
+                self._log.error(f"\t{vpc_id}: Failed to remove subnet "
+                                f"'{subnet.id}': {e}")
+        return
+
+    def delete_route_table_by_vpc_id(self, vpc_id):
+        """Delete route-tables using vpc_id
+        """
+        vpc_resource = self._ec2.Vpc(vpc_id)
+        route_tables = vpc_resource.route_tables.all()
+
+        if route_tables:
+            try:
+                for rtable in route_tables:
+                    for route in rtable.routes:
+                        if route.origin == 'CreateRoute':
+                            route.delete()
+                            # self._cli.delete_route(RouteTableId=rtable['RouteTableId'], DestinationCidrBlock=route['DestinationCidrBlock'])
+                    for association in rtable.associations:
+                        if not association.main:
+                            association.delete()
+                            # self._cli.disassociate_route_table(AssociationId=association['RouteTableAssociationId'])
+                    if len(rtable.associations) == 0:
+                        table = self._ec2.RouteTable(rtable.id)
+                        table.delete()
+                        self._log.debug(
+                            f"\t{vpc_id}: removed routing table '{rtable.id}'")
+            except boto3.exceptions.Boto3Error as e:
+                self._log.error(f"\t{vpc_id}: Failed to remove routing table "
+                                f"'{rtable.id}': {e}")
+        return
+
+    def delete_acl_by_vpc_id(self, vpc_id):
+        """Delete the network-access-lists using vpc_id
+        """
+
+        vpc_resource = self._ec2.Vpc(vpc_id)
+        acls = vpc_resource.network_acls.all()
+
+        if acls:
+            try:
+                for acl in acls:
+                    if acl.is_default:
+                        self._log.info(
+                            f"\t{vpc_id}: skipped: '{acl.id}' is the default NACL"
+                        )
+                        continue
+                    acl.delete()
+                    self._log.debug(f"\t{vpc_id}: removed ACL '{acl.id}'")
+            except boto3.exceptions.Boto3Error as e:
+                self._log.error(f"\t{vpc_id}: Failed to remove network ACL "
+                                f"'{acl.id}': {e}")
+        return
+
+    def delete_secgroup_by_vpc_id(self, vpc_id):
+        """Delete any security-groups using vpc_id
+        """
+        vpc_resource = self._ec2.Vpc(vpc_id)
+        sgroups = vpc_resource.security_groups.all()
+        if sgroups:
+            try:
+                for sg in sgroups:
+                    if sg.group_name == 'default':
+                        self._log.info(
+                            f"Skipped: '{sg.id}' is the default security group"
+                        )
+                        continue
+                    sg.delete()
+                    self._log.debug(
+                        f"\t{vpc_id}: removed security group '{sg.id}'")
+            except boto3.exceptions.Boto3Error as e:
+                self._log.error(f"\t{vpc_id}: Failed to remove security group "
+                                f"'{sg.id}': {e}")
+        return
+
+    def delete_vpc(self, vpc_id, clean_dependencies=False):
+        """ Delete VPC using its id
+        """
+        def safe_clean(f, *args):
+            try:
+                f(*args)
+            except Exception as e:
+                return False
+
+        vpc_resource = self._ec2.Vpc(vpc_id)
+        if clean_dependencies:
+            try:
+                # There is plenty of resources to cleanup
+
+                # - Delete network interfaces
+                # Enable manually. Normally these should be empty
+                # if resources up the chain was properly cleaned out.
+                # I.e. EKS clusters, ELBs
+                # self.delete_eni_by_vpc_id(vpc_id)
+
+                # - Delete the internet-gateway
+                self.delete_igw_by_vpc_id(vpc_id)
+                # - Delete subnets
+                self.delete_subnet_by_vpc_id(vpc_id)
+                # - Delete route-tables
+                self.delete_route_table_by_vpc_id(vpc_id)
+                # - Delete network access-lists
+                self.delete_acl_by_vpc_id(vpc_id)
+                # - Delete security-groups
+                self.delete_secgroup_by_vpc_id(vpc_id)
+
+                # - Delete the VPC
+                vpc_resource.delete(
+                    # DryRun=True
+                )
+            except Exception as e:
+                self._log.warning(
+                    f"\t{vpc_id}: Remove dependencies and delete VPC manually: {e}"
+                )
+                return False
+        return True
