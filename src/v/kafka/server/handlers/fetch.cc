@@ -1155,6 +1155,7 @@ void op_context::for_each_fetch_partition(Func&& f) const {
                 .topic_partition = {p.topic->name, part.partition_index},
                 .max_bytes = part.max_bytes,
                 .fetch_offset = part.fetch_offset,
+                .current_leader_epoch = part.current_leader_epoch,
               });
           });
     } else {
