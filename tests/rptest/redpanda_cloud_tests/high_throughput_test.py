@@ -1439,7 +1439,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
     # The testcase occasionally fails on various parts:
     # - toing on `_consume_from_offset(self.topic, 1, p_id, "newest", 30)`
     # - failing to ensure all manifests are in the cloud in `stop_and_scrub_object_storage`
-    # @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume_miss_cache(self):
         # create default topics
@@ -1495,9 +1494,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         partition_size_check: list[MetricCheck] = []
         partition_size_metric = "vectorized_storage_log_partition_size"
-
-        # https://github.com/redpanda-data/cloudv2/issues/10685#issuecomment-1893009486
-        # raise NotImplementedError('partition_size_check not implemented')
 
         for pod in self.redpanda.pods:
             partition_size_check.append(
