@@ -53,12 +53,15 @@ struct conn_quota_fixture {
         max_con_overrides.start(overrides).get();
 
         scq
-          .start([this]() {
-              return conn_quota_config{
-                .max_connections = max_con.local().bind(),
-                .max_connections_per_ip = max_con_per_ip.local().bind(),
-                .max_connections_overrides = max_con_overrides.local().bind()};
-          }, &logger)
+          .start(
+            [this]() {
+                return conn_quota_config{
+                  .max_connections = max_con.local().bind(),
+                  .max_connections_per_ip = max_con_per_ip.local().bind(),
+                  .max_connections_overrides
+                  = max_con_overrides.local().bind()};
+            },
+            &logger)
           .get();
     }
 

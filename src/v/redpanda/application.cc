@@ -1899,16 +1899,19 @@ void application::wire_up_redpanda_services(
       }))
       .get();
     _kafka_conn_quotas
-      .start([]() {
-          return net::conn_quota_config{
-            .max_connections
-            = config::shard_local_cfg().kafka_connections_max.bind(),
-            .max_connections_per_ip
-            = config::shard_local_cfg().kafka_connections_max_per_ip.bind(),
-            .max_connections_overrides
-            = config::shard_local_cfg().kafka_connections_max_overrides.bind(),
-          };
-      }, &kafka::klog)
+      .start(
+        []() {
+            return net::conn_quota_config{
+              .max_connections
+              = config::shard_local_cfg().kafka_connections_max.bind(),
+              .max_connections_per_ip
+              = config::shard_local_cfg().kafka_connections_max_per_ip.bind(),
+              .max_connections_overrides
+              = config::shard_local_cfg()
+                  .kafka_connections_max_overrides.bind(),
+            };
+        },
+        &kafka::klog)
       .get();
 
     ss::sharded<net::server_configuration> kafka_cfg;
