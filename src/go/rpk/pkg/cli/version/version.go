@@ -12,6 +12,7 @@ package version
 import (
 	"fmt"
 	"runtime"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -68,14 +69,30 @@ Admin API hosts via flags, profile, or environment variables.`,
 			}
 			printRpkVersion(rv)
 			var rows redpandaVersions
-			defer printClusterVersions(&rows)
+			printCV := true
+			defer func() {
+				if printCV {
+					printClusterVersions(&rows)
+				}
+			}()
 
 			p, err := p.LoadVirtualProfile(fs)
 			if err != nil {
 				zap.L().Sugar().Errorf("unable to load the profile: %v", err)
 				return
 			}
-			cl, err := adminapi.NewClient(fs, p)
+			// Cloud clusters don't expose their admin API, the rest of the
+			// command will always fail. We better exit early.
+			if p.FromCloud {
+				printCV = false
+				return
+			}
+			cl, err := adminapi.NewClient(
+				fs,
+				p,
+				adminapi.ClientTimeout(3*time.Second),
+				adminapi.MaxRetries(2),
+			)
 			if err != nil {
 				zap.L().Sugar().Errorf("unable to create the admin client: %v", err)
 				return
