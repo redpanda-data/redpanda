@@ -61,23 +61,23 @@ type (
 	// Corresponding to the above, acl and aclWithMessage are the rows
 	// for PrintStructFields.
 	acl struct {
-		Principal           string
-		Host                string
-		ResourceType        kmsg.ACLResourceType
-		ResourceName        string
-		ResourcePatternType kmsg.ACLResourcePatternType
-		Operation           kmsg.ACLOperation
-		Permission          kmsg.ACLPermissionType
+		Principal           string                      `json:"principal"`
+		Host                string                      `json:"host"`
+		ResourceType        kmsg.ACLResourceType        `json:"resource_type"`
+		ResourceName        string                      `json:"resource_name"`
+		ResourcePatternType kmsg.ACLResourcePatternType `json:"resource_pattern_type"`
+		Operation           kmsg.ACLOperation           `json:"operation"`
+		Permission          kmsg.ACLPermissionType      `json:"permission"`
 	}
 	aclWithMessage struct {
-		Principal           string
-		Host                string
-		ResourceType        kmsg.ACLResourceType
-		ResourceName        string
-		ResourcePatternType kmsg.ACLResourcePatternType
-		Operation           kmsg.ACLOperation
-		Permission          kmsg.ACLPermissionType
-		Message             string
+		Principal           string                      `json:"principal"`
+		Host                string                      `json:"host"`
+		ResourceType        kmsg.ACLResourceType        `json:"resource_type"`
+		ResourceName        string                      `json:"resource_name"`
+		ResourcePatternType kmsg.ACLResourcePatternType `json:"resource_pattern_type"`
+		Operation           kmsg.ACLOperation           `json:"operation"`
+		Permission          kmsg.ACLPermissionType      `json:"permission"`
+		Message             string                      `json:"message"`
 	}
 )
 
