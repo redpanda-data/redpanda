@@ -4,6 +4,9 @@ go 1.22
 
 toolchain go1.22.1
 
+// add the git commit hash as the target version and `go mod tidy` will transform it into pseudo-version
+replace github.com/hamba/avro/v2 => github.com/redpanda-data/go-avro/v2 v2.0.0-20240405204525-77b1144dc525
+
 require (
 	buf.build/gen/go/redpandadata/cloud/connectrpc/go v1.16.0-20240312092455-827969853e99.1
 	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.33.0-20240312092455-827969853e99.1
@@ -71,6 +74,7 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
+	github.com/cloudflare/cfssl v1.6.5 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
