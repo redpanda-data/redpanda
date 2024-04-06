@@ -59,6 +59,9 @@ TEST_F(WasmTestFixture, HandlesTransformPanic) {
 TEST_F(WasmTestFixture, HandlesTransformErrors) {
     load_wasm("transform-error.wasm");
     EXPECT_THROW(transform(make_tiny_batch()), wasm::wasm_exception);
+    engine()->stop().get();
+    engine()->start().get();
+    EXPECT_THROW(transform(make_tiny_batch()), wasm::wasm_exception);
 }
 
 namespace {
