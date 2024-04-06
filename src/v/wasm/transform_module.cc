@@ -108,9 +108,8 @@ ss::future<> transform_module::for_each_record_async(
       .callback = cb,
     });
 
-    co_await host_wait_for_proccessing();
-
-    auto result = std::exchange(_call_ctx, std::nullopt);
+    return host_wait_for_proccessing().finally(
+      [this] { _call_ctx = std::nullopt; });
 }
 
 void transform_module::check_abi_version_1() {
