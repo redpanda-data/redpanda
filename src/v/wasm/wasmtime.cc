@@ -48,7 +48,6 @@
 
 #include <absl/algorithm/container.h>
 #include <absl/strings/escaping.h>
-#include <wasmtime/store.h>
 
 #include <alloca.h>
 #include <csignal>
@@ -1496,7 +1495,12 @@ wasmtime_runtime::make_factory(model::transform_metadata meta, iobuf buf) {
           check_error(error.get());
 
           size_t start = 0, end = 0;
-          wasmtime_module_image_range(user_module.get(), &start, &end);
+          // NOLINTBEGIN(*-reinterpret-*)
+          wasmtime_module_image_range(
+            user_module.get(),
+            reinterpret_cast<void**>(&start),
+            reinterpret_cast<void**>(&end));
+          // NOLINTEND(*-reinterpret-*)
           return end - start;
       });
     _total_executable_memory += memory_usage_size;
