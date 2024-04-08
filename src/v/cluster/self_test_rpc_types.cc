@@ -35,6 +35,24 @@ std::ostream& operator<<(std::ostream& o, self_test_status sts) {
     return o;
 }
 
+ss::sstring self_test_stage_as_string(self_test_stage sts) {
+    switch (sts) {
+    case self_test_stage::idle:
+        return "idle";
+    case self_test_stage::disk:
+        return "disk";
+    case self_test_stage::net:
+        return "net";
+    case self_test_stage::cloud:
+        return "cloud";
+    }
+}
+
+std::ostream& operator<<(std::ostream& o, self_test_stage sts) {
+    fmt::print(o, "{}", self_test_stage_as_string(sts));
+    return o;
+}
+
 ss::future<cluster::netcheck_request>
 make_netcheck_request(model::node_id src, size_t sz) {
     static const size_t fragment_size = 8192;

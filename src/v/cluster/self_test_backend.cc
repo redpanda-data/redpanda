@@ -58,6 +58,7 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
     auto gate_holder = _gate.hold();
     std::vector<self_test_result> results;
 
+    _stage = self_test_stage::disk;
     for (auto& dto : dtos) {
         try {
             dto.sg = _st_sg;
@@ -85,6 +86,7 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
         }
     }
 
+    _stage = self_test_stage::net;
     for (auto& nto : ntos) {
         try {
             if (!nto.peers.empty()) {
@@ -120,6 +122,7 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
         }
     }
 
+    _stage = self_test_stage::cloud;
     for (auto& cto : ctos) {
         try {
             cto.sg = _st_sg;
@@ -170,6 +173,7 @@ get_status_response self_test_backend::start_test(start_test_request req) {
                       _prev_run = get_status_response{
                         .id = id,
                         .status = self_test_status::idle,
+                        .stage = _stage,
                         .results = std::move(results)};
                   });
             }).finally([units = std::move(units)] {});
@@ -201,13 +205,13 @@ ss::future<get_status_response> self_test_backend::stop_test() {
         vlog(clusterlog.warn, "Failed to stop self tests within 5s timeout");
     }
     co_return get_status_response{
-      .id = _id, .status = self_test_status::running};
+      .id = _id, .status = self_test_status::running, .stage = _stage};
 }
 
 get_status_response self_test_backend::get_status() const {
     if (!_lock.ready()) {
         return get_status_response{
-          .id = _id, .status = self_test_status::running};
+          .id = _id, .status = self_test_status::running, .stage = _stage};
     }
     return _prev_run;
 }

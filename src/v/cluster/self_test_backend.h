@@ -90,13 +90,15 @@ private:
 private:
     // cached values
     uuid_t _id{};
-    get_status_response _prev_run{.status = self_test_status::idle};
+    get_status_response _prev_run{
+      .status = self_test_status::idle, .stage = self_test_stage::idle};
     previous_netcheck_entity _prev_nc;
 
     model::node_id _self;
     ss::gate _gate;
     ss::scheduling_group _st_sg;
     bool _cancelling{false};
+    self_test_stage _stage{self_test_stage::idle};
     mutex _lock{"self_test"};
     self_test::diskcheck _disk_test;
     self_test::netcheck _network_test;

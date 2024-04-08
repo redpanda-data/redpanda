@@ -43,6 +43,13 @@ self_test_status self_test_frontend::node_test_state::status() const {
     return response->status;
 }
 
+self_test_stage self_test_frontend::node_test_state::stage() const {
+    if (!response) {
+        return self_test_stage::idle;
+    }
+    return response->stage;
+}
+
 self_test_frontend::global_test_state::global_test_state(
   std::vector<underlying_t::value_type>&& rs)
   : _participants(rs.begin(), rs.end()) {}

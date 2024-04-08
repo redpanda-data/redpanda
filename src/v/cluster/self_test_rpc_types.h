@@ -28,6 +28,12 @@ ss::sstring self_test_status_as_string(self_test_status sts);
 
 std::ostream& operator<<(std::ostream& o, self_test_status sts);
 
+enum class self_test_stage : int8_t { idle = 0, disk, net, cloud };
+
+ss::sstring self_test_stage_as_string(self_test_stage sts);
+
+std::ostream& operator<<(std::ostream& o, self_test_stage sts);
+
 struct diskcheck_opts
   : serde::
       envelope<diskcheck_opts, serde::version<0>, serde::compat_version<0>> {
@@ -315,15 +321,17 @@ struct get_status_response
 
     uuid_t id{};
     self_test_status status{};
+    self_test_stage stage{};
     std::vector<self_test_result> results;
 
     friend std::ostream&
     operator<<(std::ostream& o, const get_status_response& r) {
         fmt::print(
           o,
-          "{{id: {} status: {} test_results: {}}}",
+          "{{id: {} status: {} stage: {} test_results: {}}}",
           r.id,
           r.status,
+          r.stage,
           r.results);
         return o;
     }
