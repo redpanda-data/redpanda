@@ -27,9 +27,12 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		noConfirm      bool
 		diskDurationMs uint
 		netDurationMs  uint
+		cloudTimeoutMs uint
+		cloudBackoffMs uint
 		onNodes        []int
 		onlyDisk       bool
 		onlyNetwork    bool
+		onlyCloud      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -47,6 +50,11 @@ of the cluster. Available tests to run:
   * Throughput test: 8192-bit messages
     * Unique pairs of Redpanda nodes each act as a client and a server.
     * The test pushes as much data over the wire, within the test parameters.
+
+* Cloud tests:
+  * Latency test: 1024-bit object.
+    * Depending on read/write permissions, a series of cloud storage operations are performed.
+
 
 This command immediately returns on success, and the tests run asynchronously. The
 user polls for results with the 'self-test status'
@@ -72,7 +80,7 @@ command.`,
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Using cmd line args, assemble self_test_start_request body
-			tests := assembleTests(onlyDisk, onlyNetwork, diskDurationMs, netDurationMs)
+			tests := assembleTests(onlyDisk, onlyNetwork, onlyCloud, diskDurationMs, netDurationMs, cloudTimeoutMs, cloudBackoffMs)
 
 			// Make HTTP POST request to leader that starts the actual test
 			tid, err := cl.StartSelfTest(cmd.Context(), onNodes, tests)
@@ -87,19 +95,25 @@ command.`,
 		"The duration in milliseconds of individual disk test runs")
 	cmd.Flags().UintVar(&netDurationMs, "network-duration-ms", 30000,
 		"The duration in milliseconds of individual network test runs")
+	cmd.Flags().UintVar(&cloudTimeoutMs, "cloud-timeout-ms", 5000,
+		"The timeout in milliseconds for a cloud storage request")
+	cmd.Flags().UintVar(&cloudBackoffMs, "cloud-backoff-ms", 100,
+		"The backoff in milliseconds for a cloud storage request")
 	cmd.Flags().IntSliceVar(&onNodes, "participant-node-ids", nil,
 		"IDs of nodes that the tests will run on. If not set, tests will run for all node IDs.")
 	cmd.Flags().BoolVar(&onlyDisk, "only-disk-test", false, "Runs only the disk benchmarks")
 	cmd.Flags().BoolVar(&onlyNetwork, "only-network-test", false, "Runs only network benchmarks")
-	cmd.MarkFlagsMutuallyExclusive("only-disk-test", "only-network-test")
+	cmd.Flags().BoolVar(&onlyCloud, "only-cloud-test", false, "Runs only cloud storage benchmarks")
+	cmd.MarkFlagsMutuallyExclusive("only-disk-test", "only-network-test", "only-cloud-test")
 	return cmd
 }
 
 // assembleTests creates types of pre-canned tests depending on user input
 // 1. onlyDisk - Only runs the throughput/latency disk benchmarks
 // 2. onlyNetwork - Only runs the network benchmark
-// 3. All false - Runs the default which is the combination of option 1 & 2.
-func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationNet uint) []any {
+// 3. onlyCloud - Only runs the cloud benchmark
+// 4. All false - Runs the default which is the combination of all tests.
+func assembleTests(onlyDisk bool, onlyNetwork bool, onlyCloud bool, durationDisk uint, durationNet uint, timeoutCloud uint, backoffCloud uint) []any {
 	diskcheck := []any{
 		// One test weighted for better throughput results
 		adminapi.DiskcheckParameters{
@@ -135,12 +149,22 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationN
 			Type:        adminapi.NetcheckTagIdentifier,
 		},
 	}
+	cloudcheck := []any{
+		adminapi.CloudcheckParameters{
+			Name:      "Cloud Storage Test",
+			TimeoutMs: timeoutCloud,
+			BackoffMs: backoffCloud,
+			Type:      adminapi.CloudcheckTagIdentifier,
+		},
+	}
 	switch {
 	case onlyDisk:
 		return diskcheck
 	case onlyNetwork:
 		return netcheck
+	case onlyCloud:
+		return cloudcheck
 	default:
-		return append(diskcheck, netcheck...)
+		return append(append(diskcheck, netcheck...), cloudcheck...)
 	}
 }
