@@ -1584,6 +1584,7 @@ ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
     co_return info;
 }
 namespace {
+
 partition_constraints get_partition_constraints(
   model::partition_id id,
   cluster::replication_factor new_replication_factor,
@@ -1606,14 +1607,77 @@ partition_constraints get_partition_constraints(
 
     return {id, new_replication_factor, std::move(allocation_constraints)};
 }
+
+// Executed on the partition_allocator shard
+ss::future<
+  result<ss::foreign_ptr<std::unique_ptr<chunked_vector<allocated_partition>>>>>
+do_increase_replication_factor(
+  model::topic_namespace_view ns_tp,
+  const assignments_set& assignments,
+  partition_allocator& al,
+  replication_factor new_rf,
+  double max_disk_usage_ratio,
+  const topics_frontend::capacity_info& capacity_info) {
+    chunked_vector<allocated_partition> units;
+    units.reserve(assignments.size());
+    std::error_code error = errc::success;
+
+    co_await ssx::async_for_each(
+      assignments.begin(),
+      assignments.end(),
+      [&](const partition_assignment& assignment) {
+          if (error) {
+              return;
+          }
+
+          auto p_id = assignment.id;
+          if (assignment.replicas.size() > new_rf()) {
+              vlog(
+                clusterlog.warn,
+                "Current size of replicas {} > new_replication_factor {} for "
+                "topic {} and partition {}",
+                assignment.replicas.size(),
+                new_rf,
+                ns_tp,
+                p_id);
+              error = errc::topic_invalid_replication_factor;
+              return;
+          }
+
+          auto reallocated = al.reallocate_partition(
+            model::topic_namespace(ns_tp),
+            get_partition_constraints(
+              p_id, new_rf, max_disk_usage_ratio, capacity_info),
+            assignment,
+            get_allocation_domain(ns_tp));
+          if (!reallocated) {
+              vlog(
+                clusterlog.warn,
+                "attempt to find reallocation for topic {}, partition {} "
+                "failed, error: {}",
+                ns_tp,
+                p_id,
+                reallocated.error().message());
+              error = reallocated.error();
+              return;
+          }
+
+          units.push_back(std::move(reallocated.value()));
+      });
+
+    if (error) {
+        co_return error;
+    }
+    co_return ss::make_foreign(
+      std::make_unique<decltype(units)>(std::move(units)));
+}
+
 } // namespace
 
 ss::future<std::error_code> topics_frontend::increase_replication_factor(
   model::topic_namespace topic,
   cluster::replication_factor new_replication_factor,
   model::timeout_clock::time_point timeout) {
-    std::vector<move_topic_replicas_data> new_assignments;
-
     if (
       static_cast<size_t>(new_replication_factor)
       > _members_table.local().node_count()) {
@@ -1636,95 +1700,39 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
 
     auto partition_count = tp_metadata->get_configuration().partition_count;
 
-    // units shold exist during replicate_and_wait call
-    using units_from_allocator
-      = ss::foreign_ptr<std::unique_ptr<allocated_partition>>;
-    std::vector<units_from_allocator> units;
-    units.reserve(partition_count);
-
-    std::optional<std::error_code> error;
-
     auto health_report = co_await get_health_info(topic, partition_count);
 
     auto hard_max_disk_usage_ratio = (100 - _hard_max_disk_usage_ratio())
                                      / 100.0;
 
-    co_await ss::max_concurrent_for_each(
-      tp_metadata->get_assignments(),
-      32,
-      [this,
-       &units,
-       &new_assignments,
-       &error,
-       topic,
+    // units shold exist during replicate_and_wait call
+    auto units = co_await _allocator.invoke_on(
+      partition_allocator::shard,
+      [&topic,
+       &tp_metadata,
        new_replication_factor,
-       h_report = std::move(health_report),
-       hard_max_disk_usage_ratio](partition_assignment& assignment) {
-          if (error) {
-              return ss::now();
-          }
-          auto p_id = assignment.id;
-          if (assignment.replicas.size() > new_replication_factor()) {
-              vlog(
-                clusterlog.warn,
-                "Current size of replicas {} > new_replication_factor {} for "
-                "topic {} and partition {}",
-                assignment.replicas.size(),
-                new_replication_factor,
-                topic,
-                p_id);
-              error = errc::topic_invalid_replication_factor;
-              return ss::now();
-          }
-
-          return _allocator
-            .invoke_on(
-              partition_allocator::shard,
-              [new_rf = new_replication_factor,
-               topic,
-               disk_max_usage = hard_max_disk_usage_ratio,
-               assignment = std::move(assignment),
-               p_id,
-               h_report](partition_allocator& al) {
-                  auto partition_constraints = get_partition_constraints(
-                    p_id, new_rf, disk_max_usage, h_report);
-
-                  return al.reallocate_partition(
-                    topic,
-                    partition_constraints,
-                    assignment,
-                    get_allocation_domain({topic.ns, topic.tp}));
-              })
-            .then([&error, &units, &new_assignments, topic, p_id](
-                    result<allocated_partition> reallocation) {
-                if (!reallocation) {
-                    vlog(
-                      clusterlog.warn,
-                      "attempt to find reallocation for topic {}, partition {} "
-                      "failed, error: {}",
-                      topic,
-                      p_id,
-                      reallocation.error().message());
-                    error = reallocation.error();
-                    return;
-                }
-
-                units_from_allocator ptr
-                  = std::make_unique<allocated_partition>(
-                    std::move(reallocation.value()));
-
-                units.emplace_back(std::move(ptr));
-
-                new_assignments.emplace_back(p_id, units.back()->replicas());
-            });
+       hard_max_disk_usage_ratio,
+       &health_report](partition_allocator& al) {
+          return do_increase_replication_factor(
+            topic,
+            tp_metadata->get_assignments(),
+            al,
+            new_replication_factor,
+            hard_max_disk_usage_ratio,
+            health_report);
       });
+    if (units.has_error()) {
+        co_return units.error();
+    }
 
-    if (error) {
-        co_return error.value();
+    std::vector<move_topic_replicas_data> new_assignments;
+    new_assignments.reserve(units.value()->size());
+    for (const auto& reallocated : *units.value()) {
+        new_assignments.emplace_back(
+          reallocated.ntp().tp.partition, reallocated.replicas());
     }
 
     move_topic_replicas_cmd cmd(topic, std::move(new_assignments));
-
     co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
 }
 
