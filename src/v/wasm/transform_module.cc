@@ -86,10 +86,9 @@ transform_module::for_each_record_async(
       .record_callback = std::move(cb),
     });
 
-    co_await host_wait_for_proccessing();
-
-    auto result = std::exchange(_call_ctx, std::nullopt);
-    co_return std::move(result->output_data);
+    return host_wait_for_proccessing()
+      .then([this] { return std::move(_call_ctx->output_data); })
+      .finally([this] { _call_ctx = std::nullopt; });
 }
 
 void transform_module::check_abi_version_1() {
