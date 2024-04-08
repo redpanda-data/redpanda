@@ -9,7 +9,6 @@
 
 #pragma once
 
-#include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/transform.h"
