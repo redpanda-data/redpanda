@@ -829,7 +829,7 @@
                 },
                 "test_type": {
                     "type": "string",
-                    "description": "Type of self test, one of either disk/network"
+                    "description": "Type of self test, one of either disk/network/cloud"
                 },
                 "duration": {
                     "type": "long",
