@@ -857,6 +857,10 @@
                     "type": "string",
                     "description": "One of either idle / running / unreachable"
                 },
+                "stage": {
+                    "type": "string",
+                    "description": "One of either idle / net / disk / cloud"
+                },
                 "results": {
                     "type": "array",
                     "items": {

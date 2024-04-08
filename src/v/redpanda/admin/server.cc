@@ -2851,6 +2851,7 @@ admin_server::self_test_get_results_handler(
         dbg_ns::self_test_node_report nr;
         nr.node_id = id;
         nr.status = cluster::self_test_status_as_string(participant.status());
+        nr.stage = cluster::self_test_stage_as_string(participant.stage());
         if (participant.response) {
             for (const auto& r : participant.response->results) {
                 nr.results.push(self_test_result_to_json(r));
