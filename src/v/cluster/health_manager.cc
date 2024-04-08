@@ -33,6 +33,7 @@ health_manager::health_manager(
   model::node_id self,
   size_t target_replication_factor,
   std::chrono::milliseconds tick_interval,
+  config::binding<size_t> max_concurrent_moves,
   ss::sharded<topic_table>& topics,
   ss::sharded<topics_frontend>& topics_frontend,
   ss::sharded<partition_allocator>& allocator,
@@ -42,6 +43,7 @@ health_manager::health_manager(
   : _self(self)
   , _target_replication_factor(target_replication_factor)
   , _tick_interval(tick_interval)
+  , _max_concurrent_moves(std::move(max_concurrent_moves))
   , _topics(topics)
   , _topics_frontend(topics_frontend)
   , _allocator(allocator)
@@ -61,86 +63,55 @@ ss::future<> health_manager::stop() {
     return _gate.close();
 }
 
-ss::future<bool> health_manager::ensure_partition_replication(model::ntp ntp) {
-    auto assignment = _topics.local().get_partition_assignment(ntp);
-    if (!assignment) {
-        vlog(
-          clusterlog.warn,
-          "Health manager: partition {} has no assignment",
-          ntp);
-        co_return false;
-    }
-
-    if (assignment->replicas.size() >= _target_replication_factor) {
-        vlog(
-          clusterlog.debug,
-          "Health manager: partition {} with replication {} reached target {}",
-          ntp,
-          assignment->replicas.size(),
-          _target_replication_factor);
-        co_return true;
-    }
-
-    partition_constraints constraints(
-      ntp.tp.partition, _target_replication_factor);
-
-    auto allocation = _allocator.local().reallocate_partition(
-      model::topic_namespace{ntp.ns, ntp.tp.topic},
-      constraints,
-      *assignment,
-      get_allocation_domain(ntp));
-    if (!allocation) {
-        vlog(
-          clusterlog.warn,
-          "Health manager: allocation for {} with replication factor {} "
-          "failed: {}",
-          ntp,
-          _target_replication_factor,
-          allocation.error().message());
-        co_return false;
-    }
-    const auto& replicas = allocation.value().replicas();
-
-    auto err = co_await _topics_frontend.local().move_partition_replicas(
-      ntp,
-      replicas,
-      reconfiguration_policy::full_local_retention,
-      model::timeout_clock::now() + set_replicas_timeout);
-    if (err) {
-        vlog(
-          clusterlog.warn,
-          "Health manager: error setting replicas for {}: {}",
-          ntp,
-          err);
-        co_return false;
-    }
-
-    vlog(
-      clusterlog.info,
-      "Increasing replication factor for {} (new replicas: {})",
-      ntp,
-      replicas);
-
-    // short delay for things to stablize
-    co_await ss::sleep_abortable(stabilize_delay, _as.local());
-    co_return true;
-}
-
 ss::future<bool>
 health_manager::ensure_topic_replication(model::topic_namespace_view topic) {
-    auto metadata = _topics.local().get_topic_metadata(topic);
-    if (!metadata) {
+    auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
+    if (!tp_metadata.has_value()) {
         vlog(clusterlog.debug, "Health manager: topic {} not found", topic);
         co_return true;
     }
 
-    for (const auto& partition : metadata->get_assignments()) {
-        model::ntp ntp(topic.ns, topic.tp, partition.id);
-        if (!co_await ensure_partition_replication(std::move(ntp))) {
-            co_return false;
-        }
+    auto current_replication_factor
+      = tp_metadata.value().get().get_replication_factor();
+    if (current_replication_factor() >= _target_replication_factor) {
+        vlog(
+          clusterlog.debug,
+          "Health manager: topic {} with replication {} reached target "
+          "{}",
+          topic,
+          current_replication_factor,
+          _target_replication_factor);
+        co_return true;
     }
 
+    if (
+      _topics.local().updates_in_progress().size() >= _max_concurrent_moves()) {
+        vlog(
+          clusterlog.info,
+          "Health manager: max number of reconfigurations reached");
+        co_return false;
+    }
+
+    topic_properties_update properties_update(model::topic_namespace{topic});
+    properties_update.custom_properties.replication_factor.op
+      = incremental_update_operation::set;
+    properties_update.custom_properties.replication_factor.value
+      = replication_factor(_target_replication_factor);
+    auto res = co_await _topics_frontend.local().do_update_topic_properties(
+      std::move(properties_update),
+      model::timeout_clock::now() + set_replicas_timeout);
+    if (res.ec != errc::success) {
+        vlog(
+          clusterlog.warn,
+          "Health manager: error updating properties for {}: {}",
+          topic,
+          res.ec);
+        co_return false;
+    }
+
+    vlog(clusterlog.info, "Increased replication factor for {}", topic);
+    // short delay for things to stablize
+    co_await ss::sleep_abortable(stabilize_delay, _as.local());
     co_return true;
 }
 
