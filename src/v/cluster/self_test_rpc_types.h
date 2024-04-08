@@ -191,7 +191,7 @@ struct cloudcheck_opts
     // Backoff duration for cloud storage requests.
     ss::lowres_clock::duration backoff{std::chrono::milliseconds(10)};
 
-    // Scheduling group that the benchmark will operate under
+    // Scheduling group that the benchmark will operate under.
     ss::scheduling_group sg;
 
     static cloudcheck_opts from_json(const json::Value& obj) {
@@ -321,7 +321,7 @@ struct get_status_response
     operator<<(std::ostream& o, const get_status_response& r) {
         fmt::print(
           o,
-          "{{id: {} status:{} test_results: {}}}",
+          "{{id: {} status: {} test_results: {}}}",
           r.id,
           r.status,
           r.results);

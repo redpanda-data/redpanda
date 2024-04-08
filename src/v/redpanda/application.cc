@@ -1604,6 +1604,7 @@ void application::wire_up_redpanda_services(
       node_id,
       std::ref(local_monitor),
       std::ref(_connection_cache),
+      std::ref(cloud_storage_api),
       sched_groups.self_test_sg())
       .get();
 
