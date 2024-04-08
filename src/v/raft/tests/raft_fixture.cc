@@ -618,7 +618,7 @@ raft_fixture::stop_node(model::node_id id, remove_data_dir remove) {
 }
 
 raft_node_instance& raft_fixture::node(model::node_id id) {
-    return *_nodes.find(id)->second;
+    return *_nodes.at(id);
 }
 
 ss::future<model::node_id>
