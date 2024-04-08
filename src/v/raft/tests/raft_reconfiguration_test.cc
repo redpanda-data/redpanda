@@ -68,12 +68,14 @@ struct reconfiguration_test
       use_initial_learner_offset,
       consistency_level>>
   , raft_fixture {
-    ss::future<>
-    wait_for_reconfiguration_to_finish(std::chrono::milliseconds timeout) {
-        RPTEST_REQUIRE_EVENTUALLY_CORO(timeout, [this] {
-            for (auto& [_, n] : nodes()) {
+    ss::future<> wait_for_reconfiguration_to_finish(
+      const absl::flat_hash_set<model::node_id>& target_ids,
+      std::chrono::milliseconds timeout) {
+        RPTEST_REQUIRE_EVENTUALLY_CORO(timeout, [this, target_ids] {
+            for (auto id : target_ids) {
+                auto& n = node(id);
                 if (
-                  n->raft()->config().get_state()
+                  n.raft()->config().get_state()
                   != raft::configuration_state::simple) {
                     return false;
                 }
@@ -130,16 +132,16 @@ wait_for_offset(model::offset expected, raft_fixture::raft_nodes_t& nodes) {
     co_return result<model::offset>(raft::errc::timeout);
 }
 
-void assert_offset_translator_state_is_consistent(
-  raft_fixture::raft_nodes_t& nodes) {
-    if (nodes.size() == 1) {
+static void assert_offset_translator_state_is_consistent(
+  const std::vector<raft_node_instance*>& nodes) {
+    if (nodes.size() <= 1) {
         return;
     }
     model::offset start_offset{};
-    auto first_raft = nodes.begin()->second->raft();
+    auto first_raft = nodes.front()->raft();
     model::offset dirty_offset = first_raft->dirty_offset();
     // get the max start offset
-    for (auto& [id, n] : nodes) {
+    for (auto* n : nodes) {
         start_offset = std::max(n->raft()->start_offset(), start_offset);
     }
     std::vector<int64_t> deltas;
@@ -152,8 +154,7 @@ void assert_offset_translator_state_is_consistent(
         auto idx = 0;
         for (model::offset o :
              boost::irange<model::offset>(start_offset, dirty_offset)) {
-            ASSERT_EQ(
-              it->second->raft()->log()->offset_delta(o), deltas[idx++]);
+            ASSERT_EQ((*it)->raft()->log()->offset_delta(o), deltas[idx++]);
         }
     }
 }
@@ -249,9 +250,13 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
         }
     }
 
+    auto old_node_ids = all_ids();
+
+    auto current_node_ids = old_node_ids;
     auto current_nodes = all_vnodes();
 
     for (int i = 0; i < nodes_to_remove; ++i) {
+        current_node_ids.erase(current_nodes.back().id());
         current_nodes.pop_back();
     }
     absl::flat_hash_set<raft::vnode> added_nodes;
@@ -260,6 +265,7 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
           auto& n = add_node(
             model::node_id(initial_size + i), model::revision_id(0));
           current_nodes.push_back(n.get_vnode());
+          current_node_ids.insert(n.get_vnode().id());
           added_nodes.emplace(n.get_vnode());
           return n.init_and_start({});
       });
@@ -294,7 +300,7 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
           }
       });
 
-    co_await wait_for_reconfiguration_to_finish(30s);
+    co_await wait_for_reconfiguration_to_finish(current_node_ids, 30s);
 
     co_await assert_logs_equal(start_offset);
 
@@ -302,8 +308,9 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
       current_nodes.begin(), current_nodes.end());
 
     // validate configuration
-    for (const auto& [_, n] : nodes()) {
-        auto cfg = n->raft()->config();
+    for (auto id : current_node_ids) {
+        auto& n = node(id);
+        auto cfg = n.raft()->config();
         auto cfg_vnodes = cfg.all_nodes();
         ASSERT_EQ_CORO(
           current_nodes_set,
@@ -312,11 +319,16 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
         ASSERT_FALSE_CORO(cfg.old_config().has_value());
         ASSERT_TRUE_CORO(cfg.current_config().learners.empty());
 
-        if (learner_start_offset && added_nodes.contains(n->get_vnode())) {
-            ASSERT_EQ_CORO(n->raft()->start_offset(), learner_start_offset);
+        if (learner_start_offset && added_nodes.contains(n.get_vnode())) {
+            ASSERT_EQ_CORO(n.raft()->start_offset(), learner_start_offset);
         }
     }
-    assert_offset_translator_state_is_consistent(nodes());
+
+    std::vector<raft_node_instance*> current_node_ptrs;
+    for (auto id : current_node_ids) {
+        current_node_ptrs.push_back(&node(id));
+    }
+    assert_offset_translator_state_is_consistent(current_node_ptrs);
 }
 
 INSTANTIATE_TEST_SUITE_P(
