@@ -1617,7 +1617,8 @@ do_increase_replication_factor(
   partition_allocator& al,
   replication_factor new_rf,
   double max_disk_usage_ratio,
-  const topics_frontend::capacity_info& capacity_info) {
+  const topics_frontend::capacity_info& capacity_info,
+  std::optional<node2count_t> existing_replica_counts) {
     chunked_vector<allocated_partition> units;
     units.reserve(assignments.size());
     std::error_code error = errc::success;
@@ -1649,7 +1650,10 @@ do_increase_replication_factor(
             get_partition_constraints(
               p_id, new_rf, max_disk_usage_ratio, capacity_info),
             assignment,
-            get_allocation_domain(ns_tp));
+            get_allocation_domain(ns_tp),
+            {},
+            existing_replica_counts ? &existing_replica_counts.value()
+                                    : nullptr);
           if (!reallocated) {
               vlog(
                 clusterlog.warn,
@@ -1705,6 +1709,17 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
     auto hard_max_disk_usage_ratio = (100 - _hard_max_disk_usage_ratio())
                                      / 100.0;
 
+    std::optional<node2count_t> existing_replica_counts;
+    if (_partition_autobalancing_topic_aware()) {
+        node2count_t node2count;
+        for (const auto& p_as : tp_metadata->get_assignments()) {
+            for (const auto& bs : p_as.replicas) {
+                node2count[bs.node_id] += 1;
+            }
+        }
+        existing_replica_counts = std::move(node2count);
+    }
+
     // units shold exist during replicate_and_wait call
     auto units = co_await _allocator.invoke_on(
       partition_allocator::shard,
@@ -1712,14 +1727,17 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
        &tp_metadata,
        new_replication_factor,
        hard_max_disk_usage_ratio,
-       &health_report](partition_allocator& al) {
+       &health_report,
+       existing_replica_counts = std::move(existing_replica_counts)](
+        partition_allocator& al) mutable {
           return do_increase_replication_factor(
             topic,
             tp_metadata->get_assignments(),
             al,
             new_replication_factor,
             hard_max_disk_usage_ratio,
-            health_report);
+            health_report,
+            std::move(existing_replica_counts));
       });
     if (units.has_error()) {
         co_return units.error();
