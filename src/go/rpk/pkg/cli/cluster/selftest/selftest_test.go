@@ -21,7 +21,7 @@ func TestClusterStatus(t *testing.T) {
 	for _, test := range []struct {
 		name            string
 		serverResponse  string
-		runningNodes    []int
+		runningNodes    map[int]string
 		isUninitialized bool
 	}{
 		{
@@ -29,18 +29,21 @@ func TestClusterStatus(t *testing.T) {
 			serverResponse: `[
                {
                  "node_id": 1,
-                 "status": "running"
+                 "status": "running",
+                 "stage": "disk"
                },
                {
                  "node_id": 0,
-                 "status": "running"
+                 "status": "running",
+                 "stage": "cloud"
                },
                {
                  "node_id": 2,
-                 "status": "running"
+                 "status": "running",
+                 "stage": "net"
                }
             ]`,
-			runningNodes:    []int{0, 1, 2},
+			runningNodes:    map[int]string{0: "cloud", 1: "disk", 2: "net"},
 			isUninitialized: false,
 		},
 		{
@@ -48,18 +51,21 @@ func TestClusterStatus(t *testing.T) {
 			serverResponse: `[
                {
                  "node_id": 1,
-                 "status": "running"
+                 "status": "running",
+                 "stage": "disk"
                },
                {
                  "node_id": 0,
-                 "status": "idle"
+                 "status": "idle",
+                 "stage": "idle"
                },
                {
                  "node_id": 2,
-                 "status": "idle"
+                 "status": "idle",
+                 "stage": "idle"
                }
             ]`,
-			runningNodes:    []int{1},
+			runningNodes:    map[int]string{1: "disk"},
 			isUninitialized: false,
 		},
 		{
@@ -67,18 +73,21 @@ func TestClusterStatus(t *testing.T) {
 			serverResponse: `[
                {
                  "node_id": 1,
-                 "status": "idle"
+                 "status": "idle",
+                 "stage": "idle"
                },
                {
                  "node_id": 0,
-                 "status": "idle"
+                 "status": "idle",
+                 "stage": "idle"
                },
                {
                  "node_id": 2,
-                 "status": "idle"
+                 "status": "idle",
+                 "stage": "idle"
                }
             ]`,
-			runningNodes:    []int{},
+			runningNodes:    map[int]string{},
 			isUninitialized: true,
 		},
 		{
@@ -87,18 +96,21 @@ func TestClusterStatus(t *testing.T) {
                {
                  "node_id": 1,
                  "status": "idle",
+                 "stage": "idle",
                  "results": [{}]
                },
                {
                  "node_id": 0,
-                 "status": "idle"
+                 "status": "idle",
+                 "stage": "idle"
                },
                {
                  "node_id": 2,
-                 "status": "idle"
+                 "status": "idle",
+                 "stage": "idle"
                }
             ]`,
-			runningNodes:    []int{},
+			runningNodes:    map[int]string{},
 			isUninitialized: false,
 		},
 	} {

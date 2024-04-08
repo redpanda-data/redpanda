@@ -56,6 +56,8 @@ type SelfTestNodeReport struct {
 	// If a status of idle is returned, the following `Results` variable will not
 	// be nil. In all other cases it will be nil.
 	Status string `json:"status"`
+	// One of { "idle", "net", "disk", "cloud" }
+	Stage string `json:"stage"`
 	// If value of `Status` is "idle", then this field will contain one result for
 	// each peer involved in the test. It represents the results of the last
 	// successful test run.
