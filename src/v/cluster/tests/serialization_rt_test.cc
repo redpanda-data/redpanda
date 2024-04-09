@@ -1550,14 +1550,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        cluster::get_node_health_request data{
-          .filter = {
-            .ntp_filters = random_partitions_filter(),
-          },
-        };
-        roundtrip_test(data);
-    }
-    {
         storage::disk data{
           .path = random_generators::gen_alphanum_string(
             random_generators::get_int(20)),

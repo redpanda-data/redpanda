@@ -529,8 +529,7 @@ void clear_partition_sizes(node_health_report& report) {
 
 ss::future<get_node_health_reply>
 service::do_collect_node_health_report(get_node_health_request req) {
-    auto res = co_await _hm_frontend.local().collect_node_health(
-      std::move(req.filter));
+    auto res = co_await _hm_frontend.local().collect_node_health();
     if (res.has_error()) {
         co_return get_node_health_reply{
           .error = map_health_monitor_error_code(res.error())};

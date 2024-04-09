@@ -291,27 +291,6 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
                        report.value().node_reports.begin()->topics);
           });
     }).get();
-
-    // check filtering in node report
-    tests::cooperative_spin_wait_with_timeout(10s, [&] {
-        return n1->controller->get_health_monitor()
-          .local()
-          .collect_node_health(f_1.node_report_filter)
-          .then([](result<cluster::node_health_report> report) {
-              return report.has_value()
-                     && contains_exactly_ntp_leaders(
-                       g_seastar_test_log,
-                       {
-                         ntp(model::kafka_namespace, "tp-1", 0),
-                         ntp(model::kafka_namespace, "tp-1", 2),
-                         ntp(model::kafka_namespace, "tp-2", 0),
-                         ntp(model::kafka_internal_namespace, "internal-1", 0),
-                         ntp(model::kafka_internal_namespace, "internal-1", 1),
-                         ntp(model::redpanda_ns, "controller", 0),
-                       },
-                       report.value().topics);
-          });
-    }).get();
 }
 
 FIXTURE_TEST(test_alive_status, cluster_test_fixture) {

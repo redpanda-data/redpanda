@@ -352,14 +352,13 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
  * RPC requests
  */
 
-struct get_node_health_request
-  : serde::envelope<
+class get_node_health_request
+  : public serde::envelope<
       get_node_health_request,
       serde::version<0>,
       serde::compat_version<0>> {
+public:
     using rpc_adl_exempt = std::true_type;
-
-    node_report_filter filter;
 
     friend bool
     operator==(const get_node_health_request&, const get_node_health_request&)
@@ -368,7 +367,14 @@ struct get_node_health_request
     friend std::ostream&
     operator<<(std::ostream&, const get_node_health_request&);
 
-    auto serde_fields() { return std::tie(filter); }
+    auto serde_fields() { return std::tie(_filter); }
+
+private:
+    /**
+     * This field is no longer used, as it never was. It was made private on
+     * purpose
+     */
+    node_report_filter _filter;
 };
 
 struct get_node_health_reply

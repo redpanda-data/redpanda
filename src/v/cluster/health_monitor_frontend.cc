@@ -67,11 +67,10 @@ storage::disk_space_alert health_monitor_frontend::get_cluster_disk_health() {
 // Collcts and returns current node health report according to provided
 // filters list
 ss::future<result<node_health_report>>
-health_monitor_frontend::collect_node_health(node_report_filter f) {
-    return dispatch_to_backend(
-      [f = std::move(f)](health_monitor_backend& be) mutable {
-          return be.collect_current_node_health(std::move(f));
-      });
+health_monitor_frontend::collect_node_health() {
+    return dispatch_to_backend([](health_monitor_backend& be) mutable {
+        return be.collect_current_node_health();
+    });
 }
 std::optional<alive>
 health_monitor_frontend::is_alive(model::node_id id) const {
