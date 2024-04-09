@@ -42,7 +42,8 @@ public:
       ss::socket_address a,
       server_probe& p,
       std::optional<size_t> in_max_buffer_size,
-      bool tls_enabled);
+      bool tls_enabled,
+      ss::logger*);
     ~connection() noexcept;
     connection(const connection&) = delete;
     connection& operator=(const connection&) = delete;
@@ -84,6 +85,7 @@ private:
     net::batched_output_stream _out;
     server_probe& _probe;
     bool _tls_enabled;
+    ss::logger* _log;
 };
 
 } // namespace net
