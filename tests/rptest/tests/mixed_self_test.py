@@ -56,11 +56,32 @@ class KafkaCliToolsTest(RedpandaMixedTest):
 
 class RedpandaMixedTestSelfTest(RedpandaMixedTest):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, min_brokers=3, **kwargs)
+        super().__init__(*args, min_brokers=1, **kwargs)
 
-    @cluster(num_nodes=3)
-    def test_rpk_create_delete_topic(self):
-        name = 'test-rpk-create-topic'
+    @cluster(num_nodes=1)
+    def test_rpk(self):
+        """A very basic rpk test."""
         rpk = RpkTool(self.redpanda)
+
+        rpk.list_topics()
+
+        name = 'test-rpk-create-topic'
         rpk.create_topic(name)
         rpk.delete_topic(name)
+
+    @cluster(num_nodes=1)
+    def test_metrics(self):
+        """Test metrics_sample() can retrieve internal metrics.
+        """
+        vectorized_application_uptime = self.redpanda.metrics_sample(
+            sample_pattern='vectorized_application_uptime')
+        assert vectorized_application_uptime is not None, 'expected some metrics'
+
+        sample_patterns = [
+            'vectorized_application_uptime', 'vectorized_reactor_utilization'
+        ]
+        samples = self.redpanda.metrics_samples(sample_patterns)
+        assert samples is not None, 'expected sample patterns to match'
+
+        count = self.redpanda.metric_sum('vectorized_application_uptime')
+        assert count > 0, 'expected count greater than 0'
