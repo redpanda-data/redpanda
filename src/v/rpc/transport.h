@@ -104,6 +104,70 @@ struct timing_info {
     bool flushed = false;
 };
 
+class client_probe : public net::client_probe {
+public:
+    client_probe() = default;
+    client_probe(const client_probe&) = delete;
+    client_probe& operator=(const client_probe&) = delete;
+    client_probe(client_probe&&) = delete;
+    client_probe& operator=(client_probe&&) = delete;
+    ~client_probe() = default;
+
+    void request() {
+        ++_requests;
+        ++_requests_pending;
+    }
+
+    void request_completed() {
+        ++_requests_completed;
+        --_requests_pending;
+    }
+
+    void request_timeout() {
+        ++_request_timeouts;
+        --_requests_pending;
+    }
+
+    void request_error() {
+        ++_request_errors;
+        --_requests_pending;
+    }
+
+    void add_bytes_sent(size_t sent) { _out_bytes += sent; }
+
+    void add_bytes_received(size_t recv) { _in_bytes += recv; }
+
+    void read_dispatch_error() { ++_read_dispatch_errors; }
+
+    void header_corrupted() { ++_corrupted_headers; }
+
+    void client_correlation_error() { ++_client_correlation_errors; }
+
+    void server_correlation_error() { ++_server_correlation_errors; }
+
+    void waiting_for_available_memory() { ++_requests_blocked_memory; }
+
+    std::vector<ss::metrics::metric_definition> defs(
+      const std::vector<ss::metrics::label_instance>& labels,
+      const std::vector<ss::metrics::label>& aggregate_labels);
+
+private:
+    uint64_t _requests = 0;
+    uint32_t _requests_pending = 0;
+    uint32_t _request_errors = 0;
+    uint64_t _request_timeouts = 0;
+    uint64_t _requests_completed = 0;
+    uint64_t _in_bytes = 0;
+    uint64_t _out_bytes = 0;
+    uint32_t _read_dispatch_errors = 0;
+    uint32_t _corrupted_headers = 0;
+    uint32_t _server_correlation_errors = 0;
+    uint32_t _client_correlation_errors = 0;
+    uint32_t _requests_blocked_memory = 0;
+
+    friend std::ostream& operator<<(std::ostream& o, const client_probe& p);
+};
+
 /**
  * Transport implementation used for internal RPC traffic.
  *
@@ -202,7 +266,7 @@ private:
     absl::flat_hash_map<uint32_t, std::unique_ptr<response_entry>>
       _correlations;
     uint32_t _correlation_idx{0};
-    metrics::internal_metric_groups _metrics;
+
     /**
      * Ordered map containing requests to be sent over the wire. The map
      * preserves order of calling send_typed function. It is fine to use
@@ -231,6 +295,8 @@ private:
     void set_version(transport_version v) { _version = v; }
 
     friend std::ostream& operator<<(std::ostream&, const transport&);
+
+    std::unique_ptr<client_probe> _probe;
 };
 
 namespace internal {

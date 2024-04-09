@@ -23,6 +23,10 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <chrono>
+
+using namespace std::chrono_literals;
+
 namespace cloud_storage {
 
 bool operator==(const anomalies& lhs, const anomalies& rhs) {

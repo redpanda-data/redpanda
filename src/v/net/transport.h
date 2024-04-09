@@ -35,9 +35,12 @@ namespace net {
  * with the socket. As such, superclasses must provide interfaces with which to
  * send and receive bytes using the socket.
  *
- * TODO:
- *  - client_probe needs to be split apart from simple_protocol
- *  - allow subclasses to provide logger
+ * Metric probes
+ * -------------
+ *
+ * A subclass should of net::base_transport should inherit from
+ * net::client_probe and add its own probes. A pointer to the superclass should
+ * be passed into base_transport::set_probe.
  */
 class base_transport {
 public:
@@ -81,13 +84,17 @@ public:
 
     const unresolved_address& server_address() const { return _server_addr; }
 
+    /*
+     * Sets the probe instance to use. Must only be called once.
+     */
+    void set_probe(client_probe*);
+
 protected:
     virtual void fail_outstanding_futures() {}
 
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
     ss::gate _dispatch_gate;
-    std::unique_ptr<client_probe> _probe;
 
 private:
     ss::future<> do_connect(clock_type::time_point);
@@ -101,6 +108,7 @@ private:
 
     // Track if shutdown was called on the current `_fd`
     bool _shutdown{false};
+    std::optional<client_probe*> _probe;
 };
 
 } // namespace net

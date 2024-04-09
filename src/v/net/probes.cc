@@ -186,134 +186,35 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
 }
 
 void client_probe::setup_metrics(
-  metrics::internal_metric_groups& mgs,
-  const std::optional<rpc::connection_cache_label>& label,
-  const std::optional<model::node_id>& node_id,
-  const net::unresolved_address& target_addr) {
+  std::string_view name,
+  const std::vector<ss::metrics::label_instance>& labels,
+  const std::vector<ss::metrics::label>& aggregate_labels,
+  std::vector<ss::metrics::metric_definition> defs) {
     namespace sm = ss::metrics;
-    auto target = sm::label("target");
-    std::vector<sm::label_instance> labels = {
-      target(ssx::sformat("{}:{}", target_addr.host(), target_addr.port()))};
-    if (label) {
-        labels.push_back(sm::label("connection_cache_label")((*label)()));
-    }
-    std::vector<sm::label> aggregate_labels;
-    // Label the metrics for a given server with the node ID so Seastar can
-    // differentiate between them, in case multiple node IDs start at the same
-    // address (e.g. in an ungraceful decommission). Aggregate on node ID so
-    // the user is presented metrics for each server regardless of node ID.
-    if (node_id) {
-        auto node_id_label = sm::label("node_id");
-        labels.push_back(node_id_label(*node_id));
-        aggregate_labels.push_back(node_id_label);
-    }
-    mgs.add_group(
-      prometheus_sanitize::metrics_name("rpc_client"),
-      {
-        sm::make_gauge(
-          "active_connections",
-          [this] { return _connections; },
-          sm::description("Currently active connections"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "connects",
-          [this] { return _connects; },
-          sm::description("Connection attempts"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "requests",
-          [this] { return _requests; },
-          sm::description("Number of requests"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_gauge(
-          "requests_pending",
-          [this] { return _requests_pending; },
-          sm::description("Number of requests pending"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "request_errors",
-          [this] { return _request_errors; },
-          sm::description("Number or requests errors"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "request_timeouts",
-          [this] { return _request_timeouts; },
-          sm::description("Number or requests timeouts"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_total_bytes(
-          "in_bytes",
-          [this] { return _out_bytes; },
-          sm::description("Total number of bytes sent (including headers)"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_total_bytes(
-          "out_bytes",
-          [this] { return _in_bytes; },
-          sm::description("Total number of bytes received"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "connection_errors",
-          [this] { return _connection_errors; },
-          sm::description("Number of connection errors"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "read_dispatch_errors",
-          [this] { return _read_dispatch_errors; },
-          sm::description("Number of errors while dispatching responses"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "corrupted_headers",
-          [this] { return _corrupted_headers; },
-          sm::description("Number of responses with corrupted headers"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "server_correlation_errors",
-          [this] { return _server_correlation_errors; },
-          sm::description("Number of responses with wrong correlation id"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "client_correlation_errors",
-          [this] { return _client_correlation_errors; },
-          sm::description("Number of errors in client correlation id"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "requests_blocked_memory",
-          [this] { return _requests_blocked_memory; },
-          sm::description("Number of requests that are blocked because"
-                          " of insufficient memory"),
-          labels)
-          .aggregate(aggregate_labels),
-      });
-}
 
-std::ostream& operator<<(std::ostream& o, const client_probe& p) {
-    o << "{"
-      << " requests_sent: " << p._requests
-      << ", requests_pending: " << p._requests_pending
-      << ", requests_completed: " << p._requests_completed
-      << ", request_errors: " << p._request_errors
-      << ", request_timeouts: " << p._request_timeouts
-      << ", in_bytes: " << p._in_bytes << ", out_bytes: " << p._out_bytes
-      << ", connects: " << p._connects << ", connections: " << p._connections
-      << ", connection_errors: " << p._connection_errors
-      << ", read_dispatch_errors: " << p._read_dispatch_errors
-      << ", corrupted_headers: " << p._corrupted_headers
-      << ", server_correlation_errors: " << p._server_correlation_errors
-      << ", client_correlation_errors: " << p._client_correlation_errors
-      << ", requests_blocked_memory: " << p._requests_blocked_memory << " }";
-    return o;
+    defs.emplace_back(sm::make_gauge(
+                        "active_connections",
+                        [this] { return _connections; },
+                        sm::description("Currently active connections"),
+                        labels)
+                        .aggregate(aggregate_labels));
+
+    defs.emplace_back(sm::make_counter(
+                        "connects",
+                        [this] { return _connects; },
+                        sm::description("Connection attempts"),
+                        labels)
+                        .aggregate(aggregate_labels));
+
+    defs.emplace_back(sm::make_counter(
+                        "connection_errors",
+                        [this] { return _connection_errors; },
+                        sm::description("Number of connection errors"),
+                        labels)
+                        .aggregate(aggregate_labels));
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name(ss::sstring(name)), defs);
 }
 
 ss::future<ss::shared_ptr<ss::tls::server_credentials>>

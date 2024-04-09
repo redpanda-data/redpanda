@@ -13,6 +13,10 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/remote_segment.h"
 
+#include <chrono>
+
+using namespace std::chrono_literals;
+
 namespace {
 constexpr auto cache_backoff_duration = 5s;
 constexpr auto eviction_duration = 10s;
