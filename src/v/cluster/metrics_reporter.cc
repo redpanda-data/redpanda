@@ -199,30 +199,20 @@ metrics_reporter::build_metrics_snapshot() {
     if (!report) {
         co_return result<metrics_snapshot>(report.error());
     }
-    metrics_map.reserve(report.value().node_states.size());
+    metrics_map.reserve(report.value().node_reports.size());
 
-    for (auto& ns : report.value().node_states) {
-        auto [it, _] = metrics_map.emplace(ns.id, node_metrics{.id = ns.id});
+    for (auto& report : report.value().node_reports) {
+        auto [it, _] = metrics_map.emplace(
+          report.id, node_metrics{.id = report.id});
         auto& metrics = it->second;
-        metrics.is_alive = (bool)ns.is_alive;
 
-        auto nm = _members_table.local().get_node_metadata_ref(ns.id);
+        auto nm = _members_table.local().get_node_metadata_ref(report.id);
         if (!nm) {
             continue;
         }
-
         metrics.cpu_count = nm->get().broker.properties().cores;
-    }
-
-    for (auto& report : report.value().node_reports) {
-        auto it = metrics_map.find(report.id);
-        if (it == metrics_map.end()) {
-            auto [eit, _] = metrics_map.emplace(
-              report.id, node_metrics{.id = report.id});
-            it = eit;
-        }
-        auto& metrics = it->second;
-
+        metrics.is_alive = _health_monitor.local().is_alive(report.id)
+                           == cluster::alive::yes;
         metrics.version = report.local_state.redpanda_version;
         metrics.logical_version = report.local_state.logical_version;
         metrics.disks.reserve(report.local_state.shared_disk() ? 1 : 2);

@@ -943,10 +943,11 @@ get_brokers(cluster::controller* const controller) {
               }
               b.membership_status = fmt::format(
                 "{}", nm.state.get_membership_state());
+              b.is_alive = controller->get_health_monitor().local().is_alive(id)
+                           == cluster::alive::yes;
 
               // These fields are defaults that will be overwritten with
               // data from the health report.
-              b.is_alive = true;
               b.maintenance_status = fill_maintenance_status(nm.state);
               b.internal_rpc_address = nm.broker.rpc_address().host();
               b.internal_rpc_port = nm.broker.rpc_address().port();
@@ -955,43 +956,32 @@ get_brokers(cluster::controller* const controller) {
           }
 
           // Enrich the broker information with data from the health report.
-          for (auto& ns : h_report.value().node_states) {
-              auto it = broker_map.find(ns.id);
+          for (auto& node_report : h_report.value().node_reports) {
+              auto it = broker_map.find(node_report.id);
               if (it == broker_map.end()) {
                   continue;
               }
 
-              it->second.is_alive = static_cast<bool>(ns.is_alive);
+              it->second.version = node_report.local_state.redpanda_version;
+              it->second.recovery_mode_enabled
+                = node_report.local_state.recovery_mode_enabled;
+              auto nm = members_table.get_node_metadata_ref(node_report.id);
+              if (nm && node_report.drain_status) {
+                  it->second.maintenance_status = fill_maintenance_status(
+                    nm.value().get().state, node_report.drain_status.value());
+              }
 
-              auto r_it = std::find_if(
-                h_report.value().node_reports.begin(),
-                h_report.value().node_reports.end(),
-                [id = ns.id](const cluster::node_health_report& nhr) {
-                    return nhr.id == id;
-                });
-
-              if (r_it != h_report.value().node_reports.end()) {
-                  it->second.version = r_it->local_state.redpanda_version;
-                  it->second.recovery_mode_enabled
-                    = r_it->local_state.recovery_mode_enabled;
-                  auto nm = members_table.get_node_metadata_ref(r_it->id);
-                  if (nm && r_it->drain_status) {
-                      it->second.maintenance_status = fill_maintenance_status(
-                        nm.value().get().state, r_it->drain_status.value());
-                  }
-
-                  auto add_disk = [&ds_list = it->second.disk_space](
-                                    const storage::disk& ds) {
-                      ss::httpd::broker_json::disk_space_info dsi;
-                      dsi.path = ds.path;
-                      dsi.free = ds.free;
-                      dsi.total = ds.total;
-                      ds_list.push(dsi);
-                  };
-                  add_disk(r_it->local_state.data_disk);
-                  if (!r_it->local_state.shared_disk()) {
-                      add_disk(r_it->local_state.get_cache_disk());
-                  }
+              auto add_disk =
+                [&ds_list = it->second.disk_space](const storage::disk& ds) {
+                    ss::httpd::broker_json::disk_space_info dsi;
+                    dsi.path = ds.path;
+                    dsi.free = ds.free;
+                    dsi.total = ds.total;
+                    ds_list.push(dsi);
+                };
+              add_disk(node_report.local_state.data_disk);
+              if (!node_report.local_state.shared_disk()) {
+                  add_disk(node_report.local_state.get_cache_disk());
               }
           }
 
@@ -1169,6 +1159,7 @@ ss::future<> admin_server::throw_on_error(
         case rpc::errc::service_error:
         case rpc::errc::method_not_found:
         case rpc::errc::version_not_supported:
+        case rpc::errc::service_unavailable:
         case rpc::errc::unknown:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected error: {}", ec.message()));

@@ -43,8 +43,7 @@ inline errc random_failed_errc() {
 }
 
 inline node_state random_node_state() {
-    return node_state{
-      {},
+    return {
       tests::random_named_int<model::node_id>(),
       model::random_membership_state(),
       cluster::alive(tests::random_bool())};
