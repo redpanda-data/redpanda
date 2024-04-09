@@ -191,7 +191,9 @@ class ClusterConfigHelpersMixin:
             return f"Not all the nodes are at the same config_version: {config_versions}"
 
         # wait for config_version to be the same on all the nodes
-        wait_until(_check_version, timeout_sec=5, err_msg=_assert_version_msg)
+        wait_until(_check_version,
+                   timeout_sec=5,
+                   err_msg=_assert_version_msg())
 
         # we expect that key is at expect_value by now
         values = {
