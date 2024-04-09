@@ -434,7 +434,8 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
           if (id == _self) {
-              return collect_current_node_health();
+              return _report_collection_mutex.with(
+                [this] { return collect_current_node_health(); });
           }
           return collect_remote_node_health(id);
       });
@@ -532,6 +533,30 @@ health_monitor_backend::collect_current_node_health() {
 
     co_return ret;
 }
+ss::future<result<node_health_report>>
+health_monitor_backend::get_current_node_health() {
+    vlog(clusterlog.debug, "getting current node health");
+
+    auto it = _reports.find(_self);
+    if (it != _reports.end()) {
+        co_return it->second;
+    }
+
+    auto u = _report_collection_mutex.try_get_units();
+    if (!u) {
+        vlog(
+          clusterlog.debug,
+          "report collection in progress, waiting for report to be available");
+        u.emplace(co_await _report_collection_mutex.get_units());
+        auto it = _reports.find(_self);
+        if (it != _reports.end()) {
+            co_return it->second;
+        }
+    }
+
+    co_return co_await collect_current_node_health();
+}
+
 namespace {
 
 struct ntp_report {

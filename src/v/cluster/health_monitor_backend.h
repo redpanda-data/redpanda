@@ -69,6 +69,11 @@ public:
       force_refresh refresh, model::timeout_clock::time_point deadline);
 
     ss::future<result<node_health_report>> collect_current_node_health();
+    /**
+     * Return cached version of current node health of collects it if it is not
+     * available in cache.
+     */
+    ss::future<result<node_health_report>> get_current_node_health();
 
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);
@@ -189,6 +194,8 @@ private:
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>
       _node_callbacks;
     cluster::notification_id_type _next_callback_id{0};
+
+    mutex _report_collection_mutex{"health_report_collection"};
 
     friend struct health_report_accessor;
 };
