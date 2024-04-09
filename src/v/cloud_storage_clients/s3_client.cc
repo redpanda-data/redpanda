@@ -975,8 +975,8 @@ auto s3_client::delete_objects(
   std::vector<object_key> keys,
   ss::lowres_clock::duration timeout)
   -> ss::future<result<delete_objects_result, error_outcome>> {
-    object_key dummy{""};
-    return send_request(
+    const object_key dummy{""};
+    co_return co_await send_request(
       do_delete_objects(bucket, keys, timeout), bucket, dummy);
 }
 } // namespace cloud_storage_clients
