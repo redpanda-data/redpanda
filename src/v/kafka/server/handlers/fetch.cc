@@ -422,8 +422,7 @@ read_result::memory_units_t reserve_memory_units(
 static void fill_fetch_responses(
   op_context& octx,
   std::vector<read_result> results,
-  const std::vector<op_context::response_placeholder_ptr>& responses,
-  op_context::latency_point start_time) {
+  const std::vector<op_context::response_placeholder_ptr>& responses) {
     auto range = boost::irange<size_t>(0, results.size());
     if (unlikely(results.size() != responses.size())) {
         // soft assert & recovery attempt
@@ -519,10 +518,6 @@ static void fill_fetch_responses(
         }
 
         resp_it->set(std::move(resp));
-        std::chrono::microseconds fetch_latency
-          = std::chrono::duration_cast<std::chrono::microseconds>(
-            op_context::latency_clock::now() - start_time);
-        octx.rctx.probe().record_fetch_latency(fetch_latency);
     }
 }
 
@@ -1075,10 +1070,7 @@ private:
             });
 
         fill_fetch_responses(
-          octx,
-          std::move(results.read_results),
-          fetch.responses,
-          fetch.start_time);
+          octx, std::move(results.read_results), fetch.responses);
 
         _last_result_size[fetch.shard] = results.total_size;
         _completed_shard_fetches.push_back(std::move(fetch));

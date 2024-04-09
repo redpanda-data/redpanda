@@ -331,9 +331,6 @@ struct read_result {
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
 struct shard_fetch {
-    explicit shard_fetch(op_context::latency_point start_time)
-      : start_time{start_time} {}
-
     void push_back(
       ntp_fetch_config config, op_context::response_placeholder_ptr r_ph) {
         requests.push_back(std::move(config));
@@ -349,7 +346,6 @@ struct shard_fetch {
     ss::shard_id shard;
     std::vector<ntp_fetch_config> requests;
     std::vector<op_context::response_placeholder_ptr> responses;
-    op_context::latency_point start_time;
 
     friend std::ostream& operator<<(std::ostream& o, const shard_fetch& sf) {
         fmt::print(o, "{}", sf.requests);
@@ -358,10 +354,8 @@ struct shard_fetch {
 };
 
 struct fetch_plan {
-    explicit fetch_plan(
-      size_t shards,
-      op_context::latency_point start_time = op_context::latency_clock::now())
-      : fetches_per_shard(shards, shard_fetch(start_time)) {
+    explicit fetch_plan(size_t shards)
+      : fetches_per_shard(shards, shard_fetch()) {
         for (size_t i = 0; i < fetches_per_shard.size(); i++) {
             fetches_per_shard[i].shard = i;
         }
