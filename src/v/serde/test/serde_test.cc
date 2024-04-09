@@ -12,6 +12,8 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/generators.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/variant.h"
 #include "serde/serde.h"
 #include "test_utils/randoms.h"
 #include "tristate.h"
@@ -1076,4 +1078,61 @@ SEASTAR_THREAD_TEST_CASE(collections_interop) {
     // check if serialized representation is the same
     BOOST_REQUIRE(serialized_vector == serialized_fifo);
     BOOST_REQUIRE(serialized_vector == serialized_f_vector);
+}
+
+template<typename T>
+concept IsSerdeReadable = requires(
+  iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
+    { serde::tag_invoke(serde::read_tag, in, t, bytes_left_limit) };
+};
+
+template<typename T>
+concept IsSerdeWritable = requires(T&& t, iobuf b) {
+    { serde::tag_invoke(serde::write_tag, b, std::forward<T>(t)) };
+};
+
+SEASTAR_THREAD_TEST_CASE(variant) {
+    using my_variant
+      = serde::variant<ss::sstring, int, bool, my_enum, int, test_msg1>;
+    my_variant a = "foo";
+    my_variant b = my_variant(std::in_place_index_t<1>(), 1);
+    my_variant c = false;
+    my_variant d = my_enum::y;
+    my_variant e = my_variant(std::in_place_index_t<4>(), 3);
+    my_variant f = test_msg1{
+      ._a = 55, ._m = {._i = 'i', ._j = 'j'}, ._b = 33, ._c = 44};
+    for (const my_variant& v : {a, b, c, d, e, f}) {
+        auto roundtripped = serde::from_iobuf<my_variant>(serde::to_iobuf(v));
+        BOOST_REQUIRE(v == roundtripped);
+    }
+    static_assert(
+      IsSerdeReadable<serde::variant<int>>,
+      "serde::variant **should** be compatible with serde reads");
+    static_assert(
+      IsSerdeWritable<serde::variant<int>>,
+      "serde::variant **should** be compatible with serde writes");
+    static_assert(
+      !IsSerdeReadable<std::variant<int>>,
+      "std::variant should **not** be compatible with serde reads");
+    static_assert(
+      !IsSerdeWritable<std::variant<int>>,
+      "std::variant should **not** be compatible with serde writes");
+
+    static_assert(std::is_nothrow_constructible_v<my_variant>);
+    static_assert(std::is_nothrow_default_constructible_v<my_variant>);
+    static_assert(std::is_nothrow_destructible_v<my_variant>);
+    static_assert(std::is_nothrow_move_constructible_v<my_variant>);
+    static_assert(!std::is_nothrow_copy_constructible_v<my_variant>);
+    static_assert(
+      std::is_nothrow_copy_constructible_v<serde::variant<int, bool>>);
+
+    serde::variant<int, bool> v0 = false;
+    serde::variant<int, bool, ss::sstring> v1 = "foo";
+    // It's not valid to read variants of different types or sizes.
+    BOOST_CHECK_THROW(
+      serde::from_iobuf<decltype(v0)>(serde::to_iobuf(v1)),
+      serde::serde_exception);
+    BOOST_CHECK_THROW(
+      serde::from_iobuf<decltype(v1)>(serde::to_iobuf(v0)),
+      serde::serde_exception);
 }
