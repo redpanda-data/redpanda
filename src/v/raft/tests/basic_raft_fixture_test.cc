@@ -70,7 +70,8 @@ TEST_F(raft_fixture, test_empty_writes) {
     auto reader = model::make_memory_record_batch_reader(
       std::move(builder).build());
 
-    EXPECT_DEATH(replicate(std::move(reader)).get(), "Aborting");
+    EXPECT_DEATH(
+      replicate(std::move(reader)).get(), "Assert failure.+Empty batch");
 }
 
 struct test_parameters {
