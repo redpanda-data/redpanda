@@ -12,6 +12,7 @@
 
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_stm.h"
+#include "model/fundamental.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -30,6 +31,7 @@ struct group_recovery_consumer_state {
      * retention feature is activated. see group::offset_metadata for more info.
      */
     bool has_offset_retention_feature_fence{false};
+    model::offset last_read_offset;
 };
 
 class group_recovery_consumer {
