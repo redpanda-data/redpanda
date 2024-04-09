@@ -2334,6 +2334,11 @@ class RedpandaService(RedpandaServiceBase):
             return False
 
         crashes = []
+        # We log long encoded AWS/GCP headers that occasionally have 'SEGV' in
+        # them by chance
+        cloud_header_strings = [
+            'x-amz-id', 'x-amz-request', 'x-guploader-uploadid'
+        ]
         for node in self.nodes:
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
@@ -2342,9 +2347,8 @@ class RedpandaService(RedpandaServiceBase):
             for line in node.account.ssh_capture(
                     f"grep -e SEGV -e Segmentation\\ fault -e [Aa]ssert -e Sanitizer {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                     timeout_sec=30):
-                if 'SEGV' in line and ('x-amz-id' in line
-                                       or 'x-amz-request' in line):
-                    # We log long encoded AWS headers that occasionally have 'SEGV' in them by chance
+                if 'SEGV' in line and any(
+                    [h in line.lower() for h in cloud_header_strings]):
                     continue
 
                 if is_allowed_log_line(line):
