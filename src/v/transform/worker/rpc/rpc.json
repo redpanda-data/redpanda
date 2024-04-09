@@ -1,0 +1,25 @@
+{
+    "namespace": "transform::worker::rpc",
+    "service_name": "transform_worker_rpc_service",
+    "includes": [
+        "transform/worker/rpc/control_plane.h",
+        "transform/worker/rpc/data_plane.h"
+    ],
+    "methods": [
+        {
+            "name": "compute_current_state",
+            "input_type": "current_state_request",
+            "output_type": "current_state_reply"
+        },
+        {
+            "name": "manage_vm",
+            "input_type": "manage_vm_request",
+            "output_type": "manage_vm_reply"
+        },
+        {
+            "name": "transform_data",
+            "input_type": "transform_data_request",
+            "output_type": "transform_data_reply"
+        },
+    ]
+}
