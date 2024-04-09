@@ -363,8 +363,7 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
         max_metadata_age(),
         [timeout](controller_client_protocol client) mutable {
             return client.collect_node_health_report(
-              get_node_health_request{.filter = node_report_filter{}},
-              rpc::client_opts(timeout));
+              get_node_health_request{}, rpc::client_opts(timeout));
         })
       .then(&rpc::get_ctx_data<get_node_health_reply>)
       .then([this, id](result<get_node_health_reply> reply) {
@@ -435,7 +434,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
           if (id == _self) {
-              return collect_current_node_health(node_report_filter{});
+              return collect_current_node_health();
           }
           return collect_remote_node_health(id);
       });
@@ -514,8 +513,8 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
 }
 
 ss::future<result<node_health_report>>
-health_monitor_backend::collect_current_node_health(node_report_filter filter) {
-    vlog(clusterlog.debug, "collecting health report with filter: {}", filter);
+health_monitor_backend::collect_current_node_health() {
+    vlog(clusterlog.debug, "collecting health report");
     node_health_report ret;
     ret.id = _self;
 
@@ -525,11 +524,8 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
 
     ret.drain_status = co_await _drain_manager.local().status();
     ret.include_drain_status = true;
+    ret.topics = co_await collect_topic_status();
 
-    if (filter.include_partitions) {
-        ret.topics = co_await collect_topic_status(
-          std::move(filter.ntp_filters));
-    }
     auto [it, _] = _status.try_emplace(ret.id);
     it->second.is_alive = alive::yes;
     it->second.last_reply_timestamp = ss::lowres_clock::now();
@@ -543,18 +539,16 @@ struct ntp_report {
     partition_status status;
 };
 
-chunked_vector<ntp_report> collect_shard_local_reports(
-  partition_manager& pm, const partitions_filter& filters) {
+chunked_vector<ntp_report> collect_shard_local_reports(partition_manager& pm) {
     chunked_vector<ntp_report> reports;
-    // empty filter, collect all
-    if (filters.namespaces.empty()) {
-        reports.reserve(pm.partitions().size());
-        std::transform(
-          pm.partitions().begin(),
-          pm.partitions().end(),
-          std::back_inserter(reports),
-          [](auto& p) {
-              return ntp_report {
+
+    reports.reserve(pm.partitions().size());
+    std::transform(
+      pm.partitions().begin(),
+      pm.partitions().end(),
+      std::back_inserter(reports),
+      [](auto& p) {
+          return ntp_report {
                   .tp_ns = model::topic_namespace(p.first.ns, p.first.tp.topic),
                   .status = partition_status{
                     .id = p.first.tp.partition,
@@ -570,28 +564,7 @@ chunked_vector<ntp_report> collect_shard_local_reports(
                     .shard = ss::this_shard_id(),
                   },
               };
-          });
-    } else {
-        for (const auto& [ntp, partition] : pm.partitions()) {
-            if (filters.matches(ntp)) {
-                reports.push_back(ntp_report{
-                  .tp_ns = model::topic_namespace(ntp.ns, ntp.tp.topic),
-                  .status = partition_status{
-                    .id = ntp.tp.partition,
-                    .term = partition->term(),
-                    .leader_id = partition->get_leader_id(),
-                    .revision_id = partition->get_revision_id(),
-                    .size_bytes = partition->size_bytes()
-                                  + partition->non_log_disk_size_bytes(),
-                    .under_replicated_replicas
-                    = partition->get_under_replicated(),
-                    .reclaimable_size_bytes
-                    = partition->reclaimable_size_bytes(),
-                    .shard = ss::this_shard_id(),
-                  }});
-            }
-        }
-    }
+      });
 
     return reports;
 }
@@ -608,11 +581,9 @@ reports_acc_t reduce_reports_map(
 }
 } // namespace
 ss::future<chunked_vector<topic_status>>
-health_monitor_backend::collect_topic_status(partitions_filter filters) {
+health_monitor_backend::collect_topic_status() {
     auto reports_map = co_await _partition_manager.map_reduce0(
-      [&filters](partition_manager& pm) {
-          return collect_shard_local_reports(pm, filters);
-      },
+      [](partition_manager& pm) { return collect_shard_local_reports(pm); },
       reports_acc_t{},
       &reduce_reports_map);
 

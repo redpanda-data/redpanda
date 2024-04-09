@@ -68,8 +68,7 @@ public:
     ss::future<storage::disk_space_alert> get_cluster_disk_health(
       force_refresh refresh, model::timeout_clock::time_point deadline);
 
-    ss::future<result<node_health_report>>
-      collect_current_node_health(node_report_filter);
+    ss::future<result<node_health_report>> collect_current_node_health();
 
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);
@@ -126,8 +125,7 @@ private:
     std::optional<node_health_report>
     build_node_report(model::node_id, const node_report_filter&);
 
-    ss::future<chunked_vector<topic_status>>
-      collect_topic_status(partitions_filter);
+    ss::future<chunked_vector<topic_status>> collect_topic_status();
 
     result<node_health_report>
       process_node_reply(model::node_id, result<get_node_health_reply>);
