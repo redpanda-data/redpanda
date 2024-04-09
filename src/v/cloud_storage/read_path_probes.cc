@@ -68,8 +68,7 @@ ts_read_path_probe::ts_read_path_probe() {
               "downloads_throttled_sum",
               [this] { return get_downloads_throttled_sum(); },
               sm::description(
-                "Total amount of throttling applied to cloud storage "
-                "downloads"))
+                "Total amount of time downloads were throttled (ms)"))
               .aggregate(aggregate_labels),
           });
     }
@@ -157,8 +156,7 @@ ts_read_path_probe::ts_read_path_probe() {
               "downloads_throttled_sum",
               [this] { return get_downloads_throttled_sum(); },
               sm::description(
-                "Total amount of throttling applied to cloud storage "
-                "downloads"))
+                "Total amount of time downloads were throttled (ms)"))
               .aggregate(aggregate_labels),
           });
     }

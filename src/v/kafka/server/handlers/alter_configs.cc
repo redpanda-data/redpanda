@@ -279,7 +279,8 @@ create_topic_properties_update(
                   update.properties.flush_ms,
                   cfg.value,
                   kafka::config_resource_operation::set,
-                  flush_ms_validator{});
+                  flush_ms_validator{},
+                  true);
                 continue;
             }
             if (cfg.name == topic_property_flush_bytes) {

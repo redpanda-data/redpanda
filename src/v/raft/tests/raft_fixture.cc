@@ -79,11 +79,12 @@ ss::future<> channel::stop() {
         _as.request_abort();
         _new_messages.broken();
 
-        co_await _gate.close();
+        auto f = _gate.close();
 
         for (auto& m : _messages) {
             m.resp_data.set_exception(ss::abort_requested_exception());
         }
+        co_await std::move(f);
     }
 }
 
@@ -245,10 +246,11 @@ void in_memory_test_protocol::on_dispatch(
 }
 
 ss::future<> in_memory_test_protocol::stop() {
-    co_await _gate.close();
+    auto f = _gate.close();
     for (auto& [_, ch] : _channels) {
         co_await ch->stop();
     }
+    co_await std::move(f);
 }
 
 template<typename ReqT>

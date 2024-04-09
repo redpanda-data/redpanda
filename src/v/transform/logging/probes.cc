@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "transform/logging/probes.h"
+#include "probes.h"
 
 #include "base/seastarx.h"
 #include "config/configuration.h"

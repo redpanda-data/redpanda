@@ -115,8 +115,24 @@ class ProducerSwarm(Service):
             err_msg=
             f"producer_swarm service {node.account.hostname} failed to start within {600} sec",
         )
+        self._redpanda.wait_until(
+            lambda: self.is_metrics_available(node),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=
+            f"producer_swarm metrics endpoint at {self._remote_url(node, 'metrics/summary')} failed to answer after {30} sec",
+        )
 
         self._node = node
+
+    def is_metrics_available(self, node):
+        path = f"metrics/summary"
+        path = f"{path}?seconds=1"
+        try:
+            self._get(node, path)
+            return True
+        except:
+            return False
 
     def is_alive(self, node):
         result = node.account.ssh_output(

@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include "io/page.h"
-#include "io/persistence.h"
+#include "page.h"
+#include "persistence.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
@@ -44,6 +44,9 @@ class io_queue {
 public:
     /**
      * Callback invoked when the scheduler completes an operation.
+     *
+     * Write completions are delivered only if after the write has completed the
+     * operation will not be requeued.
      */
     using completion_callback_type
       = seastar::noncopyable_function<void(page&) noexcept>;

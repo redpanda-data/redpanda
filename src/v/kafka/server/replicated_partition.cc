@@ -12,6 +12,7 @@
 
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
+#include "cluster/rm_stm.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/logger.h"
@@ -183,56 +184,9 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
     cfg.max_offset = _translator->to_log_offset(cfg.max_offset);
     cfg.type_filter = {model::record_batch_type::raft_data};
 
-    class reader : public model::record_batch_reader::impl {
-    public:
-        reader(
-          std::unique_ptr<model::record_batch_reader::impl> underlying,
-          ss::lw_shared_ptr<const storage::offset_translator_state> tr)
-          : _underlying(std::move(underlying))
-          , _translator(std::move(tr)) {}
-
-        bool is_end_of_stream() const final {
-            return _underlying->is_end_of_stream();
-        }
-
-        void print(std::ostream& os) final {
-            fmt::print(os, "kafka::partition reader for ");
-            _underlying->print(os);
-        }
-        using storage_t = model::record_batch_reader::storage_t;
-        using data_t = model::record_batch_reader::data_t;
-        using foreign_data_t = model::record_batch_reader::foreign_data_t;
-
-        model::record_batch_reader::data_t& get_batches(storage_t& st) {
-            if (std::holds_alternative<data_t>(st)) {
-                return std::get<data_t>(st);
-            } else {
-                return *std::get<foreign_data_t>(st).buffer;
-            }
-        }
-
-        ss::future<storage_t>
-        do_load_slice(model::timeout_clock::time_point t) final {
-            return _underlying->do_load_slice(t).then([this](storage_t recs) {
-                for (auto& batch : get_batches(recs)) {
-                    batch.header().base_offset = _translator->from_log_offset(
-                      batch.base_offset());
-                }
-                return recs;
-            });
-        }
-
-        ss::future<> finally() noexcept final { return _underlying->finally(); }
-
-    private:
-        std::unique_ptr<model::record_batch_reader::impl> _underlying;
-        ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
-    };
+    cfg.translate_offsets = storage::translate_offsets::yes;
     auto rdr = co_await _partition->make_reader(cfg, debounce_deadline);
-    co_return storage::translating_reader(
-      model::make_record_batch_reader<reader>(
-        std::move(rdr).release(), _translator),
-      _translator);
+    co_return storage::translating_reader(std::move(rdr), _translator);
 }
 
 ss::future<std::vector<cluster::rm_stm::tx_range>>
@@ -631,13 +585,10 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
     if (reading_from_follower && !_partition->is_leader()) {
         auto ec = error_code::none;
 
-        const std::pair<model::offset, model::offset> bounds = std::minmax(
+        const auto available_to_read = std::min(
           leader_high_watermark(), log_end_offset());
-        const auto effective_log_end_offset = bounds.second;
-        const auto available_to_read = bounds.first;
-        if (
-          fetch_offset < start_offset()
-          || fetch_offset > effective_log_end_offset) {
+
+        if (fetch_offset < start_offset()) {
             ec = error_code::offset_out_of_range;
         } else if (fetch_offset > available_to_read) {
             /**

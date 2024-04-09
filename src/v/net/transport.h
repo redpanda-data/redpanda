@@ -53,7 +53,8 @@ public:
         bool wait_for_tls_server_eof = true;
     };
 
-    explicit base_transport(configuration c);
+    base_transport(configuration c, seastar::logger* log);
+
     virtual ~base_transport() noexcept = default;
     base_transport(base_transport&&) noexcept = default;
     base_transport& operator=(base_transport&&) noexcept = default;
@@ -96,6 +97,7 @@ private:
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
     std::optional<ss::sstring> _tls_sni_hostname;
     bool _wait_for_tls_server_eof;
+    seastar::logger* _log;
 
     // Track if shutdown was called on the current `_fd`
     bool _shutdown{false};

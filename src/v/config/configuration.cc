@@ -398,8 +398,11 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100ms,
       [](auto const& v) -> std::optional<ss::sstring> {
-          if (v < 1ms) {
-              return "flush delay should be atleast 1ms";
+          // maximum duration imposed by serde serialization.
+          if (v < 1ms || v > serde::max_serializable_ms) {
+              return fmt::format(
+                "flush delay should be in range: [1, {}]",
+                serde::max_serializable_ms);
           }
           return std::nullopt;
       })
@@ -618,19 +621,7 @@ configuration::configuration()
       "wasn't reached",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1ms)
-  , fetch_read_strategy(
-      *this,
-      "fetch_read_strategy",
-      "The strategy used to fulfill fetch requests",
-      {.needs_restart = needs_restart::no,
-       .example = model::fetch_read_strategy_to_string(
-         model::fetch_read_strategy::non_polling),
-       .visibility = visibility::tunable},
-      model::fetch_read_strategy::non_polling,
-      {
-        model::fetch_read_strategy::polling,
-        model::fetch_read_strategy::non_polling,
-      })
+  , fetch_read_strategy(*this, "fetch_read_strategy")
   , alter_topic_cfg_timeout_ms(
       *this,
       "alter_topic_cfg_timeout_ms",
@@ -1925,6 +1916,25 @@ configuration::configuration()
       "Retention in bytes for topics created during automated recovery",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_GiB)
+  , cloud_storage_recovery_topic_validation_mode(
+      *this,
+      "cloud_storage_recovery_topic_validation_mode",
+      "Validation mode performed before recovering a topic from cloud storage",
+      {.needs_restart = needs_restart::no,
+       .example = "check_manifest_existence",
+       .visibility = visibility::tunable},
+      model::recovery_validation_mode::check_manifest_existence,
+      {model::recovery_validation_mode::check_manifest_existence,
+       model::recovery_validation_mode::check_manifest_and_segment_metadata,
+       model::recovery_validation_mode::no_check})
+  , cloud_storage_recovery_topic_validation_depth(
+      *this,
+      "cloud_storage_recovery_topic_validation_depth",
+      "Number of segment metadata to validate, from newest to oldest, when "
+      "`cloud_storage_recovery_topic_validation_mode` is "
+      "`check_manifest_and_segment_metadata`",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10)
   , cloud_storage_segment_size_target(
       *this,
       "cloud_storage_segment_size_target",
@@ -2572,6 +2582,15 @@ configuration::configuration()
       "default this value is calculated automaticaly",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , partition_autobalancing_topic_aware(
+      *this,
+      "partition_autobalancing_topic_aware",
+      "If true, Redpanda will prioritize balancing topic-wise number of "
+      "partitions on each node, as opposed to balancing the total number of "
+      "partitions. This should give better balancing results if topics with "
+      "diverse partition sizes and load profiles are present in the cluster.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
   , enable_leader_balancer(
       *this,
       "enable_leader_balancer",
@@ -3060,7 +3079,14 @@ configuration::configuration()
       "enable_mpx_extensions",
       "Enable Redpanda extensions for MPX.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      false) {}
+      false)
+  , virtual_cluster_min_producer_ids(
+      *this,
+      "virtual_cluster_min_producer_ids",
+      "Minimum number of active producers per virtual cluster",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::numeric_limits<uint64_t>::max(),
+      {.min = 1}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

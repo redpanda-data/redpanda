@@ -518,37 +518,6 @@ struct convert<pandaproxy::schema_registry::schema_id_validation_mode> {
 };
 
 template<>
-struct convert<model::fetch_read_strategy> {
-    using type = model::fetch_read_strategy;
-
-    static constexpr auto acceptable_values = std::to_array(
-      {model::fetch_read_strategy_to_string(type::polling),
-       model::fetch_read_strategy_to_string(type::non_polling)});
-
-    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
-
-    static bool decode(const Node& node, type& rhs) {
-        auto value = node.as<std::string>();
-
-        if (
-          std::find(acceptable_values.begin(), acceptable_values.end(), value)
-          == acceptable_values.end()) {
-            return false;
-        }
-
-        rhs = string_switch<type>(std::string_view{value})
-                .match(
-                  model::fetch_read_strategy_to_string(type::polling),
-                  type::polling)
-                .match(
-                  model::fetch_read_strategy_to_string(type::non_polling),
-                  type::non_polling);
-
-        return true;
-    }
-};
-
-template<>
 struct convert<model::write_caching_mode> {
     using type = model::write_caching_mode;
 
@@ -561,6 +530,29 @@ struct convert<model::write_caching_mode> {
             return false;
         }
         rhs = mode.value();
+        return true;
+    }
+};
+
+template<>
+struct convert<model::recovery_validation_mode> {
+    using type = model::recovery_validation_mode;
+    constexpr static auto acceptable_values = std::to_array(
+      {"check_manifest_existence",
+       "check_manifest_and_segment_metadata",
+       "no_check"});
+    static Node encode(type const& rhs) {
+        Node node;
+        return Node{boost::lexical_cast<std::string>(rhs)};
+    }
+    static bool decode(Node const& node, type& rhs) {
+        auto node_str = node.as<std::string>();
+        if (
+          std::ranges::find(acceptable_values, node_str)
+          == acceptable_values.end()) {
+            return false;
+        }
+        rhs = boost::lexical_cast<type>(node_str);
         return true;
     }
 };

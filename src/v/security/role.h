@@ -89,7 +89,7 @@ public:
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     operator role_member_view() const { return role_member_view{_type, _name}; }
 
-    std::string_view name() const { return _name; }
+    const ss::sstring& name() const { return _name; }
     role_member_type type() const { return _type; }
 
     auto serde_fields() { return std::tie(_type, _name); }
@@ -109,15 +109,6 @@ private:
     ss::sstring _name;
 };
 
-/**
- * Require that some type 'T' provide the role_member{_view} interface.
- */
-template<typename T>
-concept RoleMember = requires(T m) {
-    { m.name() } -> std::convertible_to<std::string_view>;
-    { m.type() } -> std::convertible_to<role_member_type>;
-};
-
 class role
   : public serde::envelope<role, serde::version<0>, serde::compat_version<0>> {
 public:
@@ -129,7 +120,7 @@ public:
       : _members(std::move(members)) {}
 
     const container_type& members() const& { return _members; }
-    container_type&& members() && { return std::move(_members); }
+    container_type members() && { return std::move(_members); }
 
     auto serde_fields() { return std::tie(_members); }
 
@@ -153,6 +144,15 @@ private:
     friend std::ostream& operator<<(std::ostream&, const role&);
 
     container_type _members;
+};
+
+/**
+ * Require that some type 'T' provide the role_member{_view} interface.
+ */
+template<typename T>
+concept RoleMember = requires(T m) {
+    { m.name() } -> std::convertible_to<std::string_view>;
+    { m.type() } -> std::convertible_to<role_member_type>;
 };
 
 } // namespace security

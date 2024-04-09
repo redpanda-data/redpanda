@@ -11,13 +11,16 @@
 
 #pragma once
 
+#include "cluster/namespaced_cache.h"
 #include "cluster/types.h"
 #include "container/intrusive_list_helpers.h"
 #include "model/record.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_future.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <bit>
 #include <chrono>
@@ -34,7 +37,6 @@ concept AcceptsUnits = requires(Func f, ssx::semaphore_units units) {
     f(std::move(units));
 };
 
-class producer_state_manager;
 class producer_state;
 struct producer_state_snapshot;
 class request;
@@ -138,68 +140,47 @@ private:
 };
 
 /// Encapsulates all the state of a producer producing batches to
-/// a single raft group. At init, the producer registers itself with
-/// producer_state_manager that manages the lifecycle of all the
-/// producers on a given shard.
+/// a single raft group.
 class producer_state {
 public:
+    using clock_type = ss::lowres_system_clock;
+
     producer_state(
-      producer_state_manager& mgr,
       model::producer_identity id,
       raft::group_id group,
-      ss::noncopyable_function<void()> hook)
+      ss::noncopyable_function<void()> post_eviction_hook)
       : _id(id)
       , _group(group)
-      , _parent(std::ref(mgr))
       , _last_updated_ts(ss::lowres_system_clock::now())
-      , _post_eviction_hook(std::move(hook)) {
-        register_self();
-    }
+      , _post_eviction_hook(std::move(post_eviction_hook)) {}
     producer_state(
-      producer_state_manager&,
-      ss::noncopyable_function<void()> hook,
+      ss::noncopyable_function<void()> post_eviction_hook,
       producer_state_snapshot) noexcept;
 
     producer_state(const producer_state&) = delete;
     producer_state& operator=(producer_state&) = delete;
     producer_state(producer_state&&) noexcept = delete;
     producer_state& operator=(producer_state&& other) noexcept = delete;
-    ~producer_state() noexcept { deregister_self(); }
+    ~producer_state() noexcept = default;
     bool operator==(const producer_state& other) const;
 
     friend std::ostream& operator<<(std::ostream& o, const producer_state&);
 
     /// Runs the passed async function under the op_lock scope.
-    /// Additionally does the following
-    /// - de-registers self from the manager as a pre-hook
-    /// - re-registers with the manager back after the function
-    ///   completes
-    /// This helps the manager implement a lock-free eviction approach.
-    /// - A producer_state with an inflight request is not evicted, because it
-    ///   is no longer in the list of producers tracked.
-    /// - Re-registration helps the manager track LRU-ness, re-registration
-    ///   effectively puts this producer at the end of the queue when
-    ///   considering candidates for eviction.
+
     template<AcceptsUnits AsyncFunc>
     auto run_with_lock(AsyncFunc&& func) {
-        return ss::with_gate(
-          _gate, [this, func = std::forward<AsyncFunc>(func)]() mutable {
-              return _op_lock.get_units().then(
-                [this, f = std::forward<AsyncFunc>(func)](auto units) {
-                    unlink_self();
-                    _ops_in_progress++;
-                    return ss::futurize_invoke(f, std::move(units))
-                      .then_wrapped([this](auto result) {
-                          _ops_in_progress--;
-                          link_self();
-                          return result;
-                      });
-                });
+        if (_evicted) {
+            throw ss::gate_closed_exception();
+        }
+        return _op_lock.get_units().then(
+          [f = std::forward<AsyncFunc>(func)](auto units) {
+              return f(std::move(units));
           });
     }
 
-    ss::future<> shutdown_input();
-    ss::future<> evict();
+    void shutdown_input();
+    bool can_evict();
     bool is_evicted() const { return _evicted; }
 
     /* reset sequences resets the tracking state and skips the sequence
@@ -208,11 +189,17 @@ public:
       const model::batch_identity&,
       model::term_id current_term,
       bool reset_sequences = false);
-    void update(const model::batch_identity&, kafka::offset);
+    bool update(const model::batch_identity&, kafka::offset);
+
+    void touch() { _last_updated_ts = ss::lowres_system_clock::now(); }
 
     std::optional<seq_t> last_sequence_number() const;
 
     producer_state_snapshot snapshot(kafka::offset log_start_offset) const;
+
+    ss::lowres_system_clock::time_point get_last_update_timestamp() const {
+        return _last_updated_ts;
+    }
 
     model::timestamp last_update_timestamp() const {
         return model::timestamp(_last_updated_ts.time_since_epoch() / 1ms);
@@ -225,38 +212,24 @@ public:
     void update_current_txn_start_offset(std::optional<kafka::offset> offset) {
         _current_txn_start_offset = offset;
     }
+    safe_intrusive_list_hook _hook;
 
 private:
-    // Register/deregister with manager.
-    void register_self();
-    void deregister_self();
-    // Utilities to temporarily link and unlink from manager
-    // without modifying the producer count.
-    void link_self();
-    void unlink_self();
-
     std::chrono::milliseconds ms_since_last_update() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
           ss::lowres_system_clock::now() - _last_updated_ts);
     }
 
-    void touch() { _last_updated_ts = ss::lowres_system_clock::now(); }
-
     model::producer_identity _id;
     raft::group_id _group;
     // serializes all the operations on this producer
     mutex _op_lock{"producer_state::_op_lock"};
-    std::reference_wrapper<producer_state_manager> _parent;
 
     requests _requests;
     // Tracks the last time an operation is run with this producer.
     // Used to evict stale producers.
     ss::lowres_system_clock::time_point _last_updated_ts;
-    intrusive_list_hook _hook;
-    ss::gate _gate;
-    // function hook called on eviction
     bool _evicted = false;
-    size_t _ops_in_progress = 0;
     ss::noncopyable_function<void()> _post_eviction_hook;
     std::optional<kafka::offset> _current_txn_start_offset;
     friend class producer_state_manager;

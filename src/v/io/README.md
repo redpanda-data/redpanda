@@ -15,3 +15,7 @@ High-level scheduling across I/O queues.
 ### `persistence`
 
 Abstract storage interface with disk and memory backends.
+
+### `pager`
+
+Abstraction of an append-only file.

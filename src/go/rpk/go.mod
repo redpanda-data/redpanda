@@ -5,9 +5,13 @@ go 1.22
 toolchain go1.22.1
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.33.0-20240221180331-f05a6f4403ce.1
+	buf.build/gen/go/redpandadata/cloud/connectrpc/go v1.16.0-20240312092455-827969853e99.1
+	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.33.0-20240312092455-827969853e99.1
+	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.33.0-20240321121335-26480f50072a.1
+	buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.16.0-20240322160234-5037c4cf27a2.1
+	buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.33.0-20240322160234-5037c4cf27a2.1
 	cloud.google.com/go/compute/metadata v0.2.3
-	connectrpc.com/connect v1.15.0
+	connectrpc.com/connect v1.16.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/aws/aws-sdk-go v1.51.0
@@ -18,9 +22,9 @@ require (
 	github.com/docker/go-connections v0.5.0
 	github.com/docker/go-units v0.5.0
 	github.com/fatih/color v1.16.0
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.1
 	github.com/hamba/avro/v2 v2.20.0
 	github.com/hashicorp/go-multierror v1.1.1
+	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/lestrrat-go/jwx v1.2.29
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/lorenzosaino/go-sysctl v0.3.1
@@ -53,8 +57,6 @@ require (
 	golang.org/x/sync v0.6.0
 	golang.org/x/sys v0.18.0
 	golang.org/x/term v0.18.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20240314234333-6e1732d8331c
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240314234333-6e1732d8331c
 	google.golang.org/protobuf v1.33.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.29.2
@@ -63,6 +65,8 @@ require (
 )
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.33.0-20240221180331-f05a6f4403ce.1 // indirect
+	buf.build/gen/go/grpc-ecosystem/grpc-gateway/protocolbuffers/go v1.33.0-20221127060915-a1ecdc58eccd.1 // indirect
 	cloud.google.com/go/compute v1.25.1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/BurntSushi/toml v1.3.2 // indirect
@@ -86,12 +90,12 @@ require (
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/klauspost/compress v1.17.7 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.2 // indirect
@@ -128,6 +132,8 @@ require (
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.19.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240314234333-6e1732d8331c // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240314234333-6e1732d8331c // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gotest.tools/v3 v3.0.3 // indirect

@@ -11,7 +11,8 @@
 
 #include "serde/rw/rw.h"
 #include "serde/serde_size_t.h"
-#include "sstring.h"
+
+#include <seastar/core/sstring.hh>
 
 namespace serde {
 

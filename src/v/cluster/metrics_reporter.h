@@ -72,7 +72,7 @@ public:
         std::vector<node_metrics> nodes;
         bool has_kafka_gssapi;
         bool has_oidc;
-        bool has_rbac;
+        uint32_t rbac_role_count;
 
         static constexpr int64_t max_size_for_rp_env = 80;
         ss::sstring redpanda_environment;

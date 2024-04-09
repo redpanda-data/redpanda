@@ -244,6 +244,8 @@ struct try_abort_reply
     using committed_type = ss::bool_class<struct committed_type_tag>;
     using aborted_type = ss::bool_class<struct aborted_type_tag>;
 
+    using rpc_adl_exempt = std::true_type;
+
     committed_type commited;
     aborted_type aborted;
     tx_errc ec;
@@ -277,6 +279,7 @@ struct try_abort_reply
 struct try_abort_request
   : serde::
       envelope<try_abort_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     using reply = try_abort_reply;
     static constexpr const std::string_view name = "try_abort";
 
@@ -311,6 +314,8 @@ struct init_tm_tx_request
       init_tm_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     kafka::transactional_id tx_id{};
     std::chrono::milliseconds transaction_timeout_ms{};
     model::timeout_clock::duration timeout{};
@@ -339,6 +344,8 @@ struct init_tm_tx_request
 struct init_tm_tx_reply
   : serde::
       envelope<init_tm_tx_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     // partition_not_exists, not_leader, topic_not_exists
     model::producer_identity pid;
     tx_errc ec;
@@ -535,6 +542,7 @@ struct fetch_tx_reply
 struct begin_tx_request
   : serde::
       envelope<begin_tx_request, serde::version<1>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
@@ -568,6 +576,7 @@ struct begin_tx_request
 struct begin_tx_reply
   : serde::
       envelope<begin_tx_reply, serde::version<1>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     model::ntp ntp;
     model::term_id etag;
     tx_errc ec;
@@ -607,6 +616,8 @@ struct prepare_tx_request
       prepare_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::ntp ntp;
     model::term_id etag;
     model::partition_id tm;
@@ -644,6 +655,8 @@ struct prepare_tx_request
 struct prepare_tx_reply
   : serde::
       envelope<prepare_tx_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     tx_errc ec{};
 
     prepare_tx_reply() noexcept = default;
@@ -662,6 +675,8 @@ struct prepare_tx_reply
 struct commit_tx_request
   : serde::
       envelope<commit_tx_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
@@ -691,6 +706,8 @@ struct commit_tx_request
 struct commit_tx_reply
   : serde::
       envelope<commit_tx_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     tx_errc ec{};
 
     commit_tx_reply() noexcept = default;
@@ -709,6 +726,8 @@ struct commit_tx_reply
 struct abort_tx_request
   : serde::
       envelope<abort_tx_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
@@ -737,6 +756,8 @@ struct abort_tx_request
 struct abort_tx_reply
   : serde::
       envelope<abort_tx_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     tx_errc ec{};
 
     abort_tx_reply() noexcept = default;
@@ -757,6 +778,8 @@ struct begin_group_tx_request
       begin_group_tx_request,
       serde::version<1>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::ntp ntp;
     kafka::group_id group_id;
     model::producer_identity pid;
@@ -810,6 +833,8 @@ struct begin_group_tx_reply
       begin_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::term_id etag;
     tx_errc ec{};
 
@@ -837,6 +862,8 @@ struct prepare_group_tx_request
       prepare_group_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::ntp ntp;
     kafka::group_id group_id;
     model::term_id etag;
@@ -890,6 +917,8 @@ struct prepare_group_tx_reply
       prepare_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     tx_errc ec{};
 
     prepare_group_tx_reply() noexcept = default;
@@ -912,6 +941,8 @@ struct commit_group_tx_request
       commit_group_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
@@ -961,6 +992,7 @@ struct commit_group_tx_reply
       commit_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     tx_errc ec{};
 
     commit_group_tx_reply() noexcept = default;
@@ -983,6 +1015,7 @@ struct abort_group_tx_request
       abort_group_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     model::ntp ntp;
     kafka::group_id group_id;
     model::producer_identity pid;
@@ -1032,6 +1065,7 @@ struct abort_group_tx_reply
       abort_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     tx_errc ec{};
 
     abort_group_tx_reply() noexcept = default;
@@ -1122,30 +1156,6 @@ struct find_coordinator_request
     operator<<(std::ostream& o, const find_coordinator_request& r);
 
     auto serde_fields() { return std::tie(tid); }
-};
-
-struct describe_tx_registry_reply {
-    repartitioning_id id;
-    absl::flat_hash_map<model::partition_id, hosted_txs> mapping;
-    tx_errc ec{};
-
-    describe_tx_registry_reply() noexcept = default;
-
-    describe_tx_registry_reply(tx_errc ec)
-      : ec(ec) {}
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const describe_tx_registry_reply& r);
-};
-
-struct describe_tx_registry_request {
-    using reply = describe_tx_registry_reply;
-    static constexpr const std::string_view name = "describe_tx_registry";
-
-    describe_tx_registry_request() noexcept = default;
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const describe_tx_registry_request& r);
 };
 
 struct join_node_request
@@ -1440,9 +1450,6 @@ struct remote_topic_properties
 
     model::initial_revision_id remote_revision;
     int32_t remote_partition_count;
-
-    friend std::ostream&
-    operator<<(std::ostream&, const remote_topic_properties&);
 
     auto serde_fields() {
         return std::tie(remote_revision, remote_partition_count);
@@ -2188,6 +2195,8 @@ struct create_topics_request
       create_topics_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     topic_configuration_vector topics;
     model::timeout_clock::duration timeout;
 
@@ -2210,6 +2219,8 @@ struct create_topics_reply
       create_topics_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     std::vector<topic_result> results;
     std::vector<model::topic_metadata> metadata;
     topic_configuration_vector configs;
@@ -2281,6 +2292,7 @@ struct finish_partition_update_request
       finish_partition_update_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     model::ntp ntp;
     replicas_t new_replica_set;
 
@@ -2300,6 +2312,7 @@ struct finish_partition_update_reply
       finish_partition_update_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     cluster::errc result;
 
     friend bool operator==(
@@ -2318,6 +2331,7 @@ struct update_topic_properties_request
       update_topic_properties_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     topic_properties_update_vector updates;
 
     friend std::ostream&
@@ -2340,6 +2354,7 @@ struct update_topic_properties_reply
       update_topic_properties_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     std::vector<topic_result> results;
 
     friend std::ostream&
@@ -2517,6 +2532,7 @@ struct create_acls_request
       create_acls_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     create_acls_cmd_data data;
     model::timeout_clock::duration timeout;
 
@@ -2542,6 +2558,8 @@ struct create_acls_request
 struct create_acls_reply
   : serde::
       envelope<create_acls_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     std::vector<errc> results;
 
     friend bool operator==(const create_acls_reply&, const create_acls_reply&)
@@ -2583,6 +2601,7 @@ struct delete_acls_result
       delete_acls_result,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     errc error;
     std::vector<security::acl_binding> bindings;
 
@@ -2603,6 +2622,7 @@ struct delete_acls_request
       delete_acls_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     delete_acls_cmd_data data;
     model::timeout_clock::duration timeout;
 
@@ -2628,6 +2648,7 @@ struct delete_acls_request
 struct delete_acls_reply
   : serde::
       envelope<delete_acls_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     std::vector<delete_acls_result> results;
 
     friend bool operator==(const delete_acls_reply&, const delete_acls_reply&)
@@ -2645,6 +2666,7 @@ struct delete_acls_reply
 struct backend_operation
   : serde::
       envelope<backend_operation, serde::version<1>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     ss::shard_id source_shard;
     partition_assignment p_as;
     partition_operation_type type;
@@ -3076,6 +3098,7 @@ class ntp_reconciliation_state
       serde::version<0>,
       serde::compat_version<0>> {
 public:
+    using rpc_adl_exempt = std::true_type;
     ntp_reconciliation_state() noexcept = default;
 
     // success case
@@ -3182,6 +3205,8 @@ struct reconciliation_state_request
       reconciliation_state_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     std::vector<model::ntp> ntps;
 
     friend bool operator==(
@@ -3271,6 +3296,7 @@ struct reconciliation_state_reply
       reconciliation_state_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     std::vector<ntp_reconciliation_state> results;
 
     friend bool operator==(
@@ -3301,6 +3327,8 @@ struct decommission_node_request
       decommission_node_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::node_id id;
 
     friend bool operator==(
@@ -3321,6 +3349,8 @@ struct decommission_node_reply
       decommission_node_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     errc error;
 
     friend bool
@@ -3341,6 +3371,8 @@ struct recommission_node_request
       recommission_node_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::node_id id;
 
     friend bool operator==(
@@ -3361,6 +3393,8 @@ struct recommission_node_reply
       recommission_node_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     errc error;
 
     friend bool
@@ -3381,6 +3415,7 @@ struct finish_reallocation_request
       finish_reallocation_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     model::node_id id;
 
     friend bool operator==(
@@ -3401,6 +3436,8 @@ struct finish_reallocation_reply
       finish_reallocation_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     errc error;
 
     friend bool operator==(
@@ -3421,6 +3458,8 @@ struct set_maintenance_mode_request
       set_maintenance_mode_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     static constexpr int8_t current_version = 1;
     model::node_id id;
     bool enabled;
@@ -3443,6 +3482,8 @@ struct set_maintenance_mode_reply
       set_maintenance_mode_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     static constexpr int8_t current_version = 1;
     errc error;
 
@@ -3614,6 +3655,8 @@ struct config_update_reply
 struct hello_request final
   : serde::
       envelope<hello_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::node_id peer;
 
     // milliseconds since epoch
@@ -3629,6 +3672,8 @@ struct hello_request final
 
 struct hello_reply
   : serde::envelope<hello_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     errc error;
 
     friend bool operator==(const hello_reply&, const hello_reply&) = default;
@@ -3767,6 +3812,8 @@ struct cancel_all_partition_movements_request
       cancel_all_partition_movements_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     cancel_all_partition_movements_request() = default;
 
     auto serde_fields() { return std::tie(); }
@@ -3787,6 +3834,8 @@ struct cancel_node_partition_movements_request
       cancel_node_partition_movements_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     model::node_id node_id;
     partition_move_direction direction;
 
@@ -3806,6 +3855,8 @@ struct cancel_partition_movements_reply
       cancel_partition_movements_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     friend bool operator==(
       const cancel_partition_movements_reply&,
       const cancel_partition_movements_reply&)
@@ -4172,20 +4223,6 @@ struct upsert_role_cmd_data
 
     friend bool
     operator==(const upsert_role_cmd_data&, const upsert_role_cmd_data&)
-      = default;
-};
-
-struct rename_role_cmd_data
-  : serde::
-      envelope<rename_role_cmd_data, serde::version<0>, serde::version<0>> {
-    using rpc_adl_exempt = std::true_type;
-    security::role_name from_name;
-    security::role_name to_name;
-
-    auto serde_fields() { return std::tie(from_name, to_name); }
-
-    friend bool
-    operator==(const rename_role_cmd_data&, const rename_role_cmd_data&)
       = default;
 };
 
@@ -4628,19 +4665,6 @@ struct adl<cluster::topic_result> {
     cluster::topic_result from(iobuf_parser&);
 };
 
-template<>
-struct adl<cluster::create_topics_request> {
-    void to(iobuf&, cluster::create_topics_request&&);
-    cluster::create_topics_request from(iobuf);
-    cluster::create_topics_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::create_topics_reply> {
-    void to(iobuf&, cluster::create_topics_reply&&);
-    cluster::create_topics_reply from(iobuf);
-    cluster::create_topics_reply from(iobuf_parser&);
-};
 template<typename T>
 struct adl<cluster::configuration_with_assignment<T>> {
     void
@@ -4670,11 +4694,6 @@ struct adl<cluster::topic_properties_update> {
     void to(iobuf&, cluster::topic_properties_update&&);
     cluster::topic_properties_update from(iobuf_parser&);
 };
-template<>
-struct adl<cluster::ntp_reconciliation_state> {
-    void to(iobuf&, cluster::ntp_reconciliation_state&&);
-    cluster::ntp_reconciliation_state from(iobuf_parser&);
-};
 
 template<>
 struct adl<cluster::create_acls_cmd_data> {
@@ -4686,12 +4705,6 @@ template<>
 struct adl<cluster::delete_acls_cmd_data> {
     void to(iobuf&, cluster::delete_acls_cmd_data&&);
     cluster::delete_acls_cmd_data from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::delete_acls_result> {
-    void to(iobuf&, cluster::delete_acls_result&&);
-    cluster::delete_acls_result from(iobuf_parser&);
 };
 
 template<>
@@ -4749,40 +4762,6 @@ struct adl<cluster::feature_update_cmd_data> {
 };
 
 template<>
-struct adl<cluster::set_maintenance_mode_request> {
-    void to(iobuf&, cluster::set_maintenance_mode_request&&);
-    cluster::set_maintenance_mode_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::set_maintenance_mode_reply> {
-    void to(iobuf&, cluster::set_maintenance_mode_reply&&);
-    cluster::set_maintenance_mode_reply from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::allocate_id_request> {
-    void to(iobuf& out, cluster::allocate_id_request&& r) {
-        serialize(out, r.timeout);
-    }
-    cluster::allocate_id_request from(iobuf_parser& in) {
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return cluster::allocate_id_request(timeout);
-    }
-};
-
-template<>
-struct adl<cluster::allocate_id_reply> {
-    void to(iobuf& out, cluster::allocate_id_reply&& r) {
-        serialize(out, r.id, r.ec);
-    }
-    cluster::allocate_id_reply from(iobuf_parser& in) {
-        auto id = adl<int64_t>{}.from(in);
-        auto ec = adl<cluster::errc>{}.from(in);
-        return {id, ec};
-    }
-};
-template<>
 struct adl<cluster::partition_assignment> {
     void to(iobuf&, cluster::partition_assignment&&);
     cluster::partition_assignment from(iobuf_parser&);
@@ -4820,527 +4799,6 @@ struct adl<cluster::cluster_property_kv> {
 };
 
 template<>
-struct adl<cluster::abort_group_tx_request> {
-    void to(iobuf& out, cluster::abort_group_tx_request&& r) {
-        serialize(
-          out,
-          std::move(r.ntp),
-          std::move(r.group_id),
-          r.pid,
-          r.tx_seq,
-          r.timeout);
-    }
-    cluster::abort_group_tx_request from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto group_id = adl<kafka::group_id>{}.from(in);
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(ntp), std::move(group_id), pid, tx_seq, timeout};
-    }
-};
-
-template<>
-struct adl<cluster::abort_group_tx_reply> {
-    void to(iobuf& out, cluster::abort_group_tx_reply&& r) {
-        serialize(out, r.ec);
-    }
-    cluster::abort_group_tx_reply from(iobuf_parser& in) {
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return cluster::abort_group_tx_reply{ec};
-    }
-};
-
-template<>
-struct adl<cluster::commit_group_tx_request> {
-    void to(iobuf& out, cluster::commit_group_tx_request&& r) {
-        serialize(
-          out,
-          std::move(r.ntp),
-          r.pid,
-          r.tx_seq,
-          std::move(r.group_id),
-          r.timeout);
-    }
-    cluster::commit_group_tx_request from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto group_id = adl<kafka::group_id>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(ntp), pid, tx_seq, std::move(group_id), timeout};
-    }
-};
-
-template<>
-struct adl<cluster::commit_group_tx_reply> {
-    void to(iobuf& out, cluster::commit_group_tx_reply&& r) {
-        serialize(out, r.ec);
-    }
-    cluster::commit_group_tx_reply from(iobuf_parser& in) {
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return cluster::commit_group_tx_reply{ec};
-    }
-};
-
-template<>
-struct adl<cluster::prepare_group_tx_request> {
-    void to(iobuf& out, cluster::prepare_group_tx_request&& r) {
-        serialize(
-          out,
-          std::move(r.ntp),
-          std::move(r.group_id),
-          r.etag,
-          r.pid,
-          r.tx_seq,
-          r.timeout);
-    }
-    cluster::prepare_group_tx_request from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto group_id = adl<kafka::group_id>{}.from(in);
-        auto etag = adl<model::term_id>{}.from(in);
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {
-          std::move(ntp), std::move(group_id), etag, pid, tx_seq, timeout};
-    }
-};
-
-template<>
-struct adl<cluster::prepare_group_tx_reply> {
-    void to(iobuf& out, cluster::prepare_group_tx_reply&& r) {
-        serialize(out, r.ec);
-    }
-    cluster::prepare_group_tx_reply from(iobuf_parser& in) {
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return cluster::prepare_group_tx_reply{ec};
-    }
-};
-
-template<>
-struct adl<cluster::begin_group_tx_request> {
-    void to(iobuf& out, cluster::begin_group_tx_request&& r) {
-        serialize(
-          out,
-          std::move(r.ntp),
-          std::move(r.group_id),
-          r.pid,
-          r.tx_seq,
-          r.timeout,
-          r.tm_partition);
-    }
-    cluster::begin_group_tx_request from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto group_id = adl<kafka::group_id>{}.from(in);
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        auto tm_partition = adl<model::partition_id>{}.from(in);
-        return {
-          std::move(ntp),
-          std::move(group_id),
-          pid,
-          tx_seq,
-          timeout,
-          tm_partition};
-    }
-};
-
-template<>
-struct adl<cluster::begin_group_tx_reply> {
-    void to(iobuf& out, cluster::begin_group_tx_reply&& r) {
-        serialize(out, r.etag, r.ec);
-    }
-    cluster::begin_group_tx_reply from(iobuf_parser& in) {
-        auto etag = adl<model::term_id>{}.from(in);
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return {etag, ec};
-    }
-};
-
-template<>
-struct adl<cluster::abort_tx_request> {
-    void to(iobuf& out, cluster::abort_tx_request&& r) {
-        serialize(out, std::move(r.ntp), r.pid, r.tx_seq, r.timeout);
-    }
-    cluster::abort_tx_request from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(ntp), pid, tx_seq, timeout};
-    }
-};
-
-template<>
-struct adl<cluster::abort_tx_reply> {
-    void to(iobuf& out, cluster::abort_tx_reply&& r) { serialize(out, r.ec); }
-    cluster::abort_tx_reply from(iobuf_parser& in) {
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return cluster::abort_tx_reply{ec};
-    }
-};
-
-template<>
-struct adl<cluster::commit_tx_request> {
-    void to(iobuf& out, cluster::commit_tx_request&& r) {
-        serialize(out, std::move(r.ntp), r.pid, r.tx_seq, r.timeout);
-    }
-    cluster::commit_tx_request from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(ntp), pid, tx_seq, timeout};
-    }
-};
-
-template<>
-struct adl<cluster::commit_tx_reply> {
-    void to(iobuf& out, cluster::commit_tx_reply&& r) { serialize(out, r.ec); }
-    cluster::commit_tx_reply from(iobuf_parser& in) {
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return cluster::commit_tx_reply{ec};
-    }
-};
-
-template<>
-struct adl<cluster::prepare_tx_request> {
-    void to(iobuf& out, cluster::prepare_tx_request&& r) {
-        serialize(
-          out, std::move(r.ntp), r.etag, r.tm, r.pid, r.tx_seq, r.timeout);
-    }
-    cluster::prepare_tx_request from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto etag = adl<model::term_id>{}.from(in);
-        auto tm = adl<model::partition_id>{}.from(in);
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(ntp), etag, tm, pid, tx_seq, timeout};
-    }
-};
-
-template<>
-struct adl<cluster::prepare_tx_reply> {
-    void to(iobuf& out, cluster::prepare_tx_reply&& r) { serialize(out, r.ec); }
-    cluster::prepare_tx_reply from(iobuf_parser& in) {
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return cluster::prepare_tx_reply{ec};
-    }
-};
-
-template<>
-struct adl<cluster::begin_tx_request> {
-    void to(iobuf& out, cluster::begin_tx_request&& r) {
-        serialize(
-          out,
-          std::move(r.ntp),
-          r.pid,
-          r.tx_seq,
-          r.transaction_timeout_ms,
-          r.tm_partition);
-    }
-    cluster::begin_tx_request from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<std::chrono::milliseconds>{}.from(in);
-        auto tm_partition = adl<model::partition_id>{}.from(in);
-        return {std::move(ntp), pid, tx_seq, timeout, tm_partition};
-    }
-};
-
-template<>
-struct adl<cluster::begin_tx_reply> {
-    void to(iobuf& out, cluster::begin_tx_reply&& r) {
-        serialize(out, std::move(r.ntp), r.etag, r.ec);
-    }
-    cluster::begin_tx_reply from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto etag = adl<model::term_id>{}.from(in);
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return {std::move(ntp), etag, ec};
-    }
-};
-
-template<>
-struct adl<cluster::try_abort_request> {
-    void to(iobuf& out, cluster::try_abort_request&& r) {
-        serialize(out, r.tm, r.pid, r.tx_seq, r.timeout);
-    }
-    cluster::try_abort_request from(iobuf_parser& in) {
-        auto tm = adl<model::partition_id>{}.from(in);
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {tm, pid, tx_seq, timeout};
-    }
-};
-
-template<>
-struct adl<cluster::try_abort_reply> {
-    void to(iobuf& out, cluster::try_abort_reply&& r) {
-        serialize(out, bool(r.commited), bool(r.aborted), r.ec);
-    }
-    cluster::try_abort_reply from(iobuf_parser& in) {
-        using committed_type = cluster::try_abort_reply::committed_type;
-        using aborted_type = cluster::try_abort_reply::aborted_type;
-        auto committed = committed_type(adl<bool>{}.from(in));
-        auto aborted = aborted_type(adl<bool>{}.from(in));
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return {committed, aborted, ec};
-    }
-};
-
-template<>
-struct adl<cluster::init_tm_tx_request> {
-    void to(iobuf& out, cluster::init_tm_tx_request&& r) {
-        serialize(out, std::move(r.tx_id), r.transaction_timeout_ms, r.timeout);
-    }
-    cluster::init_tm_tx_request from(iobuf_parser& in) {
-        auto tx_id = adl<kafka::transactional_id>{}.from(in);
-        auto tx_timeout = adl<std::chrono::milliseconds>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(tx_id), tx_timeout, timeout};
-    }
-};
-
-template<>
-struct adl<cluster::init_tm_tx_reply> {
-    void to(iobuf& out, cluster::init_tm_tx_reply&& r) {
-        serialize(out, r.pid, r.ec);
-    }
-    cluster::init_tm_tx_reply from(iobuf_parser& in) {
-        auto pid = adl<model::producer_identity>{}.from(in);
-        auto ec = adl<cluster::tx_errc>{}.from(in);
-        return {pid, ec};
-    }
-};
-
-template<>
-struct adl<cluster::hello_request> {
-    void to(iobuf& out, cluster::hello_request&& r) {
-        serialize(out, r.peer, r.start_time);
-    }
-    cluster::hello_request from(iobuf_parser& in) {
-        auto peer = adl<model::node_id>{}.from(in);
-        auto start_time = adl<std::chrono::milliseconds>{}.from(in);
-        return {.peer = peer, .start_time = start_time};
-    }
-};
-
-template<>
-struct adl<cluster::hello_reply> {
-    void to(iobuf& out, cluster::hello_reply&& r) { serialize(out, r.error); }
-    cluster::hello_reply from(iobuf_parser& in) {
-        auto error = adl<cluster::errc>{}.from(in);
-        return {.error = error};
-    }
-};
-
-template<>
-struct adl<cluster::finish_partition_update_request> {
-    void to(iobuf& out, cluster::finish_partition_update_request&& r) {
-        serialize(out, std::move(r.ntp), std::move(r.new_replica_set));
-    }
-    cluster::finish_partition_update_request from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto new_replica_set = adl<cluster::replicas_t>{}.from(in);
-        return {
-          .ntp = std::move(ntp),
-          .new_replica_set = std::move(new_replica_set),
-        };
-    }
-};
-
-template<>
-struct adl<cluster::finish_partition_update_reply> {
-    void to(iobuf& out, cluster::finish_partition_update_reply&& r) {
-        serialize(out, r.result);
-    }
-    cluster::finish_partition_update_reply from(iobuf_parser& in) {
-        auto result = adl<cluster::errc>{}.from(in);
-        return {.result = result};
-    }
-};
-
-template<>
-struct adl<cluster::update_topic_properties_request> {
-    void to(iobuf& out, cluster::update_topic_properties_request&& r) {
-        serialize(out, std::move(r.updates));
-    }
-    cluster::update_topic_properties_request from(iobuf_parser& in) {
-        auto updates = adl<cluster::topic_properties_update_vector>{}.from(in);
-        return {.updates = std::move(updates)};
-    }
-};
-
-template<>
-struct adl<cluster::update_topic_properties_reply> {
-    void to(iobuf& out, cluster::update_topic_properties_reply&& r) {
-        serialize(out, std::move(r.results));
-    }
-    cluster::update_topic_properties_reply from(iobuf_parser& in) {
-        auto results = adl<std::vector<cluster::topic_result>>{}.from(in);
-        return {.results = std::move(results)};
-    }
-};
-
-template<>
-struct adl<cluster::reconciliation_state_request> {
-    void to(iobuf& out, cluster::reconciliation_state_request&& r) {
-        serialize(out, std::move(r.ntps));
-    }
-    cluster::reconciliation_state_request from(iobuf_parser& in) {
-        auto ntps = adl<std::vector<model::ntp>>{}.from(in);
-        return {.ntps = std::move(ntps)};
-    }
-};
-
-template<>
-struct adl<cluster::backend_operation> {
-    void to(iobuf& out, cluster::backend_operation&& r) {
-        serialize(out, r.source_shard, r.p_as, r.type);
-    }
-    cluster::backend_operation from(iobuf_parser& in) {
-        auto source_shard = adl<ss::shard_id>{}.from(in);
-        auto p_as = adl<cluster::partition_assignment>{}.from(in);
-        auto type = adl<cluster::partition_operation_type>{}.from(in);
-        return {
-          .source_shard = source_shard,
-          .p_as = std::move(p_as),
-          .type = type,
-        };
-    }
-};
-
-template<>
-struct adl<cluster::reconciliation_state_reply> {
-    void to(iobuf& out, cluster::reconciliation_state_reply&& r) {
-        serialize(out, r.results);
-    }
-    cluster::reconciliation_state_reply from(iobuf_parser& in) {
-        auto results
-          = adl<std::vector<cluster::ntp_reconciliation_state>>{}.from(in);
-        return {.results = std::move(results)};
-    }
-};
-
-template<>
-struct adl<cluster::create_acls_request> {
-    void to(iobuf& out, cluster::create_acls_request&& r) {
-        serialize(out, std::move(r.data), r.timeout);
-    }
-    cluster::create_acls_request from(iobuf_parser& in) {
-        auto data = adl<cluster::create_acls_cmd_data>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(data), timeout};
-    }
-};
-
-template<>
-struct adl<cluster::create_acls_reply> {
-    void to(iobuf& out, cluster::create_acls_reply&& r) {
-        serialize(out, std::move(r.results));
-    }
-    cluster::create_acls_reply from(iobuf_parser& in) {
-        auto results = adl<std::vector<cluster::errc>>{}.from(in);
-        return {.results = std::move(results)};
-    }
-};
-
-template<>
-struct adl<cluster::delete_acls_request> {
-    void to(iobuf& out, cluster::delete_acls_request&& r) {
-        serialize(out, std::move(r.data), r.timeout);
-    }
-    cluster::delete_acls_request from(iobuf_parser& in) {
-        auto data = adl<cluster::delete_acls_cmd_data>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(data), timeout};
-    }
-};
-
-template<>
-struct adl<cluster::delete_acls_reply> {
-    void to(iobuf& out, cluster::delete_acls_reply&& r) {
-        serialize(out, std::move(r.results));
-    }
-    cluster::delete_acls_reply from(iobuf_parser& in) {
-        auto results = adl<std::vector<cluster::delete_acls_result>>{}.from(in);
-        return {.results = std::move(results)};
-    }
-};
-
-template<>
-struct adl<cluster::decommission_node_request> {
-    void to(iobuf& out, cluster::decommission_node_request&& r) {
-        serialize(out, r.id);
-    }
-    cluster::decommission_node_request from(iobuf_parser& in) {
-        auto id = adl<model::node_id>{}.from(in);
-        return {.id = id};
-    }
-};
-
-template<>
-struct adl<cluster::decommission_node_reply> {
-    void to(iobuf& out, cluster::decommission_node_reply&& r) {
-        serialize(out, r.error);
-    }
-    cluster::decommission_node_reply from(iobuf_parser& in) {
-        auto error = adl<cluster::errc>{}.from(in);
-        return {.error = error};
-    }
-};
-
-template<>
-struct adl<cluster::recommission_node_request> {
-    void to(iobuf& out, cluster::recommission_node_request&& r) {
-        serialize(out, r.id);
-    }
-    cluster::recommission_node_request from(iobuf_parser& in) {
-        auto id = adl<model::node_id>{}.from(in);
-        return {.id = id};
-    }
-};
-
-template<>
-struct adl<cluster::recommission_node_reply> {
-    void to(iobuf& out, cluster::recommission_node_reply&& r) {
-        serialize(out, r.error);
-    }
-    cluster::recommission_node_reply from(iobuf_parser& in) {
-        auto error = adl<cluster::errc>{}.from(in);
-        return {.error = error};
-    }
-};
-
-template<>
-struct adl<cluster::finish_reallocation_request> {
-    void to(iobuf& out, cluster::finish_reallocation_request&& r) {
-        serialize(out, r.id);
-    }
-    cluster::finish_reallocation_request from(iobuf_parser& in) {
-        auto id = adl<model::node_id>{}.from(in);
-        return {.id = id};
-    }
-};
-
-template<>
-struct adl<cluster::finish_reallocation_reply> {
-    void to(iobuf& out, cluster::finish_reallocation_reply&& r) {
-        serialize(out, r.error);
-    }
-    cluster::finish_reallocation_reply from(iobuf_parser& in) {
-        auto error = adl<cluster::errc>{}.from(in);
-        return {.error = error};
-    }
-};
-
-template<>
 struct adl<cluster::cancel_moving_partition_replicas_cmd_data> {
     void
     to(iobuf& out, cluster::cancel_moving_partition_replicas_cmd_data&& d) {
@@ -5363,48 +4821,6 @@ struct adl<cluster::move_cancellation_result> {
         return {std::move(ntp), ec};
     }
 };
-
-template<>
-struct adl<cluster::cancel_node_partition_movements_request> {
-    void to(iobuf& out, cluster::cancel_node_partition_movements_request&& r) {
-        serialize(out, r.node_id, r.direction);
-    }
-
-    cluster::cancel_node_partition_movements_request from(iobuf_parser& in) {
-        auto node_id = adl<model::node_id>{}.from(in);
-        auto dir = adl<cluster::partition_move_direction>{}.from(in);
-        return cluster::cancel_node_partition_movements_request{
-          .node_id = node_id, .direction = dir};
-    }
-};
-
-template<>
-struct adl<cluster::cancel_all_partition_movements_request> {
-    void to(iobuf&, cluster::cancel_all_partition_movements_request&&) {}
-
-    cluster::cancel_all_partition_movements_request from(iobuf_parser&) {
-        return cluster::cancel_all_partition_movements_request{};
-    }
-};
-
-template<>
-struct adl<cluster::cancel_partition_movements_reply> {
-    void to(iobuf& out, cluster::cancel_partition_movements_reply&& r) {
-        serialize(out, r.general_error, std::move(r.partition_results));
-    }
-
-    cluster::cancel_partition_movements_reply from(iobuf_parser& in) {
-        auto general_error = adl<cluster::errc>{}.from(in);
-        auto partition_results
-          = adl<std::vector<cluster::move_cancellation_result>>{}.from(in);
-
-        return cluster::cancel_partition_movements_reply{
-          .general_error = general_error,
-          .partition_results = std::move(partition_results),
-        };
-    }
-};
-
 } // namespace reflection
 
 namespace absl {

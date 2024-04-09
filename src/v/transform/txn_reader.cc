@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "transform/txn_reader.h"
+#include "txn_reader.h"
 
 #include "kafka/server/partition_proxy.h"
 #include "model/fundamental.h"

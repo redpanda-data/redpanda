@@ -11,7 +11,7 @@ package utils
 
 import (
 	"bufio"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -83,28 +83,28 @@ func WriteBytes(fs afero.Fs, bs []byte, path string) (int, error) {
 	return len(bs), afero.WriteFile(fs, path, bs, 0o600)
 }
 
-func FileMd5(fs afero.Fs, filePath string) (string, error) {
-	var returnMD5String string
+func FilenameHash(fs afero.Fs, filePath string) (string, error) {
+	var hash string
 	file, err := fs.Open(filePath)
 	if err != nil {
-		return returnMD5String, err
+		return hash, err
 	}
 	defer file.Close()
-	hash := md5.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return returnMD5String, err
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return hash, err
 	}
-	hashInBytes := hash.Sum(nil)
-	returnMD5String = hex.EncodeToString(hashInBytes)
-	return returnMD5String, nil
+	hashInBytes := h.Sum(nil)
+	hash = hex.EncodeToString(hashInBytes[:16])
+	return hash, nil
 }
 
 func BackupFile(fs afero.Fs, filePath string) (string, error) {
-	md5, err := FileMd5(fs, filePath)
+	hash, err := FilenameHash(fs, filePath)
 	if err != nil {
 		return "", err
 	}
-	bkFilePath := fmt.Sprintf("%s.vectorized.%s.bk", filePath, md5)
+	bkFilePath := fmt.Sprintf("%s.vectorized.%s.bk", filePath, hash)
 	err = CopyFile(fs, filePath, bkFilePath)
 	if err != nil {
 		return "", fmt.Errorf("unable to create backup of %s", filePath)

@@ -13,6 +13,7 @@ rp_test(
     page_set_test.cc
     io_queue_test.cc
     scheduler_test.cc
+    pager_test.cc
   LIBRARIES
     v::gtest_main
     v::io

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	controlplanev1beta1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta1"
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	container "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
@@ -28,7 +29,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
-	controlplanev1beta1 "github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/controlplane/v1beta1"
 	"github.com/rs/xid"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -327,7 +327,7 @@ func CreateFlow(
 
 func createCloudProfile(ctx context.Context, yAuthVir *config.RpkCloudAuth, cfg *config.Config, clusterIDOrName string) (CloudClusterOutputs, error) {
 	if yAuthVir == nil {
-		return CloudClusterOutputs{}, errors.New("missing current coud auth, please login with 'rpk cloud login'")
+		return CloudClusterOutputs{}, errors.New("missing current cloud auth, please login with 'rpk cloud login'")
 	}
 
 	overrides := cfg.DevOverrides()
@@ -397,6 +397,9 @@ nameLookup:
 		ns, err := cl.NamespaceForID(ctx, c.Msg.NamespaceId)
 		if err != nil {
 			return CloudClusterOutputs{}, err
+		}
+		if c.Msg.State != controlplanev1beta1.Cluster_STATE_READY {
+			return CloudClusterOutputs{}, fmt.Errorf("selected cluster %q is not ready for profile creation yet; you may run this command again once the cluster is running", clusterID)
 		}
 		return fromCloudCluster(yAuthVir, ns, c.Msg), nil
 	}
@@ -488,11 +491,13 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, c *cont
 	if c.DataplaneApi != nil {
 		p.CloudCluster.ClusterURL = c.DataplaneApi.Url
 	}
-	p.KafkaAPI.Brokers = c.KafkaApi.SeedBrokers
 	var isMTLS bool
-	if mtls := c.KafkaApi.Mtls; mtls != nil {
-		p.KafkaAPI.TLS = new(config.TLS)
-		isMTLS = mtls.Enabled
+	if c.KafkaApi != nil {
+		p.KafkaAPI.Brokers = c.KafkaApi.SeedBrokers
+		if mtls := c.KafkaApi.Mtls; mtls != nil {
+			p.KafkaAPI.TLS = new(config.TLS)
+			isMTLS = mtls.Enabled
+		}
 	}
 	return CloudClusterOutputs{
 		Profile:       p,
@@ -709,6 +714,9 @@ func combineClusterNames(nss cloudapi.Namespaces, vcs []cloudapi.VirtualCluster,
 	var nameAndCs []nameAndCluster
 	for _, c := range cs {
 		c := c
+		if strings.ToLower(c.State) != cloudapi.ClusterStateReady {
+			continue
+		}
 		nameAndCs = append(nameAndCs, nameAndCluster{
 			name: fmt.Sprintf("%s/%s", nsIDToName[c.NamespaceUUID], c.Name),
 			c:    &c,

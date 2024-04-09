@@ -35,6 +35,7 @@ rp_test(
     v::seastar_testing_main
     v::kafka
     v::storage_test_utils
+    v::application
   ARGS "-- -c 1"
   LABELS
     kafka

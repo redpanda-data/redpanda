@@ -13,21 +13,22 @@ v_cc_library(
 v_cc_library(
   NAME security
   SRCS
-    scram_algorithm.cc
-    scram_authenticator.cc
+    acl.cc
+    authorizer.cc
+    credential.cc
     gssapi_authenticator.cc
+    gssapi_principal_mapper.cc
+    krb5.cc
+    krb5_configurator.cc
+    license.cc
+    mtls.cc
     oidc_authenticator.cc
     oidc_principal_mapping.cc
     oidc_service.cc
-    credential.cc
     request_auth.cc
-    acl.cc
-    mtls.cc
-    license.cc
-    krb5.cc
-    krb5_configurator.cc
-    gssapi_principal_mapper.cc
     role.cc
+    scram_algorithm.cc
+    scram_authenticator.cc
   DEPS
     v::http
     v::security_config

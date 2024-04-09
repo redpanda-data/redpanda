@@ -20,6 +20,7 @@
 #include "security/role_store.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <iterator>
@@ -63,9 +64,6 @@ security_manager::apply_update(model::record_batch batch) {
               return dispatch_updates_to_cores(std::move(cmd), _roles);
           },
           [this](update_role_cmd cmd) {
-              return dispatch_updates_to_cores(std::move(cmd), _roles);
-          },
-          [this](rename_role_cmd cmd) {
               return dispatch_updates_to_cores(std::move(cmd), _roles);
           });
     });
@@ -122,23 +120,6 @@ do_apply(create_user_cmd cmd, security::credential_store& store) {
         return errc::user_exists;
     }
     store.put(cmd.key, std::move(cmd.value));
-    return errc::success;
-}
-
-/*
- * handle: rename role command
- */
-std::error_code do_apply(rename_role_cmd cmd, security::role_store& store) {
-    auto data = std::move(cmd.value);
-    if (store.contains(data.to_name)) {
-        return errc::role_exists;
-    }
-    auto role = store.get(data.from_name);
-    auto removed = store.remove(data.from_name);
-    if (!role || !removed) {
-        return errc::role_does_not_exist;
-    }
-    store.put(std::move(data.to_name), role.value().members());
     return errc::success;
 }
 
@@ -234,6 +215,13 @@ security_manager::fill_snapshot(controller_snapshot& controller_snap) const {
 
     snapshot.acls = co_await _authorizer.local().all_bindings();
 
+    auto roles = _roles.local().range([](const auto&) { return true; });
+    snapshot.roles.reserve(roles.size());
+    for (const auto& role : roles) {
+        security::role_name name{role};
+        snapshot.roles.emplace_back(name, *_roles.local().get(name));
+    }
+
     co_return;
 }
 
@@ -253,6 +241,13 @@ ss::future<> security_manager::apply_snapshot(
     co_await _authorizer.invoke_on_all(
       [&snapshot](security::authorizer& authorizer) {
           return authorizer.reset_bindings(snapshot.acls);
+      });
+
+    co_await _roles.invoke_on_all(
+      [&snapshot](security::role_store& role_store) {
+          return ss::do_for_each(snapshot.roles, [&role_store](const auto& r) {
+              role_store.put(r.name, security::role{r.role});
+          });
       });
 }
 

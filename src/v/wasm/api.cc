@@ -11,8 +11,8 @@
 
 #include "wasm/api.h"
 
-#include "wasm/schema_registry.h"
-#include "wasm/wasmtime.h"
+#include "schema_registry.h"
+#include "wasmtime.h"
 
 namespace wasm {
 std::unique_ptr<runtime>

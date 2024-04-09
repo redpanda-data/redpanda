@@ -1,13 +1,5 @@
 v_cc_library(
   NAME transform_logging
-  HDRS
-    record_batcher.h
-    event.h
-    io.h
-    log_manager.h
-    logger.h
-    probes.h
-    rpc_client.h
   SRCS
     record_batcher.cc
     event.cc

@@ -447,7 +447,10 @@ public:
     }
 
     binding(binding<T>&& rhs) noexcept
+      // The base move constructor doesn't touch _value
+      // so that's why it's safe to use `rhs` after.
       : binding_base<T>(std::move(rhs))
+      // NOLINTNEXTLINE(*-use-after-move)
       , _value(std::move(rhs._value)) {}
 
     const T& operator()() const {
@@ -535,8 +538,12 @@ public:
     }
 
     conversion_binding(conversion_binding&& rhs) noexcept
+      // The base move constructor doesn't touch _value or _convert
+      // so that's why it's safe to use `rhs` after.
       : binding_base<T>(std::move(rhs))
+      // NOLINTNEXTLINE(*-use-after-move)
       , _value(std::move(rhs._value))
+      // NOLINTNEXTLINE(*-use-after-move)
       , _convert(std::move(rhs._convert)) {}
 
     conversion_binding& operator=(conversion_binding&&) = delete;
@@ -641,10 +648,11 @@ consteval std::string_view property_type_name() {
                            pandaproxy::schema_registry::
                              schema_id_validation_mode>) {
         return "string";
-    } else if constexpr (std::is_same_v<type, model::fetch_read_strategy>) {
-        return "string";
     } else if constexpr (std::is_same_v<type, model::write_caching_mode>) {
         return "string";
+    } else if constexpr (std::
+                           is_same_v<type, model::recovery_validation_mode>) {
+        return "recovery_validation_mode";
     } else {
         static_assert(
           utils::unsupported_type<T>::value, "Type name not defined");

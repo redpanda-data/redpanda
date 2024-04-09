@@ -1,0 +1,3 @@
+pointer-overflow:aead.c
+nonnull-attribute:aead.c
+alignment:crc32c_arm64.cc

@@ -463,19 +463,35 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
             // At this point, all partition deletions either succeeded or
             // permanently failed: clean up the topic manifest and erase
             // the controller tombstone.
-            auto topic_manifest_path
+            auto topic_manifest_path_serde
               = cloud_storage::topic_manifest::get_topic_manifest_path(
-                topic_config.tp_ns.ns, topic_config.tp_ns.tp);
+                topic_config.tp_ns.ns,
+                topic_config.tp_ns.tp,
+                cloud_storage::manifest_format::serde);
+            auto topic_manifest_path_json
+              = cloud_storage::topic_manifest::get_topic_manifest_path(
+                topic_config.tp_ns.ns,
+                topic_config.tp_ns.tp,
+                cloud_storage::manifest_format::json);
             vlog(
               archival_log.debug,
               "Erasing topic manifest {}",
-              topic_manifest_path);
+              topic_manifest_path_serde);
+
             retry_chain_node topic_manifest_rtc(5s, 1s, &_root_rtc);
-            auto manifest_delete_result = co_await _api.delete_object(
-              bucket,
-              cloud_storage_clients::object_key(topic_manifest_path),
-              topic_manifest_rtc);
-            if (manifest_delete_result != upload_result::success) {
+            auto [manifest_delete_result_serde, manifest_delete_result_json]
+              = co_await ss::when_all_succeed(
+                _api.delete_object(
+                  bucket,
+                  cloud_storage_clients::object_key(topic_manifest_path_serde),
+                  topic_manifest_rtc),
+                _api.delete_object(
+                  bucket,
+                  cloud_storage_clients::object_key(topic_manifest_path_json),
+                  topic_manifest_rtc));
+            if (
+              manifest_delete_result_serde != upload_result::success
+              || manifest_delete_result_json != upload_result::success) {
                 vlog(
                   archival_log.info,
                   "Failed to erase topic manifest {}, will retry on next scrub",

@@ -26,6 +26,7 @@
 #include "serde/envelope.h"
 #include "storage/fwd.h"
 
+#include <chrono>
 #include <vector>
 
 namespace features {
@@ -113,7 +114,8 @@ public:
       ss::sharded<storage::api>&,
       ss::sharded<drain_manager>&,
       ss::sharded<partition_balancer_state>&,
-      ss::sharded<ss::abort_source>&);
+      ss::sharded<ss::abort_source>&,
+      std::chrono::milliseconds);
 
     /**
      * Initializes connections to brokers. If provided a non-empty list, it's
@@ -337,6 +339,7 @@ private:
     // required to apply raft-0 configuration as they contain cluster membership
     // state changes.
     model::offset _first_node_operation_command_offset = model::offset::max();
+    std::chrono::milliseconds _application_start_time;
 };
 
 } // namespace cluster

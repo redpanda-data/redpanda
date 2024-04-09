@@ -12,7 +12,8 @@
 
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
-#include "json/document.h"
+#include "cluster/types.h"
+#include "features/feature_table.h"
 
 #include <optional>
 
@@ -21,15 +22,32 @@ namespace cloud_storage {
 struct topic_manifest_handler;
 class topic_manifest final : public base_manifest {
 public:
-    /// Create manifest for specific ntp
+    using version_t = named_type<int32_t, struct topic_manifest_version_tag>;
+
+    constexpr static auto first_version = version_t{1};
+    // this version introduces the serialization of
+    // cluster::topic_configuration, with all its field
+    constexpr static auto serde_version = version_t{2};
+
+    constexpr static auto current_version = serde_version;
+
+    /// Create manifest for specific ntp. feature_table is used to decide which
+    /// encoding format to use
     explicit topic_manifest(
-      const manifest_topic_configuration& cfg, model::initial_revision_id rev);
+      const cluster::topic_configuration& cfg,
+      model::initial_revision_id rev,
+      const features::feature_table& ft);
 
     /// Create empty manifest that supposed to be updated later
     topic_manifest();
 
+    ss::future<> update(ss::input_stream<char> is) override {
+        // assume format is json
+        return update(manifest_format::json, std::move(is));
+    }
+
     /// Update manifest file from input_stream (remote set)
-    ss::future<> update(ss::input_stream<char> is) override;
+    ss::future<> update(manifest_format, ss::input_stream<char> is) override;
 
     /// Serialize manifest object
     ///
@@ -40,12 +58,13 @@ public:
     remote_manifest_path get_manifest_path() const override;
 
     static remote_manifest_path
-    get_topic_manifest_path(model::ns ns, model::topic topic);
+    get_topic_manifest_path(model::ns ns, model::topic topic, manifest_format);
 
-    /// Serialize manifest object
+    /// Serialize manifest object in json format. only fields up to
+    /// first_version are serialized
     ///
     /// \param out output stream that should be used to output the json
-    void serialize(std::ostream& out) const;
+    void serialize_v1_json(std::ostream& out) const;
 
     manifest_type get_manifest_type() const override {
         return manifest_type::topic;
@@ -56,10 +75,19 @@ public:
     /// Change topic-manifest revision
     void set_revision(model::initial_revision_id id) noexcept { _rev = id; }
 
-    std::optional<manifest_topic_configuration> const&
+    std::optional<cluster::topic_configuration> const&
     get_topic_config() const noexcept {
         return _topic_config;
     }
+
+    /// return the version of the decoded manifest. useful to decide if to fill
+    /// a field that was not encoded in a previous version
+    version_t get_manifest_version() const noexcept {
+        return _manifest_version;
+    }
+
+    std::pair<manifest_format, remote_manifest_path>
+    get_manifest_format_and_path() const override;
 
     bool operator==(const topic_manifest& other) const {
         return std::tie(_topic_config, _rev)
@@ -71,7 +99,8 @@ private:
     /// from manifest.json file
     void do_update(const topic_manifest_handler& handler);
 
-    std::optional<manifest_topic_configuration> _topic_config;
+    std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;
+    version_t _manifest_version{first_version};
 };
 } // namespace cloud_storage

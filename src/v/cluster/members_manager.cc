@@ -31,7 +31,6 @@
 #include "raft/group_configuration.h"
 #include "raft/types.h"
 #include "random/generators.h"
-#include "redpanda/application.h"
 #include "reflection/adl.h"
 #include "storage/api.h"
 
@@ -61,7 +60,8 @@ members_manager::members_manager(
   ss::sharded<storage::api>& storage,
   ss::sharded<drain_manager>& drain_manager,
   ss::sharded<partition_balancer_state>& pb_state,
-  ss::sharded<ss::abort_source>& as)
+  ss::sharded<ss::abort_source>& as,
+  std::chrono::milliseconds application_start_time)
   : _seed_servers(config::node().seed_servers())
   , _self(make_self_broker(config::node()))
   , _join_retry_jitter(config::shard_local_cfg().join_retry_timeout_ms())
@@ -78,7 +78,8 @@ members_manager::members_manager(
   , _as(as)
   , _rpc_tls_config(config::node().rpc_server_tls())
   , _update_queue(max_updates_queue_size)
-  , _next_assigned_id(model::node_id(1)) {
+  , _next_assigned_id(model::node_id(1))
+  , _application_start_time(application_start_time) {
     auto sub = _as.local().subscribe([this]() noexcept {
         _update_queue.abort(
           std::make_exception_ptr(ss::abort_requested_exception{}));
@@ -1632,10 +1633,10 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
       broker.rpc_address(),
       _rpc_tls_config,
       2s,
-      [self = _self.id()](controller_client_protocol c) {
+      [self = _self.id(), this](controller_client_protocol c) {
           hello_request req{
             .peer = self,
-            .start_time = redpanda_start_time,
+            .start_time = _application_start_time,
           };
           return c.hello(std::move(req), rpc::client_opts(2s))
             .then(&rpc::get_ctx_data<hello_reply>);

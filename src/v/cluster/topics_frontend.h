@@ -27,6 +27,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -40,6 +41,13 @@ namespace cluster {
 // on every core
 class topics_frontend {
 public:
+    /**
+     * A boolean that may be used by the caller to request redirecting a request
+     * to the leader. This is useful as topic operations must be executed on
+     * `redpanda/controller` partition leader.
+     */
+    using dispatch_to_leader = ss::bool_class<struct dispatch_to_leader_tag>;
+
     struct capacity_info {
         absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
         absl::flat_hash_map<model::partition_id, int64_t> ntp_sizes;
@@ -60,8 +68,9 @@ public:
       ss::sharded<shard_table>&,
       plugin_table&,
       metadata_cache&,
-      config::binding<unsigned>,
-      config::binding<int16_t>);
+      config::binding<unsigned> hard_max_disk_usage_ratio,
+      config::binding<int16_t> minimum_topic_replication,
+      config::binding<bool> partition_autobalancing_topic_aware);
 
     ss::future<std::vector<topic_result>> create_topics(
       custom_assignable_topic_configuration_vector,
@@ -128,7 +137,8 @@ public:
     ss::future<std::error_code> finish_moving_partition_replicas(
       model::ntp,
       std::vector<model::broker_shard>,
-      model::timeout_clock::time_point);
+      model::timeout_clock::time_point,
+      dispatch_to_leader = dispatch_to_leader::yes);
 
     ss::future<std::error_code> revert_cancel_partition_move(
       model::ntp, model::timeout_clock::time_point);
@@ -282,6 +292,7 @@ private:
 
     config::binding<unsigned> _hard_max_disk_usage_ratio;
     config::binding<int16_t> _minimum_topic_replication;
+    config::binding<bool> _partition_autobalancing_topic_aware;
 
     static constexpr std::chrono::seconds _get_health_report_timeout = 10s;
 };

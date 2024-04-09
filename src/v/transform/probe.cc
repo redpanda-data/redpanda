@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "transform/probe.h"
+#include "probe.h"
 
 #include "model/transform.h"
 #include "prometheus/prometheus_sanitize.h"

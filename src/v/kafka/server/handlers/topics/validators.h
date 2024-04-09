@@ -314,7 +314,7 @@ struct write_caching_configs_validator {
             auto val = boost::lexical_cast<std::chrono::milliseconds::rep>(
               it->value.value());
             // atleast 1ms, anything less than that is suspiciously small.
-            return val >= 1;
+            return val >= 1 && val <= serde::max_serializable_ms.count();
         } catch (...) {
         }
         return false;

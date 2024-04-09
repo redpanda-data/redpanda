@@ -143,7 +143,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> tx_timeout_delay_ms;
     deprecated_property rm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
-    enum_property<model::fetch_read_strategy> fetch_read_strategy;
+    deprecated_property fetch_read_strategy;
     property<std::chrono::milliseconds> alter_topic_cfg_timeout_ms;
     property<model::cleanup_policy_bitflags> log_cleanup_policy;
     enum_property<model::timestamp_type> log_message_timestamp_type;
@@ -358,6 +358,11 @@ struct configuration final : public config_store {
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
     property<bool> cloud_storage_enable_compacted_topic_reupload;
     property<size_t> cloud_storage_recovery_temporary_retention_bytes_default;
+    // validation of topic manifest during recovery
+    enum_property<model::recovery_validation_mode>
+      cloud_storage_recovery_topic_validation_mode;
+    property<uint32_t> cloud_storage_recovery_topic_validation_depth;
+
     property<std::optional<size_t>> cloud_storage_segment_size_target;
     property<std::optional<size_t>> cloud_storage_segment_size_min;
     property<std::optional<size_t>> cloud_storage_max_throughput_per_shard;
@@ -467,6 +472,7 @@ struct configuration final : public config_store {
     property<size_t> partition_autobalancing_concurrent_moves;
     property<double> partition_autobalancing_tick_moves_drop_threshold;
     property<std::optional<size_t>> partition_autobalancing_min_size_threshold;
+    property<bool> partition_autobalancing_topic_aware;
 
     property<bool> enable_leader_balancer;
     enum_property<model::leader_balancer_mode> leader_balancer_mode;
@@ -569,6 +575,7 @@ struct configuration final : public config_store {
 
     // MPX
     property<bool> enable_mpx_extensions;
+    bounded_property<uint64_t> virtual_cluster_min_producer_ids;
 
     configuration();
 

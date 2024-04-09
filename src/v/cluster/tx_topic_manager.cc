@@ -14,10 +14,10 @@
 #include "base/vassert.h"
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
+#include "cluster/logger.h"
 #include "cluster/topics_frontend.h"
 #include "features/feature_table.h"
 #include "model/namespace.h"
-#include "model/timeout_clock.h"
 #include "ssx/future-util.h"
 #include "tristate.h"
 

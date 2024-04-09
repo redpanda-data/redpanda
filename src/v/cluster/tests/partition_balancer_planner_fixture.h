@@ -115,8 +115,8 @@ public:
     }
 
     void set_maintenance_mode(model::node_id id) {
-        members.local().apply(
-          model::offset{}, cluster::maintenance_mode_cmd(id, true));
+        BOOST_REQUIRE(!members.local().apply(
+          model::offset{}, cluster::maintenance_mode_cmd(id, true)));
         auto broker = members.local().get_node_metadata_ref(id);
         BOOST_REQUIRE(broker);
         BOOST_REQUIRE(
@@ -125,8 +125,8 @@ public:
     }
 
     void set_decommissioning(model::node_id id) {
-        members.local().apply(
-          model::offset{}, cluster::decommission_node_cmd(id, 0));
+        BOOST_REQUIRE(!members.local().apply(
+          model::offset{}, cluster::decommission_node_cmd(id, 0)));
         allocator.local().decommission_node(id);
         auto broker = members.local().get_node_metadata_ref(id);
         BOOST_REQUIRE(broker);
@@ -165,31 +165,11 @@ struct partition_balancer_planner_fixture {
             .max_concurrent_actions = max_concurrent_actions,
             .node_availability_timeout_sec = std::chrono::minutes(1),
             .segment_fallocation_step = 16,
-            .node_responsiveness_timeout = std::chrono::seconds(10)},
+            .node_responsiveness_timeout = std::chrono::seconds(10),
+            .topic_aware = true,
+          },
           workers.state.local(),
           workers.allocator.local());
-    }
-
-    cluster::topic_configuration_assignment make_tp_configuration(
-      const ss::sstring& topic, int partitions, int16_t replication_factor) {
-        cluster::topic_configuration cfg(
-          test_ns, model::topic(topic), partitions, replication_factor);
-
-        cluster::allocation_request req(
-          cfg.tp_ns, cluster::partition_allocation_domains::common);
-        req.partitions.reserve(partitions);
-        for (auto p = 0; p < partitions; ++p) {
-            req.partitions.emplace_back(
-              model::partition_id(p), replication_factor);
-        }
-
-        auto pas = workers.allocator.local()
-                     .allocate(std::move(req))
-                     .get()
-                     .value()
-                     ->copy_assignments();
-
-        return {cfg, std::move(pas)};
     }
 
     model::topic_namespace make_tp_ns(const ss::sstring& tp) {
@@ -247,10 +227,7 @@ struct partition_balancer_planner_fixture {
         auto& members_table = workers.members.local();
 
         std::vector<model::broker> new_brokers;
-        for (auto [id, nm] : members_table.nodes()) {
-            new_brokers.push_back(nm.broker);
-        }
-
+        new_brokers.reserve(nodes_amount);
         for (size_t i = 0; i < nodes_amount; ++i) {
             std::optional<model::rack_id> rack_id;
             if (!rack_ids.empty()) {
@@ -259,7 +236,7 @@ struct partition_balancer_planner_fixture {
 
             workers.allocator.local().register_node(
               create_allocation_node(model::node_id(last_node_idx), 4));
-            new_brokers.push_back(model::broker(
+            new_brokers.emplace_back(
               model::node_id(last_node_idx),
               net::unresolved_address{},
               net::unresolved_address{},
@@ -267,12 +244,12 @@ struct partition_balancer_planner_fixture {
               model::broker_properties{
                 .cores = 4,
                 .available_memory_gb = 2,
-                .available_disk_gb = 100}));
+                .available_disk_gb = 100});
             last_node_idx++;
         }
         for (auto& b : new_brokers) {
-            members_table.apply(
-              model::offset{}, cluster::add_node_cmd(b.id(), b));
+            BOOST_REQUIRE(!members_table.apply(
+              model::offset{}, cluster::add_node_cmd(b.id(), b)));
         }
     }
 

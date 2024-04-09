@@ -11,6 +11,9 @@
 
 #include "cluster/controller_snapshot.h"
 
+#include "security/types.h"
+#include "serde/rw/rw.h"
+
 namespace cluster {
 
 namespace controller_snapshot_parts {
@@ -157,6 +160,7 @@ topics_t::serde_async_read(iobuf_parser& in, serde::header const h) {
 ss::future<> security_t::serde_async_write(iobuf& out) {
     co_await write_vector_async(out, std::move(user_credentials));
     co_await write_vector_async(out, std::move(acls));
+    co_await write_vector_async(out, std::move(roles));
 }
 
 ss::future<>
@@ -166,6 +170,10 @@ security_t::serde_async_read(iobuf_parser& in, serde::header const h) {
         in, h._bytes_left_limit);
     acls = co_await read_vector_async_nested<decltype(acls)>(
       in, h._bytes_left_limit);
+    if (h._version > 0) {
+        roles = co_await read_vector_async_nested<decltype(roles)>(
+          in, h._bytes_left_limit);
+    }
 
     if (in.bytes_left() > h._bytes_left_limit) {
         in.skip(in.bytes_left() - h._bytes_left_limit);

@@ -109,6 +109,7 @@ class CloudCleanup():
 
         # Fugure out which time was 36h back
         self.back_36h = datetime.now() - timedelta(hours=36)
+        self.back_8h = datetime.now() - timedelta(hours=8)
 
     def load_globals(self, path):
         _gconfig = {}
@@ -488,7 +489,7 @@ class CloudCleanup():
 
         return
 
-    def clean_buckets(self, mask=None):
+    def clean_buckets(self, mask=None, eight_hours=False):
         """
             Function list buckets on S3 for cloud cluster storage
             and cleans them up if corresponding cluster is deleted/not exists.
@@ -508,16 +509,17 @@ class CloudCleanup():
                           "Will not delete all buckets for account")
             return
         else:
-            self.log.info(f"# Listing buckets usign '{mask}'")
+            self.log.info(f"# Listing buckets using '{mask}'")
             buckets = self.provider.list_buckets(mask=mask)
             self.log.info(f"# Found buckets: {len(buckets)}")
             for bucket in buckets:
                 self.log.info(f"-> Processing '{bucket['Name']}'")
                 # Check creation time
                 created = bucket['CreationDate']
-                if created.timestamp() > self.back_36h.timestamp():
+                ts = self.back_8h if eight_hours else self.back_36h
+                if created.timestamp() > ts.timestamp():
                     _d = created.strftime(ns_name_date_fmt)
-                    self.log.info(f"...36h not passed; created at {_d}'; "
+                    self.log.info(f"...8h not passed; created at {_d}'; "
                                   "skipped")
                     continue
                 # Do not need to check the cluster status in CloudV2 API
@@ -568,18 +570,45 @@ def cleanup_entrypoint():
     # Init the cleaner class
     cleaner = CloudCleanup()
 
+    # Arguments parsing. Quick and head on. No fancy argparse needed
+    clean_namespaces = False
+    clean_buckets = False
+    clean_nats = False
+    # Copy the list
+    arguments = sys.argv[:]
+    arguments.pop(0)
+    if len(arguments) == 0:
+        clean_namespaces = True
+    else:
+        while len(arguments) > 0:
+            option = arguments.pop()
+            if option == 'ns':
+                clean_namespaces = True
+            elif option == 'nat':
+                clean_nats = True
+            elif option == 's3':
+                clean_buckets = True
+            else:
+                cleaner.log.error(
+                    f"ERROR: Wrong argument: '{option}'. Accepting "
+                    "only 's3'/'nat' to clean buckets or aws NATs")
+                sys.exit(1)
+
     # Namespaces
-    cleaner.clean_namespaces(ns_name_prefix, 8)
+    if clean_namespaces:
+        cleaner.clean_namespaces(ns_name_prefix, 8)
 
     # NAT Gateways cleaning routine
-    # Enable manually to cleanup redundancies
-    # cleaner.clean_aws_nat()
+    if clean_nats:
+        cleaner.clean_aws_nat()
 
     # Clean buckets for deleted clusters and networks
-    # Enable manually
-    # cleaner.clean_buckets(mask="panda-bucket-")
-    # cleaner.clean_buckets(mask="redpanda-cloud-storage-")
-    # cleaner.clean_buckets(mask="redpanda-network-logs-")
+    if clean_buckets:
+        cleaner.clean_buckets(mask="panda-bucket-", eight_hours=True)
+        cleaner.clean_buckets(mask="redpanda-cloud-storage-")
+        cleaner.clean_buckets(mask="redpanda-network-logs-")
+
+    cleaner.log.info("\n# Done.")
     return
 
 

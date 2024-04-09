@@ -101,7 +101,9 @@ def read_topic_properties_serde(rdr: Reader, version):
         }
     if version >= 7:
         topic_properties |= {
-            'mpx_virtual_cluster_id': rdr.read_optional(Reader.read_bytes),
+            'mpx_virtual_cluster_id':
+            rdr.read_optional(
+                lambda rdr: rdr.read_serde_vector(Reader.read_uint8)),
         }
 
     if version >= 8:
@@ -114,24 +116,31 @@ def read_topic_properties_serde(rdr: Reader, version):
     return topic_properties
 
 
+def read_topic_config(rdr: Reader, version):
+    decoded = {
+        'namespace':
+        rdr.read_string(),
+        'topic':
+        rdr.read_string(),
+        'partitions':
+        rdr.read_int32(),
+        'replication_factor':
+        rdr.read_int16(),
+        'properties':
+        rdr.read_envelope(read_topic_properties_serde, max_version=8),
+    }
+    if version < 1:
+        # see https://github.com/redpanda-data/redpanda/pull/6613
+        decoded['properties']['remote_delete'] = False
+
+    return decoded
+
+
 def read_topic_configuration_assignment_serde(rdr: Reader):
     return rdr.read_envelope(
         lambda rdr, _: {
             'cfg':
-            rdr.read_envelope(
-                lambda rdr, _: {
-                    'namespace':
-                    rdr.read_string(),
-                    'topic':
-                    rdr.read_string(),
-                    'partitions':
-                    rdr.read_int32(),
-                    'replication_factor':
-                    rdr.read_int16(),
-                    'properties':
-                    rdr.read_envelope(read_topic_properties_serde,
-                                      max_version=8),
-                }, 1),
+            rdr.read_envelope(read_topic_config, 1),
             'assignments':
             rdr.read_serde_vector(lambda r: r.read_envelope(
                 lambda ir, _: {

@@ -8,19 +8,17 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "transform/transform_manager.h"
+#include "transform_manager.h"
 
 #include "base/vassert.h"
 #include "base/vlog.h"
+#include "logger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/transform.h"
 #include "rpc/backoff_policy.h"
-#include "ssx/future-util.h"
-#include "transform/logger.h"
-#include "transform/transform_processor.h"
+#include "transform_processor.h"
 #include "utils/human.h"
-#include "wasm/api.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
@@ -37,12 +35,8 @@
 
 #include <algorithm>
 #include <chrono>
-#include <functional>
-#include <future>
-#include <iterator>
 #include <memory>
 #include <utility>
-#include <vector>
 
 namespace transform {
 

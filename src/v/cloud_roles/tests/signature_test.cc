@@ -51,7 +51,7 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_1) {
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::range, "bytes=0-9");
 
-    sign.sign_header(header, sha256);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -88,7 +88,7 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_2) {
     header.insert(
       boost::beast::http::field::date, "Fri, 24 May 2013 00:00:00 GMT");
 
-    sign.sign_header(header, sha256);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -123,7 +123,7 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_3) {
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
 
-    sign.sign_header(header, sha256);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -156,7 +156,7 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_4) {
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
 
-    sign.sign_header(header, sha256);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -186,7 +186,7 @@ SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation) {
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
 
-    sign.sign_header(header);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
 
     std::string expected
       = "SharedKey "
@@ -214,7 +214,7 @@ SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation_many_query_params) {
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
 
-    sign.sign_header(header);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
 
     std::string expected
       = "SharedKey "

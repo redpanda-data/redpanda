@@ -13,6 +13,7 @@
 #include "cluster/tests/topic_properties_generator.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "raft/consensus.h"
 #include "security/acl.h"
 #include "storage/types.h"
 
@@ -22,6 +23,9 @@ namespace cluster::cloud_metadata {
 
 inline security::license get_test_license() {
     const char* sample_valid_license = std::getenv("REDPANDA_SAMPLE_LICENSE");
+    vassert(
+      sample_valid_license != nullptr,
+      "Expected REDPANDA_SAMPLE_LICENSE to be set");
     const ss::sstring license_str{sample_valid_license};
     return security::make_license(license_str);
 }

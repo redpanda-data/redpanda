@@ -8,15 +8,28 @@
 // by the Apache License, Version 2.0
 
 #pragma once
+#include "cluster/producer_state_manager.h"
 #include "cluster/rm_stm.h"
 #include "config/property.h"
 #include "raft/tests/simple_raft_fixture.h"
+
+#include <seastar/core/sharded.hh>
 
 static ss::logger logger{"rm_stm-test"};
 
 struct rm_stm_test_fixture : simple_raft_fixture {
     void create_stm_and_start_raft(
       storage::ntp_config::default_overrides overrides = {}) {
+        producer_state_manager
+          .start(
+            config::mock_binding(std::numeric_limits<uint64_t>::max()),
+            std::chrono::milliseconds::max(),
+            config::mock_binding(std::numeric_limits<uint64_t>::max()))
+          .get();
+        producer_state_manager
+          .invoke_on_all(
+            [](cluster::producer_state_manager& mgr) { return mgr.start(); })
+          .get();
         create_raft(overrides);
         raft::state_machine_manager_builder stm_m_builder;
 
@@ -25,10 +38,18 @@ struct rm_stm_test_fixture : simple_raft_fixture {
           _raft.get(),
           tx_gateway_frontend,
           _feature_table,
-          _producer_state_manager);
+          producer_state_manager,
+          std::nullopt);
 
         _raft->start(std::move(stm_m_builder)).get();
         _started = true;
+    }
+
+    ~rm_stm_test_fixture() {
+        if (_started) {
+            stop_all();
+            producer_state_manager.stop().get();
+        }
     }
 
     const cluster::rm_stm::producers_t& producers() const {
@@ -49,5 +70,6 @@ struct rm_stm_test_fixture : simple_raft_fixture {
     }
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    ss::sharded<cluster::producer_state_manager> producer_state_manager;
     ss::shared_ptr<cluster::rm_stm> _stm;
 };

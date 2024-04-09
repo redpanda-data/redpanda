@@ -12,6 +12,8 @@
 #include "config/property.h"
 #include "container/intrusive_list_helpers.h"
 
+#include <seastar/core/lowres_clock.hh>
+
 #include <absl/container/node_hash_map.h>
 #include <boost/intrusive/list_hook.hpp>
 
@@ -19,6 +21,16 @@
 #include <exception>
 
 namespace cluster {
+using clock_t = ss::lowres_clock;
+template<typename Entry>
+concept entry_with_timestamp = requires(
+  const Entry& const_entry, Entry& entry) {
+    typename Entry::clock_type;
+    {
+        const_entry.get_last_update_timestamp()
+    } -> std::same_as<typename Entry::clock_type::time_point>;
+    { entry.touch() };
+};
 
 /**
  * Post eviction hook is called after an entry has been evicted from the cache.
@@ -112,6 +124,44 @@ struct lru_cache {
     void remove(const EntryT&);
     void touch(EntryT&);
     size_t size() const { return _size; }
+    /**
+     * Evicts from cache elements that are older then requested timestamp and
+     * the pre_eviction_hook allows to do it.
+     */
+    template<typename ClockT>
+    size_t evict_older_than(
+      typename ClockT::time_point deadline,
+      const PreEvictionHookT& pre_eviction_hook,
+      const PostEvictionHookT& post_eviction_hook)
+    requires entry_with_timestamp<EntryT>
+    {
+        struct comparator {
+            bool operator()(
+              const EntryT& entry, const ClockT::time_point& time_point) {
+                return entry.get_last_update_timestamp() < time_point;
+            }
+            bool operator()(const EntryT& lhs, const EntryT& rhs) {
+                return lhs.get_last_update_timestamp()
+                       < rhs.get_last_update_timestamp();
+            }
+        };
+        size_t evicted = 0;
+        auto range_end = std::lower_bound(
+          _lru.begin(), _lru.end(), deadline, comparator{});
+        auto it = _lru.begin();
+        while (it != range_end) {
+            if (pre_eviction_hook(*it)) {
+                auto& entry = *it;
+                it = _lru.erase(it);
+                --_size;
+                post_eviction_hook(entry);
+                evicted++;
+            } else {
+                ++it;
+            }
+        }
+        return evicted;
+    }
 
 private:
     size_t _size{0};
@@ -215,6 +265,29 @@ public:
     }
 
     void clear() { _namespaces.clear(); }
+
+    /**
+     * Removes elements older than the provided deadline, this method is only
+     * available if an entry meets the entry_with_timestamp constraint
+     */
+    template<typename ClockT>
+    size_t evict_older_than(typename ClockT::time_point deadline)
+    requires entry_with_timestamp<EntryT>
+    {
+        size_t evicted = 0;
+        for (const auto& p : _namespaces) {
+            evicted += p.second->template evict_older_than<ClockT>(
+              deadline, _pre_eviction_hook, _post_eviction_hook);
+        }
+
+        if (evicted > 0) {
+            absl::erase_if(_namespaces, [](const namespaces_t::value_type& p) {
+                return p.second->size() == 0;
+            });
+        }
+        _size -= evicted;
+        return evicted;
+    }
 
 private:
     /**
@@ -439,6 +512,7 @@ void namespaced_cache<
         evict(_namespaces.end());
     }
 }
+
 /**
  * lru_cache definitions
  */
@@ -450,6 +524,9 @@ template<
   post_eviction_hook<EntryT> PostEvictionHookT>
 void lru_cache<EntryT, HookPtr, EvictionPredicate, PostEvictionHookT>::insert(
   EntryT& entry) {
+    if constexpr (entry_with_timestamp<EntryT>) {
+        entry.touch();
+    }
     _lru.push_back(entry);
     ++_size;
 }
@@ -497,5 +574,8 @@ void lru_cache<EntryT, HookPtr, EvictionPredicate, PostEvictionHookT>::touch(
     }
     _lru.erase(_lru.iterator_to(entry));
     _lru.push_back(entry);
+    if constexpr (entry_with_timestamp<EntryT>) {
+        entry.touch();
+    }
 }
 } // namespace cluster

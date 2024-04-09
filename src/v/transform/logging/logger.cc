@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "transform/logging/logger.h"
+#include "logger.h"
 
 namespace transform::logging {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)

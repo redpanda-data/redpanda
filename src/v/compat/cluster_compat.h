@@ -17,6 +17,8 @@
 #include "compat/json.h"
 #include "compat/model_json.h"
 
+#include <vector>
+
 namespace compat {
 
 GEN_COMPAT_CHECK(
@@ -77,7 +79,7 @@ GEN_COMPAT_CHECK_SERDE_ONLY(
       json_read(latest_version);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::hello_request,
   {
       json_write(peer);
@@ -88,7 +90,7 @@ GEN_COMPAT_CHECK(
       json_read(start_time);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::hello_reply, { json_write(error); }, { json_read(error); });
 
 GEN_COMPAT_CHECK(
@@ -164,31 +166,31 @@ GEN_COMPAT_CHECK_SERDE_ONLY(
       json_read(raw_status);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::decommission_node_request, { json_write(id); }, { json_read(id); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::decommission_node_reply,
   { json_write(error); },
   { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::recommission_node_request, { json_write(id); }, { json_read(id); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::recommission_node_reply,
   { json_write(error); },
   { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::finish_reallocation_request, { json_write(id); }, { json_read(id); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::finish_reallocation_reply,
   { json_write(error); },
   { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::set_maintenance_mode_request,
   {
       json_write(id);
@@ -199,12 +201,12 @@ GEN_COMPAT_CHECK(
       json_read(enabled);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::set_maintenance_mode_reply,
   { json_write(error); },
   { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::reconciliation_state_request,
   { json_write(ntps); },
   { json_read(ntps); });
@@ -232,16 +234,16 @@ struct compat_check<cluster::reconciliation_state_reply> {
 
     static std::vector<compat_binary>
     to_binary(cluster::reconciliation_state_reply obj) {
-        return compat_binary::serde_and_adl(std::move(obj));
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void
     check(cluster::reconciliation_state_reply obj, compat_binary test) {
-        verify_adl_or_serde(std::move(obj), std::move(test));
+        verify_serde_only(std::move(obj), std::move(test));
     }
 };
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::finish_partition_update_request,
   {
       json_write(ntp);
@@ -252,12 +254,12 @@ GEN_COMPAT_CHECK(
       json_read(new_replica_set);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::finish_partition_update_reply,
   { json_write(result); },
   { json_read(result); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::cancel_partition_movements_reply,
   {
       json_write(general_error);
@@ -268,7 +270,7 @@ GEN_COMPAT_CHECK(
       json_read(partition_results);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::cancel_node_partition_movements_request,
   {
       json_write(node_id);
@@ -279,7 +281,7 @@ GEN_COMPAT_CHECK(
       json_read(direction);
   });
 
-EMPTY_COMPAT_CHECK(cluster::cancel_all_partition_movements_request);
+EMPTY_COMPAT_CHECK_SERDE_ONLY(cluster::cancel_all_partition_movements_request);
 
 GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::configuration_update_request,
@@ -536,45 +538,13 @@ struct compat_check<cluster::create_topics_request> {
 
     static std::vector<compat_binary>
     to_binary(cluster::create_topics_request obj) {
-        return compat_binary::serde_and_adl(std::move(obj));
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void check(cluster::create_topics_request obj, compat_binary test) {
         if (test.name == "serde") {
             verify_serde_only(obj.copy(), test);
             return;
-        }
-        vassert(test.name == "adl", "Unknown compat_binary format encounterd");
-        iobuf_parser iobp(std::move(test.data));
-        auto req = reflection::adl<cluster::create_topics_request>{}.from(iobp);
-        for (auto& topic : obj.topics) {
-            topic.properties.read_replica = std::nullopt;
-            topic.properties.read_replica_bucket = std::nullopt;
-            topic.properties.remote_topic_properties = std::nullopt;
-            topic.properties.batch_max_bytes = std::nullopt;
-            topic.properties.retention_local_target_bytes = tristate<size_t>{
-              std::nullopt};
-            topic.properties.retention_local_target_ms
-              = tristate<std::chrono::milliseconds>{std::nullopt};
-
-            topic.properties.segment_ms = tristate<std::chrono::milliseconds>{
-              std::nullopt};
-
-            topic.properties.initial_retention_local_target_bytes
-              = tristate<size_t>{std::nullopt};
-            topic.properties.initial_retention_local_target_ms
-              = tristate<std::chrono::milliseconds>{std::nullopt};
-            topic.properties.mpx_virtual_cluster_id = std::nullopt;
-            topic.properties.write_caching = std::nullopt;
-            topic.properties.flush_bytes = std::nullopt;
-            topic.properties.flush_ms = std::nullopt;
-        }
-        if (req != obj) {
-            throw compat_error(fmt::format(
-              "Verify of {{cluster::create_toics_request}} decoding "
-              "failed:\n Expected: {}\nDecoded: {}",
-              obj,
-              req));
         }
     }
 };
@@ -604,43 +574,13 @@ struct compat_check<cluster::create_topics_reply> {
 
     static std::vector<compat_binary>
     to_binary(cluster::create_topics_reply obj) {
-        return compat_binary::serde_and_adl(std::move(obj));
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void check(cluster::create_topics_reply obj, compat_binary test) {
         if (test.name == "serde") {
             verify_serde_only(obj.copy(), test);
             return;
-        }
-        vassert(test.name == "adl", "Unknown compat_binary format encounterd");
-        iobuf_parser iobp(std::move(test.data));
-        auto reply = reflection::adl<cluster::create_topics_reply>{}.from(iobp);
-        for (auto& topic : obj.configs) {
-            topic.properties.read_replica = std::nullopt;
-            topic.properties.read_replica_bucket = std::nullopt;
-            topic.properties.remote_topic_properties = std::nullopt;
-            topic.properties.batch_max_bytes = std::nullopt;
-            topic.properties.retention_local_target_bytes = tristate<size_t>{
-              std::nullopt};
-            topic.properties.retention_local_target_ms
-              = tristate<std::chrono::milliseconds>{std::nullopt};
-            topic.properties.segment_ms = tristate<std::chrono::milliseconds>{
-              std::nullopt};
-            topic.properties.initial_retention_local_target_bytes
-              = tristate<size_t>{std::nullopt};
-            topic.properties.initial_retention_local_target_ms
-              = tristate<std::chrono::milliseconds>{std::nullopt};
-            topic.properties.mpx_virtual_cluster_id = std::nullopt;
-            topic.properties.write_caching = std::nullopt;
-            topic.properties.flush_bytes = std::nullopt;
-            topic.properties.flush_ms = std::nullopt;
-        }
-        if (reply != obj) {
-            throw compat_error(fmt::format(
-              "Verify of {{cluster::create_toics_reply}} decoding "
-              "failed:\n Expected: {}\nDecoded: {}",
-              obj,
-              reply));
         }
     }
 };
@@ -710,12 +650,11 @@ GEN_COMPAT_CHECK(
       json_read(custom_properties);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::update_topic_properties_request,
   { json_write(updates); },
   { json_read(updates); })
-
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::update_topic_properties_reply,
   { json_write(results); },
   { json_read(results); })

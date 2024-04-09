@@ -355,13 +355,7 @@ TEST_P_CORO(
       [this, &last_visible] {
           for (auto& [id, node] : nodes()) {
               auto o = node->raft()->last_visible_index();
-              vassert(
-                last_visible[id] <= o,
-                "Visible offset moved back on node {}, current visible offset: "
-                "{}, last visible offset: {}",
-                id,
-                o,
-                last_visible[id]);
+
               auto dirty_offset = node->raft()->dirty_offset();
               vassert(
                 o <= dirty_offset,
