@@ -46,16 +46,16 @@ replication_monitor::replication_monitor(consensus* r)
 }
 
 std::ostream& operator<<(std::ostream& o, const replication_monitor& mon) {
-    static constexpr size_t max_waiters_to_print = 3;
-    auto to_copy = std::min(mon._waiters.size(), max_waiters_to_print);
+    static constexpr long max_waiters_to_print = 3;
     auto view = std::views::values(mon._waiters);
-    auto begin = view.begin();
-    auto end = std::next(begin, static_cast<long>(to_copy));
+    auto end = std::ranges::next(
+      view.begin(), max_waiters_to_print, view.end());
     fmt::print(
       o,
-      "{{count: {}, waiters: [{}]}}",
+      "{{count: {}, pending_majority_waiters: {}, waiters: [{}]}}",
       mon._waiters.size(),
-      fmt::join(begin, end, ","));
+      mon._pending_majority_replication_waiters,
+      fmt::join(view.begin(), end, ","));
     return o;
 }
 
@@ -82,7 +82,7 @@ operator<<(std::ostream& o, const replication_monitor::wait_type& type) {
 ss::future<> replication_monitor::stop() {
     auto f = _gate.close();
     for (auto& [_, waiter] : _waiters) {
-        waiter.done.set_value(errc::shutting_down);
+        waiter->done.set_value(errc::shutting_down);
     }
     _committed_event_cv.broken();
     _replicated_event_cv.broken();
@@ -94,8 +94,9 @@ ss::future<errc> replication_monitor::do_wait_until(
     if (_gate.is_closed()) {
         return ssx::now(errc::not_leader);
     }
-    auto it = _waiters.emplace(append.base_offset, waiter(append, type));
-    return it->second.done.get_future();
+    auto it = _waiters.emplace(
+      append.base_offset, ss::make_lw_shared<waiter>(this, append, type));
+    return it->second->done.get_future();
 }
 
 ss::future<errc>
@@ -109,23 +110,26 @@ ss::future<errc> replication_monitor::wait_until_majority_replicated(
 }
 
 ss::future<> replication_monitor::do_notify_replicated() {
-    auto majority_replicated_offset = _raft->_majority_replicated_index;
-    auto it = _waiters.begin();
-    while (it != _waiters.end() && it->first <= majority_replicated_offset) {
-        auto& entry = it->second;
-        auto& append_info = entry.append_info;
-        auto replicated_term = _raft->get_term(append_info.last_offset);
-        if (
-          entry.type == wait_type::majority_replication
-          // We need the offset is majority replicated in the same term
-          // it is appended for the replication to be successful.
-          // Truncation is detected based on committed offset updates.
-          && replicated_term == append_info.last_term
-          && majority_replicated_offset >= append_info.last_offset) {
-            entry.done.set_value(errc::success);
-            it = _waiters.erase(it);
-        } else {
-            ++it;
+    if (_pending_majority_replication_waiters > 0) {
+        auto majority_replicated_offset = _raft->_majority_replicated_index;
+        auto it = _waiters.begin();
+        while (it != _waiters.end()
+               && it->first <= majority_replicated_offset) {
+            auto& entry = it->second;
+            auto& append_info = entry->append_info;
+            auto replicated_term = _raft->get_term(append_info.last_offset);
+            if (
+              entry->type == wait_type::majority_replication
+              // We need the offset is majority replicated in the same term
+              // it is appended for the replication to be successful.
+              // Truncation is detected based on committed offset updates.
+              && replicated_term == append_info.last_term
+              && majority_replicated_offset >= append_info.last_offset) {
+                entry->done.set_value(errc::success);
+                it = _waiters.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
     co_await _replicated_event_cv.wait();
@@ -137,7 +141,7 @@ ss::future<> replication_monitor::do_notify_committed() {
     auto it = _waiters.begin();
     while (it != _waiters.end()) {
         auto& entry = it->second;
-        auto& append_info = entry.append_info;
+        auto& append_info = entry->append_info;
 
         // The loop is only interested in the waiters that the new committed
         // offset may affect. The term condition is to detect truncation events.
@@ -182,11 +186,11 @@ ss::future<> replication_monitor::do_notify_committed() {
           appended_term == append_info.last_term
           && committed_offset >= append_info.last_offset) {
             // committed
-            entry.done.set_value(errc::success);
+            entry->done.set_value(errc::success);
             it = _waiters.erase(it);
         } else if (truncated()) {
             // truncated
-            entry.done.set_value(errc::replicated_entry_truncated);
+            entry->done.set_value(errc::replicated_entry_truncated);
             it = _waiters.erase(it);
         } else {
             ++it;
@@ -207,6 +211,21 @@ void replication_monitor::notify_committed() {
         return;
     }
     _committed_event_cv.signal();
+}
+
+replication_monitor::waiter::waiter(
+  replication_monitor* mon, storage::append_result r, wait_type t) noexcept
+  : monitor(mon)
+  , append_info(r)
+  , type(t) {
+    if (type == wait_type::majority_replication) {
+        monitor->_pending_majority_replication_waiters++;
+    }
+}
+replication_monitor::waiter::~waiter() noexcept {
+    if (type == wait_type::majority_replication) {
+        monitor->_pending_majority_replication_waiters--;
+    }
 }
 
 } // namespace raft

@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "storage/logger.h"
+#include "storage/offset_translator_state.h"
 #include "storage/parser_errc.h"
 
 #include <seastar/core/abort_source.hh>
@@ -278,7 +279,8 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
 log_reader::log_reader(
   std::unique_ptr<lock_manager::lease> l,
   log_reader_config config,
-  probe& probe) noexcept
+  probe& probe,
+  ss::lw_shared_ptr<const storage::offset_translator_state> tr) noexcept
   : _lease(std::move(l))
   , _iterator(_lease->range.begin())
   , _config(config)
@@ -286,7 +288,8 @@ log_reader::log_reader(
       _config.fill_gaps
         ? std::make_optional<model::offset>(_config.start_offset)
         : std::nullopt)
-  , _probe(probe) {
+  , _probe(probe)
+  , _translator(std::move(tr)) {
     if (config.abort_source) {
         auto op_sub = config.abort_source.value().get().subscribe(
           [this]() noexcept { set_end_of_stream(); });
@@ -430,7 +433,20 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
               return ss::make_ready_future<storage_t>(
                 std::move(batches_filled));
           }
+          // To keep things consistent, our internal accounting is all done in
+          // untranslated offsets, even if we've been requested to return
+          // translated offsets.
           _expected_next = model::next_offset(batches.back().last_offset());
+
+          if (_config.translate_offsets) {
+              vassert(
+                _translator, "Expected offset translactor to be initialized");
+              for (auto& b : batches) {
+                  b.header().base_offset = _translator->from_log_offset(
+                    b.base_offset());
+              }
+          }
+
           return ss::make_ready_future<storage_t>(std::move(batches));
       })
       .handle_exception([this](std::exception_ptr e) {

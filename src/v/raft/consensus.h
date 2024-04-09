@@ -515,7 +515,7 @@ public:
 
     bool write_caching_enabled() const { return _write_caching_enabled; }
     size_t flush_bytes() const { return _max_pending_flush_bytes; }
-    std::chrono::milliseconds flush_ms() const { return _max_flush_delay_ms; }
+    std::chrono::milliseconds flush_ms() const;
 
     replication_monitor& get_replication_monitor() {
         return _replication_monitor;
@@ -532,6 +532,8 @@ private:
     friend heartbeat_manager;
     using update_last_quorum_index
       = ss::bool_class<struct update_last_quorum_index>;
+    using flush_delay_t
+      = std::variant<std::chrono::milliseconds, std::chrono::years>;
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void do_step_down(std::string_view);
@@ -763,6 +765,7 @@ private:
         return _features.is_active(features::feature::raft_config_serde);
     }
 
+    flush_delay_t compute_max_flush_delay() const;
     ss::future<> maybe_flush_log();
     ss::future<> background_flusher();
 
@@ -893,8 +896,9 @@ private:
     static constexpr std::chrono::milliseconds flush_ms_jitter{5};
     bool _write_caching_enabled;
     size_t _max_pending_flush_bytes;
-    std::chrono::milliseconds _max_flush_delay_ms;
-
+    // Its a variant to workaround a bug in cv::wait() method,
+    // check comment in compute_max_flush_delay() for details
+    flush_delay_t _max_flush_delay;
     ss::condition_variable _background_flusher;
 
     replication_monitor _replication_monitor;

@@ -30,6 +30,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/weak_ptr.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <boost/beast/http/error.hpp>
@@ -988,6 +989,40 @@ ss::future<download_result> remote::segment_exists(
       existence_check_type::segment);
 }
 
+ss::future<remote::partition_manifest_existence>
+remote::partition_manifest_exists(
+  const cloud_storage_clients::bucket_name& bucket,
+  model::ntp ntp,
+  model::initial_revision_id rev_id,
+  retry_chain_node& parent) {
+    // first check serde and exit early if it exists
+    auto serde_res = co_await object_exists(
+      bucket,
+      cloud_storage_clients::object_key{generate_partition_manifest_path(
+        ntp, rev_id, manifest_format::serde)()},
+      parent,
+      existence_check_type::manifest);
+
+    switch (serde_res) {
+    case download_result::success:
+        co_return partition_manifest_existence{
+          download_result::success, manifest_format::serde};
+    case download_result::notfound: {
+        auto json_res = co_await object_exists(
+          bucket,
+          cloud_storage_clients::object_key{generate_partition_manifest_path(
+            ntp, rev_id, manifest_format::json)()},
+          parent,
+          existence_check_type::manifest);
+        co_return partition_manifest_existence{json_res, manifest_format::json};
+    }
+    case download_result::failed:
+    case download_result::timedout:
+        // do not try to check for json in case of failures
+        co_return partition_manifest_existence{serde_res, {}};
+    }
+}
+
 ss::future<upload_result> remote::delete_object(
   const cloud_storage_clients::bucket_name& bucket,
   const cloud_storage_clients::object_key& path,
@@ -1265,36 +1300,27 @@ ss::future<upload_result> remote::delete_objects_sequentially(
             .node = std::make_unique<retry_chain_node>(&parent)};
       });
 
-    auto results = co_await ss::do_with(
-      bucket,
-      std::move(key_nodes),
-      std::vector<upload_result>{},
-      [this, ctxlog](auto& bucket, auto& key_nodes, auto& results) {
-          results.reserve(key_nodes.size());
-          return ss::max_concurrent_for_each(
-                   key_nodes.begin(),
-                   key_nodes.end(),
-                   concurrency(),
-                   [this, &bucket, &results, ctxlog](auto& kn) -> ss::future<> {
-                       vlog(ctxlog.trace, "Deleting key {}", kn.key);
-                       return delete_object(bucket, kn.key, *kn.node)
-                         .then([&results](auto result) {
-                             results.push_back(result);
-                         });
-                   })
-            .handle_exception_type([ctxlog](const std::exception& ex) {
-                if (ssx::is_shutdown_exception(std::make_exception_ptr(ex))) {
-                    vlog(
-                      ctxlog.debug,
-                      "Failed to delete keys during shutdown: {}",
-                      ex.what());
-
-                } else {
-                    vlog(ctxlog.error, "Failed to delete keys: {}", ex.what());
-                }
-            })
-            .then([&results] { return results; });
-      });
+    std::vector<upload_result> results;
+    results.reserve(key_nodes.size());
+    auto fut = co_await ss::coroutine::as_future(ss::max_concurrent_for_each(
+      key_nodes.begin(),
+      key_nodes.end(),
+      concurrency(),
+      [this, &bucket, &results, ctxlog](auto& kn) -> ss::future<> {
+          vlog(ctxlog.trace, "Deleting key {}", kn.key);
+          return delete_object(bucket, kn.key, *kn.node)
+            .then([&results](auto result) { results.push_back(result); });
+      }));
+    if (fut.failed()) {
+        std::exception_ptr eptr = fut.get_exception();
+        if (ssx::is_shutdown_exception(eptr)) {
+            vlog(
+              ctxlog.debug, "Failed to delete keys during shutdown: {}", eptr);
+        } else {
+            vlog(ctxlog.error, "Failed to delete keys: {}", eptr);
+        }
+        co_return upload_result::failed;
+    }
 
     if (results.empty()) {
         vlog(ctxlog.error, "No keys were deleted");

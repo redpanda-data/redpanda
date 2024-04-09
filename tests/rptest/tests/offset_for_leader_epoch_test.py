@@ -20,6 +20,7 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.services.rpk_producer import RpkProducer
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class OffsetForLeaderEpochTest(PreallocNodesTest):
@@ -166,6 +167,7 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
             # but the requested
             assert o.error == '' and o.leader_epoch == 15000 and o.epoch_end_offset == -1
 
+    @skip_debug_mode
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_offset_for_leader_epoch_transfer(self):
 

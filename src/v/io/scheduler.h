@@ -11,7 +11,7 @@
 #pragma once
 
 #include "container/intrusive_list_helpers.h"
-#include "io/io_queue.h"
+#include "io_queue.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/future.hh>

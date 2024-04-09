@@ -267,59 +267,6 @@
             }
         }
     },
-    "put": {
-        "tags": [
-            "Roles"
-        ],
-        "summary": "Update the specified role",
-        "operationId": "update_role",
-        "consumes": [
-            "application/json"
-        ],
-        "parameters": [
-            {
-                "name": "role",
-                "in": "path",
-                "required": true,
-                "type": "string"
-            },
-            {
-                "name": "role_definition",
-                "in": "body",
-                "required": true,
-                "schema": {
-                    "$ref": "#/definitions/role_definition"
-                }
-            }
-        ],
-        "produces": ["application/json"],
-        "responses": {
-            "200": {
-                "description": "OK",
-                "schema": {
-                    "$ref": "#/definitions/role_definition"
-                }
-            },
-            "400": {
-                "description": "Bad Request",
-                "schema": {
-                    "$ref": "#/definitions/rbac_error_body"
-                }
-            },
-            "404": {
-                "description": "Not Found",
-                "schema": {
-                    "$ref": "#/definitions/rbac_error_body"
-                }
-            },
-            "409": {
-                "description": "Conflict",
-                "schema": {
-                    "$ref": "#/definitions/rbac_error_body"
-                }
-            }
-        }
-    },
     "delete": {
         "tags": [
             "Roles"
@@ -330,6 +277,12 @@
             "application/json"
         ],
         "parameters": [
+            {
+                "name": "delete_acls",
+                "in": "query",
+                "required": false,
+                "type": "boolean"
+            },
             {
                 "name": "role",
                 "in": "path",

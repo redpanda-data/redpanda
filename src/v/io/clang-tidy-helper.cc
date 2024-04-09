@@ -8,8 +8,8 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "io/cache.h"
-#include "io/interval_map.h"
-#include "io/page.h"
-#include "io/page_set.h"
-#include "io/persistence.h"
+#include "cache.h"
+#include "interval_map.h"
+#include "page.h"
+#include "page_set.h"
+#include "persistence.h"

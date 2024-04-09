@@ -24,34 +24,6 @@
 #include <seastar/util/log.hh>
 
 namespace cluster {
-namespace {
-
-void reassign_replicas(
-  const model::ntp& ntp,
-  partition_allocator& allocator,
-  partition_assignment current_assignment,
-  members_backend::partition_reallocation& reallocation) {
-    auto res = allocator.reallocate_partition(
-      model::topic_namespace{ntp.ns, ntp.tp.topic},
-      reallocation.constraints.value(),
-      current_assignment,
-      get_allocation_domain(ntp),
-      std::vector(
-        reallocation.replicas_to_remove.begin(),
-        reallocation.replicas_to_remove.end()));
-    if (res.has_value()) {
-        reallocation.set_new_replicas(std::move(res.value()));
-    } else {
-        vlog(
-          clusterlog.info,
-          "failed to reallocate partition {} with assignment {}, error: {}",
-          ntp,
-          current_assignment.replicas,
-          res.error());
-    }
-}
-
-} // namespace
 
 members_backend::members_backend(
   ss::sharded<cluster::topics_frontend>& topics_frontend,
@@ -269,8 +241,7 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
         if (meta.partition_reallocations.contains(ntp)) {
             continue;
         }
-        partition_reallocation reallocation;
-        reallocation.state = reallocation_state::request_cancel;
+
         auto current_assignment = _topics.local().get_partition_assignment(ntp);
         auto previous_replica_set = _topics.local().get_previous_replica_set(
           ntp);
@@ -279,9 +250,10 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
           || !previous_replica_set.has_value()) {
             continue;
         }
-        reallocation.current_replica_set = std::move(
-          current_assignment->replicas);
-        reallocation.new_replica_set = std::move(*previous_replica_set);
+        partition_reallocation reallocation(
+          std::move(current_assignment->replicas),
+          std::move(*previous_replica_set),
+          cancellation_state::request_cancel);
 
         meta.partition_reallocations.emplace(
           std::move(ntp), std::move(reallocation));
@@ -360,13 +332,6 @@ ss::future<std::error_code> members_backend::reconcile() {
           "reconcile() leadership changed {} {}",
           _last_term,
           current_term);
-        for (auto& [_, reallocation] : meta.partition_reallocations) {
-            if (reallocation.state == reallocation_state::reassigned) {
-                reallocation.release_allocated();
-                reallocation.new_replica_set.clear();
-                reallocation.state = reallocation_state::initial;
-            }
-        }
     }
     _last_term = current_term;
 
@@ -432,7 +397,7 @@ ss::future<std::error_code> members_backend::reconcile() {
 
     // remove finished reallocations
     absl::erase_if(meta.partition_reallocations, [](const auto& r) {
-        return r.second.state == reallocation_state::finished;
+        return r.second.state == cancellation_state::finished;
     });
 
     co_return errc::update_in_progress;
@@ -514,7 +479,7 @@ members_backend::try_to_finish_update(members_backend::update_meta& meta) {
     for (auto& [ntp, reallocation] : meta.partition_reallocations) {
         if (!_topics.local().contains(
               model::topic_namespace_view(ntp), ntp.tp.partition)) {
-            reallocation.state = reallocation_state::finished;
+            reallocation.state = cancellation_state::finished;
         }
     }
     // we do not have to check if all reallocations are finished, we will
@@ -524,7 +489,7 @@ members_backend::try_to_finish_update(members_backend::update_meta& meta) {
     }
 
     auto is_finished = [](const auto& r) {
-        return r.second.state == reallocation_state::finished;
+        return r.second.state == cancellation_state::finished;
     };
 
     // if all reallocations are propagate reallocation finished event and
@@ -572,97 +537,14 @@ ss::future<> members_backend::reconcile_reallocation_state(
     auto current_assignment = _topics.local().get_partition_assignment(ntp);
     // topic was deleted, we are done with reallocation
     if (!current_assignment) {
-        meta.state = reallocation_state::finished;
+        meta.state = cancellation_state::finished;
         co_return;
     }
 
     switch (meta.state) {
-    case reallocation_state::initial: {
-        meta.current_replica_set = current_assignment->replicas;
-        // initial state, try to reassign partition replicas
-
-        reassign_replicas(
-          ntp, _allocator.local(), std::move(*current_assignment), meta);
-        if (meta.new_replica_set.empty()) {
-            // if partition allocator failed to reassign partitions return
-            // and wait for next retry
-            vlog(
-              clusterlog.trace,
-              "[ntp: {}, {} -> -] new partition assignment failed (empty)",
-              ntp,
-              meta.new_replica_set);
-            co_return;
-        }
-        // success, update state and move on
-        meta.state = reallocation_state::reassigned;
-        vlog(
-          clusterlog.info,
-          "[ntp: {}, {} -> {}] new partition assignment calculated "
-          "successfully",
-          ntp,
-          meta.current_replica_set,
-          meta.new_replica_set);
-        [[fallthrough]];
-    }
-    case reallocation_state::reassigned: {
-        vassert(
-          !meta.new_replica_set.empty(),
-          "reallocation meta in reassigned state must have new_assignment");
-        vlog(
-          clusterlog.info,
-          "[ntp: {}, {} -> {}] dispatching request to move partition",
-          ntp,
-          meta.current_replica_set,
-          meta.new_replica_set);
-        // request topic partition move
-        std::error_code error
-          = co_await _topics_frontend.local().move_partition_replicas(
-            ntp,
-            meta.new_replica_set,
-            reconfiguration_policy::full_local_retention,
-            model::timeout_clock::now() + _retry_timeout);
-        if (error) {
-            vlog(
-              clusterlog.info,
-              "[ntp: {}, {} -> {}] partition move error: {}",
-              ntp,
-              meta.current_replica_set,
-              meta.new_replica_set,
-              error.message());
-            if (error == errc::update_in_progress) {
-                // Skip meta for this partition as it as already moving
-                meta.state = reallocation_state::finished;
-            }
-            co_return;
-        }
-        // success, update state and move on
-        meta.state = reallocation_state::requested;
-        meta.release_allocated();
-        [[fallthrough]];
-    }
-    case reallocation_state::requested: {
-        // wait for partition replicas to be moved
-        auto reconciliation_state
-          = co_await _api.local().get_reconciliation_state(ntp);
-        vlog(
-          clusterlog.info,
-          "[ntp: {}, {} -> {}] reconciliation state: {}, pending "
-          "operations: "
-          "{}",
-          ntp,
-          meta.current_replica_set,
-          meta.new_replica_set,
-          reconciliation_state.status(),
-          reconciliation_state.pending_operations());
-        if (reconciliation_state.status() != reconciliation_status::done) {
-            co_return;
-        }
-        meta.state = reallocation_state::finished;
-        [[fallthrough]];
-    }
-    case reallocation_state::finished:
+    case cancellation_state::finished:
         co_return;
-    case reallocation_state::request_cancel: {
+    case cancellation_state::request_cancel: {
         std::error_code error
           = co_await _topics_frontend.local().cancel_moving_partition_replicas(
             ntp, model::timeout_clock::now() + _retry_timeout);
@@ -678,15 +560,15 @@ ss::future<> members_backend::reconcile_reallocation_state(
             if (error == errc::no_update_in_progress) {
                 // mark reallocation as finished, reallocations will be
                 // recalculated if required
-                meta.state = reallocation_state::finished;
+                meta.state = cancellation_state::finished;
             }
             co_return;
         }
         // success, update state and move on
-        meta.state = reallocation_state::cancelled;
+        meta.state = cancellation_state::cancelled;
         [[fallthrough]];
     }
-    case reallocation_state::cancelled: {
+    case cancellation_state::cancelled: {
         auto reconciliation_state
           = co_await _api.local().get_reconciliation_state(ntp);
         vlog(
@@ -702,7 +584,7 @@ ss::future<> members_backend::reconcile_reallocation_state(
         if (reconciliation_state.status() != reconciliation_status::done) {
             co_return;
         }
-        meta.state = reallocation_state::finished;
+        meta.state = cancellation_state::finished;
         co_return;
     };
     }
@@ -844,37 +726,21 @@ std::ostream&
 operator<<(std::ostream& o, const members_backend::partition_reallocation& r) {
     fmt::print(
       o,
-      "{{constraints: {},  allocated: {}, state: {},replicas_to_remove: [",
-      r.constraints,
-      !r.new_replica_set.empty(),
+      "{{current: {}, new: {}, state: {}}}",
+      r.current_replica_set,
+      r.new_replica_set,
       r.state);
-
-    if (!r.replicas_to_remove.empty()) {
-        auto it = r.replicas_to_remove.begin();
-        fmt::print(o, "{}", *it);
-        ++it;
-        for (; it != r.replicas_to_remove.end(); ++it) {
-            fmt::print(o, ", {}", *it);
-        }
-    }
-    fmt::print(o, "]}}");
     return o;
 }
 std::ostream&
-operator<<(std::ostream& o, const members_backend::reallocation_state& state) {
+operator<<(std::ostream& o, const members_backend::cancellation_state& state) {
     switch (state) {
-    case members_backend::reallocation_state::initial:
-        return o << "initial";
-    case members_backend::reallocation_state::reassigned:
-        return o << "reassigned";
-    case members_backend::reallocation_state::requested:
-        return o << "requested";
-    case members_backend::reallocation_state::finished:
-        return o << "finished";
-    case members_backend::reallocation_state::request_cancel:
+    case members_backend::cancellation_state::request_cancel:
         return o << "request_cancel";
-    case members_backend::reallocation_state::cancelled:
+    case members_backend::cancellation_state::cancelled:
         return o << "cancelled";
+    case members_backend::cancellation_state::finished:
+        return o << "finished";
     }
 
     __builtin_unreachable();

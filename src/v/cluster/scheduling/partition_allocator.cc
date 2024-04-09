@@ -50,7 +50,6 @@ partition_allocator::partition_allocator(
   config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>(
     partitions_per_shard, partitions_reserve_shard0, internal_kafka_topics))
-  , _allocation_strategy(simple_allocation_strategy())
   , _members(members)
   , _memory_per_partition(std::move(memory_per_partition))
   , _fds_per_partition(std::move(fds_per_partition))
@@ -59,29 +58,27 @@ partition_allocator::partition_allocator(
   , _internal_kafka_topics(std::move(internal_kafka_topics))
   , _enable_rack_awareness(std::move(enable_rack_awareness)) {}
 
-allocation_constraints partition_allocator::default_constraints(
-  const partition_allocation_domain domain) {
+allocation_constraints partition_allocator::default_constraints() {
     allocation_constraints req;
 
+    // hard constraints
     req.add(distinct_nodes());
     req.add(not_fully_allocated());
     req.add(is_active());
 
-    if (domain == partition_allocation_domains::common) {
-        req.add(max_final_capacity());
-    } else {
-        req.add(max_final_capacity_in_domain(domain));
-    }
+    // soft constraints
     if (_enable_rack_awareness()) {
         req.add(distinct_rack_preferred(_members.local()));
     }
+
     return req;
 }
 
 result<allocated_partition> partition_allocator::allocate_new_partition(
   model::topic_namespace nt,
   partition_constraints p_constraints,
-  const partition_allocation_domain domain) {
+  const partition_allocation_domain domain,
+  const std::optional<node2count_t>& node2count) {
     vlog(
       clusterlog.trace,
       "allocating new partition with constraints: {}",
@@ -94,7 +91,14 @@ result<allocated_partition> partition_allocator::allocate_new_partition(
         return errc::topic_invalid_replication_factor;
     }
 
-    auto effective_constraints = default_constraints(domain);
+    auto effective_constraints = default_constraints();
+    if (node2count) {
+        effective_constraints.ensure_new_level();
+        effective_constraints.add(
+          min_count_in_map("min topic-wise count", *node2count));
+    }
+    effective_constraints.ensure_new_level();
+    effective_constraints.add(max_final_capacity(domain));
     effective_constraints.add(p_constraints.constraints);
 
     model::ntp ntp{
@@ -281,11 +285,16 @@ partition_allocator::allocate(allocation_request request) {
     intermediate_allocation assignments(
       *_state, request.partitions.size(), request.domain);
 
+    std::optional<node2count_t> node2count;
+    if (request.existing_replica_counts) {
+        node2count = std::move(*request.existing_replica_counts);
+    }
+
     const auto& nt = request._nt;
     for (auto& p_constraints : request.partitions) {
         auto const partition_id = p_constraints.partition_id;
         auto allocated = allocate_new_partition(
-          nt, std::move(p_constraints), request.domain);
+          nt, std::move(p_constraints), request.domain, node2count);
         if (!allocated) {
             co_return allocated.error();
         }
@@ -293,6 +302,13 @@ partition_allocator::allocate(allocation_request request) {
           _state->next_group_id(),
           partition_id,
           allocated.value().release_new_partition());
+
+        if (node2count) {
+            for (const auto& bs : assignments.get().back().replicas) {
+                (*node2count)[bs.node_id] += 1;
+            }
+        }
+
         co_await ss::coroutine::maybe_yield();
     }
 
@@ -331,7 +347,9 @@ result<allocated_partition> partition_allocator::reallocate_partition(
         return res;
     }
 
-    auto effective_constraints = default_constraints(domain);
+    auto effective_constraints = default_constraints();
+    effective_constraints.ensure_new_level();
+    effective_constraints.add(max_final_capacity(domain));
     effective_constraints.add(std::move(p_constraints.constraints));
 
     // first, move existing replicas
@@ -374,7 +392,7 @@ result<reallocation_step> partition_allocator::reallocate_replica(
       partition.replicas(),
       constraints);
 
-    auto effective_constraints = default_constraints(partition._domain);
+    auto effective_constraints = default_constraints();
     effective_constraints.add(std::move(constraints));
 
     return do_allocate_replica(partition, prev_node, effective_constraints);
@@ -391,23 +409,13 @@ result<reallocation_step> partition_allocator::do_allocate_replica(
             return errc::node_does_not_exists;
         }
     }
-    auto revert = ss::defer([&] {
-        if (prev) {
-            partition.cancel_move(*prev);
-        }
-    });
 
     auto node = _allocation_strategy.choose_node(
-      partition._ntp,
-      partition._replicas,
-      effective_constraints,
-      *_state,
-      partition._domain);
+      *_state, effective_constraints, partition, prev_node);
     if (!node) {
         return node.error();
     }
 
-    revert.cancel();
     auto new_replica = partition.add_replica(node.value(), prev);
     std::optional<model::broker_shard> prev_replica;
     if (prev) {

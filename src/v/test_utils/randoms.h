@@ -11,6 +11,7 @@
 #pragma once
 
 #include "bytes/random.h"
+#include "cluster/producer_state.h"
 #include "container/fragmented_vector.h"
 #include "random/generators.h"
 #include "tristate.h"

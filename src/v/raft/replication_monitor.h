@@ -69,10 +69,11 @@ public:
 private:
     enum wait_type : int8_t { commit, majority_replication };
     struct waiter {
-        waiter(storage::append_result r, wait_type t) noexcept
-          : append_info(r)
-          , type(t) {}
+        waiter(
+          replication_monitor*, storage::append_result, wait_type) noexcept;
+        ~waiter() noexcept;
         ss::promise<errc> done;
+        replication_monitor* monitor;
         storage::append_result append_info;
         wait_type type;
     };
@@ -85,12 +86,20 @@ private:
     consensus* _raft;
     // Key is the base offset of the append results. So all the waiters
     // are sorted by the base offsets of the results.
-    using waiters_type = absl::btree_multimap<model::offset, waiter>;
+    using waiters_type
+      = absl::btree_multimap<model::offset, ss::lw_shared_ptr<waiter>>;
     waiters_type _waiters;
     ss::gate _gate;
 
     ss::condition_variable _replicated_event_cv;
     ss::condition_variable _committed_event_cv;
+    // Tracks the number of waiters of type majority_replication in
+    // the waiters map. This is an optimization to avoid looping
+    // through all waiters in the map if there are no waiters
+    // of the matching type. majority replication index may move
+    // faster than committed index, so if there are no waiters
+    // for majority replication, it is wasteful to do the extra work.
+    size_t _pending_majority_replication_waiters{0};
 
 public:
     friend std::ostream& operator<<(std::ostream&, const replication_monitor&);

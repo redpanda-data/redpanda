@@ -564,6 +564,8 @@ std::ostream& operator<<(std::ostream& os, existence_check_type head) {
         return os << "object";
     case segment:
         return os << "segment";
+    case manifest:
+        return os << "manifest";
     }
 }
 

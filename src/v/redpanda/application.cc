@@ -9,6 +9,7 @@
 
 #include "redpanda/application.h"
 
+#include "archival/archival_metadata_stm.h"
 #include "archival/archiver_manager.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/purger.h"
@@ -39,6 +40,7 @@
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/id_allocator_stm.h"
+#include "cluster/log_eviction_stm.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"
@@ -117,7 +119,7 @@
 #include "transform/api.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/service.h"
-#include "transform/transform_offsets_stm.h"
+#include "transform/stm/transform_offsets_stm.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
@@ -1431,7 +1433,11 @@ void application::wire_up_redpanda_services(
       ss::sharded_parameter([]() {
           return config::shard_local_cfg().max_concurrent_producer_ids.bind();
       }),
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
+      config::shard_local_cfg().transactional_id_expiration_ms.value(),
+      ss::sharded_parameter([]() {
+          return config::shard_local_cfg()
+            .virtual_cluster_min_producer_ids.bind();
+      }))
       .get();
 
     producer_manager.invoke_on_all(&cluster::producer_state_manager::start)
@@ -2558,7 +2564,8 @@ void application::start_runtime_services(
             config::shard_local_cfg().enable_idempotence.value(),
             tx_gateway_frontend,
             producer_manager,
-            feature_table);
+            feature_table,
+            controller->get_topics_state());
           pm.register_factory<cluster::log_eviction_stm_factory>(
             storage.local().kvs());
           pm.register_factory<cluster::archival_metadata_stm_factory>(
@@ -2614,7 +2621,8 @@ void application::start_runtime_services(
         app_signal.abort_source(),
         std::move(offsets_upload_requestor),
         producer_id_recovery_manager,
-        std::move(offsets_recovery_requestor))
+        std::move(offsets_recovery_requestor),
+        redpanda_start_time)
       .get0();
 
     if (archiver_manager.local_is_initialized()) {

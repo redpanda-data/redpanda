@@ -147,8 +147,7 @@ consensus::consensus(
   , _append_requests_buffer(*this, 256)
   , _write_caching_enabled(log_config().write_caching())
   , _max_pending_flush_bytes(log_config().flush_bytes())
-  , _max_flush_delay_ms(
-      flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}.next_duration())
+  , _max_flush_delay(compute_max_flush_delay())
   , _replication_monitor(this) {
     setup_metrics();
     setup_public_metrics();
@@ -843,7 +842,12 @@ replicate_stages consensus::do_replicate(
         _probe->replicate_requests_ack_leader();
         break;
     case consistency_level::quorum_ack:
-        _probe->replicate_requests_ack_all();
+        auto flush = opts.force_flush() || !_write_caching_enabled;
+        if (flush) {
+            _probe->replicate_requests_ack_all_with_flush();
+        } else {
+            _probe->replicate_requests_ack_all_without_flush();
+        }
         break;
     }
 
@@ -2019,11 +2023,11 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 3
     if (request_metadata.prev_log_index < last_log_offset) {
-        if (unlikely(request_metadata.prev_log_index < last_visible_index())) {
+        if (unlikely(request_metadata.prev_log_index < _commit_index)) {
             reply.result = reply_result::success;
             // clamp dirty offset to the current commit index not to allow
             // leader reasoning about follower log beyond that point
-            reply.last_dirty_log_index = last_visible_index();
+            reply.last_dirty_log_index = _commit_index;
             reply.last_flushed_log_index = _commit_index;
             vlog(
               _ctxlog.info,
@@ -2049,15 +2053,22 @@ consensus::do_append_entries(append_entries_request&& r) {
           truncate_at);
         _probe->log_truncated();
 
+        _majority_replicated_index = std::min(
+          model::prev_offset(truncate_at), _majority_replicated_index);
+        _last_quorum_replicated_index_with_flush = std::min(
+          model::prev_offset(truncate_at),
+          _last_quorum_replicated_index_with_flush);
+        // update flushed offset since truncation may happen to already
+        // flushed entries
+        _flushed_offset = std::min(
+          model::prev_offset(truncate_at), _flushed_offset);
         return _log
           ->truncate(
             storage::truncate_config(truncate_at, _scheduling.default_iopc))
           .then([this, truncate_at] {
-              _last_quorum_replicated_index_with_flush = std::min(
-                model::prev_offset(truncate_at),
-                _last_quorum_replicated_index_with_flush);
-              // update flushed offset since truncation may happen to already
-              // flushed entries
+              // update flushed offset once again after truncation as flush is
+              // executed concurrently to append entries and it may race with
+              // the truncation
               _flushed_offset = std::min(
                 model::prev_offset(truncate_at), _flushed_offset);
 
@@ -3898,7 +3909,7 @@ ss::future<> consensus::maybe_flush_log() {
     // detect it and flush log.
     if (
       _pending_flush_bytes < _max_pending_flush_bytes
-      && time_since_last_flush() < _max_flush_delay_ms) {
+      && time_since_last_flush() < flush_ms()) {
         co_return;
     }
     try {
@@ -3926,12 +3937,42 @@ std::optional<model::offset> consensus::get_learner_start_offset() const {
     return std::nullopt;
 }
 
+consensus::flush_delay_t consensus::compute_max_flush_delay() const {
+    auto delay = flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
+                   .next_duration();
+    if (delay > std::chrono::years{1}) {
+        // For large delays (eg: long max), the condition variable waiting
+        // on this delay runs into a UB because of an overflow. A total
+        // hack here is to convert it to a larger duration type so the
+        // integral value of the duration is much smaller thus avoiding
+        // the overflow. This is a pretty bad hack but needed to
+        // workaround seastar's inability to wait for arbitrary large yet
+        // valid durations supposedly used for indefinite waits.
+        auto delay_years = std::chrono::duration_cast<std::chrono::years>(
+          delay);
+        return flush_delay_t{delay_years};
+    }
+    return flush_delay_t{delay};
+}
+
+std::chrono::milliseconds consensus::flush_ms() const {
+    return std::visit(
+      [](auto&& delay) {
+          using T = std::decay_t<decltype(delay)>;
+          if constexpr (std::is_same_v<T, std::chrono::milliseconds>) {
+              return delay;
+          } else {
+              return std::chrono::duration_cast<std::chrono::milliseconds>(
+                delay);
+          }
+      },
+      _max_flush_delay);
+}
+
 void consensus::notify_config_update() {
     _write_caching_enabled = log_config().write_caching();
     _max_pending_flush_bytes = log_config().flush_bytes();
-    _max_flush_delay_ms
-      = flush_jitter_t{log_config().flush_ms(), flush_ms_jitter}
-          .next_duration();
+    _max_flush_delay = compute_max_flush_delay();
     // let the flusher know that the tunables have changed, this may result
     // in an extra flush but that should be ok since this this is a rare
     // operation.
@@ -3941,7 +3982,11 @@ void consensus::notify_config_update() {
 ss::future<> consensus::background_flusher() {
     while (!_bg.is_closed()) {
         try {
-            co_await _background_flusher.wait(log_config().flush_ms());
+            co_await std::visit(
+              [&](auto&& flush_delay) {
+                  return _background_flusher.wait(flush_delay);
+              },
+              _max_flush_delay);
         } catch (const ss::condition_variable_timed_out&) {
         }
         co_await maybe_flush_log().handle_exception(

@@ -59,6 +59,7 @@ v_cc_library(
   PUBLIC
 )
 
+add_subdirectory(mvlog)
 add_subdirectory(tests)
 add_subdirectory(opfuzz)
 

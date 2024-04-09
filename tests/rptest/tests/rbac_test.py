@@ -7,19 +7,22 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
+from requests.exceptions import HTTPError
+import random
 import time
 from typing import Optional
 
 from ducktape.utils.util import wait_until
-from requests.exceptions import HTTPError
-import json
 
+import ducktape.errors
 from ducktape.utils.util import wait_until
+from ducktape.mark import parametrize
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.admin import (Admin, RoleMemberList, RoleUpdate,
-                                   RoleErrorCode, RoleError, RolesList,
-                                   RoleDescription, RoleMemberUpdateResponse,
-                                   RoleMember, Role)
+from rptest.services.admin import (Admin, RedpandaNode, RoleMemberList,
+                                   RoleUpdate, RoleErrorCode, RoleError,
+                                   RolesList, RoleDescription,
+                                   RoleMemberUpdateResponse, RoleMember, Role)
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -87,16 +90,6 @@ class RBACTest(RBACTestBase):
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
             self.superuser_admin.get_role(role=self.role_name0)
 
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role(role=self.role_name0,
-                                             update=RoleUpdate(
-                                                 self.role_name1))
-
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role(role=self.role_name0,
-                                             update=RoleUpdate(
-                                                 self.role_name1))
-
         res = self.superuser_admin.list_roles(filter='ba',
                                               principal=ALICE.username)
         assert len(RolesList.from_response(res)) == 0, "Unexpected roles"
@@ -118,10 +111,6 @@ class RBACTest(RBACTestBase):
 
         with expect_http_error(403):
             self.user_admin.get_role(role=self.role_name0)
-
-        with expect_http_error(403):
-            self.user_admin.update_role(role=self.role_name0,
-                                        update=RoleUpdate(self.role_name1))
 
         with expect_http_error(403):
             self.user_admin.update_role_members(
@@ -286,70 +275,6 @@ class RBACTest(RBACTestBase):
                    timeout_sec=10,
                    backoff_sec=2,
                    err_msg="Get role hasn't succeeded in time")
-
-    @cluster(num_nodes=3)
-    def test_update_role(self):
-        alice = RoleMember(RoleMember.PrincipalType.USER, 'alice')
-
-        self.logger.debug("Test that update_role rejects an unknown role")
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role(
-                role=self.role_name0, update=RoleUpdate(role=self.role_name1))
-
-        self.logger.debug(
-            "Test that update_role successfully renames role and maintains members"
-        )
-        self.superuser_admin.update_role_members(role=self.role_name0,
-                                                 add=[alice],
-                                                 create=True)
-
-        res = self.superuser_admin.update_role(
-            role=self.role_name0, update=RoleUpdate(role=self.role_name1))
-        new_role = res.json()['role']
-        assert new_role == self.role_name1, f"Unexpected role name: {new_role} != {self.role_name1}"
-
-        def update_completes_atomically():
-            roles = self._set_of_user_roles()
-            # Abort waiting and fail early if we ever see both roles at the same time
-            assert roles in [{self.role_name0}, {self.role_name1}]
-            return roles == {self.role_name1}
-
-        wait_until(update_completes_atomically,
-                   timeout_sec=10,
-                   backoff_sec=2,
-                   err_msg="Role update hasn't completed in time")
-
-        def update_maintains_members(role_name: str,
-                                     expected_members: list[str] = []):
-            try:
-                res = self.superuser_admin.get_role(role=role_name)
-                role = Role.from_response(res)
-
-                return role.name == role_name and \
-                    len(role.members) == len(expected_members) and \
-                    all(member in role.members for member in expected_members)
-            except HTTPError as e:
-                assert RoleError.from_http_error(e).code == RoleErrorCode.ROLE_NOT_FOUND, \
-                    f"Unexpected error while waiting for get_role to succeed: {e}"
-                return False
-
-        wait_until(lambda: update_maintains_members(self.role_name1,
-                                                    expected_members=[alice]),
-                   timeout_sec=10,
-                   backoff_sec=2,
-                   err_msg="Role update hasn't completed in time")
-
-        self.logger.debug("Test that updated role no longer exists")
-        with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
-            self.superuser_admin.update_role(
-                role=self.role_name0, update=RoleUpdate(role=self.role_name2))
-
-        self.logger.debug(
-            "Test that update_role rejects renaming to an existing role")
-        self._create_and_wait_for_role(role=self.role_name2)
-        with expect_role_error(RoleErrorCode.ROLE_NAME_CONFLICT):
-            self.superuser_admin.update_role(
-                role=self.role_name1, update=RoleUpdate(role=self.role_name2))
 
     @cluster(num_nodes=3)
     def test_delete_role(self):
@@ -682,13 +607,17 @@ class RBACTelemetryTest(RBACTestBase):
             self.logger.debug(f'New report: {self.metrics.reports()[-1]}')
             return self.metrics.reports()[-1]
 
-        assert wait_for_new_report()['has_rbac'] is False
+        assert wait_for_new_report()['rbac_role_count'] == 0
 
-        self.superuser_admin.create_role(role=self.role_name0)
+        names = ['a', 'b', 'c', 'd', 'e', 'f']
 
-        wait_until(lambda: wait_for_new_report()['has_rbac'] is True,
-                   timeout_sec=20,
-                   backoff_sec=1)
+        for n in names:
+            self.superuser_admin.create_role(role=n)
+
+        wait_until(
+            lambda: wait_for_new_report()['rbac_role_count'] == len(names),
+            timeout_sec=20,
+            backoff_sec=1)
         self.metrics.stop()
 
 
@@ -755,8 +684,8 @@ class RBACEndToEndTest(RBACTestBase):
         super().setUp()
 
     def role_for_user(self, role: str, user: RoleMember):
-        res = self.superuser_admin.list_role_members(role=role)
-        return user in RoleMemberList.from_response(res)
+        res = self.superuser_admin.list_roles(principal=user.name)
+        return RoleDescription(role) in RolesList.from_response(res)
 
     def has_topics(self, client: RpkTool):
         tps = client.list_topics()
@@ -858,3 +787,164 @@ class RBACEndToEndTest(RBACTestBase):
         assert rec['topic'] == self.topic0, f"Unexpected topic {rec['topic']}"
         assert rec['key'] == 'foo', f"Unexpected key {rec['key']}"
         assert rec['value'] == 'bar', f"Unexpected value {rec['value']}"
+
+    @cluster(num_nodes=3)
+    @parametrize(delete_acls=True)
+    @parametrize(delete_acls=False)
+    @parametrize(delete_acls=None)
+    def test_delete_role_acls(self, delete_acls):
+        alice = RoleMember.User('alice')
+        r0_principal = f"RedpandaRole:{self.role_name0}"
+        r1_principal = f"RedpandaRole:{self.role_name1}"
+
+        res = self.superuser_admin.update_role_members(role=self.role_name0,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to create role"
+        res = self.superuser_admin.update_role_members(role=self.role_name1,
+                                                       add=[alice],
+                                                       create=True)
+        assert res.status_code == 200, "Failed to create role"
+
+        self.su_rpk.sasl_allow_principal(r0_principal, ['read'], 'topic', '*')
+        self.su_rpk.sasl_allow_principal(r0_principal, ['all'], 'group', '*')
+        self.su_rpk.acl_create_allow_cluster(username=self.role_name0,
+                                             op='all',
+                                             principal_type="RedpandaRole")
+        self.su_rpk.sasl_allow_principal(r0_principal, ['all'],
+                                         'transactional-id', '*')
+        self.su_rpk.sasl_allow_principal(r1_principal, ['write'], 'topic', '*')
+
+        for r in [self.role_name0, self.role_name1]:
+            wait_until(lambda: self.role_for_user(r, alice),
+                       timeout_sec=10,
+                       backoff_sec=1,
+                       retry_on_exc=True)
+
+        def acl_list():
+            return list(
+                filter(lambda l: l != '' and 'PRINCIPAL' not in l,
+                       self.su_rpk.acl_list().split('\n')))
+
+        wait_until(lambda: len(acl_list()) == 5,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        self.superuser_admin.delete_role(role=self.role_name0,
+                                         delete_acls=delete_acls)
+
+        wait_until(lambda: not self.role_for_user(self.role_name0, alice),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
+
+        def expect_acls_deleted():
+            return wait_until_result(lambda:
+                                     (len(acl_list()) == 1, acl_list()),
+                                     timeout_sec=10,
+                                     backoff_sec=1,
+                                     retry_on_exc=True)
+
+        if delete_acls:
+            acls = expect_acls_deleted()
+            assert not any(r0_principal in a for a in acls)
+        else:
+            with expect_exception(ducktape.errors.TimeoutError,
+                                  lambda e: True):
+                expect_acls_deleted()
+
+        roles = RolesList.from_response(self.superuser_admin.list_roles())
+
+        assert len(roles) == 1, f"Wrong number of roles {str(roles)}"
+
+
+class RolePersistenceTest(RBACTestBase):
+    def _wait_for_everything_snapshotted(self, nodes: list, admin: Admin):
+        controller_max_offset = max(
+            admin.get_controller_status(n)['committed_index'] for n in nodes)
+        self.logger.debug(f"controller max offset is {controller_max_offset}")
+
+        for n in nodes:
+            self.redpanda.wait_for_controller_snapshot(
+                node=n, prev_start_offset=(controller_max_offset - 1))
+
+        return controller_max_offset
+
+    @cluster(num_nodes=3)
+    def test_role_survives_restart(self):
+        self.redpanda.set_feature_active('controller_snapshots',
+                                         True,
+                                         timeout_sec=10)
+
+        self.redpanda.set_cluster_config(
+            {'controller_snapshot_max_age_sec': 1})
+
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        admin = self.superuser_admin
+
+        names = [
+            'a',
+            'b',
+            'c',
+            'd',
+            'e',
+            'f',
+        ]
+
+        for n in names:
+            admin.create_role(role=n)
+
+        rand_role = random.choice(names)
+
+        users = [
+            'u1',
+            'u2',
+            'u3',
+            'u4',
+            'u5',
+            'u6',
+        ]
+
+        self.logger.debug(
+            "Submit several updates, each of which is destructive.")
+
+        for u in users:
+            admin.update_role_members(role=rand_role, add=[RoleMember.User(u)])
+
+        partition = len(users) // 2
+
+        to_remove = [RoleMember.User(u) for u in users[partition:]]
+
+        admin.update_role_members(role=rand_role, remove=to_remove)
+
+        self._wait_for_everything_snapshotted(self.redpanda.nodes, admin)
+
+        r = wait_until_result(
+            lambda: Role.from_response(admin.get_role(role=rand_role)),
+            timeout_sec=10,
+            backoff_sec=1,
+            retry_on_exc=True)
+
+        assert r.name == rand_role
+
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        for n in names:
+            r = wait_until_result(
+                lambda: Role.from_response(admin.get_role(role=n)),
+                timeout_sec=10,
+                backoff_sec=1,
+                retry_on_exc=True)
+            assert r.name == n
+
+        expected = [RoleMember.User(u) for u in users[:partition]]
+
+        wait_until(lambda: set(
+            RoleMemberList.from_response(
+                admin.list_role_members(role=rand_role)).members) == set(
+                    expected),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)

@@ -161,7 +161,14 @@ public:
 
     void reset_leaders();
     ss::future<> refresh_health_monitor();
-    cluster::partition_leaders_table::leaders_info_t get_leaders() const;
+
+    /**
+     * Get a snapshot of leaders from the partition_leaders_table.
+     *
+     * @throws if concurrent modification is detected.
+     */
+    ss::future<cluster::partition_leaders_table::leaders_info_t>
+    get_leaders() const;
 
     void set_is_node_isolated_status(bool is_node_isolated);
     bool is_node_isolated();

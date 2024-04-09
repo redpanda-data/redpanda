@@ -9,22 +9,20 @@
  * by the Apache License, Version 2.0
  */
 
-#include "wasm/transform_module.h"
+#include "transform_module.h"
 
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "ffi.h"
+#include "logger.h"
 #include "model/compression.h"
 #include "model/record.h"
-#include "model/record_batch_types.h"
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "utils/named_type.h"
-#include "utils/vint.h"
+#include "wasi.h"
 #include "wasm/api.h"
-#include "wasm/ffi.h"
-#include "wasm/logger.h"
-#include "wasm/wasi.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/coroutine/maybe_yield.hh>

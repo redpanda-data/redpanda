@@ -10,75 +10,119 @@
  */
 #pragma once
 #include "security/acl.h"
-#include "utils/absl_sstring_hash.h"
+#include "security/acl_entry_set.h"
 
 #include <absl/container/btree_map.h>
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/node_hash_set.h>
+
+#include <ranges>
 
 namespace security {
 
 /*
- * A collection of ACL entries.
+ * Container for ACLs.
  */
-class acl_entry_set {
+class acl_matches;
+class acl_store {
 public:
-    using container_type = absl::node_hash_set<acl_entry>;
-    using role_cache_type
-      = absl::flat_hash_map<ss::sstring, ssize_t, sstring_hash, sstring_eq>;
-    using const_iterator = container_type::const_iterator;
-    using const_reference = std::reference_wrapper<const acl_entry>;
+    acl_store() = default;
+    acl_store(acl_store&&) noexcept = default;
+    acl_store& operator=(acl_store&&) noexcept = default;
+    acl_store(const acl_store&) = delete;
+    acl_store& operator=(const acl_store&) = delete;
+    ~acl_store() noexcept = default;
 
-    acl_entry_set() noexcept = default;
-    acl_entry_set(acl_entry_set&&) noexcept = default;
-    acl_entry_set& operator=(acl_entry_set&&) noexcept = default;
-    acl_entry_set(const acl_entry_set&) = delete;
-    acl_entry_set& operator=(const acl_entry_set&) = delete;
-    ~acl_entry_set() noexcept = default;
-
-    void insert(acl_entry entry);
-    void erase(container_type::const_iterator it) {
-        remove_if_role(it->principal());
-        _entries.erase(it);
-    }
-    void remove_if_role(const acl_principal_base& p);
-
-    template<typename Predicate>
-    void erase_if(Predicate pred) {
-        absl::erase_if(_entries, pred);
+    void add_bindings(const std::vector<acl_binding>& bindings) {
+        for (auto& binding : bindings) {
+            auto& entries = _acls[binding.pattern()];
+            entries.insert(binding.entry());
+            entries.rehash();
+        }
     }
 
-    void rehash() {
-        _entries.rehash(0);
-        _role_cache.rehash(0);
-    }
+    // remove bindings according the input filters and return the bindings that
+    // matched in the same order. the `dry_run` flag will identify all of the
+    // bindings to be removed but not perform the destructive operation.
+    std::vector<std::vector<acl_binding>> remove_bindings(
+      const std::vector<acl_binding_filter>&, bool dry_run = false);
 
-    bool empty() const { return _entries.empty(); }
+    std::vector<acl_binding> acls(const acl_binding_filter&) const;
 
-    std::optional<const_reference> find(
-      acl_operation operation,
-      const acl_principal_base& principal,
-      const acl_host& host,
-      acl_permission perm) const;
+    /**
+     * WARNING: The acl_matches returned from this function may contain
+     * iterators into a container which is NOT iterator stable. Use of these
+     * matches across a yield point or acl_store update of any kind may (and
+     * likely will) result in UNDEFINED BEHAVIOR.
+     */
+    acl_matches find(resource_type, const ss::sstring&) const;
 
-    bool contains(
-      acl_operation operation,
-      const acl_principal_base& principal,
-      const acl_host& host,
-      acl_permission perm) const {
-        return find(operation, principal, host, perm).has_value();
-    }
-
-    const_iterator begin() const { return _entries.cbegin(); }
-    const_iterator end() const { return _entries.cend(); }
+    // NOTE: the following functions assume that acl_store doesn't change across
+    // yield points.
+    ss::future<fragmented_vector<acl_binding>> all_bindings() const;
+    ss::future<> reset_bindings(const fragmented_vector<acl_binding>& bindings);
 
 private:
-    container_type _entries;
-    role_cache_type _role_cache;
+    /*
+     * resource pattern ordering:
+     *
+     *  1. resource type
+     *  2. pattern type
+     *  3. name (in reverse order)
+     */
+    struct resource_pattern_compare {
+        bool
+        operator()(const resource_pattern& a, const resource_pattern& b) const {
+            if (a.resource() != b.resource()) {
+                return a.resource() < b.resource();
+            }
+            if (a.pattern() != b.pattern()) {
+                return a.pattern() < b.pattern();
+            }
+            return b.name() < a.name();
+        }
+    };
+
+    using container_type = absl::
+      btree_map<resource_pattern, acl_entry_set, resource_pattern_compare>;
+    container_type _acls;
+
+    /**
+     * WARNING: The view returned by this function contains iterators into a
+     * container which is NOT iterator stable. Use of this view across a yield
+     * point or acl_store update of any kind may (and likely will) result in
+     * UNDEFINED BEHAVIOR.
+     */
+    template<typename RefT>
+    static auto get_prefix_view(
+      const container_type& acls,
+      resource_type resource,
+      const ss::sstring& name) {
+        auto it = acls.lower_bound(
+          resource_pattern(resource, name, pattern_type::prefixed));
+
+        auto end = acls.upper_bound(resource_pattern(
+          resource, name.substr(0, 1), pattern_type::prefixed));
+
+        return std::ranges::subrange(it, end)
+               | std::views::filter([&name](const auto& e) {
+                     return std::string_view(name).starts_with(e.first.name());
+                 })
+               | std::views::transform([](const auto& e) {
+                     return RefT{e.first, e.second};
+                 });
+    }
+
+public:
+    template<
+      typename RefT,
+      typename ViewT = decltype(get_prefix_view<RefT>(
+        std::declval<container_type>(),
+        std::declval<resource_type>(),
+        std::declval<ss::sstring>()))>
+    using prefix_view = ViewT;
 };
 
 /*
- * A lightweight container of references to ACL entries. An instance of this
+ * A lightweight view of references to ACL entries. An instance of this
  * object is created when authorizing and contains ACL matches for the
  * authorization request. Then authorization step searches through the matches
  * based on configured policies and type of authorization request.
@@ -92,15 +136,10 @@ public:
 
     using entry_set_ref = acl_entry_set_match;
 
-    struct acl_match {
-        std::reference_wrapper<const resource_pattern> resource;
-        acl_entry_set::const_reference acl;
-    };
-
     acl_matches(
       std::optional<entry_set_ref> wildcards,
       std::optional<entry_set_ref> literals,
-      std::vector<entry_set_ref> prefixes)
+      acl_store::prefix_view<entry_set_ref> prefixes)
       : wildcards(wildcards)
       , literals(literals)
       , prefixes(std::move(prefixes)) {}
@@ -130,66 +169,10 @@ public:
 private:
     std::optional<entry_set_ref> wildcards;
     std::optional<entry_set_ref> literals;
-    std::vector<entry_set_ref> prefixes;
-};
-
-/*
- * Container for ACLs.
- */
-class acl_store {
-public:
-    acl_store() = default;
-    acl_store(acl_store&&) noexcept = default;
-    acl_store& operator=(acl_store&&) noexcept = default;
-    acl_store(const acl_store&) = delete;
-    acl_store& operator=(const acl_store&) = delete;
-    ~acl_store() noexcept = default;
-
-    void add_bindings(const std::vector<acl_binding>& bindings) {
-        for (auto& binding : bindings) {
-            auto& entries = _acls[binding.pattern()];
-            entries.insert(binding.entry());
-            entries.rehash();
-        }
-    }
-
-    // remove bindings according the input filters and return the bindings that
-    // matched in the same order. the `dry_run` flag will identify all of the
-    // bindings to be removed but not perform the destructive operation.
-    std::vector<std::vector<acl_binding>> remove_bindings(
-      const std::vector<acl_binding_filter>&, bool dry_run = false);
-
-    std::vector<acl_binding> acls(const acl_binding_filter&) const;
-    acl_matches find(resource_type, const ss::sstring&) const;
-
-    // NOTE: the following functions assume that acl_store doesn't change across
-    // yield points.
-    ss::future<fragmented_vector<acl_binding>> all_bindings() const;
-    ss::future<> reset_bindings(const fragmented_vector<acl_binding>& bindings);
-
-private:
-    /*
-     * resource pattern ordering:
-     *
-     *  1. resource type
-     *  2. pattern type
-     *  3. name (in reverse order)
-     */
-    struct resource_pattern_compare {
-        bool
-        operator()(const resource_pattern& a, const resource_pattern& b) const {
-            if (a.resource() != b.resource()) {
-                return a.resource() < b.resource();
-            }
-            if (a.pattern() != b.pattern()) {
-                return a.pattern() < b.pattern();
-            }
-            return b.name() < a.name();
-        }
-    };
-
-    absl::btree_map<resource_pattern, acl_entry_set, resource_pattern_compare>
-      _acls;
+    // NOTE(oren): mutable because filter_view & transform_view don't support
+    // const iterators as of C++20. Both are slated for C++23, so we can remove
+    // the mutable specifier when we bump compilers.
+    mutable acl_store::prefix_view<entry_set_ref> prefixes;
 };
 
 } // namespace security

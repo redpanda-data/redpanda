@@ -13,8 +13,12 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_map.h"
 #include "absl/container/node_hash_set.h"
+#include "container/fragmented_vector.h"
+#include "security/fwd.h"
 #include "security/role.h"
 #include "security/types.h"
+
+#include <seastar/util/noncopyable_function.hh>
 
 #include <absl/algorithm/container.h>
 #include <boost/range/iterator_range.hpp>
@@ -73,6 +77,10 @@ class role_store {
       name_view_set_type,
       detail::role_member_hash,
       detail::role_member_eq>;
+    using role_accessor = std::pair<
+      role_name_view, /* role_name */
+      ss::noncopyable_function<const members_store_type&(void)>>;
+    using range_query_container_type = fragmented_vector<role_name_view>;
 
 public:
     using roles_range
@@ -89,7 +97,7 @@ public:
     template<typename T>
     requires std::ranges::range<T>
              && std::convertible_to<std::ranges::range_value_t<T>, role_member>
-    bool put(role_name name, T&& role) {
+    bool put(role_name name, const T& role) {
         auto [it, inserted] = _roles.insert(std::move(name));
         if (inserted) {
             for (const auto& m : role) {
@@ -99,18 +107,7 @@ public:
         return inserted;
     }
 
-    std::optional<role> get(const role_name& name) const {
-        if (!_roles.contains(name)) {
-            return std::nullopt;
-        }
-        auto member_rng = _members_store
-                          | std::views::filter(
-                            [&name](const members_store_type::value_type& e) {
-                                return e.second.contains(role_name_view{name});
-                            })
-                          | std::views::keys;
-        return role{{member_rng.begin(), member_rng.end()}};
-    }
+    std::optional<role> get(const role_name& name) const;
 
     template<RoleMember T>
     roles_range roles_for_member(const T& user) const {
@@ -120,20 +117,13 @@ public:
         return {};
     }
 
-    bool remove(const role_name& name) {
-        absl::c_for_each(
-          _members_store, [&name](members_store_type::value_type& e) {
-              e.second.erase(role_name_view{name});
-          });
-        return _roles.erase(name) > 0;
-    }
-
+    bool remove(const role_name& name);
     bool contains(const role_name& name) const { return _roles.contains(name); }
-
     void clear() {
         _members_store.clear();
         _roles.clear();
     }
+    size_t size() const { return _roles.size(); }
 
     // Retrieve a list of role_names that satisfy some predicate
     //
@@ -143,34 +133,18 @@ public:
     //     return role_store::has_member(r, mem) &&
     //       role_store::name_prefix_filter(e, "foo");
     // });
-    auto range(auto&& pred) const {
-        return _roles | std::views::transform([this](const auto& e) {
-                   return std::make_pair(
-                     role_name_view{e}, [this]() -> const members_store_type& {
-                         return _members_store;
-                     });
-               })
-               | std::views::filter(std::forward<decltype(pred)>(pred))
-               | std::views::keys;
-    }
+    range_query_container_type
+    range(std::function<bool(const role_accessor&)>&& pred) const;
 
     static constexpr auto name_prefix_filter =
-      [](
-        const std::pair<
-          role_name_view, /* role_name */
-          std::function<const members_store_type&(void)>>& e,
-        std::string_view filter) {
-          const auto [name, _] = e;
+      [](const role_accessor& e, std::string_view filter) {
+          const auto& name = e.first;
           return filter.empty() || name().starts_with(filter);
       };
 
     static constexpr auto has_member =
-      [](
-        const std::pair<
-          role_name_view, /* role_name  */
-          std::function<const members_store_type&(void)>>& e,
-        const security::role_member& member) {
-          const auto [name, get_ms] = e;
+      [](const role_accessor& e, const RoleMember auto& member) {
+          const auto& [name, get_ms] = e;
           const auto& ms = get_ms();
           if (auto it = ms.find(member); it != ms.end()) {
               return it->second.contains(name);

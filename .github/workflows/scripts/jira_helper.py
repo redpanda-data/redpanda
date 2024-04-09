@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+from atlassian import Jira
+import argparse
+from enum import Enum
+import json
+import logging
+import os
+import requests
+from requests.auth import HTTPBasicAuth
+import subprocess
+import sys
+import tempfile
+from typing import Tuple
+
+
+class NoJiraIssueFound(Exception):
+    pass
+
+
+class MultipleJiraIssuesFound(Exception):
+    pass
+
+
+class Command(Enum):
+    ISSUE = 1
+    UPDATE_COMMENT = 2
+
+
+class JiraHelper():
+    _base_url = 'https://redpandadata.atlassian.net'
+    _project_key = 'CORE'
+    _done_status_name = 'DONE'
+    _backlog_status_name = 'BACKLOG'
+
+    def __init__(self, command: Command, logger: logging.Logger):
+        self.logger: logging.Logger = logger
+        self.command: Command = command
+        self._check_env()
+        self._jira = Jira(url=self._base_url,
+                          username=os.environ['JIRA_USER'],
+                          password=os.environ['JIRA_TOKEN'],
+                          cloud=True)
+
+    @staticmethod
+    def _get_auth() -> HTTPBasicAuth:
+        return HTTPBasicAuth(username=os.environ['JIRA_USER'],
+                             password=os.environ['JIRA_TOKEN'])
+
+    def _check_env_val(self, val: str):
+        self.logger.debug(f'Checking environment for {val}')
+        try:
+            assert os.environ[
+                val] is not None, f"Environment variable {val} must be set"
+        except KeyError:
+            assert False, f"Environment variable {val} must be set"
+
+    def _check_env(self):
+        self._check_env_val('JIRA_USER')
+        self._check_env_val('JIRA_TOKEN')
+
+        if self.command == Command.ISSUE:
+            self._check_env_val('ISSUE_BODY')
+            self._check_env_val('ISSUE_URL')
+            self._check_env_val('ISSUE_TITLE')
+            self._check_env_val('ISSUE_LABELS')
+            self._check_env_val('ISSUE_STATE')
+            self._check_env_val('EVENT_NAME')
+        elif self.command == Command.UPDATE_COMMENT:
+            self._check_env_val('ISSUE_URL')
+            self._check_env_val('ISSUE_COMMENT')
+        else:
+            raise NotImplementedError(
+                f"Command {self.command} is not implemented")
+
+    def _get_gh_issue_comments(self, url):
+        return json.loads(
+            self._get_gh_output(f'gh issue view {url} --json comments'))
+
+    def _issue_helper(self):
+        event_name = os.environ['EVENT_NAME']
+        # Make sure the issue is closed
+        issue_is_closed = event_name == "closed" or event_name == "deleted"
+        # If re-opened, then the issue should transition to backlog
+        issue_reopened = event_name == "reopened"
+        issue_edited = event_name == "edited" or event_name == "labeled" or event_name == "unlabeled"
+
+        issue_id = self._find_or_create_issue()
+        self.logger.debug(f'Issue ID: {issue_id}')
+
+        if issue_edited:
+            self.logger.debug(f'Issue {issue_id} has been edited, update it')
+            self._update_issue(issue_id)
+        elif issue_reopened:
+            self.logger.debug(
+                f'Issue {issue_id} reopened... transitioning to {self._backlog_status_name}'
+            )
+            self._reopen_issue(issue_id)
+        elif issue_is_closed:
+            self.logger.debug(
+                f'Issue {issue_id} has been closed, transitioning to {self._done_status_name}'
+            )
+            self._close_issue(issue_id)
+
+    def execute(self):
+        self.logger.debug(f'Executing command {self.command}')
+        if self.command == Command.ISSUE:
+            self._issue_helper()
+        elif self.command == Command.UPDATE_COMMENT:
+            self._update_comment()
+        else:
+            raise NotImplementedError(
+                f'Command {self.command} not yet implemented')
+
+    def _get_gh_output(self, command) -> str:
+        return subprocess.check_output(command.split(' ')).decode()
+
+    def _transition_issue(self, issue_id, status_name):
+        try:
+            self._jira.issue_transition(issue_key=issue_id, status=status_name)
+        except Exception as e:
+            if "Issue does not exist" in str(e):
+                raise NoJiraIssueFound()
+            else:
+                raise e
+
+    def _close_issue(self, issue_id):
+        self._transition_issue(issue_id, self._done_status_name)
+        self._add_comment_to_issue(
+            issue_id,
+            f"Closing JIRA issue from GitHub issue {os.environ['ISSUE_URL']}")
+
+    def _find_or_create_issue(self):
+        try:
+            return self._find_jira_issue_by_gh_issue_url()
+        except NoJiraIssueFound:
+            pass
+
+        self.logger.debug("issue doesn't exist... creating it")
+
+        issue_id = self._create_issue()
+        self.logger.debug(f'Created issue {issue_id}, now adding comments')
+        issue_comments = self._get_gh_issue_comments(os.environ['ISSUE_URL'])
+        self.logger.debug(f'Comments: {issue_comments}')
+        for comment in issue_comments['comments']:
+            self._add_comment_to_issue(issue_id, comment['body'])
+
+        return issue_id
+
+    def _reopen_issue(self, issue_id):
+        self._transition_issue(issue_id, self._backlog_status_name)
+        self._add_comment_to_issue(
+            issue_id,
+            f"Reopening JIRA issue from Github issue {os.environ['ISSUE_URL']}"
+        )
+
+    def _get_issue_type(self, labels) -> str:
+        if 'kind/bug' in labels:
+            return 'Bug'
+        else:
+            return 'Task'
+
+    def _get_gh_issue_labels(self):
+        try:
+            labels = os.environ['ISSUE_LABELS']
+            self.logger.debug(f'Labels: {labels}')
+            return labels.split(',')
+        except Exception:
+            return []
+
+    def _create_issue(self):
+        issue_body = os.environ['ISSUE_BODY']
+        issue_url = os.environ['ISSUE_URL']
+        issue_title = os.environ['ISSUE_TITLE']
+        labels = self._get_gh_issue_labels()
+        issue_type = self._get_issue_type(labels)
+
+        fields = {
+            "description": f"{issue_body}",
+            "summary": f"{issue_title}",
+            "issuetype": {
+                "name": f"{issue_type}"
+            },
+            "labels": labels,
+            "project": {
+                "key": f"{self._project_key}"
+            },
+            "customfield_10052": f"{issue_url}"
+        }
+        self.logger.debug(
+            f"Creating an issue of type {issue_type} with fields {fields}")
+        new_issue = self._jira.issue_create(fields=fields)
+        issue_key = new_issue['key']
+        issue_id = new_issue['id']
+
+        message = """
+JIRA Issue created from GitHub issue.  Any updates in JIRA will _not_ be pushed back
+to the GitHub issue.  New comments from GitHub will sync with JIRA issue, but not
+modifications.  Please refer to the External GitHub Link field to get to the GitHub
+issue that triggered this issue's creation.
+"""
+
+        self._add_comment_to_issue(issue_id, message)
+
+        jira_issue_url = f'{self._base_url}/browse/{issue_key}'
+        new_body = issue_body + f"\n\nJIRA Link: [{issue_key}]({jira_issue_url})"
+        self.logger.debug(
+            f"Updating issue text to include link to {jira_issue_url}")
+
+        with tempfile.NamedTemporaryFile(delete=False) as tf:
+            tf.write(new_body.encode())
+            tf.flush()
+            tf.close
+            cmd = ["gh", "issue", "edit", issue_url, "--body-file", tf.name]
+            self.logger.debug(f'Executing gh command: {cmd}')
+            subprocess.run(cmd)
+
+        return issue_id
+
+    def _add_comment_to_issue(self, issue_id, comment):
+        self.logger.debug(
+            f'Updating issue {issue_id} with comment "{comment}"')
+        try:
+            self._jira.issue_add_comment(issue_key=issue_id, comment=comment)
+        except Exception as e:
+            if "Issue does not exist" in str(e):
+                raise NoJiraIssueFound()
+            else:
+                raise e
+
+    def _update_comment(self):
+        issue_id = self._find_jira_issue_by_gh_issue_url()
+        comment_body = os.environ['ISSUE_COMMENT']
+        self.logger.debug(f'Found issue with ID {issue_id}')
+        self._add_comment_to_issue(issue_id, comment_body)
+
+    def _update_issue(self, issue_id):
+        gh_issue_title = os.environ['ISSUE_TITLE']
+        gh_issue_labels = self._get_gh_issue_labels()
+        gh_issue_labels.sort()
+        self.logger.debug(f'GH Labels: {gh_issue_labels}')
+
+        fields = {}
+        jira_issue_summary = self._jira.issue_field_value(issue_id,
+                                                          field='summary')
+        if jira_issue_summary != gh_issue_title:
+            self.logger.debug(
+                f'Jira issue {issue_id} has a different title: "{jira_issue_summary}" != "{gh_issue_title}")'
+            )
+            fields['summary'] = gh_issue_title
+
+        jira_issue_labels = self._jira.issue_field_value(issue_id,
+                                                         field='labels')
+        jira_issue_labels.sort()
+        if jira_issue_labels != gh_issue_labels:
+            self.logger.debug(
+                f'Jira issue {issue_id} labels do not match GH issue: "{jira_issue_labels}" != "{gh_issue_labels}"'
+            )
+            fields['labels'] = gh_issue_labels
+
+        if len(fields) == 0:
+            self.logger.debug('No updates necessary')
+        else:
+            self.logger.debug(f'Submitting update: {fields}')
+            self._jira.update_issue_field(issue_id, fields, notify_users=True)
+
+    def _find_jira_issue_by_gh_issue_url(self) -> str:
+        issue_url = os.environ['ISSUE_URL']
+        jql_request = f'project = {self._project_key} and "External GitHub Issue[URL Field]" = "{issue_url}"'
+        issues = self._jira.jql(jql=jql_request, fields='summary')
+        issues = issues['issues']
+        if len(issues) == 0:
+            raise NoJiraIssueFound()
+        elif len(issues) > 1:
+            raise MultipleJiraIssuesFound()
+        else:
+            return issues[0]["id"]
+
+
+def parse_args() -> Tuple[Command, bool]:
+    parser = argparse.ArgumentParser(
+        prog='jira-helper', description='JIRA Github Integration script')
+    parser.add_argument('command', choices=[e.name for e in Command])
+    parser.add_argument('-v',
+                        '--verbose',
+                        action='store_true',
+                        help='Increase verbosity')
+    args = parser.parse_args()
+    return (Command[args.command], args.verbose)
+
+
+def main():
+    logger = logging.getLogger(__name__)
+    (command, verbose) = parse_args()
+    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
+    logger.info(f'Executing command {command}')
+    helper = JiraHelper(command, logger)
+    helper.execute()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

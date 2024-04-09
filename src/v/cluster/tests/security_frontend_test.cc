@@ -60,7 +60,6 @@ static std::vector<role> make_random_roles(size_t N, size_t N_MEM) {
 }
 
 static const std::vector<role_name> orig_names = make_random_names(N_ROLES);
-static const std::vector<role_name> updated_names = make_random_names(N_ROLES);
 static const std::vector<role> orig_roles = make_random_roles(
   N_ROLES, N_MEMBERS_PER_ROLE);
 static const std::vector<role> updated_roles = make_random_roles(
@@ -114,13 +113,6 @@ FIXTURE_TEST(test_role_management, cluster_test_fixture) {
         });
     };
 
-    auto rename_role = [&try_command](
-                         const role_name& n1, const role_name& n2) {
-        return try_command([&n1, &n2](security_frontend& fe) {
-            return fe.rename_role(n1, n2, model::timeout_clock::now() + 10s);
-        });
-    };
-
     auto update_role = [&try_command](const role_name& n, const role& r) {
         return try_command([&n, &r](security_frontend& fe) {
             return fe.update_role(n, r, model::timeout_clock::now() + 10s);
@@ -154,44 +146,30 @@ FIXTURE_TEST(test_role_management, cluster_test_fixture) {
         BOOST_CHECK_EQUAL(got.value(), get<1>(expect));
     }
 
-    // ...And change their names...
-    for (const auto& it : container::zip(orig_names, updated_names)) {
-        BOOST_CHECK_EQUAL(
-          rename_role(get<0>(it), get<1>(it)), cluster::errc::success);
-    }
-
-    for (const auto& expect : container::zip(updated_names, orig_roles)) {
-        auto got = store.get(get<0>(expect));
-        BOOST_REQUIRE(got.has_value());
-        BOOST_CHECK_EQUAL(got.value(), get<1>(expect));
-    }
-
     // ...And change their contents...
-    for (const auto& it : container::zip(updated_names, updated_roles)) {
+    for (const auto& it : container::zip(orig_names, updated_roles)) {
         BOOST_CHECK_EQUAL(
           update_role(get<0>(it), get<1>(it)), cluster::errc::success);
     }
 
-    for (const auto& expect : container::zip(updated_names, updated_roles)) {
+    for (const auto& expect : container::zip(orig_names, updated_roles)) {
         auto got = store.get(get<0>(expect));
         BOOST_REQUIRE(got.has_value());
         BOOST_CHECK_EQUAL(got.value(), get<1>(expect));
     }
 
     // ...And remove them from the system...
-    for (const auto& name : updated_names) {
+    for (const auto& name : orig_names) {
         BOOST_CHECK_EQUAL(delete_role(name), cluster::errc::success);
     }
 
-    for (const auto& it : container::zip(orig_names, updated_names)) {
-        BOOST_CHECK(!store.get(get<0>(it)).has_value());
-        BOOST_CHECK(!store.get(get<1>(it)).has_value());
+    for (const auto& name : orig_names) {
+        BOOST_CHECK(!store.get(name).has_value());
     }
 
     // Store should be empty at this point
 
-    const auto& some_name = updated_names[0];
-    const auto& other_name = updated_names[1];
+    const auto& some_name = orig_names[0];
     const auto& some_role = orig_roles.back();
 
     // Updating a nonexistent role should fail and have no effect
@@ -203,23 +181,11 @@ FIXTURE_TEST(test_role_management, cluster_test_fixture) {
     BOOST_CHECK_EQUAL(
       delete_role(some_name), cluster::errc::role_does_not_exist);
 
-    // And for renaming a nonexistent role
-    BOOST_CHECK_EQUAL(
-      rename_role(some_name, other_name), cluster::errc::role_does_not_exist);
-    BOOST_CHECK(!store.get(other_name).has_value());
-
     // Create role should fail if the role already exists
     BOOST_CHECK_EQUAL(
       create_role(some_name, some_role), cluster::errc::success);
     BOOST_CHECK_EQUAL(
       create_role(some_name, some_role), cluster::errc::role_exists);
-
-    // Rename role should also fail if the desired role name is already taken
-    BOOST_CHECK_EQUAL(
-      create_role(other_name, some_role), cluster::errc::success);
-
-    BOOST_CHECK_EQUAL(
-      rename_role(some_name, other_name), cluster::errc::role_exists);
 
     // Disable RBAC feature and confirm errors
 
@@ -240,9 +206,6 @@ FIXTURE_TEST(test_role_management, cluster_test_fixture) {
 
     BOOST_CHECK_EQUAL(
       create_role(role_name{"foo"}, role{}), cluster::errc::feature_disabled);
-    BOOST_CHECK_EQUAL(
-      rename_role(role_name{"foo"}, role_name{"bar"}),
-      cluster::errc::feature_disabled);
     BOOST_CHECK_EQUAL(
       update_role(role_name{"foo"}, role{}), cluster::errc::feature_disabled);
     BOOST_CHECK_EQUAL(

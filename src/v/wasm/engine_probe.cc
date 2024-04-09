@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "wasm/engine_probe.h"
+#include "engine_probe.h"
 
 #include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"

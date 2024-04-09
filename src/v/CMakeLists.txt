@@ -24,7 +24,8 @@ if(REDPANDA_RUN_CLANG_TIDY)
         bugprone-stringview-nullptr
         bugprone-unused-return-value
         bugprone-suspicious-string-compare
-        cppcoreguidelines-rvalue-reference-param-not-moved
+        # TODO: Reenable this after fixing all the noise (and nuking ADL)
+        # cppcoreguidelines-rvalue-reference-param-not-moved
         misc-unused-using-decls
         misc-unused-alias-decls
         modernize-redundant-void-arg
@@ -94,14 +95,17 @@ add_subdirectory(http)
 add_subdirectory(container)
 add_subdirectory(strings)
 add_subdirectory(crypto)
+add_subdirectory(cloud_roles)
+add_subdirectory(syschecks)
+add_subdirectory(io)
+add_subdirectory(ssx)
+add_subdirectory(wasm)
+add_subdirectory(transform)
 
 # libraries
 add_subdirectory(test_utils)
-add_subdirectory(io)
-add_subdirectory(ssx)
 add_subdirectory(finjector)
 add_subdirectory(utils)
-add_subdirectory(syschecks)
 add_subdirectory(net)
 add_subdirectory(rpc)
 add_subdirectory(metrics)
@@ -120,13 +124,10 @@ add_subdirectory(archival)
 add_subdirectory(security)
 add_subdirectory(serde)
 add_subdirectory(cloud_storage)
-add_subdirectory(cloud_roles)
 add_subdirectory(compat)
 add_subdirectory(rp_util)
 add_subdirectory(resource_mgmt)
 add_subdirectory(migrations)
-add_subdirectory(wasm)
-add_subdirectory(transform)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 

@@ -12,8 +12,12 @@
 #include "producer_state_manager.h"
 
 #include "cluster/logger.h"
+#include "cluster/producer_state.h"
+#include "cluster/types.h"
+#include "config/property.h"
 #include "prometheus/prometheus_sanitize.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/util/defer.hh>
 
@@ -21,9 +25,17 @@ namespace cluster {
 
 producer_state_manager::producer_state_manager(
   config::binding<uint64_t> max_producer_ids,
-  std::chrono::milliseconds producer_expiration_ms)
+  std::chrono::milliseconds producer_expiration_ms,
+  config::binding<size_t> virtual_cluster_min_producer_ids)
   : _producer_expiration_ms(producer_expiration_ms)
-  , _max_ids(std::move(max_producer_ids)) {
+  , _max_ids(std::move(max_producer_ids))
+  , _virtual_cluster_min_producer_ids(
+      std::move(virtual_cluster_min_producer_ids))
+  , _cache(
+      _max_ids,
+      _virtual_cluster_min_producer_ids,
+      pre_eviction_hook{},
+      post_eviction_hook(*this)) {
     setup_metrics();
 }
 
@@ -48,7 +60,7 @@ void producer_state_manager::setup_metrics() {
       prometheus_sanitize::metrics_name("cluster:producer_state_manager"),
       {sm::make_gauge(
          "producer_manager_total_active_producers",
-         [this] { return _num_producers; },
+         [this] { return _cache.get_stats().total_size; },
          sm::description(
            "Total number of active idempotent and transactional producers.")),
        sm::make_counter(
@@ -57,64 +69,50 @@ void producer_state_manager::setup_metrics() {
          sm::description("Number of evicted producers so far."))});
 }
 
-void producer_state_manager::register_producer(producer_state& state) {
-    link(state);
-    ++_num_producers;
-    vlog(clusterlog.debug, "Registered producer: {}", state);
+void producer_state_manager::register_producer(
+  producer_state& state, std::optional<model::vcluster_id> vcluster) {
+    vlog(
+      clusterlog.debug,
+      "Registering producer: {}, current producer count: {}",
+      state,
+      _cache.get_stats().total_size);
+    _cache.insert(vcluster.value_or(no_vcluster), state);
 }
 
-void producer_state_manager::deregister_producer(producer_state& state) {
-    if (state._hook.is_linked()) {
-        state._hook.unlink();
-        --_num_producers;
-        vlog(clusterlog.debug, "Removing producer: {}", state);
-    }
+void producer_state_manager::deregister_producer(
+  producer_state& state, std::optional<model::vcluster_id> vcluster) {
+    vlog(
+      clusterlog.debug,
+      "Removing producer: {}, current producer count: {}",
+      state,
+      _cache.get_stats().total_size);
+    _cache.remove(vcluster.value_or(no_vcluster), state);
 }
-
-void producer_state_manager::link(producer_state& state) {
-    vassert(
-      !state._hook.is_linked(),
-      "double linking of producer state {}",
-      state._id);
-    _lru_producers.push_back(state);
+void producer_state_manager::touch(
+  producer_state& state, std::optional<model::vcluster_id> vcluster) {
+    vlog(clusterlog.trace, "Touched producer: {}", state);
+    _cache.touch(vcluster.value_or(no_vcluster), state);
 }
-
-bool producer_state_manager::can_evict_producer(
-  const producer_state& state) const {
-    return _num_producers > _max_ids()
-           || state.ms_since_last_update() > _producer_expiration_ms;
-}
-
 void producer_state_manager::evict_excess_producers() {
-    ssx::background = ssx::spawn_with_gate_then(_gate, [this]() {
-                          do_evict_excess_producers();
-                      }).finally([this] {
-        if (!_gate.is_closed()) {
-            _reaper.arm(period);
-        }
-    });
-}
-
-void producer_state_manager::do_evict_excess_producers() {
-    if (_gate.is_closed()) {
-        return;
-    }
-    vlog(clusterlog.debug, "producer eviction tick");
-    auto it = _lru_producers.begin();
-    while (it != _lru_producers.end() && can_evict_producer(*it)) {
-        auto it_copy = it;
-        ++it;
-        auto& state = *it_copy;
-        // Here eviction does not need to check if an operation is
-        // currently in progress on the producer at this point. That
-        // is because the producer unlinks itself from this list
-        // temporarily and relinks back after the operation is finished
-        // essentially resulting in the fact that only currently inactive
-        // producers are in the list. This makes the whole logic lock free.
-        ssx::spawn_with_gate(_gate, [&state] { return state.evict(); });
-        --_num_producers;
-        ++_eviction_counter;
+    _cache.evict_older_than<ss::lowres_system_clock>(
+      ss::lowres_system_clock::now() - _producer_expiration_ms);
+    if (!_gate.is_closed()) {
+        _reaper.arm(period);
     }
 }
 
+bool producer_state_manager::pre_eviction_hook::operator()(
+  producer_state& state) const noexcept {
+    return state.can_evict();
+}
+
+producer_state_manager::post_eviction_hook::post_eviction_hook(
+  producer_state_manager& mgr)
+  : _state_manger(mgr) {}
+
+void producer_state_manager::post_eviction_hook::operator()(
+  producer_state& state) const noexcept {
+    _state_manger._eviction_counter++;
+    return state._post_eviction_hook();
+}
 }; // namespace cluster

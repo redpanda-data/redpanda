@@ -14,6 +14,12 @@ import pathlib
 import subprocess
 import re
 
+# Generated code (like our RPCs) can be apart of a module's exports
+# but since there is no file on the filesystem, we need to teach 
+# this script that the file is there.
+GENERATED_CODE = {
+    pathlib.Path("transform/rpc/rpc_service.h")
+}
 
 def get_modules(root):
     """
@@ -114,6 +120,11 @@ def get_module_includes(root, modules):
         # finally, we choose the longest module path to which the include path
         # is relative.
         if len(include_path.parents) == 1:
+            continue
+
+        # Skip over generated code, we can't check the existance of these files
+        # This effectively treats generated code as exported.
+        if include_path in GENERATED_CODE:
             continue
 
         include_module = None

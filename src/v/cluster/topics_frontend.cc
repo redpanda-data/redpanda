@@ -27,6 +27,7 @@
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/shard_table.h"
+#include "cluster/topic_recovery_validator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
@@ -76,7 +77,8 @@ topics_frontend::topics_frontend(
   plugin_table& plugin_table,
   metadata_cache& metadata_cache,
   config::binding<unsigned> hard_max_disk_usage_ratio,
-  config::binding<int16_t> minimum_topic_replication)
+  config::binding<int16_t> minimum_topic_replication,
+  config::binding<bool> partition_autobalancing_topic_aware)
   : _self(self)
   , _stm(s)
   , _allocator(pal)
@@ -93,7 +95,9 @@ topics_frontend::topics_frontend(
   , _pm(pm)
   , _shard_table(shard_table)
   , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio)
-  , _minimum_topic_replication(minimum_topic_replication) {
+  , _minimum_topic_replication(minimum_topic_replication)
+  , _partition_autobalancing_topic_aware(
+      std::move(partition_autobalancing_topic_aware)) {
     if (ss::this_shard_id() == 0) {
         _minimum_topic_replication.watch(
           [this]() { print_rf_warning_message(); });
@@ -341,8 +345,8 @@ make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
     return topic_result(tp_ns, errc::topic_operation_error);
 }
 
-allocation_request
-make_allocation_request(const custom_assignable_topic_configuration& ca_cfg) {
+static allocation_request make_allocation_request(
+  const custom_assignable_topic_configuration& ca_cfg, bool topic_aware) {
     // no custom assignments, lets allocator decide based on partition count
     const auto& tp_ns = ca_cfg.cfg.tp_ns;
     allocation_request req(tp_ns, get_allocation_domain(tp_ns));
@@ -361,6 +365,9 @@ make_allocation_request(const custom_assignable_topic_configuration& ca_cfg) {
             req.partitions.emplace_back(
               cas.id, cas.replicas.size(), std::move(constraints));
         }
+    }
+    if (topic_aware) {
+        req.existing_replica_counts = node2count_t{};
     }
     return req;
 }
@@ -447,8 +454,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
 
         const auto& bucket_config
           = cloud_storage::configuration::get_bucket_config();
-        auto bucket = bucket_config.value();
-        if (!bucket.has_value()) {
+        if (!bucket_config.value().has_value()) {
             vlog(
               clusterlog.error,
               "Can't run topic recovery for the topic {}, {} is not set",
@@ -457,6 +463,10 @@ ss::future<topic_result> topics_frontend::do_create_topic(
             co_return make_error_result(
               assignable_config.cfg.tp_ns, errc::topic_operation_error);
         }
+
+        auto bucket = cloud_storage_clients::bucket_name{
+          bucket_config.value().value()};
+
         auto cfg_source = remote_topic_configuration_source(
           _cloud_storage_api.local());
 
@@ -468,9 +478,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
                .has_value()) {
             errc download_res
               = co_await cfg_source.set_recovered_topic_properties(
-                assignable_config,
-                cloud_storage_clients::bucket_name(bucket.value()),
-                _as.local());
+                assignable_config, bucket, _as.local());
 
             if (download_res != errc::success) {
                 vlog(
@@ -487,6 +495,32 @@ ss::future<topic_result> topics_frontend::do_create_topic(
               "valid "
               "topic manifest");
         }
+        auto validation_map = co_await maybe_validate_recovery_topic(
+          assignable_config, bucket, _cloud_storage_api.local(), _as.local());
+        if (std::ranges::any_of(
+              validation_map,
+              [](std::pair<model::partition_id, validation_result> const& vp) {
+                  using enum validation_result;
+                  switch (vp.second) {
+                  case passed:
+                  case missing_manifest:
+                      // passed or missing_manifest do not fail validation
+                      return false;
+                  case anomaly_detected:
+                  case download_issue:
+                      // failure needs to be handled by an operator,
+                      // download_issue likely is a config issue
+                      return true;
+                  }
+              })) {
+            vlog(
+              clusterlog.error,
+              "Stopping recovery of {} due to validation error",
+              assignable_config.cfg.tp_ns);
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns,
+              make_error_code(errc::validation_of_recovery_topic_failed));
+        }
 
         vlog(
           clusterlog.info,
@@ -496,8 +530,11 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     }
 
     auto units = co_await _allocator.invoke_on(
-      partition_allocator::shard, [assignable_config](partition_allocator& al) {
-          return al.allocate(make_allocation_request(assignable_config));
+      partition_allocator::shard,
+      [assignable_config, topic_aware = _partition_autobalancing_topic_aware()](
+        partition_allocator& al) {
+          return al.allocate(
+            make_allocation_request(assignable_config, topic_aware));
       });
 
     if (!units) {
@@ -1090,7 +1127,8 @@ ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
 ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
   model::ntp ntp,
   std::vector<model::broker_shard> new_replica_set,
-  model::timeout_clock::time_point tout) {
+  model::timeout_clock::time_point tout,
+  dispatch_to_leader dispatch) {
     auto leader = _leaders.local().get_leader(model::controller_ntp);
 
     // no leader available
@@ -1098,17 +1136,24 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
         return ss::make_ready_future<std::error_code>(
           errc::no_leader_controller);
     }
-    // optimization: if update is not in progress return early
-    if (!_topics.local().is_update_in_progress(ntp)) {
-        return ss::make_ready_future<std::error_code>(
-          errc::no_update_in_progress);
-    }
+
     // current node is a leader, just replicate
     if (leader == _self) {
+        // optimization: if update is not in progress return early
+        if (!_topics.local().is_update_in_progress(ntp)) {
+            return ss::make_ready_future<std::error_code>(
+              errc::no_update_in_progress);
+        }
+
         finish_moving_partition_replicas_cmd cmd(
           std::move(ntp), std::move(new_replica_set));
 
         return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+    }
+
+    if (!dispatch) {
+        return ss::make_ready_future<std::error_code>(
+          errc::not_leader_controller);
     }
 
     return _connections.local()
@@ -1269,13 +1314,15 @@ topics_frontend::validate_shard(model::node_id node, uint32_t shard) const {
       });
 }
 
-allocation_request make_allocation_request(
+static allocation_request make_allocation_request(
   int16_t replication_factor,
   const int32_t current_partitions_count,
+  std::optional<node2count_t> existing_replica_counts,
   const create_partitions_configuration& cfg) {
     const auto new_partitions_cnt = cfg.new_total_partition_count
                                     - current_partitions_count;
     allocation_request req(cfg.tp_ns, get_allocation_domain(cfg.tp_ns));
+    req.existing_replica_counts = std::move(existing_replica_counts);
     req.partitions.reserve(new_partitions_cnt);
     for (auto p = 0; p < new_partitions_cnt; ++p) {
         req.partitions.emplace_back(model::partition_id(p), replication_factor);
@@ -1301,12 +1348,30 @@ ss::future<topic_result> topics_frontend::do_create_partition(
         co_return make_error_result(p_cfg.tp_ns, errc::topic_disabled);
     }
 
+    std::optional<node2count_t> existing_replica_counts;
+    if (_partition_autobalancing_topic_aware()) {
+        auto md_ref = _topics.local().get_topic_metadata_ref(p_cfg.tp_ns);
+        if (!md_ref) {
+            co_return make_error_result(p_cfg.tp_ns, errc::topic_not_exists);
+        }
+
+        node2count_t node2count;
+        for (const auto& p_as : md_ref->get().get_assignments()) {
+            for (const auto& r : p_as.replicas) {
+                node2count[r.node_id] += 1;
+            }
+        }
+        existing_replica_counts = std::move(node2count);
+    }
+
     auto units = co_await _allocator.invoke_on(
       partition_allocator::shard,
       [p_cfg,
        current = tp_cfg->partition_count,
-       rf = replication_factor.value()](partition_allocator& al) {
-          return al.allocate(make_allocation_request(rf, current, p_cfg));
+       existing_rc = std::move(existing_replica_counts),
+       rf = replication_factor.value()](partition_allocator& al) mutable {
+          return al.allocate(make_allocation_request(
+            rf, current, std::move(existing_rc), p_cfg));
       });
 
     // no assignments, error
@@ -1526,10 +1591,6 @@ partition_constraints get_partition_constraints(
   const topics_frontend::capacity_info& info) {
     allocation_constraints allocation_constraints;
 
-    // Add constraint on least disk usage
-    allocation_constraints.add(
-      least_disk_filled(max_disk_usage_ratio, info.node_disk_reports));
-
     auto partition_size_it = info.ntp_sizes.find(id);
     if (partition_size_it == info.ntp_sizes.end()) {
         return {id, new_replication_factor, std::move(allocation_constraints)};
@@ -1537,6 +1598,10 @@ partition_constraints get_partition_constraints(
 
     // Add constraint on partition max_disk_usage_ratio overfill
     allocation_constraints.add(disk_not_overflowed_by_partition(
+      max_disk_usage_ratio, partition_size_it->second, info.node_disk_reports));
+
+    // Add constraint on least disk usage
+    allocation_constraints.add(least_disk_filled(
       max_disk_usage_ratio, partition_size_it->second, info.node_disk_reports));
 
     return {id, new_replication_factor, std::move(allocation_constraints)};

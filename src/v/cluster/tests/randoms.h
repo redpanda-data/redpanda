@@ -198,14 +198,12 @@ inline tx_snapshot_v3::tx_seqs_snapshot random_tx_seqs_snapshot() {
 
 namespace tests {
 
-inline cluster::producer_ptr
-random_producer_state(cluster::producer_state_manager& psm) {
+inline cluster::producer_ptr random_producer_state() {
     return ss::make_lw_shared<cluster::producer_state>(
-      psm,
       model::producer_identity{
         random_generators::get_int<int64_t>(),
         random_generators::get_int<int16_t>()},
-      tests::random_named_int<raft::group_id>(),
+      random_named_int<raft::group_id>(),
       ss::noncopyable_function<void()>{});
 }
 

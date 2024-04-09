@@ -12,6 +12,8 @@
 #include "container/intrusive_list_helpers.h"
 #include "test_utils/test.h"
 
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/core/manual_clock.hh>
 #include <seastar/core/sstring.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -449,6 +451,94 @@ TEST_F(fixture, test_changing_max_size) {
 
     EXPECT_EQ(cache.get_stats().namespaces.size(), 3);
     EXPECT_EQ(cache.get_stats().total_size, 10);
+
+    cache.clear();
+}
+
+struct entry_with_ts {
+    using clock_type = ss::manual_clock;
+
+    clock_type::time_point get_last_update_timestamp() const {
+        return last_update_ts;
+    }
+
+    void touch() { last_update_ts = clock_type::now(); }
+
+    clock_type::time_point last_update_ts = clock_type::now();
+    safe_intrusive_list_hook _hook;
+};
+
+using namespace std::chrono_literals;
+
+TEST_F(fixture, test_removing_old_entries) {
+    ss::sstring t_1 = "t_1";
+    ss::sstring t_2 = "t_2";
+    ss::sstring t_3 = "t_3";
+    /**
+     * Create cache with capacity of 15 and min 3 entries per namespace
+     */
+    cluster::namespaced_cache<entry_with_ts, ss::sstring, &entry_with_ts::_hook>
+      cache(config::mock_binding<size_t>(15), config::mock_binding<size_t>(3));
+
+    std::vector<entry_with_ts> entries{15, entry_with_ts{}};
+    // clock is at 0
+    // fill cache
+    for (int i = 0; i < 15; i += 3) {
+        cache.insert(t_1, entries[i]);
+        cache.insert(t_2, entries[i + 1]);
+        cache.insert(t_3, entries[i + 2]);
+    }
+    ss::manual_clock::advance(10s);
+    // clock is at 10 seconds
+    /**
+     * No entries should be evicted as none of them is older than 15s
+     */
+    cache.evict_older_than<ss::manual_clock>(ss::manual_clock::now() - 15s);
+    EXPECT_EQ(cache.get_stats().namespaces.size(), 3);
+    EXPECT_EQ(cache.get_stats().total_size, 15);
+
+    /**
+     * All entries should be evicted as all of them are older than 5s
+     */
+    auto evicted = cache.evict_older_than<ss::manual_clock>(
+      ss::manual_clock::now() - 5s);
+    EXPECT_EQ(cache.get_stats().namespaces.size(), 0);
+    EXPECT_EQ(cache.get_stats().total_size, 0);
+    EXPECT_EQ(evicted, 15);
+
+    ss::manual_clock::advance(10s);
+
+    // fill cache once again
+    for (int i = 0; i < 15; i += 3) {
+        cache.insert(t_1, entries[i]);
+        cache.insert(t_2, entries[i + 1]);
+        cache.insert(t_3, entries[i + 2]);
+    }
+    // touch all the entries while advancing clock
+    for (int i = 0; i < 15; i += 3) {
+        cache.touch(t_1, entries[i]);
+        ss::manual_clock::advance(1s);
+        cache.touch(t_2, entries[i + 1]);
+        ss::manual_clock::advance(1s);
+        cache.touch(t_3, entries[i + 2]);
+        ss::manual_clock::advance(1s);
+    }
+    EXPECT_EQ(cache.get_stats().namespaces.size(), 3);
+    EXPECT_EQ(cache.get_stats().total_size, 15);
+
+    // no entries are older than 15 seconds
+    cache.evict_older_than<ss::manual_clock>(ss::manual_clock::now() - 15s);
+    EXPECT_EQ(cache.get_stats().namespaces.size(), 3);
+    EXPECT_EQ(cache.get_stats().total_size, 15);
+
+    // some of the entries should be evicted
+    cache.evict_older_than<ss::manual_clock>(ss::manual_clock::now() - 8s);
+    EXPECT_EQ(cache.get_stats().namespaces.size(), 3);
+    EXPECT_EQ(cache.get_stats().total_size, 8);
+
+    cache.evict_older_than<ss::manual_clock>(ss::manual_clock::now() - 2s);
+    EXPECT_EQ(cache.get_stats().namespaces.size(), 2);
+    EXPECT_EQ(cache.get_stats().total_size, 2);
 
     cache.clear();
 }

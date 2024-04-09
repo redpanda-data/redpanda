@@ -11,7 +11,7 @@
 
 #include "wasm/cache.h"
 
-#include "wasm/logger.h"
+#include "logger.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>

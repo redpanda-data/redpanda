@@ -149,7 +149,12 @@ public:
 
     using leaders_info_t = chunked_vector<leader_info_t>;
 
-    leaders_info_t get_leaders() const;
+    /**
+     * Get a snapshot of all the current leaders.
+     *
+     * @throws if the set of leaders changes during iteration.
+     */
+    ss::future<leaders_info_t> get_leaders() const;
 
     uint64_t leaderless_partition_count() const {
         return _leaderless_partition_count;

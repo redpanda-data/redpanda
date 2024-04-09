@@ -11,14 +11,14 @@
 #pragma once
 
 #include "cluster/types.h"
+#include "io.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "model/transform.h"
 #include "ssx/work_queue.h"
 #include "transform/fwd.h"
-#include "transform/io.h"
-#include "transform/transform_processor.h"
+#include "transform_processor.h"
 #include "wasm/fwd.h"
 
 #include <seastar/core/lowres_clock.hh>

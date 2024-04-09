@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "container/fragmented_vector.h"
 #include "model/record_batch_reader.h"
 #include "raft/types.h"
 #include "ssx/semaphore.h"
@@ -29,7 +30,7 @@ public:
     public:
         item(
           size_t record_count,
-          std::vector<model::record_batch> batches,
+          chunked_vector<model::record_batch> batches,
           ssx::semaphore_units u,
           std::optional<model::term_id> expected_term,
           replicate_options opts)
@@ -100,7 +101,7 @@ public:
             }
         }
         size_t _record_count;
-        std::vector<model::record_batch> _data;
+        chunked_vector<model::record_batch> _data;
         ssx::semaphore_units _units;
         std::optional<model::term_id> _expected_term;
         replicate_options _replicate_opts;
@@ -145,7 +146,7 @@ private:
 
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
       std::optional<model::term_id>,
-      ss::circular_buffer<model::record_batch>,
+      chunked_vector<model::record_batch>,
       size_t,
       replicate_options);
 

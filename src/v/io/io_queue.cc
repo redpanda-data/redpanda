@@ -8,11 +8,11 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "io/io_queue.h"
+#include "io_queue.h"
 
 #include "base/vassert.h"
 #include "base/vlog.h"
-#include "io/logger.h"
+#include "logger.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
@@ -203,18 +203,20 @@ void io_queue::dispatch_write(
             ->dma_write(page.offset(), page.data().get(), page.data().size())
             .then([this, &page, units = std::move(units)](auto) mutable {
                 running_.erase(request_list_type::s_iterator_to(page));
+                units.return_all();
                 /*
                  * the queued flag is cleared before dispatch_write is invoked,
                  * but while the write is in flight, submit_write may be called
                  * again. for example, if more data was written into the page
                  * and the page needs to be written again. it's requeued here.
+                 *
+                 * completion callback is invoked only after the write completes
+                 * without being requeued.
                  */
                 if (page.test_flag(page::flags::queued)) {
                     pending_.push_back(page);
                     cond_.signal();
-                }
-                if (complete_) {
-                    units.return_all();
+                } else if (complete_) {
                     complete_(page);
                 }
             })

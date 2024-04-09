@@ -546,25 +546,6 @@ operator<<(std::ostream& os, cloud_storage_chunk_eviction_strategy st) {
     }
 }
 
-enum class fetch_read_strategy : uint8_t {
-    polling = 0,
-    non_polling = 1,
-};
-
-constexpr const char* fetch_read_strategy_to_string(fetch_read_strategy s) {
-    switch (s) {
-    case fetch_read_strategy::polling:
-        return "polling";
-    case fetch_read_strategy::non_polling:
-        return "non_polling";
-    default:
-        throw std::invalid_argument("unknown fetch_read_strategy");
-    }
-}
-
-std::ostream& operator<<(std::ostream&, fetch_read_strategy);
-std::istream& operator>>(std::istream&, fetch_read_strategy&);
-
 /**
  * Type representing MPX virtual cluster. MPX uses XID to identify clusters.
  */
@@ -620,6 +601,21 @@ struct broker_v0 {
 };
 
 } // namespace internal
+
+enum class recovery_validation_mode : std::uint16_t {
+    // ensure that either the manifest is in TS or that no manifest is present.
+    // download issues will fail the validation
+    check_manifest_existence = 0,
+    // download the manifest and check the most recent segments up to
+    // max_segment_depth
+    check_manifest_and_segment_metadata = 1,
+    // do not perform any check, validation is considered successful
+    no_check = 0xff,
+};
+
+std::ostream& operator<<(std::ostream&, recovery_validation_mode);
+std::istream& operator>>(std::istream&, recovery_validation_mode&);
+
 } // namespace model
 
 template<>

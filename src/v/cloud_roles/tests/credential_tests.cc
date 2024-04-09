@@ -21,7 +21,7 @@ BOOST_AUTO_TEST_CASE(test_gcp_headers) {
 
     {
         bh::request_header<> h{};
-        applier.add_auth(h);
+        BOOST_REQUIRE_EQUAL(applier.add_auth(h), std::error_code{});
         BOOST_REQUIRE_EQUAL(h.at(bh::field::authorization), "Bearer a-token");
     }
 
@@ -30,7 +30,7 @@ BOOST_AUTO_TEST_CASE(test_gcp_headers) {
 
     {
         bh::request_header<> h{};
-        applier.add_auth(h);
+        BOOST_REQUIRE_EQUAL(applier.add_auth(h), std::error_code{});
         BOOST_REQUIRE_EQUAL(
           h.at(bh::field::authorization), "Bearer second-token");
     }
@@ -47,7 +47,7 @@ BOOST_AUTO_TEST_CASE(test_aws_headers) {
     {
         bh::request_header<> h{};
         h.method(bh::verb::put);
-        applier.add_auth(h);
+        BOOST_REQUIRE_EQUAL(applier.add_auth(h), std::error_code{});
         fmt::print("{}", h);
         BOOST_REQUIRE_EQUAL(h.at("x-amz-security-token"), "tok");
         // put request contains unsigned payload
@@ -63,7 +63,7 @@ BOOST_AUTO_TEST_CASE(test_aws_headers) {
     {
         bh::request_header<> h{};
         h.method(bh::verb::get);
-        applier.add_auth(h);
+        BOOST_REQUIRE_EQUAL(applier.add_auth(h), std::error_code{});
         fmt::print("{}", h);
         BOOST_REQUIRE_EQUAL(h.at("x-amz-security-token"), "tok2");
         // get request contains empty signature

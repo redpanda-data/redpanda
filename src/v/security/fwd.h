@@ -13,10 +13,14 @@
 
 namespace security {
 
+class acl_matches;
 class acl_store;
 class authorizer;
 class credential_store;
 class ephemeral_credential_store;
+class role;
+class role_member;
+class role_member_view;
 class role_store;
 
 namespace oidc {

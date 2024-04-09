@@ -9,12 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
-#include "transform/logging/record_batcher.h"
+#include "record_batcher.h"
 
 #include "absl/algorithm/container.h"
+#include "logger.h"
 #include "model/record.h"
 #include "storage/record_batch_builder.h"
-#include "transform/logging/logger.h"
 #include "utils/human.h"
 
 namespace transform::logging {

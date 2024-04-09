@@ -29,12 +29,13 @@ class TopicSpec:
     PROPERTY_SEGMENT_SIZE = "segment.bytes"
     PROPERTY_RETENTION_BYTES = "retention.bytes"
     PROPERTY_RETENTION_TIME = "retention.ms"
-    PROPERTY_DATA_POLICY_FUNCTION_NAME = "redpanda.datapolicy.function.name"
-    PROPERTY_DATA_POLICY_SCRIPT_NAME = "redpanda.datapolicy.script.name"
     PROPERTY_RETENTION_LOCAL_TARGET_BYTES = "retention.local.target.bytes"
     PROPERTY_RETENTION_LOCAL_TARGET_MS = "retention.local.target.ms"
     PROPERTY_REMOTE_DELETE = "redpanda.remote.delete"
     PROPERTY_SEGMENT_MS = "segment.ms"
+    PROPERTY_WRITE_CACHING = "write.caching"
+    PROPERTY_FLUSH_MS = "flush.ms"
+    PROPERTY_FLUSH_BYTES = "flush.bytes"
 
     class CompressionTypes(str, Enum):
         """
@@ -94,7 +95,6 @@ class TopicSpec:
                  segment_bytes=None,
                  retention_bytes=None,
                  retention_ms=None,
-                 redpanda_datapolicy=None,
                  redpanda_remote_read=None,
                  redpanda_remote_write=None,
                  redpanda_remote_delete=None,
@@ -120,7 +120,6 @@ class TopicSpec:
         self.segment_bytes = segment_bytes
         self.retention_bytes = retention_bytes
         self.retention_ms = retention_ms
-        self.redpanda_datapolicy = redpanda_datapolicy
         self.redpanda_remote_read = redpanda_remote_read
         self.redpanda_remote_write = redpanda_remote_write
         self.redpanda_remote_delete = redpanda_remote_delete

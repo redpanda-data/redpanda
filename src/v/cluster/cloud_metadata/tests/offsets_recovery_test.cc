@@ -7,7 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-
+#include "archival/archival_metadata_stm.h"
 #include "cloud_storage/remote_file.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tests/manual_fixture.h"
@@ -669,7 +669,7 @@ FIXTURE_TEST(test_controller_upload_offsets, offsets_recovery_fixture) {
       5s, [&] { return controller_stm.maybe_write_snapshot(); });
 
     // Now begin uploading metadata.
-    auto& uploader = app.controller->metadata_uploader();
+    auto& uploader = app.controller->metadata_uploader().value().get();
     cluster::consensus_ptr raft0
       = app.partition_manager.local().get(model::controller_ntp)->raft();
     RPTEST_REQUIRE_EVENTUALLY(5s, [&] { return raft0->is_leader(); });
@@ -835,7 +835,7 @@ FIXTURE_TEST(test_cluster_recovery_with_offsets, offsets_recovery_fixture) {
       5s, [&controller_stm] { return controller_stm.maybe_write_snapshot(); });
     auto raft0
       = app.partition_manager.local().get(model::controller_ntp)->raft();
-    auto& uploader = app.controller->metadata_uploader();
+    auto& uploader = app.controller->metadata_uploader().value().get();
     retry_chain_node retry_node(never_abort, 30s, 1s);
     cluster_metadata_manifest manifest;
     manifest.cluster_uuid = cluster_uuid;

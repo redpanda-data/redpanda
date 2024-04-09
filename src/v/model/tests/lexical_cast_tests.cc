@@ -10,6 +10,7 @@
 #include "model/record.h"
 #define BOOST_TEST_MODULE model
 #include "model/compression.h"
+#include "model/metadata.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -85,3 +86,25 @@ BOOST_AUTO_TEST_CASE(timestamp_type_printing) {
     BOOST_CHECK_EQUAL(
       "LogAppendTime", fmt::format("{}", model::timestamp_type::append_time));
 };
+
+BOOST_AUTO_TEST_CASE(recovery_validation_mode_enum_roundtrip) {
+    // test that all recovery_validation_mode have a unique string
+    // representation
+    using enum model::recovery_validation_mode;
+
+    BOOST_CHECK_EQUAL(
+      boost::lexical_cast<model::recovery_validation_mode>("no_check"),
+      no_check);
+    BOOST_CHECK_EQUAL(
+      boost::lexical_cast<model::recovery_validation_mode>(
+        "check_manifest_existence"),
+      check_manifest_existence);
+    BOOST_CHECK_EQUAL(
+      boost::lexical_cast<model::recovery_validation_mode>(
+        "check_manifest_and_segment_metadata"),
+      check_manifest_and_segment_metadata);
+    BOOST_REQUIRE_THROW(
+      boost::lexical_cast<model::recovery_validation_mode>(
+        "this_mode_does_not_exists"),
+      boost::bad_lexical_cast);
+}

@@ -33,6 +33,13 @@ RELEASES_CACHE_FILE_TTL = timedelta(minutes=30)
 # It's a ":"-separated list of versions, e.g.: v23.2.1:v23.1.12:v23.1.11
 RP_GIT_RELEASED_VERSIONS = "RP_GIT_RELEASED_VERSIONS"
 
+REDPANDA_INSTALLER_HEAD_TAG = "head"
+
+RedpandaVersionTriple = tuple[int, int, int]
+RedpandaVersionLine = tuple[int, int]
+RedpandaVersion = typing.Literal[
+    'head'] | RedpandaVersionLine | RedpandaVersionTriple
+
 
 def wait_for_num_versions(redpanda, num_versions):
     # Use a single node so the metadata about brokers have a consistent source
@@ -76,6 +83,14 @@ def ver_string(int_tuple):
     return f"v{'.'.join(str(i) for i in int_tuple)}"
 
 
+def ver_triple(version_line: RedpandaVersionLine) -> RedpandaVersionTriple:
+    """
+    Converts "v24.1.0-dev-1940-g8ae241e966 - 8ae241e966bd3d5811951a176fc40a7a77ce2a0c" into (24, 1, 0)
+    """
+    matches = VERSION_RE.findall(version_line)
+    return RedpandaVersionTriple(int_tuple(matches[0]))
+
+
 class InstallOptions:
     """
     Options with which to configure the installation of Redpanda in a cluster.
@@ -96,14 +111,6 @@ class InstallOptions:
         # cluster on an older version, e.g. to simulate a mixed-version
         # environment.
         self.num_to_upgrade = num_to_upgrade
-
-
-REDPANDA_INSTALLER_HEAD_TAG = "head"
-
-RedpandaVersionTriple = tuple[int, int, int]
-RedpandaVersionLine = tuple[int, int]
-RedpandaVersion = typing.Literal[
-    'head'] | RedpandaVersionLine | RedpandaVersionTriple
 
 
 class RedpandaInstaller:
@@ -307,8 +314,7 @@ class RedpandaInstaller:
         # use it to get older versions relative to the head version.
         # NOTE: installing this version may not yield the same binaries being
         # as 'head', e.g. if an unreleased source is checked out.
-        self._head_version: RedpandaVersionTriple = int_tuple(
-            VERSION_RE.findall(initial_version)[0])
+        self._head_version: RedpandaVersionTriple = ver_triple(initial_version)
 
         self._started = True
 
@@ -677,7 +683,7 @@ class RedpandaInstaller:
         version_root = self.root_for_version(version)
 
         tgz = "redpanda.tar.gz"
-        cmd = f"curl -fsSL {self._version_package_url(version)} --create-dir --output-dir {version_root} -o {tgz} && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && rm {version_root}/{tgz}"
+        cmd = f"curl -fsSL {self._version_package_url(version)} --create-dir -o {version_root}/{tgz} && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && rm {version_root}/{tgz}"
         return node.account.ssh_capture(cmd)
 
     def reset_current_install(self, nodes):

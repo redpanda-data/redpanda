@@ -87,6 +87,8 @@ find_package(Arrow REQUIRED)
 find_package(Parquet REQUIRED)
 v_cc_library(
   NAME cluster
+  HDRS
+    topic_recovery_validator.h
   SRCS
     metadata_cache.cc
     partition_manager.cc
@@ -199,6 +201,7 @@ v_cc_library(
     ../archival/purger.cc
     ../archival/scrubber.cc
     ../archival/archiver_manager.cc
+    ../archival/async_data_uploader.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc
@@ -209,6 +212,10 @@ v_cc_library(
     tx_topic_manager.cc
     shard_placement_table.cc
     shard_balancer.cc
+    topic_recovery_validator.cc
+    ../cloud_storage/topic_manifest.cc
+  HDRS
+    ../cloud_storage/topic_manifest.h
   DEPS
     Seastar::seastar
     bootstrap_rpc

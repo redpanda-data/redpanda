@@ -9,6 +9,7 @@
  */
 
 #include "archival/adjacent_segment_merger.h"
+#include "archival/archival_metadata_stm.h"
 #include "archival/archival_policy.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/tests/service_fixture.h"

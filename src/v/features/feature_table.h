@@ -76,6 +76,7 @@ enum class feature : std::uint64_t {
     compaction_placeholder_batch = 1ULL << 42U,
     partition_shard_in_health_report = 1ULL << 43U,
     role_based_access_control = 1ULL << 44U,
+    cluster_topic_manifest_format_v2 = 1ULL << 45U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -384,7 +385,14 @@ constexpr static std::array feature_schema{
     "role_based_access_control",
     feature::role_based_access_control,
     feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always}};
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{12},
+    "cluster_topic_manifest_format_v2",
+    feature::cluster_topic_manifest_format_v2,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+};
 
 std::string_view to_string_view(feature);
 std::string_view to_string_view(feature_state::state);

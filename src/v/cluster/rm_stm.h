@@ -15,6 +15,7 @@
 #include "cluster/fwd.h"
 #include "cluster/producer_state.h"
 #include "cluster/state_machine_registry.h"
+#include "cluster/topic_table.h"
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
 #include "config/property.h"
@@ -25,7 +26,6 @@
 #include "model/record.h"
 #include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
-#include "raft/types.h"
 #include "storage/snapshot.h"
 #include "utils/available_promise.h"
 #include "utils/mutex.h"
@@ -114,7 +114,8 @@ public:
       raft::consensus*,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<features::feature_table>&,
-      ss::sharded<producer_state_manager>&);
+      ss::sharded<producer_state_manager>&,
+      std::optional<model::vcluster_id>);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
       model::producer_identity,
@@ -581,6 +582,7 @@ private:
     ss::timer<clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
     ss::sharded<producer_state_manager>& _producer_state_manager;
+    std::optional<model::vcluster_id> _vcluster_id;
 
     producers_t _producers;
     metrics::internal_metric_groups _metrics;
@@ -606,7 +608,8 @@ public:
       bool enable_idempotence,
       ss::sharded<tx_gateway_frontend>&,
       ss::sharded<cluster::producer_state_manager>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::topic_table>&);
     bool is_applicable_for(const storage::ntp_config&) const final;
     void create(raft::state_machine_manager_builder&, raft::consensus*) final;
 
@@ -616,6 +619,7 @@ private:
     ss::sharded<tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<cluster::producer_state_manager>& _producer_state_manager;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<topic_table>& _topics;
 };
 
 model::record_batch make_fence_batch_v1(

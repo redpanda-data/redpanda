@@ -11,8 +11,8 @@
 #include "cloud_roles/aws_refresh_impl.h"
 #include "cloud_roles/aws_sts_refresh_impl.h"
 #include "cloud_roles/gcp_refresh_impl.h"
-#include "cloud_roles/tests/test_definitions.h"
 #include "http/tests/http_imposter.h"
+#include "test_definitions.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/file.hh>
