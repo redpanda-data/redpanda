@@ -12,6 +12,7 @@
 
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
     seastar::testing::global_test_runner().start(argc, argv);
 
     int ret = 0;
