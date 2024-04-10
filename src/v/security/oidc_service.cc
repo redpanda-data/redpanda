@@ -19,6 +19,7 @@
 #include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
 #include "ssx/future-util.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
@@ -31,6 +32,8 @@
 #include <boost/outcome/success_failure.hpp>
 
 #include <chrono>
+
+using namespace std::chrono_literals;
 
 namespace security::oidc {
 

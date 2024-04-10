@@ -10,6 +10,8 @@
 
 #include "cloud_storage_clients/util.h"
 
+#include <seastar/core/sharded.hh>
+
 #include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(test_nested_exception) {

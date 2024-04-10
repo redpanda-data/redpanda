@@ -14,6 +14,10 @@
 
 #include <seastar/coroutine/as_future.hh>
 
+#include <chrono>
+
+using namespace std::chrono_literals;
+
 namespace cluster {
 
 // Each partition gets a separate retry_chain_node and a logger tied to it.
