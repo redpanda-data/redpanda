@@ -30,6 +30,7 @@
 #include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
+#include "ssx/semaphore.h"
 #include "transform/logging/log_manager.h"
 #include "transform/logging/rpc_client.h"
 #include "transform/rpc/client.h"
@@ -477,7 +478,8 @@ service::service(
   ss::sharded<cluster::partition_manager>* partition_manager,
   ss::sharded<rpc::client>* rpc_client,
   ss::sharded<cluster::metadata_cache>* metadata_cache,
-  ss::scheduling_group sg)
+  ss::scheduling_group sg,
+  size_t memory_limit)
   : _runtime(runtime)
   , _self(self)
   , _plugin_frontend(plugin_frontend)
@@ -487,7 +489,8 @@ service::service(
   , _partition_manager(partition_manager)
   , _rpc_client(rpc_client)
   , _metadata_cache(metadata_cache)
-  , _sg(sg) {}
+  , _sg(sg)
+  , _total_memory_limit(memory_limit) {}
 
 service::~service() = default;
 
@@ -505,6 +508,30 @@ ss::future<> service::start() {
       config::shard_local_cfg().data_transforms_commit_interval_ms.bind(),
       std::make_unique<rpc_offset_committer>(&_rpc_client->local()));
 
+    size_t read_buffer_percent
+      = config::shard_local_cfg()
+          .data_transforms_read_buffer_memory_percentage.value();
+    size_t write_buffer_percent
+      = config::shard_local_cfg()
+          .data_transforms_write_buffer_memory_percentage.value();
+    vassert(
+      read_buffer_percent + write_buffer_percent <= 90,
+      "Total buffer memory percentage must not be greater than 90%, read "
+      "buffer percent: {}%, write buffer percent: {}%",
+      read_buffer_percent,
+      write_buffer_percent);
+    constexpr size_t total_percentage = 100;
+    size_t one_percent = _total_memory_limit / total_percentage;
+    memory_limits mem_limits = {
+      .read_buffer_semaphore = {
+            one_percent * read_buffer_percent, 
+            "transform::read_buffer",
+        },
+      .write_buffer_semaphore = { 
+            one_percent * write_buffer_percent, 
+            "transform::write_buffer",
+        },
+    };
     _manager = std::make_unique<manager<ss::lowres_clock>>(
       _self,
       std::make_unique<registry_adapter>(
@@ -517,7 +544,8 @@ ss::future<> service::start() {
         &_partition_manager->local(),
         &_rpc_client->local(),
         _batcher.get()),
-      _sg);
+      _sg,
+      std::move(mem_limits));
 
     co_await _log_manager->start();
     co_await _batcher->start();

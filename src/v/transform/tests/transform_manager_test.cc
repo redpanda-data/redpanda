@@ -2,6 +2,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/transform.h"
+#include "ssx/semaphore.h"
 #include "test_utils/async.h"
 #include "transform/logger.h"
 #include "transform/tests/test_fixture.h"
@@ -290,11 +291,16 @@ public:
         _registry = r.get();
         auto t = std::make_unique<processor_tracker>();
         _tracker = t.get();
+        constexpr size_t memory_limit = 10_MiB;
         _manager = std::make_unique<manager<ss::manual_clock>>(
           /*self=*/model::node_id(0),
           std::move(r),
           std::move(t),
-          ss::current_scheduling_group());
+          ss::current_scheduling_group(),
+          memory_limits{
+            ssx::semaphore(memory_limit, "read_buf"),
+            ssx::semaphore(memory_limit, "write_buf"),
+          });
         _manager->start().get();
     }
     void TearDown() override {
