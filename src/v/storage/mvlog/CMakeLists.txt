@@ -4,6 +4,7 @@ v_cc_library(
   NAME mvlog
   SRCS
     batch_collector.cc
+    logger.cc
     skipping_data_source.cc
   DEPS
     Seastar::seastar
