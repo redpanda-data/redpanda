@@ -307,6 +307,20 @@ def should_compile(
         allow_list_element, AllowLogsOnPredicate)
 
 
+def in_fips_environment() -> bool:
+    """
+    Returns True if the file /proc/sys/crypto/fips_enabled is present and
+    contains '1', otherwise returns False.
+    """
+    fips_file = "/proc/sys/crypto/fips_enabled"
+    if os.path.exists(fips_file) and os.path.isfile(fips_file):
+        with open(fips_file, 'r') as f:
+            contents = f.read().strip()
+            return contents == '1'
+
+    return False
+
+
 class ResourceSettings:
     """
     Control CPU+memory footprint of Redpanda instances.  Pass one
@@ -1141,6 +1155,9 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
 
     FAILURE_INJECTION_CONFIG_PATH = "/etc/redpanda/failure_injection_config.json"
+
+    OPENSSL_CONFIG_FILE = "/opt/redpanda/openssl/openssl.cnf"
+    OPENSSL_MODULES_PATH = "/opt/redpanda/lib/ossl-modules/"
 
     # When configuring multiple listeners for testing, a secondary port to use
     # instead of the default.
@@ -3727,6 +3744,22 @@ class RedpandaService(RedpandaServiceBase):
             ]
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
+            conf = yaml.dump(doc)
+
+        def is_fips_capable(node) -> bool:
+            cur_ver = self._installer.installed_version(node)
+            return cur_ver == RedpandaInstaller.HEAD or cur_ver >= (24, 1, 1)
+
+        if in_fips_environment() and is_fips_capable(node):
+            self.logger.info(
+                "Operating in FIPS environment, enabling FIPS mode for Redpanda"
+            )
+            doc = yaml.full_load(conf)
+            doc["redpanda"].update(
+                dict(fips_mode=True,
+                     openssl_config_file=RedpandaService.OPENSSL_CONFIG_FILE,
+                     openssl_module_directory=RedpandaService.
+                     OPENSSL_MODULES_PATH))
             conf = yaml.dump(doc)
 
         self.logger.info("Writing Redpanda node config file: {}".format(
