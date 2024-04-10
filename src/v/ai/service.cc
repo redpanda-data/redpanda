@@ -44,13 +44,12 @@ struct model_parameters {
     llama::model::config config;
 };
 
-struct generate_text_request {
-    ss::sstring prompt;
-    service::generate_text_options options;
+struct compute_embeddings_request {
+    ss::sstring text;
 };
 
-struct generate_text_response {
-    ss::sstring text;
+struct compute_embeddings_response {
+    std::vector<float> embeddings;
 };
 
 } // namespace
@@ -58,8 +57,8 @@ struct generate_text_response {
 class model final
   : public ai::batched_thread_worker<
       model_parameters,
-      generate_text_request,
-      generate_text_response> {
+      compute_embeddings_request,
+      compute_embeddings_response> {
     struct slot {
         int32_t id;
         llama::token sampled;
@@ -185,7 +184,10 @@ private:
                 return;
             }
             auto param = item->take_parameter();
-            auto tokens = _llm->tokenize(param.prompt);
+            auto tokens = _llm->tokenize(param.text);
+            if (tokens.empty() || tokens.back() != _llm->eos()) {
+                tokens.push_back(_llm->eos());
+            }
             _prompt_tokens += int64_t(tokens.size());
             slot = {
               .id = slot.id,
@@ -194,7 +196,7 @@ private:
               .i_batch = 0, // initialized later
               .state = slot::state::response,
               .item = item,
-              .tokens_remaining = param.options.max_tokens,
+              .tokens_remaining = 0,
               .output = "",
             };
             // TODO: Truncate large prompts
@@ -222,11 +224,6 @@ private:
     void process_batch(absl::FixedArray<slot>* slots) {
         vlog(logger.trace, "starting processing batch");
         auto max_batch_size = _llm->n_batch();
-
-        // Greed sampling state
-        auto n_vocab = _llm->n_vocab();
-        llama::token_vector candidates;
-        candidates.reserve(n_vocab);
 
         for (int32_t i = 0; i < _batch.size(); i += max_batch_size) {
             int32_t n_tokens = std::min(max_batch_size, _batch.size() - i);
@@ -259,24 +256,12 @@ private:
                   || slot.i_batch >= uint32_t(i + n_tokens)) {
                     continue;
                 }
-                std::span<float> logits = _llm->get_logits(
-                  llama::position(int32_t(slot.i_batch) - i));
-
-                candidates.clear();
-                for (llama::token token_id : _llm->vocab()) {
-                    candidates.add(token_id, logits[token_id], 0.0f);
-                }
-                auto new_token_id = candidates.greedy_sample();
-                ++_response_tokens;
-                if (new_token_id == _llm->eos() || slot.tokens_remaining <= 0) {
-                    send_response(slot.item, {std::move(slot.output)});
-                    slot.state = slot::state::free;
-                    _llm->reset(slot.id);
-                    continue;
-                }
-                --slot.tokens_remaining;
-                slot.sampled = new_token_id;
-                _llm->append_decoded_token(new_token_id, &slot.output);
+                std::span<float> embeddings = _llm->get_embeddings(
+                  slot.id, llama::position(int32_t(slot.i_batch) - i));
+                std::vector<float> copy{embeddings.begin(), embeddings.end()};
+                send_response(slot.item, {std::move(copy)});
+                slot.state = slot::state::free;
+                _llm->reset(slot.id);
             }
             vlog(logger.debug, "decoding batch complete");
         }
@@ -326,24 +311,21 @@ ss::future<> service::stop() {
     co_await _model->stop();
 }
 
-ss::future<ss::sstring>
-service::generate_text(ss::sstring prompt, generate_text_options opts) {
-    if (prompt.empty()) {
-        return ss::make_ready_future<ss::sstring>();
+ss::future<std::vector<float>> service::compute_embeddings(ss::sstring text) {
+    if (text.empty()) {
+        return ss::make_ready_future<std::vector<float>>();
     }
     return container().invoke_on(
       model_shard,
-      [](service& s, ss::sstring prompt, generate_text_options opts) {
-          return s.do_generate_text(std::move(prompt), opts);
+      [](service& s, ss::sstring text) {
+          return s.do_compute_embeddings(std::move(text));
       },
-      std::move(prompt),
-      opts);
+      std::move(text));
 }
 
-ss::future<ss::sstring>
-service::do_generate_text(ss::sstring prompt, generate_text_options opts) {
-    auto resp = co_await _model->submit(
-      {.prompt = std::move(prompt), .options = opts});
-    co_return std::move(resp.text);
+ss::future<std::vector<float>>
+service::do_compute_embeddings(ss::sstring text) {
+    auto resp = co_await _model->submit({.text = std::move(text)});
+    co_return std::move(resp.embeddings);
 }
 } // namespace ai

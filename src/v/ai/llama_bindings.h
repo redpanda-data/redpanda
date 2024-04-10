@@ -68,6 +68,10 @@ public:
     // Get the logits vector (which is the size of the vocab) for this position.
     std::span<float> get_logits(position);
 
+    // Get the embeddings vector (which is the size of the vocab) for this
+    // position.
+    std::span<float> get_embeddings(llama_seq_id, position);
+
     // The context size to use during inference.
     int32_t n_ctx() const;
     int32_t n_batch() const;

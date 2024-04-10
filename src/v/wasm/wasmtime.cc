@@ -1322,6 +1322,7 @@ void register_ai_module(
 #define REG_HOST_FN(name)                                                      \
     host_function<&ai_module::name>::reg(linker, #name, ssc)
     REG_HOST_FN(generate_text);
+    REG_HOST_FN(compute_embeddings);
 #undef REG_HOST_FN
 }
 

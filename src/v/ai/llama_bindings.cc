@@ -56,6 +56,7 @@ initialize_context(llama_model* model, const model::config& cfg) {
     llama_context_params ctx_params = llama_context_default_params();
 
     ctx_params.seed = -1; // Use RNG
+    ctx_params.embeddings = true;
     ctx_params.n_ctx = cfg.context_window;
     ctx_params.n_threads = cfg.nthreads;
     ctx_params.n_threads_batch = ctx_params.n_threads; // use n_threads
@@ -181,6 +182,14 @@ void batch::clear() { _underlying.n_tokens = 0; }
 
 std::span<float> model::get_logits(position pos) {
     return {llama_get_logits_ith(_context.get(), pos), n_vocab()};
+}
+std::span<float> model::get_embeddings(llama_seq_id seq, position pos) {
+    size_t n = llama_n_embd(_underlying.get());
+    float* raw = llama_get_embeddings_seq(_context.get(), seq);
+    if (raw == nullptr) {
+        raw = llama_get_embeddings_ith(_context.get(), pos());
+    }
+    return {raw, n};
 }
 uint32_t model::n_vocab() const { return llama_n_vocab(_underlying.get()); }
 int32_t model::n_ctx() const { return int32_t(llama_n_ctx(_context.get())); }

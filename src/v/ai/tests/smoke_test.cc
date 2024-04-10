@@ -11,7 +11,10 @@
 #include "ai/service.h"
 #include "container/zip.h"
 
+#include <absl/container/flat_hash_map.h>
 #include <gtest/gtest.h>
+
+#include <vector>
 
 namespace ai {
 
@@ -31,7 +34,7 @@ public:
         s.start().get();
         service::config service_config{
           .model_file
-          = "/home/rockwood/code/llama.cpp/models/llama-2-7b.Q4_K_M.gguf",
+          = "/home/rockwood/code/llama.cpp/models/all-MiniLM-L6-v2.Q4_K_M.gguf",
         };
         s.invoke_on_all(
            [&service_config](service& s) { return s.start(service_config); })
@@ -42,11 +45,9 @@ public:
 
 TEST_P(LLMTest, Smoke) {
     const auto& param = GetParam();
-    service::generate_text_options opts = {
-      .max_tokens = param.max_tokens,
-    };
-    auto response = s.local().generate_text(param.prompt, opts).get();
-    EXPECT_EQ(std::string(response), param.response);
+    auto response
+      = s.local().compute_embeddings(param.prompt + param.response).get();
+    EXPECT_EQ(response.size(), 384);
 }
 
 static const std::vector<test_data> testcases = {
@@ -81,22 +82,45 @@ static const std::vector<test_data> testcases = {
   },
 };
 
+float cosine_similarity(
+  const std::vector<float>& lhs, const std::vector<float>& rhs) {
+    float dot = 0.0, denom_a = 0.0, denom_b = 0.0;
+    for (const auto& [a, b] : container::zip(lhs, rhs)) {
+        dot += a * b;
+        denom_a += a * a;
+        denom_b += b * b;
+    }
+    return dot / (sqrt(denom_a) * sqrt(denom_b));
+}
+
 TEST_F(LLMTest, ParallelSmoke) {
+    absl::flat_hash_map<ss::sstring, std::vector<float>> expected;
+    for (const auto& tc : testcases) {
+        auto response
+          = s.local().compute_embeddings(tc.prompt + tc.response).get();
+        expected.emplace(tc.response, response);
+    }
     constexpr int iters = 5;
     for (int i = 0; i < iters; ++i) {
-        std::vector<std::pair<test_data, ss::future<ss::sstring>>> jobs;
+        std::vector<std::pair<test_data, ss::future<std::vector<float>>>> jobs;
         jobs.reserve(testcases.size() * iters);
         for (int j = 0; j < iters; ++j) {
             for (const auto& tc : testcases) {
-                service::generate_text_options opts = {
-                  .max_tokens = tc.max_tokens,
-                };
-                jobs.emplace_back(tc, s.local().generate_text(tc.prompt, opts));
+                jobs.emplace_back(
+                  tc, s.local().compute_embeddings(tc.prompt + tc.response));
             }
         }
         for (auto& [tc, job] : jobs) {
-            std::string response = job.get();
-            EXPECT_EQ(response, tc.response);
+            std::vector<float> response = job.get();
+            EXPECT_EQ(response.size(), 384);
+            EXPECT_GT(cosine_similarity(response, expected[tc.response]), 0.9);
+            for (const auto& other : testcases) {
+                if (tc.prompt == other.prompt) {
+                    continue;
+                }
+                EXPECT_LT(
+                  cosine_similarity(response, expected[other.response]), 0.9);
+            }
         }
     }
 }
