@@ -7,6 +7,7 @@ v_cc_library(
     entry.cc
     entry_stream_utils.cc
     logger.cc
+    segment_appender.cc
     skipping_data_source.cc
   DEPS
     Seastar::seastar
