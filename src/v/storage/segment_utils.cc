@@ -714,6 +714,7 @@ ss::future<compaction_result> self_compact_segment(
         co_return compaction_result(sz_before);
     }
     pb.segment_compacted();
+    pb.add_compaction_removed_bytes(ssize_t(sz_before) - ssize_t(*sz_after));
     s->mark_as_finished_self_compaction();
     co_return compaction_result(sz_before, *sz_after);
 }

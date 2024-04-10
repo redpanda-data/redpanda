@@ -81,6 +81,20 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         ]
         client.create_topic(self.topics[0])
 
+        # keep track of vectorized_storage_log_compaction_removed_bytes, check during the test that the value increases
+        metric = 'vectorized_storage_log_compaction_removed_bytes_total'
+
+        m = MetricCheck(self.logger,
+                        self.redpanda,
+                        self.redpanda.partitions(
+                            self.topics[0].name)[0].leader, [metric],
+                        labels={
+                            'namespace': 'kafka',
+                            'topic': self.topics[0].name,
+                            'partition': '0',
+                        },
+                        reduce=sum)
+
         rw_verifier = CompactedVerifier(self.test_context, self.redpanda,
                                         workload)
         rw_verifier.start()
@@ -124,6 +138,8 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
 
         # enable compaction, if topic isn't compacted
         if initial_cleanup_policy == TopicSpec.CLEANUP_DELETE:
+            # check: expect that no compaction is reported up until now
+            m.expect([(metric, lambda old, new: old == new)])
             rpk.alter_topic_config(self.topic,
                                    set_key="cleanup.policy",
                                    set_value=TopicSpec.CLEANUP_COMPACT)
@@ -157,6 +173,13 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         rw_verifier.remote_wait_consumer()
         rw_verifier.stop()
         rw_verifier.wait(timeout_sec=10)
+
+        if workload == Workload.TX_UNIQUE_KEYS:
+            # this workload with these test setting might generate non-compactible segments
+            m.expect([(metric, lambda old, new: old <= new)])
+        else:
+            # expect some level of compaction
+            m.expect([(metric, lambda old, new: old < new)])
 
 
 class CompactionWithRecoveryTest(RedpandaTest, PartitionMovementMixin):
