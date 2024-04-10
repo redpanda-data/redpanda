@@ -145,9 +145,29 @@ public:
 
     /// main write interface
     /// auto indexes record_batch
+    ///
     /// We recommend using the const-ref method below over the r-value since we
     /// do not need to take ownership of the batch itself
+    ///
+    /// Appending does not offer read-your-writes consistency in the general
+    /// case. It only buffers data in-memory and no guarantees are made about
+    /// when the data will be available fo reading.
+    ///
+    /// If you need to read the data you either need to wait for the stable
+    /// offset to cover `append_result::last_offset`^1 or flush the segment.
+    ///
+    /// In case batch_cache_index is provided, the batch will be available for
+    /// will be available there immediately after and at least until it is
+    /// written to disk. The batch cache can be used to read data immediately
+    /// after it is appended.^2
+    ///
+    /// ^1: This is what `log_segment_batch_reader` does
+    ///     https://github.com/redpanda-data/redpanda/blob/b4f54b1dc71c1f6750a319f6ef0efa6192bb95d7/src/v/storage/log_reader.cc#L246-L254
+    /// ^2: This is what `log_reader` does via `log_segment_batch_reader`
+    ///     https://github.com/redpanda-data/redpanda/blob/b4f54b1dc71c1f6750a319f6ef0efa6192bb95d7/src/v/storage/log_reader.cc#L224-L230
     ss::future<append_result> append(model::record_batch&&);
+
+    /// See the overload for r-value batches above for documentation.
     ss::future<append_result> append(const model::record_batch&);
     ss::future<append_result> do_append(const model::record_batch&);
     ss::future<bool> materialize_index();
