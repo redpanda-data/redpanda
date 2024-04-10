@@ -35,6 +35,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: stable
+          cache-dependency-path: 'src/go/rpk/go.sum'
 
       - name: Run tests
         working-directory: src/go/rpk/
