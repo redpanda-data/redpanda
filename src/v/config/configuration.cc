@@ -2590,7 +2590,7 @@ configuration::configuration()
       "partitions. This should give better balancing results if topics with "
       "diverse partition sizes and load profiles are present in the cluster.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      true)
+      false)
   , enable_leader_balancer(
       *this,
       "enable_leader_balancer",
