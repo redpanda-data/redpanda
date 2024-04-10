@@ -371,10 +371,11 @@ struct write_caching_config_validator {
               "Invalid value {} for {}, accepted values: [{}, {}]",
               value,
               topic_property_write_caching,
-              model::write_caching_mode::on,
-              model::write_caching_mode::off);
+              model::write_caching_mode::default_true,
+              model::write_caching_mode::default_false);
         }
-        auto cluster_default = config::shard_local_cfg().write_caching();
+        auto cluster_default
+          = config::shard_local_cfg().write_caching_default();
         if (cluster_default == model::write_caching_mode::disabled) {
             return fmt::format("write caching disabled at cluster level");
         }

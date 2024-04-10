@@ -122,6 +122,13 @@ func importConfig(
 				if vInt, ok := v.(int); ok {
 					v = float64(vInt)
 				}
+			} else if meta.Type == "string" {
+				// Some boolean configurations are inherently strings
+				// in which case we type switch to string for correct comparison
+				// below. yaml loses this type information during export.
+				if vBool, ok := v.(bool); ok {
+					v = fmt.Sprintf("%v", vBool)
+				}
 			} else if meta.Type == "array" && meta.Items.Type == "string" {
 				switch vArray := v.(type) {
 				case []interface{}:

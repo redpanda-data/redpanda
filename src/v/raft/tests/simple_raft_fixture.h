@@ -84,7 +84,7 @@ struct simple_raft_fixture {
                   = config::mock_binding<size_t>(64),
                   .election_timeout_ms = config::mock_binding(10ms),
                   .write_caching = config::mock_binding(
-                    model::write_caching_mode::off),
+                    model::write_caching_mode::default_false),
                   .write_caching_flush_ms = config::mock_binding(100ms),
                   .write_caching_flush_bytes
                   = config::mock_binding<std::optional<size_t>>(std::nullopt)};

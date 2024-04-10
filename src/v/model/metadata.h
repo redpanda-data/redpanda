@@ -555,21 +555,21 @@ using vcluster_id = named_type<xid, struct v_cluster_id_tag>;
  * Type that represents the cluster wide write caching mode.
  */
 enum class write_caching_mode : uint8_t {
-    // on by default for all topics
-    on = 0,
-    // off by default for all topics
-    off = 1,
-    // disabled by default clusterwide.
-    // cannot be overriden at topic level.
+    // true by default for all topics
+    default_true = 0,
+    // false by default for all topics
+    default_false = 1,
+    // disabled across all topics even for those
+    // with overrides. kill switch.
     disabled = 2
 };
 
 constexpr const char* write_caching_mode_to_string(write_caching_mode s) {
     switch (s) {
-    case write_caching_mode::on:
-        return "on";
-    case write_caching_mode::off:
-        return "off";
+    case write_caching_mode::default_true:
+        return "true";
+    case write_caching_mode::default_false:
+        return "false";
     case write_caching_mode::disabled:
         return "disabled";
     default:

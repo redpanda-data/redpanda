@@ -223,7 +223,7 @@ class DescribeTopicsTest(RedpandaTest):
             "write.caching":
             ConfigProperty(
                 config_type="STRING",
-                value="off",
+                value="false",
                 doc_string=
                 "Cache batches until the segment appender chunk is full instead of "
                 "flushing for every acks=all write. This is the global default "
