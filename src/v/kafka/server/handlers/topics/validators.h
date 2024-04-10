@@ -281,13 +281,13 @@ struct write_caching_configs_validator {
           [](const createable_topic_config& cfg) {
               return cfg.name == topic_property_write_caching;
           });
-        if (it == c.configs.end() || it->value.has_value()) {
+        if (it == c.configs.end() || !it->value.has_value()) {
             return true;
         }
         auto mode = model::write_caching_mode_from_string(it->value.value());
+        // Failed to parse the value.
         if (!mode) {
-            // nothing is set.
-            return true;
+            return false;
         }
         auto is_user_topic = model::is_user_topic(
           model::topic_namespace{model::kafka_namespace, c.name});
