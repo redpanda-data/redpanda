@@ -68,7 +68,7 @@ storage::disk_space_alert health_monitor_frontend::get_cluster_disk_health() {
  * Gets cached or collects a node health report.
  */
 ss::future<result<node_health_report>>
-health_monitor_frontend::collect_node_health() {
+health_monitor_frontend::get_current_node_health() {
     return dispatch_to_backend([](health_monitor_backend& be) mutable {
         return be.get_current_node_health();
     });
