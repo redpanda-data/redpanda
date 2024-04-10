@@ -1164,6 +1164,9 @@ ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
     }
 
     *_manifest = std::move(new_manifest);
+    // reset counter since it was related to the previous manifest
+    _compacted_replaced_bytes = 0;
+
     auto start_offset = get_start_offset();
 
     auto iso = _manifest->get_insync_offset();
@@ -1243,6 +1246,9 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
       get_last_offset(),
       _manifest->get_spillover_map().size(),
       _manifest->highest_producer_id());
+
+    // reset counter, the value depended on the previous _manifest
+    _compacted_replaced_bytes = 0;
 
     if (snap.dirty == state_dirty::dirty) {
         _last_clean_at = model::offset{0};
@@ -1368,7 +1374,15 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
         // ntp_revision field.
         meta.ntp_revision = segment.ntp_revision_deprecated;
     }
-    _manifest->add(segment.name, meta);
+
+    auto add_result = _manifest->add(segment.name, meta);
+    if (
+      add_result.has_value()
+      && add_result->bytes_replaced_range > add_result->bytes_new_range) {
+        _compacted_replaced_bytes += add_result->bytes_replaced_range
+                                     - add_result->bytes_new_range;
+    }
+
     vlog(
       _logger.debug,
       "Add segment command applied with {}, new start offset: {}, new last "
@@ -1525,6 +1539,7 @@ void archival_metadata_stm::apply_spillover(const spillover_cmd& so) {
 
 void archival_metadata_stm::apply_replace_manifest(iobuf val) {
     _manifest->from_iobuf(std::move(val));
+    _compacted_replaced_bytes = 0;
 
     vlog(
       _logger.debug,

@@ -62,6 +62,10 @@ public:
 
     void cloud_log_size(uint64_t size) { _cloud_log_size = size; }
 
+    void compacted_replaced_bytes(size_t bytes) {
+        _compacted_replaced_bytes = bytes;
+    }
+
 private:
     /// Uploaded offsets
     uint64_t _uploaded = 0;
@@ -77,8 +81,10 @@ private:
     int64_t _segments_in_manifest = 0;
     /// Number of segments awaiting deletion
     int64_t _segments_to_delete = 0;
-    /// size in byted of the user-visible log
+    /// size in bytes of the user-visible log
     uint64_t _cloud_log_size = 0;
+    /// cloud bytes "removed" due to compaction operation
+    size_t _compacted_replaced_bytes = 0;
 
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;

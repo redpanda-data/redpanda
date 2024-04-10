@@ -2358,7 +2358,7 @@ SEASTAR_THREAD_TEST_CASE(test_readd_protection) {
     };
     BOOST_REQUIRE(m.add(s));
     auto size = m.cloud_log_size();
-    BOOST_REQUIRE(m.add(s) == false);
+    BOOST_REQUIRE(m.add(s) == std::nullopt);
     BOOST_REQUIRE(m.cloud_log_size() == size);
     auto backlog = m.replaced_segments();
     BOOST_REQUIRE(backlog.empty());

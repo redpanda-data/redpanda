@@ -3,6 +3,7 @@ import pprint
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import CloudStorageType, SISettings, make_redpanda_service, LoggingConfig, get_cloud_storage_type
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until_segments, wait_for_removal_of_n_segments
@@ -52,6 +53,22 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
         # Set compaction to happen infrequently initially, so we have several log segments.
         self._rpk_client.cluster_config_set("log_compaction_interval_ms",
                                             f'{1000 * 60 * 60}')
+
+        # observe this metric about compaction removed bytes to check that it increases
+        metric = "vectorized_ntp_archiver_compacted_replaced_bytes"
+        original_topic_describe = list(
+            self._rpk_client.describe_topic(self.topic))[0]
+
+        m = MetricCheck(self.logger,
+                        self.redpanda,
+                        self.redpanda.nodes[original_topic_describe.leader -
+                                            1], [metric], {
+                                                "namespace": "kafka",
+                                                "topic": self.topic,
+                                                "partition": "0"
+                                            },
+                        reduce=sum)
+
         self.start_producer(throughput=5000, repeating_keys=10)
 
         expected_segment_count = 10
@@ -105,6 +122,19 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
                    timeout_sec=180,
                    backoff_sec=2,
                    err_msg=lambda: f"Compacted segments not uploaded")
+
+        # check that the metric is increasing. the check needs to account for leadership changes (unlikely in this test),
+        # because the current implementation does not persist the value in the manifest or the log
+        compacted_replaced_bytes_increasing = m.evaluate([
+            (metric, lambda old, new: old < new)
+        ])
+        new_topic_describe = list(self._rpk_client.describe_topic(
+            self.topic))[0]
+        self.logger.info(
+            f"{compacted_replaced_bytes_increasing=}, original leader,epoch: {original_topic_describe.leader},{original_topic_describe.leader_epoch}. new leader,epoch:{new_topic_describe.leader},{new_topic_describe.leader_epoch}"
+        )
+        if original_topic_describe.leader_epoch == new_topic_describe.leader_epoch:
+            assert compacted_replaced_bytes_increasing, f"{metric=} is not increasing"
 
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(
