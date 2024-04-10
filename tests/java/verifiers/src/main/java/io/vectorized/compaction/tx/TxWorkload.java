@@ -272,6 +272,7 @@ public class TxWorkload extends GatedWorkload {
       try {
         if (shouldAbort) {
           log(pid, "abort");
+          producer.flush();
           producer.abortTransaction();
         } else {
           log(pid, "commit");

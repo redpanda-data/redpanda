@@ -225,6 +225,7 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
       try {
         if (shouldAbort) {
           log(pid, "abort");
+          producer.flush();
           producer.abortTransaction();
         } else {
           log(pid, "commit");
