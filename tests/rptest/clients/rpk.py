@@ -961,8 +961,11 @@ class RpkTool:
     def self_test_start(self,
                         disk_duration_ms=None,
                         network_duration_ms=None,
+                        cloud_timeout_ms=None,
+                        cloud_backoff_ms=None,
                         only_disk=False,
                         only_network=False,
+                        only_cloud=False,
                         node_ids=None):
         cmd = [
             self._rpk_binary(), '--api-urls',
@@ -972,10 +975,16 @@ class RpkTool:
             cmd += ['--disk-duration-ms', str(disk_duration_ms)]
         if network_duration_ms is not None:
             cmd += ['--network-duration-ms', str(network_duration_ms)]
+        if cloud_timeout_ms is not None:
+            cmd += ['--cloud-timeout-ms', str(cloud_timeout_ms)]
+        if cloud_backoff_ms is not None:
+            cmd += ['--cloud-backoff-ms', str(cloud_backoff_ms)]
         if only_disk is True:
             cmd += ['--only-disk-test']
         if only_network is True:
             cmd += ['--only-network-test']
+        if only_cloud is True:
+            cmd += ['--only-cloud-test']
         if node_ids is not None:
             ids = ",".join([str(x) for x in node_ids])
             cmd += ['--participants-node-ids', ids]

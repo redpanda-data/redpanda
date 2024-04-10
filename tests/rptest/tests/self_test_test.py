@@ -13,7 +13,7 @@ from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 from ducktape.utils.util import wait_until
 from rptest.utils.functional import flat_map
 from rptest.util import wait_until_result
@@ -29,7 +29,10 @@ class SelfTestTest(RedpandaTest):
     ]
 
     def __init__(self, ctx):
-        super(SelfTestTest, self).__init__(test_context=ctx)
+
+        super(SelfTestTest,
+              self).__init__(test_context=ctx,
+                             si_settings=SISettings(test_context=ctx))
         self._rpk = RpkTool(self.redpanda)
 
     def wait_for_self_test_completion(self):
@@ -47,7 +50,7 @@ class SelfTestTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_self_test(self):
         """Assert the self test starts/completes with success."""
-        self._rpk.self_test_start(2000, 2000)
+        self._rpk.self_test_start(2000, 2000, 5000, 100)
 
         # Wait for completion
         node_reports = self.wait_for_self_test_completion()
@@ -57,9 +60,18 @@ class SelfTestTest(RedpandaTest):
             assert node['status'] == 'idle'
             assert node.get('results') is not None
             for report in node['results']:
-                assert 'error' not in report
-                assert 'warning' not in report
-                assert report['duration'] > 0, report['duration']
+                if report['test_type'] == 'cloud_storage':
+                    if (self.si_settings.cloud_storage_enable_remote_read
+                            and report['info'] in ['download']
+                        ) or (
+                            self.si_settings.cloud_storage_enable_remote_write
+                            and report['info'] in ['upload', 'delete']):
+                        assert 'error' not in report
+                        assert 'warning' not in report
+                else:
+                    assert 'error' not in report
+                    assert 'warning' not in report
+                    assert report['duration'] > 0, report['duration']
 
         num_nodes = 3
 
@@ -77,8 +89,12 @@ class SelfTestTest(RedpandaTest):
         # Assert properties of the network results hold true
         network_results = [r for r in reports if r['test_type'] == 'network']
 
+        cloud_results = [
+            r for r in reports if r['test_type'] == 'cloud_storage'
+        ]
         # Ensure no other result sets exist
-        assert len(disk_results) + len(network_results) == len(reports)
+        assert len(disk_results) + len(network_results) + len(
+            cloud_results) == len(reports)
 
         # Ensure nCr network test reports, clusterwide
         assert len(network_results) == comb(
@@ -136,13 +152,14 @@ class SelfTestTest(RedpandaTest):
             assert node['status'] == 'idle'
             assert node.get('results') is not None
             for report in node['results']:
-                # Errors related to crashed node are allowed, for example a network test on a good node that had attempted to connect to the crashed node
-                if 'error' in report:
-                    assert report[
-                        'error'] == f'Failed to reach peer with node_id: {stopped_nid}'
-                else:
-                    assert 'warning' not in report
-                    assert report['duration'] > 0, report['duration']
+                if report['test_type'] == 'network':
+                    # Errors related to crashed node are allowed, for example a network test on a good node that had attempted to connect to the crashed node
+                    if 'error' in report:
+                        assert report[
+                            'error'] == f'Failed to reach peer with node_id: {stopped_nid}'
+                    else:
+                        assert 'warning' not in report
+                        assert report['duration'] > 0, report['duration']
         crashed_nodes_report = [
             x for x in node_reports if x['node_id'] == stopped_nid
         ][0]
