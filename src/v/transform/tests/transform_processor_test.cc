@@ -61,7 +61,7 @@ MATCHER(SameRecordEq, "") {
 
 // A helper to ensure all records have the same key/value/headers (but doesn't
 // check other metadata).
-auto SameRecords(std::vector<model::record>& expected) {
+auto SameRecords(std::span<model::record> expected) {
     std::vector<std::reference_wrapper<const model::record>> expected_refs;
     expected_refs.reserve(expected.size());
     for (const auto& r : expected) {
@@ -76,10 +76,14 @@ struct stats_snapshot {
     std::vector<uint64_t> lag;
 };
 
+struct fixture_param {
+    model::transform_metadata meta;
+    bool autostart = true;
+};
+
 } // namespace
 
-class ProcessorTestFixture
-  : public ::testing::TestWithParam<model::transform_metadata> {
+class ProcessorTestFixture : public ::testing::TestWithParam<fixture_param> {
 public:
     void SetUp() override {
         auto engine = ss::make_shared<testing::fake_wasm_engine>();
@@ -87,18 +91,19 @@ public:
         auto src = std::make_unique<testing::fake_source>();
         _src = src.get();
         std::vector<std::unique_ptr<transform::sink>> sinks;
-        for (size_t i = 0; i < GetParam().output_topics.size(); ++i) {
+        const fixture_param& param = GetParam();
+        for (size_t i = 0; i < param.meta.output_topics.size(); ++i) {
             auto sink = std::make_unique<testing::fake_sink>();
             _sinks.push_back(sink.get());
             sinks.push_back(std::move(sink));
         }
         auto offset_tracker = std::make_unique<testing::fake_offset_tracker>();
         _offset_tracker = offset_tracker.get();
-        _probe.setup_metrics(GetParam());
+        _probe.setup_metrics(param.meta);
         _p = std::make_unique<transform::processor>(
           testing::my_transform_id,
           testing::my_ntp,
-          GetParam(),
+          param.meta,
           std::move(engine),
           [this](auto, auto, processor::state state) {
               if (state == processor::state::errored) {
@@ -109,12 +114,14 @@ public:
           std::move(sinks),
           std::move(offset_tracker),
           &_probe);
-        _p->start().get();
-        // Wait for the initial offset to be committed so we know that the
-        // processor is actually ready, otherwise it could be possible that
-        // the processor picks up after the initial records are added to the
-        // partition.
-        wait_for_committed_offset(kafka::offset{});
+        if (param.autostart) {
+            _p->start().get();
+            // Wait for the initial offset to be committed so we know that the
+            // processor is actually ready, otherwise it could be possible that
+            // the processor picks up after the initial records are added to the
+            // partition.
+            wait_for_committed_offset(kafka::offset{});
+        }
     }
     void TearDown() override { _p->stop().get(); }
 
@@ -156,7 +163,7 @@ public:
     void set_devnull_output() { _engine->set_output_topics({}); }
     void set_tee_output() {
         std::vector<model::topic> topics;
-        for (const auto& tp_ns : GetParam().output_topics) {
+        for (const auto& tp_ns : GetParam().meta.output_topics) {
             topics.push_back(tp_ns.tp);
         }
         _engine->set_output_topics(std::move(topics));
@@ -179,7 +186,9 @@ public:
             data.push_back(model::transformed_data::from_record(r.copy()));
         }
         auto batch = model::transformed_data::make_batch(
-          model::timestamp::now(), std::move(data));
+          _fixed_time, std::move(data));
+        _fixed_time = model::timestamp(
+          _fixed_time.value() + batch.record_count());
         batch.header().base_offset = kafka::offset_cast(_offset);
         _offset += batch.record_count();
         _src->push_batch(std::move(batch)).get();
@@ -215,7 +224,7 @@ public:
 
     std::vector<model::output_topic_index> output_topics() const {
         std::vector<model::output_topic_index> indexes;
-        size_t size = GetParam().output_topics.size();
+        size_t size = GetParam().meta.output_topics.size();
         indexes.reserve(size);
         for (size_t i = 0; i < size; ++i) {
             indexes.emplace_back(i);
@@ -244,6 +253,7 @@ private:
     static constexpr kafka::offset start_offset = kafka::offset(0);
 
     kafka::offset _offset = start_offset;
+    model::timestamp _fixed_time = model::timestamp::min();
     std::unique_ptr<transform::processor> _p;
     testing::fake_wasm_engine* _engine = nullptr;
     testing::fake_source* _src = nullptr;
@@ -271,7 +281,7 @@ TEST_P(ProcessorTestFixture, ProcessOne) {
     auto stats = current_stats();
     EXPECT_GT(stats.read_bytes, 0);
     EXPECT_THAT(stats.write_bytes, Contains(Gt(0)));
-    EXPECT_EQ(stats.write_bytes.size(), GetParam().output_topics.size());
+    EXPECT_EQ(stats.write_bytes.size(), GetParam().meta.output_topics.size());
     EXPECT_EQ(error_count(), 0);
 }
 
@@ -355,7 +365,51 @@ INSTANTIATE_TEST_SUITE_P(
   GenericProcessorTest,
   ProcessorTestFixture,
   ::testing::Values(
-    testing::my_single_output_metadata, testing::my_multiple_output_metadata));
+    fixture_param{testing::my_single_output_metadata},
+    fixture_param{testing::my_multiple_output_metadata}));
+
+// Alias the test name so that we can write specialized tests for multiple
+// output topics.
+using ProcessorTimequeryTestFixture = ProcessorTestFixture;
+
+TEST_P(ProcessorTimequeryTestFixture, StartAtTime) {
+    constexpr size_t n = 10;
+    std::vector<model::record> records;
+    for (size_t i = 0; i < n; ++i) {
+        auto batch_one = make_records(1);
+        push_batch(batch_one);
+        records.push_back(batch_one.front().copy());
+    }
+    start();
+    ASSERT_TRUE(wait_for_all_committed());
+    // We should skip the first 4 records and start exactly at timestamp=4
+    EXPECT_THAT(read_records(6), SameRecords(std::span(records).subspan(4)));
+}
+
+TEST_P(ProcessorTimequeryTestFixture, BatchGranularity) {
+    std::vector<model::record> records;
+    for (size_t i = 0; i < 3; ++i) {
+        auto batch = make_records(3);
+        push_batch(batch);
+        for (const auto& r : batch) {
+            records.push_back(r.copy());
+        }
+    }
+    start();
+    ASSERT_TRUE(wait_for_all_committed());
+    // We don't split batches to start at the exact right time, so you can get
+    // older records if they are batched together.
+    EXPECT_THAT(read_records(3), SameRecords(std::span(records).subspan(6)));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  TimequeryProcessorTest,
+  ProcessorTimequeryTestFixture,
+  ::testing::Values([]() {
+      auto meta = testing::my_single_output_metadata;
+      meta.offset_options.position = model::timestamp(4);
+      return fixture_param{.meta = meta, .autostart = false};
+  }()));
 
 // Alias the test name so that we can write specialized tests for multiple
 // output topics.
@@ -374,7 +428,7 @@ TEST_P(MultipleOutputsProcessorTestFixture, ProcessOne) {
     auto stats = current_stats();
     EXPECT_GT(stats.read_bytes, 0);
     EXPECT_THAT(stats.write_bytes, Each(Gt(0)));
-    EXPECT_EQ(stats.write_bytes.size(), GetParam().output_topics.size());
+    EXPECT_EQ(stats.write_bytes.size(), GetParam().meta.output_topics.size());
     EXPECT_EQ(error_count(), 0);
 }
 
@@ -490,6 +544,6 @@ TEST_P(MultipleOutputsProcessorTestFixture, TracksProcessPerOutput) {
 INSTANTIATE_TEST_SUITE_P(
   MultipleOutputsProcessorTest,
   MultipleOutputsProcessorTestFixture,
-  ::testing::Values(testing::my_multiple_output_metadata));
+  ::testing::Values(fixture_param{testing::my_multiple_output_metadata}));
 
 } // namespace transform

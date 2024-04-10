@@ -26,6 +26,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "model/transform.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
@@ -55,6 +56,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <boost/range/irange.hpp>
 
+#include <optional>
 #include <system_error>
 
 namespace transform {
@@ -142,6 +144,21 @@ public:
               kafka::make_error_code(result.error()).message());
         }
         return model::offset_cast(model::prev_offset(result.value()));
+    }
+
+    ss::future<kafka::offset>
+    offset_at_timestamp(model::timestamp ts, ss::abort_source* as) final {
+        auto result = co_await _partition.timequery(storage::timequery_config(
+          ts,
+          model::offset::max(),
+          /*iop=*/wasm_read_priority(),
+          /*type_filter=*/std::nullopt,
+          /*as=*/*as,
+          /*client_addr=*/std::nullopt));
+        if (!result.has_value()) {
+            co_return kafka::offset::min();
+        }
+        co_return model::offset_cast(result->offset);
     }
 
     ss::future<model::record_batch_reader>
@@ -651,6 +668,14 @@ service::deploy_transform(model::transform_metadata meta, iobuf binary) {
     auto [key, offset] = result.value();
     meta.uuid = key;
     meta.source_ptr = offset;
+    meta.offset_options = model::transform_offset_options{
+      // Set the transform to start processing new records starting now,
+      // this is the default expectations for developers, as once deploy
+      // completes, they should be able to produce without waiting for the
+      // vm to start. If we start from the end of the log, then records produced
+      // between now and the vm start would be skipped.
+      .position = model::new_timestamp(),
+    };
     vlog(
       tlog.debug,
       "stored wasm binary for transform {} at offset {}",
