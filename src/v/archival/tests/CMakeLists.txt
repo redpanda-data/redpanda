@@ -92,22 +92,4 @@ else()
      LABELS storage
     )
 
-    # rp_test(
-    #   UNIT_TEST
-    #   GTEST
-    #   BINARY_NAME gtest_arrow_writer
-    #   SOURCES
-    #     arrow_writer_gtest.cc
-    #   LIBRARIES
-    #     v::raft
-    #     v::raft_fixture
-    #     v::cluster
-    #     v::cloud_roles
-    #     v::http_test_utils
-    #     v::gtest_main
-    #     Arrow::arrow_shared
-    #     Parquet::parquet_shared
-    #   LABELS archival
-    #   ARGS "-- -c 1"
-    # )
 endif()
