@@ -27,6 +27,7 @@
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "security/acl.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sstring.hh>
@@ -39,8 +40,8 @@
 namespace kafka {
 template<typename T>
 struct groupped_resources {
-    std::vector<T> topic_changes;
-    std::vector<T> broker_changes;
+    chunked_vector<T> topic_changes;
+    chunked_vector<T> broker_changes;
 };
 
 template<typename T>
@@ -193,15 +194,18 @@ std::vector<R> authorize_alter_config_resources(
             res, error_code::topic_authorization_failed);
       });
 
-    to_authorize.topic_changes.erase(
-      unauthorized_it, to_authorize.topic_changes.end());
+    to_authorize.topic_changes.pop_back_n(
+      std::distance(unauthorized_it, to_authorize.topic_changes.end()));
 
     return not_authorized;
 }
 
 template<typename T, typename R, typename Func>
 ss::future<std::vector<R>> do_alter_topics_configuration(
-  request_context& ctx, std::vector<T> resources, bool validate_only, Func f) {
+  request_context& ctx,
+  chunked_vector<T> resources,
+  bool validate_only,
+  Func f) {
     std::vector<R> responses;
     responses.reserve(resources.size());
 
@@ -257,7 +261,7 @@ ss::future<std::vector<R>> do_alter_topics_configuration(
 
 template<typename T, typename R>
 ss::future<std::vector<R>> unsupported_broker_configuration(
-  std::vector<T> resources, std::string_view const msg) {
+  chunked_vector<T> resources, std::string_view const msg) {
     std::vector<R> responses;
     responses.reserve(resources.size());
     std::transform(
