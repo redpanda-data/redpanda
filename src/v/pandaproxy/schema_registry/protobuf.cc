@@ -624,11 +624,13 @@ struct compatibility_checker {
 
 } // namespace
 
-bool check_compatible(
+compatibility_result check_compatible(
   const protobuf_schema_definition& reader,
-  const protobuf_schema_definition& writer) {
+  const protobuf_schema_definition& writer,
+  verbose is_verbose [[maybe_unused]]) {
     compatibility_checker checker{reader(), writer()};
-    return checker.check_compatible();
+    // TODO(gellert.nagy): start using the is_verbose flag in a follow up PR
+    return compatibility_result{.is_compat = checker.check_compatible()};
 }
 
 } // namespace pandaproxy::schema_registry
