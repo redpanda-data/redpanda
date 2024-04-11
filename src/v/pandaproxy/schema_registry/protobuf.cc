@@ -693,11 +693,12 @@ struct compatibility_checker {
 
 } // namespace
 
-bool check_compatible(
+compatibility_result check_compatible(
   const protobuf_schema_definition& reader,
-  const protobuf_schema_definition& writer) {
+  const protobuf_schema_definition& writer,
+  verbose is_verbose) {
     compatibility_checker checker{reader(), writer()};
-    return checker.check_compatible("#/")(verbose::no).is_compat;
+    return checker.check_compatible("#/")(is_verbose);
 }
 
 } // namespace pandaproxy::schema_registry

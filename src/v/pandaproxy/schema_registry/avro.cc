@@ -598,11 +598,12 @@ sanitize_avro_schema_definition(unparsed_schema_definition def) {
       def.refs()};
 }
 
-bool check_compatible(
-  const avro_schema_definition& reader, const avro_schema_definition& writer) {
+compatibility_result check_compatible(
+  const avro_schema_definition& reader,
+  const avro_schema_definition& writer,
+  verbose is_verbose) {
     return check_compatible(
-             *reader().root(), *writer().root(), "/")(verbose::no)
-      .is_compat;
+      *reader().root(), *writer().root(), "/")(is_verbose);
 }
 
 } // namespace pandaproxy::schema_registry
