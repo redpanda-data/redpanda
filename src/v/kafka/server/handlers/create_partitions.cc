@@ -13,6 +13,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/create_partitions_request.h"
 #include "kafka/protocol/schemata/create_partitions_response.h"
@@ -43,7 +44,7 @@ make_result(const create_partitions_topic& tp, error_code ec) {
     };
 }
 
-using request_iterator = std::vector<create_partitions_topic>::iterator;
+using request_iterator = chunked_vector<create_partitions_topic>::iterator;
 
 template<typename ResultIter>
 request_iterator validate_range_duplicates(
@@ -152,7 +153,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
     create_partitions_response resp;
 
     if (request.data.topics.empty()) {
-        co_return co_await ctx.respond(resp);
+        co_return co_await ctx.respond(std::move(resp));
     }
 
     resp.data.results.reserve(request.data.topics.size());

@@ -326,10 +326,10 @@ create_topic_properties_update(
     return update;
 }
 
-static ss::future<std::vector<alter_configs_resource_response>>
+static ss::future<chunked_vector<alter_configs_resource_response>>
 alter_topic_configuration(
   request_context& ctx,
-  std::vector<alter_configs_resource> resources,
+  chunked_vector<alter_configs_resource> resources,
   bool validate_only) {
     return do_alter_topics_configuration<
       alter_configs_resource,
@@ -342,8 +342,8 @@ alter_topic_configuration(
       });
 }
 
-static ss::future<std::vector<alter_configs_resource_response>>
-alter_broker_configuartion(std::vector<alter_configs_resource> resources) {
+static ss::future<chunked_vector<alter_configs_resource_response>>
+alter_broker_configuartion(chunked_vector<alter_configs_resource> resources) {
     return unsupported_broker_configuration<
       alter_configs_resource,
       alter_configs_resource_response>(
@@ -372,13 +372,14 @@ ss::future<response_ptr> alter_configs_handler::handle(
           alter_configs_resource_response,
           alter_configs_resource>(
           std::move(groupped), std::move(unauthorized_responsens));
+
         co_return co_await ctx.respond(
           assemble_alter_config_response<
             alter_configs_response,
             alter_configs_resource_response>(std::move(responses)));
     }
 
-    std::vector<ss::future<std::vector<alter_configs_resource_response>>>
+    std::vector<ss::future<chunked_vector<alter_configs_resource_response>>>
       futures;
     futures.reserve(2);
     futures.push_back(alter_topic_configuration(

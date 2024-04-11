@@ -259,17 +259,18 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
         // disable incremental fetches
         req.data.session_id = kafka::invalid_fetch_session_id;
         req.data.session_epoch = kafka::final_fetch_session_epoch;
-        req.data.topics = {{
+        req.data.topics.emplace_back(kafka::fetch_topic{
           .name = topic,
           .fetch_partitions = {{
             .partition_index = pid,
             .fetch_offset = offset,
           }},
-        }};
+        });
 
         auto client = make_kafka_client().get0();
         client.connect().get();
-        auto resp = client.dispatch(req, kafka::api_version(version)).get0();
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(version)).get0();
         client.stop().then([&client] { client.shutdown(); }).get();
 
         BOOST_REQUIRE(resp.data.topics.size() == 1);
@@ -360,7 +361,8 @@ FIXTURE_TEST(fetch_empty, redpanda_thread_fixture) {
 
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto resp_1 = client.dispatch(no_topics, kafka::api_version(6)).get0();
+    auto resp_1
+      = client.dispatch(std::move(no_topics), kafka::api_version(6)).get0();
 
     BOOST_REQUIRE(resp_1.data.topics.empty());
 
@@ -368,9 +370,13 @@ FIXTURE_TEST(fetch_empty, redpanda_thread_fixture) {
     no_partitions.data.max_bytes = std::numeric_limits<int32_t>::max();
     no_partitions.data.min_bytes = 1;
     no_partitions.data.max_wait_ms = std::chrono::milliseconds(1000);
-    no_partitions.data.topics = {{.name = topic, .fetch_partitions = {}}};
+    no_partitions.data.topics.emplace_back(
+      kafka::fetch_topic{.name = topic, .fetch_partitions = {}});
 
-    auto resp_2 = client.dispatch(no_topics, kafka::api_version(6)).get0();
+    // NOTE(oren): this looks like it was ill-formed before? see surrounding
+    // code
+    auto resp_2
+      = client.dispatch(std::move(no_partitions), kafka::api_version(6)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_REQUIRE(resp_2.data.topics.empty());
@@ -428,17 +434,17 @@ FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
     req.data.max_bytes = std::numeric_limits<int32_t>::max();
     req.data.min_bytes = 1;
     req.data.max_wait_ms = std::chrono::milliseconds(1000);
-    req.data.topics = {
-      {.name = topic,
-       .fetch_partitions = {{
-         .partition_index = pid,
-         .current_leader_epoch = kafka::leader_epoch(1),
-         .fetch_offset = model::offset(6),
-       }}}};
+    req.data.topics.emplace_back(kafka::fetch_topic{
+      .name = topic,
+      .fetch_partitions = {{
+        .partition_index = pid,
+        .current_leader_epoch = kafka::leader_epoch(1),
+        .fetch_offset = model::offset(6),
+      }}});
 
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto resp = client.dispatch(req, kafka::api_version(9)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(9)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_REQUIRE_MESSAGE(
@@ -466,10 +472,10 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
     req.data.min_bytes = 1;
     req.data.max_wait_ms = std::chrono::milliseconds(3000);
     req.data.session_id = kafka::invalid_fetch_session_id;
-    req.data.topics = {{
+    req.data.topics.emplace_back(kafka::fetch_topic{
       .name = topic,
       .fetch_partitions = {},
-    }};
+    });
     for (int i = 0; i < 6; ++i) {
         kafka::fetch_request::partition p;
         p.partition_index = model::partition_id(i);
@@ -480,7 +486,7 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
     }
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto fresp = client.dispatch(req, kafka::api_version(4));
+    auto fresp = client.dispatch(std::move(req), kafka::api_version(4));
 
     for (int i = 0; i < 6; ++i) {
         model::partition_id partition_id(i);
@@ -541,17 +547,17 @@ FIXTURE_TEST(fetch_leader_ack, redpanda_thread_fixture) {
     req.data.min_bytes = 1;
     req.data.max_wait_ms = std::chrono::milliseconds(5000);
     req.data.session_id = kafka::invalid_fetch_session_id;
-    req.data.topics = {{
+    req.data.topics.emplace_back(kafka::fetch_topic{
       .name = topic,
       .fetch_partitions = {{
         .partition_index = pid,
         .fetch_offset = offset,
       }},
-    }};
+    });
 
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto fresp = client.dispatch(req, kafka::api_version(4));
+    auto fresp = client.dispatch(std::move(req), kafka::api_version(4));
     auto shard = app.shard_table.local().shard_for(ntp);
     app.partition_manager
       .invoke_on(
@@ -598,17 +604,17 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
     req.data.min_bytes = 1;
     req.data.max_wait_ms = std::chrono::milliseconds(5000);
     req.data.session_id = kafka::invalid_fetch_session_id;
-    req.data.topics = {{
+    req.data.topics.emplace_back(kafka::fetch_topic{
       .name = topic,
       .fetch_partitions = {{
         .partition_index = pid,
         .fetch_offset = offset,
       }},
-    }};
+    });
 
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto fresp = client.dispatch(req, kafka::api_version(4));
+    auto fresp = client.dispatch(std::move(req), kafka::api_version(4));
     auto shard = app.shard_table.local().shard_for(ntp);
     app.partition_manager
       .invoke_on(
@@ -665,15 +671,14 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
     req.data.min_bytes = 1;
     req.data.max_wait_ms = std::chrono::milliseconds(3000);
     req.data.session_id = kafka::invalid_fetch_session_id;
-    req.data.topics = {
-      {
-        .name = topic_1,
-        .fetch_partitions = {},
-      },
-      {
-        .name = topic_2,
-        .fetch_partitions = {},
-      }};
+    req.data.topics.emplace_back(kafka::fetch_topic{
+      .name = topic_1,
+      .fetch_partitions = {},
+    });
+    req.data.topics.emplace_back(kafka::fetch_topic{
+      .name = topic_2,
+      .fetch_partitions = {},
+    });
 
     for (auto& ntp : ntps) {
         kafka::fetch_request::partition p;
@@ -707,7 +712,7 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
           .get0();
     }
 
-    auto resp = client.dispatch(req, kafka::api_version(4)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(4)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 2);
@@ -762,17 +767,17 @@ FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
         req.data.min_bytes = 1;
         req.data.max_wait_ms = std::chrono::milliseconds(0);
         req.data.session_id = kafka::invalid_fetch_session_id;
-        req.data.topics = {{
+        req.data.topics.emplace_back(kafka::fetch_topic{
           .name = topic,
           .fetch_partitions = {{
             .partition_index = pid,
             .fetch_offset = model::offset(0),
           }},
-        }};
+        });
 
         auto client = make_kafka_client().get();
         client.connect().get();
-        auto fresp = client.dispatch(req, kafka::api_version(4));
+        auto fresp = client.dispatch(std::move(req), kafka::api_version(4));
 
         auto resp = fresp.get();
         client.stop().then([&client] { client.shutdown(); }).get();

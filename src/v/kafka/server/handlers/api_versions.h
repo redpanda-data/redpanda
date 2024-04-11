@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/api_versions.h"
 #include "kafka/server/handlers/handler.h"
 
@@ -24,6 +25,6 @@ struct api_versions_handler
     static api_versions_response handle_raw(request_context& ctx);
 };
 
-std::vector<api_versions_response_key> get_supported_apis();
+chunked_vector<api_versions_response_key> get_supported_apis();
 
 } // namespace kafka

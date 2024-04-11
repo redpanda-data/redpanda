@@ -11,6 +11,7 @@
 
 #pragma once
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/join_group_request.h"
 #include "kafka/protocol/schemata/join_group_response.h"
@@ -48,8 +49,9 @@ struct join_group_request final {
      * type is also the type stored on disk and we do not want it to be tied to
      * the type produced by code generation.
      */
-    std::vector<member_protocol> native_member_protocols() const {
-        std::vector<member_protocol> res;
+    chunked_vector<member_protocol> native_member_protocols() const {
+        chunked_vector<member_protocol> res;
+        res.reserve(data.protocols.size());
         std::transform(
           data.protocols.cbegin(),
           data.protocols.cend(),
@@ -102,7 +104,7 @@ struct join_group_response final {
       kafka::protocol_name protocol_name,
       kafka::member_id leader_id,
       kafka::member_id member_id,
-      std::vector<join_group_response_member> members = {}) {
+      chunked_vector<join_group_response_member> members = {}) {
         data.throttle_time_ms = std::chrono::milliseconds(0);
         data.error_code = error;
         data.generation_id = generation_id;
@@ -134,6 +136,19 @@ make_join_error(kafka::member_id member_id, error_code error) {
 
 // group membership helper to compare a protocol set from the wire with our
 // internal type without doing a full type conversion.
+inline bool operator==(
+  const chunked_vector<join_group_request_protocol>& a,
+  const chunked_vector<member_protocol>& b) {
+    return std::equal(
+      a.cbegin(),
+      a.cend(),
+      b.cbegin(),
+      b.cend(),
+      [](const join_group_request_protocol& a, const member_protocol& b) {
+          return a.name == b.name && a.metadata == b.metadata;
+      });
+}
+
 inline bool operator==(
   const std::vector<join_group_request_protocol>& a,
   const std::vector<member_protocol>& b) {
