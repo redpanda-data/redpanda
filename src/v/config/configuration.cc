@@ -2506,6 +2506,12 @@ configuration::configuration()
       "Size of the zstd decompression workspace",
       {.visibility = visibility::tunable},
       8_MiB)
+  , lz4_decompress_reusable_buffers_disabled(
+      *this,
+      "lz4_decompress_reusable_buffers_disabled",
+      "Disable reusable preallocated buffers for LZ4 decompression",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
   , full_raft_configuration_recovery_pattern(
       *this, "full_raft_configuration_recovery_pattern")
   , enable_auto_rebalance_on_node_add(

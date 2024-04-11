@@ -11,11 +11,13 @@ v_cc_library(
     "stream_zstd.cc"
     "async_stream_zstd.cc"
     "snappy_standard_compressor.cc"
+    "lz4_decompression_buffers.cc"
     "internal/snappy_java_compressor.cc"
     "internal/lz4_frame_compressor.cc"
     "internal/gzip_compressor.cc"
   DEPS
     v::bytes
+    v::ssx
     Zstd::zstd
     LZ4::LZ4
     Snappy::snappy
