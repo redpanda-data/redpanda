@@ -10,6 +10,7 @@
  */
 #include "cloud_storage/tests/util.h"
 
+#include "model/record.h"
 #include "model/record_batch_types.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -821,6 +822,89 @@ scan_result scan_remote_partition(
       .bytes_skip = probe.get_bytes_skip() - bytes_skip,
       .bytes_accept = probe.get_bytes_accept() - bytes_accept,
     };
+}
+
+std::vector<model::record_batch_header>
+scan_remote_partition_incrementally_with_closest_lso(
+  cloud_storage_fixture& imposter,
+  model::offset base,
+  model::offset max,
+  size_t maybe_max_segments,
+  size_t maybe_max_readers) {
+    ss::lowres_clock::update();
+    auto conf = imposter.get_configuration();
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    if (maybe_max_segments) {
+        config::shard_local_cfg()
+          .cloud_storage_max_materialized_segments_per_shard.set_value(
+            maybe_max_segments);
+    }
+    if (maybe_max_readers) {
+        config::shard_local_cfg()
+          .cloud_storage_max_segment_readers_per_shard.set_value(
+            maybe_max_readers);
+    }
+    auto manifest = hydrate_manifest(imposter.api.local(), bucket);
+    partition_probe probe(manifest.get_ntp());
+
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      imposter.api, imposter.cache, manifest, bucket);
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view,
+      imposter.api.local(),
+      imposter.cache.local(),
+      bucket,
+      probe);
+
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    std::vector<model::record_batch_header> headers;
+
+    storage::log_reader_config reader_config(
+      base, model::next_offset(base), ss::default_priority_class());
+
+    // starting max_bytes
+    reader_config.max_bytes = 1;
+
+    auto next = base;
+
+    int num_fetches = 0;
+    while (next < max) {
+        reader_config.start_offset = next;
+        reader_config.max_offset = model::next_offset(next);
+        vlog(test_util_log.info, "reader_config {}", reader_config);
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(test_consumer(), model::no_timeout).get();
+        if (headers_read.empty()) {
+            // If the reader returned the empty result then the offset
+            // corresponds to tx-batch. Our own tx-batches looks like offset
+            // gaps to the client. We're always adding tx-batches with only one
+            // record so we can increment the 'next' offset and continue.
+            next = model::next_offset(next);
+            vlog(
+              test_util_log.info,
+              "Reader config: {} produced empty result, next offset set to {}",
+              reader_config,
+              next);
+            // test is prepared to see the gaps in place of tx-fence batches
+            continue;
+        }
+        BOOST_REQUIRE(headers_read.size() == 1);
+        vlog(test_util_log.info, "header {}", headers_read.front());
+        next = headers_read.back().last_offset() + model::offset(1);
+        std::copy(
+          headers_read.begin(),
+          headers_read.end(),
+          std::back_inserter(headers));
+        num_fetches++;
+    }
+    BOOST_REQUIRE(num_fetches > 0);
+    vlog(test_util_log.info, "{} fetch operations performed", num_fetches);
+    return headers;
 }
 
 void reupload_compacted_segments(
