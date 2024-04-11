@@ -26,6 +26,7 @@ enum class errc {
     version_not_supported,
     connection_timeout,
     shutting_down,
+    service_unavailable,
 
     // Used when receiving an undefined errc (e.g. from a newer version of
     // Redpanda).
@@ -52,6 +53,8 @@ struct errc_category final : public std::error_category {
             return "rpc::errc::connection_timeout";
         case errc::shutting_down:
             return "rpc::errc::shutting_down";
+        case errc::service_unavailable:
+            return "rpc::errc::service_unavailable";
         default:
             return "rpc::errc::unknown(" + std::to_string(c) + ")";
         }

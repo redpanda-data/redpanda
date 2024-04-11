@@ -102,7 +102,7 @@ std::string_view to_string_view(feature f) {
     case feature::partition_shard_in_health_report:
         return "partition_shard_in_health_report";
     case feature::role_based_access_control:
-        return "role_base_access_control";
+        return "role_based_access_control";
     case feature::cluster_topic_manifest_format_v2:
         return "cluster_topic_manifest_format_v2";
 

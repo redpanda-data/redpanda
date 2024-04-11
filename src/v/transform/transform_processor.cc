@@ -194,8 +194,9 @@ ss::future<> processor::poll_sleep() {
     try {
         co_await ss::sleep_abortable<ss::lowres_clock>(
           jitter.next_duration(), _as);
-    } catch (const ss::sleep_aborted&) {
+    } catch (const ss::sleep_aborted& ex) {
         // do nothing, the caller will handle exiting properly.
+        std::ignore = ex;
     }
 }
 
@@ -204,14 +205,34 @@ processor::load_latest_committed() {
     co_await _offset_tracker->wait_for_previous_flushes(&_as);
     auto latest_committed = co_await _offset_tracker->load_committed_offsets();
     auto latest = _source->latest_offset();
+    std::optional<kafka::offset> initial_offset;
     for (const auto& [_, output] : _outputs) {
         auto it = latest_committed.find(output.index);
         if (it == latest_committed.end()) {
-            // If we have never committed, mark the end of the log as our
-            // starting place, and start processing from the next record that is
-            // produced.
-            co_await _offset_tracker->commit_offset(output.index, latest);
-            latest_committed[output.index] = latest;
+            // If we have never committed, determine where we need to start
+            // processing log records, from the end or at a specific timestamp.
+            if (!initial_offset) {
+                initial_offset = co_await ss::visit(
+                  _meta.offset_options.position,
+                  [this,
+                   &latest](model::transform_offset_options::latest_offset) {
+                      vlog(_logger.debug, "starting at latest: {}", latest);
+                      return ssx::now(latest);
+                  },
+                  [this](model::timestamp ts) {
+                      vlog(_logger.debug, "starting at timestamp: {}", ts);
+                      // We want to *start at* this timestamp, so record that
+                      // we're going to commit progress at the offset before, so
+                      // we start inclusive of this offset.
+                      return _source->offset_at_timestamp(ts, &_as).then(
+                        kafka::prev_offset);
+                  });
+                vlog(
+                  _logger.debug, "resolved start offset: {}", *initial_offset);
+            }
+            co_await _offset_tracker->commit_offset(
+              output.index, *initial_offset);
+            latest_committed[output.index] = *initial_offset;
             continue;
         }
         // The latest record is inclusive of the last record, so we want to

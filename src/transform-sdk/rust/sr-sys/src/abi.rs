@@ -14,6 +14,8 @@
 
 #[link(wasm_import_module = "redpanda_schema_registry")]
 extern "C" {
+    #[link_name = "check_abi_version_0"]
+    pub(crate) fn check();
 
     #[link_name = "get_schema_definition_len"]
     pub(crate) fn get_schema_definition_len(schema_id: i32, len: *mut i32) -> i32;

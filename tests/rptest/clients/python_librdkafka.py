@@ -12,9 +12,10 @@ import functools
 
 from confluent_kafka import Consumer, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
-from typing import Optional
+from typing import Any, Optional, cast
 from rptest.services import tls
 from rptest.services.keycloak import OAuthConfig
+from rptest.services.redpanda_types import KafkaClientSecurity
 
 
 class PythonLibrdkafka:
@@ -24,15 +25,15 @@ class PythonLibrdkafka:
     def __init__(self,
                  redpanda,
                  *,
-                 username=None,
-                 password=None,
-                 algorithm=None,
+                 username: str | None = None,
+                 password: str | None = None,
+                 algorithm: str | None = None,
                  tls_cert: Optional[tls.Certificate] = None,
                  oauth_config: Optional[OAuthConfig] = None):
         self._redpanda = redpanda
-        self._username = username
-        self._password = password
-        self._algorithm = algorithm
+        self._security = cast(KafkaClientSecurity,
+                              redpanda.kafka_client_security()).override(
+                                  username, password, algorithm, None)
         self._tls_cert = tls_cert
         self._oauth_config = oauth_config
         self._oauth_count = 0
@@ -74,7 +75,7 @@ class PythonLibrdkafka:
         self._redpanda.logger.debug(f"{producer_conf}")
         return Producer(producer_conf)
 
-    def get_consumer(self, extra_config: Optional[dict] = None):
+    def get_consumer(self, extra_config: dict[str, Any] = {}):
         conf = self._get_config()
         conf.update(extra_config)
         self._redpanda.logger.debug(f"{conf}")
@@ -85,11 +86,10 @@ class PythonLibrdkafka:
             'bootstrap.servers': self._redpanda.brokers(),
         }
 
-        if self._redpanda.sasl_enabled():
-            if self._algorithm == 'OAUTHBEARER':
-                conf.update(self._get_oauth_config())
-            else:
-                conf.update(self._get_sasl_config())
+        if self._security.mechanism == 'OAUTHBEARER':
+            conf.update(self._get_oauth_config())
+        else:
+            conf.update(self._get_sasl_config())
 
         if self._tls_cert:
             conf.update({
@@ -123,17 +123,14 @@ class PythonLibrdkafka:
             self._redpanda.logger,
         }
 
-    def _get_sasl_config(self):
-        if self._username:
-            c = (self._username, self._password, self._algorithm)
-        else:
-            c = self._redpanda.SUPERUSER_CREDENTIALS
+    def _get_sasl_config(self) -> dict[str, str]:
+        c = self._security.simple_credentials()
         return {
-            'sasl.mechanism': c[2],
-            'security.protocol': 'sasl_plaintext',
-            'sasl.username': c[0],
-            'sasl.password': c[1],
-        }
+            'security.protocol': self._security.security_protocol.name.lower(),
+            'sasl.username': c.username,
+            'sasl.password': c.password,
+            'sasl.mechanism': c.mechanism
+        } if c else {}
 
     def _get_oauth_token(self, conf: OAuthConfig, _):
         # Better to wrap this whole thing in a try block, since the context where

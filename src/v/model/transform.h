@@ -17,6 +17,7 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "serde/envelope.h"
+#include "serde/rw/variant.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -46,12 +47,48 @@ using transform_name_view
   = named_type<std::string_view, struct transform_name_view_tag>;
 
 /**
+ * The options related to the offset at which transforms are at.
+ *
+ * Currently, this struct only supports specifying an initial position, but in
+ * the future it may be expanded to support resetting the offset at which
+ * transforms are at.
+ */
+struct transform_offset_options
+  : serde::envelope<
+      transform_offset_options,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    // Signifies that a transform should start at the latest offset available.
+    //
+    // This is the default, but is expected to only be used for legacy deployed
+    // transforms. New deployed transforms should start their offsets at a fixed
+    // point from a deploy.
+    struct latest_offset
+      : serde::
+          envelope<latest_offset, serde::version<0>, serde::compat_version<0>> {
+        bool operator==(const latest_offset&) const = default;
+    };
+    // A transform can either start at the latest offset or at a timestamp.
+    //
+    // When a timestamp is used, a timequery is used to resolve the offset for
+    // each partition.
+    serde::variant<latest_offset, model::timestamp> position;
+
+    bool operator==(const transform_offset_options&) const = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const transform_offset_options&);
+
+    auto serde_fields() { return std::tie(position); }
+};
+
+/**
  * Metadata for a WebAssembly powered data transforms.
  */
 struct transform_metadata
   : serde::envelope<
       transform_metadata,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     // The user specified name of the transform.
     transform_name name;
@@ -69,6 +106,8 @@ struct transform_metadata
     uuid_t uuid;
     // The offset of the committed WASM source in the wasm_binary topic.
     model::offset source_ptr;
+    // The options related to the offset that the transform processor.
+    transform_offset_options offset_options;
 
     friend bool operator==(const transform_metadata&, const transform_metadata&)
       = default;
@@ -77,7 +116,13 @@ struct transform_metadata
 
     auto serde_fields() {
         return std::tie(
-          name, input_topic, output_topics, environment, uuid, source_ptr);
+          name,
+          input_topic,
+          output_topics,
+          environment,
+          uuid,
+          source_ptr,
+          offset_options);
     }
 };
 

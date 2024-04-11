@@ -11,6 +11,7 @@
 #pragma once
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
+#include "config/property.h"
 #include "model/metadata.h"
 
 #include <seastar/core/abort_source.hh>
@@ -37,6 +38,7 @@ public:
       model::node_id,
       size_t,
       std::chrono::milliseconds,
+      config::binding<size_t> max_concurrent_moves,
       ss::sharded<topic_table>&,
       ss::sharded<topics_frontend>&,
       ss::sharded<partition_allocator>&,
@@ -49,13 +51,13 @@ public:
 
 private:
     ss::future<bool> ensure_topic_replication(model::topic_namespace_view);
-    ss::future<bool> ensure_partition_replication(model::ntp);
     void tick();
     ss::future<> do_tick();
 
     model::node_id _self;
     size_t _target_replication_factor;
     std::chrono::milliseconds _tick_interval;
+    config::binding<size_t> _max_concurrent_moves;
     ss::sharded<topic_table>& _topics;
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<partition_allocator>& _allocator;

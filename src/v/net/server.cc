@@ -263,7 +263,8 @@ ss::future<ss::stop_iteration> server::accept_finish(
       ar.remote_address,
       *_probe,
       cfg.stream_recv_buf,
-      tls_enabled);
+      tls_enabled,
+      &_log);
     vlog(
       _log.trace,
       "{} - Incoming connection from {} on \"{}\"",

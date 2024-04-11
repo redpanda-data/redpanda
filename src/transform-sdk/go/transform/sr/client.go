@@ -127,6 +127,7 @@ func NewClient(opts ...ClientOpt) (c SchemaRegistryClient) {
 	for _, opt := range opts {
 		opt.apply(&o)
 	}
+	checkAbi()
 	c = &clientImpl{}
 	if o.maxCacheSize <= 0 {
 		return c

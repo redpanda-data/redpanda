@@ -21,11 +21,13 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
 from kafka import KafkaConsumer, TopicPartition
+from kafka import errors as kerr
 from kafka.admin import KafkaAdminClient
 from kafka.protocol.commit import OffsetFetchRequest_v3
 from kafka.protocol.api import Request, Response
@@ -405,21 +407,28 @@ class ConsumerGroupTest(RedpandaTest):
         assert offsets[TopicPartition(self.topic_spec.name,
                                       0)].leader_epoch > 0
 
+        # Remember the old offsets to compare them after the restart.
+        prev_offsets = offsets
+
         # Restart the broker.
         self.logger.info("Restarting redpanda nodes.")
         self.redpanda.restart_nodes(self.redpanda.nodes)
-        self.redpanda._admin.await_stable_leader("controller",
-                                                 partition=0,
-                                                 namespace='redpanda',
-                                                 timeout_s=60,
-                                                 backoff_s=2)
-
-        prev_offsets = offsets
 
         # Validate that the group state is recovered.
-        test_admin = KafkaTestAdminClient(self.redpanda)
-        offsets = test_admin.list_offsets(
-            group_id, [TopicPartition(self.topic_spec.name, 0)])
+        def try_list_offsets():
+            try:
+                test_admin = KafkaTestAdminClient(self.redpanda)
+                return test_admin.list_offsets(
+                    group_id, [TopicPartition(self.topic_spec.name, 0)])
+            except Exception as e:
+                self.logger.debug(f"Failed to list offsets: {e}")
+                return None
+
+        offsets = wait_until_result(
+            try_list_offsets,
+            timeout_sec=30,
+            backoff_sec=3,
+            err_msg="Failed to make list_offsets request")
 
         self.logger.info(f"Got offsets after restart: {offsets}")
         assert len(offsets) == 1
@@ -592,6 +601,10 @@ class KafkaTestAdminClient():
         return self._admin._send_request_to_node(coordinator, request)
 
     def _list_offsets_send_process_response(self, response):
+        error_type = kerr.for_code(response.error_code)
+        if error_type is not kerr.NoError:
+            raise error_type("Error in list_offsets response")
+
         offsets = {}
         for topic, partitions in response.topics:
             for partition, offset, leader_epoch, metadata, error_code in partitions:

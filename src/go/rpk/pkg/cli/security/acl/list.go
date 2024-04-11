@@ -50,6 +50,10 @@ resource names:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
+			f := p.Formatter
+			if h, ok := f.Help(&aclListOutput{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
@@ -59,9 +63,10 @@ resource names:
 
 			b, err := a.createDeletionsAndDescribes(true)
 			out.MaybeDieErr(err)
-			describeReqResp(adm, printAllFilters, false, b)
+			describeReqResp(adm, printAllFilters, false, b, f)
 		},
 	}
+	p.InstallFormatFlag(cmd)
 	p.InstallKafkaFlags(cmd)
 	a.addListFlags(cmd)
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
@@ -101,6 +106,7 @@ func describeReqResp(
 	printAllFilters bool,
 	printMatchesHeader bool,
 	b *kadm.ACLBuilder,
+	f config.OutFormatter,
 ) {
 	results, err := adm.DescribeACLs(context.Background(), b)
 	out.MaybeDie(err, "unable to list ACLs: %v", err)
@@ -115,41 +121,22 @@ func describeReqResp(
 			break
 		}
 	}
-	if printAllFilters || printFailedFilters {
-		out.Section("filters")
-		printDescribeFilters(results)
-		fmt.Println()
-		printMatchesHeader = true
-	}
-	if printMatchesHeader {
-		out.Section("matches")
-	}
-	printDescribedACLs(results)
-}
-
-func printDescribeFilters(results kadm.DescribeACLsResults) {
-	tw := out.NewTable(headersWithError...)
-	defer tw.Flush()
+	output := aclListOutput{}
 	for _, f := range results {
-		tw.PrintStructFields(aclWithMessage{
-			unptr(f.Principal),
-			unptr(f.Host),
-			f.Type,
-			unptr(f.Name),
-			f.Pattern,
-			f.Operation,
-			f.Permission,
-			kafka.ErrMessage(f.Err),
-		})
-	}
-}
-
-func printDescribedACLs(results kadm.DescribeACLsResults) {
-	tw := out.NewTable(headersWithError...)
-	defer tw.Flush()
-	for _, f := range results {
+		if printAllFilters || printFailedFilters {
+			output.Filters = append(output.Filters, aclWithMessage{
+				unptr(f.Principal),
+				unptr(f.Host),
+				f.Type,
+				unptr(f.Name),
+				f.Pattern,
+				f.Operation,
+				f.Permission,
+				kafka.ErrMessage(f.Err),
+			})
+		}
 		for _, d := range f.Described {
-			tw.PrintStructFields(acl{
+			output.Matches = append(output.Matches, acl{
 				d.Principal,
 				d.Host,
 				d.Type,
@@ -159,5 +146,41 @@ func printDescribedACLs(results kadm.DescribeACLsResults) {
 				d.Permission,
 			})
 		}
+	}
+	if isText, _, t, err := f.Format(&output); !isText {
+		out.MaybeDie(err, "unable to print in the requested format %q: %v", f.Kind, err)
+		fmt.Printf("%s\n", t)
+		return
+	}
+	if len(output.Filters) > 0 {
+		out.Section("filters")
+		printDescribeFilters(output)
+		fmt.Println()
+		printMatchesHeader = true
+	}
+	if printMatchesHeader {
+		out.Section("matches")
+	}
+	printDescribedACLs(output)
+}
+
+type aclListOutput struct {
+	Filters []aclWithMessage `json:"filters,omitempty"`
+	Matches []acl            `json:"matches"`
+}
+
+func printDescribeFilters(output aclListOutput) {
+	tw := out.NewTable(headersWithError...)
+	defer tw.Flush()
+	for _, f := range output.Filters {
+		tw.PrintStructFields(f)
+	}
+}
+
+func printDescribedACLs(output aclListOutput) {
+	tw := out.NewTable(headersWithError...)
+	defer tw.Flush()
+	for _, m := range output.Matches {
+		tw.PrintStructFields(m)
 	}
 }

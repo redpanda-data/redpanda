@@ -58,6 +58,7 @@ from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.services import redpanda_types, tls
+from rptest.services.redpanda_types import KafkaClientSecurity
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.redpanda_cloud import CloudCluster, CloudTierName, get_config_profile_name
@@ -899,6 +900,12 @@ class RedpandaServiceABC(ABC):
     def all_up(self):
         pass
 
+    @abstractmethod
+    def kafka_client_security(self) -> KafkaClientSecurity:
+        """Return a KafkaClientSecurity object suitable for connecting to the Kafka API
+         on this broker."""
+        pass
+
     def wait_until(self, fn, timeout_sec, backoff_sec, err_msg: str = None):
         """
         Cluster-aware variant of wait_until, which will fail out
@@ -1472,8 +1479,21 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     def validate_controller_log(self):
         pass
 
-    def security_config(self):
-        return self._security_config
+    def kafka_client_security(self):
+        if self._security_config:
+
+            def get_str(key: str):
+                v = self._security_config[key]
+                assert isinstance(v, str)
+                return v
+
+            creds = SaslCredentials(username=get_str('sasl_plain_username'),
+                                    password=get_str('sasl_plain_password'),
+                                    algorithm=get_str('sasl_mechanism'))
+        else:
+            creds = None
+
+        return KafkaClientSecurity(creds, tls_enabled=False)
 
     def set_skip_if_no_redpanda_log(self, v: bool):
         self._skip_if_no_redpanda_log = v
@@ -1721,6 +1741,9 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                     sasl_plain_username=self._superuser.username,
                     sasl_plain_password=self._superuser.password,
                     enable_tls=True)
+
+    def kafka_client_security(self):
+        return KafkaClientSecurity(self._superuser, True)
 
     def rebuild_pods_classes(self):
         """Querry pods and create Classes fresh
@@ -3300,6 +3323,11 @@ class RedpandaService(RedpandaServiceBase):
             return False
 
         crashes = []
+        # We log long encoded AWS/GCP headers that occasionally have 'SEGV' in
+        # them by chance
+        cloud_header_strings = [
+            'x-amz-id', 'x-amz-request', 'x-guploader-uploadid'
+        ]
         for node in self.nodes:
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
@@ -3308,9 +3336,8 @@ class RedpandaService(RedpandaServiceBase):
             for line in node.account.ssh_capture(
                     f"grep -e SEGV -e Segmentation\\ fault -e [Aa]ssert -e Sanitizer {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                     timeout_sec=30):
-                if 'SEGV' in line and ('x-amz-id' in line
-                                       or 'x-amz-request' in line):
-                    # We log long encoded AWS headers that occasionally have 'SEGV' in them by chance
+                if 'SEGV' in line and any(
+                    [h in line.lower() for h in cloud_header_strings]):
                     continue
 
                 if is_allowed_log_line(line):

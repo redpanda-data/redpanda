@@ -313,11 +313,14 @@ inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const cluster::node_state& f) {
     w.StartObject();
     w.Key("id");
-    rjson_serialize(w, f.id);
+    rjson_serialize(w, f.id());
     w.Key("membership_state");
-    rjson_serialize(w, f.membership_state);
+    rjson_serialize(w, f.membership_state());
     w.Key("is_alive");
-    rjson_serialize(w, f.is_alive);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    rjson_serialize(w, f.is_alive());
+#pragma clang diagnostic pop
     w.EndObject();
 }
 
@@ -449,7 +452,7 @@ inline void read_value(json::Value const& rd, cluster::node_state& obj) {
     read_member(rd, "membership_state", membership_state);
     read_member(rd, "is_alive", is_alive);
 
-    obj = cluster::node_state{{}, id, membership_state, is_alive};
+    obj = cluster::node_state(id, membership_state, is_alive);
 }
 
 inline void

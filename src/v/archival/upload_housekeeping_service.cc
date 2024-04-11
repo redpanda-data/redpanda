@@ -27,6 +27,8 @@
 #include <functional>
 #include <variant>
 
+using namespace std::chrono_literals;
+
 namespace archival {
 
 std::ostream& operator<<(std::ostream& o, housekeeping_state s) {

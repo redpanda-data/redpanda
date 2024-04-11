@@ -10,9 +10,12 @@
 import subprocess
 import time
 import json
-from typing import Optional
+from typing import Any, cast
 
+from rptest.services.redpanda_types import RedpandaServiceForClients
 from rptest.util import wait_until_result
+
+# pyright: strict
 
 
 class KafkaCat:
@@ -21,18 +24,18 @@ class KafkaCat:
 
     This tools is useful because it offers a JSON output format.
     """
-    def __init__(self, redpanda):
+    def __init__(self, redpanda: RedpandaServiceForClients):
         self._redpanda = redpanda
 
     def metadata(self):
         return self._cmd(["-L"])
 
     def consume_one(self,
-                    topic,
-                    partition,
-                    offset=None,
+                    topic: str,
+                    partition: int,
+                    offset: int | None = None,
                     *,
-                    first_timestamp: Optional[int] = None):
+                    first_timestamp: int | None = None):
         if offset is not None:
             # <value>  (absolute offset)
             query = offset
@@ -46,32 +49,36 @@ class KafkaCat:
             f"{query}", "-c1"
         ])
 
-    def produce_one(self, topic, msg, tx_id=None):
+    def produce_one(self, topic: str, msg: str, tx_id: int | None = None):
         cmd = ['-P', '-t', topic]
         if tx_id:
             cmd += ['-X', f'transactional.id={tx_id}']
         return self._cmd_raw(cmd, input=f"{msg}\n")
 
-    def _cmd(self, cmd, input=None):
+    def _cmd(self, cmd: list[str], input: str | None = None):
         res = self._cmd_raw(cmd + ['-J'], input=input)
         res = json.loads(res)
         self._redpanda.logger.debug(json.dumps(res, indent=2))
         return res
 
-    def _cmd_raw(self, cmd, input=None):
+    def _cmd_raw(self, cmd: list[str], input: str | None = None):
         for retry in reversed(range(10)):
-            if getattr(self._redpanda, "sasl_enabled", lambda: False)():
-                cfg = self._redpanda.security_config()
-                cmd += [
-                    "-X", f"security.protocol={cfg['security_protocol']}", "-X"
-                    f"sasl.mechanism={cfg['sasl_mechanism']}", "-X",
-                    f"sasl.username={cfg['sasl_plain_username']}", "-X",
-                    f"sasl.password={cfg['sasl_plain_password']}"
-                ]
-                if cfg['sasl_mechanism'] == "GSSAPI":
+            cfg = self._redpanda.kafka_client_security()
+            if cfg.sasl_enabled:
+                if cfg.mechanism == 'GSSAPI':
                     cmd += [
                         "-X", "sasl.kerberos.service.name=redpanda",
                         '-Xsasl.kerberos.kinit.cmd=kinit client -t /var/lib/redpanda/client.keytab'
+                    ]
+                else:
+                    creds = cfg.simple_credentials()
+                    assert creds
+                    cmd += [
+                        "-X", f"security.protocol={cfg.security_protocol}",
+                        "-X"
+                        f"sasl.mechanism={creds.mechanism}", "-X",
+                        f"sasl.username={creds.username}", "-X",
+                        f"sasl.password={creds.password}"
                     ]
             try:
                 res = subprocess.check_output(
@@ -87,8 +94,12 @@ class KafkaCat:
                     "kcat retrying after exit code {}: {}".format(
                         e.returncode, e.output))
                 time.sleep(2)
+        assert False, "unreachable"  # help the type checker
 
-    def get_partition_leader(self, topic, partition, timeout_sec=None):
+    def get_partition_leader(self,
+                             topic: str,
+                             partition: int,
+                             timeout_sec: int | None = None):
         """
         :param topic: string, topic name
         :param partition: integer
@@ -106,7 +117,7 @@ class KafkaCat:
                                  timeout_sec=timeout_sec,
                                  backoff_sec=2)
 
-    def _get_partition_leader(self, topic, partition):
+    def _get_partition_leader(self, topic: str, partition: int):
         topic_meta = None
         all_metadata = self.metadata()
         for t in all_metadata['topics']:
@@ -118,20 +129,20 @@ class KafkaCat:
         assert topic_meta is not None
 
         # Raise IndexError if user queried a partition that does not exist
-        partition = topic_meta['partitions'][partition]
+        partition_meta: dict[str, Any] = topic_meta['partitions'][partition]
 
-        leader_id = partition['leader']
-        replicas = [p['id'] for p in partition['replicas']]
+        leader_id = cast(int, partition_meta['leader'])
+        replicas = [cast(int, p['id']) for p in partition_meta['replicas']]
         if leader_id == -1:
             return None, replicas
         else:
             return leader_id, replicas
 
-    def list_offsets(self, topic, partition):
-        def cmd(ts):
+    def list_offsets(self, topic: str, partition: int):
+        def cmd(ts: int):
             return ["-Q", "-t", f"{topic}:{partition}:{ts}"]
 
-        def offset(res):
+        def offset(res: dict[str, Any]):
             # partition is a string in the output
             return res[topic][f"{partition}"]["offset"]
 
@@ -140,7 +151,7 @@ class KafkaCat:
 
         return (oldest, newest)
 
-    def query_offset(self, topic, partition, ts):
+    def query_offset(self, topic: str, partition: int, ts: int):
         res = self._cmd(["-Q", "-t", f"{topic}:{partition}:{ts}"])
 
         return res[topic][f"{partition}"]["offset"]

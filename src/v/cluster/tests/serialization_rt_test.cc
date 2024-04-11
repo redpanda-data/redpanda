@@ -729,11 +729,7 @@ cluster::node::local_state random_local_state() {
 cluster::cluster_health_report random_cluster_health_report() {
     std::vector<cluster::node_state> node_states;
     for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-        node_states.push_back(cluster::node_state{
-          .id = tests::random_named_int<model::node_id>(),
-          .membership_state = model::membership_state::draining,
-          .is_alive = cluster::alive(tests::random_bool()),
-        });
+        node_states.push_back(cluster::random_node_state());
     }
     std::vector<cluster::node_health_report> node_reports;
     for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
@@ -1555,14 +1551,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        cluster::get_node_health_request data{
-          .filter = {
-            .ntp_filters = random_partitions_filter(),
-          },
-        };
-        roundtrip_test(data);
-    }
-    {
         storage::disk data{
           .path = random_generators::gen_alphanum_string(
             random_generators::get_int(20)),
@@ -1676,14 +1664,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
-    {
-        cluster::node_state data{
-          .id = tests::random_named_int<model::node_id>(),
-          .membership_state = model::membership_state::draining,
-          .is_alive = cluster::alive(tests::random_bool()),
-        };
-        roundtrip_test(data);
-    }
+    { roundtrip_test(cluster::random_node_state()); }
     {
         auto data = random_cluster_health_report();
         roundtrip_test(data);

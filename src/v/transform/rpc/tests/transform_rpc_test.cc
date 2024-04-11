@@ -339,6 +339,14 @@ public:
     explicit fake_partition_manager(fake_offset_tracker* fot)
       : _offset_tracker(fot) {}
 
+    std::optional<ss::shard_id> shard_owner(const model::ktp& ktp) final {
+        auto it = _shard_locations.find(ktp);
+        if (it == _shard_locations.end()) {
+            return std::nullopt;
+        }
+        return it->second;
+    };
+
     std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) final {
         auto it = _shard_locations.find(ntp);
         if (it == _shard_locations.end()) {
@@ -366,11 +374,12 @@ public:
         return batches;
     }
 
-    ss::future<cluster::errc> invoke_on_shard(
+    template<typename R, typename N>
+    ss::future<result<R, cluster::errc>> invoke_on_shard_impl(
       ss::shard_id shard_id,
-      const model::ntp& ntp,
+      const N& ntp,
       ss::noncopyable_function<
-        ss::future<cluster::errc>(kafka::partition_proxy*)> fn) final {
+        ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> fn) {
         auto owner = shard_owner(ntp);
         if (!owner || shard_id != *owner) {
             co_return cluster::errc::not_leader;
@@ -382,6 +391,35 @@ public:
         auto pp = kafka::partition_proxy(
           std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
         co_return co_await fn(&pp);
+    }
+
+    ss::future<result<iobuf, cluster::errc>> invoke_on_shard(
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      ss::noncopyable_function<ss::future<result<iobuf, cluster::errc>>(
+        kafka::partition_proxy*)> fn) final {
+        return invoke_on_shard_impl(shard_id, ntp, std::move(fn));
+    }
+    ss::future<result<iobuf, cluster::errc>> invoke_on_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<result<iobuf, cluster::errc>>(
+        kafka::partition_proxy*)> fn) final {
+        return invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
+        kafka::partition_proxy*)> fn) final {
+        return invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
+        kafka::partition_proxy*)> fn) final {
+        return invoke_on_shard_impl(shard_id, ntp, std::move(fn));
     }
 
     ss::future<find_coordinator_response> invoke_on_shard(
@@ -501,6 +539,11 @@ public:
 private:
     class in_memory_proxy : public kafka::partition_proxy::impl {
     public:
+        in_memory_proxy(
+          const model::ktp& ktp,
+          ss::chunked_fifo<produced_batch>* produced_batches)
+          : _ntp(ktp.to_ntp())
+          , _produced_batches(produced_batches) {}
         in_memory_proxy(
           model::ntp ntp, ss::chunked_fifo<produced_batch>* produced_batches)
           : _ntp(std::move(ntp))

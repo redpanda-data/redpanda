@@ -14,16 +14,20 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_service.h"
+#include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
 #include "config/validators.h"
+#include "features/feature_state.h"
 #include "features/feature_table.h"
 #include "model/timeout_clock.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "raft/group_manager.h"
 #include "security/role_store.h"
+#include "security/types.h"
 
 #include <absl/algorithm/container.h>
 
@@ -224,15 +228,17 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
                    != pandaproxy::schema_registry::schema_id_validation_mode::
                      none;
         };
-        auto has_roles = !_role_store.local()
-                            .range([](auto const&) { return true; })
-                            .empty();
+        auto n_roles = _role_store.local().size();
+        auto has_non_default_roles
+          = n_roles >= 2
+            || (n_roles == 1 && !_role_store.local().contains(security::default_role));
+
         if (
           cfg.audit_enabled || cfg.cloud_storage_enabled
           || cfg.partition_autobalancing_mode
                == model::partition_autobalancing_mode::continuous
           || has_gssapi() || has_oidc() || has_schma_id_validation()
-          || has_roles) {
+          || has_non_default_roles) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
@@ -413,25 +419,6 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     // B) All member nodes must be up
     // C) All versions must be >= the new active version
 
-    std::map<model::node_id, node_state> node_status;
-
-    // This call in principle can be a network fetch, but in practice
-    // we're only doing it immediately after cluster health has just
-    // been updated, so do not expect it to go remote.
-    auto node_status_v = co_await _hm_frontend.local().get_nodes_status(
-      model::timeout_clock::now() + 5s);
-    if (node_status_v.has_error()) {
-        // Raise exception to trigger backoff+retry
-        throw std::runtime_error(fmt::format(
-          "Can't update active cluster version, failed to get health "
-          "status: {}",
-          node_status_v.error()));
-    } else {
-        for (const auto& i : node_status_v.value()) {
-            node_status.emplace(i.id, i);
-        }
-    }
-
     // Ensure that our _node_versions contains versions for all
     // nodes in members_table & that they are all sufficiently recent
     const auto& member_table = _members.local();
@@ -457,8 +444,8 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
             co_return;
         }
 
-        auto state_iter = node_status.find(node_id);
-        if (state_iter == node_status.end()) {
+        auto is_alive_opt = _hm_frontend.local().is_alive(node_id);
+        if (!is_alive_opt.has_value()) {
             // Unexpected: the health monitor should be populating
             // state for all known members_table nodes, but this
             // could happen if we raced with a decom or node add.
@@ -470,7 +457,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
               max_version,
               node_id));
 
-        } else if (!state_iter->second.is_alive) {
+        } else if (is_alive_opt == alive::no) {
             // Raise exception to trigger backoff+retry
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,

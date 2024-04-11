@@ -164,6 +164,7 @@ cluster::errc map_update_interruption_error_code(std::error_code ec) {
         case rpc::errc::service_error:
         case rpc::errc::method_not_found:
         case rpc::errc::version_not_supported:
+        case rpc::errc::service_unavailable:
         case rpc::errc::unknown:
             return errc::replication_error;
         }

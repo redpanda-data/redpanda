@@ -977,7 +977,10 @@ class Admin:
         path = "partitions/force_recover_from_nodes"
         return self._request('post', path, node, json=payload)
 
-    def create_user(self, username, password, algorithm):
+    def create_user(self,
+                    username,
+                    password="12345678",
+                    algorithm="SCRAM-SHA-256"):
         self.redpanda.logger.debug(
             f"Creating user {username}:{password}:{algorithm}")
 

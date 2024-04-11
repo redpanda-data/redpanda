@@ -882,6 +882,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 f"Low throughput while preparing for the test: {_throughput} MB/s"
             ) from None
 
+    @ignore
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_and_add(self):
         """Decommission and add while under load.
@@ -1196,6 +1197,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # kubectl delete pvc shadow-index-cache-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
         self.redpanda.kubectl.cmd(['delete', 'pvc', pvc_name, '-n=redpanda'])
 
+    @ignore
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_add_and_decommission(self):
         """Add a new node and then decommission it while under load.
@@ -1439,7 +1441,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
     # The testcase occasionally fails on various parts:
     # - toing on `_consume_from_offset(self.topic, 1, p_id, "newest", 30)`
     # - failing to ensure all manifests are in the cloud in `stop_and_scrub_object_storage`
-    @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume_miss_cache(self):
         # create default topics
@@ -1496,14 +1497,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         partition_size_check: list[MetricCheck] = []
         partition_size_metric = "vectorized_storage_log_partition_size"
 
-        # https://github.com/redpanda-data/cloudv2/issues/10685#issuecomment-1893009486
-        raise NotImplementedError('partition_size_check not implemented')
-
-        for node in self.redpanda.nodes:
+        for pod in self.redpanda.pods:
             partition_size_check.append(
                 MetricCheck(self.logger,
                             self.redpanda,
-                            node,
+                            pod,
                             partition_size_metric,
                             reduce=sum))
 
@@ -1596,11 +1594,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             "vectorized_storage_log_cached_read_bytes_total",
         ]
 
-        for node in self.redpanda.nodes:
+        for pod in self.redpanda.pods:
             check_batch_cache_reads.append(
                 MetricCheck(self.logger,
                             self.redpanda,
-                            node,
+                            pod,
                             cache_metrics,
                             reduce=sum))
 

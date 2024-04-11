@@ -31,6 +31,8 @@
 
 #include <chrono>
 
+using namespace std::chrono_literals;
+
 namespace archival {
 
 enum class housekeeping_state {

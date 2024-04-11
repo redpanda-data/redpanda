@@ -29,8 +29,7 @@ ss::future<ss::connected_socket> connect_with_timeout(
 namespace net {
 
 base_transport::base_transport(configuration c, seastar::logger* log)
-  : _probe(std::make_unique<client_probe>())
-  , _server_addr(c.server_addr)
+  : _server_addr(c.server_addr)
   , _creds(c.credentials)
   , _tls_sni_hostname(c.tls_sni_hostname)
   , _wait_for_tls_server_eof(c.wait_for_tls_server_eof)
@@ -60,7 +59,9 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
                 .wait_for_eof_on_shutdown = _wait_for_tls_server_eof});
         }
         _fd = std::make_unique<ss::connected_socket>(std::move(fd));
-        _probe->connection_established();
+        if (auto* p = _probe.value_or(nullptr); p != nullptr) {
+            p->connection_established();
+        }
         _in = _fd->input();
 
         // Never implicitly destroy a live output stream here: output streams
@@ -69,7 +70,9 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
         _out = net::batched_output_stream(_fd->output());
     } catch (...) {
         auto e = std::current_exception();
-        _probe->connection_error();
+        if (auto* p = _probe.value_or(nullptr); p != nullptr) {
+            p->connection_error();
+        }
         _log->trace("Connection error: {}", e);
         std::rethrow_exception(e);
     }
@@ -134,6 +137,11 @@ ss::future<> base_transport::wait_input_shutdown() {
     if (_fd && _shutdown) {
         co_return co_await _fd->wait_input_shutdown();
     }
+}
+
+void base_transport::set_probe(client_probe* probe) {
+    vassert(!_probe.has_value(), "Transport already has registered probe");
+    _probe = probe;
 }
 
 } // namespace net

@@ -92,6 +92,9 @@ struct raft_node_map {
       node_for(model::node_id) = 0;
 };
 
+using dispatch_callback_t
+  = ss::noncopyable_function<ss::future<>(model::node_id, msg_type)>;
+
 class in_memory_test_protocol : public consensus_client_protocol::impl {
 public:
     explicit in_memory_test_protocol(raft_node_map&, prefix_logger&);
@@ -129,7 +132,7 @@ public:
 
     channel& get_channel(model::node_id id);
 
-    void on_dispatch(ss::noncopyable_function<ss::future<>(msg_type)> f);
+    void on_dispatch(dispatch_callback_t f);
 
     ss::future<> stop();
 
@@ -138,8 +141,7 @@ private:
     ss::future<result<RespT>> dispatch(model::node_id, ReqT req);
     ss::gate _gate;
     absl::flat_hash_map<model::node_id, std::unique_ptr<channel>> _channels;
-    std::vector<ss::noncopyable_function<ss::future<>(msg_type)>>
-      _on_dispatch_handlers;
+    std::vector<dispatch_callback_t> _on_dispatch_handlers;
     raft_node_map& _nodes;
     prefix_logger& _logger;
 };
@@ -227,7 +229,7 @@ public:
     ///
     //// \param f The callback function to be invoked when a message is
     /// dispatched.
-    void on_dispatch(ss::noncopyable_function<ss::future<>(msg_type)> f);
+    void on_dispatch(dispatch_callback_t);
 
 private:
     model::node_id _id;

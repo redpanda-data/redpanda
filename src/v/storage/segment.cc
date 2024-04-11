@@ -504,6 +504,11 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
 ss::future<append_result> segment::do_append(const model::record_batch& b) {
     check_segment_not_closed("append()");
     vassert(
+      b.base_offset() <= b.last_offset(),
+      "Empty batch written to {}. Batch header: {}",
+      path(),
+      b.header());
+    vassert(
       b.base_offset() >= _tracker.get_base_offset(),
       "Invalid state. Attempted to append a batch with base_offset:{}, but "
       "would invalidate our initial state base offset of:{}. Actual batch "

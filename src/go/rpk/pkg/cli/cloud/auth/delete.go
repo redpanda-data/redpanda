@@ -22,16 +22,16 @@ import (
 func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete [NAME]",
-		Short: "Delete an rpk cloud auth",
-		Long: `Delete an rpk cloud auth.
+		Short: "Delete an rpk cloud authentication",
+		Long: `Delete an rpk cloud authentication.
 
-Deleting a cloud auth removes it from the rpk.yaml file. If the deleted
-auth was the current auth, rpk will use a default SSO auth the next time
-you try to login and save that auth.
+Deleting a cloud authentication removes it from the rpk.yaml file. If the
+deleted auth was the current authentication, rpk will use a default SSO auth the
+next time you try to login and save that auth.
 
-If you delete an auth that is used by profiles, affected profiles have
-their auth cleared and you will only be able to access the profile's
-cluster via SASL credentials.
+If you delete an authentication that is used by profiles, affected profiles have
+their authentication cleared and you will only be able to access the profile's
+cluster using SASL credentials.
 `,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: validAuths(fs, p),

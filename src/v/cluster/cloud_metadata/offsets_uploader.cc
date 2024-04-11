@@ -25,7 +25,10 @@
 
 #include <seastar/core/lowres_clock.hh>
 
+#include <chrono>
 #include <exception>
+
+using namespace std::chrono_literals;
 
 namespace cluster::cloud_metadata {
 
