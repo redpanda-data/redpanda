@@ -355,24 +355,25 @@ ss::future<> partition_balancer_backend::do_tick() {
     // claim node unresponsive it doesn't responded to at least 7
     // status requests by default 700ms
     auto const node_responsiveness_timeout = _node_status_interval() * 7;
-    auto plan_data
-      = co_await partition_balancer_planner(
-          planner_config{
-            .mode = _mode(),
-            .soft_max_disk_usage_ratio = soft_max_disk_usage_ratio,
-            .hard_max_disk_usage_ratio = hard_max_disk_usage_ratio,
-            .max_concurrent_actions = _max_concurrent_actions(),
-            .node_availability_timeout_sec = _availability_timeout(),
-            .ondemand_rebalance_requested
-            = _cur_term->_ondemand_rebalance_requested,
-            .segment_fallocation_step = _segment_fallocation_step(),
-            .min_partition_size_threshold = get_min_partition_size_threshold(),
-            .node_responsiveness_timeout = node_responsiveness_timeout,
-            .topic_aware = _topic_aware(),
-          },
-          _state,
-          _partition_allocator)
-          .plan_actions(health_report.value(), _tick_in_progress.value());
+    partition_balancer_planner planner(
+      planner_config{
+        .mode = _mode(),
+        .soft_max_disk_usage_ratio = soft_max_disk_usage_ratio,
+        .hard_max_disk_usage_ratio = hard_max_disk_usage_ratio,
+        .max_concurrent_actions = _max_concurrent_actions(),
+        .node_availability_timeout_sec = _availability_timeout(),
+        .ondemand_rebalance_requested
+        = _cur_term->_ondemand_rebalance_requested,
+        .segment_fallocation_step = _segment_fallocation_step(),
+        .min_partition_size_threshold = get_min_partition_size_threshold(),
+        .node_responsiveness_timeout = node_responsiveness_timeout,
+        .topic_aware = _topic_aware(),
+      },
+      _state,
+      _partition_allocator);
+
+    auto plan_data = co_await planner.plan_actions(
+      health_report.value(), _tick_in_progress.value());
 
     _cur_term->last_tick_time = clock_t::now();
     _cur_term->last_violations = std::move(plan_data.violations);
