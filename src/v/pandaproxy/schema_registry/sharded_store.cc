@@ -23,6 +23,7 @@
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "pandaproxy/schema_registry/util.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -49,13 +50,14 @@ ss::shard_id shard_for(schema_id id) {
     return jump_consistent_hash(id(), ss::smp::count);
 }
 
-bool check_compatible(const valid_schema& reader, const valid_schema& writer) {
-    return reader.visit([&](const auto& reader) {
-        return writer.visit([&](const auto& writer) {
+compatibility_result check_compatible(
+  const valid_schema& reader, const valid_schema& writer, verbose is_verbose) {
+    return reader.visit([&](const auto& reader) -> compatibility_result {
+        return writer.visit([&](const auto& writer) -> compatibility_result {
             if constexpr (std::is_same_v<decltype(reader), decltype(writer)>) {
-                return check_compatible(reader, writer);
+                return check_compatible(reader, writer, is_verbose);
             }
-            return false;
+            return {.is_compat = false};
         });
     });
 }
@@ -679,6 +681,18 @@ ss::future<> sharded_store::maybe_update_max_schema_id(schema_id id) {
 
 ss::future<bool> sharded_store::is_compatible(
   schema_version version, canonical_schema new_schema) {
+    auto rslt = co_await do_is_compatible(
+      version, std::move(new_schema), verbose::no);
+    co_return rslt.is_compat;
+}
+
+ss::future<compatibility_result> sharded_store::is_compatible(
+  schema_version version, canonical_schema new_schema, verbose is_verbose) {
+    return do_is_compatible(version, std::move(new_schema), is_verbose);
+}
+
+ss::future<compatibility_result> sharded_store::do_is_compatible(
+  schema_version version, canonical_schema new_schema, verbose is_verbose) {
     // Lookup the version_ids
     const auto sub = new_schema.sub();
     const auto versions = co_await _store.invoke_on(
@@ -704,16 +718,22 @@ ss::future<bool> sharded_store::is_compatible(
     auto old_schema = co_await get_subject_schema(
       sub, version, include_deleted::no);
 
-    // Types must always match
-    if (old_schema.schema.type() != new_schema.type()) {
-        co_return false;
-    }
-
     // Lookup the compatibility level
     auto compat = co_await get_compatibility(sub, default_to_global::yes);
 
+    // Types must always match
+    if (old_schema.schema.type() != new_schema.type()) {
+        compatibility_result result{.is_compat = false};
+        if (is_verbose) {
+            result.messages = {
+              "Incompatible because of different schema type",
+              fmt::format("{{compatibility: {}}}", compat)};
+        }
+        co_return result;
+    }
+
     if (compat == compatibility_level::none) {
-        co_return true;
+        co_return compatibility_result{.is_compat = true};
     }
 
     // Currently support PROTOBUF, AVRO
@@ -733,8 +753,18 @@ ss::future<bool> sharded_store::is_compatible(
 
     auto new_valid = co_await make_valid_schema(std::move(new_schema));
 
-    auto is_compat = true;
-    for (; is_compat && ver_it != versions.end(); ++ver_it) {
+    compatibility_result result{.is_compat = true};
+
+    auto formatter = [](std::string_view rdr, std::string_view wrtr) {
+        return [rdr, wrtr](std::string_view msg) {
+            return fmt::format(
+              fmt::runtime(msg),
+              fmt::arg("reader", rdr),
+              fmt::arg("writer", wrtr));
+        };
+    };
+
+    for (; result.is_compat && ver_it != versions.end(); ++ver_it) {
         if (ver_it->deleted) {
             continue;
         }
@@ -744,22 +774,56 @@ ss::future<bool> sharded_store::is_compatible(
         auto old_valid = co_await make_valid_schema(
           std::move(old_schema.schema));
 
+        std::vector<ss::sstring> version_messages;
+
         if (
           compat == compatibility_level::backward
           || compat == compatibility_level::backward_transitive
           || compat == compatibility_level::full
           || compat == compatibility_level::full_transitive) {
-            is_compat = is_compat && check_compatible(new_valid, old_valid);
+            auto r = check_compatible(new_valid, old_valid, is_verbose);
+            result.is_compat = result.is_compat && r.is_compat;
+            version_messages.reserve(
+              version_messages.size() + r.messages.size());
+            std::transform(
+              std::make_move_iterator(r.messages.begin()),
+              std::make_move_iterator(r.messages.end()),
+              std::back_inserter(version_messages),
+              formatter("new", "old"));
         }
         if (
           compat == compatibility_level::forward
           || compat == compatibility_level::forward_transitive
           || compat == compatibility_level::full
           || compat == compatibility_level::full_transitive) {
-            is_compat = is_compat && check_compatible(old_valid, new_valid);
+            auto r = check_compatible(old_valid, new_valid, is_verbose);
+            result.is_compat = result.is_compat && r.is_compat;
+            version_messages.reserve(
+              version_messages.size() + r.messages.size());
+            std::transform(
+              std::make_move_iterator(r.messages.begin()),
+              std::make_move_iterator(r.messages.end()),
+              std::back_inserter(version_messages),
+              formatter("old", "new"));
         }
+
+        if (is_verbose && !result.is_compat) {
+            version_messages.emplace_back(
+              fmt::format("{{oldSchemaVersion: {}}}", old_schema.version));
+            version_messages.emplace_back(
+              fmt::format("{{oldSchema: '{}'}}", to_string(old_valid.raw())));
+            version_messages.emplace_back(
+              fmt::format("{{compatibility: {}}}", compat));
+        }
+
+        result.messages.reserve(
+          result.messages.size() + version_messages.size());
+        std::move(
+          version_messages.begin(),
+          version_messages.end(),
+          std::back_inserter(result.messages));
     }
-    co_return is_compat;
+    co_return result;
 }
 
 void sharded_store::check_mode_mutability(force f) const {
