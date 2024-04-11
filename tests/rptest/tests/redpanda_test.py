@@ -98,17 +98,6 @@ class RedpandaTest(RedpandaTestBase):
         """
         super().__init__(test_context)
 
-        if num_brokers is None:
-            # Default to a 3 node cluster if sufficient nodes are available, else
-            # a single node cluster.  This is just a default: tests are welcome
-            # to override constructor to pass an explicit size.  This logic makes
-            # it convenient to mix 3 node and 1 node cases in the same class, by
-            # just modifying the @cluster node count per test.
-            if test_context.cluster.available().size() >= 3:
-                num_brokers = 3
-            else:
-                num_brokers = 1
-
         self.redpanda = make_redpanda_service(test_context,
                                               num_brokers,
                                               extra_rp_conf=extra_rp_conf,

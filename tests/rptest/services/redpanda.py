@@ -2140,8 +2140,8 @@ class RedpandaService(RedpandaServiceBase):
     nodes: list[ClusterNode]
 
     def __init__(self,
-                 context,
-                 num_brokers,
+                 context: TestContext,
+                 num_brokers: int,
                  *,
                  extra_rp_conf=None,
                  extra_node_conf=None,
@@ -4753,7 +4753,7 @@ class RedpandaService(RedpandaServiceBase):
 
 
 def make_redpanda_service(context: TestContext,
-                          num_brokers: Optional[int],
+                          num_brokers: int | None,
                           *,
                           extra_rp_conf=None,
                           **kwargs) -> RedpandaService:
@@ -4763,15 +4763,27 @@ def make_redpanda_service(context: TestContext,
     assert not is_redpanda_cloud(context), 'make_redpanda_service '  \
         + 'should not be called in a cloud test context'
 
+    if num_brokers is None:
+        # Default to a 3 node cluster if sufficient nodes are available, else
+        # a single node cluster.  This is just a default: tests are welcome
+        # to override constructor to pass an explicit size.  This logic makes
+        # it convenient to mix 3 node and 1 node cases in the same class, by
+        # just modifying the @cluster node count per test.
+        if context.cluster.available().size() >= 3:
+            num_brokers = 3
+        else:
+            num_brokers = 1
+
     return RedpandaService(context,
                            num_brokers,
                            extra_rp_conf=extra_rp_conf,
                            **kwargs)
 
 
-def make_redpanda_cloud_service(context: TestContext,
-                                *,
-                                min_brokers: int = 3) -> RedpandaServiceCloud:
+def make_redpanda_cloud_service(
+        context: TestContext,
+        *,
+        min_brokers: int | None = None) -> RedpandaServiceCloud:
     """Create a RedpandaServiceCloud service. This can only be used in a test
     running against Redpanda Cloud or else it will throw."""
 
@@ -4785,7 +4797,7 @@ def make_redpanda_cloud_service(context: TestContext,
 
     return RedpandaServiceCloud(context,
                                 config_profile_name=config_profile_name,
-                                min_brokers=min_brokers)
+                                min_brokers=min_brokers if min_brokers else 1)
 
 
 def make_redpanda_mixed_service(context: TestContext,
@@ -4795,7 +4807,9 @@ def make_redpanda_mixed_service(context: TestContext,
     environemnt we are running in. This allows you to write a so-called 'mixed' test
     which can run against services of different types.
 
-    :param min_brokers: Create or expose a cluster with at least this many brokers."""
+    :param min_brokers: Create or expose a cluster with at least this many brokers.
+    None indicates that the caller doens't have any requirement on the number of brokers
+    and that the framework may select an appropriate number."""
 
     # For cloud tests, we can't affect the number of brokers (or any other cluster
     # parameters, really), so we just check (eventually) that the number of brokers
