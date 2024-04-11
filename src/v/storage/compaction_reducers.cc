@@ -135,6 +135,8 @@ model::record_batch copy_data_segment_reducer::make_placeholder_batch(
     new_hdr.type = model::record_batch_type::compaction_placeholder;
     new_hdr.base_offset = hdr.base_offset;
     new_hdr.last_offset_delta = hdr.last_offset_delta;
+    new_hdr.first_timestamp = hdr.first_timestamp;
+    new_hdr.max_timestamp = hdr.max_timestamp;
     auto no_records = iobuf{};
     reset_size_checksum_metadata(new_hdr, no_records);
     return model::record_batch(

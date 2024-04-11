@@ -38,6 +38,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		listCommand(fs, p),
 		unassignCommand(fs, p),
 	)
+	p.InstallAdminFlags(cmd)
 	p.InstallFormatFlag(cmd)
 	return cmd
 }
@@ -47,9 +48,6 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 func parsePrincipal(p string) (principalType string, name string) {
 	if strings.HasPrefix(p, userPrefix) {
 		return "User", strings.TrimPrefix(p, userPrefix)
-	}
-	if strings.HasPrefix(p, rolePrefix) {
-		return "RedpandaRole", strings.TrimPrefix(p, rolePrefix)
 	}
 	return "User", p
 }

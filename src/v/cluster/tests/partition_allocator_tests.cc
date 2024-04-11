@@ -1028,3 +1028,55 @@ FIXTURE_TEST(revert_allocation_step, partition_allocator_fixture) {
         check_final_counts(allocator, {0, 1, 1, 1, 0});
     }
 }
+
+FIXTURE_TEST(topic_aware_reallocate_partition, partition_allocator_fixture) {
+    register_node(0, 4);
+
+    cluster::allocation_units::pointer topic1;
+    {
+        auto res = allocator.allocate(make_allocation_request(10, 1)).get();
+        topic1 = std::move(res.value());
+    }
+    check_allocated_counts(allocator, {10});
+
+    register_node(1, 4);
+    register_node(2, 4);
+    register_node(3, 4);
+
+    cluster::allocation_units::pointer topic2;
+    {
+        auto res = allocator.allocate(make_allocation_request(3, 1)).get();
+        topic2 = std::move(res.value());
+    }
+    // 1-replica partitions of topic2 should end up on empty nodes
+    check_allocated_counts(allocator, {10, 1, 1, 1});
+
+    cluster::node2count_t topic2_counts;
+    for (const auto& p_as : topic2->get_assignments()) {
+        for (const auto& bs : p_as.replicas) {
+            topic2_counts[bs.node_id] += 1;
+        }
+    }
+    BOOST_CHECK(!topic2_counts.contains(model::node_id{0}));
+
+    auto reallocated = allocator.reallocate_partition(
+      tn,
+      cluster::partition_constraints(model::partition_id(0), 3),
+      topic2->get_assignments().front(),
+      cluster::partition_allocation_domains::common,
+      {},
+      &topic2_counts);
+    BOOST_REQUIRE(reallocated);
+
+    // reallocated partition should have one of its replicas on node 0, despite
+    // partitions of topic1 being there.
+    BOOST_CHECK(cluster::contains_node(
+      reallocated.value().replicas(), model::node_id{0}));
+    BOOST_CHECK_EQUAL(topic2_counts.at(model::node_id{0}), 1);
+    size_t total = 0;
+    for (const auto& [n, count] : topic2_counts) {
+        total += count;
+    }
+    // 3 replicas for partition 0, and 1 replica for partitions 2 and 3.
+    BOOST_CHECK_EQUAL(total, 5);
+}

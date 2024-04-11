@@ -452,7 +452,12 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
             // the manifest's prefix. Backoff algorithm should be applied.
             // In principle only slow_down should occur, but in practice
             // AWS S3 does return internal_error as well sometimes.
-            vlog(s3_log.warn, "{} response received {}", err.code(), bucket);
+            vlog(
+              s3_log.warn,
+              "{} response received {} in {}",
+              err.code(),
+              key,
+              bucket);
             outcome = error_outcome::retry;
         } else {
             // Unexpected REST API error, we can't recover from this
@@ -460,9 +465,10 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
             // exist)
             vlog(
               s3_log.error,
-              "Accessing {}, unexpected REST API error \"{}\" detected, "
+              "Accessing {} in {}, unexpected REST API error \"{}\" detected, "
               "code: "
               "{}, request_id: {}, resource: {}",
+              key,
               bucket,
               err.message(),
               err.code_string(),
@@ -535,8 +541,8 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
-      .then([expect_no_such_key,
-             is_byte_range_requested](http::client::response_stream_ref&& ref) {
+      .then([expect_no_such_key, is_byte_range_requested, key](
+              http::client::response_stream_ref&& ref) {
           // here we didn't receive any bytes from the socket and
           // ref->is_header_done() is 'false', we need to prefetch
           // the header first
@@ -545,7 +551,8 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
           auto f = ref->prefetch_headers();
           return f.then([ref = std::move(ref),
                          expect_no_such_key,
-                         is_byte_range_requested]() mutable {
+                         is_byte_range_requested,
+                         key]() mutable {
               vassert(ref->is_header_done(), "Header is not received");
               const auto result = ref->get_headers().result();
               bool request_failed = result != boost::beast::http::status::ok;
@@ -561,13 +568,16 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
                     && result == boost::beast::http::status::not_found) {
                       vlog(
                         s3_log.debug,
-                        "S3 GET request with expected error: {} {:l}",
+                        "S3 GET request with expected error for key {}: {} "
+                        "{:l}",
+                        key,
                         ref->get_headers().result(),
                         ref->get_headers());
                   } else {
                       vlog(
                         s3_log.warn,
-                        "S3 GET request failed: {} {:l}",
+                        "S3 GET request failed for key {}: {} {:l}",
+                        key,
                         ref->get_headers().result(),
                         ref->get_headers());
                   }
@@ -612,14 +622,16 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
                   if (status == boost::beast::http::status::not_found) {
                       vlog(
                         s3_log.debug,
-                        "Object not available, error: {:l}",
+                        "Object {} not available, error: {:l}",
+                        key,
                         ref->get_headers());
                       return parse_head_error_response<head_object_result>(
                         ref->get_headers(), key);
                   } else if (status != boost::beast::http::status::ok) {
                       vlog(
                         s3_log.warn,
-                        "S3 HEAD request failed: {} {:l}",
+                        "S3 HEAD request failed for key: {} {:l}",
+                        key,
                         status,
                         ref->get_headers());
                       return parse_head_error_response<head_object_result>(
@@ -675,21 +687,22 @@ ss::future<> s3_client::do_put_object(
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return ss::do_with(
       std::move(body),
-      [this, timeout, header = std::move(header)](
+      [this, timeout, header = std::move(header), id](
         ss::input_stream<char>& body) mutable {
           auto make_request = [this, &header, &body, &timeout]() {
               return _client.request(std::move(header.value()), body, timeout);
           };
 
           return ss::futurize_invoke(make_request)
-            .then([](const http::client::response_stream_ref& ref) {
+            .then([id](const http::client::response_stream_ref& ref) {
                 return util::drain_response_stream(ref).then(
-                  [ref](iobuf&& res) {
+                  [ref, id](iobuf&& res) {
                       auto status = ref->get_headers().result();
                       if (status != boost::beast::http::status::ok) {
                           vlog(
                             s3_log.warn,
-                            "S3 PUT request failed: {} {:l}",
+                            "S3 PUT request failed for key {}: {} {:l}",
+                            id,
                             status,
                             ref->get_headers());
                           return parse_rest_error_response<>(
@@ -706,8 +719,12 @@ ss::future<> s3_client::do_put_object(
                 _probe->register_failure(err.code(), op_type_tag::upload);
                 return ss::make_exception_future<>(err);
             })
-            .handle_exception([](std::exception_ptr eptr) {
-                vlog(s3_log.warn, "S3 PUT request failed with error: {}", eptr);
+            .handle_exception([id](std::exception_ptr eptr) {
+                vlog(
+                  s3_log.warn,
+                  "S3 PUT request failed with error for key {}: {}",
+                  id,
+                  eptr);
                 return ss::make_exception_future<>(eptr);
             })
             .finally([&body]() { return body.close(); });
@@ -852,8 +869,8 @@ ss::future<> s3_client::do_delete_object(
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
-      .then([](const http::client::response_stream_ref& ref) {
-          return util::drain_response_stream(ref).then([ref](iobuf&& res) {
+      .then([key](const http::client::response_stream_ref& ref) {
+          return util::drain_response_stream(ref).then([ref, key](iobuf&& res) {
               auto status = ref->get_headers().result();
               if (
                 status != boost::beast::http::status::ok
@@ -861,7 +878,8 @@ ss::future<> s3_client::do_delete_object(
                      != boost::beast::http::status::no_content) { // expect 204
                   vlog(
                     s3_log.warn,
-                    "S3 DeleteObject request failed: {} {:l}",
+                    "S3 DeleteObject request failed for key {}: {} {:l}",
+                    key,
                     status,
                     ref->get_headers());
                   return parse_rest_error_response<>(status, std::move(res));
@@ -975,8 +993,8 @@ auto s3_client::delete_objects(
   std::vector<object_key> keys,
   ss::lowres_clock::duration timeout)
   -> ss::future<result<delete_objects_result, error_outcome>> {
-    object_key dummy{""};
-    return send_request(
+    const object_key dummy{""};
+    co_return co_await send_request(
       do_delete_objects(bucket, keys, timeout), bucket, dummy);
 }
 } // namespace cloud_storage_clients

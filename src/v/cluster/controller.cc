@@ -32,6 +32,7 @@
 #include "cluster/feature_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/health_manager.h"
+#include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/logger.h"
 #include "cluster/members_backend.h"
@@ -568,6 +569,8 @@ ss::future<> controller::start(
             _raft0->self().id(),
             config::shard_local_cfg().internal_topic_replication_factor(),
             config::shard_local_cfg().health_manager_tick_interval(),
+            config::shard_local_cfg()
+              .partition_autobalancing_concurrent_moves.bind(),
             std::ref(_tp_state),
             std::ref(_tp_frontend),
             std::ref(_partition_allocator),
@@ -613,7 +616,14 @@ ss::future<> controller::start(
             _raft0);
           return _leader_balancer->start();
       })
-      .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
+      .then([this] {
+          return _hm_frontend.start(
+            std::ref(_hm_backend),
+            std::ref(_node_status_table),
+            ss::sharded_parameter([]() {
+                return config::shard_local_cfg().alive_timeout_ms.bind();
+            }));
+      })
       .then([this] {
           return _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
       })

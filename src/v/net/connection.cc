@@ -17,7 +17,6 @@
 #include <seastar/core/future.hh>
 #include <seastar/net/tls.hh>
 
-#include <asm-generic/errno.h>
 #include <gnutls/gnutls.h>
 
 namespace net {
@@ -133,7 +132,8 @@ connection::connection(
   ss::socket_address a,
   server_probe& p,
   std::optional<size_t> in_max_buffer_size,
-  bool tls_enabled)
+  bool tls_enabled,
+  ss::logger* log)
   : addr(a)
   , _hook(hook)
   , _name(std::move(name))
@@ -142,7 +142,8 @@ connection::connection(
   , _in(_fd.input())
   , _out(_fd.output())
   , _probe(p)
-  , _tls_enabled(tls_enabled) {
+  , _tls_enabled(tls_enabled)
+  , _log(log) {
     if (in_max_buffer_size.has_value()) {
         auto in_config = ss::connected_socket_input_stream_config{};
         in_config.max_buffer_size = in_max_buffer_size.value();
@@ -162,7 +163,7 @@ void connection::shutdown_input() {
         _fd.shutdown_input();
     } catch (...) {
         _probe.connection_close_error();
-        rpc::rpclog.debug(
+        _log->debug(
           "Failed to shutdown connection: {}", std::current_exception());
     }
 }

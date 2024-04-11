@@ -54,6 +54,13 @@ public:
     virtual kafka::offset latest_offset() = 0;
 
     /**
+     * The offset of a record the log for a given timestamp - if the log is
+     * empty then `kafka::offset::min()` is returned.
+     */
+    virtual ss::future<kafka::offset>
+    offset_at_timestamp(model::timestamp, ss::abort_source*) = 0;
+
+    /**
      * Read from the log starting at a given offset, aborting when requested.
      *
      * NOTE: It's important in terms of lifetimes that the source **always**

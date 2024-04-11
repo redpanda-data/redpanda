@@ -19,9 +19,12 @@
 #include <seastar/core/smp.hh>
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
 #include <random>
 #include <utility>
+
+using namespace std::chrono_literals;
 
 namespace {
 constexpr auto self_configure_attempts = 3;

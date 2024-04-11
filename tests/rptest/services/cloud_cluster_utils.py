@@ -1,13 +1,18 @@
 import json
 from rptest.clients.rpk import RpkTool
+from rptest.services.redpanda_types import KafkaClientSecurity
 
 
 class FakePanda:
-    logger = None
-
+    """A mock for a RedpandaService-like class which we pass in to
+    RpkTool which allows access to some methods on RpkTool which do
+    not require access to a real redpanda instance."""
     def __init__(self, context, log):
         self._context = context
         self.logger = log
+
+    def kafka_client_security(self):
+        return KafkaClientSecurity(None, False)
 
 
 class CloudClusterUtils:
@@ -26,7 +31,6 @@ class CloudClusterUtils:
         :param oauth_url_origin: just scheme and hostname
         :param oauth_audience: audience for issued token
         """
-        # Create fake redpanda class with logger only
         self.fake_panda = FakePanda(context, logger)
         # Create rpk to use several functions that is isolated
         # from actual redpanda service

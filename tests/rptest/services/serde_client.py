@@ -38,7 +38,7 @@ class SerdeClient(BackgroundThreadService):
     def __init__(
             self,
             context: TestContext,
-            brokers: list[str],
+            brokers: str,
             schema_registry_url: str,
             schema_type: SchemaType,
             serde_client_type: SerdeClientType,

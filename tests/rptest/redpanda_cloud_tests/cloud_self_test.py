@@ -9,6 +9,7 @@
 
 from typing import Any
 from ducktape.tests.test import TestContext
+from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RedpandaServiceCloud
@@ -65,3 +66,10 @@ class SelfRedpandaCloudTest(RedpandaCloudTest):
 
         count = self.redpanda.metric_sum('vectorized_application_uptime')
         assert count > 0, 'expected count greater than 0'
+
+    @cluster(num_nodes=0)
+    def test_rpk(self):
+        """Test that rpk works"""
+
+        rpk = RpkTool(self.redpanda)
+        rpk.list_topics()

@@ -18,10 +18,7 @@
 
 namespace compat {
 
-GEN_COMPAT_CHECK_SERDE_ONLY(
-  cluster::get_node_health_request,
-  { json_write(filter); },
-  { json_read(filter); });
+EMPTY_COMPAT_CHECK_SERDE_ONLY(cluster::get_node_health_request);
 
 template<>
 struct compat_check<cluster::get_node_health_reply> {

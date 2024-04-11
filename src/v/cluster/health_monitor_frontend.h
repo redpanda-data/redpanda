@@ -10,16 +10,15 @@
  */
 #pragma once
 #include "cluster/fwd.h"
-#include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_types.h"
+#include "cluster/node_status_table.h"
+#include "config/property.h"
 #include "controller_stm.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "storage/types.h"
 
 #include <seastar/core/sharded.hh>
-
-#include <utility>
 
 namespace cluster {
 
@@ -31,6 +30,9 @@ namespace cluster {
  * health monitor backend which lives on single shard.
  * Most requests are forwarded to the backend shard, except cluster-level disk
  * health, which is kept cached on each core for fast access.
+ *
+ * Health monitor frontend is also an entry point for querying information about
+ * the node liveness status.
  */
 class health_monitor_frontend
   : public seastar::peering_sharded_service<health_monitor_frontend> {
@@ -40,7 +42,10 @@ public:
     static constexpr ss::shard_id refresher_shard
       = cluster::controller_stm_shard;
 
-    explicit health_monitor_frontend(ss::sharded<health_monitor_backend>&);
+    explicit health_monitor_frontend(
+      ss::sharded<health_monitor_backend>&,
+      ss::sharded<node_status_table>&,
+      config::binding<std::chrono::milliseconds>);
 
     ss::future<> start();
     ss::future<> stop();
@@ -54,14 +59,8 @@ public:
 
     storage::disk_space_alert get_cluster_disk_health();
 
-    // Collcts and returns current node health report according to provided
-    // filters list
-    ss::future<result<node_health_report>>
-      collect_node_health(node_report_filter);
-
-    // Return status of all nodes
-    ss::future<result<std::vector<node_state>>>
-      get_nodes_status(model::timeout_clock::time_point);
+    // Collects or return cached version of current node health report.
+    ss::future<result<node_health_report>> get_current_node_health();
 
     /**
      * Return drain status for a given node.
@@ -84,22 +83,28 @@ public:
       get_cluster_health_overview(model::timeout_clock::time_point);
 
     ss::future<bool> does_raft0_have_leader();
+    /**
+     * Method validating if a node is known and alive. It will return an empty
+     * optional if the node is not present in node status table.
+     */
+    std::optional<alive> is_alive(model::node_id) const;
 
 private:
     template<typename Func>
     auto dispatch_to_backend(Func&& f) {
         return _backend.invoke_on(
-          health_monitor_backend::shard, std::forward<Func>(f));
+          health_monitor_backend_shard, std::forward<Func>(f));
     }
 
     ss::sharded<health_monitor_backend>& _backend;
+    ss::sharded<node_status_table>& _node_status_table;
+    config::binding<std::chrono::milliseconds> _alive_timeout;
 
     // Currently the worst / max of all nodes' disk space state
     storage::disk_space_alert _cluster_disk_health{
       storage::disk_space_alert::ok};
     ss::timer<ss::lowres_clock> _refresh_timer;
     ss::gate _refresh_gate;
-
     void disk_health_tick();
     ss::future<> update_other_shards(const storage::disk_space_alert);
     ss::future<> update_frontend_and_backend_cache();

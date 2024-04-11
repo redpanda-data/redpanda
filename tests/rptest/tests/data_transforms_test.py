@@ -57,7 +57,8 @@ class BaseDataTransformsTest(RedpandaTest):
                      name: str,
                      input_topic: TopicSpec,
                      output_topic: TopicSpec | list[TopicSpec],
-                     file="tinygo/identity.wasm"):
+                     file="tinygo/identity.wasm",
+                     wait_running=True):
         """
         Deploy a wasm transform and wait for all processors to be running.
         """
@@ -78,6 +79,9 @@ class BaseDataTransformsTest(RedpandaTest):
             err_msg=f"unable to deploy wasm transform {name}",
             retry_on_exc=True,
         )
+
+        if not wait_running:
+            return
 
         def is_all_running():
             transforms = self._rpk.list_wasm()
@@ -236,8 +240,8 @@ class DataTransformsTest(BaseDataTransformsTest):
     topics = [TopicSpec(partition_count=9), TopicSpec(partition_count=9)]
 
     @cluster(num_nodes=4)
-    @matrix(transactional=[False, True])
-    def test_identity(self, transactional):
+    @matrix(transactional=[False, True], wait_running=[False, True])
+    def test_identity(self, transactional, wait_running):
         """
         Test that a transform that only copies records from the input to the output topic works as intended.
         """
@@ -245,7 +249,8 @@ class DataTransformsTest(BaseDataTransformsTest):
         output_topic = self.topics[1]
         self._deploy_wasm(name="identity-xform",
                           input_topic=input_topic,
-                          output_topic=output_topic)
+                          output_topic=output_topic,
+                          wait_running=wait_running)
         producer_status = self._produce_input_topic(
             topic=self.topics[0], transactional=transactional)
         consumer_status = self._consume_output_topic(topic=self.topics[1],
@@ -265,7 +270,8 @@ class DataTransformsTest(BaseDataTransformsTest):
         self._deploy_invalid(
             file="validation/wasi.wasm",
             expected_msg=
-            "Does the broker support this version of the Data Transforms SDK?")
+            "Check the broker support for the version of the Data Transforms SDK being used."
+        )
 
     @cluster(num_nodes=3)
     def test_tracked_offsets_cleaned_up(self):

@@ -273,6 +273,10 @@ public:
 
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
+    size_t get_compacted_replaced_bytes() const {
+        return _compacted_replaced_bytes;
+    }
+
 private:
     ss::future<bool>
     do_sync(model::timeout_clock::duration timeout, ss::abort_source* as);
@@ -371,6 +375,13 @@ private:
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;
     ss::abort_source _download_as;
+
+    // for observability: keep track of the number of cloud bytes "removed" by
+    // compaction. as in the size difference between the original segment(s) and
+    // compacted segment reuploaded note that this value does not correlate to
+    // the change in size in cloud storage until the original segment(s) are
+    // garbage collected.
+    size_t _compacted_replaced_bytes{0};
 };
 
 class archival_metadata_stm_factory : public state_machine_factory {

@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newCreateCommand(_ afero.Fs, _ *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "create [NAME]",
 		Short:  "Create an rpk cloud auth",

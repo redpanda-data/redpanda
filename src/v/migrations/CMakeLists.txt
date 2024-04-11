@@ -1,8 +1,9 @@
 v_cc_library(
   NAME migrations
   SRCS
-    feature_migrator.cc
     cloud_storage_config.cc
+    feature_migrator.cc
+    rbac_migrator.cc
   DEPS
     Seastar::seastar
     v::model

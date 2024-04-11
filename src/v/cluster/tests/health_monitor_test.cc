@@ -21,6 +21,7 @@
 #include "test_utils/fixture.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/core/when_all.hh>
 
 #include <boost/test/tools/interface.hpp>
 #include <boost/test/tools/old/interface.hpp>
@@ -92,15 +93,14 @@ void check_states_the_same(
 
     auto by_id = [](
                    const cluster::node_state& lr,
-                   const cluster::node_state& rr) { return lr.id < rr.id; };
+                   const cluster::node_state& rr) { return lr.id() < rr.id(); };
     std::sort(lhs.begin(), lhs.end(), by_id);
     std::sort(rhs.begin(), rhs.end(), by_id);
 
     for (auto i = 0; i < lhs.size(); ++i) {
         auto& lr = lhs[i];
         auto& rr = rhs[i];
-        BOOST_TEST_REQUIRE(lr.is_alive == rr.is_alive);
-        BOOST_TEST_REQUIRE(lr.membership_state == rr.membership_state);
+        BOOST_TEST_REQUIRE(lr.membership_state() == rr.membership_state());
     }
 }
 
@@ -293,27 +293,6 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
                        report.value().node_reports.begin()->topics);
           });
     }).get();
-
-    // check filtering in node report
-    tests::cooperative_spin_wait_with_timeout(10s, [&] {
-        return n1->controller->get_health_monitor()
-          .local()
-          .collect_node_health(f_1.node_report_filter)
-          .then([](result<cluster::node_health_report> report) {
-              return report.has_value()
-                     && contains_exactly_ntp_leaders(
-                       g_seastar_test_log,
-                       {
-                         ntp(model::kafka_namespace, "tp-1", 0),
-                         ntp(model::kafka_namespace, "tp-1", 2),
-                         ntp(model::kafka_namespace, "tp-2", 0),
-                         ntp(model::kafka_internal_namespace, "internal-1", 0),
-                         ntp(model::kafka_internal_namespace, "internal-1", 1),
-                         ntp(model::redpanda_ns, "controller", 0),
-                       },
-                       report.value().topics);
-          });
-    }).get();
 }
 
 FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
@@ -344,25 +323,9 @@ FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
 
     // wait until the node will be reported as not alive
     tests::cooperative_spin_wait_with_timeout(10s, [&n1] {
-        return n1->controller->get_health_monitor()
-          .local()
-          .get_cluster_health(
-            get_all, cluster::force_refresh::yes, model::no_timeout)
-          .then([](result<cluster::cluster_health_report> res) {
-              if (!res) {
-                  return false;
-              }
-              if (res.value().node_reports.empty()) {
-                  return false;
-              }
-              auto it = std::find_if(
-                res.value().node_states.begin(),
-                res.value().node_states.end(),
-                [](cluster::node_state& s) {
-                    return s.id == model::node_id(1);
-                });
-              return it->is_alive == cluster::alive::no;
-          });
+        return n1->controller->get_health_monitor().local().is_alive(
+                 model::node_id(1))
+               == cluster::alive::no;
     }).get();
 }
 
@@ -587,4 +550,20 @@ FIXTURE_TEST(test_report_truncation, health_report_unit) {
 
     test_unhealthy(max_count + 1, LEADERLESS);
     test_unhealthy(max_count + 1, URP);
+}
+
+FIXTURE_TEST(
+  test_requesting_collection_at_the_same_time, cluster_test_fixture) {
+    auto n1 = create_node_application(model::node_id{0});
+    /**
+     * Request reports
+     */
+    auto f_h_1
+      = n1->controller->get_health_monitor().local().get_current_node_health();
+    auto f_h_2
+      = n1->controller->get_health_monitor().local().get_current_node_health();
+
+    auto results = ss::when_all(std::move(f_h_1), std::move(f_h_2)).get();
+    BOOST_REQUIRE(
+      std::get<0>(results).get().value() == std::get<1>(results).get().value());
 }

@@ -343,9 +343,27 @@ public:
     bool segment_with_offset_range_exists(
       model::offset base, model::offset committed) const;
 
-    /// Add new segment to the manifest
-    bool add(segment_meta meta);
-    bool add(const segment_name& name, const segment_meta& meta);
+    struct add_segment_meta_result {
+        // size in bytes of the segment(s) that has been replaced by this
+        // operation (might be 0 for appends)
+        size_t bytes_replaced_range{};
+        // size in bytes of the segment referenced by the input segment_meta
+        size_t bytes_new_range{};
+    };
+
+    /// Add new segment to the manifest.
+    /// Returns the result of the operation,
+    /// in terms of delta of cloud storage size.
+    /// If `meta` causes an append operation, bytes_replaced will be 0,
+    /// and if it causes a replace operation, bytes_replaced will be
+    /// the size of the replaced segments.
+    /// The return value is std::nullopt if `meta` cannot be added.
+    /// Currently this is the case if the remote path for `meta` is the
+    /// same of a segment already in the manifest.
+    /// See safe_segment_meta_to_add()
+    std::optional<add_segment_meta_result> add(segment_meta meta);
+    std::optional<add_segment_meta_result>
+    add(const segment_name& name, const segment_meta& meta);
 
     /// Return 'true' if the segment meta can be added safely
     bool safe_segment_meta_to_add(const segment_meta& meta) const;

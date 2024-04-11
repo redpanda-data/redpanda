@@ -74,6 +74,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
     if (_as.abort_requested()) {
         co_return ss::stop_iteration::yes;
     }
+    _state.last_read_offset = batch.last_offset();
     if (batch.header().type == model::record_batch_type::raft_data) {
         _batch_base_offset = batch.base_offset();
         co_await model::for_each_record(batch, [this](model::record& r) {

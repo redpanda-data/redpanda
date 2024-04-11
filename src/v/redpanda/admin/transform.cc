@@ -222,10 +222,12 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
 
     // Now do the deploy!
     std::error_code ec = co_await _transform_service->local().deploy_transform(
-      {.name = name,
-       .input_topic = input_nt,
-       .output_topics = output_topics,
-       .environment = std::move(env)},
+      {
+        .name = name,
+        .input_topic = input_nt,
+        .output_topics = output_topics,
+        .environment = std::move(env),
+      },
       std::move(body));
 
     co_await throw_on_error(*req, ec, model::controller_ntp);

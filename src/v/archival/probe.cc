@@ -70,6 +70,12 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
           [this] { return _pending; },
           sm::description("Pending offsets"),
           labels),
+        sm::make_gauge(
+          "compacted_replaced_bytes",
+          [this] { return _compacted_replaced_bytes; },
+          sm::description("Bytes replaced due to compaction since this replica "
+                          "become leader for this partition"),
+          labels),
       },
       {},
       aggregate_labels);

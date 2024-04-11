@@ -175,7 +175,11 @@ get_enum_value(const config_map_t& config, std::string_view key) {
     if (!s_opt) {
         return std::nullopt;
     }
-    std::istringstream(*s_opt) >> ret;
+    auto is = std::istringstream(*s_opt);
+    is >> ret;
+    if (is.fail()) {
+        return std::nullopt;
+    }
     return ret;
 }
 

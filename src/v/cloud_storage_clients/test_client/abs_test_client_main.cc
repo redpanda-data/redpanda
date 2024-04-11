@@ -46,6 +46,8 @@
 #include <stdexcept>
 #include <string>
 
+using namespace std::chrono_literals;
+
 static ss::logger test_log{"test"};
 
 void cli_opts(boost::program_options::options_description_easy_init opt) {

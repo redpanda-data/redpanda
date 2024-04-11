@@ -14,9 +14,11 @@ on:
       - 'dev'
     paths:
       - 'src/go/rpk/**'
+      - '.github/workflows/rpk-build.yml'
   pull_request:
     paths:
       - 'src/go/rpk/**'
+      - '.github/workflows/rpk-build.yml'
 
 jobs:
   test:
@@ -29,13 +31,14 @@ jobs:
     steps:
 
       - name: Check out code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: stable
+          cache-dependency-path: 'src/go/rpk/go.sum'
 
       - name: Run tests
         working-directory: src/go/rpk/
-        run: go test -v ./...
+        run: go run gotest.tools/gotestsum@v1.11.0 -- -cover ./...

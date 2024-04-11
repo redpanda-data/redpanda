@@ -113,8 +113,8 @@ model::offset replicated_partition::log_end_offset() const {
     /**
      * By default we return a dirty_offset + 1
      */
-    return model::next_offset(
-      _translator->from_log_offset(_partition->dirty_offset()));
+    return _translator->from_log_offset(
+      model::next_offset(_partition->dirty_offset()));
 }
 
 model::offset replicated_partition::leader_high_watermark() const {

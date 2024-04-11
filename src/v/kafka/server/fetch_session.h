@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -30,6 +31,15 @@ struct fetch_session_partition {
     model::offset high_watermark;
     model::offset last_stable_offset;
     kafka::leader_epoch current_leader_epoch = invalid_leader_epoch;
+
+    fetch_session_partition(
+      const model::topic& tp, const fetch_request::partition& p)
+      : topic_partition(tp, p.partition_index)
+      , max_bytes(p.max_bytes)
+      , fetch_offset(p.fetch_offset)
+      , high_watermark(model::offset(-1))
+      , last_stable_offset(model::offset(-1))
+      , current_leader_epoch(p.current_leader_epoch) {}
 };
 /**
  * Map of partitions that is kept by fetch session. This map is using intrusive

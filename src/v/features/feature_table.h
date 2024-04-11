@@ -385,7 +385,7 @@ constexpr static std::array feature_schema{
     "role_based_access_control",
     feature::role_based_access_control,
     feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
+    feature_spec::prepare_policy::requires_migration},
   feature_spec{
     cluster::cluster_version{12},
     "cluster_topic_manifest_format_v2",

@@ -175,17 +175,30 @@ public:
      * Will return cluster::errc::not_leader if the shard_id is incorrect for
      * that ntp.
      */
-    virtual ss::future<cluster::errc> invoke_on_shard(
+    virtual ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
+        kafka::partition_proxy*)> fn)
+      = 0;
+    virtual ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+      ss::shard_id,
+      const model::ntp&,
+      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
+        kafka::partition_proxy*)>)
+      = 0;
+
+    virtual ss::future<result<iobuf, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
       const model::ktp& ktp,
       ss::noncopyable_function<
-        ss::future<cluster::errc>(kafka::partition_proxy*)> fn);
-
-    virtual ss::future<cluster::errc> invoke_on_shard(
+        ss::future<result<iobuf, cluster::errc>>(kafka::partition_proxy*)>)
+      = 0;
+    virtual ss::future<result<iobuf, cluster::errc>> invoke_on_shard(
       ss::shard_id,
       const model::ntp&,
       ss::noncopyable_function<
-        ss::future<cluster::errc>(kafka::partition_proxy*)>)
+        ss::future<result<iobuf, cluster::errc>>(kafka::partition_proxy*)>)
       = 0;
 
     virtual ss::future<find_coordinator_response>

@@ -11,9 +11,6 @@
 
 #include "transform/rpc/service.h"
 
-#include "cluster/metadata_cache.h"
-#include "cluster/partition_manager.h"
-#include "cluster/shard_table.h"
 #include "cluster/types.h"
 #include "kafka/server/partition_proxy.h"
 #include "model/ktp.h"
@@ -23,7 +20,6 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
-#include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
 #include "storage/types.h"
@@ -34,10 +30,10 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/coroutine/switch_to.hh>
 
-#include <algorithm>
 #include <iterator>
 #include <memory>
 #include <system_error>
@@ -159,26 +155,21 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
     auto rdr = model::make_foreign_fragmented_memory_record_batch_reader(
       std::move(batches));
     // TODO: schema validation
-    model::offset produced_offset;
-    auto ec = co_await _partition_manager->invoke_on_shard(
+    co_return co_await _partition_manager->invoke_on_shard(
       *shard,
       ntp,
-      [timeout, r = std::move(rdr), &produced_offset](
-        kafka::partition_proxy* partition) mutable {
+      [timeout, r = std::move(rdr)](kafka::partition_proxy* partition) mutable {
           return partition
             ->replicate(std::move(r), make_replicate_options(timeout))
-            .then([&produced_offset](result<model::offset> r) {
-                if (r.has_error()) {
-                    return map_errc(r.assume_error());
-                }
-                produced_offset = r.value();
-                return cluster::errc::success;
-            });
+            .then(
+              [](result<model::offset> r)
+                -> result<model::offset, cluster::errc> {
+                  if (r.has_error()) {
+                      return map_errc(r.assume_error());
+                  }
+                  return r.value();
+              });
       });
-    if (ec == cluster::errc::success) {
-        co_return produced_offset;
-    }
-    co_return ec;
 }
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
@@ -222,12 +213,10 @@ ss::future<result<iobuf, cluster::errc>> local_service::load_wasm_binary(
     if (!shard) {
         co_return cluster::errc::not_leader;
     }
-    iobuf data;
-    auto ec = co_await _partition_manager->invoke_on_shard(
+    co_return co_await _partition_manager->invoke_on_shard(
       *shard,
       model::wasm_binaries_internal_ntp,
-      [this, offset, timeout, &data](
-        kafka::partition_proxy* partition) mutable {
+      [this, offset, timeout](kafka::partition_proxy* partition) mutable {
           storage::log_reader_config reader_config(
             /*start_offset=*/offset,
             /*max_offset=*/offset,
@@ -241,19 +230,8 @@ ss::future<result<iobuf, cluster::errc>> local_service::load_wasm_binary(
             .then([this, timeout](storage::translating_reader rdr) {
                 return consume_wasm_binary_reader(
                   std::move(rdr.reader), timeout);
-            })
-            .then([&data](result<iobuf, cluster::errc> r) {
-                if (r.has_error()) {
-                    return r.error();
-                }
-                data = std::move(r).value();
-                return cluster::errc::success;
             });
       });
-    if (ec != cluster::errc::success) {
-        co_return ec;
-    }
-    co_return data;
 }
 
 ss::future<model::cluster_transform_report>

@@ -157,6 +157,11 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _bytes_prefix_truncated; },
           sm::description("Number of bytes removed by prefix truncation."),
           labels),
+        sm::make_counter(
+          "compaction_removed_bytes",
+          [this] { return _compaction_removed_bytes; },
+          sm::description("Number of bytes removed by a compaction operation"),
+          labels),
       },
       {},
       {sm::shard_label, partition_label});

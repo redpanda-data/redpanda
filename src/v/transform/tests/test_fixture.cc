@@ -37,8 +37,15 @@ ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
     _cond_var.broadcast();
 }
 
+class read_timed_out : public ss::condition_variable_timed_out {
+    const char* what() const noexcept override {
+        return "waiting for read timed out";
+    }
+};
+
 ss::future<model::record> fake_sink::read() {
-    co_await _cond_var.wait(1s, [this] { return !_records.empty(); });
+    co_await _cond_var.wait(1s, [this] { return !_records.empty(); })
+      .handle_exception([](auto) { throw read_timed_out(); });
     auto record = std::move(_records.front());
     _records.pop_front();
     co_return record;
@@ -59,6 +66,26 @@ kafka::offset fake_source::latest_offset() {
         return {};
     }
     return _batches.rbegin()->first;
+}
+
+ss::future<kafka::offset>
+fake_source::offset_at_timestamp(model::timestamp ts, ss::abort_source*) {
+    // Walk through the batches from most recent and look for the first batch
+    // where the timestamp bounds is inclusive of `ts`.
+    for (const auto& batch : _batches) {
+        const auto& header = batch.second.header();
+        if (header.max_timestamp >= ts) {
+            auto delta = (header.first_timestamp - ts).value();
+            for (const auto& r : batch.second.copy_records()) {
+                if (r.timestamp_delta() >= delta) {
+                    co_return kafka::offset(
+                      header.base_offset() + r.offset_delta());
+                }
+            }
+            co_return model::offset_cast(batch.second.header().last_offset());
+        }
+    }
+    co_return kafka::offset{};
 }
 
 ss::future<model::record_batch_reader>
@@ -145,12 +172,22 @@ fake_offset_tracker::load_committed_offsets() {
     co_return _committed;
 }
 
+class commit_wait_timed_out : public ss::condition_variable_timed_out {
+    const char* what() const noexcept override {
+        return "waiting for committed offset timed out";
+    }
+};
+
 ss::future<> fake_offset_tracker::wait_for_committed_offset(
   model::output_topic_index index, kafka::offset o) {
-    return _cond_var.wait(1s, [this, index, o] {
-        auto it = _committed.find(index);
-        return it != _committed.end() && it->second >= o;
-    });
+    return _cond_var
+      .wait(
+        1s,
+        [this, index, o] {
+            auto it = _committed.find(index);
+            return it != _committed.end() && it->second >= o;
+        })
+      .handle_exception([](auto) { throw commit_wait_timed_out(); });
 }
 
 ss::future<> fake_offset_tracker::wait_for_previous_flushes(ss::abort_source*) {

@@ -21,6 +21,7 @@
 #include <ranges>
 #include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -53,6 +54,10 @@ public:
     /** A view over an entire bytes range. */
     // NOLINTNEXTLINE(*-explicit-*)
     bytes_view(const bytes&);
+    /** A view over the bytes in a string. */
+    explicit bytes_view(const std::string& str);
+    /** A view over the bytes in a string view. */
+    explicit bytes_view(std::string_view str);
 
     /** The start of this range. */
     [[nodiscard]] bytes::const_pointer begin() const;

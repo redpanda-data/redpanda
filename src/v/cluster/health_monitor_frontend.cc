@@ -10,16 +10,26 @@
  */
 #include "cluster/health_monitor_frontend.h"
 
+#include "cluster/health_monitor_backend.h"
 #include "cluster/logger.h"
+#include "config/property.h"
 #include "model/timeout_clock.h"
 
 #include <seastar/util/later.hh>
 
+#include <chrono>
+#include <ctime>
+#include <optional>
+
 namespace cluster {
 
 health_monitor_frontend::health_monitor_frontend(
-  ss::sharded<health_monitor_backend>& backend)
-  : _backend(backend) {}
+  ss::sharded<health_monitor_backend>& backend,
+  ss::sharded<node_status_table>& node_status_table,
+  config::binding<std::chrono::milliseconds> alive_timeout)
+  : _backend(backend)
+  , _node_status_table(node_status_table)
+  , _alive_timeout(std::move(alive_timeout)) {}
 
 ss::future<> health_monitor_frontend::start() {
     if (ss::this_shard_id() == refresher_shard) {
@@ -54,38 +64,24 @@ storage::disk_space_alert health_monitor_frontend::get_cluster_disk_health() {
     return _cluster_disk_health;
 }
 
-// Collcts and returns current node health report according to provided
-// filters list
+/**
+ * Gets cached or collects a node health report.
+ */
 ss::future<result<node_health_report>>
-health_monitor_frontend::collect_node_health(node_report_filter f) {
-    return dispatch_to_backend(
-      [f = std::move(f)](health_monitor_backend& be) mutable {
-          return be.collect_current_node_health(std::move(f));
-      });
-}
-
-// Return status of single node
-ss::future<result<std::vector<node_state>>>
-health_monitor_frontend::get_nodes_status(
-  model::timeout_clock::time_point deadline) {
-    return dispatch_to_backend([deadline](health_monitor_backend& be) {
-        // build filter
-        cluster_report_filter filter{
-          .node_report_filter = node_report_filter{
-            .include_partitions = include_partitions_info::no,
-          }};
-        return be.get_cluster_health(filter, force_refresh::no, deadline)
-          .then([](result<cluster_health_report> res) {
-              using ret_t = result<std::vector<node_state>>;
-              if (!res) {
-                  return ret_t(res.error());
-              }
-
-              return ret_t(std::move(res.value().node_states));
-          });
+health_monitor_frontend::get_current_node_health() {
+    return dispatch_to_backend([](health_monitor_backend& be) mutable {
+        return be.get_current_node_health();
     });
 }
-
+std::optional<alive>
+health_monitor_frontend::is_alive(model::node_id id) const {
+    auto status = _node_status_table.local().get_node_status(id);
+    if (!status) {
+        return std::nullopt;
+    }
+    return alive(
+      status->last_seen + _alive_timeout() >= model::timeout_clock::now());
+}
 ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
 health_monitor_frontend::get_node_drain_status(
   model::node_id node_id, model::timeout_clock::time_point deadline) {

@@ -17,6 +17,7 @@
 #include "cluster/node_status_rpc_service.h"
 #include "cluster/node_status_table.h"
 #include "config/node_config.h"
+#include "model/metadata.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
 
@@ -181,6 +182,11 @@ ss::future<> node_status_backend::collect_and_store_updates() {
       [updates = std::move(updates)](auto& table) {
           table.update_peers(updates);
       });
+}
+
+void node_status_backend::reset_node_backoff(model::node_id id) {
+    vlog(clusterlog.debug, "Resetting reconnect backoff for node: {}", id);
+    _node_connection_set.reset_client_backoff(id);
 }
 
 ss::future<std::vector<node_status>>

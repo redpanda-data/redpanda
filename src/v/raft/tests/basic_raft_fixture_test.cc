@@ -53,11 +53,11 @@ TEST_F_CORO(raft_fixture, test_multi_nodes_cluster_can_elect_leader) {
     });
 }
 
-// Empty writes should return an error rather than passing silently
-// with incorrect results.
-TEST_F_CORO(raft_fixture, test_empty_writes) {
-    co_await create_simple_group(5);
-    auto leader = co_await wait_for_leader(10s);
+// Empty writes should crash rather than passing silently with incorrect
+// results.
+TEST_F(raft_fixture, test_empty_writes) {
+    create_simple_group(5).get();
+    auto leader = wait_for_leader(10s).get();
 
     auto replicate = [&](auto reader) {
         return node(leader).raft()->replicate(
@@ -70,14 +70,8 @@ TEST_F_CORO(raft_fixture, test_empty_writes) {
     auto reader = model::make_memory_record_batch_reader(
       std::move(builder).build());
 
-    auto result = co_await replicate(std::move(reader));
-    ASSERT_TRUE_CORO(result.has_error());
-    ASSERT_EQ_CORO(result.error(), errc::invalid_input_records);
-
-    // empty batch.
-    result = co_await replicate(make_batches({}));
-    ASSERT_TRUE_CORO(result.has_error());
-    ASSERT_EQ_CORO(result.error(), errc::invalid_input_records);
+    EXPECT_DEATH(
+      replicate(std::move(reader)).get(), "Assert failure.+Empty batch");
 }
 
 struct test_parameters {
@@ -279,7 +273,7 @@ TEST_P_CORO(
     co_await set_write_caching(params.write_caching);
 
     for (auto& [_, node] : nodes()) {
-        node->on_dispatch([](raft::msg_type t) {
+        node->on_dispatch([](model::node_id, raft::msg_type t) {
             if (
               t == raft::msg_type::append_entries
               && random_generators::get_int(1000) > 800) {
@@ -411,7 +405,7 @@ TEST_P_CORO(quorum_acks_fixture, test_progress_on_truncation) {
     // truncation.
     for (auto& [id, node] : nodes()) {
         if (id == leader_id) {
-            node->on_dispatch([](raft::msg_type t) {
+            node->on_dispatch([](model::node_id, raft::msg_type t) {
                 if (
                   t == raft::msg_type::append_entries
                   || t == raft::msg_type::vote) {

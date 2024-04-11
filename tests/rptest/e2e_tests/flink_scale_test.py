@@ -32,14 +32,7 @@ class FlinkScaleTests(RedpandaTest):
         self.test_context = test_context
 
         # Prepare client
-        config = self.redpanda.security_config()
-        user = config.get("sasl_plain_username")
-        passwd = config.get("sasl_plain_password")
-        protocol = config.get("security_protocol", "SASL_PLAINTEXT")
-        self.kafkacli = KafkaCliTools(self.redpanda,
-                                      user=user,
-                                      passwd=passwd,
-                                      protocol=protocol)
+        self.kafkacli = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
         # Prepare Workloads
         self.workload_manager = WorkloadManager(self.logger)

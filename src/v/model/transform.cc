@@ -19,6 +19,7 @@
 #include "utils/vint.h"
 
 #include <seastar/core/print.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <algorithm>
 #include <optional>
@@ -71,6 +72,19 @@ void append_vint_to_iobuf(iobuf& b, int64_t v) {
 }
 
 } // namespace
+
+std::ostream&
+operator<<(std::ostream& os, const transform_offset_options& opts) {
+    ss::visit(
+      opts.position,
+      [&os](transform_offset_options::latest_offset) {
+          fmt::print(os, "{{ latest_offset }}");
+      },
+      [&os](model::timestamp ts) {
+          fmt::print(os, "{{ timequery: {} }}", ts.value());
+      });
+    return os;
+}
 
 std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
     fmt::print(

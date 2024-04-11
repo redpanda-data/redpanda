@@ -14,15 +14,18 @@ package integration_tests
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"log"
 	"os"
 	"testing"
 
+	"github.com/hamba/avro"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sr"
 )
 
 var (
@@ -31,6 +34,7 @@ var (
 	adminClient      *AdminAPIClient     = nil
 	kafkaClient      *kgo.Client         = nil
 	kafkaAdminClient *kadm.Client        = nil
+	srClient         *sr.Client          = nil
 )
 
 func TestMain(m *testing.M) {
@@ -66,6 +70,20 @@ func TestMain(m *testing.M) {
 	kafkaClient = kgoClient
 
 	kafkaAdminClient = kadm.NewClient(kafkaClient)
+
+	srAddress, err := container.SchemaRegistryAddress(ctx)
+	if err != nil {
+		log.Fatalf("unable to get schema registry address: %v", err)
+	}
+	srClient, err = sr.NewClient(sr.URLs(srAddress))
+	if err != nil {
+		log.Fatalf("unable to create schema registry client: %v", err)
+	}
+	// Initialize schema registry with a dummy request
+	_, err = srClient.SupportedTypes(ctx)
+	if err != nil {
+		log.Fatalf("unable to make schema registry request: %v", err)
+	}
 
 	// Run tests
 	exitcode := m.Run()
@@ -207,4 +225,106 @@ func TestMultipleOutputs(t *testing.T) {
 			requireRecordEquals(t, got, r, "record topic mismatch: %q", got.Topic)
 		}
 	}
+}
+
+type (
+	RecordV1 struct {
+		A int64  `avro:"a" json:"a"`
+		B string `avro:"b" json:"b"`
+	}
+	RecordV2 struct {
+		A int64  `avro:"a" json:"a"`
+		B string `avro:"b" json:"b"`
+		C string `avro:"c" json:"c"`
+	}
+)
+
+var (
+	RecordV1Schema = avro.MustParse(`{
+		"type": "record",
+		"name": "com.example.Example",
+		"fields": [
+			{"name": "a", "type": "long", "default": 0},
+			{"name": "b", "type": "string", "default": ""}
+		]
+	}`)
+	RawRecordV2Schema = `{
+		"type": "record",
+		"name": "com.example.Example",
+		"fields": [
+			{"name": "a", "type": "long", "default": 0},
+			{"name": "b", "type": "string", "default": ""},
+			{"name": "c", "type": "string", "default": ""}
+		]
+	}`
+	RecordV2Schema = avro.MustParse(RawRecordV2Schema)
+)
+
+func prependSchemaID(data []byte, id int) []byte {
+	return append(binary.BigEndian.AppendUint32([]byte{0x0}, uint32(id)), data...)
+}
+
+func TestSchemaRegistry(t *testing.T) {
+	compat := avro.NewSchemaCompatibility()
+	require.NoError(t, compat.Compatible(RecordV2Schema, RecordV1Schema))
+	require.NoError(t, compat.Compatible(RecordV1Schema, RecordV2Schema))
+	wasmBinary := loadWasmFile(t, "SCHEMA_REGISTRY")
+	metadata := TransformDeployMetadata{
+		Name:         "sr-xform",
+		InputTopic:   "avro",
+		OutputTopics: []string{"json"},
+	}
+	deployTransform(t, metadata, wasmBinary)
+	v1 := RecordV1{
+		A: 412342,
+		B: "aldskjal",
+	}
+	v1Avro, err := avro.Marshal(RecordV1Schema, &v1)
+	require.NoError(t, err)
+	r := &kgo.Record{
+		Key:   []byte("testing"),
+		Value: prependSchemaID(v1Avro, 1),
+	}
+	client := makeClient(t, kgo.DefaultProduceTopic(metadata.InputTopic), kgo.ConsumeTopics(metadata.OutputTopics...))
+	defer client.Close()
+	err = client.ProduceSync(ctx, r).FirstErr()
+	require.NoError(t, err)
+	fetches := client.PollFetches(ctx)
+	v1Json, err := json.Marshal(&v1)
+	require.NoError(t, err)
+	requireRecordsEquals(t, fetches, &kgo.Record{
+		Key:     []byte("testing"),
+		Value:   v1Json,
+		Headers: []kgo.RecordHeader{},
+	})
+	// Make sure the schema was created by the transform
+	schema, err := srClient.SchemaByID(ctx, 1)
+	require.NoError(t, err)
+	// Ensure the canonicalized schema is what we expect.
+	require.Equal(t, avro.MustParse(schema.Schema).String(), RecordV1Schema.String())
+	v2 := RecordV2{
+		A: 412342,
+		B: "aldskjal",
+		C: "zlxkjals",
+	}
+	// Make sure the transform can handle new schemas
+	schemaWithId, err := srClient.CreateSchema(ctx, "demo-topic-value", sr.Schema{
+		Schema: RawRecordV2Schema,
+		Type:   sr.TypeAvro,
+	})
+	require.NoError(t, err)
+	v2Avro, err := avro.Marshal(RecordV2Schema, &v2)
+	r = &kgo.Record{
+		Key:   []byte("test2"),
+		Value: prependSchemaID(v2Avro, schemaWithId.ID),
+	}
+	err = client.ProduceSync(ctx, r).FirstErr()
+	require.NoError(t, err)
+	fetches = client.PollFetches(ctx)
+	// Because the transform doesn't know about the new schema it will skip C and we get the same data as v1
+	requireRecordsEquals(t, fetches, &kgo.Record{
+		Key:     []byte("test2"),
+		Value:   v1Json,
+		Headers: []kgo.RecordHeader{},
+	})
 }

@@ -961,6 +961,7 @@ func setContainerModeCfgFields(y *config.RedpandaYaml) {
 	y.Redpanda.Other["fetch_reads_debounce_timeout"] = 10
 	y.Redpanda.Other["group_initial_rebalance_delay"] = 0
 	y.Redpanda.Other["log_segment_size_min"] = 1
+	y.Redpanda.Other["write_caching"] = "on"
 }
 
 func getOrFindInstallDir(fs afero.Fs, installDir string) (string, error) {
@@ -991,6 +992,7 @@ environments:
         * fetch_reads_debounce_timeout: 10
         * group_initial_rebalance_delay: 0
         * log_segment_size_min: 1
+        * write_caching: on
 
 After redpanda starts you can modify the cluster properties using:
     rpk config set <key> <value>`

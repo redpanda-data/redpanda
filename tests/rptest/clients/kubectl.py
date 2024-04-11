@@ -321,7 +321,14 @@ class KubeNodeShell():
         self.logger = self.kubectl._redpanda.logger
         self.current_context = self.kubectl.cmd(
             f"config current-context").decode().strip()
-        self.pod_name = f"{node_name}-priviledged-shell"
+        # Make sure that name is not longer that 63 chars
+        # The Pod "gke-redpanda-co9uuq78jo-redpanda-6a66-fcfacc41-65mz-priviledged-shell" is invalid: metadata.labels:
+        # Invalid value: "gke-redpanda-co9uuq78jo-redpanda-6a66-fcfacc41-65mz-priviledged-shell": must be no more than 63 characters
+        self.pod_name = f"{node_name}-pshell"
+        if len(self.pod_name) > 63:
+            # Assume that our added chars broke the limit
+            # Cut them to fit
+            self.pod_name = self.pod_name[:63]
 
         # In case of concurrent tests, just reuse existing pod
         self.pod_reused = True if self._is_shell_running() else False

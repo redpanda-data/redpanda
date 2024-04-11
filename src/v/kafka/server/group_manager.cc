@@ -849,16 +849,31 @@ ss::future<> group_manager::handle_partition_leader_change(
                   std::nullopt,
                   std::nullopt,
                   std::nullopt);
-
+                auto expected_to_read = model::prev_offset(
+                  p->partition->high_watermark());
                 return p->partition->make_reader(reader_config)
-                  .then([this, term, p, timeout](
+                  .then([this, term, p, timeout, expected_to_read](
                           model::record_batch_reader reader) {
                       return std::move(reader)
                         .consume(
                           group_recovery_consumer(_serializer_factory(), p->as),
                           timeout)
-                        .then([this, term, p](
+                        .then([this, term, p, expected_to_read](
                                 group_recovery_consumer_state state) {
+                            if (state.last_read_offset < expected_to_read) {
+                                vlog(
+                                  klog.error,
+                                  "error recovering group state from {}. "
+                                  "Expected to read up to {} but last offset "
+                                  "consumed is equal to {}",
+                                  p->partition->ntp(),
+                                  expected_to_read,
+                                  state.last_read_offset);
+                                // force step down to allow other node to
+                                // recover group
+                                return p->partition->raft()->step_down(
+                                  "unable to recover group, short read");
+                            }
                             // avoid trying to recover if we stopped the
                             // reader because an abort was requested
                             if (p->as.abort_requested()) {
