@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/delete_topics.h"
@@ -58,7 +59,7 @@ public:
           = client.dispatch(std::move(req), kafka::api_version(2)).get0();
     }
     kafka::delete_topics_request make_delete_topics_request(
-      std::vector<model::topic> topics, std::chrono::milliseconds timeout) {
+      chunked_vector<model::topic> topics, std::chrono::milliseconds timeout) {
         kafka::delete_topics_request req;
         req.data.topic_names = std::move(topics);
         req.data.timeout_ms = timeout;
@@ -67,8 +68,11 @@ public:
 
     kafka::delete_topics_response
     delete_topics(std::vector<model::topic> topics) {
-        return send_delete_topics_request(
-          make_delete_topics_request(std::move(topics), 5s));
+        return send_delete_topics_request(make_delete_topics_request(
+          chunked_vector<model::topic>{
+            std::make_move_iterator(topics.begin()),
+            std::make_move_iterator(topics.end())},
+          5s));
     }
 
     kafka::delete_topics_response
@@ -97,12 +101,13 @@ public:
     ss::future<kafka::metadata_response>
     get_topic_metadata(const model::topic& tp) {
         return do_with_client([tp](kafka::client::transport& client) {
-            std::vector<kafka::metadata_request_topic> topics;
+            chunked_vector<kafka::metadata_request_topic> topics;
             topics.push_back(kafka::metadata_request_topic{tp});
             kafka::metadata_request md_req{
-              .data = {.topics = topics, .allow_auto_topic_creation = false},
+              .data
+              = {.topics = std::make_optional(std::move(topics)), .allow_auto_topic_creation = false},
               .list_all_topics = false};
-            return client.dispatch(md_req);
+            return client.dispatch(std::move(md_req));
         });
     }
 

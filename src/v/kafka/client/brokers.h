@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/protocol/metadata.h"
@@ -55,7 +56,7 @@ public:
     ss::future<> erase(model::node_id id);
 
     /// \brief Apply the given metadata response.
-    ss::future<> apply(std::vector<metadata_response::broker>&& brokers);
+    ss::future<> apply(chunked_vector<metadata_response::broker>&& brokers);
 
     /// \brief Returns true if there are no connected brokers
     ss::future<bool> empty() const;

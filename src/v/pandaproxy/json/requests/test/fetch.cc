@@ -10,6 +10,7 @@
 #include "pandaproxy/json/requests/fetch.h"
 
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "kafka/client/test/utils.h"
@@ -45,7 +46,7 @@ make_record_set(model::offset offset, size_t count) {
 
 auto make_fetch_response(
   std::vector<model::topic_partition> tps, model::offset offset, size_t count) {
-    std::vector<kafka::fetch_response::partition> parts;
+    chunked_vector<kafka::fetch_response::partition> parts;
     for (const auto& tp : tps) {
         kafka::fetch_response::partition res{tp.topic};
         res.partitions.push_back(kafka::fetch_response::partition_response{

@@ -468,11 +468,28 @@ override_member_container = {
     'metadata_response_topic': 'small_fragment_vector',
     'fetchable_partition_response': 'small_fragment_vector',
     'offset_fetch_response_partition': 'small_fragment_vector',
-    'creatable_topic': 'chunked_vector',
-    'creatable_topic_configs': 'chunked_vector',
-    'creatable_topic_result': 'chunked_vector',
-    'describe_configs_resource_result': 'chunked_vector',
-    'describe_configs_result': 'chunked_vector',
+    'int32_t': 'std::vector',
+    'model::node_id': 'std::vector',
+    'model::partition_id': 'std::vector',
+    'reassignable_partition_response': 'std::vector',
+    'reassignable_partition': 'std::vector',
+    'describe_configs_synonym': 'std::vector',
+    'createable_topic_config': 'std::vector',
+    'creatable_topic_configs': 'std::vector',
+    'creatable_replica_assignment': 'std::vector',
+    'offset_commit_request_partition': 'std::vector',
+    'offset_commit_response_partition': 'std::vector',
+    'offset_commit_request_topic': 'std::vector',
+    'offset_fetch_request_topic': 'std::vector',
+    'partition_produce_response': 'std::vector',
+    'creatable_acl_result': 'std::vector',
+    'listed_group': 'std::vector',
+    'offset_delete_request_partition': 'std::vector',
+    'deletable_group_result': 'std::vector',
+    'delete_acls_matching_acl': 'std::vector',
+    'txn_offset_commit_request_partition': 'std::vector',
+    'txn_offset_commit_request_topic': 'std::vector',
+    'txn_offset_commit_response_partition': 'std::vector',
 }
 
 
@@ -1065,7 +1082,7 @@ class Field:
             if name in override_member_container:
                 yield override_member_container[name]
             else:
-                yield "std::vector"
+                yield "chunked_vector"
         if self.nullable():
             assert default_value is None  # not supported
             yield "std::optional"

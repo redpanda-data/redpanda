@@ -37,7 +37,7 @@ struct config_response {
 };
 
 using config_response_container_t = chunked_vector<config_response>;
-using config_key_t = std::optional<std::vector<ss::sstring>>;
+using config_key_t = std::optional<chunked_vector<ss::sstring>>;
 
 config_response_container_t make_topic_configs(
   const cluster::metadata_cache& metadata_cache,

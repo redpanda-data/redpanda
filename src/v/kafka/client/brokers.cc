@@ -48,8 +48,8 @@ ss::future<> brokers::erase(model::node_id node_id) {
     return ss::now();
 }
 
-ss::future<> brokers::apply(std::vector<metadata_response::broker>&& res) {
-    using new_brokers_t = std::vector<metadata_response::broker>;
+ss::future<> brokers::apply(chunked_vector<metadata_response::broker>&& res) {
+    using new_brokers_t = chunked_vector<metadata_response::broker>;
     return ss::do_with(std::move(res), [this](new_brokers_t& new_brokers) {
         auto new_brokers_begin = std::partition(
           new_brokers.begin(),

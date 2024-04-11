@@ -28,7 +28,7 @@
 namespace pandaproxy::json {
 
 struct subscribe_consumer_request {
-    std::vector<model::topic> topics;
+    chunked_vector<model::topic> topics;
 };
 
 template<typename Encoding = ::json::UTF8<>>
