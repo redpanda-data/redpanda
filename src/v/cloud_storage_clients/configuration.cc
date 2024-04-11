@@ -91,6 +91,8 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     client_cfg.secret_key = skey;
     client_cfg.region = region;
     client_cfg.uri = access_point_uri(endpoint_uri);
+    client_cfg.url_style = overrides.url_style;
+
     if (overrides.disable_tls == false) {
         client_cfg.credentials = co_await build_tls_credentials(
           "s3", overrides.trust_file, s3_log);
