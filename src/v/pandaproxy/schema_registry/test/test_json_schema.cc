@@ -24,6 +24,12 @@
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 
+bool check_compatible(
+  const pps::json_schema_definition& reader_schema,
+  const pps::json_schema_definition& writer_schema) {
+    return pps::check_compatible(reader_schema, writer_schema).is_compat;
+}
+
 struct store_fixture {
     store_fixture() {
         store.start(pps::is_mutable::yes, ss::default_smp_service_group())
@@ -979,14 +985,14 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
             try {
                 // sanity check that each schema is compatible with itself
                 BOOST_CHECK_MESSAGE(
-                  pps::check_compatible(
+                  ::check_compatible(
                     make_json_schema(data.reader_schema),
                     make_json_schema(data.reader_schema)),
                   fmt::format(
                     "reader '{}' should be compatible with itself",
                     data.reader_schema));
                 BOOST_CHECK_MESSAGE(
-                  pps::check_compatible(
+                  ::check_compatible(
                     make_json_schema(data.writer_schema),
                     make_json_schema(data.writer_schema)),
                   fmt::format(
@@ -996,7 +1002,7 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
                 // check compatibility (or not) reader->writer
                 BOOST_CHECK_EQUAL(
                   data.reader_is_compatible_with_writer,
-                  pps::check_compatible(
+                  ::check_compatible(
                     make_json_schema(data.reader_schema),
                     make_json_schema(data.writer_schema)));
             } catch (...) {

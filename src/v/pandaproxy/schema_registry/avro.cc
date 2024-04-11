@@ -17,6 +17,7 @@
 #include "json/document.h"
 #include "json/json.h"
 #include "json/types.h"
+#include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
@@ -550,9 +551,13 @@ sanitize_avro_schema_definition(unparsed_schema_definition def) {
       def.refs()};
 }
 
-bool check_compatible(
-  const avro_schema_definition& reader, const avro_schema_definition& writer) {
-    return check_compatible(*reader().root(), *writer().root());
+compatibility_result check_compatible(
+  const avro_schema_definition& reader,
+  const avro_schema_definition& writer,
+  verbose is_verbose [[maybe_unused]]) {
+    // TODO(gellert.nagy): start using the is_verbose flag in a follow up PR
+    return compatibility_result{
+      .is_compat = check_compatible(*reader().root(), *writer().root())};
 }
 
 } // namespace pandaproxy::schema_registry

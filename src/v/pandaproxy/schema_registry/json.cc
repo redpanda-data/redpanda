@@ -1570,15 +1570,22 @@ ss::future<canonical_schema> make_canonical_json_schema(
     co_return schema;
 }
 
-bool check_compatible(
-  const json_schema_definition& reader, const json_schema_definition& writer) {
-    // schemas might be using incompatible dialects
-    if (!check_compatible_dialects(reader().doc, writer().doc)) {
-        return false;
-    }
-    // reader is a superset of writer iff every schema that is valid for writer
-    // is also valid for reader
-    return is_superset(reader().doc, writer().doc);
+compatibility_result check_compatible(
+  const json_schema_definition& reader,
+  const json_schema_definition& writer,
+  verbose is_verbose [[maybe_unused]]) {
+    auto is_compatible = [&]() {
+        // schemas might be using incompatible dialects
+        if (!check_compatible_dialects(reader().doc, writer().doc)) {
+            return false;
+        }
+        // reader is a superset of writer iff every schema that is valid for
+        // writer is also valid for reader
+        return is_superset(reader().doc, writer().doc);
+    }();
+
+    // TODO(gellert.nagy): start using the is_verbose flag in a follow up PR
+    return compatibility_result{.is_compat = is_compatible};
 }
 
 } // namespace pandaproxy::schema_registry
