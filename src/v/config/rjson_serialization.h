@@ -64,6 +64,10 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
+  const cloud_storage_clients::s3_url_style& v);
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
   const model::cloud_credentials_source& v);
 
 void rjson_serialize(

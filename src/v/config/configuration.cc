@@ -1630,6 +1630,18 @@ configuration::configuration()
       {.visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
+  , cloud_storage_url_style(
+      *this,
+      "cloud_storage_url_style",
+      "The addressing style to use for S3 requests.",
+      {.needs_restart = needs_restart::yes,
+       .example = "virtual_host",
+       .visibility = visibility::user},
+      cloud_storage_clients::s3_url_style::virtual_host,
+      {
+        cloud_storage_clients::s3_url_style::virtual_host,
+        cloud_storage_clients::s3_url_style::path,
+      })
   , cloud_storage_credentials_source(
       *this,
       "cloud_storage_credentials_source",

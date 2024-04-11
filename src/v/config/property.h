@@ -11,6 +11,7 @@
 
 #pragma once
 #include "base/oncore.h"
+#include "cloud_storage_clients/types.h"
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
 #include "container/intrusive_list_helpers.h"
@@ -627,6 +628,10 @@ consteval std::string_view property_type_name() {
         return "integer";
     } else if constexpr (std::
                            is_same_v<type, model::cloud_credentials_source>) {
+        return "string";
+    } else if constexpr (std::is_same_v<
+                           type,
+                           cloud_storage_clients::s3_url_style>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::cloud_storage_backend>) {
         return "string";
