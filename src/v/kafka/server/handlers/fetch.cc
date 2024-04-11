@@ -700,12 +700,7 @@ void op_context::for_each_fetch_partition(Func&& f) const {
           request.cend(),
           [f = std::forward<Func>(f)](
             const fetch_request::const_iterator::value_type& p) {
-              auto& part = *p.partition;
-              f(fetch_session_partition{
-                .topic_partition = {p.topic->name, part.partition_index},
-                .max_bytes = part.max_bytes,
-                .fetch_offset = part.fetch_offset,
-              });
+              f(fetch_session_partition(p.topic->name, *p.partition));
           });
     } else {
         std::for_each(
