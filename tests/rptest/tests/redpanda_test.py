@@ -346,6 +346,12 @@ class RedpandaMixedTest(RedpandaTestBase):
         return self.redpanda if isinstance(self.redpanda,
                                            RedpandaServiceCloud) else None
 
+    def as_noncloud(self):
+        """A convenience method which returns self.redpanda if it is a RedpandaService
+        or None otherwise."""
+        return self.redpanda if isinstance(self.redpanda,
+                                           RedpandaService) else None
+
     def client(self):
         return self._client
 
