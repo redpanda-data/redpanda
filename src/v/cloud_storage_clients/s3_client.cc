@@ -81,8 +81,13 @@ result<http::client::request_header> request_creator::make_get_object_request(
   object_key const& key,
   std::optional<http_byte_range> byte_range) {
     http::client::request_header header{};
+    // Virtual Style:
     // GET /{object-id} HTTP/1.1
-    // Host: {bucket-name}.s3.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // GET /{bucket-name}/{object-id} HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // x-amz-date:{req-datetime}
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -112,8 +117,13 @@ result<http::client::request_header> request_creator::make_get_object_request(
 result<http::client::request_header> request_creator::make_head_object_request(
   bucket_name const& name, object_key const& key) {
     http::client::request_header header{};
+    // Virtual Style:
     // HEAD /{object-id} HTTP/1.1
-    // Host: {bucket-name}.s3.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // HEAD /{bucket-name}/{object-id} HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // x-amz-date:{req-datetime}
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -135,8 +145,13 @@ result<http::client::request_header> request_creator::make_head_object_request(
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
   bucket_name const& name, object_key const& key, size_t payload_size_bytes) {
+    // Virtual Style:
     // PUT /my-image.jpg HTTP/1.1
-    // Host: myBucket.s3.<Region>.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // PUT /{bucket-name}/{object-id} HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // Date: Wed, 12 Oct 2009 17:50:00 GMT
     // Authorization: authorization string
     // Content-Type: text/plain
@@ -173,8 +188,13 @@ request_creator::make_list_objects_v2_request(
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
   std::optional<char> delimiter) {
+    // Virtual Style:
     // GET /?list-type=2&prefix=photos/2006/&delimiter=/ HTTP/1.1
-    // Host: example-bucket.s3.<Region>.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // GET /{bucket-name}/?list-type=2&prefix=photos/2006/&delimiter=/ HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // x-amz-date: 20160501T000433Z
     // Authorization: authorization string
     http::client::request_header header{};
@@ -226,8 +246,13 @@ result<http::client::request_header>
 request_creator::make_delete_object_request(
   bucket_name const& name, object_key const& key) {
     http::client::request_header header{};
+    // Virtual Style:
     // DELETE /{object-id} HTTP/1.1
     // Host: {bucket-name}.s3.amazonaws.com
+    // Path Style:
+    // DELETE /{bucket-name}/{object-id} HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // x-amz-date:{req-datetime}
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
@@ -264,8 +289,13 @@ request_creator::make_delete_objects_request(
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
     // will generate this request:
     //
+    // Virtual Style:
     // POST /?delete HTTP/1.1
-    // Host: <Bucket>.s3.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // POST /{bucket-name}/?delete HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // Content-MD5: <Computer from body>
     // Authorization: <applied by _requestor>
     // Content-Length: <...>
