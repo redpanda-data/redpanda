@@ -9,6 +9,7 @@
 
 #include "cluster/config_frontend.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/alter_configs.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/describe_configs.h"
@@ -74,7 +75,7 @@ public:
     kafka::alter_configs_resource make_alter_topic_config_resource(
       const model::topic& topic,
       const absl::flat_hash_map<ss::sstring, ss::sstring>& properties) {
-        std::vector<kafka::alterable_config> cfg_list;
+        chunked_vector<kafka::alterable_config> cfg_list;
         cfg_list.reserve(properties.size());
         for (auto& [k, v] : properties) {
             cfg_list.push_back(kafka::alterable_config{.name = k, .value = v});
@@ -88,6 +89,15 @@ public:
         };
     }
 
+    chunked_vector<kafka::alter_configs_resource>
+    make_alter_topic_config_resource_cv(
+      const model::topic& topic,
+      const absl::flat_hash_map<ss::sstring, ss::sstring>& properties) {
+        chunked_vector<kafka::alter_configs_resource> cv;
+        cv.push_back(make_alter_topic_config_resource(topic, properties));
+        return cv;
+    }
+
     kafka::incremental_alter_configs_resource
     make_incremental_alter_topic_config_resource(
       const model::topic& topic,
@@ -96,7 +106,7 @@ public:
         std::
           pair<std::optional<ss::sstring>, kafka::config_resource_operation>>&
         operations) {
-        std::vector<kafka::incremental_alterable_config> cfg_list;
+        chunked_vector<kafka::incremental_alterable_config> cfg_list;
         cfg_list.reserve(operations.size());
         for (auto& [k, v] : operations) {
             cfg_list.push_back(kafka::incremental_alterable_config{
@@ -114,6 +124,20 @@ public:
         };
     }
 
+    chunked_vector<kafka::incremental_alter_configs_resource>
+    make_incremental_alter_topic_config_resource_cv(
+      const model::topic& topic,
+      const absl::flat_hash_map<
+        ss::sstring,
+        std::
+          pair<std::optional<ss::sstring>, kafka::config_resource_operation>>&
+        operations) {
+        chunked_vector<kafka::incremental_alter_configs_resource> cv;
+        cv.push_back(
+          make_incremental_alter_topic_config_resource(topic, operations));
+        return cv;
+    }
+
     kafka::describe_configs_response describe_configs(
       const ss::sstring& resource_name,
       std::optional<std::vector<ss::sstring>> configuration_keys = std::nullopt,
@@ -124,7 +148,7 @@ public:
         kafka::describe_configs_resource res{
           .resource_type = resource_type,
           .resource_name = resource_name,
-          .configuration_keys = configuration_keys,
+          .configuration_keys = std::move(configuration_keys),
         };
         req.data.resources.push_back(std::move(res));
         return do_with_client([req = std::move(req)](
@@ -136,7 +160,7 @@ public:
     }
 
     kafka::alter_configs_response
-    alter_configs(std::vector<kafka::alter_configs_resource> resources) {
+    alter_configs(chunked_vector<kafka::alter_configs_resource> resources) {
         kafka::alter_configs_request req;
         req.data.resources = std::move(resources);
         return do_with_client([req = std::move(req)](
@@ -148,7 +172,7 @@ public:
     }
 
     kafka::incremental_alter_configs_response incremental_alter_configs(
-      std::vector<kafka::incremental_alter_configs_resource> resources) {
+      chunked_vector<kafka::incremental_alter_configs_resource> resources) {
         kafka::incremental_alter_configs_request req;
         req.data.resources = std::move(resources);
         return do_with_client([req = std::move(req)](
@@ -459,7 +483,7 @@ FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
     properties.emplace("flush.bytes", "32468");
 
     auto resp = alter_configs(
-      {make_alter_topic_config_resource(test_tp, properties)});
+      make_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -496,10 +520,9 @@ FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
     properties_2.emplace("flush.ms", "100");
     properties_2.emplace("flush.bytes", "990");
 
-    auto resp = alter_configs({
-      make_alter_topic_config_resource(topic_1, properties_1),
-      make_alter_topic_config_resource(topic_2, properties_2),
-    });
+    auto cv = make_alter_topic_config_resource_cv(topic_1, properties_1);
+    cv.push_back(make_alter_topic_config_resource(topic_2, properties_2));
+    auto resp = alter_configs(std::move(cv));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 2);
     BOOST_REQUIRE_EQUAL(
@@ -536,7 +559,7 @@ FIXTURE_TEST(
     properties.emplace("replication.factor", "1");
 
     auto resp = alter_configs(
-      {make_alter_topic_config_resource(test_tp, properties)});
+      make_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(
       resp.data.responses[0].error_code, kafka::error_code::none);
@@ -562,7 +585,7 @@ FIXTURE_TEST(test_alter_topic_error, alter_config_test_fixture) {
         absl::flat_hash_map<ss::sstring, ss::sstring> properties;
         properties.emplace(property);
         auto resp = alter_configs(
-          {make_alter_topic_config_resource(test_tp, properties)});
+          make_alter_topic_config_resource_cv(test_tp, properties));
         BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
         BOOST_REQUIRE_EQUAL(
           resp.data.responses[0].error_code, kafka::error_code::invalid_config);
@@ -586,7 +609,7 @@ FIXTURE_TEST(
     properties.emplace("flush.bytes", "32468");
 
     auto resp = alter_configs(
-      {make_alter_topic_config_resource(test_tp, properties)});
+      make_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -610,7 +633,7 @@ FIXTURE_TEST(
     new_properties.emplace("flush.ms", "9999");
     new_properties.emplace("flush.bytes", "8888");
 
-    alter_configs({make_alter_topic_config_resource(test_tp, new_properties)});
+    alter_configs(make_alter_topic_config_resource_cv(test_tp, new_properties));
 
     auto new_describe_resp = describe_configs(test_tp);
     // properties should be set back to default
@@ -650,7 +673,7 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
       std::make_pair("5678", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, properties)});
+      make_incremental_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -679,7 +702,7 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
       std::make_pair("off", kafka::config_resource_operation::set));
 
     incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, new_properties)});
+      make_incremental_alter_topic_config_resource_cv(test_tp, new_properties));
 
     auto new_describe_resp = describe_configs(test_tp);
     // retention.ms should stay untouched
@@ -708,7 +731,7 @@ FIXTURE_TEST(
       std::pair{"true", kafka::config_resource_operation::set});
 
     auto resp = incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, properties)});
+      make_incremental_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(
       resp.data.responses[0].error_code, kafka::error_code::none);
@@ -737,7 +760,7 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       std::make_pair("8888", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, properties)});
+      make_incremental_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -772,7 +795,7 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       std::pair{std::nullopt, kafka::config_resource_operation::remove});
 
     resp = incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, new_properties)});
+      make_incremental_alter_topic_config_resource_cv(test_tp, new_properties));
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
       resp.data.responses[0].error_code, kafka::error_code::none);

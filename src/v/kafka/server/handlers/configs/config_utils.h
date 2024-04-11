@@ -45,7 +45,7 @@ struct groupped_resources {
 };
 
 template<typename T>
-groupped_resources<T> group_alter_config_resources(std::vector<T> req) {
+groupped_resources<T> group_alter_config_resources(chunked_vector<T> req) {
     groupped_resources<T> ret;
     for (auto& res : req) {
         switch (config_resource_type(res.resource_type)) {
@@ -60,7 +60,7 @@ groupped_resources<T> group_alter_config_resources(std::vector<T> req) {
 }
 
 template<typename T, typename R>
-T assemble_alter_config_response(std::vector<std::vector<R>> responses) {
+T assemble_alter_config_response(std::vector<chunked_vector<R>> responses) {
     T response;
     for (auto& v : responses) {
         std::move(
@@ -126,9 +126,9 @@ std::vector<std::vector<R>> make_audit_failure_response(
  * responsens and modifies passed in group_resources<T>
  */
 template<typename T, typename R>
-std::vector<R> authorize_alter_config_resources(
+chunked_vector<R> authorize_alter_config_resources(
   request_context& ctx, groupped_resources<T>& to_authorize) {
-    std::vector<R> not_authorized;
+    chunked_vector<R> not_authorized;
     /**
      * Check broker configuration authorization
      */
@@ -201,12 +201,12 @@ std::vector<R> authorize_alter_config_resources(
 }
 
 template<typename T, typename R, typename Func>
-ss::future<std::vector<R>> do_alter_topics_configuration(
+ss::future<chunked_vector<R>> do_alter_topics_configuration(
   request_context& ctx,
   chunked_vector<T> resources,
   bool validate_only,
   Func f) {
-    std::vector<R> responses;
+    chunked_vector<R> responses;
     responses.reserve(resources.size());
 
     absl::node_hash_set<ss::sstring> topic_names;
@@ -260,9 +260,9 @@ ss::future<std::vector<R>> do_alter_topics_configuration(
 }
 
 template<typename T, typename R>
-ss::future<std::vector<R>> unsupported_broker_configuration(
+ss::future<chunked_vector<R>> unsupported_broker_configuration(
   chunked_vector<T> resources, std::string_view const msg) {
-    std::vector<R> responses;
+    chunked_vector<R> responses;
     responses.reserve(resources.size());
     std::transform(
       resources.begin(),
@@ -273,7 +273,7 @@ ss::future<std::vector<R>> unsupported_broker_configuration(
             resource, error_code::invalid_config, ss::sstring(msg));
       });
 
-    return ss::make_ready_future<std::vector<R>>(std::move(responses));
+    return ss::make_ready_future<chunked_vector<R>>(std::move(responses));
 }
 
 class validation_error final : std::exception {

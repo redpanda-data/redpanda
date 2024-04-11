@@ -334,7 +334,7 @@ create_topic_properties_update(
     return update;
 }
 
-static ss::future<std::vector<resp_resource_t>> alter_topic_configuration(
+static ss::future<chunked_vector<resp_resource_t>> alter_topic_configuration(
   request_context& ctx,
   chunked_vector<req_resource_t> resources,
   bool validate_only) {
@@ -358,9 +358,9 @@ inline std::string_view map_config_name(std::string_view input) {
       .default_match(input);
 }
 
-static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
+static ss::future<chunked_vector<resp_resource_t>> alter_broker_configuartion(
   request_context& ctx, chunked_vector<req_resource_t> resources) {
-    std::vector<resp_resource_t> responses;
+    chunked_vector<resp_resource_t> responses;
     responses.reserve(resources.size());
     for (const auto& resource : resources) {
         cluster::config_update_request req;
@@ -461,6 +461,14 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
             continue;
         }
 
+        req_resource_t resource_c{
+          .resource_type = resource.resource_type,
+          .resource_name = resource.resource_name,
+          .unknown_tags = resource.unknown_tags,
+        };
+        resource_c.configs.reserve(resource.configs.size());
+        absl::c_copy(resource.configs, std::back_inserter(resource_c.configs));
+
         auto resp
           = co_await ctx.config_frontend()
               .local()
@@ -468,7 +476,8 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
                 std::move(req),
                 model::timeout_clock::now()
                   + config::shard_local_cfg().alter_topic_cfg_timeout_ms())
-              .then([resource](cluster::config_frontend::patch_result pr) {
+              .then([resource = std::move(resource_c)](
+                      cluster::config_frontend::patch_result pr) {
                   std::error_code& ec = pr.errc;
                   error_code kec = error_code::none;
 
@@ -509,14 +518,25 @@ ss::future<response_ptr> incremental_alter_configs_handler::handle(
         auto responses = make_audit_failure_response<
           resp_resource_t,
           incremental_alter_configs_resource>(
-          std::move(groupped), std::move(unauthorized_responsens));
+          std::move(groupped),
+          std::vector<resp_resource_t>{
+            std::move_iterator(unauthorized_responsens.begin()),
+            std::move_iterator(unauthorized_responsens.end())});
 
-        co_return co_await ctx.respond(assemble_alter_config_response<
-                                       incremental_alter_configs_response,
-                                       resp_resource_t>(std::move(responses)));
+        std::vector<chunked_vector<resp_resource_t>> responses_cv;
+        responses_cv.reserve(responses.size());
+        for (const auto& v : responses) {
+            responses_cv.emplace_back(
+              std::move_iterator(v.begin()), std::move_iterator(v.end()));
+        }
+
+        co_return co_await ctx.respond(
+          assemble_alter_config_response<
+            incremental_alter_configs_response,
+            resp_resource_t>(std::move(responses_cv)));
     }
 
-    std::vector<ss::future<std::vector<resp_resource_t>>> futures;
+    std::vector<ss::future<chunked_vector<resp_resource_t>>> futures;
     futures.reserve(2);
     futures.push_back(alter_topic_configuration(
       ctx, std::move(groupped.topic_changes), request.data.validate_only));
