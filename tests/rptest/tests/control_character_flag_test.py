@@ -46,11 +46,11 @@ class ControlCharacterPermittedBase(RedpandaTest):
             {self.feature_legacy_permit_control_char})
 
     def _perform_update(self, initial_version, version):
-        self._installer.install(self.redpanda.nodes, version)
-        self.redpanda.restart_nodes(self.redpanda.nodes)
-
-        unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert ver_string(initial_version) not in unique_versions
+        for v in self.load_version_range(initial_version):
+            self._installer.install(self.redpanda.nodes, v)
+            self.redpanda.restart_nodes(self.redpanda.nodes)
+            unique_versions = wait_for_num_versions(self.redpanda, 1)
+            assert ver_string(initial_version) not in unique_versions
 
         config = self._admin.get_cluster_config()
         assert config.keys() > {self.feature_legacy_permit_control_char}

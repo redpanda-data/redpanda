@@ -14,7 +14,7 @@ import random
 import re
 import tempfile
 import time
-from typing import Any, NamedTuple, Protocol
+from typing import Any, List, NamedTuple, Protocol
 
 import requests
 import yaml
@@ -28,7 +28,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST, get_cloud_storage_type, RedpandaService
-from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersionLine
+from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionTriple
 from rptest.services.metrics_check import MetricCheck
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_http_error, expect_exception, produce_until_segments
@@ -164,7 +164,13 @@ class ClusterConfigUpgradeTest(RedpandaTest):
 class HasRedpandaAndAdmin(Protocol):
     redpanda: RedpandaService
     admin: Admin
-    logger: logging.Logger
+
+    @property
+    def logger(self) -> logging.Logger:
+        pass
+
+    def _check_value_everywhere(self, key, expect_value):
+        pass
 
 
 class ClusterConfigHelpersMixin:
@@ -1877,7 +1883,9 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
     def setUp(self):
         pass
 
-    def _upgrade(self, wipe_cache, version=RedpandaInstaller.HEAD):
+    def _upgrade(self,
+                 wipe_cache,
+                 version: RedpandaVersion = RedpandaInstaller.HEAD):
         self.installer.install(self.redpanda.nodes, version)
         for node in self.redpanda.nodes:
             self.redpanda.stop_node(node)
@@ -1897,41 +1905,44 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
     @parametrize(wipe_cache=True)
     @parametrize(wipe_cache=False)
     def test_legacy_default(self, wipe_cache: bool):
-        old_version, _ = self.installer.latest_for_line(self.legacy_version)
-        self.installer.install(self.redpanda.nodes, old_version)
+        versions = self.load_version_range(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, versions[0])
         self.redpanda.start()
+        self._check_value_everywhere(self.key, self.legacy_default)
 
-        self._check_value_everywhere(self.key, self.legacy_default)
-        self._upgrade(wipe_cache)
-        self._check_value_everywhere(self.key, self.legacy_default)
+        for v in versions[1:]:
+            self._upgrade(wipe_cache, v)
+            self._check_value_everywhere(self.key, self.legacy_default)
 
     @cluster(num_nodes=3)
     @parametrize(wipe_cache=True)
     @parametrize(wipe_cache=False)
     def test_legacy_default_explicit_before_upgrade(self, wipe_cache: bool):
-        old_version, _ = self.installer.latest_for_line(self.legacy_version)
-        self.installer.install(self.redpanda.nodes, old_version)
+        versions = self.load_version_range(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, versions[0])
 
         expected = self.legacy_default + 1
         self.redpanda.add_extra_rp_conf({self.key: expected})
         self.redpanda.start()
 
         self._check_value_everywhere(self.key, expected)
-        self._upgrade(wipe_cache)
-        self._check_value_everywhere(self.key, expected)
+        for v in versions[1:]:
+            self._upgrade(wipe_cache, v)
+            self._check_value_everywhere(self.key, expected)
 
     @cluster(num_nodes=3)
     @parametrize(wipe_cache=True)
     @parametrize(wipe_cache=False)
     def test_legacy_default_explicit_after_upgrade(self, wipe_cache: bool):
-        old_version, _ = self.installer.latest_for_line(self.legacy_version)
-        self.installer.install(self.redpanda.nodes, old_version)
+        versions = self.load_version_range(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, versions[0])
         self.redpanda.start()
 
         self._check_value_everywhere(self.key, self.legacy_default)
+        for v in versions[1:]:
+            self._upgrade(wipe_cache, v)
+            self._check_value_everywhere(self.key, self.legacy_default)
 
-        self._upgrade(wipe_cache)
-        self._check_value_everywhere(self.key, self.legacy_default)
         expected = self.new_default + 1
         self.redpanda.set_cluster_config({self.key: expected})
 
@@ -1944,19 +1955,18 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
     @parametrize(wipe_cache=False)
     def test_removal_of_legacy_default_defaulted(self, wipe_cache: bool):
         # in 23.1 space management feature does not exist
-        old_version, _ = self.installer.latest_for_line(self.legacy_version)
-        self.installer.install(self.redpanda.nodes, old_version)
+        versions = self.load_version_range(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, versions[0])
         self.redpanda.start()
 
         # in 23.2 space management exists, but is disabled by default for
         # upgraded clusters.
-        self._upgrade(wipe_cache, self.intermediate_version)
-        self._check_value_everywhere("space_management_enable", False)
-
-        # in >=23.3 space management should be enabled by default provided that
-        # it wasn't explicitly disabled in 23.2.
-        self._upgrade(wipe_cache)
-        self._check_value_everywhere("space_management_enable", True)
+        for v in versions[1:]:
+            self._upgrade(wipe_cache, v)
+            if v[0] == 23 and v[1] == 2:
+                self._check_value_everywhere("space_management_enable", False)
+            else:
+                self._check_value_everywhere("space_management_enable", True)
 
         # survives a restart
         self.redpanda.restart_nodes(self.redpanda.nodes)
@@ -1967,25 +1977,25 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
     @parametrize(wipe_cache=False)
     def test_removal_of_legacy_default_overriden(self, wipe_cache: bool):
         # in 23.1 space management feature does not exist
-        old_version, _ = self.installer.latest_for_line(self.legacy_version)
-        self.installer.install(self.redpanda.nodes, old_version)
+        versions = self.load_version_range(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, versions[0])
         self.redpanda.start()
 
         # in 23.2 space management exists, but is disabled by default for
         # upgraded clusters.
-        self._upgrade(wipe_cache, self.intermediate_version)
-        self._check_value_everywhere("space_management_enable", False)
+        for v in versions[1:]:
+            self._upgrade(wipe_cache, v)
+            self._check_value_everywhere("space_management_enable", False)
+            if v[0] == 23 and v[1] == 2:
+                # we need to toggle it to get it to stick since the api seems to not
+                # change the underlying value explicitly if its default is that value.
+                # the legacy default bits here are to blame for the weirdness i presume
 
-        # we need to toggle it to get it to stick since the api seems to not
-        # change the underlying value explicitly if its default is that value.
-        # the legacy default bits here are to blame for the weirdness i presume
-        self.redpanda.set_cluster_config({"space_management_enable": True})
-        self.redpanda.set_cluster_config({"space_management_enable": False})
-
-        # in >=23.3 space management should be enabled by default provided that
-        # it wasn't explicitly disabled in 23.2.
-        self._upgrade(wipe_cache)
-        self._check_value_everywhere("space_management_enable", False)
+                self.redpanda.set_cluster_config(
+                    {"space_management_enable": True})
+                self.redpanda.set_cluster_config(
+                    {"space_management_enable": False})
+                self._check_value_everywhere("space_management_enable", False)
 
         # survives a restart
         self.redpanda.restart_nodes(self.redpanda.nodes)
