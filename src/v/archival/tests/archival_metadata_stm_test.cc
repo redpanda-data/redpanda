@@ -78,6 +78,7 @@ struct archival_metadata_stm_base_fixture
         conf.access_key = cloud_roles::public_key_str("acess-key");
         conf.secret_key = cloud_roles::private_key_str("secret-key");
         conf.region = cloud_roles::aws_region_name("us-east-1");
+        conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
         conf.server_addr = server_addr;
         conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
           net::metrics_disabled::yes,

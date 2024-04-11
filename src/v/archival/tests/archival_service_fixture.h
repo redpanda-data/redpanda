@@ -10,6 +10,7 @@
 #include "archival/archiver_manager.h"
 #include "archival/tests/service_fixture.h"
 #include "archival/types.h"
+#include "cloud_storage_clients/types.h"
 #include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -59,6 +60,7 @@ class archiver_cluster_fixture
         s3_conf.access_key = cloud_roles::public_key_str("access-key");
         s3_conf.secret_key = cloud_roles::private_key_str("secret-key");
         s3_conf.region = cloud_roles::aws_region_name("us-east-1");
+        s3_conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
         s3_conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
           net::metrics_disabled::yes,
           net::public_metrics_disabled::yes,
