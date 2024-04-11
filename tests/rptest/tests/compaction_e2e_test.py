@@ -174,12 +174,8 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         rw_verifier.stop()
         rw_verifier.wait(timeout_sec=10)
 
-        if workload == Workload.TX_UNIQUE_KEYS:
-            # this workload with these test setting might generate non-compactible segments
-            m.expect([(metric, lambda old, new: old <= new)])
-        else:
-            # expect some level of compaction
-            m.expect([(metric, lambda old, new: old < new)])
+        # expect some level of compaction
+        m.expect([(metric, lambda old, new: old < new)])
 
 
 class CompactionWithRecoveryTest(RedpandaTest, PartitionMovementMixin):
