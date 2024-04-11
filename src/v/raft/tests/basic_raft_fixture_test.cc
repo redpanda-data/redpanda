@@ -120,6 +120,24 @@ TEST_P_CORO(all_acks_fixture, validate_replication) {
     co_await assert_logs_equal();
 }
 
+TEST_P_CORO(all_acks_fixture, single_node_replication) {
+    co_await create_simple_group(1);
+
+    auto params = GetParam();
+    co_await set_write_caching(params.write_caching);
+
+    auto leader = co_await wait_for_leader(10s);
+    auto& leader_node = node(leader);
+
+    auto result = co_await leader_node.raft()->replicate(
+      make_batches({{"k_1", "v_1"}}), replicate_options(params.c_lvl));
+    ASSERT_TRUE_CORO(result.has_value());
+
+    // wait for committed offset to propagate
+    co_await wait_for_committed_offset(result.value().last_offset, 5s);
+    co_await assert_logs_equal();
+}
+
 TEST_P_CORO(all_acks_fixture, validate_recovery) {
     co_await create_simple_group(5);
     auto leader = co_await wait_for_leader(10s);

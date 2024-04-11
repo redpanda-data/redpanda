@@ -101,11 +101,18 @@ ss::future<errc> replication_monitor::do_wait_until(
 
 ss::future<errc>
 replication_monitor::wait_until_committed(storage::append_result append) {
+    auto done = is_append_committed_or_truncated(append);
+    if (done) {
+        return ssx::now(done.value());
+    }
     return do_wait_until(append, wait_type::commit);
 }
 
 ss::future<errc> replication_monitor::wait_until_majority_replicated(
   storage::append_result append) {
+    if (is_append_replicated(append)) {
+        return ssx::now(errc::success);
+    }
     return do_wait_until(append, wait_type::majority_replication);
 }
 
