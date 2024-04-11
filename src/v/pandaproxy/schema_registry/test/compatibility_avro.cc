@@ -23,12 +23,13 @@ bool check_compatible(
   const pps::canonical_schema_definition& w) {
     pps::sharded_store s;
     return check_compatible(
-      pps::make_avro_schema_definition(
-        s, {pps::subject("r"), {r.shared_raw(), pps::schema_type::avro}})
-        .get(),
-      pps::make_avro_schema_definition(
-        s, {pps::subject("w"), {w.shared_raw(), pps::schema_type::avro}})
-        .get());
+             pps::make_avro_schema_definition(
+               s, {pps::subject("r"), {r.shared_raw(), pps::schema_type::avro}})
+               .get(),
+             pps::make_avro_schema_definition(
+               s, {pps::subject("w"), {w.shared_raw(), pps::schema_type::avro}})
+               .get())
+      .is_compat;
 }
 
 SEASTAR_THREAD_TEST_CASE(test_avro_type_promotion) {
