@@ -108,6 +108,12 @@
       "properties": {
         "is_compatible": {
           "type": "boolean"
-        }
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
       }
     }
