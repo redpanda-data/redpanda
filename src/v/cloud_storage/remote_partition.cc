@@ -424,9 +424,41 @@ public:
                     if (
                       _first_produced_offset == model::offset{} && !d.empty()) {
                         _first_produced_offset = d.front().base_offset();
+                    } else {
+                        auto current_ko = _ot_state->from_log_offset(
+                          _seg_reader->current_rp_offset());
+                        vlog(
+                          _ctxlog.debug,
+                          "No results, current rp offset: {}, current kafka "
+                          "offset: {}, max rp offset: "
+                          "{}",
+                          _seg_reader->current_rp_offset(),
+                          current_ko,
+                          _seg_reader->config().max_offset);
+                        if (current_ko > _seg_reader->config().max_offset) {
+                            // Reader overshoot the offset. If we will not reset
+                            // the stream the loop inside the
+                            // record_batch_reader will keep calling this method
+                            // again and again. We will be returning empty
+                            // result every time because the current offset
+                            // overshoot the max allowed offset. Resetting the
+                            // segment reader fixes the issue.
+                            //
+                            // We can get into the situation when the current
+                            // reader returns empty result in several cases:
+                            // - we reached max_offset (covered here)
+                            // - we reached end of stream (covered above right
+                            //   after the 'read_some' call)
+                            //
+                            // If we reached max-bytes then the result won't be
+                            // empty. It will have at least one record batch.
+                            co_await set_end_of_stream();
+                        }
                     }
                     co_return storage_t{std::move(d)};
                 } catch (const stuck_reader_exception& ex) {
+                    // FIXME: the exception is no longer thrown
+                    // anywhere in the code
                     throw_on_external_abort();
                     vlog(
                       _ctxlog.warn,
