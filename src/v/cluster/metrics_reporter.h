@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/plugin_table.h"
 #include "cluster/types.h"
 #include "features/fwd.h"
 #include "http/client.h"
@@ -73,6 +74,7 @@ public:
         bool has_kafka_gssapi;
         bool has_oidc;
         uint32_t rbac_role_count;
+        uint32_t data_transforms_count;
 
         static constexpr int64_t max_size_for_rp_env = 80;
         ss::sstring redpanda_environment;
@@ -89,6 +91,7 @@ public:
       ss::sharded<config_frontend>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<security::role_store>& role_store,
+      ss::sharded<plugin_table>*,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -112,6 +115,7 @@ private:
     ss::sharded<config_frontend>& _config_frontend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<security::role_store>& _role_store;
+    ss::sharded<plugin_table>* _plugin_table;
     ss::sharded<ss::abort_source>& _as;
     prefix_logger _logger;
     ss::timer<> _tick_timer;

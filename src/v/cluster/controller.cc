@@ -646,6 +646,7 @@ ss::future<> controller::start(
             std::ref(_config_frontend),
             std::ref(_feature_table),
             std::ref(_roles),
+            std::addressof(_plugin_table),
             std::ref(_as));
       })
       .then([this] {
