@@ -74,4 +74,20 @@
           "type": "string"
         }
       }
+    },
+    "get_compatibility": {
+      "type": "object",
+      "properties": {
+          "compatibilityLevel": {
+            "type": "string"
+          }
+      }
+    },
+    "put_compatibility": {
+      "type": "object",
+      "properties": {
+          "compatibility": {
+            "type": "string"
+          }
+      }
     }
