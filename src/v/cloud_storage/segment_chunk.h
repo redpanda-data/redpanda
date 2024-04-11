@@ -30,6 +30,8 @@ enum class chunk_state {
     hydrated,
 };
 
+std::ostream& operator<<(std::ostream& os, chunk_state);
+
 struct segment_chunk {
     chunk_state current_state;
 
