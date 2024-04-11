@@ -18,6 +18,7 @@ namespace pandaproxy::schema_registry {
 
 struct post_compatibility_res {
     bool is_compat{false};
+    std::vector<ss::sstring> messages;
 };
 
 inline void rjson_serialize(
@@ -26,6 +27,8 @@ inline void rjson_serialize(
     w.StartObject();
     w.Key("is_compatible");
     ::json::rjson_serialize(w, res.is_compat);
+    w.Key("messages");
+    ::json::rjson_serialize(w, res.messages);
     w.EndObject();
 }
 

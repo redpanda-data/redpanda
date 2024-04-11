@@ -30,7 +30,9 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/coroutine/as_future.hh>
 
+#include <exception>
 #include <limits>
 
 namespace ppj = pandaproxy::json;
@@ -682,6 +684,9 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
     auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto is_verbose{
+      parse::query_param<std::optional<verbose>>(*rq.req, "verbose")
+        .value_or(verbose::no)};
     auto unparsed = ppj::rjson_parse(
       rq.req->content.data(), post_subject_versions_request_handler<>{sub});
     rq.req.reset();
@@ -708,12 +713,36 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
 
     auto schema = co_await rq.service().schema_store().make_canonical_schema(
       std::move(unparsed.def));
-    auto get_res = co_await get_or_load(rq, [&rq, &schema, version]() {
-        return rq.service().schema_store().is_compatible(version, schema);
-    });
 
-    auto json_rslt{
-      json::rjson_serialize(post_compatibility_res{.is_compat = get_res})};
+    auto fut = co_await ss::coroutine::as_future(
+      get_or_load(rq, [&rq, &schema, version, is_verbose]() {
+          return rq.service().schema_store().is_compatible(
+            version, schema, is_verbose);
+      }));
+
+    auto get_res = [is_verbose, &fut]() mutable -> compatibility_result {
+        if (!fut.failed()) {
+            return std::move(fut).get();
+        }
+        try {
+            std::rethrow_exception(std::move(fut).get_exception());
+        } catch (exception& e) {
+            // NOTE(oren): catch only specific error code(s)
+            //  - invalid_schema
+            //  - others?
+            static std::unordered_set<std::error_code> report{
+              error_code::schema_invalid};
+            if (is_verbose && report.contains(e.code())) {
+                return {.is_compat = false, .messages = {e.message()}};
+            }
+            throw;
+        }
+    }();
+
+    auto json_rslt{json::rjson_serialize(post_compatibility_res{
+      .is_compat = get_res.is_compat,
+      .messages = std::move(get_res.messages),
+    })};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
