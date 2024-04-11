@@ -326,7 +326,7 @@ create_topic_properties_update(
     return update;
 }
 
-static ss::future<std::vector<alter_configs_resource_response>>
+static ss::future<chunked_vector<alter_configs_resource_response>>
 alter_topic_configuration(
   request_context& ctx,
   chunked_vector<alter_configs_resource> resources,
@@ -342,7 +342,7 @@ alter_topic_configuration(
       });
 }
 
-static ss::future<std::vector<alter_configs_resource_response>>
+static ss::future<chunked_vector<alter_configs_resource_response>>
 alter_broker_configuartion(chunked_vector<alter_configs_resource> resources) {
     return unsupported_broker_configuration<
       alter_configs_resource,
@@ -371,14 +371,25 @@ ss::future<response_ptr> alter_configs_handler::handle(
         auto responses = make_audit_failure_response<
           alter_configs_resource_response,
           alter_configs_resource>(
-          std::move(groupped), std::move(unauthorized_responsens));
+          std::move(groupped),
+          std::vector<alter_configs_resource_response>{
+            std::move_iterator(unauthorized_responsens.begin()),
+            std::move_iterator(unauthorized_responsens.end())});
+
+        std::vector<chunked_vector<alter_configs_resource_response>>
+          responses_cv;
+        responses_cv.reserve(responses.size());
+        for (const auto& v : responses) {
+            responses_cv.emplace_back(
+              std::move_iterator(v.begin()), std::move_iterator(v.end()));
+        }
         co_return co_await ctx.respond(
           assemble_alter_config_response<
             alter_configs_response,
-            alter_configs_resource_response>(std::move(responses)));
+            alter_configs_resource_response>(std::move(responses_cv)));
     }
 
-    std::vector<ss::future<std::vector<alter_configs_resource_response>>>
+    std::vector<ss::future<chunked_vector<alter_configs_resource_response>>>
       futures;
     futures.reserve(2);
     futures.push_back(alter_topic_configuration(
