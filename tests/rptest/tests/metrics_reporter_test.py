@@ -126,12 +126,15 @@ class MetricsReporterTest(RedpandaTest):
         assert_fields_are_the_same(metadata, 'has_oidc')
         # cluster config should be the same
         assert_fields_are_the_same(metadata, 'config')
+        # No transforms are deployed
+        assert_fields_are_the_same(metadata, 'data_transforms_count')
         # get the last report
         last = metadata.pop()
         assert last['topic_count'] == total_topics
         assert last['partition_count'] == total_partitions
         assert last['has_kafka_gssapi'] is False
         assert last['has_oidc'] is False
+        assert last['data_transforms_count'] == 0
         assert last['active_logical_version'] == features['cluster_version']
         assert last['original_logical_version'] == features[
             'original_cluster_version']

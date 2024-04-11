@@ -112,6 +112,7 @@ metrics_reporter::metrics_reporter(
   ss::sharded<config_frontend>& config_frontend,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<security::role_store>& role_store,
+  ss::sharded<plugin_table>* pt,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
   , _cluster_info(controller_stm.local().get_metrics_reporter_cluster_info())
@@ -122,6 +123,7 @@ metrics_reporter::metrics_reporter(
   , _config_frontend(config_frontend)
   , _feature_table(feature_table)
   , _role_store(role_store)
+  , _plugin_table(pt)
   , _as(as)
   , _logger(logger, "metrics-reporter") {}
 
@@ -246,6 +248,8 @@ metrics_reporter::build_metrics_snapshot() {
                         || config::oidc_is_enabled_http();
 
     snapshot.rbac_role_count = _role_store.local().size();
+
+    snapshot.data_transforms_count = _plugin_table->local().size();
 
     auto env_value = std::getenv("REDPANDA_ENVIRONMENT");
     if (env_value) {
@@ -510,6 +514,9 @@ void rjson_serialize(
 
     w.Key("rbac_role_count");
     w.Int(snapshot.rbac_role_count);
+
+    w.Key("data_transforms_count");
+    w.Uint(snapshot.data_transforms_count);
 
     w.Key("config");
     config::shard_local_cfg().to_json_for_metrics(w);

@@ -29,6 +29,8 @@ plugin_table::map_t plugin_table::all_transforms() const {
     return all;
 }
 
+size_t plugin_table::size() const { return _underlying.size(); }
+
 std::optional<transform_id>
 plugin_table::find_id_by_name(std::string_view name) const {
     auto it = _name_index.find(name);

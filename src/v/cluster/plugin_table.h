@@ -40,6 +40,8 @@ public:
 
     // Snapshot (copy) of all the transforms
     map_t all_transforms() const;
+    // Number of transforms
+    size_t size() const;
 
     // Lookups
     std::optional<model::transform_metadata>
