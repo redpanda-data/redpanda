@@ -336,7 +336,7 @@ create_topic_properties_update(
 
 static ss::future<std::vector<resp_resource_t>> alter_topic_configuration(
   request_context& ctx,
-  std::vector<req_resource_t> resources,
+  chunked_vector<req_resource_t> resources,
   bool validate_only) {
     return do_alter_topics_configuration<req_resource_t, resp_resource_t>(
       ctx, std::move(resources), validate_only, [&ctx](req_resource_t& r) {
@@ -359,7 +359,7 @@ inline std::string_view map_config_name(std::string_view input) {
 }
 
 static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
-  request_context& ctx, std::vector<req_resource_t> resources) {
+  request_context& ctx, chunked_vector<req_resource_t> resources) {
     std::vector<resp_resource_t> responses;
     responses.reserve(resources.size());
     for (const auto& resource : resources) {
