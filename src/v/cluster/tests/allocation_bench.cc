@@ -19,9 +19,14 @@
 #include <vector>
 
 PERF_TEST_F(partition_allocator_fixture, allocation_3) {
-    register_node(0, 24);
-    register_node(1, 24);
-    register_node(2, 24);
+    static bool initialized = false;
+    if (!initialized) {
+        register_node(0, 24);
+        register_node(1, 24);
+        register_node(2, 24);
+        initialized = true;
+    }
+
     auto req = make_allocation_request(1, 3);
 
     perf_tests::start_measuring_time();
@@ -31,9 +36,14 @@ PERF_TEST_F(partition_allocator_fixture, allocation_3) {
     });
 }
 PERF_TEST_F(partition_allocator_fixture, deallocation_3) {
-    register_node(0, 24);
-    register_node(1, 24);
-    register_node(2, 24);
+    static bool initialized = false;
+    if (!initialized) {
+        register_node(0, 24);
+        register_node(1, 24);
+        register_node(2, 24);
+        initialized = true;
+    }
+
     auto req = make_allocation_request(1, 3);
 
     std::vector<model::broker_shard> replicas;
@@ -56,9 +66,14 @@ PERF_TEST_F(partition_allocator_fixture, deallocation_3) {
     });
 }
 PERF_TEST_F(partition_allocator_fixture, recovery) {
-    register_node(0, 24);
-    register_node(1, 24);
-    register_node(2, 24);
+    static bool initialized = false;
+    if (!initialized) {
+        register_node(0, 24);
+        register_node(1, 24);
+        register_node(2, 24);
+        initialized = true;
+    }
+
     const auto node_capacity = max_capacity();
 
     std::vector<model::broker_shard> replicas;
