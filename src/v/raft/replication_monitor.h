@@ -83,6 +83,10 @@ private:
 
     ss::future<errc> do_wait_until(storage::append_result, wait_type);
 
+    bool is_append_replicated(const storage::append_result&) const;
+    std::optional<errc>
+    is_append_committed_or_truncated(const storage::append_result&) const;
+
     consensus* _raft;
     // Key is the base offset of the append results. So all the waiters
     // are sorted by the base offsets of the results.
