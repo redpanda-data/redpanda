@@ -1136,6 +1136,12 @@
             "schema":  {
               "$ref": "#/definitions/schema_def"
             }
+          },
+          {
+            "name": "verbose",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "produces": ["application/vnd.schemaregistry.v1+json"],
@@ -1145,8 +1151,14 @@
             "schema": {
               "type": "object",
               "properties": {
-                "id": {
-                  "type": "integer"
+                "is_compatible": {
+                  "type": "boolean"
+                },
+                "messages": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               }
             }
