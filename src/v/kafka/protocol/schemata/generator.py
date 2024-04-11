@@ -473,6 +473,10 @@ override_member_container = {
     'creatable_topic_result': 'chunked_vector',
     'describe_configs_resource_result': 'chunked_vector',
     'describe_configs_result': 'chunked_vector',
+    'incremental_alterable_config': 'chunked_vector',
+    'incremental_alter_configs_resource': 'chunked_vector',
+    'alter_configs_resource': 'chunked_vector',
+    'alterable_config': 'chunked_vector',
 }
 
 
