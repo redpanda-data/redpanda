@@ -21,6 +21,7 @@ jobs:
             test-arm64
             dt
             microbench
+            publish-to-install-pack
           static-args: |
             org=redpanda-data
             repo=redpanda
