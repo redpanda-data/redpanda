@@ -113,13 +113,14 @@ public:
           std::move(src),
           std::move(sinks),
           std::move(offset_tracker),
-          &_probe);
+          &_probe,
+          &_memory_limits);
         if (param.autostart) {
             _p->start().get();
             // Wait for the initial offset to be committed so we know that the
-            // processor is actually ready, otherwise it could be possible that
-            // the processor picks up after the initial records are added to the
-            // partition.
+            // processor is actually ready, otherwise it could be possible
+            // that the processor picks up after the initial records are added
+            // to the partition.
             wait_for_committed_offset(kafka::offset{});
         }
     }
@@ -252,6 +253,8 @@ public:
 private:
     static constexpr kafka::offset start_offset = kafka::offset(0);
 
+    memory_limits _memory_limits = memory_limits(
+      memory_limits::config{.read = 10_MiB, .write = 10_MiB});
     kafka::offset _offset = start_offset;
     model::timestamp _fixed_time = model::timestamp::min();
     std::unique_ptr<transform::processor> _p;

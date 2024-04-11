@@ -379,7 +379,8 @@ public:
       model::ntp ntp,
       model::transform_metadata meta,
       processor::state_callback cb,
-      probe* p) final {
+      probe* p,
+      memory_limits* ml) final {
         auto engine = co_await _wasm_engine_factory(meta);
         if (!engine) {
             throw std::runtime_error("unable to create wasm engine");
@@ -410,7 +411,8 @@ public:
           std::move(src),
           std::move(sinks),
           std::move(offset_tracker),
-          p);
+          p,
+          ml);
     }
 
 private:
@@ -522,16 +524,9 @@ ss::future<> service::start() {
       write_buffer_percent);
     constexpr size_t total_percentage = 100;
     size_t one_percent = _total_memory_limit / total_percentage;
-    memory_limits mem_limits = {
-      .read_buffer_semaphore = {
-            one_percent * read_buffer_percent, 
-            "transform::read_buffer",
-        },
-      .write_buffer_semaphore = { 
-            one_percent * write_buffer_percent, 
-            "transform::write_buffer",
-        },
-    };
+    auto mem_limits = std::make_unique<memory_limits>(memory_limits::config{
+      .read = one_percent * read_buffer_percent,
+      .write = one_percent * write_buffer_percent});
     _manager = std::make_unique<manager<ss::lowres_clock>>(
       _self,
       std::make_unique<registry_adapter>(

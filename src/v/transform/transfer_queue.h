@@ -10,6 +10,7 @@
  */
 
 #include "base/seastarx.h"
+#include "memory_limiter.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -17,6 +18,7 @@
 #include <seastar/core/semaphore.hh>
 
 #include <algorithm>
+#include <numeric>
 #include <optional>
 
 namespace transform {
@@ -49,8 +51,8 @@ public:
      * Construct a transfer queue with `max_memory_usage` being the soft limit
      * at which to limit in the queue.
      */
-    explicit transfer_queue(size_t max_memory_usage)
-      : _max_memory(max_memory_usage) {}
+    explicit transfer_queue(memory_limiter* ml)
+      : _memory_limiter(ml) {}
 
     /**
      * Push an entry into the queue, waiting for there to be available memory.
@@ -65,13 +67,14 @@ public:
         // We want to be able to always insert at least one item, so cap memory
         // usage by _max_memory so we don't overload our semaphore and so we
         // can't get stuck.
-        size_t mem = std::min(entry.memory_usage(), _max_memory);
-        co_await wait_for_free_memory(as, mem);
-        if (as->abort_requested()) {
+        size_t mem = std::min(
+          entry.memory_usage(), _memory_limiter->max_memory());
+        try {
+            co_await _memory_limiter->acquire(mem, as);
+        } catch (...) {
             co_return;
         }
         _entries.push_back(std::move(entry));
-        _used_memory += mem;
         _cond_var.signal();
     }
 
@@ -88,7 +91,8 @@ public:
         }
         T entry = std::move(_entries.front());
         _entries.pop_front();
-        _used_memory -= std::min(entry.memory_usage(), _max_memory);
+        _memory_limiter->release(
+          std::min(entry.memory_usage(), _memory_limiter->max_memory()));
         _cond_var.signal();
         co_return entry;
     }
@@ -105,7 +109,7 @@ public:
         if (as->abort_requested()) {
             co_return ss::chunked_fifo<T, items_per_chunk>{};
         }
-        _used_memory = 0;
+        _memory_limiter->release(memory_usage());
         _cond_var.signal();
         co_return std::exchange(_entries, {});
     }
@@ -114,24 +118,11 @@ public:
      * Remove all entries from this queue.
      */
     void clear() noexcept {
+        _memory_limiter->release(memory_usage());
         _entries.clear();
-        _used_memory = 0;
     }
 
 private:
-    ss::future<>
-    wait_for_free_memory(ss::abort_source* as, size_t needed_memory) noexcept {
-        auto sub = as->subscribe([this]() noexcept { _cond_var.signal(); });
-        if (sub) {
-            co_await _cond_var.wait([this, as, needed_memory] {
-                if (as->abort_requested()) {
-                    return true;
-                }
-                return (_used_memory + needed_memory) <= _max_memory;
-            });
-        }
-    }
-
     ss::future<> wait_for_non_empty(ss::abort_source* as) noexcept {
         auto sub = as->subscribe([this]() noexcept { _cond_var.signal(); });
         if (sub) {
@@ -141,19 +132,17 @@ private:
         }
     }
 
+    size_t memory_usage() const {
+        size_t sum = 0;
+        for (const auto& entry : _entries) {
+            sum += entry.memory_usage();
+        }
+        return sum;
+    }
+
     ss::chunked_fifo<T, items_per_chunk> _entries;
     ss::condition_variable _cond_var;
-    size_t _max_memory;
-    // A semaphore is a natural fit here, but at the time of writing there is a
-    // stack-use-after-return issue with `ss::semaphore::wait(ss::abort_source,
-    // size_t)`, so instead, manually implement the semaphore with our existing
-    // condition_variable.
-    //
-    // N.B. Reusing our existing condition variable for this only works because
-    // this is a SPSC queue. Multiple producers or multiple consumers could
-    // cause race conditions between modifying this and the _cond_var unblocking
-    // another fiber.
-    size_t _used_memory = 0;
+    memory_limiter* _memory_limiter;
 };
 
 } // namespace transform

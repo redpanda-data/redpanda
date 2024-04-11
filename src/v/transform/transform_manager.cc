@@ -250,7 +250,7 @@ manager<ClockType>::manager(
   std::unique_ptr<registry> r,
   std::unique_ptr<processor_factory> f,
   ss::scheduling_group sg,
-  memory_limits memory_limits)
+  std::unique_ptr<memory_limits> memory_limits)
   : _self(self)
   , _queue(
       sg,
@@ -428,7 +428,7 @@ ss::future<> manager<ClockType>::create_processor(
       };
     auto fut = co_await ss::coroutine::as_future(
       _processor_factory->create_processor(
-        id, ntp, meta, std::move(cb), p.get()));
+        id, ntp, meta, std::move(cb), p.get(), _memory_limits.get()));
     if (fut.failed()) {
         vlog(
           tlog.warn,

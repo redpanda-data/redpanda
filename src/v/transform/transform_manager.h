@@ -10,10 +10,10 @@
  */
 #pragma once
 
+#include "memory_limiter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/transform.h"
-#include "ssx/semaphore.h"
 #include "ssx/work_queue.h"
 #include "transform/fwd.h"
 #include "transform_processor.h"
@@ -75,26 +75,9 @@ public:
       model::ntp,
       model::transform_metadata,
       processor::state_callback,
-      probe*)
+      probe*,
+      memory_limits*)
       = 0;
-};
-
-// The limits to various buffers for this shard within the transform
-// subsystem. We have two main "buffers" we need to limit, the amount of
-// data we have ingress to the Wasm VM, and the amount of data we have
-// egress from the Wasm VM. We split statically the memory available between
-// these buffers so that there are starvation issues where we have to write
-// more data in order to get data out of our write buffers and the read
-// buffers have taken up all the memory.
-//
-// In addition to these semaphores, we also reserve 10% of this subsystem's
-// memory as flex space.
-//
-// All of these memory limits have tunable overrides in the case of a
-// miscalculation causing memory pressure on shards.
-struct memory_limits {
-    ssx::semaphore read_buffer_semaphore;
-    ssx::semaphore write_buffer_semaphore;
 };
 
 template<typename ClockType>
@@ -127,7 +110,7 @@ public:
       std::unique_ptr<registry>,
       std::unique_ptr<processor_factory>,
       ss::scheduling_group,
-      memory_limits);
+      std::unique_ptr<memory_limits>);
     manager(const manager&) = delete;
     manager& operator=(const manager&) = delete;
     manager(manager&&) = delete;
@@ -175,7 +158,7 @@ private:
 
     model::node_id _self;
     ssx::work_queue _queue;
-    memory_limits _memory_limits;
+    std::unique_ptr<memory_limits> _memory_limits;
     std::unique_ptr<registry> _registry;
     std::unique_ptr<processor_table<ClockType>> _processors;
     std::unique_ptr<processor_factory> _processor_factory;
