@@ -12,6 +12,7 @@ import threading
 import json
 import time
 import random
+import subprocess
 import sys
 import concurrent.futures
 import numpy
@@ -23,6 +24,7 @@ from confluent_kafka import KafkaError, KafkaException
 
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig, MetricsEndpoint
 from rptest.tests.redpanda_test import RedpandaTest
@@ -1294,3 +1296,26 @@ class ManyTopicsTest(RedpandaTest):
             f"swarm_nodes='''{', '.join([str(num) for num in hwms])}'''"
 
         return
+
+    @cluster(num_nodes=11)
+    def test_many_topics_config(self):
+        """Test how Redpanda behaves when attempting to describe the configs
+        of all the topics in a 40k topic cluster and how it behaves when altering
+        the configs of said topics
+        """
+        tsm = TopicScaleProfileManager()
+        profile = tsm.get_profile("topic_profile_t40k_p1")
+
+        # Start kafka
+        self.redpanda.start()
+
+        topic_details = self._stage_create_topics(profile)
+        self.logger.debug(f'topic_detals: {topic_details}')
+
+        client = KafkaCliTools(self.redpanda)
+        try:
+            client.describe_topics()
+        except subprocess.CalledProcessError:
+            # This is expected - the kafka CLI tools will run out of
+            # heap space on such a large request.
+            pass
