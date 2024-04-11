@@ -36,6 +36,7 @@ using is_deleted = ss::bool_class<struct is_deleted_tag>;
 using default_to_global = ss::bool_class<struct default_to_global_tag>;
 using force = ss::bool_class<struct force_tag>;
 using normalize = ss::bool_class<struct normalize_tag>;
+using verbose = ss::bool_class<struct verbose_tag>;
 
 template<typename E>
 std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
@@ -533,6 +534,11 @@ from_string_view<compatibility_level>(std::string_view sv) {
         compatibility_level::full_transitive)
       .default_match(std::nullopt);
 }
+
+struct compatibility_result {
+    bool is_compat;
+    std::vector<ss::sstring> messages;
+};
 
 } // namespace pandaproxy::schema_registry
 
