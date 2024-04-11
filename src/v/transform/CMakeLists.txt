@@ -8,6 +8,7 @@ v_cc_library(
     transform_manager.cc
     commit_batcher.cc
     txn_reader.cc
+    memory_limiter.cc
   DEPS
     v::wasm
     v::model
