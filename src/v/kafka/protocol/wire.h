@@ -562,12 +562,12 @@ public:
         return _out->size_bytes() - start_size;
     }
 
-    template<typename T, typename ElementWriter>
-    requires requires(ElementWriter writer, encoder& rw, T& elem) {
+    template<typename C, typename ElementWriter>
+    requires requires(
+      ElementWriter writer, encoder& rw, typename C::value_type& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
-    uint32_t write_nullable_array(
-      std::optional<std::vector<T>>& v, ElementWriter&& writer) {
+    uint32_t write_nullable_array(std::optional<C>& v, ElementWriter&& writer) {
         if (!v) {
             return write(int32_t(-1));
         }
@@ -589,12 +589,13 @@ public:
         return _out->size_bytes() - start_size;
     }
 
-    template<typename T, typename ElementWriter>
-    requires requires(ElementWriter writer, encoder& rw, T& elem) {
+    template<typename C, typename ElementWriter>
+    requires requires(
+      ElementWriter writer, encoder& rw, typename C::value_type& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
-    uint32_t write_nullable_flex_array(
-      std::optional<std::vector<T>>& v, ElementWriter&& writer) {
+    uint32_t
+    write_nullable_flex_array(std::optional<C>& v, ElementWriter&& writer) {
         if (!v) {
             return write_unsigned_varint(0);
         }

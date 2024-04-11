@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "utils/absl_sstring_hash.h"
+#include "utils/fragmented_vector.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string.hpp>
@@ -145,12 +146,12 @@ from_cluster_topic_result(const cluster::topic_result& err) {
 }
 
 config_map_t config_map(const std::vector<createable_topic_config>& config);
-config_map_t config_map(const std::vector<creatable_topic_configs>& config);
+config_map_t config_map(const chunked_vector<creatable_topic_configs>& config);
 
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t);
 
-std::vector<kafka::creatable_topic_configs> report_topic_configs(
+chunked_vector<kafka::creatable_topic_configs> report_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties);
 

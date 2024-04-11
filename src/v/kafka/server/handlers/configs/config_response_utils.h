@@ -14,6 +14,7 @@
 #include "cluster/types.h"
 #include "kafka/protocol/describe_configs.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
+#include "utils/fragmented_vector.h"
 
 #include <iterator>
 #include <optional>
@@ -35,7 +36,7 @@ struct config_response {
     creatable_topic_configs to_create_config();
 };
 
-using config_response_container_t = std::vector<config_response>;
+using config_response_container_t = chunked_vector<config_response>;
 using config_key_t = std::optional<std::vector<ss::sstring>>;
 
 config_response_container_t make_topic_configs(
