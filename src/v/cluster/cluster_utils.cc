@@ -319,6 +319,7 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
     raft_state.write_caching_enabled = ptr->write_caching_enabled();
     raft_state.flush_bytes = ptr->flush_bytes();
     raft_state.flush_ms = ptr->flush_ms();
+    raft_state.time_since_last_flush = ptr->time_since_last_flush();
     raft_state.replication_monitor_state = fmt::format(
       "{}", ptr->get_replication_monitor());
 
