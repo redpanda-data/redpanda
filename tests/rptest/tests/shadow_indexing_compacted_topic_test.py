@@ -1,6 +1,6 @@
 import pprint
 
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkPartition, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
@@ -47,6 +47,21 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
                     'cleanup.policy': topic.cleanup_policy,
                 })
 
+    def describe_topic(self, topic: str) -> list[RpkPartition]:
+        description: list[RpkPartition] | None = None
+
+        def capture_description_is_ok():
+            nonlocal description
+            description = list(self._rpk_client.describe_topic(topic))
+            return description is not None and len(description) > 0
+
+        wait_until(capture_description_is_ok,
+                   timeout_sec=20,
+                   backoff_sec=1,
+                   err_msg=f"failed to get describe_topic {topic}")
+        assert description is not None, "description is None"
+        return description
+
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_upload(self, cloud_storage_type):
@@ -56,8 +71,7 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
 
         # observe this metric about compaction removed bytes to check that it increases
         metric = "vectorized_ntp_archiver_compacted_replaced_bytes"
-        original_topic_describe = list(
-            self._rpk_client.describe_topic(self.topic))[0]
+        original_topic_describe = self.describe_topic(self.topic)[0]
 
         m = MetricCheck(self.logger,
                         self.redpanda,
@@ -128,8 +142,7 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
         compacted_replaced_bytes_increasing = m.evaluate([
             (metric, lambda old, new: old < new)
         ])
-        new_topic_describe = list(self._rpk_client.describe_topic(
-            self.topic))[0]
+        new_topic_describe = self.describe_topic(self.topic)[0]
         self.logger.info(
             f"{compacted_replaced_bytes_increasing=}, original leader,epoch: {original_topic_describe.leader},{original_topic_describe.leader_epoch}. new leader,epoch:{new_topic_describe.leader},{new_topic_describe.leader_epoch}"
         )
