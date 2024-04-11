@@ -17,6 +17,7 @@
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/types.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -49,7 +50,7 @@ public:
       duration_type session_timeout,
       duration_type rebalance_timeout,
       kafka::protocol_type protocol_type,
-      std::vector<member_protocol> protocols)
+      chunked_vector<member_protocol> protocols)
       : group_member(
         member_state{
           .id = std::move(member_id),
@@ -73,7 +74,7 @@ public:
       kafka::member_state state,
       kafka::group_id group_id,
       kafka::protocol_type protocol_type,
-      std::vector<member_protocol> protocols)
+      chunked_vector<member_protocol> protocols)
       : _state(std::move(state))
       , _group_id(std::move(group_id))
       , _is_new(false)
@@ -115,10 +116,12 @@ public:
     /// Clear the member's assignment.
     void clear_assignment() { _state.assignment.clear(); }
 
-    const std::vector<member_protocol>& protocols() const { return _protocols; }
+    const chunked_vector<member_protocol>& protocols() const {
+        return _protocols;
+    }
 
     /// Update the set of protocols supported by the member.
-    void set_protocols(std::vector<member_protocol> protocols) {
+    void set_protocols(chunked_vector<member_protocol> protocols) {
         _protocols = std::move(protocols);
     }
 
@@ -215,7 +218,7 @@ private:
     clock_type::time_point _latest_heartbeat;
     ss::timer<clock_type> _expire_timer;
     kafka::protocol_type _protocol_type;
-    std::vector<member_protocol> _protocols;
+    chunked_vector<member_protocol> _protocols;
 
     // external shutdown synchronization
     std::unique_ptr<sync_promise> _sync_promise;

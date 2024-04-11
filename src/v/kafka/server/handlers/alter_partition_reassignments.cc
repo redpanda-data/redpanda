@@ -22,6 +22,7 @@
 #include "kafka/server/protocol_utils.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "utils/fragmented_vector.h"
 
 #include <absl/container/flat_hash_set.h>
 #include <fmt/format.h>
@@ -71,8 +72,7 @@ partitions_request_iterator validate_replicas(
 
 /**
  * @brief Validates partitions and places invalid partitions into @p resp_it
- * @param begin starting position for a vector<reassignable_partition>
- * @param end stopping position for a vector<reassignable_partition>
+ * @param topic the reassignable_topic to validate
  * @param resp_it  a wrapper to std::back_inserter
  * @param topic_response a reassignable_topic_response to put errors into
  * @param alive_nodes list of RP nodes that are live
@@ -83,10 +83,8 @@ partitions_request_iterator validate_replicas(
  */
 template<typename Container>
 partitions_request_iterator validate_partitions(
-  partitions_request_iterator begin,
-  partitions_request_iterator end,
+  reassignable_topic& topic,
   std::back_insert_iterator<Container> resp_it,
-  reassignable_topic_response topic_response,
   std::vector<model::node_id> alive_nodes,
   std::optional<std::reference_wrapper<const cluster::topic_metadata>>
     tp_metadata) {
@@ -95,6 +93,8 @@ partitions_request_iterator validate_partitions(
     // replicas.has_value are necessary.
 
     std::vector<reassignable_partition_response> invalid_partitions;
+    auto begin = topic.partitions.begin();
+    auto end = topic.partitions.end();
 
     auto valid_partitions_end = validate_replicas(
       begin,
@@ -210,9 +210,9 @@ partitions_request_iterator validate_partitions(
 
     // Store any invalid partitions in the response
     if (!invalid_partitions.empty()) {
-        topic_response.partitions = std::move(invalid_partitions);
         // resp_it is a wrapper to std::back_inserter
-        *resp_it = std::move(topic_response);
+        *resp_it = reassignable_topic_response{
+          .name = topic.name, .partitions = std::move(invalid_partitions)};
     }
 
     return valid_partitions_end;
@@ -241,7 +241,9 @@ ss::future<std::error_code> handle_partition(
 
         return octx.rctx.topics_frontend().move_partition_replicas(
           ntp,
-          std::move(*partition.replicas),
+          std::vector<model::node_id>{
+            std::make_move_iterator(partition.replicas->begin()),
+            std::make_move_iterator(partition.replicas->end())},
           cluster::reconfiguration_policy::full_local_retention,
           model::timeout_clock::now() + octx.request.data.timeout_ms);
 
@@ -289,10 +291,8 @@ ss::future<reassignable_topic_response> do_handle_topic(
       model::topic_namespace_view{model::kafka_namespace, topic.name});
 
     auto valid_partitions_end = validate_partitions(
-      topic.partitions.begin(),
-      topic.partitions.end(),
+      topic,
       std::back_inserter(octx.response.data.responses),
-      topic_response,
       std::move(alive_nodes),
       tp_metadata_ref);
 
@@ -376,8 +376,8 @@ static ss::future<response_ptr> do_handle(alter_op_context& octx) {
     return collect_alive_nodes(octx.rctx)
       .then([&octx](std::vector<model::node_id> alive_nodes) {
           return ssx::parallel_transform(
-            octx.request.data.topics.begin(),
-            octx.request.data.topics.end(),
+            std::make_move_iterator(octx.request.data.topics.begin()),
+            std::make_move_iterator(octx.request.data.topics.end()),
             [&octx, alive_nodes = std::move(alive_nodes)](
               reassignable_topic topic) mutable {
                 return ss::do_with(topic, [&octx, alive_nodes](auto& topic) {
@@ -388,7 +388,7 @@ static ss::future<response_ptr> do_handle(alter_op_context& octx) {
       .then([&octx](std::vector<reassignable_topic_response> topic_responses) {
           for (auto& t : topic_responses) {
               if (!t.partitions.empty()) {
-                  octx.response.data.responses.push_back(t);
+                  octx.response.data.responses.push_back(std::move(t));
               }
           }
           return octx.rctx.respond(std::move(octx.response));

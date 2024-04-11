@@ -44,7 +44,7 @@ concept TopicResultIterator
 template<typename T>
 requires TopicRequestItem<T>
 creatable_topic_result
-generate_error(T item, error_code code, const ss::sstring& msg) {
+generate_error(const T& item, error_code code, const ss::sstring& msg) {
     return creatable_topic_result{
       .name = item.name,
       .error_code = code,
@@ -55,7 +55,7 @@ generate_error(T item, error_code code, const ss::sstring& msg) {
 /// Generates successfull creatable_topic_result for single topic request item
 template<typename T>
 requires TopicRequestItem<T>
-creatable_topic_result generate_successfull_result(T item) {
+creatable_topic_result generate_successfull_result(const T& item) {
     return creatable_topic_result{
       .name = item.name, .error_code = error_code::none};
 }

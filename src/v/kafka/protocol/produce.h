@@ -18,6 +18,7 @@
 #include "kafka/types.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 
@@ -40,7 +41,7 @@ struct produce_request final {
     produce_request(
       std::optional<ss::sstring> t_id,
       int16_t acks,
-      std::vector<produce_request::topic> topics) {
+      chunked_vector<produce_request::topic> topics) {
         if (t_id) {
             data.transactional_id = transactional_id(std::move(*t_id));
         }

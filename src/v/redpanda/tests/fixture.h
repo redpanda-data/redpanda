@@ -782,7 +782,7 @@ public:
     }
 
     kafka::request_context
-    make_request_context(kafka::fetch_request& request, conn_ptr conn = {}) {
+    make_request_context(kafka::fetch_request&& request, conn_ptr conn = {}) {
         if (!conn) {
             conn = make_connection_context();
         }
@@ -807,7 +807,7 @@ public:
         // do not use incremental fetch requests
         request.data.max_wait_ms = std::chrono::milliseconds::zero();
 
-        return make_request_context(request);
+        return make_request_context(std::move(request));
     }
 
     application app;

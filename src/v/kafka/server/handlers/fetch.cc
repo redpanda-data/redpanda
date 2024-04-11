@@ -35,6 +35,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "ssx/semaphore.h"
 #include "storage/parser_utils.h"
+#include "utils/fragmented_vector.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/do_with.hh>
@@ -499,7 +500,7 @@ static void fill_fetch_responses(
              * set aborted transactions if present
              */
             if (!res.aborted_transactions.empty()) {
-                std::vector<fetch_response::aborted_transaction> aborted;
+                chunked_vector<fetch_response::aborted_transaction> aborted;
                 aborted.reserve(res.aborted_transactions.size());
                 std::transform(
                   res.aborted_transactions.begin(),

@@ -25,6 +25,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/sstring.hh>
@@ -74,7 +75,7 @@ public:
     kafka::alter_configs_resource make_alter_topic_config_resource(
       const model::topic& topic,
       const absl::flat_hash_map<ss::sstring, ss::sstring>& properties) {
-        std::vector<kafka::alterable_config> cfg_list;
+        chunked_vector<kafka::alterable_config> cfg_list;
         cfg_list.reserve(properties.size());
         for (auto& [k, v] : properties) {
             cfg_list.push_back(kafka::alterable_config{.name = k, .value = v});
@@ -88,6 +89,15 @@ public:
         };
     }
 
+    chunked_vector<kafka::alter_configs_resource>
+    make_alter_topic_config_resource_cv(
+      const model::topic& topic,
+      const absl::flat_hash_map<ss::sstring, ss::sstring>& properties) {
+        chunked_vector<kafka::alter_configs_resource> cv;
+        cv.push_back(make_alter_topic_config_resource(topic, properties));
+        return cv;
+    }
+
     kafka::incremental_alter_configs_resource
     make_incremental_alter_topic_config_resource(
       const model::topic& topic,
@@ -96,7 +106,7 @@ public:
         std::
           pair<std::optional<ss::sstring>, kafka::config_resource_operation>>&
         operations) {
-        std::vector<kafka::incremental_alterable_config> cfg_list;
+        chunked_vector<kafka::incremental_alterable_config> cfg_list;
         cfg_list.reserve(operations.size());
         for (auto& [k, v] : operations) {
             cfg_list.push_back(kafka::incremental_alterable_config{
@@ -114,9 +124,24 @@ public:
         };
     }
 
+    chunked_vector<kafka::incremental_alter_configs_resource>
+    make_incremental_alter_topic_config_resource_cv(
+      const model::topic& topic,
+      const absl::flat_hash_map<
+        ss::sstring,
+        std::
+          pair<std::optional<ss::sstring>, kafka::config_resource_operation>>&
+        operations) {
+        chunked_vector<kafka::incremental_alter_configs_resource> cv;
+        cv.push_back(
+          make_incremental_alter_topic_config_resource(topic, operations));
+        return cv;
+    }
+
     kafka::describe_configs_response describe_configs(
       const ss::sstring& resource_name,
-      std::optional<std::vector<ss::sstring>> configuration_keys = std::nullopt,
+      std::optional<chunked_vector<ss::sstring>> configuration_keys
+      = std::nullopt,
       kafka::config_resource_type resource_type
       = kafka::config_resource_type::topic) {
         kafka::describe_configs_request req;
@@ -124,7 +149,7 @@ public:
         kafka::describe_configs_resource res{
           .resource_type = resource_type,
           .resource_name = resource_name,
-          .configuration_keys = configuration_keys,
+          .configuration_keys = std::move(configuration_keys),
         };
         req.data.resources.push_back(std::move(res));
         return do_with_client([req = std::move(req)](
@@ -136,7 +161,7 @@ public:
     }
 
     kafka::alter_configs_response
-    alter_configs(std::vector<kafka::alter_configs_resource> resources) {
+    alter_configs(chunked_vector<kafka::alter_configs_resource> resources) {
         kafka::alter_configs_request req;
         req.data.resources = std::move(resources);
         return do_with_client([req = std::move(req)](
@@ -148,7 +173,7 @@ public:
     }
 
     kafka::incremental_alter_configs_response incremental_alter_configs(
-      std::vector<kafka::incremental_alter_configs_resource> resources) {
+      chunked_vector<kafka::incremental_alter_configs_resource> resources) {
         kafka::incremental_alter_configs_request req;
         req.data.resources = std::move(resources);
         return do_with_client([req = std::move(req)](
@@ -238,7 +263,7 @@ FIXTURE_TEST(
     req.data.topics = std::nullopt;
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
     auto broker_id = std::to_string(resp.data.brokers[0].node_id());
 
@@ -264,10 +289,10 @@ FIXTURE_TEST(
 
     // Single properies_request
     for (const auto& request_property : all_properties) {
-        std::vector<ss::sstring> request_properties = {request_property};
+        chunked_vector<ss::sstring> request_properties{request_property};
         auto single_describe_resp = describe_configs(
           broker_id,
-          std::make_optional(request_properties),
+          std::make_optional(std::move(request_properties)),
           kafka::config_resource_type::broker);
         assert_properties_amount(broker_id, single_describe_resp, 1);
         for (const auto& property : all_properties) {
@@ -280,14 +305,14 @@ FIXTURE_TEST(
     }
 
     // Group properties_request
-    std::vector<ss::sstring> first_group_config_properties = {
+    chunked_vector<ss::sstring> first_group_config_properties = {
       "listeners",
       "advertised.listeners",
       "log.segment.bytes",
       "log.retention.bytes",
       "log.retention.ms"};
 
-    std::vector<ss::sstring> second_group_config_properties = {
+    chunked_vector<ss::sstring> second_group_config_properties = {
       "num.partitions",
       "default.replication.factor",
       "log.dirs",
@@ -295,7 +320,7 @@ FIXTURE_TEST(
 
     auto first_group_describe_resp = describe_configs(
       broker_id,
-      std::make_optional(first_group_config_properties),
+      std::make_optional(first_group_config_properties.copy()),
       kafka::config_resource_type::broker);
     assert_properties_amount(
       broker_id,
@@ -312,7 +337,7 @@ FIXTURE_TEST(
 
     auto second_group_describe_resp = describe_configs(
       broker_id,
-      std::make_optional(second_group_config_properties),
+      std::make_optional(second_group_config_properties.copy()),
       kafka::config_resource_type::broker);
     assert_properties_amount(
       broker_id,
@@ -377,9 +402,9 @@ FIXTURE_TEST(
 
     // Single properties_request
     for (const auto& request_property : all_properties) {
-        std::vector<ss::sstring> request_properties = {request_property};
+        chunked_vector<ss::sstring> request_properties = {request_property};
         auto single_describe_resp = describe_configs(
-          test_tp, std::make_optional(request_properties));
+          test_tp, std::make_optional(std::move(request_properties)));
         assert_properties_amount(test_tp, single_describe_resp, 1);
         for (const auto& property : all_properties) {
             assert_property_presented(
@@ -391,18 +416,18 @@ FIXTURE_TEST(
     }
 
     // Group properties_request
-    std::vector<ss::sstring> first_group_config_properties = {
+    chunked_vector<ss::sstring> first_group_config_properties = {
       "retention.ms",
       "retention.bytes",
       "segment.bytes",
       "redpanda.remote.read",
       "redpanda.remote.write"};
 
-    std::vector<ss::sstring> second_group_config_properties = {
+    chunked_vector<ss::sstring> second_group_config_properties = {
       "cleanup.policy", "compression.type", "message.timestamp.type"};
 
     auto first_group_describe_resp = describe_configs(
-      test_tp, std::make_optional(first_group_config_properties));
+      test_tp, std::make_optional(first_group_config_properties.copy()));
     vlog(
       test_log.debug,
       "first_group_describe_resp: {}",
@@ -419,7 +444,7 @@ FIXTURE_TEST(
     }
 
     auto second_group_describe_resp = describe_configs(
-      test_tp, std::make_optional(second_group_config_properties));
+      test_tp, std::make_optional(second_group_config_properties.copy()));
     vlog(
       test_log.debug,
       "second_group_describe_resp: {}",
@@ -450,7 +475,7 @@ FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
     properties.emplace("replication.factor", "1");
 
     auto resp = alter_configs(
-      {make_alter_topic_config_resource(test_tp, properties)});
+      make_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -481,10 +506,9 @@ FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
     properties_2.emplace("retention.bytes", "4096");
     properties_2.emplace("replication.factor", "1");
 
-    auto resp = alter_configs({
-      make_alter_topic_config_resource(topic_1, properties_1),
-      make_alter_topic_config_resource(topic_2, properties_2),
-    });
+    auto cv = make_alter_topic_config_resource_cv(topic_1, properties_1);
+    cv.push_back(make_alter_topic_config_resource(topic_2, properties_2));
+    auto resp = alter_configs(std::move(cv));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 2);
     BOOST_REQUIRE_EQUAL(
@@ -515,7 +539,7 @@ FIXTURE_TEST(
     properties.emplace("replication.factor", "1");
 
     auto resp = alter_configs(
-      {make_alter_topic_config_resource(test_tp, properties)});
+      make_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(
       resp.data.responses[0].error_code, kafka::error_code::none);
@@ -530,7 +554,7 @@ FIXTURE_TEST(test_alter_topic_error, alter_config_test_fixture) {
     properties.emplace("not.exists", "1234");
 
     auto resp = alter_configs(
-      {make_alter_topic_config_resource(test_tp, properties)});
+      {make_alter_topic_config_resource_cv(test_tp, properties)});
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -551,7 +575,7 @@ FIXTURE_TEST(
     properties.emplace("replication.factor", "1");
 
     auto resp = alter_configs(
-      {make_alter_topic_config_resource(test_tp, properties)});
+      make_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -569,7 +593,7 @@ FIXTURE_TEST(
     new_properties.emplace("retention.bytes", "4096");
     new_properties.emplace("replication.factor", "1");
 
-    alter_configs({make_alter_topic_config_resource(test_tp, new_properties)});
+    alter_configs(make_alter_topic_config_resource_cv(test_tp, new_properties));
 
     auto new_describe_resp = describe_configs(test_tp);
     // retention.ms should be set back to default
@@ -597,7 +621,7 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
       std::make_pair("1234", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, properties)});
+      make_incremental_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -620,7 +644,7 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
       std::pair{"4096", kafka::config_resource_operation::set});
 
     incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, new_properties)});
+      make_incremental_alter_topic_config_resource_cv(test_tp, new_properties));
 
     auto new_describe_resp = describe_configs(test_tp);
     // retention.ms should stay untouched
@@ -646,7 +670,7 @@ FIXTURE_TEST(
       std::pair{"true", kafka::config_resource_operation::set});
 
     auto resp = incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, properties)});
+      make_incremental_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(
       resp.data.responses[0].error_code, kafka::error_code::none);
@@ -666,7 +690,7 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       std::make_pair("1234", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, properties)});
+      make_incremental_alter_topic_config_resource_cv(test_tp, properties));
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -688,8 +712,8 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       "retention.ms",
       std::pair{std::nullopt, kafka::config_resource_operation::remove});
 
-    incremental_alter_configs(
-      {make_incremental_alter_topic_config_resource(test_tp, new_properties)});
+    incremental_alter_configs({make_incremental_alter_topic_config_resource_cv(
+      test_tp, new_properties)});
 
     auto new_describe_resp = describe_configs(test_tp);
     // retention.ms should be set back to default

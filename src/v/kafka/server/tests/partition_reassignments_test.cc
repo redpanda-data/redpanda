@@ -17,6 +17,7 @@
 #include "kafka/types.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/sstring.hh>
@@ -54,7 +55,7 @@ public:
         kafka::alter_partition_reassignments_request req;
 
         if (topic_name.has_value()) {
-            req.data.topics = std::vector<kafka::reassignable_topic>{
+            req.data.topics = chunked_vector<kafka::reassignable_topic>{
               kafka::reassignable_topic{
                 .name = *topic_name,
                 .partitions = std::move(reassignable_partitions)}};
@@ -64,11 +65,11 @@ public:
 
     kafka::list_partition_reassignments_response list_partition_reassignments(
       kafka::client::transport& client,
-      std::optional<std::vector<kafka::list_partition_reassignments_topics>>
+      std::optional<chunked_vector<kafka::list_partition_reassignments_topics>>
         topics
       = std::nullopt) {
         kafka::list_partition_reassignments_request req;
-        req.data.topics = topics;
+        req.data.topics = std::move(topics);
         return client.dispatch(std::move(req), kafka::api_version(0)).get();
     }
 };
@@ -267,12 +268,13 @@ FIXTURE_TEST(
         test_log.info(
           "List partition assignments {} expect an empty response", test_tp);
         std::vector<model::partition_id> pids;
+        pids.reserve(num_partitions);
         for (int pid = 0; pid < num_partitions; ++pid) {
             pids.emplace_back(pid);
         }
         auto resp = list_partition_reassignments(
           client,
-          std::vector<kafka::list_partition_reassignments_topics>{
+          chunked_vector<kafka::list_partition_reassignments_topics>{
             kafka::list_partition_reassignments_topics{
               .name = test_tp, .partition_indexes = pids}});
         BOOST_CHECK_EQUAL(resp.data.topics.size(), 0);

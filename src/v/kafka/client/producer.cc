@@ -17,6 +17,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "model/fundamental.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/gate.hh>
 
@@ -26,12 +27,12 @@ namespace kafka::client {
 
 produce_request make_produce_request(
   model::topic_partition tp, model::record_batch&& batch, int16_t acks) {
-    std::vector<produce_request::partition> partitions;
+    chunked_vector<produce_request::partition> partitions;
     partitions.emplace_back(produce_request::partition{
       .partition_index{tp.partition},
       .records = produce_request_record_data(std::move(batch))});
 
-    std::vector<produce_request::topic> topics;
+    chunked_vector<produce_request::topic> topics;
     topics.emplace_back(produce_request::topic{
       .name{std::move(tp.topic)}, .partitions{std::move(partitions)}});
     std::optional<ss::sstring> t_id;
