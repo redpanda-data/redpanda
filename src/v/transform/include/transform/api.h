@@ -75,7 +75,7 @@ public:
      * Deploy a transform to the cluster.
      */
     ss::future<std::error_code>
-      deploy_transform(model::transform_metadata, iobuf);
+      deploy_transform(model::transform_metadata, model::wasm_binary_iobuf);
 
     /**
      * Delete a transform from the cluster.

@@ -112,7 +112,10 @@ operator<<(std::ostream& os, const load_wasm_binary_request& req) {
 std::ostream&
 operator<<(std::ostream& os, const load_wasm_binary_reply& reply) {
     fmt::print(
-      os, "{{ data_size: {}, errc: {} }}", reply.data.size_bytes(), reply.ec);
+      os,
+      "{{ data_size: {}, errc: {} }}",
+      reply.data()->size_bytes(),
+      reply.ec);
     return os;
 }
 
@@ -145,7 +148,7 @@ operator<<(std::ostream& os, const store_wasm_binary_request& req) {
     fmt::print(
       os,
       "{{ data_size: {}, timeout: {} }}",
-      req.data.size_bytes(),
+      req.data()->size_bytes(),
       req.timeout);
     return os;
 }

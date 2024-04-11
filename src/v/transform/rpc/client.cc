@@ -284,16 +284,17 @@ client::do_remote_produce(model::node_id node, produce_request req) {
 }
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
-client::store_wasm_binary(iobuf data, model::timeout_clock::duration timeout) {
+client::store_wasm_binary(
+  model::wasm_binary_iobuf data, model::timeout_clock::duration timeout) {
     co_return co_await retry([this, &data, timeout]() {
         return do_store_wasm_binary_once(
-          data.share(0, data.size_bytes()), timeout);
+          model::share_wasm_binary(data), timeout);
     });
 }
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
 client::do_store_wasm_binary_once(
-  iobuf data, model::timeout_clock::duration timeout) {
+  model::wasm_binary_iobuf data, model::timeout_clock::duration timeout) {
     auto leader = co_await compute_wasm_binary_ntp_leader();
     if (!leader) {
         co_return cluster::errc::not_leader;
@@ -302,7 +303,7 @@ client::do_store_wasm_binary_once(
       log.trace,
       "do_store_wasm_binary_once_request(node={}): size={}",
       *leader,
-      data.size_bytes());
+      data()->size_bytes());
     auto reply = co_await (
       leader == _self
         ? do_local_store_wasm_binary(std::move(data), timeout)
@@ -317,13 +318,15 @@ client::do_store_wasm_binary_once(
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
 client::do_local_store_wasm_binary(
-  iobuf data, model::timeout_clock::duration timeout) {
+  model::wasm_binary_iobuf data, model::timeout_clock::duration timeout) {
     return _local_service->local().store_wasm_binary(std::move(data), timeout);
 }
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
 client::do_remote_store_wasm_binary(
-  model::node_id node, iobuf data, model::timeout_clock::duration timeout) {
+  model::node_id node,
+  model::wasm_binary_iobuf data,
+  model::timeout_clock::duration timeout) {
     auto resp = co_await _connections->local()
                   .with_node_client<impl::transform_rpc_client_protocol>(
                     _self,
@@ -403,14 +406,16 @@ ss::future<cluster::errc> client::do_remote_delete_wasm_binary(
     co_return resp.value().ec;
 }
 
-ss::future<result<iobuf, cluster::errc>> client::load_wasm_binary(
+ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
+client::load_wasm_binary(
   model::offset offset, model::timeout_clock::duration timeout) {
     return retry([this, offset, timeout]() {
         return do_load_wasm_binary_once(offset, timeout);
     });
 }
 
-ss::future<result<iobuf, cluster::errc>> client::do_load_wasm_binary_once(
+ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
+client::do_load_wasm_binary_once(
   model::offset offset, model::timeout_clock::duration timeout) {
     auto leader = co_await compute_wasm_binary_ntp_leader();
     if (!leader) {
@@ -432,12 +437,14 @@ ss::future<result<iobuf, cluster::errc>> client::do_load_wasm_binary_once(
     co_return reply;
 }
 
-ss::future<result<iobuf, cluster::errc>> client::do_local_load_wasm_binary(
+ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
+client::do_local_load_wasm_binary(
   model::offset offset, model::timeout_clock::duration timeout) {
     return _local_service->local().load_wasm_binary(offset, timeout);
 }
 
-ss::future<result<iobuf, cluster::errc>> client::do_remote_load_wasm_binary(
+ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
+client::do_remote_load_wasm_binary(
   model::node_id node,
   model::offset offset,
   model::timeout_clock::duration timeout) {

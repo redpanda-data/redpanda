@@ -96,11 +96,12 @@ public:
         return invoke_on_shard_impl(shard, ktp, std::move(fn));
     }
 
-    ss::future<result<iobuf, cluster::errc>> invoke_on_shard(
+    ss::future<result<model::wasm_binary_iobuf, cluster::errc>> invoke_on_shard(
       ss::shard_id shard,
       const model::ktp& ktp,
-      ss::noncopyable_function<ss::future<result<iobuf, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
+      ss::noncopyable_function<
+        ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
+          kafka::partition_proxy*)> fn) final {
         return invoke_on_shard_impl(shard, ktp, std::move(fn));
     }
 
@@ -111,11 +112,12 @@ public:
         kafka::partition_proxy*)> fn) final {
         return invoke_on_shard_impl(shard, ntp, std::move(fn));
     }
-    ss::future<result<iobuf, cluster::errc>> invoke_on_shard(
+    ss::future<result<model::wasm_binary_iobuf, cluster::errc>> invoke_on_shard(
       ss::shard_id shard,
       const model::ntp& ntp,
-      ss::noncopyable_function<ss::future<result<iobuf, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
+      ss::noncopyable_function<
+        ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
+          kafka::partition_proxy*)> fn) final {
         return invoke_on_shard_impl(shard, ntp, std::move(fn));
     }
 

@@ -151,10 +151,10 @@ public:
 
     ss::future<> stop() override;
 
-    ss::future<ss::shared_ptr<factory>>
-    make_factory(model::transform_metadata meta, iobuf buf) override;
+    ss::future<ss::shared_ptr<factory>> make_factory(
+      model::transform_metadata meta, model::wasm_binary_iobuf buf) override;
 
-    ss::future<> validate(iobuf buf) override;
+    ss::future<> validate(model::wasm_binary_iobuf buf) override;
 
     wasm_engine_t* engine() const;
 
@@ -1451,8 +1451,8 @@ ss::future<> wasmtime_runtime::stop() {
     co_await _stack_allocator.stop();
 }
 
-ss::future<ss::shared_ptr<factory>>
-wasmtime_runtime::make_factory(model::transform_metadata meta, iobuf buf) {
+ss::future<ss::shared_ptr<factory>> wasmtime_runtime::make_factory(
+  model::transform_metadata meta, model::wasm_binary_iobuf buf) {
     auto preinitialized = ss::make_lw_shared<preinitialized_instance>();
 
     // Enable strict stack checking only if tracking is enabled.
@@ -1465,11 +1465,11 @@ wasmtime_runtime::make_factory(model::transform_metadata meta, iobuf buf) {
                      : nullptr,
     };
     size_t memory_usage_size = co_await _alien_thread.submit(
-      [this, &meta, &buf, &preinitialized, &ssc] {
+      [this, &meta, buf = buf().get(), &preinitialized, &ssc] {
           vlog(wasm_log.debug, "compiling wasm module {}", meta.name);
           // This can be a large contiguous allocation, however it happens
           // on an alien thread so it bypasses the seastar allocator.
-          bytes b = iobuf_to_bytes(buf);
+          bytes b = iobuf_to_bytes(*buf);
           wasmtime_module_t* user_module_ptr = nullptr;
           handle<wasmtime_error_t, wasmtime_error_delete> error{
             wasmtime_module_new(
@@ -1684,10 +1684,10 @@ bool is_invalid_sr_abi_check_fn(const parser::module_import& mod_import) {
     return mod_import.item_name != "check_abi_version_0";
 }
 
-ss::future<> wasmtime_runtime::validate(iobuf buf) {
+ss::future<> wasmtime_runtime::validate(model::wasm_binary_iobuf buf) {
     parser::module_declarations decls;
     try {
-        decls = co_await parser::extract_declarations(std::move(buf));
+        decls = co_await parser::extract_declarations(std::move(*buf()));
     } catch (const parser::module_too_large_exception& ex) {
         vlog(wasm_log.warn, "invalid module (too large): {}", ex);
         throw wasm_exception(ex.what(), errc::invalid_module);

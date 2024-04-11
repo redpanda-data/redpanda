@@ -183,11 +183,12 @@ void WasmTestFixture::TearDown() {
 
 void WasmTestFixture::load_wasm(const std::string& path) {
     auto wasm_file = ss::util::read_entire_file(path).get0();
-    iobuf buf;
+    auto buf = model::wasm_binary_iobuf(std::make_unique<iobuf>());
     for (auto& chunk : wasm_file) {
-        buf.append(std::move(chunk));
+        buf()->append(std::move(chunk));
     }
-    _runtime->validate(buf.share(0, buf.size_bytes())).get();
+
+    _runtime->validate(model::share_wasm_binary(buf)).get();
     _factory = _runtime->make_factory(_meta, std::move(buf)).get();
     if (_engine) {
         _engine->stop().get();

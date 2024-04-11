@@ -635,15 +635,15 @@ service::delete_transform(model::transform_name name) {
     co_return cluster::make_error_code(cluster::errc::success);
 }
 
-ss::future<std::error_code>
-service::deploy_transform(model::transform_metadata meta, iobuf binary) {
+ss::future<std::error_code> service::deploy_transform(
+  model::transform_metadata meta, model::wasm_binary_iobuf binary) {
     if (!_feature_table->local().is_active(
           features::feature::wasm_transforms)) {
         co_return cluster::make_error_code(cluster::errc::feature_disabled);
     }
     auto _ = _gate.hold();
     try {
-        co_await _runtime->validate(binary.share(0, binary.size_bytes()));
+        co_await _runtime->validate(model::share_wasm_binary(binary));
     } catch (const wasm::wasm_exception& ex) {
         vlog(
           tlog.warn,
@@ -655,9 +655,8 @@ service::deploy_transform(model::transform_metadata meta, iobuf binary) {
     vlog(
       tlog.info,
       "deploying wasm binary (size={}) for transform {}",
-      binary.size_bytes(),
+      binary()->size_bytes(),
       meta.name);
-    // TODO(rockwood): Validate that the wasm adheres to our ABI
     auto result = co_await _rpc_client->local().store_wasm_binary(
       std::move(binary), wasm_binary_timeout);
     if (result.has_error()) {

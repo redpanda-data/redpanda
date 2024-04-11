@@ -19,6 +19,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "model/transform.h"
 #include "raft/errc.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
@@ -32,6 +33,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/coroutine/switch_to.hh>
 
 #include <iterator>
@@ -174,13 +176,27 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
 
 ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
 local_service::store_wasm_binary(
-  iobuf data, model::timeout_clock::duration timeout) {
+  model::wasm_binary_iobuf data, model::timeout_clock::duration timeout) {
     uuid_t key = uuid_t::create();
     storage::record_batch_builder b(
       model::record_batch_type::raft_data, model::offset(0));
     std::vector<model::record_header> headers;
     headers.push_back(make_header("state", "live"));
-    b.add_raw_kw(make_iobuf(key), std::move(data), std::move(headers));
+    if (data().get_owner_shard() == ss::this_shard_id()) {
+        // If we're on the same shard we can enable move fragment optimizations
+        b.add_raw_kw(make_iobuf(key), std::move(*data()), std::move(headers));
+    } else {
+        // Otherwise we can't touch the memory and we need to do a full copy to
+        // this core.
+        iobuf copy;
+        for (const auto& fragment : *data()) {
+            copy.append(fragment.get(), fragment.size());
+        }
+        b.add_raw_kw(make_iobuf(key), std::move(copy), std::move(headers));
+        // Free the reference to this data by sending
+        // it back to the owning shard.
+        std::move(data)().reset();
+    }
     ss::chunked_fifo<model::record_batch> batches;
     batches.push_back(std::move(b).build());
     auto r = co_await produce(
@@ -206,7 +222,8 @@ ss::future<cluster::errc> local_service::delete_wasm_binary(
     co_return r.has_error() ? r.error() : cluster::errc::success;
 }
 
-ss::future<result<iobuf, cluster::errc>> local_service::load_wasm_binary(
+ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
+local_service::load_wasm_binary(
   model::offset offset, model::timeout_clock::duration timeout) {
     auto shard = _partition_manager->shard_owner(
       model::wasm_binaries_internal_ntp);
@@ -239,7 +256,7 @@ local_service::compute_node_local_report() {
     return _reporter->compute_report();
 }
 
-ss::future<result<iobuf, cluster::errc>>
+ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
 local_service::consume_wasm_binary_reader(
   model::record_batch_reader rdr, model::timeout_clock::duration timeout) {
     model::timeout_clock::time_point deadline = model::timeout_clock::now()
@@ -258,7 +275,8 @@ local_service::consume_wasm_binary_reader(
     if (data.empty()) {
         co_return cluster::errc::invalid_request;
     }
-    co_return data;
+    co_return model::wasm_binary_iobuf(
+      std::make_unique<iobuf>(std::move(data)));
 }
 
 ss::future<find_coordinator_response>

@@ -30,6 +30,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <memory>
 #include <unistd.h>
 
 using namespace std::chrono_literals;
@@ -72,11 +73,11 @@ public:
           .environment = {},
           .source_ptr = model::offset(0),
         };
-        iobuf wasm_binary;
+        auto wasm_binary = model::wasm_binary_iobuf(std::make_unique<iobuf>());
         {
             auto data = co_await ss::util::read_entire_file_contiguous(
               filename);
-            wasm_binary.append(data.data(), data.size());
+            wasm_binary()->append(data.data(), data.size());
         }
         auto factory = co_await _runtime->make_factory(
           meta, std::move(wasm_binary));
