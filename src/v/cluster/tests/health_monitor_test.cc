@@ -21,6 +21,7 @@
 #include "test_utils/fixture.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/core/when_all.hh>
 
 #include <boost/test/tools/interface.hpp>
 #include <boost/test/tools/old/interface.hpp>
@@ -292,27 +293,6 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
                        report.value().node_reports.begin()->topics);
           });
     }).get();
-
-    // check filtering in node report
-    tests::cooperative_spin_wait_with_timeout(10s, [&] {
-        return n1->controller->get_health_monitor()
-          .local()
-          .collect_node_health(f_1.node_report_filter)
-          .then([](result<cluster::node_health_report> report) {
-              return report.has_value()
-                     && contains_exactly_ntp_leaders(
-                       g_seastar_test_log,
-                       {
-                         ntp(model::kafka_namespace, "tp-1", 0),
-                         ntp(model::kafka_namespace, "tp-1", 2),
-                         ntp(model::kafka_namespace, "tp-2", 0),
-                         ntp(model::kafka_internal_namespace, "internal-1", 0),
-                         ntp(model::kafka_internal_namespace, "internal-1", 1),
-                         ntp(model::redpanda_ns, "controller", 0),
-                       },
-                       report.value().topics);
-          });
-    }).get();
 }
 
 FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
@@ -570,4 +550,20 @@ FIXTURE_TEST(test_report_truncation, health_report_unit) {
 
     test_unhealthy(max_count + 1, LEADERLESS);
     test_unhealthy(max_count + 1, URP);
+}
+
+FIXTURE_TEST(
+  test_requesting_collection_at_the_same_time, cluster_test_fixture) {
+    auto n1 = create_node_application(model::node_id{0});
+    /**
+     * Request reports
+     */
+    auto f_h_1
+      = n1->controller->get_health_monitor().local().get_current_node_health();
+    auto f_h_2
+      = n1->controller->get_health_monitor().local().get_current_node_health();
+
+    auto results = ss::when_all(std::move(f_h_1), std::move(f_h_2)).get();
+    BOOST_REQUIRE(
+      std::get<0>(results).get().value() == std::get<1>(results).get().value());
 }

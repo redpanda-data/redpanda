@@ -10,6 +10,7 @@
  */
 #include "cluster/health_monitor_frontend.h"
 
+#include "cluster/health_monitor_backend.h"
 #include "cluster/logger.h"
 #include "config/property.h"
 #include "model/timeout_clock.h"
@@ -63,14 +64,14 @@ storage::disk_space_alert health_monitor_frontend::get_cluster_disk_health() {
     return _cluster_disk_health;
 }
 
-// Collcts and returns current node health report according to provided
-// filters list
+/**
+ * Gets cached or collects a node health report.
+ */
 ss::future<result<node_health_report>>
-health_monitor_frontend::collect_node_health(node_report_filter f) {
-    return dispatch_to_backend(
-      [f = std::move(f)](health_monitor_backend& be) mutable {
-          return be.collect_current_node_health(std::move(f));
-      });
+health_monitor_frontend::get_current_node_health() {
+    return dispatch_to_backend([](health_monitor_backend& be) mutable {
+        return be.get_current_node_health();
+    });
 }
 std::optional<alive>
 health_monitor_frontend::is_alive(model::node_id id) const {

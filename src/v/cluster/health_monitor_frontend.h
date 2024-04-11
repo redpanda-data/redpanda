@@ -10,7 +10,6 @@
  */
 #pragma once
 #include "cluster/fwd.h"
-#include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/node_status_table.h"
 #include "config/property.h"
@@ -20,9 +19,6 @@
 #include "storage/types.h"
 
 #include <seastar/core/sharded.hh>
-
-#include <chrono>
-#include <utility>
 
 namespace cluster {
 
@@ -63,10 +59,8 @@ public:
 
     storage::disk_space_alert get_cluster_disk_health();
 
-    // Collcts and returns current node health report according to provided
-    // filters list
-    ss::future<result<node_health_report>>
-      collect_node_health(node_report_filter);
+    // Collects or return cached version of current node health report.
+    ss::future<result<node_health_report>> get_current_node_health();
 
     /**
      * Return drain status for a given node.
@@ -99,7 +93,7 @@ private:
     template<typename Func>
     auto dispatch_to_backend(Func&& f) {
         return _backend.invoke_on(
-          health_monitor_backend::shard, std::forward<Func>(f));
+          health_monitor_backend_shard, std::forward<Func>(f));
     }
 
     ss::sharded<health_monitor_backend>& _backend;
