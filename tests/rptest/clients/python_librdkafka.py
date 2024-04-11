@@ -42,11 +42,11 @@ class PythonLibrdkafka:
     def oauth_count(self):
         return self._oauth_count
 
-    def brokers(self):
+    def brokers(self) -> dict[str, Any]:
         client = AdminClient(self._get_config())
         return client.list_topics(timeout=10).brokers
 
-    def topics(self, topic=None):
+    def topics(self, topic: str | None = None):
         client = AdminClient(self._get_config())
         return client.list_topics(timeout=10, topic=topic).topics
 
