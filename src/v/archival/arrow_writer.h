@@ -24,6 +24,10 @@ ss::future<bool> write_parquet(
   model::offset starting_offset,
   model::offset ending_offset);
 
+/** Low-level wrapper for writing an arrow table to parquet*/
+arrow::Status write_table_to_parquet(
+  std::shared_ptr<arrow::Table>, std::filesystem::path path);
+
 /** Is this a datalake topic? Should we write it to Iceberg/Parquet?
  */
 bool is_datalake_topic(cluster::partition& partition);
@@ -44,16 +48,17 @@ class arrow_writing_consumer {
      * is written.
      */
 public:
-    explicit arrow_writing_consumer(std::filesystem::path file_name);
+    explicit arrow_writing_consumer();
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
-    arrow::Status write_file();
-    ss::future<arrow::Status> end_of_stream();
+    ss::future<std::shared_ptr<arrow::Table>> end_of_stream();
+    std::shared_ptr<arrow::Table> get_table();
+
+    arrow::Status status() { return _ok; }
 
 private:
     uint32_t iobuf_to_uint32(const iobuf& buf);
     std::string iobuf_to_string(const iobuf& buf);
 
-    std::filesystem::path _local_file_name;
     uint32_t _compressed_batches = 0;
     uint32_t _uncompressed_batches = 0;
     uint32_t _rows = 0;

@@ -10,9 +10,12 @@
 #include <seastar/util/file.hh>
 
 #include <archival/arrow_writer.h>
+#include <arrow/scalar.h>
 #include <arrow/type_fwd.h>
+#include <arrow/visitor.h>
 
 #include <filesystem>
+#include <memory>
 #include <string_view>
 
 ss::future<bool> datalake::write_parquet(
@@ -24,7 +27,8 @@ ss::future<bool> datalake::write_parquet(
       starting_offset,
       ending_offset,
       0,
-      10ll * 1024ll * 1024ll * 1024ll, // FIXME(jcipar): 10 GiB is probably too much.
+      10ll * 1024ll * 1024ll
+        * 1024ll, // FIXME(jcipar): 10 GiB is probably too much.
       ss::default_priority_class(),
       model::record_batch_type::raft_data,
       std::nullopt,
@@ -37,10 +41,35 @@ ss::future<bool> datalake::write_parquet(
 
     std::filesystem::path path = std::filesystem::path("/tmp/parquet_files")
                                  / topic_name / inner_path;
-    arrow_writing_consumer consumer(path);
-    arrow::Status result = co_await reader.consume(
+    arrow_writing_consumer consumer;
+    std::shared_ptr<arrow::Table> table = co_await reader.consume(
       std::move(consumer), model::no_timeout);
+    if (table == nullptr) {
+        co_return false;
+    }
+
+    // FIXME: Creating and destroying sharded_thread_workers is supposed
+    // to be rare. The docs for the class suggest doing creating it once
+    // during application startup.
+    ssx::sharded_thread_worker thread_worker;
+    co_await thread_worker.start({.name = "parquet"});
+    auto result = co_await thread_worker.submit(
+      [table, path]() -> arrow::Status {
+          return write_table_to_parquet(table, path);
+      });
+    co_await thread_worker.stop();
     co_return result.ok();
+}
+
+arrow::Status datalake::write_table_to_parquet(
+  std::shared_ptr<arrow::Table> table, std::filesystem::path path) {
+    std::filesystem::create_directories(path.parent_path());
+    std::shared_ptr<arrow::io::FileOutputStream> outfile;
+    ARROW_ASSIGN_OR_RAISE(outfile, arrow::io::FileOutputStream::Open(path));
+    PARQUET_THROW_NOT_OK(parquet::arrow::WriteTable(
+      *table, arrow::default_memory_pool(), outfile));
+    PARQUET_THROW_NOT_OK(outfile->Close());
+    return arrow::Status::OK();
 }
 
 bool datalake::is_datalake_topic(cluster::partition& partition) {
@@ -213,9 +242,12 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
     return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
 }
 
-arrow::Status datalake::arrow_writing_consumer::write_file() {
+template<typename ArrowType>
+class get_arrow_value : public arrow::ScalarVisitor {};
+
+std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
     if (!_ok.ok()) {
-        return _ok;
+        return nullptr;
     }
     // Create a ChunkedArray
     std::shared_ptr<arrow::ChunkedArray> key_chunks
@@ -228,45 +260,25 @@ arrow::Status datalake::arrow_writing_consumer::write_file() {
       = std::make_shared<arrow::ChunkedArray>(_offset_vector);
 
     // Create a table
-    std::shared_ptr<arrow::Table> table = arrow::Table::Make(
+    return arrow::Table::Make(
       _schema,
       {key_chunks, value_chunks, timestamp_chunks, offset_chunks},
       key_chunks->length());
-
-    // Write it out
-    // In the future we may want to return the arrow table and let the
-    // caller write it out however they want. This would make it easy
-    // to support other arrow-compatible output formats like ORC.
-    std::filesystem::create_directories(_local_file_name.parent_path());
-    std::shared_ptr<arrow::io::FileOutputStream> outfile;
-
-    ARROW_ASSIGN_OR_RAISE(
-      outfile, arrow::io::FileOutputStream::Open(_local_file_name));
-    PARQUET_THROW_NOT_OK(parquet::arrow::WriteTable(
-      *table, arrow::default_memory_pool(), outfile));
-    PARQUET_THROW_NOT_OK(outfile->Close());
-    return arrow::Status::OK();
 }
 
-ss::future<arrow::Status> datalake::arrow_writing_consumer::end_of_stream() {
+ss::future<std::shared_ptr<arrow::Table>>
+datalake::arrow_writing_consumer::end_of_stream() {
     if (!_ok.ok()) {
-        co_return _ok;
+        co_return nullptr;
     }
     if (_key_vector.size() == 0 || _rows == 0) {
         // FIXME: use a different return type for this.
         // See the note in ntp_archiver_service::do_upload_segment when
         // calling write_parquet.
-        co_return arrow::Status::UnknownError("No Data");
+        _ok = arrow::Status::UnknownError("No Data");
+        co_return nullptr;
     }
-    // FIXME: Creating and destroying sharded_thread_workers is supposed
-    // to be rare. The docs for the class suggest doing creating it once
-    // during application startup.
-    ssx::sharded_thread_worker thread_worker;
-    co_await thread_worker.start({.name = "parquet"});
-    auto result = co_await thread_worker.submit(
-      [this]() -> arrow::Status { return this->write_file(); });
-    co_await thread_worker.stop();
-    co_return result;
+    co_return this->get_table();
 }
 
 uint32_t datalake::arrow_writing_consumer::iobuf_to_uint32(const iobuf& buf) {
@@ -293,9 +305,7 @@ datalake::arrow_writing_consumer::iobuf_to_string(const iobuf& buf) {
     return value;
 }
 
-datalake::arrow_writing_consumer::arrow_writing_consumer(
-  std::filesystem::path file_name)
-  : _local_file_name(std::move(file_name)) {
+datalake::arrow_writing_consumer::arrow_writing_consumer() {
     // For now these could be local variables in end_of_stream, but in
     // the future we will have the constructor take a schema argument.
     //
