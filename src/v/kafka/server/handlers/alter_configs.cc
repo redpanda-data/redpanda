@@ -329,7 +329,7 @@ create_topic_properties_update(
 static ss::future<std::vector<alter_configs_resource_response>>
 alter_topic_configuration(
   request_context& ctx,
-  std::vector<alter_configs_resource> resources,
+  chunked_vector<alter_configs_resource> resources,
   bool validate_only) {
     return do_alter_topics_configuration<
       alter_configs_resource,
@@ -343,7 +343,7 @@ alter_topic_configuration(
 }
 
 static ss::future<std::vector<alter_configs_resource_response>>
-alter_broker_configuartion(std::vector<alter_configs_resource> resources) {
+alter_broker_configuartion(chunked_vector<alter_configs_resource> resources) {
     return unsupported_broker_configuration<
       alter_configs_resource,
       alter_configs_resource_response>(
