@@ -10,6 +10,7 @@
 #include "handlers.h"
 
 #include "base/vlog.h"
+#include "container/fragmented_vector.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/schemata/offset_commit_request.h"
@@ -467,7 +468,7 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
 
     // If the request is empty, commit all offsets
     auto req_data = rq.req->content.length() == 0
-                      ? std::vector<kafka::offset_commit_request_topic>()
+                      ? chunked_vector<kafka::offset_commit_request_topic>()
                       : ppj::partition_offsets_request_to_offset_commit_request(
                         ppj::rjson_parse(
                           rq.req->content.data(),

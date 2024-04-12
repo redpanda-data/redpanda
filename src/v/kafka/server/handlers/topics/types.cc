@@ -58,7 +58,7 @@ config_map_t make_config_map(const T& config) {
     return ret;
 }
 
-config_map_t config_map(const std::vector<createable_topic_config>& config) {
+config_map_t config_map(const chunked_vector<createable_topic_config>& config) {
     return make_config_map(config);
 }
 
@@ -276,7 +276,8 @@ to_cluster_type(const creatable_topic& t) {
             ret.custom_assignments.push_back(
               cluster::custom_partition_assignment{
                 .id = assignment.partition_index,
-                .replicas = assignment.broker_ids});
+                .replicas = std::vector<model::node_id>{
+                  assignment.broker_ids.begin(), assignment.broker_ids.end()}});
         }
     }
     return ret;

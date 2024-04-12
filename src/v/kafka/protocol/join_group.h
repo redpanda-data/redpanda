@@ -11,6 +11,7 @@
 
 #pragma once
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/join_group_request.h"
 #include "kafka/protocol/schemata/join_group_response.h"
@@ -48,8 +49,8 @@ struct join_group_request final {
      * type is also the type stored on disk and we do not want it to be tied to
      * the type produced by code generation.
      */
-    std::vector<member_protocol> native_member_protocols() const {
-        std::vector<member_protocol> res;
+    chunked_vector<member_protocol> native_member_protocols() const {
+        chunked_vector<member_protocol> res;
         std::transform(
           data.protocols.cbegin(),
           data.protocols.cend(),
@@ -102,7 +103,7 @@ struct join_group_response final {
       kafka::protocol_name protocol_name,
       kafka::member_id leader_id,
       kafka::member_id member_id,
-      std::vector<join_group_response_member> members = {}) {
+      chunked_vector<join_group_response_member> members = {}) {
         data.throttle_time_ms = std::chrono::milliseconds(0);
         data.error_code = error;
         data.generation_id = generation_id;

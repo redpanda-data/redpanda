@@ -60,7 +60,9 @@ struct replicas_diversity {
           c.assignments.begin(),
           c.assignments.end(),
           [](const creatable_replica_assignment& cra) {
-              auto ids = cra.broker_ids;
+              decltype(cra.broker_ids) ids;
+              ids.reserve(cra.broker_ids.size());
+              absl::c_copy(cra.broker_ids, std::back_inserter(ids));
               std::sort(ids.begin(), ids.end());
               auto last = std::unique(ids.begin(), ids.end());
               return ids.size() == (size_t)std::distance(ids.begin(), last);

@@ -59,7 +59,7 @@ struct offset_fetch_response final {
       : offset_fetch_response(error) {}
 
     offset_fetch_response(
-      std::optional<std::vector<offset_fetch_request_topic>>& topics) {
+      std::optional<chunked_vector<offset_fetch_request_topic>>& topics) {
         data.error_code = error_code::none;
         if (topics) {
             for (auto& topic : *topics) {

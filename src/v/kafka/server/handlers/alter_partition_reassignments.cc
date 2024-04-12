@@ -14,6 +14,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "config/node_config.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/alter_partition_reassignments_request.h"
 #include "kafka/protocol/schemata/alter_partition_reassignments_response.h"
@@ -38,7 +39,7 @@ struct alter_op_context {
     alter_partition_reassignments_response response;
 };
 using partitions_request_iterator
-  = std::vector<reassignable_partition>::iterator;
+  = chunked_vector<reassignable_partition>::iterator;
 
 template<typename ResultIter, typename Predicate>
 partitions_request_iterator validate_replicas(
@@ -94,7 +95,7 @@ partitions_request_iterator validate_partitions(
     // AlterPartitionReassignmentsRequest schemata. Therefore checks for
     // replicas.has_value are necessary.
 
-    std::vector<reassignable_partition_response> invalid_partitions;
+    chunked_vector<reassignable_partition_response> invalid_partitions;
 
     auto valid_partitions_end = validate_replicas(
       begin,
@@ -241,7 +242,9 @@ ss::future<std::error_code> handle_partition(
 
         return octx.rctx.topics_frontend().move_partition_replicas(
           ntp,
-          std::move(*partition.replicas),
+          std::vector<model::node_id>{
+            std::make_move_iterator(partition.replicas->begin()),
+            std::make_move_iterator(partition.replicas->end())},
           cluster::reconfiguration_policy::full_local_retention,
           model::timeout_clock::now() + octx.request.data.timeout_ms);
 
@@ -375,9 +378,10 @@ static ss::future<response_ptr> do_handle(alter_op_context& octx) {
 
     return collect_alive_nodes(octx.rctx)
       .then([&octx](std::vector<model::node_id> alive_nodes) {
+          // TODO(oren): I think we own these, no?
           return ssx::parallel_transform(
-            octx.request.data.topics.begin(),
-            octx.request.data.topics.end(),
+            std::make_move_iterator(octx.request.data.topics.begin()),
+            std::make_move_iterator(octx.request.data.topics.end()),
             [&octx, alive_nodes = std::move(alive_nodes)](
               reassignable_topic topic) mutable {
                 return ss::do_with(topic, [&octx, alive_nodes](auto& topic) {
@@ -388,7 +392,7 @@ static ss::future<response_ptr> do_handle(alter_op_context& octx) {
       .then([&octx](std::vector<reassignable_topic_response> topic_responses) {
           for (auto& t : topic_responses) {
               if (!t.partitions.empty()) {
-                  octx.response.data.responses.push_back(t);
+                  octx.response.data.responses.push_back(std::move(t));
               }
           }
           return octx.rctx.respond(std::move(octx.response));

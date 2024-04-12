@@ -15,6 +15,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/fwd.h"
@@ -78,7 +79,7 @@ std::optional<cluster::leader_term> get_leader_term(
   model::topic_namespace_view tp_ns,
   model::partition_id p_id,
   const cluster::metadata_cache& md_cache,
-  const std::vector<model::node_id>& replicas) {
+  const chunked_vector<model::node_id>& replicas) {
     auto leader_term = md_cache.get_leader_term(tp_ns, p_id);
     /**
      * If current broker do not yet have any information about leadership we
@@ -126,7 +127,7 @@ metadata_response::topic make_topic_response_from_topic_metadata(
     const auto* disabled_set = md_cache.get_topic_disabled_set(tp_ns);
 
     for (const auto& p_as : tp_md.get_assignments()) {
-        std::vector<model::node_id> replicas{};
+        chunked_vector<model::node_id> replicas{};
         replicas.reserve(p_as.replicas.size());
         // current replica set
         std::transform(
@@ -149,7 +150,9 @@ metadata_response::topic make_topic_response_from_topic_metadata(
             p.leader_epoch = leader_epoch_from_term(lt->term);
         }
         if (is_node_isolated && p.error_code == error_code::none) {
-            auto replicas_for_sfuffle = replicas;
+            decltype(replicas) replicas_for_sfuffle;
+            replicas_for_sfuffle.reserve(replicas.size());
+            absl::c_copy(replicas, std::back_inserter(replicas_for_sfuffle));
             std::shuffle(
               replicas_for_sfuffle.begin(),
               replicas_for_sfuffle.end(),
@@ -162,7 +165,8 @@ metadata_response::topic make_topic_response_from_topic_metadata(
             }
         }
         p.replica_nodes = std::move(replicas);
-        p.isr_nodes = p.replica_nodes;
+        p.isr_nodes.reserve(p.replica_nodes.size());
+        absl::c_copy(p.replica_nodes, std::back_inserter(p.isr_nodes));
         p.offline_replicas = {};
         tp.partitions.push_back(std::move(p));
     }
