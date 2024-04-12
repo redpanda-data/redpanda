@@ -185,7 +185,9 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
     def test_read_chunks(self):
         self.default_chunk_size = 1048576
         self._set_params_and_start_redpanda(
-            cloud_storage_cache_chunk_size=self.default_chunk_size)
+            cloud_storage_cache_chunk_size=self.default_chunk_size,
+            # Disable leader balancer to have stable node to fetch metrics from.
+            enable_leader_balancer=False)
 
         self._produce_baseline()
 
@@ -235,7 +237,9 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         self.log_segment_size = 1048576 * 10
         self.topics[0].segment_bytes = self.log_segment_size
         self._set_params_and_start_redpanda(
-            cloud_storage_chunk_prefetch=prefetch)
+            cloud_storage_chunk_prefetch=prefetch,
+            # Disable leader balancer to have stable node to fetch metrics from.
+            enable_leader_balancer=False)
 
         # Smaller messages mean chunks are closer to requested limit. We need more messages to be able
         # to produce the required number of segments
