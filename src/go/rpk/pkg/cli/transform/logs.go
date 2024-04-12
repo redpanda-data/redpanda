@@ -127,6 +127,9 @@ the Open Telemetry LogRecord protocol buffer.`,
 
 			topics, err := admin.ListTopics(cmd.Context(), "_redpanda.transform_logs")
 			out.MaybeDie(err, "unable to get logs topic: %v", err)
+			if len(topics.TopicsList()) == 0 {
+				out.Die("unable to find logs topic - is Redpanda on the right version with Data Transforms enabled?")
+			}
 			topic := topics.TopicsList()[0]
 			partition := computeLogPartition(transformName, topic)
 
