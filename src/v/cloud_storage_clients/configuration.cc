@@ -229,7 +229,7 @@ void apply_self_configuration_result(
 
 std::ostream& operator<<(std::ostream& o, const abs_configuration& c) {
     o << "{storage_account_name: " << c.storage_account_name()
-      << ", shared_key:****"
+      << ", shared_key:" << (c.shared_key.has_value() ? "****" : "none")
       << ", access_point_uri:" << c.uri() << ", server_addr:" << c.server_addr
       << ", max_idle_time:"
       << std::chrono::duration_cast<std::chrono::milliseconds>(c.max_idle_time)
