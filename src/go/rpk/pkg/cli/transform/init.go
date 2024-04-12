@@ -135,6 +135,7 @@ This initializes a transform project in the foobar directory.
 	}
 	cmd.Flags().VarP(&lang, "language", "l", "The language used to develop the transform")
 	cmd.Flags().Var(&install, "install-deps", "If dependencies should be installed for the project")
+	cmd.Flags().Lookup("install-deps").NoOptDefVal = "true"
 	cmd.Flags().StringVar(&name, "name", "", "The name of the transform")
 	return cmd
 }
