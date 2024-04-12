@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "container/fragmented_vector.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
@@ -75,7 +76,8 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         }).get();
     }
 
-    std::vector<kafka::produce_request::partition> small_batches(size_t count) {
+    chunked_vector<kafka::produce_request::partition>
+    small_batches(size_t count) {
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));
 
@@ -85,7 +87,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
             builder.add_raw_kv(iobuf{}, std::move(v));
         }
 
-        std::vector<kafka::produce_request::partition> res;
+        chunked_vector<kafka::produce_request::partition> res;
 
         kafka::produce_request::partition partition;
         partition.partition_index = model::partition_id(0);
@@ -96,11 +98,11 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
 
     ss::future<kafka::produce_response> produce_raw(
       kafka::client::transport& producer,
-      std::vector<kafka::produce_request::partition>&& partitions) {
+      chunked_vector<kafka::produce_request::partition>&& partitions) {
         kafka::produce_request::topic tp;
         tp.partitions = std::move(partitions);
         tp.name = test_topic;
-        std::vector<kafka::produce_request::topic> topics;
+        chunked_vector<kafka::produce_request::topic> topics;
         topics.push_back(std::move(tp));
         kafka::produce_request req(std::nullopt, 1, std::move(topics));
         req.data.timeout_ms = std::chrono::seconds(2);
@@ -109,8 +111,8 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         return producer.dispatch(std::move(req));
     }
 
-    ss::future<kafka::produce_response>
-    produce_raw(std::vector<kafka::produce_request::partition>&& partitions) {
+    ss::future<kafka::produce_response> produce_raw(
+      chunked_vector<kafka::produce_request::partition>&& partitions) {
         return produce_raw(producers.front(), std::move(partitions));
     }
 
@@ -210,7 +212,7 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
 FIXTURE_TEST(test_version_handler, prod_consume_fixture) {
     wait_for_controller_leadership().get();
     start();
-    std::vector<kafka::produce_request::topic> topics;
+    chunked_vector<kafka::produce_request::topic> topics;
     topics.push_back(kafka::produce_request::topic{
       .name = model::topic{"abc123"}, .partitions = small_batches(10)});
 
@@ -226,7 +228,7 @@ FIXTURE_TEST(test_version_handler, prod_consume_fixture) {
       kafka::client::kafka_request_disconnected_exception);
 }
 
-static std::vector<kafka::produce_request::partition>
+static chunked_vector<kafka::produce_request::partition>
 single_batch(model::partition_id p_id, const size_t volume) {
     storage::record_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
@@ -241,7 +243,7 @@ single_batch(model::partition_id p_id, const size_t volume) {
     partition.partition_index = p_id;
     partition.records.emplace(std::move(builder).build());
 
-    std::vector<kafka::produce_request::partition> res;
+    chunked_vector<kafka::produce_request::partition> res;
     res.push_back(std::move(partition));
     return res;
 }
@@ -1004,7 +1006,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
       {},
     };
     req.data.topics.emplace_back(std::move(t));
-    auto resp = client.dispatch(req, kafka::api_version(2)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(2)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
     BOOST_REQUIRE_EQUAL(1, resp.data.topics.size());
     const auto& topic_resp = resp.data.topics[0];

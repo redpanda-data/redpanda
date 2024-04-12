@@ -140,7 +140,8 @@ public:
 
     kafka::describe_configs_response describe_configs(
       const ss::sstring& resource_name,
-      std::optional<std::vector<ss::sstring>> configuration_keys = std::nullopt,
+      std::optional<chunked_vector<ss::sstring>> configuration_keys
+      = std::nullopt,
       kafka::config_resource_type resource_type
       = kafka::config_resource_type::topic) {
         kafka::describe_configs_request req;
@@ -262,7 +263,7 @@ FIXTURE_TEST(
     req.data.topics = std::nullopt;
     auto client = make_kafka_client().get0();
     client.connect().get();
-    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
     auto broker_id = std::to_string(resp.data.brokers[0].node_id());
 
@@ -288,10 +289,10 @@ FIXTURE_TEST(
 
     // Single properies_request
     for (const auto& request_property : all_properties) {
-        std::vector<ss::sstring> request_properties = {request_property};
+        chunked_vector<ss::sstring> request_properties{request_property};
         auto single_describe_resp = describe_configs(
           broker_id,
-          std::make_optional(request_properties),
+          std::make_optional(std::move(request_properties)),
           kafka::config_resource_type::broker);
         assert_properties_amount(broker_id, single_describe_resp, 1);
         for (const auto& property : all_properties) {
@@ -304,14 +305,14 @@ FIXTURE_TEST(
     }
 
     // Group properties_request
-    std::vector<ss::sstring> first_group_config_properties = {
+    chunked_vector<ss::sstring> first_group_config_properties = {
       "listeners",
       "advertised.listeners",
       "log.segment.bytes",
       "log.retention.bytes",
       "log.retention.ms"};
 
-    std::vector<ss::sstring> second_group_config_properties = {
+    chunked_vector<ss::sstring> second_group_config_properties = {
       "num.partitions",
       "default.replication.factor",
       "log.dirs",
@@ -319,7 +320,7 @@ FIXTURE_TEST(
 
     auto first_group_describe_resp = describe_configs(
       broker_id,
-      std::make_optional(first_group_config_properties),
+      std::make_optional(std::move(first_group_config_properties)),
       kafka::config_resource_type::broker);
     assert_properties_amount(
       broker_id,
@@ -336,7 +337,7 @@ FIXTURE_TEST(
 
     auto second_group_describe_resp = describe_configs(
       broker_id,
-      std::make_optional(second_group_config_properties),
+      std::make_optional(std::move(second_group_config_properties)),
       kafka::config_resource_type::broker);
     assert_properties_amount(
       broker_id,
@@ -404,9 +405,9 @@ FIXTURE_TEST(
 
     // Single properties_request
     for (const auto& request_property : all_properties) {
-        std::vector<ss::sstring> request_properties = {request_property};
+        chunked_vector<ss::sstring> request_properties = {request_property};
         auto single_describe_resp = describe_configs(
-          test_tp, std::make_optional(request_properties));
+          test_tp, std::make_optional(std::move(request_properties)));
         assert_properties_amount(test_tp, single_describe_resp, 1);
         for (const auto& property : all_properties) {
             assert_property_presented(
@@ -418,21 +419,21 @@ FIXTURE_TEST(
     }
 
     // Group properties_request
-    std::vector<ss::sstring> first_group_config_properties = {
+    chunked_vector<ss::sstring> first_group_config_properties = {
       "retention.ms",
       "retention.bytes",
       "segment.bytes",
       "redpanda.remote.read",
       "redpanda.remote.write"};
 
-    std::vector<ss::sstring> second_group_config_properties = {
+    chunked_vector<ss::sstring> second_group_config_properties = {
       "cleanup.policy",
       "compression.type",
       "message.timestamp.type",
       "write.caching"};
 
     auto first_group_describe_resp = describe_configs(
-      test_tp, std::make_optional(first_group_config_properties));
+      test_tp, std::make_optional(std::move(first_group_config_properties)));
     vlog(
       test_log.debug,
       "first_group_describe_resp: {}",
@@ -449,7 +450,7 @@ FIXTURE_TEST(
     }
 
     auto second_group_describe_resp = describe_configs(
-      test_tp, std::make_optional(second_group_config_properties));
+      test_tp, std::make_optional(std::move(second_group_config_properties)));
     vlog(
       test_log.debug,
       "second_group_describe_resp: {}",

@@ -135,7 +135,8 @@ FIXTURE_TEST(test_session_operations, fixture) {
     kafka::fetch_request req;
     req.data.session_epoch = kafka::initial_fetch_session_epoch;
     req.data.session_id = kafka::invalid_fetch_session_id;
-    req.data.topics = {make_fetch_request_topic(model::topic("test"), 3)};
+    req.data.topics.emplace_back(
+      make_fetch_request_topic(model::topic("test"), 3));
     {
         BOOST_TEST_MESSAGE("create new session");
         auto ctx = cache.maybe_get_session(req);
@@ -175,8 +176,14 @@ FIXTURE_TEST(test_session_operations, fixture) {
     BOOST_TEST_MESSAGE("test updating session");
     {
         // Remove and forget about the first partition.
-        req.data.topics[0].fetch_partitions.erase(
+        auto parts = req.data.topics[0].fetch_partitions.copy();
+        parts.erase_to_end(
           std::next(req.data.topics[0].fetch_partitions.begin()));
+        std::move(
+          std::next(req.data.topics[0].fetch_partitions.begin(), 2),
+          req.data.topics[0].fetch_partitions.end(),
+          std::back_inserter(parts));
+        req.data.topics[0].fetch_partitions = std::move(parts);
         req.data.forgotten.push_back(kafka::fetch_request::forgotten_topic{
           .name = model::topic("test"), .forgotten_partition_indexes = {1}});
         // Update the second partition.
