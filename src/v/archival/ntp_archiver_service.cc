@@ -55,6 +55,7 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/all.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -225,9 +226,9 @@ ntp_archiver::ntp_archiver(
   , _next_housekeeping(_housekeeping_jitter())
   , _feature_table(parent.feature_table())
   , _local_segment_merger(
-      maybe_make_adjacent_segment_merger(*this, parent.log()->config()))
+      maybe_make_adjacent_segment_merger(*this, _parent.log()->config()))
   , _scrubber(maybe_make_scrubber(
-      *this, _remote, _feature_table.local(), parent.log()->config()))
+      *this, _remote, _feature_table.local(), _parent.log()->config()))
   , _manifest_upload_interval(
       config::shard_local_cfg()
         .cloud_storage_manifest_max_upload_interval_sec.bind())
@@ -248,7 +249,7 @@ ntp_archiver::ntp_archiver(
       archival_log.debug,
       "created ntp_archiver {} in term {}",
       _ntp,
-      _start_term);
+      _parent.term());
 }
 
 const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
@@ -260,20 +261,6 @@ const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
 }
 
 ss::future<> ntp_archiver::start() {
-    // Pre-sync the ntp_archiver to make sure that the adjacent segment merger
-    // can only see up to date manifest.
-    auto sync_timeout = config::shard_local_cfg()
-                          .cloud_storage_metadata_sync_timeout_ms.value();
-    co_await _parent.archival_meta_stm()->sync(sync_timeout);
-
-    bool is_leader = _parent.is_leader();
-    if (_local_segment_merger) {
-        _local_segment_merger->set_enabled(is_leader);
-    }
-    if (_scrubber) {
-        _scrubber->set_enabled(is_leader);
-    }
-
     if (_parent.get_ntp_config().is_read_replica_mode_enabled()) {
         ssx::spawn_with_gate(_gate, [this] {
             return sync_manifest_until_abort().then([this] {
@@ -314,13 +301,6 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
       _parent.raft()->self().id());
     if (is_leader) {
         _leader_cond.signal();
-    }
-    if (_local_segment_merger) {
-        _local_segment_merger->set_enabled(is_leader);
-    }
-
-    if (_scrubber) {
-        _scrubber->set_enabled(is_leader);
     }
 }
 
@@ -367,7 +347,36 @@ ss::future<> ntp_archiver::upload_until_abort() {
         if (!is_synced.has_value()) {
             continue;
         }
+
         vlog(_rtclog.debug, "upload loop synced in term {}", _start_term);
+        if (!may_begin_uploads()) {
+            continue;
+        }
+
+        if (_local_segment_merger) {
+            vlog(
+              _rtclog.debug,
+              "Enable adjacent segment merger in term {}",
+              _start_term);
+            _local_segment_merger->set_enabled(true);
+        }
+        if (_scrubber) {
+            vlog(_rtclog.debug, "Enable scrubber in term {}", _start_term);
+            _scrubber->set_enabled(true);
+        }
+        auto disable_hk_jobs = ss::defer([this] {
+            if (_local_segment_merger) {
+                vlog(
+                  _rtclog.debug,
+                  "Disable adjacent segment merger in term {}",
+                  _start_term);
+                _local_segment_merger->set_enabled(false);
+            }
+            if (_scrubber) {
+                vlog(_rtclog.debug, "Disable scrubber in term {}", _start_term);
+                _scrubber->set_enabled(false);
+            }
+        });
 
         co_await ss::with_scheduling_group(
           _conf->upload_scheduling_group,
