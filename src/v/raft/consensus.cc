@@ -2691,6 +2691,10 @@ ss::future<consensus::flushed> consensus::flush_log() {
 
     _flushed_offset = std::max(flushed_up_to, _flushed_offset);
     vlog(_ctxlog.trace, "flushed offset updated: {}", _flushed_offset);
+
+    maybe_update_majority_replicated_index();
+    maybe_update_leader_commit_idx();
+
     // TODO: remove this assertion when we will remove committed_offset
     // from storage.
     vassert(

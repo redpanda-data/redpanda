@@ -99,8 +99,8 @@ private:
     ss::future<model::record_batch_reader> share_batches();
 
     ss::future<> dispatch_one(vnode);
-    ss::future<result<append_entries_reply>> dispatch_single_retry(vnode);
-    ss::future<result<append_entries_reply>> flush_log();
+    ss::future<> dispatch_remote_append_entries(vnode);
+    ss::future<> flush_log();
 
     ss::future<result<append_entries_reply>>
       send_append_entries_request(vnode, model::record_batch_reader);
