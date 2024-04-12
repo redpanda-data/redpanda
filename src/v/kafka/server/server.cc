@@ -17,6 +17,7 @@
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/schemata/list_groups_response.h"
 #include "kafka/server/connection_context.h"
@@ -628,7 +629,7 @@ ss::future<response_ptr> list_groups_handler::handle(
                 security::acl_operation::describe, group.group_id);
           });
 
-        resp.data.groups.erase(non_visible_it, resp.data.groups.end());
+        resp.data.groups.erase_to_end(non_visible_it);
     }
 
     if (!ctx.audit()) {
@@ -800,8 +801,7 @@ ss::future<response_ptr> delete_groups_handler::handle(
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.groups_names.end()));
 
-    request.data.groups_names.erase(
-      unauthorized_it, request.data.groups_names.end());
+    request.data.groups_names.erase_to_end(unauthorized_it);
 
     std::vector<deletable_group_result> results;
 
@@ -1129,7 +1129,7 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
             co_return co_await ctx.respond(std::move(resp));
         }
 
-        resp.data.topics.erase(unauthorized, resp.data.topics.end());
+        resp.data.topics.erase_to_end(unauthorized);
 
         co_return co_await ctx.respond(std::move(resp));
     }
@@ -1154,7 +1154,7 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
       std::make_move_iterator(request.data.topics->end()));
 
     // remove unauthorized topics from request
-    request.data.topics->erase(unauthorized_it, request.data.topics->end());
+    request.data.topics->erase_to_end(unauthorized_it);
     auto resp = co_await ctx.groups().offset_fetch(std::move(request));
 
     // add requested (but unauthorized) topics into response
@@ -1204,7 +1204,7 @@ offset_delete_handler::handle(request_context ctx, ss::smp_service_group) {
     std::vector<offset_delete_request_topic> unauthorized(
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.topics.end()));
-    request.data.topics.erase(unauthorized_it, request.data.topics.end());
+    request.data.topics.erase_to_end(unauthorized_it);
 
     /// Remove unknown topic_partitions from request
     std::vector<offset_delete_request_topic> unknowns;
@@ -1220,10 +1220,10 @@ offset_delete_handler::handle(request_context ctx, ss::smp_service_group) {
         if (std::distance(unknowns_it, topic.partitions.end()) > 0) {
             unknowns.push_back(offset_delete_request_topic{
               .name = topic.name,
-              .partitions = std::vector<offset_delete_request_partition>(
+              .partitions = chunked_vector<offset_delete_request_partition>(
                 std::make_move_iterator(unknowns_it),
                 std::make_move_iterator(topic.partitions.end()))});
-            topic.partitions.erase(unknowns_it, topic.partitions.end());
+            topic.partitions.erase_to_end(unknowns_it);
         }
     }
 
@@ -1306,8 +1306,7 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.topic_names.end()));
 
-    request.data.topic_names.erase(
-      unauthorized_it, request.data.topic_names.end());
+    request.data.topic_names.erase_to_end(unauthorized_it);
 
     auto kafka_nodelete_topics
       = config::shard_local_cfg().kafka_nodelete_topics();
@@ -1331,7 +1330,7 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
       std::make_move_iterator(nodelete_it),
       std::make_move_iterator(request.data.topic_names.end()));
 
-    request.data.topic_names.erase(nodelete_it, request.data.topic_names.end());
+    request.data.topic_names.erase_to_end(nodelete_it);
 
     std::vector<cluster::topic_result> res;
 
@@ -1358,8 +1357,7 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
       std::make_move_iterator(quota_exceeded_it),
       std::make_move_iterator(request.data.topic_names.end()));
 
-    request.data.topic_names.erase(
-      quota_exceeded_it, request.data.topic_names.end());
+    request.data.topic_names.erase_to_end(quota_exceeded_it);
 
     if (!request.data.topic_names.empty()) {
         // construct namespaced topic set from request
@@ -1779,7 +1777,7 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
                       .error_code = error_code::unknown_topic_or_partition,
                     });
                 }
-                it->partitions.erase(split, it->partitions.end());
+                it->partitions.erase_to_end(split);
             }
             ++it;
         } else {
@@ -1853,10 +1851,10 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
                   for (auto& topic : resp.data.topics) {
                       auto it = octx.nonexistent_tps.find(topic.name);
                       if (it != octx.nonexistent_tps.end()) {
-                          topic.partitions.insert(
-                            topic.partitions.end(),
+                          std::copy(
                             it->second.begin(),
-                            it->second.end());
+                            it->second.end(),
+                            topic.partitions.end());
                           octx.nonexistent_tps.erase(it);
                       }
                   }
@@ -1919,7 +1917,7 @@ describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.groups.end()));
 
-    request.data.groups.erase(unauthorized_it, request.data.groups.end());
+    request.data.groups.erase_to_end(unauthorized_it);
 
     describe_groups_response response;
 

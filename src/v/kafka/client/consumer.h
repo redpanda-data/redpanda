@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/configuration.h"
@@ -65,16 +66,16 @@ public:
     const kafka::member_id& name() const {
         return _name != kafka::no_member ? _name : _member_id;
     }
-    const std::vector<model::topic>& topics() const { return _topics; }
+    const chunked_vector<model::topic>& topics() const { return _topics; }
     const assignment_t& assignment() const { return _assignment; }
 
     ss::future<> initialize();
     ss::future<leave_group_response> leave();
-    ss::future<> subscribe(std::vector<model::topic> topics);
+    ss::future<> subscribe(chunked_vector<model::topic> topics);
     ss::future<offset_fetch_response>
-    offset_fetch(std::vector<offset_fetch_request_topic> topics);
+    offset_fetch(chunked_vector<offset_fetch_request_topic> topics);
     ss::future<offset_commit_response>
-    offset_commit(std::vector<offset_commit_request_topic> topics);
+    offset_commit(chunked_vector<offset_commit_request_topic> topics);
     ss::future<fetch_response>
     fetch(std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes);
 
@@ -91,7 +92,7 @@ private:
     ss::future<> join();
     ss::future<> sync();
 
-    ss::future<std::vector<metadata_response::topic>>
+    ss::future<chunked_vector<metadata_response::topic>>
     get_subscribed_topic_metadata();
 
     ss::future<> heartbeat();
@@ -165,9 +166,9 @@ private:
     kafka::member_id _member_id{no_member};
     kafka::member_id _name{no_member};
     kafka::member_id _leader_id{no_leader};
-    std::vector<model::topic> _topics{};
-    std::vector<kafka::member_id> _members{};
-    std::vector<model::topic> _subscribed_topics{};
+    chunked_vector<model::topic> _topics{};
+    chunked_vector<kafka::member_id> _members{};
+    chunked_vector<model::topic> _subscribed_topics{};
     std::unique_ptr<assignment_plan> _plan{};
     assignment_t _assignment{};
     absl::node_hash_map<shared_broker_t, fetch_session> _fetch_sessions;

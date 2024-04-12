@@ -1069,7 +1069,7 @@ class Field:
             if name in override_member_container:
                 yield override_member_container[name]
             else:
-                yield "std::vector"
+                yield "chunked_vector"
         if self.nullable():
             assert default_value is None  # not supported
             yield "std::optional"

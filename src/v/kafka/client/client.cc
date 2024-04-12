@@ -146,7 +146,9 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
 
 ss::future<> client::apply(metadata_response res) {
     try {
-        co_await _brokers.apply(std::move(res.data.brokers));
+        co_await _brokers.apply(
+          {std::make_move_iterator(res.data.brokers.begin()),
+           std::make_move_iterator(res.data.brokers.end())});
         co_await _topic_cache.apply(std::move(res.data.topics));
         _controller = res.data.controller_id;
     } catch (const std::exception& ex) {
@@ -270,7 +272,7 @@ ss::future<produce_response> client::produce_records(
     }
 
     // Convert to request::partition
-    std::vector<kafka::produce_request::partition> partitions;
+    chunked_vector<kafka::produce_request::partition> partitions;
     partitions.reserve(partition_builders.size());
     for (auto& pb : partition_builders) {
         partitions.emplace_back(kafka::produce_request::partition{
@@ -291,8 +293,11 @@ ss::future<produce_response> client::produce_records(
 
     co_return produce_response{
       .data = produce_response_data{
-        .responses{
-          {.name{std::move(topic)}, .partitions{std::move(responses)}}},
+        .responses{topic_produce_response{
+          .name{std::move(topic)},
+          .partitions{
+            std::make_move_iterator(responses.begin()),
+            std::make_move_iterator(responses.end())}}},
         .throttle_time_ms{{std::chrono::milliseconds{0}}}}};
 }
 
@@ -302,8 +307,12 @@ client::create_topic(kafka::creatable_topic req) {
         auto controller = _controller;
         return _brokers.find(controller)
           .then([req](auto broker) mutable {
-              return broker->dispatch(
-                kafka::create_topics_request{.data{.topics{std::move(req)}}});
+              chunked_vector<kafka::creatable_topic> cv;
+              cv.push_back(std::move(req));
+              return broker->dispatch(kafka::create_topics_request{
+                .data = {
+                  .topics = std::move(cv),
+                }});
           })
           .then([controller](auto res) {
               auto ec = res.data.topics[0].error_code;
@@ -337,11 +346,27 @@ ss::future<list_offsets_response>
 client::do_list_offsets(model::topic_partition tp) {
     auto node_id = co_await _topic_cache.leader(tp);
     auto broker = co_await _brokers.find(node_id);
+    // kafka::list_offset_topic lo_tp{
+    //   .name{tp.topic},
+    //   .partitions{
+    //     {
+    //       {.partition_index{tp.partition}, .max_num_offsets = 1},
+    //     },
+    //   },
+    // };
+    chunked_vector<kafka::list_offset_topic> cv; // {std::move(lo_tp)};
+    cv.push_back(kafka::list_offset_topic{
+      .name{tp.topic},
+      .partitions{
+        {
+          {.partition_index{tp.partition}, .max_num_offsets = 1},
+        },
+      },
+    });
     auto res = co_await broker->dispatch(kafka::list_offsets_request{
-      .data = {.topics{
-        {{.name{tp.topic},
-          .partitions{
-            {{.partition_index{tp.partition}, .max_num_offsets = 1}}}}}}}});
+      .data = {
+        .topics = std::move(cv),
+      }});
 
     const auto& topics = res.data.topics;
     auto ec = error_code::none;
@@ -474,17 +499,17 @@ ss::future<> client::remove_consumer(group_id g_id, const member_id& name) {
 ss::future<> client::subscribe_consumer(
   const group_id& g_id,
   const member_id& name,
-  std::vector<model::topic> topics) {
+  chunked_vector<model::topic> topics) {
     return get_consumer(g_id, name)
       .then([topics{std::move(topics)}](shared_consumer_t c) mutable {
           return c->subscribe(std::move(topics));
       });
 }
 
-ss::future<std::vector<model::topic>>
+ss::future<chunked_vector<model::topic>>
 client::consumer_topics(const group_id& g_id, const member_id& name) {
     return get_consumer(g_id, name).then([](shared_consumer_t c) {
-        return ss::make_ready_future<std::vector<model::topic>>(c->topics());
+        return ss::make_ready_future<chunked_vector<model::topic>>(c->topics());
     });
 }
 
@@ -498,7 +523,7 @@ client::consumer_assignment(const group_id& g_id, const member_id& name) {
 ss::future<offset_fetch_response> client::consumer_offset_fetch(
   const group_id& g_id,
   const member_id& name,
-  std::vector<offset_fetch_request_topic> topics) {
+  chunked_vector<offset_fetch_request_topic> topics) {
     return get_consumer(g_id, name)
       .then([this, topics{std::move(topics)}](shared_consumer_t c) mutable {
           return gated_retry_with_mitigation([c, topics{std::move(topics)}]() {
@@ -510,7 +535,7 @@ ss::future<offset_fetch_response> client::consumer_offset_fetch(
 ss::future<offset_commit_response> client::consumer_offset_commit(
   const group_id& g_id,
   const member_id& name,
-  std::vector<offset_commit_request_topic> topics) {
+  chunked_vector<offset_commit_request_topic> topics) {
     return get_consumer(g_id, name)
       .then([this, topics{std::move(topics)}](shared_consumer_t c) mutable {
           return gated_retry_with_mitigation([c, topics{std::move(topics)}]() {

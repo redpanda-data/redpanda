@@ -11,6 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/schemata/sasl_handshake_request.h"
 #include "kafka/protocol/schemata/sasl_handshake_response.h"
 #include "kafka/types.h"
@@ -48,7 +49,7 @@ struct sasl_handshake_response final {
     sasl_handshake_response() = default;
 
     sasl_handshake_response(
-      error_code error, std::vector<ss::sstring> mechanisms) {
+      error_code error, chunked_vector<ss::sstring> mechanisms) {
         data.error_code = error;
         data.mechanisms = std::move(mechanisms);
     }

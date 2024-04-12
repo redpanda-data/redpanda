@@ -598,10 +598,13 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
           partitions_produced.begin(), partitions_produced.end())
           .then([name = std::move(topic.name)](
                   std::vector<produce_response::partition> parts) mutable {
-              return produce_response::topic{
+              produce_response::topic r{
                 .name = std::move(name),
-                .partitions = std::move(parts),
               };
+              r.partitions.reserve(parts.size());
+              std::move(
+                parts.begin(), parts.end(), std::back_inserter(r.partitions));
+              return r;
           }),
     };
 }
@@ -761,7 +764,8 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           return r;
       });
 
-    request.data.topics.erase(unauthorized_it, request.data.topics.end());
+    request.data.topics.pop_back_n(
+      std::distance(unauthorized_it, request.data.topics.end()));
 
     ss::promise<> dispatched_promise;
     auto dispatched_f = dispatched_promise.get_future();

@@ -152,7 +152,7 @@ from_cluster_topic_result(const cluster::topic_result& err) {
       .error_message = cluster::make_error_code(err.ec).message()};
 }
 
-config_map_t config_map(const std::vector<createable_topic_config>& config);
+config_map_t config_map(const chunked_vector<createable_topic_config>& config);
 config_map_t config_map(const chunked_vector<creatable_topic_configs>& config);
 
 cluster::custom_assignable_topic_configuration

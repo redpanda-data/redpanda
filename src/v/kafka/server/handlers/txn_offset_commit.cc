@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/txn_offset_commit.h"
 
 #include "cluster/topics_frontend.h"
+#include "container/fragmented_vector.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/logger.h"
@@ -29,14 +30,14 @@ struct txn_offset_commit_ctx {
 
     absl::flat_hash_map<
       model::topic,
-      std::vector<txn_offset_commit_response_partition>>
+      chunked_vector<txn_offset_commit_response_partition>>
       unauthorized_tps;
 
     // topic partitions found not to existent prior to processing. responses for
     // these are patched back into the final response after processing.
     absl::flat_hash_map<
       model::topic,
-      std::vector<txn_offset_commit_response_partition>>
+      chunked_vector<txn_offset_commit_response_partition>>
       nonexistent_tps;
 
     txn_offset_commit_ctx(
@@ -66,10 +67,10 @@ ss::future<response_ptr> txn_offset_commit(txn_offset_commit_ctx& octx) {
               for (auto& topic : resp.data.topics) {
                   auto it = octx.nonexistent_tps.find(topic.name);
                   if (it != octx.nonexistent_tps.end()) {
-                      topic.partitions.insert(
-                        topic.partitions.end(),
+                      std::move(
                         it->second.begin(),
-                        it->second.end());
+                        it->second.end(),
+                        std::back_inserter(topic.partitions));
                       octx.nonexistent_tps.erase(it);
                   }
               }
@@ -129,6 +130,20 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
      * flag to mark topic-partitions to be ignored by the group membership
      * subsystem.
      */
+
+    // TODO(oren): yuck
+    // Also idk whether the order of the input topics actually matters here...
+    // it might!
+    auto pit = std::partition(
+      octx.request.data.topics.begin(),
+      octx.request.data.topics.end(),
+      [&octx](const auto& e) {
+          model::topic name{e.name};
+          return !octx.rctx.authorized(security::acl_operation::read, name)
+                 || octx.rctx.metadata_cache().contains(
+                   model::topic_namespace_view{model::kafka_namespace, name});
+      });
+
     for (auto it = octx.request.data.topics.begin();
          it != octx.request.data.topics.end();) {
         /*
@@ -169,7 +184,7 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
                       .error_code = error_code::unknown_topic_or_partition,
                     });
                 }
-                it->partitions.erase(split, it->partitions.end());
+                it->partitions.erase_to_end(split);
             }
             ++it;
         } else {
@@ -183,9 +198,11 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
                   .error_code = error_code::unknown_topic_or_partition,
                 });
             }
-            it = octx.request.data.topics.erase(it);
+            ++it;
         }
     }
+
+    octx.request.data.topics.erase_to_end(pit);
 
     if (!octx.rctx.audit()) {
         return octx.rctx.respond(txn_offset_commit_response{

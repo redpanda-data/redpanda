@@ -41,7 +41,7 @@ struct delete_groups_response final {
     delete_groups_response_data data;
 
     explicit delete_groups_response(
-      std::vector<deletable_group_result> results) {
+      chunked_vector<deletable_group_result> results) {
         data.results = std::move(results);
     }
 

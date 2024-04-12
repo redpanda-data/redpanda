@@ -351,13 +351,13 @@ public:
      * \returns join response promise set at the end of the join phase.
      */
     ss::future<join_group_response> update_member(
-      member_ptr member, std::vector<member_protocol>&& new_protocols);
+      member_ptr member, chunked_vector<member_protocol>&& new_protocols);
     /**
      * Same as update_member but without returning the join promise. Used when
      * reverting member state after failed group checkpoint
      */
     void update_member_no_join(
-      member_ptr member, std::vector<member_protocol>&& new_protocols);
+      member_ptr member, chunked_vector<member_protocol>&& new_protocols);
 
     /**
      * \brief Get the timeout duration for rebalancing.
@@ -377,7 +377,7 @@ public:
      *
      * Caller must ensure that the group's protocol is set.
      */
-    std::vector<join_group_response_member> member_metadata() const;
+    chunked_vector<join_group_response_member> member_metadata() const;
 
     /**
      * \brief Add empty assignments for missing group members.

@@ -131,7 +131,7 @@ group::group(
           std::move(m),
           id,
           _protocol_type.value(),
-          std::vector<kafka::member_protocol>{member_protocol{
+          chunked_vector<kafka::member_protocol>{member_protocol{
             .name = _protocol.value_or(protocol_name("")),
             .metadata = iobuf_to_bytes(m.subscription),
           }});
@@ -296,7 +296,7 @@ ss::future<join_group_response> group::add_member(member_ptr member) {
 }
 
 void group::update_member_no_join(
-  member_ptr member, std::vector<member_protocol>&& new_protocols) {
+  member_ptr member, chunked_vector<member_protocol>&& new_protocols) {
     vlog(
       _ctxlog.trace,
       "Updating {}joining member {} with protocols {}",
@@ -325,7 +325,7 @@ void group::update_member_no_join(
 }
 
 ss::future<join_group_response> group::update_member(
-  member_ptr member, std::vector<member_protocol>&& new_protocols) {
+  member_ptr member, chunked_vector<member_protocol>&& new_protocols) {
     update_member_no_join(member, std::move(new_protocols));
 
     if (!member->is_joining()) {
@@ -352,7 +352,7 @@ group::duration_type group::rebalance_timeout() const {
     }
 }
 
-std::vector<member_config> group::member_metadata() const {
+chunked_vector<member_config> group::member_metadata() const {
     if (
       in_state(group_state::dead)
       || in_state(group_state::preparing_rebalance)) {
@@ -364,7 +364,7 @@ std::vector<member_config> group::member_metadata() const {
           fmt::format("invalid group state: {}", _state));
     }
 
-    std::vector<member_config> out;
+    chunked_vector<member_config> out;
     std::transform(
       std::cbegin(_members),
       std::cend(_members),
@@ -675,7 +675,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
                       }
                       // leader    -> member metadata
                       // followers -> []
-                      std::vector<member_config> md;
+                      chunked_vector<member_config> md;
                       if (is_leader(new_member_id)) {
                           md = member_metadata();
                       }
@@ -841,7 +841,7 @@ group::join_group_known_member(join_group_request&& r) {
             // generation.</kafka>
 
             // the leader receives group member metadata
-            std::vector<member_config> members;
+            chunked_vector<member_config> members;
             if (is_leader(r.data.member_id)) {
                 members = member_metadata();
             }
@@ -1142,7 +1142,7 @@ void group::complete_join() {
 
                   // leader    -> member metadata
                   // followers -> []
-                  std::vector<member_config> md;
+                  chunked_vector<member_config> md;
                   if (is_leader(member->id())) {
                       md = member_metadata();
                   }
