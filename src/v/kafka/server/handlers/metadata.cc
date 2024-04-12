@@ -79,7 +79,7 @@ std::optional<cluster::leader_term> get_leader_term(
   model::topic_namespace_view tp_ns,
   model::partition_id p_id,
   const cluster::metadata_cache& md_cache,
-  const chunked_vector<model::node_id>& replicas) {
+  const std::vector<model::node_id>& replicas) {
     auto leader_term = md_cache.get_leader_term(tp_ns, p_id);
     /**
      * If current broker do not yet have any information about leadership we
@@ -127,7 +127,7 @@ metadata_response::topic make_topic_response_from_topic_metadata(
     const auto* disabled_set = md_cache.get_topic_disabled_set(tp_ns);
 
     for (const auto& p_as : tp_md.get_assignments()) {
-        chunked_vector<model::node_id> replicas{};
+        std::vector<model::node_id> replicas{};
         replicas.reserve(p_as.replicas.size());
         // current replica set
         std::transform(

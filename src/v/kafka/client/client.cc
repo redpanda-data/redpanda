@@ -272,7 +272,7 @@ ss::future<produce_response> client::produce_records(
     }
 
     // Convert to request::partition
-    chunked_vector<kafka::produce_request::partition> partitions;
+    std::vector<kafka::produce_request::partition> partitions;
     partitions.reserve(partition_builders.size());
     for (auto& pb : partition_builders) {
         partitions.emplace_back(kafka::produce_request::partition{
@@ -291,13 +291,13 @@ ss::future<produce_response> client::produce_records(
             std::move(*p.records->adapter.batch));
       });
 
+    chunked_vector<topic_produce_response> responses_cv;
+    responses_cv.emplace_back(topic_produce_response{
+      .name{std::move(topic)}, .partitions{std::move(responses)}});
+
     co_return produce_response{
       .data = produce_response_data{
-        .responses{topic_produce_response{
-          .name{std::move(topic)},
-          .partitions{
-            std::make_move_iterator(responses.begin()),
-            std::make_move_iterator(responses.end())}}},
+        .responses = std::move(responses_cv),
         .throttle_time_ms{{std::chrono::milliseconds{0}}}}};
 }
 
@@ -509,7 +509,8 @@ ss::future<> client::subscribe_consumer(
 ss::future<chunked_vector<model::topic>>
 client::consumer_topics(const group_id& g_id, const member_id& name) {
     return get_consumer(g_id, name).then([](shared_consumer_t c) {
-        return ss::make_ready_future<chunked_vector<model::topic>>(c->topics());
+        return ss::make_ready_future<chunked_vector<model::topic>>(
+          c->topics().copy());
     });
 }
 
@@ -523,10 +524,10 @@ client::consumer_assignment(const group_id& g_id, const member_id& name) {
 ss::future<offset_fetch_response> client::consumer_offset_fetch(
   const group_id& g_id,
   const member_id& name,
-  chunked_vector<offset_fetch_request_topic> topics) {
+  std::vector<offset_fetch_request_topic> topics) {
     return get_consumer(g_id, name)
       .then([this, topics{std::move(topics)}](shared_consumer_t c) mutable {
-          return gated_retry_with_mitigation([c, topics{std::move(topics)}]() {
+          return gated_retry_with_mitigation([c, topics = std::move(topics)]() {
               return c->offset_fetch(topics);
           });
       });
@@ -535,10 +536,10 @@ ss::future<offset_fetch_response> client::consumer_offset_fetch(
 ss::future<offset_commit_response> client::consumer_offset_commit(
   const group_id& g_id,
   const member_id& name,
-  chunked_vector<offset_commit_request_topic> topics) {
+  std::vector<offset_commit_request_topic> topics) {
     return get_consumer(g_id, name)
-      .then([this, topics{std::move(topics)}](shared_consumer_t c) mutable {
-          return gated_retry_with_mitigation([c, topics{std::move(topics)}]() {
+      .then([this, topics = std::move(topics)](shared_consumer_t c) mutable {
+          return gated_retry_with_mitigation([c, topics = std::move(topics)]() {
               return c->offset_commit(topics);
           });
       });

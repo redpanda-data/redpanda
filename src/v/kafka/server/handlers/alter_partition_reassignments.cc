@@ -39,7 +39,7 @@ struct alter_op_context {
     alter_partition_reassignments_response response;
 };
 using partitions_request_iterator
-  = chunked_vector<reassignable_partition>::iterator;
+  = std::vector<reassignable_partition>::iterator;
 
 template<typename ResultIter, typename Predicate>
 partitions_request_iterator validate_replicas(
@@ -84,10 +84,8 @@ partitions_request_iterator validate_replicas(
  */
 template<typename Container>
 partitions_request_iterator validate_partitions(
-  partitions_request_iterator begin,
-  partitions_request_iterator end,
+  reassignable_topic& topic,
   std::back_insert_iterator<Container> resp_it,
-  reassignable_topic_response topic_response,
   std::vector<model::node_id> alive_nodes,
   std::optional<std::reference_wrapper<const cluster::topic_metadata>>
     tp_metadata) {
@@ -95,7 +93,9 @@ partitions_request_iterator validate_partitions(
     // AlterPartitionReassignmentsRequest schemata. Therefore checks for
     // replicas.has_value are necessary.
 
-    chunked_vector<reassignable_partition_response> invalid_partitions;
+    std::vector<reassignable_partition_response> invalid_partitions;
+    auto begin = topic.partitions.begin();
+    auto end = topic.partitions.end();
 
     auto valid_partitions_end = validate_replicas(
       begin,
@@ -211,9 +211,9 @@ partitions_request_iterator validate_partitions(
 
     // Store any invalid partitions in the response
     if (!invalid_partitions.empty()) {
-        topic_response.partitions = std::move(invalid_partitions);
         // resp_it is a wrapper to std::back_inserter
-        *resp_it = std::move(topic_response);
+        *resp_it = reassignable_topic_response{
+          .name = topic.name, .partitions = std::move(invalid_partitions)};
     }
 
     return valid_partitions_end;
@@ -292,10 +292,8 @@ ss::future<reassignable_topic_response> do_handle_topic(
       model::topic_namespace_view{model::kafka_namespace, topic.name});
 
     auto valid_partitions_end = validate_partitions(
-      topic.partitions.begin(),
-      topic.partitions.end(),
+      topic,
       std::back_inserter(octx.response.data.responses),
-      topic_response,
       std::move(alive_nodes),
       tp_metadata_ref);
 

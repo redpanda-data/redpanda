@@ -58,11 +58,11 @@ config_map_t make_config_map(const T& config) {
     return ret;
 }
 
-config_map_t config_map(const chunked_vector<createable_topic_config>& config) {
+config_map_t config_map(const std::vector<createable_topic_config>& config) {
     return make_config_map(config);
 }
 
-config_map_t config_map(const chunked_vector<creatable_topic_configs>& config) {
+config_map_t config_map(const std::vector<creatable_topic_configs>& config) {
     return make_config_map(config);
 }
 
@@ -283,9 +283,9 @@ to_cluster_type(const creatable_topic& t) {
     return ret;
 }
 
-static chunked_vector<kafka::creatable_topic_configs>
+static std::vector<kafka::creatable_topic_configs>
 convert_topic_configs(config_response_container_t&& topic_cfgs) {
-    auto configs = chunked_vector<kafka::creatable_topic_configs>();
+    auto configs = std::vector<kafka::creatable_topic_configs>();
     configs.reserve(topic_cfgs.size());
 
     for (auto& conf : topic_cfgs) {
@@ -295,7 +295,7 @@ convert_topic_configs(config_response_container_t&& topic_cfgs) {
     return configs;
 }
 
-chunked_vector<kafka::creatable_topic_configs> report_topic_configs(
+std::vector<kafka::creatable_topic_configs> report_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties) {
     auto topic_cfgs = make_topic_configs(

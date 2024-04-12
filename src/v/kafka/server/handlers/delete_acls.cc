@@ -113,7 +113,7 @@ ss::future<response_ptr> delete_acls_handler::handle(
         resp.data.filter_results.reserve(request.data.filters.size());
         for ([[maybe_unused]] auto _ :
              boost::irange<size_t>(request.data.filters.size())) {
-            resp.data.filter_results.emplace_back(result);
+            resp.data.filter_results.emplace_back(std::move(result));
         }
         co_return co_await ctx.respond(std::move(resp));
     }
@@ -155,7 +155,7 @@ ss::future<response_ptr> delete_acls_handler::handle(
                 .matching_acls = bindings_to_delete_result(results[i].bindings),
               });
           },
-          [&response](delete_acls_filter_result r) {
+          [&response](delete_acls_filter_result& r) {
               response.data.filter_results.push_back(std::move(r));
           });
     }

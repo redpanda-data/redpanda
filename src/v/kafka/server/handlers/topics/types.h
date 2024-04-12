@@ -152,13 +152,13 @@ from_cluster_topic_result(const cluster::topic_result& err) {
       .error_message = cluster::make_error_code(err.ec).message()};
 }
 
-config_map_t config_map(const chunked_vector<createable_topic_config>& config);
-config_map_t config_map(const chunked_vector<creatable_topic_configs>& config);
+config_map_t config_map(const std::vector<createable_topic_config>& config);
+config_map_t config_map(const std::vector<creatable_topic_configs>& config);
 
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t);
 
-chunked_vector<kafka::creatable_topic_configs> report_topic_configs(
+std::vector<kafka::creatable_topic_configs> report_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties);
 

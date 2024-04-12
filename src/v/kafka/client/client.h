@@ -88,12 +88,12 @@ public:
 
     /// \brief Invoke func, on failure, mitigate error and retry.
     template<typename Func>
-    std::invoke_result_t<Func> gated_retry_with_mitigation(Func func) {
+    std::invoke_result_t<Func> gated_retry_with_mitigation(Func&& func) {
         return gated_retry_with_mitigation_impl(
           _gate,
           _config.retries(),
           _config.retry_base_backoff(),
-          std::move(func),
+          std::forward<Func>(func),
           [this](std::exception_ptr ex) { return mitigate_error(ex); },
           _as);
     }
@@ -150,12 +150,12 @@ public:
     ss::future<offset_fetch_response> consumer_offset_fetch(
       const group_id& g_id,
       const member_id& m_id,
-      chunked_vector<offset_fetch_request_topic> topics);
+      std::vector<offset_fetch_request_topic> topics);
 
     ss::future<offset_commit_response> consumer_offset_commit(
       const group_id& g_id,
       const member_id& m_id,
-      chunked_vector<offset_commit_request_topic> topics);
+      std::vector<offset_commit_request_topic> topics);
 
     ss::future<fetch_response> consumer_fetch(
       const group_id& g_id,

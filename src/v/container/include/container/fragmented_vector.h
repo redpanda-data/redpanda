@@ -100,7 +100,6 @@ public:
     fragmented_vector(fragmented_vector&& other) noexcept {
         *this = std::move(other);
     }
-    fragmented_vector(const fragmented_vector&) noexcept = default;
 
     /**
      * @brief Create a vector from a begin, end iterator pair.
@@ -526,7 +525,7 @@ private:
 
 private:
     friend class fragmented_vector_validator;
-    // fragmented_vector(const fragmented_vector&) noexcept = default;
+    fragmented_vector(const fragmented_vector&) noexcept = default;
 
     template<typename TT, size_t SS>
     friend seastar::future<>

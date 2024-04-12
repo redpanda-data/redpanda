@@ -153,7 +153,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
     create_partitions_response resp;
 
     if (request.data.topics.empty()) {
-        co_return co_await ctx.respond(resp);
+        co_return co_await ctx.respond(std::move(resp));
     }
 
     resp.data.results.reserve(request.data.topics.size());

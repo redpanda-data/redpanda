@@ -10,6 +10,7 @@
 from ast import main
 import threading
 import json
+import requests
 import time
 import random
 import subprocess
@@ -1319,3 +1320,75 @@ class ManyTopicsTest(RedpandaTest):
             # This is expected - the kafka CLI tools will run out of
             # heap space on such a large request.
             pass
+
+    def _request(self,
+                 verb,
+                 path,
+                 hostname=None,
+                 tls_enabled: bool = False,
+                 **kwargs):
+        """
+
+        :param verb: String, as for first arg to requests.request
+        :param path: URI path without leading slash
+        :param timeout: Optional requests timeout in seconds
+        :return:
+        """
+
+        if hostname is None:
+            # Pick hostname once: we will retry the same place we got an error,
+            # to avoid silently skipping hosts that are persistently broken
+            nodes = [n for n in self.redpanda.nodes]
+            random.shuffle(nodes)
+            node = nodes[0]
+            hostname = node.account.hostname
+
+        scheme = "https" if tls_enabled else "http"
+        uri = f"{scheme}://{hostname}:8081/{path}"
+
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 60
+
+        # Error codes that may appear during normal API operation, do not
+        # indicate an issue with the service
+        acceptable_errors = {409, 422, 404}
+
+        def accept_response(resp):
+            return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+
+        self.logger.debug(f"{verb} hostname={hostname} {path} {kwargs}")
+
+        # This is not a retry loop: you get *one* retry to handle issues
+        # during startup, after that a failure is a failure.
+        r = requests.request(verb, uri, **kwargs)
+        if not accept_response(r):
+            self.logger.info(
+                f"Retrying for error {r.status_code} on {verb} {path} ({r.text})"
+            )
+            time.sleep(10)
+            r = requests.request(verb, uri, **kwargs)
+            if accept_response(r):
+                self.logger.info(
+                    f"OK after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+            else:
+                self.logger.info(
+                    f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+
+        self.logger.info(
+            f"{r.status_code} {verb} hostname={hostname} {path} {kwargs}")
+
+        return r
+
+    @cluster(num_nodes=10)
+    def test_many_subjects(self):
+        num_subjects = 40000
+        self.redpanda.start()
+
+        schema1_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
+        schema1_data = json.dumps({"schema": schema1_def})
+
+        for i in 0..num_subjects:
+            subject_name = f'subject{i}'
+

@@ -17,7 +17,6 @@
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
-#include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/schemata/list_groups_response.h"
 #include "kafka/server/connection_context.h"
@@ -82,6 +81,7 @@
 
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -629,7 +629,7 @@ ss::future<response_ptr> list_groups_handler::handle(
                 security::acl_operation::describe, group.group_id);
           });
 
-        resp.data.groups.erase_to_end(non_visible_it);
+        resp.data.groups.erase(non_visible_it, resp.data.groups.end());
     }
 
     if (!ctx.audit()) {
@@ -660,12 +660,12 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
      */
     auto error = error_code::none;
 
-    std::vector<ss::sstring> supported_sasl_mechanisms;
+    chunked_vector<ss::sstring> supported_sasl_mechanisms;
     if (supports("SCRAM")) {
-        supported_sasl_mechanisms.insert(
-          supported_sasl_mechanisms.end(),
-          {security::scram_sha256_authenticator::name,
-           security::scram_sha512_authenticator::name});
+        supported_sasl_mechanisms.emplace_back(
+          security::scram_sha256_authenticator::name);
+        supported_sasl_mechanisms.emplace_back(
+          security::scram_sha512_authenticator::name);
 
         if (
           request.data.mechanism
@@ -1007,7 +1007,7 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
                            ? error_code::topic_authorization_failed
                            : error_code::operation_not_attempted;
               }};
-            return ctx.respond(response);
+            return ctx.respond(std::move(response));
         }
 
         cluster::add_paritions_tx_request tx_request{
@@ -1076,7 +1076,7 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
               }
 
               add_partitions_to_txn_response response;
-              response.data = data;
+              response.data = std::move(data);
               return ctx.respond(std::move(response));
           });
     });
@@ -1154,7 +1154,7 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
       std::make_move_iterator(request.data.topics->end()));
 
     // remove unauthorized topics from request
-    request.data.topics->erase_to_end(unauthorized_it);
+    request.data.topics->erase(unauthorized_it, request.data.topics->end());
     auto resp = co_await ctx.groups().offset_fetch(std::move(request));
 
     // add requested (but unauthorized) topics into response
@@ -1220,10 +1220,10 @@ offset_delete_handler::handle(request_context ctx, ss::smp_service_group) {
         if (std::distance(unknowns_it, topic.partitions.end()) > 0) {
             unknowns.push_back(offset_delete_request_topic{
               .name = topic.name,
-              .partitions = chunked_vector<offset_delete_request_partition>(
+              .partitions = std::vector<offset_delete_request_partition>(
                 std::make_move_iterator(unknowns_it),
                 std::make_move_iterator(topic.partitions.end()))});
-            topic.partitions.erase_to_end(unknowns_it);
+            topic.partitions.erase(unknowns_it, topic.partitions.end());
         }
     }
 
@@ -1777,7 +1777,7 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
                       .error_code = error_code::unknown_topic_or_partition,
                     });
                 }
-                it->partitions.erase_to_end(split);
+                it->partitions.erase(split, it->partitions.end());
             }
             ++it;
         } else {
@@ -1851,10 +1851,10 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
                   for (auto& topic : resp.data.topics) {
                       auto it = octx.nonexistent_tps.find(topic.name);
                       if (it != octx.nonexistent_tps.end()) {
-                          std::copy(
+                          topic.partitions.insert(
+                            topic.partitions.end(),
                             it->second.begin(),
-                            it->second.end(),
-                            topic.partitions.end());
+                            it->second.end());
                           octx.nonexistent_tps.erase(it);
                       }
                   }
@@ -1934,8 +1934,12 @@ describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
                   return res;
               }));
         }
-        response.data.groups = co_await ss::when_all_succeed(
+        auto group_v = co_await ss::when_all_succeed(
           described.begin(), described.end());
+
+        response.data.groups = {
+          std::make_move_iterator(group_v.begin()),
+          std::make_move_iterator(group_v.end())};
     }
 
     for (auto& group : unauthorized) {

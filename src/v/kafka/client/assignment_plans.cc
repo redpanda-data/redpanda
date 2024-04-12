@@ -45,15 +45,13 @@ assignment assignment_plan::decode(const bytes& b) const {
         return {};
     }
     protocol::decoder reader(bytes_to_iobuf(b));
-    auto result = reader.read_array<chunked_vector>(
-      [](protocol::decoder& reader) {
-          auto topic = model::topic(reader.read_string());
-          return std::make_pair(
-            std::move(topic),
-            reader.read_array<chunked_vector>([](protocol::decoder& reader) {
-                return model::partition_id(reader.read_int32());
-            }));
-      });
+    auto result = reader.read_array([](protocol::decoder& reader) {
+        auto topic = model::topic(reader.read_string());
+        return std::make_pair(
+          std::move(topic), reader.read_array([](protocol::decoder& reader) {
+              return model::partition_id(reader.read_int32());
+          }));
+    });
     return assignment(
       std::make_move_iterator(result.begin()),
       std::make_move_iterator(result.end()));

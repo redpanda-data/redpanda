@@ -13,7 +13,6 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "container/fragmented_vector.h"
 #include "json/encodings.h"
 #include "json/types.h"
 #include "kafka/protocol/errors.h"

@@ -477,6 +477,24 @@ override_member_container = {
     'incremental_alter_configs_resource': 'chunked_vector',
     'alter_configs_resource': 'chunked_vector',
     'alterable_config': 'chunked_vector',
+    'int32_t': 'std::vector',
+    'model::node_id': 'std::vector',
+    'model::partition_id': 'std::vector',
+    'reassignable_partition_response': 'std::vector',
+    'reassignable_partition': 'std::vector',
+    'describe_configs_synonym': 'std::vector',
+    'createable_topic_config': 'std::vector',
+    'creatable_topic_configs': 'std::vector',
+    'creatable_replica_assignment': 'std::vector',
+    'offset_commit_request_partition': 'std::vector',
+    'offset_commit_response_partition': 'std::vector',
+    'offset_commit_request_topic': 'std::vector',
+    'offset_fetch_request_topic': 'std::vector',
+    'partition_produce_response': 'std::vector',
+    'creatable_acl_result': 'std::vector',
+    'listed_group': 'std::vector',
+    'offset_delete_request_partition': 'std::vector',
+    'deletable_group_result': 'std::vector'
 }
 
 
@@ -1066,6 +1084,7 @@ class Field:
         yield name
         if isinstance(self._type, ArrayType):
             assert default_value is None  # not supported
+            # print(f'NAME: {name}')
             if name in override_member_container:
                 yield override_member_container[name]
             else:

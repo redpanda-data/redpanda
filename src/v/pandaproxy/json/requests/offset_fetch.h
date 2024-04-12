@@ -12,7 +12,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "container/fragmented_vector.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "kafka/protocol/errors.h"
@@ -22,9 +21,9 @@
 
 namespace pandaproxy::json {
 
-inline chunked_vector<kafka::offset_fetch_request_topic>
+inline std::vector<kafka::offset_fetch_request_topic>
 partitions_request_to_offset_request(std::vector<model::topic_partition> tps) {
-    chunked_vector<kafka::offset_fetch_request_topic> res;
+    std::vector<kafka::offset_fetch_request_topic> res;
     if (tps.empty()) {
         return res;
     }

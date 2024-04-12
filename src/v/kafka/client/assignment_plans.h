@@ -23,7 +23,7 @@
 namespace kafka::client {
 
 using assignment
-  = absl::flat_hash_map<model::topic, chunked_vector<model::partition_id>>;
+  = absl::flat_hash_map<model::topic, std::vector<model::partition_id>>;
 using assignments = absl::flat_hash_map<member_id, assignment>;
 
 /// \brief Assignment plans are used by the consumer group leader to distribute

@@ -633,7 +633,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
      */
     schedule_next_heartbeat_expiration(member);
     auto f = update_member(member, r.native_member_protocols());
-    auto old_protocols = _members.at(new_member_id)->protocols();
+    auto old_protocols = _members.at(new_member_id)->protocols().copy();
     switch (state()) {
     case group_state::stable: {
         auto next_gen_protocol = select_protocol();

@@ -296,7 +296,7 @@ ss::future<> consumer::sync() {
                 .generation_id = me->_generation_id,
                 .member_id = me->_member_id,
                 .group_instance_id = std::nullopt,
-                .assignments = assignments}};
+                .assignments = std::move(assignments)}};
           };
 
           return req_res(std::move(req_builder))
@@ -359,7 +359,7 @@ ss::future<describe_groups_response> consumer::describe_group() {
 }
 
 ss::future<offset_fetch_response>
-consumer::offset_fetch(chunked_vector<offset_fetch_request_topic> topics) {
+consumer::offset_fetch(std::vector<offset_fetch_request_topic> topics) {
     refresh_inactivity_timer();
     auto req_builder = [topics{std::move(topics)},
                         group_id{_group_id}]() mutable {
@@ -378,7 +378,7 @@ consumer::offset_fetch(chunked_vector<offset_fetch_request_topic> topics) {
 }
 
 ss::future<offset_commit_response>
-consumer::offset_commit(chunked_vector<offset_commit_request_topic> topics) {
+consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
     refresh_inactivity_timer();
     if (topics.empty()) { // commit all offsets
         for (const auto& s : _fetch_sessions) {
@@ -392,14 +392,13 @@ consumer::offset_commit(chunked_vector<offset_commit_request_topic> topics) {
             }
         }
     }
-    auto req_builder = [me{shared_from_this()}, topics{std::move(topics)}]() {
+    auto req_builder = [me{shared_from_this()},
+                        topics{std::move(topics)}]() mutable {
         return offset_commit_request{.data{
           .group_id = me->_group_id,
           .generation_id = me->_generation_id,
           .member_id = me->_member_id,
-          .topics = {
-            std::make_move_iterator(topics.begin()),
-            std::make_move_iterator(topics.end())}}};
+          .topics = std::move(topics)}};
     };
 
     co_return co_await req_res(std::move(req_builder));
