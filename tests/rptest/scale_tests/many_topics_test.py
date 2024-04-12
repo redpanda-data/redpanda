@@ -27,7 +27,7 @@ from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig, MetricsEndpoint
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig, MetricsEndpoint, PandaproxyConfig, SchemaRegistryConfig
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.node_operations import NodeOpsExecutor
@@ -36,6 +36,13 @@ from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.consumer_swarm import ConsumerSwarm
 from rptest.scale_tests.topic_scale_profiles import TopicScaleProfileManager
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+
+HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
+
+HTTP_POST_HEADERS = {
+    "Accept": "application/vnd.schemaregistry.v1+json",
+    "Content-Type": "application/vnd.schemaregistry.v1+json"
+}
 
 
 class ManyTopicsTest(RedpandaTest):
@@ -84,6 +91,8 @@ class ManyTopicsTest(RedpandaTest):
                                          'raft': 'warn',
                                          'offset_translator': 'warn'
                                      }),
+            pandaproxy_config=PandaproxyConfig(),
+            schema_registry_config=SchemaRegistryConfig(),
             **kwargs)
 
         self.admin = Admin(self.redpanda)
@@ -1381,6 +1390,43 @@ class ManyTopicsTest(RedpandaTest):
 
         return r
 
+    def _post_subjects_subject_versions(self,
+                                        subject,
+                                        data,
+                                        headers=HTTP_POST_HEADERS,
+                                        **kwargs):
+        return self._request("POST",
+                             f"subjects/{subject}/versions",
+                             headers=headers,
+                             data=data,
+                             **kwargs)
+
+    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
+        return self._request("GET",
+                             f"subjects{'?deleted=true' if deleted else ''}",
+                             headers=headers,
+                             **kwargs)
+
+    def _get_schemas_ids_id_versions(self,
+                                     id,
+                                     headers=HTTP_GET_HEADERS,
+                                     **kwargs):
+        return self._request("GET",
+                             f"schemas/ids/{id}/versions",
+                             headers=headers,
+                             **kwargs)
+
+    def _get_schemas_ids_id_subjects(self,
+                                     id,
+                                     deleted=False,
+                                     headers=HTTP_GET_HEADERS,
+                                     **kwargs):
+        return self._request(
+            "GET",
+            f"schemas/ids/{id}/subjects{'?deleted=true' if deleted else ''}",
+            headers=headers,
+            **kwargs)
+
     @cluster(num_nodes=10)
     def test_many_subjects(self):
         num_subjects = 40000
@@ -1389,6 +1435,61 @@ class ManyTopicsTest(RedpandaTest):
         schema1_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
         schema1_data = json.dumps({"schema": schema1_def})
 
-        for i in 0..num_subjects:
-            subject_name = f'subject{i}'
+        id = None
 
+        for i in range(num_subjects):
+            subject_name = f'subject{i}'
+            result_raw = self._post_subjects_subject_versions(
+                subject=subject_name, data=schema1_data)
+            assert result_raw.status_code == requests.codes.ok, f'Failed to post {subject_name}: {result_raw.status_code}'
+            if id is None:
+                id = result_raw.json()["id"]
+            else:
+                assert id == result_raw.json(
+                )["id"], f'Id mismatch: {id} != {result_raw.json()["id"]}'
+
+        result_raw = self._get_subjects()
+        assert result_raw.status_code == requests.codes.ok, f'Failed to get subjects: {result_raw.status_code}'
+        assert len(
+            result_raw.json()
+        ) == num_subjects, f'Length of json ({len(result_raw.json())}) != expected {num_subjects}'
+
+        result_raw = self._get_schemas_ids_id_subjects(id=id)
+        assert result_raw.status_code == requests.codes.ok, f'Failed to get subjects by id: {result_raw.status_code}'
+        assert len(
+            result_raw.json()
+        ) == num_subjects, f'Length of json ({len(result_raw.json())}) != expected {num_subjects}'
+
+        result_raw = self._get_schemas_ids_id_versions(id=id)
+        assert result_raw.status_code == requests.codes.ok, f'Failed to get subject versions by id: {result_raw.status_code}'
+        assert len(
+            result_raw.json()
+        ) == num_subjects, f'Length of json ({len(result_raw.json())}) != expected {num_subjects}'
+
+    @cluster(num_nodes=10)
+    def test_many_schemas(self):
+        num_schemas = 40000
+        self.redpanda.start()
+
+        schema_fmt = '{{"type":"record","name":"{subject}","fields":[{{"name":"{subject}","type":"string"}}]}}'
+
+        prev_id = None
+        for i in range(num_schemas):
+            subject = f'subject{i}'
+            schema_data = json.dumps(
+                {"schema": schema_fmt.format(subject=subject)})
+            result_raw = self._post_subjects_subject_versions(subject=subject,
+                                                              data=schema_data)
+            assert result_raw.status_code == requests.codes.ok, f'Failed to post {subject}: {result_raw.status_code}'
+            if prev_id is None:
+                prev_id = result_raw.json()["id"]
+            else:
+                assert prev_id != result_raw.json(
+                )["id"], f'Expected different schema ID: {prev_id}'
+                prev_id = result_raw.json()["id"]
+
+        result_raw = self._get_subjects()
+        assert result_raw.status_code == requests.codes.ok, f'Failed to get subjects: {result_raw.status_code}'
+        assert len(
+            result_raw.json()
+        ) == num_schemas, f'Length of json ({len(result_raw.json())}) != expected {num_schemas}'
