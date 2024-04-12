@@ -515,19 +515,34 @@ void consensus::maybe_promote_to_voter(vnode id) {
             return ss::now();
         }
 
-        vlog(_ctxlog.trace, "promoting node {} to voter", id);
-        return _op_lock.get_units()
-          .then([this, id](ssx::semaphore_units u) mutable {
-              auto latest_cfg = _configuration_manager.get_latest();
-              latest_cfg.promote_to_voter(id);
+        // do not promote if the previous configuration is still uncommitted,
+        // otherwise we may add several new voters in quick succession, that the
+        // old voters will not know of, resulting in a possibility of
+        // non-intersecting quorums.
+        if (_configuration_manager.get_latest_offset() > _commit_index) {
+            return ss::now();
+        }
 
-              return replicate_configuration(
-                std::move(u), std::move(latest_cfg));
-          })
-          .then([this, id](std::error_code ec) {
-              vlog(
-                _ctxlog.trace, "node {} promotion result {}", id, ec.message());
-          });
+        return _op_lock.get_units().then([this,
+                                          id](ssx::semaphore_units u) mutable {
+            // check once more under _op_lock to protect against races with
+            // concurrent voter promotions.
+            if (_configuration_manager.get_latest_offset() > _commit_index) {
+                return ss::now();
+            }
+
+            vlog(_ctxlog.trace, "promoting node {} to voter", id);
+            auto latest_cfg = _configuration_manager.get_latest();
+            latest_cfg.promote_to_voter(id);
+            return replicate_configuration(std::move(u), std::move(latest_cfg))
+              .then([this, id](std::error_code ec) {
+                  vlog(
+                    _ctxlog.trace,
+                    "node {} promotion result {}",
+                    id,
+                    ec.message());
+              });
+        });
     });
 }
 
