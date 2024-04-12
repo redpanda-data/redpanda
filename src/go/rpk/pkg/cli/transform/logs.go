@@ -173,7 +173,7 @@ the Open Telemetry LogRecord protocol buffer.`,
 				}
 			}
 			zap.L().Sugar().Debugf("reading logs topic with bounds [%v, %v] on partition %d", startOffset, maxOffset, partition)
-			if startOffset > maxOffset {
+			if startOffset >= maxOffset {
 				return
 			}
 
