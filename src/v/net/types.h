@@ -32,4 +32,6 @@ protected:
       : std::runtime_error(m) {}
 };
 
+class parsing_exception : public std::exception {};
+
 } // namespace net
