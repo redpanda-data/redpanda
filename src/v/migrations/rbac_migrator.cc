@@ -42,7 +42,17 @@ ss::future<> rbac_migrator::do_mutate() {
     auto err = co_await _controller.get_security_frontend().local().create_role(
       role_name, std::move(role), model::timeout_clock::now() + 5s);
 
-    if (err) {
+    if (err == cluster::errc::role_exists) {
+        // If the leader running the feature migration loses leadership after
+        // the role is created but before the feature migration is successfully
+        // completed, the next leader will redo the feature migration. In that
+        // case, we will get the role_exists error here, which we can safely
+        // ignore.
+        vlog(
+          featureslog.info,
+          "Default role '{}' already exists...",
+          security::default_role_name);
+    } else if (err) {
         vlog(
           featureslog.error,
           "Error while creating default role '{}': {}",

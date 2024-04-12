@@ -43,6 +43,9 @@ protected:
      * If not overriding `start` and `do_migrate`, then implement
      * `do_mutate` to express the change that should be made to
      * the system during upgrade.
+     *
+     * `do_mutate` should be idempotent as it may be executed multiple times if
+     * there is a leader reelection while do_mutate is being executed.
      */
     virtual ss::future<> do_mutate() { return ss::now(); }
     ss::future<> do_migrate();
