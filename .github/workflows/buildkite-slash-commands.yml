@@ -10,6 +10,7 @@ on:
       - test-arm64-command
       - dt-command
       - microbench-command
+      - publish-to-install-pack-command
 
 jobs:
   run-build:
