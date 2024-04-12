@@ -1581,8 +1581,8 @@ void config_multi_property_validation(
             // azure_vm_instance_metadata requires an client_id to work
             // correctly
             config_properties_seq properties = {
-              std::ref(updated_config.cloud_storage_region),
-              std::ref(updated_config.cloud_storage_bucket),
+              std::ref(updated_config.cloud_storage_azure_storage_account),
+              std::ref(updated_config.cloud_storage_azure_container),
               std::ref(updated_config.cloud_storage_azure_managed_identity_id),
             };
 
