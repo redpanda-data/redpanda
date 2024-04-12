@@ -6,4 +6,6 @@ if [ $(uname -m) = "aarch64" ]; then
 else
   export ARCHID="amd64"
 fi
-curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 "https://github.com/redpanda-data/tinygo/releases/download/v0.30.0-rpk1/tinygo-linux-${ARCHID}.tar.gz" | tar -xz -C /usr/local/tinygo/ --strip 1
+curl -sSLf --retry 5 --retry-all-errors --retry-delay 2 "https://github.com/redpanda-data/tinygo/releases/download/v0.31.0-rpk2/tinygo-linux-${ARCHID}.tar.gz" -o /tmp/tinygo-linux.tar.gz
+cat /tmp/tinygo-linux.tar.gz | tar -xz -C /usr/local/tinygo/ --strip 1
+rm /tmp/tinygo-linux.tar.gz
