@@ -14,8 +14,9 @@ import time
 import signal
 import threading
 import requests
-from typing import Any, List, Optional
+from typing import Any, Dict, Optional
 
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -34,6 +35,8 @@ class KgoVerifierService(Service):
     To validate produced record user should run consumer and producer in one node.
     Use ctx.cluster.alloc(ClusterSpec.simple_linux(1)) to allocate node and pass it to constructor
     """
+    _status_thread: Optional[StatusThread]
+
     def __init__(self,
                  context,
                  redpanda,
@@ -147,7 +150,7 @@ class KgoVerifierService(Service):
 
         debug = '--debug' if self._debug_logs else ''
         trace = '--trace' if self._trace_logs else ''
-        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} {debug} {trace}> {self.log_path} 2>&1 & echo $!"
+        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} {debug} {trace}>> {self.log_path} 2>&1 & echo $!"
         self.logger.debug(f"spawn {self.who_am_i()}: {wrapped_cmd}")
         pid_str = node.account.ssh_output(wrapped_cmd, timeout_sec=10)
         self.logger.debug(
@@ -209,13 +212,14 @@ class KgoVerifierService(Service):
             if b"No such process" not in e.msg:
                 raise
 
+        self._pid = None
         self._release_port()
 
-    def clean_node(self, node):
+    def clean_node(self, node: ClusterNode):
         self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
         node.account.kill_process("kgo-verifier", clean_shutdown=False)
         node.account.remove("valid_offsets*json", True)
-        node.account.remove(f"/tmp/{self.__class__.__name__}*")
+        node.account.remove(f"/tmp/{self.__class__.__name__}*", True)
 
     def _remote(self, node, action, timeout=60):
         """
@@ -449,10 +453,12 @@ class ValidatorStatus:
     internally to kgo-verifier.  Other parts of consumer status are allowed to
     differ per-worker, although at time of writing they don't.
     """
+    lost_offsets: Dict[str, int]
+
     def __init__(self, name: str, valid_reads: int, invalid_reads: int,
                  out_of_scope_invalid_reads: int,
-                 max_offsets_consumed: Optional[int],
-                 lost_offsets: Optional[List[int]]):
+                 max_offsets_consumed: Optional[int], lost_offsets: Dict[str,
+                                                                         int]):
         # Validator name is just a unique name per worker thread in kgo-verifier: useful in logging
         # but we mostly don't care
         self.name = name
@@ -475,7 +481,7 @@ class ValidatorStatus:
 
         # Clear other fields we aren't interested in, to avoid confusion.
         self.max_offsets_consumed = None
-        self.lost_offsets = None
+        self.lost_offsets = {}
 
         self.valid_reads += rhs.valid_reads
         self.invalid_reads += rhs.invalid_reads
@@ -669,7 +675,30 @@ class KgoVerifierProducer(KgoVerifierService):
         self._status_thread.start()
 
 
-class KgoVerifierSeqConsumer(KgoVerifierService):
+class AbstractConsumer(KgoVerifierService):
+    _status: ConsumerStatus
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self._status = ConsumerStatus()
+
+    @property
+    def consumer_status(self) -> ConsumerStatus:
+        return self._status
+
+    def wait_total_reads(self, count, timeout_sec, backoff_sec):
+        self.logger.info("Waiting for total reads to reach %d", count)
+
+        self._redpanda.wait_until(
+            lambda: self._status_thread.errored or self.consumer_status.
+            validator.total_reads >= count,
+            timeout_sec=timeout_sec,
+            backoff_sec=backoff_sec)
+        self._status_thread.raise_on_error()
+
+
+class KgoVerifierSeqConsumer(AbstractConsumer):
     def __init__(
             self,
             context,
@@ -688,21 +717,14 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
             username: Optional[str] = None,
             password: Optional[str] = None,
             enable_tls: Optional[bool] = False):
-        super(KgoVerifierSeqConsumer,
-              self).__init__(context, redpanda, topic, msg_size, nodes,
-                             debug_logs, trace_logs, username, password,
-                             enable_tls)
+        super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
+                         trace_logs, username, password, enable_tls)
         self._max_msgs = max_msgs
         self._max_throughput_mb = max_throughput_mb
-        self._status = ConsumerStatus()
         self._loop = loop
         self._continuous = continuous
         self._tolerate_data_loss = tolerate_data_loss
         self._producer = producer
-
-    @property
-    def consumer_status(self):
-        return self._status
 
     def start_node(self, node, clean=False):
         if clean:
@@ -760,7 +782,7 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
         return super().wait_node(node, timeout_sec=timeout_sec)
 
 
-class KgoVerifierRandomConsumer(KgoVerifierService):
+class KgoVerifierRandomConsumer(AbstractConsumer):
     def __init__(self,
                  context,
                  redpanda,
@@ -778,11 +800,6 @@ class KgoVerifierRandomConsumer(KgoVerifierService):
                          trace_logs, username, password, enable_tls)
         self._rand_read_msgs = rand_read_msgs
         self._parallel = parallel
-        self._status = ConsumerStatus()
-
-    @property
-    def consumer_status(self):
-        return self._status
 
     def start_node(self, node, clean=False):
         if clean:
@@ -802,7 +819,10 @@ class KgoVerifierRandomConsumer(KgoVerifierService):
         self._status_thread.start()
 
 
-class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
+class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
+    _status: ConsumerStatus
+    _group_name: Optional[str]
+
     def __init__(self,
                  context,
                  redpanda,
@@ -831,11 +851,6 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
         self._group_name = group_name
         self._continuous = continuous
         self._tolerate_data_loss = tolerate_data_loss
-        self._status = ConsumerStatus()
-
-    @property
-    def consumer_status(self):
-        return self._status
 
     def start_node(self, node, clean=False):
         if clean:
