@@ -78,7 +78,9 @@ fetch_response
 reduce_fetch_response(fetch_response result, fetch_response val) {
     result.data.throttle_time_ms += val.data.throttle_time_ms;
     std::move(
-      val.data.topics.begin(), val.data.topics.end(), result.data.topics.end());
+      val.data.topics.begin(),
+      val.data.topics.end(),
+      std::back_inserter(result.data.topics));
     return result;
 };
 
@@ -383,7 +385,7 @@ consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
     if (topics.empty()) { // commit all offsets
         for (const auto& s : _fetch_sessions) {
             auto res = s.second.make_offset_commit_request();
-            std::move(res.begin(), res.end(), topics.end());
+            std::move(res.begin(), res.end(), std::back_inserter(topics));
         }
     } else { // set epoch for requests tps
         for (auto& t : topics) {
