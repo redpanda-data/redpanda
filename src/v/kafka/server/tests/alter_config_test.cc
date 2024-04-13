@@ -320,7 +320,7 @@ FIXTURE_TEST(
 
     auto first_group_describe_resp = describe_configs(
       broker_id,
-      std::make_optional(std::move(first_group_config_properties)),
+      std::make_optional(first_group_config_properties.copy()),
       kafka::config_resource_type::broker);
     assert_properties_amount(
       broker_id,
@@ -337,7 +337,7 @@ FIXTURE_TEST(
 
     auto second_group_describe_resp = describe_configs(
       broker_id,
-      std::make_optional(std::move(second_group_config_properties)),
+      std::make_optional(second_group_config_properties.copy()),
       kafka::config_resource_type::broker);
     assert_properties_amount(
       broker_id,
@@ -433,7 +433,7 @@ FIXTURE_TEST(
       "write.caching"};
 
     auto first_group_describe_resp = describe_configs(
-      test_tp, std::make_optional(std::move(first_group_config_properties)));
+      test_tp, std::make_optional(first_group_config_properties.copy()));
     vlog(
       test_log.debug,
       "first_group_describe_resp: {}",
@@ -450,7 +450,7 @@ FIXTURE_TEST(
     }
 
     auto second_group_describe_resp = describe_configs(
-      test_tp, std::make_optional(std::move(second_group_config_properties)));
+      test_tp, std::make_optional(second_group_config_properties.copy()));
     vlog(
       test_log.debug,
       "second_group_describe_resp: {}",

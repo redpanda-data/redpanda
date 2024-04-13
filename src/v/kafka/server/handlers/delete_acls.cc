@@ -30,9 +30,9 @@ using namespace std::chrono_literals;
 
 namespace kafka {
 
-static chunked_vector<delete_acls_matching_acl>
+static std::vector<delete_acls_matching_acl>
 bindings_to_delete_result(const std::vector<security::acl_binding>& bindings) {
-    chunked_vector<delete_acls_matching_acl> res;
+    std::vector<delete_acls_matching_acl> res;
 
     for (auto& binding : bindings) {
         delete_acls_matching_acl m;
@@ -101,7 +101,7 @@ ss::future<response_ptr> delete_acls_handler::handle(
         resp.data.filter_results.reserve(request.data.filters.size());
         for ([[maybe_unused]] auto _ :
              boost::irange<size_t>(request.data.filters.size())) {
-            resp.data.filter_results.emplace_back(std::move(result));
+            resp.data.filter_results.emplace_back(result);
         }
         co_return co_await ctx.respond(std::move(resp));
     }
@@ -113,7 +113,7 @@ ss::future<response_ptr> delete_acls_handler::handle(
         resp.data.filter_results.reserve(request.data.filters.size());
         for ([[maybe_unused]] auto _ :
              boost::irange<size_t>(request.data.filters.size())) {
-            resp.data.filter_results.emplace_back(std::move(result));
+            resp.data.filter_results.emplace_back(result);
         }
         co_return co_await ctx.respond(std::move(resp));
     }

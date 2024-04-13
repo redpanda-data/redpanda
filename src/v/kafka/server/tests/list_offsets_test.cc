@@ -244,6 +244,7 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
     for (long i = 0; i < batch_count; ++i) {
         // fetch timestamp i, expect offset 2 * i.
         kafka::list_offsets_request req;
+
         req.data.topics.emplace_back(kafka::list_offset_topic{
           .name = ntp.tp.topic,
           .partitions = {{
@@ -268,7 +269,15 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
         // compressed batches we should still get a result pointing
         // to the start of the batch.
         auto record_offset = 1; // Offset into batch which we will read
-        req.data.topics.emplace_back(kafka::list_offset_topic{
+        kafka::list_offsets_request req2;
+        req2.data.topics.emplace_back(kafka::list_offset_topic{
+          .name = ntp.tp.topic,
+          .partitions = {{
+            .partition_index = ntp.tp.partition,
+            .timestamp = model::timestamp(base_timestamp + i * record_count),
+          }},
+        });
+        req2.data.topics.emplace_back(kafka::list_offset_topic{
           .name = ntp.tp.topic,
           .partitions = {{
             .partition_index = ntp.tp.partition,
@@ -279,7 +288,7 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
 
         const auto& batch = batches[i];
         auto resp_midbatch
-          = client.dispatch(std::move(req), kafka::api_version(1)).get0();
+          = client.dispatch(std::move(req2), kafka::api_version(1)).get0();
         BOOST_REQUIRE_EQUAL(resp_midbatch.data.topics.size(), 1);
         BOOST_REQUIRE_EQUAL(resp_midbatch.data.topics[0].partitions.size(), 1);
         if (batch.compressed()) {

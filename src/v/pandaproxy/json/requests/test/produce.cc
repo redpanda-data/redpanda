@@ -263,20 +263,6 @@ SEASTAR_THREAD_TEST_CASE(test_produce_response) {
 
     auto topic = kafka::produce_response::topic{
       .name = model::topic{"topic0"},
-      // .partitions = {
-      //   kafka::produce_response::partition{
-      //     .partition_index = model::partition_id{0},
-      //     .error_code = kafka::error_code::none,
-      //     .base_offset = model::offset{42},
-      //     .log_append_time_ms = model::timestamp{},
-      //     .log_start_offset = model::offset{}},
-      //   kafka::produce_response::partition{
-      //     .partition_index = model::partition_id{1},
-      //     .error_code = kafka::error_code::invalid_partitions,
-      //     .base_offset = model::offset{-1},
-      //     .log_append_time_ms = model::timestamp{},
-      //     .log_start_offset = model::offset{}},
-      // }
     };
 
     topic.partitions.emplace_back(kafka::produce_response::partition{
