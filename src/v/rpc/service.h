@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "net/types.h"
 #include "reflection/async_adl.h"
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
@@ -39,7 +40,7 @@ struct service {
     virtual void setup_metrics() = 0;
 };
 
-class rpc_internal_body_parsing_exception : public std::exception {
+class rpc_internal_body_parsing_exception : public net::parsing_exception {
 public:
     explicit rpc_internal_body_parsing_exception(const std::exception_ptr& e)
       : _what(
