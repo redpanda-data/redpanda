@@ -274,13 +274,6 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
           .name = ntp.tp.topic,
           .partitions = {{
             .partition_index = ntp.tp.partition,
-            .timestamp = model::timestamp(base_timestamp + i * record_count),
-          }},
-        });
-        req2.data.topics.emplace_back(kafka::list_offset_topic{
-          .name = ntp.tp.topic,
-          .partitions = {{
-            .partition_index = ntp.tp.partition,
             .timestamp = model::timestamp(
               base_timestamp + i * record_count + record_offset),
           }},
