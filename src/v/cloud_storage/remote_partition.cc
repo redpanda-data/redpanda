@@ -402,69 +402,58 @@ public:
                   "{}",
                   _seg_reader->config());
 
-                try {
-                    auto result = co_await _seg_reader->read_some(
-                      deadline, *_ot_state);
-                    throw_on_external_abort();
+                auto result = co_await _seg_reader->read_some(
+                  deadline, *_ot_state);
+                throw_on_external_abort();
 
-                    if (!result) {
-                        vlog(
-                          _ctxlog.debug,
-                          "Error while reading from stream '{}'",
-                          result.error());
-                        co_await set_end_of_stream();
-                        throw std::system_error(result.error());
-                    }
-                    data_t d = std::move(result.value());
-                    for (const auto& batch : d) {
-                        _partition->_probe.add_bytes_read(
-                          batch.header().size_bytes);
-                        _partition->_probe.add_records_read(
-                          batch.record_count());
-                    }
-                    if (
-                      _first_produced_offset == model::offset{} && !d.empty()) {
-                        _first_produced_offset = d.front().base_offset();
-                    }
-                    co_return storage_t{std::move(d)};
-                } catch (const stuck_reader_exception& ex) {
-                    throw_on_external_abort();
+                if (!result) {
                     vlog(
-                      _ctxlog.warn,
-                      "stuck reader: current rp offset: {}, max rp offset: {}",
-                      ex.rp_offset,
-                      _seg_reader->max_rp_offset());
-
-                    // If the reader is stuck because of a mismatch between
-                    // segment data and manifest entry, set reader to EOF and
-                    // try to reset reader on the next loop iteration. We only
-                    // do this when the reader has not reached eof. For example,
-                    // the segment ends at offset 10 but the manifest has max
-                    // offset at 11 for the segment, with offset 11 actually
-                    // present in the next segment. When the reader is stuck,
-                    // the current offset will be 10 which we will not be able
-                    // to read from. Switching to the next segment should enable
-                    // reads to proceed.
-                    if (
-                      model::next_offset(ex.rp_offset)
-                        >= _next_segment_base_offset
-                      && !_seg_reader->is_eof()) {
-                        vlog(
-                          _ctxlog.info,
-                          "mismatch between current segment end and manifest "
-                          "data: current rp offset {}, manifest max rp offset "
-                          "{}, next segment base offset {}, reader is EOF: {}. "
-                          "set EOF on reader and try to "
-                          "reset",
-                          ex.rp_offset,
-                          _seg_reader->max_rp_offset(),
-                          _next_segment_base_offset,
-                          _seg_reader->is_eof());
-                        _seg_reader->set_eof();
-                        continue;
-                    }
-                    throw;
+                      _ctxlog.debug,
+                      "Error while reading from stream '{}'",
+                      result.error());
+                    co_await set_end_of_stream();
+                    throw std::system_error(result.error());
                 }
+                data_t d = std::move(result.value());
+                for (const auto& batch : d) {
+                    _partition->_probe.add_bytes_read(
+                      batch.header().size_bytes);
+                    _partition->_probe.add_records_read(batch.record_count());
+                }
+                if (_first_produced_offset == model::offset{} && !d.empty()) {
+                    _first_produced_offset = d.front().base_offset();
+                } else {
+                    auto current_ko = _ot_state->from_log_offset(
+                      _seg_reader->current_rp_offset());
+                    vlog(
+                      _ctxlog.debug,
+                      "No results, current rp offset: {}, current kafka "
+                      "offset: {}, max rp offset: "
+                      "{}",
+                      _seg_reader->current_rp_offset(),
+                      current_ko,
+                      _seg_reader->config().max_offset);
+                    if (current_ko > _seg_reader->config().max_offset) {
+                        // Reader overshoot the offset. If we will not reset
+                        // the stream the loop inside the
+                        // record_batch_reader will keep calling this method
+                        // again and again. We will be returning empty
+                        // result every time because the current offset
+                        // overshoot the max allowed offset. Resetting the
+                        // segment reader fixes the issue.
+                        //
+                        // We can get into the situation when the current
+                        // reader returns empty result in several cases:
+                        // - we reached max_offset (covered here)
+                        // - we reached end of stream (covered above right
+                        //   after the 'read_some' call)
+                        //
+                        // If we reached max-bytes then the result won't be
+                        // empty. It will have at least one record batch.
+                        co_await set_end_of_stream();
+                    }
+                }
+                co_return storage_t{std::move(d)};
             }
         } catch (const ss::gate_closed_exception&) {
             vlog(

@@ -14,6 +14,7 @@
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/tests/util.h"
+#include "model/record_batch_types.h"
 
 #include <seastar/core/lowres_clock.hh>
 
@@ -315,6 +316,49 @@ FIXTURE_TEST(
     try {
         auto headers_read = scan_remote_partition_incrementally(
           *this, base, max, 0, 20, 20);
+        model::offset expected_offset{0};
+        size_t ix_header = 0;
+        for (const auto& ix_seg : segment_layout) {
+            for (const auto& batch : ix_seg) {
+                if (batch.type == model::record_batch_type::tx_fence) {
+                    expected_offset++;
+                } else if (batch.type == model::record_batch_type::raft_data) {
+                    auto header = headers_read[ix_header];
+                    BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
+                    expected_offset = header.last_offset() + model::offset(1);
+                    ix_header++;
+                } else {
+                    // raft_configuratoin or archival_metadata
+                    // no need to update expected_offset or ix_header
+                }
+            }
+        }
+    } catch (const download_exception& ex) {
+        vlog(test_log.warn, "timeout connecting to s3 impostor: {}", ex.what());
+    }
+}
+
+FIXTURE_TEST(
+  test_remote_partition_scan_incrementally_random_with_tx_fence_random_lso,
+  cloud_storage_fixture) {
+    vlog(
+      test_log.info,
+      "Seed used for read workload: {}",
+      random_generators::internal::seed);
+
+    constexpr int num_segments = 1000;
+    const auto [segment_layout, num_data_batches] = generate_segment_layout(
+      num_segments, 42, false);
+    auto segments = setup_s3_imposter(*this, segment_layout);
+    auto base = segments[0].base_offset;
+    auto max = segments.back().max_offset;
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    try {
+        auto headers_read
+          = scan_remote_partition_incrementally_with_closest_lso(
+            *this, base, max, 5, 5);
+        vlog(test_log.debug, "{} record batches consumed", headers_read.size());
         model::offset expected_offset{0};
         size_t ix_header = 0;
         for (const auto& ix_seg : segment_layout) {
