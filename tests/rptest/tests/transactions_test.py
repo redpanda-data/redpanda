@@ -102,6 +102,37 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         self.max_records = 100
         self.admin = Admin(self.redpanda)
 
+    def wait_for_eviction(self, max_concurrent_producer_ids, num_to_evict):
+        samples = [
+            "idempotency_pid_cache_size",
+            "producer_state_manager_evicted_producers"
+        ]
+        brokers = self.redpanda.started_nodes()
+        metrics = self.redpanda.metrics_samples(samples, brokers)
+        producers_per_node = defaultdict(int)
+        evicted_per_node = defaultdict(int)
+        for pattern, metric in metrics.items():
+            for m in metric.samples:
+                id = self.redpanda.node_id(m.node)
+                if pattern == "idempotency_pid_cache_size":
+                    producers_per_node[id] += int(m.value)
+                elif pattern == "producer_state_manager_evicted_producers":
+                    evicted_per_node[id] += int(m.value)
+
+        self.redpanda.logger.debug(f"active producers: {producers_per_node}")
+        self.redpanda.logger.debug(f"evicted producers: {evicted_per_node}")
+
+        remaining_match = all([
+            num == max_concurrent_producer_ids
+            for num in producers_per_node.values()
+        ])
+
+        evicted_match = all(
+            [val == num_to_evict for val in evicted_per_node.values()])
+
+        return len(producers_per_node) == len(
+            brokers) and remaining_match and evicted_match
+
     @cluster(num_nodes=3)
     def find_coordinator_creates_tx_topics_test(self):
         for node in self.redpanda.started_nodes():
@@ -718,6 +749,43 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         ])
 
     @cluster(num_nodes=3)
+    def check_progress_after_fencing_test(self):
+        """Checks that a fencing producer makes progress after fenced producers are evicted."""
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': 'test',
+            'transaction.timeout.ms': 100000,
+        })
+
+        topic_name = self.topics[0].name
+
+        # create a pid, do not commit/abort transaction.
+        producer.init_transactions()
+        producer.begin_transaction()
+        producer.produce(topic_name, "0", "0", 0, self.on_delivery)
+        producer.flush()
+
+        # fence the above pid with another producer
+        producer0 = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': 'test',
+            'transaction.timeout.ms': 100000,
+        })
+        producer0.init_transactions()
+        producer0.begin_transaction()
+        producer0.produce(topic_name, "0", "0", 0, self.on_delivery)
+
+        max_concurrent_pids = 1
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("max_concurrent_producer_ids",
+                               str(max_concurrent_pids))
+
+        self.wait_for_eviction(max_concurrent_pids, 1)
+
+        producer0.commit_transaction()
+
+    @cluster(num_nodes=3)
     def check_pids_overflow_test(self):
         rpk = RpkTool(self.redpanda)
         max_concurrent_producer_ids = 10
@@ -747,41 +815,8 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
         evicted_count = max_producers - max_concurrent_producer_ids
 
-        # Wait until eviction kicks in.
-        def wait_for_eviction():
-            samples = [
-                "idempotency_pid_cache_size",
-                "producer_state_manager_evicted_producers"
-            ]
-            brokers = self.redpanda.started_nodes()
-            metrics = self.redpanda.metrics_samples(samples, brokers)
-            producers_per_node = defaultdict(int)
-            evicted_per_node = defaultdict(int)
-            for pattern, metric in metrics.items():
-                for m in metric.samples:
-                    id = self.redpanda.node_id(m.node)
-                    if pattern == "idempotency_pid_cache_size":
-                        producers_per_node[id] += int(m.value)
-                    elif pattern == "producer_state_manager_evicted_producers":
-                        evicted_per_node[id] += int(m.value)
-
-            self.redpanda.logger.debug(
-                f"active producers: {producers_per_node}")
-            self.redpanda.logger.debug(
-                f"evicted producers: {evicted_per_node}")
-
-            remaining_match = all([
-                num == max_concurrent_producer_ids
-                for num in producers_per_node.values()
-            ])
-
-            evicted_match = all(
-                [val == evicted_count for val in evicted_per_node.values()])
-
-            return len(producers_per_node) == len(
-                brokers) and remaining_match and evicted_match
-
-        wait_until(wait_for_eviction,
+        wait_until(lambda: self.wait_for_eviction(max_concurrent_producer_ids,
+                                                  evicted_count),
                    timeout_sec=30,
                    backoff_sec=2,
                    err_msg="Producers not evicted in time")
