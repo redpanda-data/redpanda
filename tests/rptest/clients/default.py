@@ -13,7 +13,9 @@ from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
-from kafka import KafkaAdminClient
+from rptest.services.redpanda_types import RedpandaServiceForClients
+
+# pyright: strict
 
 
 class PartitionDescription(typing.NamedTuple):
@@ -31,7 +33,7 @@ class TopicConfigValue(typing.NamedTuple):
     value: typing.Union[str, int]
     source: str
 
-    def __eq__(self, other):
+    def __eq__(self, other: object):
         if isinstance(other, TopicConfigValue):
             return self.value == other.value and self.source == other.source
         assert isinstance(other, str) or isinstance(other, int)
@@ -45,10 +47,10 @@ class BrokerDescription(typing.NamedTuple):
 
 
 class DefaultClient:
-    def __init__(self, redpanda):
+    def __init__(self, redpanda: RedpandaServiceForClients):
         self._redpanda = redpanda
 
-    def create_topic(self, specs):
+    def create_topic(self, specs: TopicSpec | typing.Iterable[TopicSpec]):
         if isinstance(specs, TopicSpec):
             specs = [specs]
         client = KafkaCliTools(self._redpanda)
@@ -73,7 +75,7 @@ class DefaultClient:
             for b in brokers.values()
         }
 
-    def delete_topic(self, name):
+    def delete_topic(self, name: str):
         client = KafkaCliTools(self._redpanda)
         client.delete_topic(name)
 

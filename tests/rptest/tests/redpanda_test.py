@@ -9,10 +9,11 @@
 
 from abc import ABC, abstractmethod
 import os
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence, cast
 
 from ducktape.tests.test import Test, TestContext
-from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud, SISettings, make_redpanda_service, CloudStorageType
+from ducktape.utils.util import wait_until
+from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud, SISettings, make_redpanda_mixed_service, make_redpanda_service, CloudStorageType
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
@@ -88,7 +89,6 @@ class RedpandaTest(RedpandaTestBase):
     def __init__(self,
                  test_context: TestContext,
                  num_brokers: int | None = None,
-                 cloud_tier: str | None = None,
                  extra_rp_conf: dict[str, Any] | None = None,
                  si_settings: SISettings | None = None,
                  **kwargs: Any):
@@ -98,24 +98,10 @@ class RedpandaTest(RedpandaTestBase):
         """
         super().__init__(test_context)
 
-        self.si_settings = si_settings
-
-        if num_brokers is None and cloud_tier is None:
-            # Default to a 3 node cluster if sufficient nodes are available, else
-            # a single node cluster.  This is just a default: tests are welcome
-            # to override constructor to pass an explicit size.  This logic makes
-            # it convenient to mix 3 node and 1 node cases in the same class, by
-            # just modifying the @cluster node count per test.
-            if test_context.cluster.available().size() >= 3:
-                num_brokers = 3
-            else:
-                num_brokers = 1
-
         self.redpanda = make_redpanda_service(test_context,
                                               num_brokers,
-                                              cloud_tier=cloud_tier,
                                               extra_rp_conf=extra_rp_conf,
-                                              si_settings=self.si_settings,
+                                              si_settings=si_settings,
                                               **kwargs)
         self._client = DefaultClient(self.redpanda)
 
@@ -126,12 +112,17 @@ class RedpandaTest(RedpandaTestBase):
         self.redpanda.set_skip_if_no_redpanda_log(True)
 
     @property
+    def si_settings(self):
+        """Shortcut to self.redpanda.si_settings"""
+        return self.redpanda.si_settings
+
+    @property
     def azure_blob_storage(self):
         return self.si_settings.cloud_storage_type == CloudStorageType.ABS
 
     @property
     def cloud_storage_client(self):
-        return self.redpanda.cloud_storage_client
+        return self.redpanda._cloud_storage_client
 
     def client(self):
         return self._client
@@ -164,7 +155,7 @@ class RedpandaTest(RedpandaTestBase):
         versions_in: list[RedpandaVersion],
         already_running: bool = False,
         auto_assign_node_id: bool = False,
-        mid_upgrade_check: Callable[[dict[Any, RedpandaVersion]],
+        mid_upgrade_check: Callable[[Mapping[Any, RedpandaVersion]],
                                     None] = lambda x: None):
         """
         Step the cluster through all the versions in `versions`, at each stage
@@ -306,3 +297,53 @@ class RedpandaTest(RedpandaTestBase):
 
             # We are fully upgraded, yield to whatever the test wants to do in this version
             yield current_version
+
+
+class RedpandaMixedTest(RedpandaTestBase):
+    """
+    Base class for tests which can run either against vanilla infrastructure or
+    against the cloud.
+    """
+    def __init__(self,
+                 test_context: TestContext,
+                 *,
+                 min_brokers: int | None = None):
+        """
+        :param min_brokers: the minimum number of brokers the test requires. The
+        test must be OK with more brokers than the given number (which will occur
+        in cloud tests, as the number of brokers is already set at cloud cluster
+        creation time). None indicates that the test does not care how many brokers
+        are created (there will always be at least 1!).
+        """
+        super().__init__(test_context=test_context)
+        self.redpanda = make_redpanda_mixed_service(test_context,
+                                                    min_brokers=min_brokers)
+
+        self._client = DefaultClient(self.redpanda)
+
+    def setup(self):
+        super().setup()
+        if (cloud := self.as_cloud()):
+            wait_until(lambda: cloud.cluster_healthy(),
+                       timeout_sec=20,
+                       backoff_sec=5,
+                       err_msg='cluster unhealthy before start of test')
+
+    def as_cloud(self):
+        """A convenience method which returns self.redpanda if it is a RedpandaServiceCloud
+        or None otherwise."""
+        return self.redpanda if isinstance(self.redpanda,
+                                           RedpandaServiceCloud) else None
+
+    def as_noncloud(self):
+        """A convenience method which returns self.redpanda if it is a RedpandaService
+        or None otherwise."""
+        return self.redpanda if isinstance(self.redpanda,
+                                           RedpandaService) else None
+
+    def client(self):
+        return self._client
+
+    def tearDown(self):
+        if (cloud := self.as_cloud()):
+            cloud.clean_cluster()

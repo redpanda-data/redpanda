@@ -46,11 +46,10 @@ def assert_rpk_fails(cmd, error_msg):
 
 class RecoveryModeTest(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        self.si_settings = SISettings(test_ctx)
         super().__init__(*args,
                          test_ctx,
                          num_brokers=4,
-                         si_settings=self.si_settings,
+                         si_settings=SISettings(test_ctx),
                          **kwargs)
 
     def setUp(self):

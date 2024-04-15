@@ -10,23 +10,20 @@ import random
 
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.tests.redpanda_test import RedpandaTest
-
+from rptest.tests.redpanda_test import RedpandaMixedTest
+from ducktape.tests.test import TestContext
 from rptest.clients.types import TopicSpec
 
 
-class CreatePartitionsTest(RedpandaTest):
-    def __init__(self, test_context):
-        super().__init__(test_context=test_context,
-                         extra_rp_conf={
-                             "enable_leader_balancer": False,
-                         })
+class CreatePartitionsTest(RedpandaMixedTest):
+    def __init__(self, test_context: TestContext):
+        super().__init__(test_context=test_context)
 
-    def _partition_count(self, topic):
+    def _partition_count(self, topic: str):
         meta = self.client().describe_topic(topic)
         return len(meta.partitions)
 
-    def _create_add_verify(self, topic, new_parts):
+    def _create_add_verify(self, topic: TopicSpec, new_parts: int):
         self.logger.info(
             f"Testing topic {topic.name} with partitions {topic.partition_count} replicas {topic.replication_factor} expected partitions {new_parts}"
         )

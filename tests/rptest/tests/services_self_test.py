@@ -11,7 +11,7 @@ from subprocess import CalledProcessError
 from ducktape.mark import matrix
 from ducktape.tests.test import Test
 
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.redpanda_test import RedpandaMixedTest, RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -19,7 +19,7 @@ from rptest.services.failure_injector import FailureSpec, make_failure_injector
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
-from rptest.services.redpanda import RedpandaServiceCloud, SISettings, CloudStorageType, get_cloud_storage_type, make_redpanda_service, make_redpanda_service_mixed
+from rptest.services.redpanda import RedpandaServiceCloud, SISettings, CloudStorageType, get_cloud_storage_type, make_redpanda_service, make_redpanda_mixed_service
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import BucketView
 from rptest.util import expect_exception
@@ -79,9 +79,9 @@ class ProducerSwarmSelfTest(RedpandaTest):
         producer.stop()
 
 
-class KgoRepeaterSelfTest(RedpandaTest):
+class KgoRepeaterSelfTest(RedpandaMixedTest):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, num_brokers=3, **kwargs)
+        super().__init__(*args, min_brokers=3, **kwargs)
 
     @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
     @cluster(num_nodes=5)
@@ -283,7 +283,7 @@ class SimpleSelfTest(Test):
     """
     def __init__(self, test_context):
         super(SimpleSelfTest, self).__init__(test_context)
-        self.redpanda = make_redpanda_service_mixed(test_context,
+        self.redpanda = make_redpanda_mixed_service(test_context,
                                                     min_brokers=3)
 
     def setUp(self):
@@ -319,7 +319,7 @@ class KubectlSelfTest(Test):
     """
     def __init__(self, test_context):
         super().__init__(test_context)
-        self.redpanda = make_redpanda_service_mixed(test_context)
+        self.redpanda = make_redpanda_mixed_service(test_context)
 
     def setUp(self):
         self.redpanda.start()

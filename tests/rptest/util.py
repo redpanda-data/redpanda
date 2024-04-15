@@ -41,15 +41,18 @@ class Scale:
         return self._scale
 
     @property
-    def local(self):
+    def local(self) -> bool:
+        """True iff we are running at local scale."""
         return self._scale == Scale.LOCAL
 
     @property
-    def ci(self):
+    def ci(self) -> bool:
+        """True iff we are running at CI scale."""
         return self._scale == Scale.CI
 
     @property
-    def release(self):
+    def release(self) -> bool:
+        """True iff we are running at release scale."""
         return self._scale == Scale.RELEASE
 
 

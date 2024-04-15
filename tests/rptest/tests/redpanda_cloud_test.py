@@ -7,25 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
-from typing import Sequence
-
 from ducktape.utils.util import wait_until
-from ducktape.tests.test import Test, TestContext
-from rptest.services.redpanda import CloudTierName, SISettings, make_redpanda_cloud_service, make_redpanda_service, CloudStorageType
-from rptest.clients.kafka_cli_tools import KafkaCliTools
+from ducktape.tests.test import TestContext
 from rptest.clients.default import DefaultClient
+from rptest.services.redpanda import make_redpanda_cloud_service
 from rptest.tests.redpanda_test import RedpandaTestBase
-from rptest.util import Scale
-from rptest.utils import mode_checks
-from rptest.clients.types import TopicSpec
-from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionLine, RedpandaVersionTriple
-from rptest.clients.rpk import RpkTool
 
 
 class RedpandaCloudTest(RedpandaTestBase):
     """
-    Base class for tests which run against the Redpanda Cloud.
+    Base class for tests which run only against the Redpanda Cloud.
     """
     def __init__(self, test_context: TestContext):
 
