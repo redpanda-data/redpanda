@@ -644,6 +644,7 @@ private:
         std::optional<shard_placement_target> target;
         if (auto it = _ntpt.ntp2meta.find(ntp); it != _ntpt.ntp2meta.end()) {
             target = shard_placement_target(
+              it->second.group,
               it->second.log_revision,
               random_generators::get_int(get_max_shard_id()));
         }

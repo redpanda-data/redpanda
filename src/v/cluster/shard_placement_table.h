@@ -46,6 +46,7 @@ public:
     /// Struct used to express the fact that a partition replica of some ntp is
     /// expected on this shard.
     struct shard_local_assignment {
+        raft::group_id group;
         model::revision_id log_revision;
         model::shard_revision_id shard_revision;
 
@@ -65,25 +66,25 @@ public:
 
     /// Current state of shard-local partition kvstore data on this shard.
     struct shard_local_state {
+        raft::group_id group;
         model::revision_id log_revision;
         hosted_status status;
         model::shard_revision_id shard_revision;
 
-        static shard_local_state initial(const shard_local_assignment& as) {
-            return shard_local_state{
-              .log_revision = as.log_revision,
-              .status = hosted_status::hosted,
-              .shard_revision = as.shard_revision,
-            };
-        }
+        shard_local_state(
+          raft::group_id g,
+          model::revision_id lr,
+          hosted_status s,
+          model::shard_revision_id sr)
+          : group(g)
+          , log_revision(lr)
+          , status(s)
+          , shard_revision(sr) {}
 
-        static shard_local_state receiving(const shard_local_assignment& as) {
-            return shard_local_state{
-              .log_revision = as.log_revision,
-              .status = hosted_status::receiving,
-              .shard_revision = as.shard_revision,
-            };
-        }
+        shard_local_state(
+          const shard_local_assignment& as, hosted_status status)
+          : shard_local_state(
+            as.group, as.log_revision, status, as.shard_revision) {}
 
         friend std::ostream&
         operator<<(std::ostream&, const shard_local_state&);
@@ -186,8 +187,7 @@ public:
 private:
     ss::future<> set_assigned_on_this_shard(
       const model::ntp&,
-      model::revision_id target_log_revision,
-      model::shard_revision_id,
+      const shard_local_assignment&,
       bool is_initial,
       shard_callback_t);
 

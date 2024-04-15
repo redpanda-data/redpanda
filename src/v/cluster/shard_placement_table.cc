@@ -24,7 +24,8 @@ std::ostream& operator<<(
   std::ostream& o, const shard_placement_table::shard_local_assignment& as) {
     fmt::print(
       o,
-      "{{log_revision: {}, shard_revision: {}}}",
+      "{{group: {}, log_revision: {}, shard_revision: {}}}",
+      as.group,
       as.log_revision,
       as.shard_revision);
     return o;
@@ -47,7 +48,8 @@ std::ostream& operator<<(
   std::ostream& o, const shard_placement_table::shard_local_state& ls) {
     fmt::print(
       o,
-      "{{log_revision: {}, status: {}, shard_revision: {}}}",
+      "{{group: {}, log_revision: {}, status: {}, shard_revision: {}}}",
+      ls.group,
       ls.log_revision,
       ls.status,
       ls.shard_revision);
@@ -152,13 +154,15 @@ ss::future<> shard_placement_table::initialize(
 
               auto placement = placement_state();
               auto assigned = shard_local_assignment{
+                .group = target->group,
                 .log_revision = target->log_revision,
                 .shard_revision = _cur_shard_revision};
 
               if (orig_shard && target->shard != orig_shard) {
                   // cross-shard transfer, orig_shard gets the hosted marker
                   if (ss::this_shard_id() == orig_shard) {
-                      placement.current = shard_local_state::initial(assigned);
+                      placement.current = shard_local_state(
+                        assigned, hosted_status::hosted);
                       _states.emplace(ntp, placement);
                   } else if (ss::this_shard_id() == target->shard) {
                       placement.assigned = assigned;
@@ -166,7 +170,8 @@ ss::future<> shard_placement_table::initialize(
                   }
               } else if (ss::this_shard_id() == target->shard) {
                   // in other cases target shard gets the hosted marker
-                  placement.current = shard_local_state::initial(assigned);
+                  placement.current = shard_local_state(
+                    assigned, hosted_status::hosted);
                   placement.assigned = assigned;
                   _states.emplace(ntp, placement);
               }
@@ -235,16 +240,17 @@ ss::future<> shard_placement_table::set_target(
     if (target) {
         const bool is_initial
           = (!prev_target || prev_target->log_revision != target->log_revision);
+        shard_local_assignment as{
+          .group = target->group,
+          .log_revision = target->log_revision,
+          .shard_revision = shard_rev,
+        };
         co_await container().invoke_on(
           target->shard,
-          [&ntp, target, shard_rev, is_initial, shard_callback](
+          [&ntp, &as, is_initial, shard_callback](
             shard_placement_table& other) {
               return other.set_assigned_on_this_shard(
-                ntp,
-                target->log_revision,
-                shard_rev,
-                is_initial,
-                shard_callback);
+                ntp, as, is_initial, shard_callback);
           });
     }
 
@@ -259,26 +265,20 @@ ss::future<> shard_placement_table::set_target(
 
 ss::future<> shard_placement_table::set_assigned_on_this_shard(
   const model::ntp& ntp,
-  model::revision_id target_log_rev,
-  model::shard_revision_id shard_rev,
+  const shard_local_assignment& as,
   bool is_initial,
   shard_callback_t shard_callback) {
     vlog(
       clusterlog.trace,
-      "[{}] setting assigned on this shard, "
-      "log_revision: {}, shard_revision: {}, is_initial: {}",
+      "[{}] setting assigned on this shard to: {}, is_initial: {}",
       ntp,
-      target_log_rev,
-      shard_rev,
+      as,
       is_initial);
 
     auto& state = _states.try_emplace(ntp).first->second;
-    state.assigned = shard_local_assignment{
-      .log_revision = target_log_rev,
-      .shard_revision = shard_rev,
-    };
+    state.assigned = as;
     if (is_initial) {
-        state._is_initial_for = target_log_rev;
+        state._is_initial_for = as.log_revision;
     }
 
     // Notify the caller that something has changed on this shard.
@@ -334,7 +334,8 @@ ss::future<std::error_code> shard_placement_table::prepare_create(
 
     if (!state.current) {
         if (state._is_initial_for == expected_log_rev) {
-            state.current = shard_local_state::initial(*state.assigned);
+            state.current = shard_local_state(
+              *state.assigned, hosted_status::hosted);
             state._is_initial_for = std::nullopt;
         } else {
             // x-shard transfer hasn't started yet, wait for it.
@@ -443,8 +444,8 @@ ss::future<result<ss::shard_id>> shard_placement_table::prepare_transfer(
 
               // at this point we commit to the transfer on the
               // destination shard
-              dest_state.current = shard_local_state::receiving(
-                dest_state.assigned.value());
+              dest_state.current = shard_local_state(
+                dest_state.assigned.value(), hosted_status::receiving);
               if (dest_state._is_initial_for <= expected_log_rev) {
                   dest_state._is_initial_for = std::nullopt;
               }
