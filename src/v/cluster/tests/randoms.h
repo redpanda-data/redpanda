@@ -100,7 +100,11 @@ inline cluster_health_report random_cluster_health_report() {
       tests::random_optional(
         [] { return tests::random_named_int<model::node_id>(); }),
       tests::random_vector(random_node_state),
-      tests::random_vector(random_node_health_report)};
+      tests::random_vector([] {
+          return ss::make_foreign(
+            ss::make_lw_shared<const cluster::node_health_report>(
+              random_node_health_report()));
+      })};
 }
 
 inline partitions_filter random_partitions_filter() {

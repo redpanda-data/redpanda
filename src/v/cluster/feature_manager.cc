@@ -87,8 +87,8 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
     // Register for node health change notifications
     _health_notify_handle = _hm_backend.local().register_node_callback(
       [this](
-        node_health_report const& report,
-        std::optional<std::reference_wrapper<const node_health_report>>) {
+        const node_health_report& report,
+        std::optional<ss::lw_shared_ptr<const node_health_report>>) {
           // If we did not know the node's version or if the report is
           // higher, submit an update.
           auto i = _node_versions.find(report.id);
