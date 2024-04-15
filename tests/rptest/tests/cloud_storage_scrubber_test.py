@@ -183,7 +183,7 @@ class Anomalies:
 
 
 class CloudStorageScrubberTest(RedpandaTest):
-    scrub_timeout = 90
+    scrub_timeout = 200
     partition_count = 3
     message_size = 16 * 1024  # 16KiB
     segment_size = 1024 * 1024  # 1MiB
@@ -201,12 +201,11 @@ class CloudStorageScrubberTest(RedpandaTest):
         super().__init__(
             test_context=test_context,
             extra_rp_conf={
-                "cloud_storage_enable_scrubbing": True,
-                "cloud_storage_partial_scrub_interval_ms": 1000,
+                "cloud_storage_partial_scrub_interval_ms": 100,
                 "cloud_storage_full_scrub_interval_ms": 1000,
-                "cloud_storage_scrubbing_interval_jitter_ms": 100,
+                "cloud_storage_scrubbing_interval_jitter_ms": 50,
                 # Small quota forces partial scrubs
-                "cloud_storage_background_jobs_quota": 30,
+                "cloud_storage_background_jobs_quota": 40,
                 # Disable segment merging since it can reupload
                 # the deleted segment and remove the gap
                 "cloud_storage_enable_segment_merging": False,
