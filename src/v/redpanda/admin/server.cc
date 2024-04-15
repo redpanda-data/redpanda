@@ -48,6 +48,7 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "container/fragmented_vector.h"
+#include "container/lw_shared_container.h"
 #include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "finjector/stress_fiber.h"
@@ -147,7 +148,6 @@ using namespace std::chrono_literals;
 
 using admin::apply_validator;
 using admin::get_boolean_query_param;
-using admin::lw_shared_container;
 
 ss::logger adminlog{"admin_api_server"};
 

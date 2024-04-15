@@ -18,6 +18,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "container/fragmented_vector.h"
+#include "container/lw_shared_container.h"
 #include "redpanda/admin/api-doc/debug.json.hh"
 #include "redpanda/admin/api-doc/partition.json.hh"
 #include "redpanda/admin/server.h"
@@ -30,7 +31,6 @@
 #include <boost/algorithm/string/trim.hpp>
 
 using admin::apply_validator;
-using admin::lw_shared_container;
 
 ss::future<ss::json::json_return_type>
 admin_server::get_transactions_handler(std::unique_ptr<ss::http::request> req) {
@@ -898,8 +898,7 @@ admin_server::get_topic_partitions_handler(
       });
 
     co_return ss::json::json_return_type(ss::json::stream_range_as_array(
-      admin::lw_shared_container(std::move(partitions)),
-      [](auto& p) { return p; }));
+      lw_shared_container(std::move(partitions)), [](auto& p) { return p; }));
 }
 
 ss::future<ss::json::json_return_type>
