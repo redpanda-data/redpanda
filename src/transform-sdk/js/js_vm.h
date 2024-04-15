@@ -23,7 +23,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -388,6 +387,9 @@ public:
 
     /** Add a native module that is accessible to javascript. */
     std::expected<std::monostate, exception> add_module(module_builder);
+
+    /** Add builtin functions like console.log */
+    std::expected<std::monostate, exception> create_builtins();
 
     [[nodiscard]] JSContext* context() const { return _ctx.get(); }
 

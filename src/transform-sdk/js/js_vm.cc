@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <expected>
+#include <format>
 #include <print>
 #include <unordered_map>
 #include <utility>
@@ -341,6 +342,65 @@ runtime::runtime()
     JS_SetRuntimeOpaque(_rt.get(), new state());
     // NOLINTNEXTLINE(*-owning-memory)
     JS_SetContextOpaque(_ctx.get(), new context_state());
+}
+
+namespace {
+class console {
+public:
+    struct config {
+        FILE* info;
+        FILE* warn;
+    };
+    explicit console(config cfg)
+      : _info_stream(cfg.info)
+      , _err_stream(cfg.warn) {}
+
+    std::expected<qjs::value, qjs::exception>
+    info(JSContext* /*ctx*/, std::span<qjs::value> params) {
+        return log_impl(_info_stream, params);
+    }
+
+    std::expected<qjs::value, qjs::exception>
+    warn(JSContext* /*ctx*/, std::span<qjs::value> params) {
+        return log_impl(_err_stream, params);
+    }
+
+private:
+    static std::expected<qjs::value, qjs::exception>
+    log_impl(FILE* stream, std::span<qjs::value> params) {
+        if (params.empty()) {
+            std::println(stream, "");
+            return {};
+        }
+        std::string buffer;
+        buffer += params.front().debug_string();
+        for (const auto& arg : params.subspan(1)) {
+            buffer += ' ';
+            buffer += arg.debug_string();
+        }
+        std::println(stream, "{}", buffer);
+        return {};
+    }
+
+    FILE* _info_stream;
+    FILE* _err_stream;
+};
+} // namespace
+
+std::expected<std::monostate, exception> runtime::create_builtins() {
+    auto console_builder = class_builder<console>(_ctx.get(), "Console");
+    console_builder.method<&console::info>("log");
+    console_builder.method<&console::info>("info");
+    console_builder.method<&console::info>("debug");
+    console_builder.method<&console::info>("trace");
+    console_builder.method<&console::warn>("warn");
+    console_builder.method<&console::warn>("error");
+    auto factory = console_builder.build();
+    auto global_this = value::global(_ctx.get());
+    return global_this.set_property(
+      "console",
+      factory.create(std::make_unique<console>(
+        console::config{.info = stdout, .warn = stderr})));
 }
 
 runtime::~runtime() {

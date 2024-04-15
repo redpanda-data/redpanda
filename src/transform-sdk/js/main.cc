@@ -361,10 +361,18 @@ compile_and_load(qjs::runtime* runtime) {
 
 int run() {
     qjs::runtime runtime;
+    auto result = runtime.create_builtins();
+    if (!result) {
+        std::println(
+          stderr,
+          "unable to install globals: {}",
+          result.error().val.debug_string());
+        return 1;
+    }
     auto writer_factory = make_record_writer_class(&runtime);
     auto data_factory = make_record_data_class(&runtime);
     qjs::value record_callback = qjs::value::undefined(runtime.context());
-    auto result = initial_native_modules(&runtime, &record_callback);
+    result = initial_native_modules(&runtime, &record_callback);
     if (!result) [[unlikely]] {
         std::println(
           stderr,

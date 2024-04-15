@@ -258,6 +258,7 @@ jobs:
           cmake --preset release-static
           cmake --build --preset release-static -- redpanda_js_transform
           cat identity.js | ./generate_js_provider.py > identity_source.wat
+          cat identity_logging.js | ./generate_js_provider.py > logging_source.wat
           curl -SLO https://github.com/WebAssembly/binaryen/releases/download/version_117/binaryen-version_117-x86_64-linux.tar.gz
           tar xf binaryen-version_117-x86_64-linux.tar.gz
           rm binaryen-version_117-x86_64-linux.tar.gz
@@ -266,6 +267,11 @@ jobs:
             ./identity_source.wat redpanda_js_provider \
             -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
             -o identity.wasm
+          ./binaryen-version_117/bin/wasm-merge \
+            ./build/release-static/redpanda_js_transform js_vm \
+            ./logging_source.wat redpanda_js_provider \
+            -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
+            -o logging.wasm
       - name: Download integration test suite
         uses: actions/download-artifact@v4
         with:
@@ -275,7 +281,7 @@ jobs:
         working-directory: src/transform-sdk/js
         env:
           IDENTITY: identity.wasm
-          LOGGING: "@UNIMPLEMENTED@"
+          LOGGING: logging.wasm
           TEE: "@UNIMPLEMENTED@"
           SCHEMA_REGISTRY: "@UNIMPLEMENTED@"
         run: |
