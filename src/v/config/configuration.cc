@@ -2128,6 +2128,17 @@ configuration::configuration()
       "cloud_storage_azure_adls_endpoint.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       std::nullopt)
+  , cloud_storage_azure_hierarchical_namespace_enabled(
+      *this,
+      "cloud_storage_azure_hierarchical_namespace_enabled",
+      "Whether or not Azure Hierarchical Namespaces are enabled on the "
+      "cloud_storage_azure_storage_account. If this property is not set, "
+      "cloud_storage_azure_shared_key must be set, and each node will try to "
+      "determine at startup if HNS is enabled. Setting this property to True "
+      "will disable the check and assume HNS is active. Setting to False will "
+      "disable the check and assume that HNS is not active.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      std::nullopt)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
