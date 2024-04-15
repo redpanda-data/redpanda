@@ -15,6 +15,7 @@
 #include "cluster/node/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "serde/async.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -216,6 +217,8 @@ struct node_health_report
     operator==(const node_health_report& a, const node_health_report& b);
 };
 
+using node_health_report_ptr
+  = ss::foreign_ptr<ss::lw_shared_ptr<const node_health_report>>;
 struct cluster_health_report
   : serde::envelope<
       cluster_health_report,
@@ -228,7 +231,7 @@ struct cluster_health_report
 
     // node reports are node specific information collected directly on a
     // node
-    std::vector<node_health_report> node_reports;
+    std::vector<node_health_report_ptr> node_reports;
 
     // cluster-wide cached information about total cloud storage usage
     std::optional<size_t> bytes_in_cloud_storage;
@@ -239,9 +242,81 @@ struct cluster_health_report
     operator==(const cluster_health_report&, const cluster_health_report&)
       = default;
 
-    auto serde_fields() {
-        return std::tie(
-          raft0_leader, node_states, node_reports, bytes_in_cloud_storage);
+    cluster_health_report copy() const;
+
+    ss::future<> serde_async_write(iobuf& out) {
+        using serde::write;
+        using serde::write_async;
+        // the current version decodes into the decoded version and is used in
+        // request handling--that is, it is used at layer above serialization so
+        // without further changes we'll need to preserve that behavior.
+        write(out, raft0_leader);
+        write(out, node_states);
+        write(out, static_cast<serde::serde_size_t>(node_reports.size()));
+        for (auto& nr : node_reports) {
+            co_await write_async(out, *nr);
+        }
+        write(out, bytes_in_cloud_storage);
+    }
+
+    ss::future<> serde_async_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_async_nested;
+        using serde::read_nested;
+        raft0_leader = read_nested<std::optional<model::node_id>>(
+          in, h._bytes_left_limit);
+        node_states = read_nested<std::vector<node_state>>(
+          in, h._bytes_left_limit);
+        const auto sz = read_nested<serde::serde_size_t>(
+          in, h._bytes_left_limit);
+        node_reports.reserve(sz);
+        for (auto i = 0U; i < sz; ++i) {
+            auto r = co_await read_async_nested<node_health_report>(
+              in, h._bytes_left_limit);
+            node_reports.emplace_back(
+              ss::make_lw_shared<node_health_report>(std::move(r)));
+        }
+        bytes_in_cloud_storage = read_nested<std::optional<size_t>>(
+          in, h._bytes_left_limit);
+
+        if (in.bytes_left() > h._bytes_left_limit) {
+            in.skip(in.bytes_left() - h._bytes_left_limit);
+        }
+    }
+    void serde_write(iobuf& out) {
+        using serde::write;
+
+        // the current version decodes into the decoded version and is used in
+        // request handling--that is, it is used at layer above serialization so
+        // without further changes we'll need to preserve that behavior.
+        write(out, raft0_leader);
+        write(out, node_states);
+        write(out, static_cast<serde::serde_size_t>(node_reports.size()));
+        for (auto& nr : node_reports) {
+            write(out, *nr);
+        }
+        write(out, bytes_in_cloud_storage);
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        raft0_leader = read_nested<std::optional<model::node_id>>(
+          in, h._bytes_left_limit);
+        node_states = read_nested<std::vector<node_state>>(
+          in, h._bytes_left_limit);
+        const auto sz = read_nested<serde::serde_size_t>(
+          in, h._bytes_left_limit);
+        node_reports.reserve(sz);
+        for (auto i = 0U; i < sz; ++i) {
+            auto r = read_nested<node_health_report>(in, h._bytes_left_limit);
+            node_reports.emplace_back(
+              ss::make_lw_shared<node_health_report>(std::move(r)));
+        }
+        bytes_in_cloud_storage = read_nested<std::optional<size_t>>(
+          in, h._bytes_left_limit);
+
+        if (in.bytes_left() > h._bytes_left_limit) {
+            in.skip(in.bytes_left() - h._bytes_left_limit);
+        }
     }
 };
 
@@ -459,6 +534,8 @@ struct get_cluster_health_reply
 
     friend std::ostream&
     operator<<(std::ostream&, const get_cluster_health_reply&);
+
+    get_cluster_health_reply copy() const;
 
     auto serde_fields() { return std::tie(error, report); }
 };

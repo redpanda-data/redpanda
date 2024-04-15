@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "base/vlog.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/tests/partition_balancer_planner_fixture.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -465,12 +466,17 @@ FIXTURE_TEST(test_move_part_of_replicas, partition_balancer_planner_fixture) {
     auto hr = create_health_report(full_nodes);
 
     populate_node_status_table().get();
-
+    auto nr_1 = *hr.node_reports[1];
+    auto nr_2 = *hr.node_reports[2];
     // Set order of full nodes
-    hr.node_reports[1].local_state.log_data_size.value().data_current_size
-      += 1_MiB;
-    hr.node_reports[2].local_state.log_data_size.value().data_current_size
-      += 2_MiB;
+
+    nr_1.local_state.log_data_size.value().data_current_size += 1_MiB;
+    nr_2.local_state.log_data_size.value().data_current_size += 2_MiB;
+
+    hr.node_reports[1] = ss::make_foreign(
+      ss::make_lw_shared<const cluster::node_health_report>(std::move(nr_1)));
+    hr.node_reports[2] = ss::make_foreign(
+      ss::make_lw_shared<const cluster::node_health_report>(std::move(nr_2)));
 
     auto planner = make_planner();
     auto plan_data = planner.plan_actions(hr, as).get();
@@ -512,13 +518,13 @@ FIXTURE_TEST(
     std::set<size_t> full_nodes = {0, 1};
     auto hr = create_health_report(full_nodes);
     populate_node_status_table().get();
+    auto nr_0 = *hr.node_reports[0];
 
     // Set order of full nodes
-    hr.node_reports[0].local_state.log_data_size.value().data_current_size
-      += 1_MiB;
+    nr_0.local_state.log_data_size.value().data_current_size += 1_MiB;
 
     // Set partition sizes
-    for (auto& topic : hr.node_reports[0].topics) {
+    for (auto& topic : nr_0.topics) {
         if (topic.tp_ns.tp == "topic-1") {
             for (auto& partition : topic.partitions) {
                 if (partition.id == 1) {
@@ -531,6 +537,8 @@ FIXTURE_TEST(
         }
     }
 
+    hr.node_reports[0] = ss::make_foreign(
+      ss::make_lw_shared<const cluster::node_health_report>(std::move(nr_0)));
     auto planner = make_planner();
     auto plan_data = planner.plan_actions(hr, as).get();
 
@@ -697,9 +705,13 @@ FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
     auto hr = create_health_report();
     // Make node_4 disk free size less to make partition allocator disk usage
     // constraint prefer node_3 rather than node_4
-    hr.node_reports[4].local_state.log_data_size.value().data_current_size
-      = hr.node_reports[3].local_state.log_data_size.value().data_current_size
+    auto nr_4 = *hr.node_reports[4];
+    nr_4.local_state.log_data_size.value().data_current_size
+      = hr.node_reports[3]->local_state.log_data_size.value().data_current_size
         - 10_MiB;
+
+    hr.node_reports[4] = ss::make_foreign(
+      ss::make_lw_shared<const cluster::node_health_report>(std::move(nr_4)));
 
     std::set<size_t> unavailable_nodes = {0};
     populate_node_status_table(unavailable_nodes).get();

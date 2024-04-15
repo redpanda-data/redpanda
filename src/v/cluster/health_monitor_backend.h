@@ -31,8 +31,8 @@
 namespace cluster {
 
 using health_node_cb_t = ss::noncopyable_function<void(
-  node_health_report const&,
-  std::optional<std::reference_wrapper<const node_health_report>>)>;
+  const node_health_report&,
+  std::optional<ss::lw_shared_ptr<const node_health_report>>)>;
 
 /**
  * Health monitor backend is responsible for collecting cluster health status
@@ -114,8 +114,8 @@ private:
     };
 
     using status_cache_t = absl::node_hash_map<model::node_id, reply_status>;
-    using report_cache_t
-      = absl::node_hash_map<model::node_id, node_health_report>;
+    using nhr_ptr = ss::lw_shared_ptr<const node_health_report>;
+    using report_cache_t = absl::node_hash_map<model::node_id, nhr_ptr>;
 
     void tick();
     ss::future<std::error_code> collect_cluster_health();
@@ -127,7 +127,7 @@ private:
 
     cluster_health_report build_cluster_report(const cluster_report_filter&);
 
-    std::optional<node_health_report>
+    std::optional<node_health_report_ptr>
     build_node_report(model::node_id, const node_report_filter&);
 
     ss::future<chunked_vector<topic_status>> collect_topic_status();

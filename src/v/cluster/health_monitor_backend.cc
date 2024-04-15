@@ -33,6 +33,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
@@ -81,7 +82,7 @@ health_monitor_backend::register_node_callback(health_node_cb_t cb) {
     auto id = _next_callback_id++;
     // call notification for all the groups
     for (const auto& report : _reports) {
-        cb(report.second, {});
+        cb(*report.second, {});
     }
     _node_callbacks.emplace_back(id, std::move(cb));
     return id;
@@ -117,7 +118,7 @@ ss::future<> health_monitor_backend::stop() {
 
 cluster_health_report health_monitor_backend::build_cluster_report(
   const cluster_report_filter& filter) {
-    std::vector<node_health_report> reports;
+    std::vector<node_health_report_ptr> reports;
     std::vector<node_state> statuses;
 
     auto nodes = filter.nodes.empty() ? _members.local().node_ids()
@@ -178,28 +179,32 @@ chunked_vector<topic_status> filter_topic_status(
     return filtered;
 }
 
-std::optional<node_health_report> health_monitor_backend::build_node_report(
+std::optional<node_health_report_ptr> health_monitor_backend::build_node_report(
   model::node_id id, const node_report_filter& f) {
     auto it = _reports.find(id);
     if (it == _reports.end()) {
         return std::nullopt;
     }
+    if (f.include_partitions && f.ntp_filters.namespaces.empty()) {
+        return ss::make_foreign(it->second);
+    }
 
     node_health_report report;
     report.id = id;
 
-    report.local_state = it->second.local_state;
+    report.local_state = it->second->local_state;
     report.local_state.logical_version
       = features::feature_table::get_latest_logical_version();
 
     if (f.include_partitions) {
-        report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
+        report.topics = filter_topic_status(it->second->topics, f.ntp_filters);
     }
 
-    report.drain_status = it->second.drain_status;
+    report.drain_status = it->second->drain_status;
     report.include_drain_status = true;
 
-    return report;
+    return ss::make_foreign(
+      ss::make_lw_shared<const node_health_report>(std::move(report)));
 }
 
 void health_monitor_backend::abortable_refresh_request::abort() {
@@ -454,8 +459,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
               id,
               r.value());
 
-            std::optional<std::reference_wrapper<const node_health_report>>
-              old_report;
+            std::optional<nhr_ptr> old_report;
             if (auto old_i = old_reports.find(id); old_i != old_reports.end()) {
                 vlog(
                   clusterlog.debug,
@@ -473,7 +477,8 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
             cluster_disk_health = storage::max_severity(
               r.value().local_state.get_disk_alert(), cluster_disk_health);
 
-            _reports.emplace(id, std::move(r.value()));
+            _reports.emplace(
+              id, ss::make_lw_shared<node_health_report>(std::move(r.value())));
         }
     }
     _reports_disk_health = cluster_disk_health;
@@ -539,7 +544,7 @@ health_monitor_backend::get_current_node_health() {
 
     auto it = _reports.find(_self);
     if (it != _reports.end()) {
-        co_return it->second;
+        co_return *it->second;
     }
 
     auto u = _report_collection_mutex.try_get_units();
@@ -550,7 +555,7 @@ health_monitor_backend::get_current_node_health() {
         u.emplace(co_await _report_collection_mutex.get_units());
         auto it = _reports.find(_self);
         if (it != _reports.end()) {
-            co_return it->second;
+            co_return *it->second;
         }
     }
 
@@ -646,7 +651,7 @@ health_monitor_backend::get_node_drain_status(
         co_return errc::node_does_not_exists;
     }
 
-    co_return it->second.drain_status;
+    co_return it->second->drain_status;
 }
 
 health_monitor_backend::aggregated_report
@@ -683,7 +688,7 @@ health_monitor_backend::aggregate_reports(report_cache_t& reports) {
     collector leaderless, urp;
 
     for (const auto& [_, report] : reports) {
-        for (const auto& [tp_ns, partitions] : report.topics) {
+        for (const auto& [tp_ns, partitions] : report->topics) {
             auto& leaderless_this_topic = leaderless.t_to_p[tp_ns];
             auto& urp_this_topic = urp.t_to_p[tp_ns];
 
@@ -726,7 +731,7 @@ health_monitor_backend::get_cluster_health_overview(
         auto report_it = _reports.find(id);
         if (
           report_it != _reports.end()
-          && report_it->second.local_state.recovery_mode_enabled) {
+          && report_it->second->local_state.recovery_mode_enabled) {
             ret.nodes_in_recovery_mode.push_back(id);
         }
     }

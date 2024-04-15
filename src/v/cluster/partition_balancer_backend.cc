@@ -27,6 +27,7 @@
 #include "utils/stable_iterator_adaptor.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <chrono>
 #include <optional>
@@ -238,7 +239,7 @@ void partition_balancer_backend::on_topic_table_update() {
 
 void partition_balancer_backend::on_health_monitor_update(
   node_health_report const& report,
-  std::optional<std::reference_wrapper<const node_health_report>> old_report) {
+  std::optional<ss::lw_shared_ptr<const node_health_report>> old_report) {
     if (!old_report) {
         vlog(
           clusterlog.debug,

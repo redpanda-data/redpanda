@@ -928,18 +928,18 @@ get_brokers(cluster::controller* const controller) {
 
           // Enrich the broker information with data from the health report.
           for (auto& node_report : h_report.value().node_reports) {
-              auto it = broker_map.find(node_report.id);
+              auto it = broker_map.find(node_report->id);
               if (it == broker_map.end()) {
                   continue;
               }
 
-              it->second.version = node_report.local_state.redpanda_version;
+              it->second.version = node_report->local_state.redpanda_version;
               it->second.recovery_mode_enabled
-                = node_report.local_state.recovery_mode_enabled;
-              auto nm = members_table.get_node_metadata_ref(node_report.id);
-              if (nm && node_report.drain_status) {
+                = node_report->local_state.recovery_mode_enabled;
+              auto nm = members_table.get_node_metadata_ref(node_report->id);
+              if (nm && node_report->drain_status) {
                   it->second.maintenance_status = fill_maintenance_status(
-                    nm.value().get().state, node_report.drain_status.value());
+                    nm.value().get().state, node_report->drain_status.value());
               }
 
               auto add_disk =
@@ -950,9 +950,9 @@ get_brokers(cluster::controller* const controller) {
                     dsi.total = ds.total;
                     ds_list.push(dsi);
                 };
-              add_disk(node_report.local_state.data_disk);
-              if (!node_report.local_state.shared_disk()) {
-                  add_disk(node_report.local_state.get_cache_disk());
+              add_disk(node_report->local_state.data_disk);
+              if (!node_report->local_state.shared_disk()) {
+                  add_disk(node_report->local_state.get_cache_disk());
               }
           }
 
