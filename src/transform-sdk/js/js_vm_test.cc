@@ -180,4 +180,36 @@ TEST(JavascriptVMTest, Object) {
     EXPECT_EQ(last_result->as_number(), num);
 }
 
+TEST(JavascriptVMTest, Array) {
+    const qjs::runtime runtime;
+    auto arr = qjs::value::array(runtime.context());
+    auto to_vector = [&arr]() {
+        std::vector<double> result;
+        for (size_t i = 0; i < arr.array_length(); ++i) {
+            result.push_back(arr.get_element(i).as_number());
+        }
+        return result;
+    };
+    std::vector<double> shadow;
+    EXPECT_EQ(to_vector(), shadow);
+    EXPECT_EQ(arr.array_length(), 0);
+    EXPECT_TRUE(arr.push_back(qjs::value::number(runtime.context(), 4)));
+    shadow.push_back(4);
+    EXPECT_EQ(to_vector(), shadow);
+    EXPECT_EQ(arr.array_length(), 1);
+    EXPECT_TRUE(arr.push_back(qjs::value::number(runtime.context(), 3)));
+    shadow.push_back(3);
+    EXPECT_EQ(to_vector(), shadow);
+    EXPECT_EQ(arr.array_length(), 2);
+    EXPECT_TRUE(arr.push_back(qjs::value::number(runtime.context(), 2)));
+    shadow.push_back(2);
+    EXPECT_EQ(to_vector(), shadow);
+    EXPECT_EQ(arr.array_length(), 3);
+    EXPECT_TRUE(arr.push_back(qjs::value::number(runtime.context(), 1)));
+    shadow.push_back(1);
+    EXPECT_EQ(to_vector(), shadow);
+    EXPECT_EQ(arr.array_length(), 4);
+    EXPECT_TRUE(arr.get_element(10).is_undefined());
+}
+
 // NOLINTEND(*-unchecked-optional-*,*-function-cognitive-complexity)

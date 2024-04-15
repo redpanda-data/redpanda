@@ -199,6 +199,7 @@ bool value::is_uint8_array() const { return JS_IsUint8Array(_underlying) != 0; }
 bool value::is_object() const { return JS_IsObject(_underlying) != 0; }
 bool value::is_null() const { return JS_IsNull(_underlying) != 0; }
 bool value::is_undefined() const { return JS_IsUndefined(_underlying) != 0; }
+bool value::is_array() const { return JS_IsArray(_ctx, _underlying) != 0; }
 JSValue value::raw() const { return _underlying; }
 JSValue value::raw_dup() const { return JS_DupValue(_ctx, _underlying); }
 
@@ -248,6 +249,30 @@ value::set_property(std::string_view key, const value& val) {
         return std::unexpected(exception::current(_ctx));
     }
     return {};
+}
+
+std::expected<std::monostate, exception> value::push_back(const value& val) {
+    const size_t len = array_length();
+    constexpr auto flags = JS_PROP_C_W_E; // NOLINT
+    const int result = JS_DefinePropertyValueUint32(
+      _ctx, _underlying, len, val.raw_dup(), flags);
+    if (result < 0) {
+        return std::unexpected(exception::current(_ctx));
+    }
+    return {};
+}
+
+value value::get_element(size_t idx) const {
+    auto raw = JS_GetPropertyUint32(_ctx, _underlying, idx);
+    return {_ctx, raw};
+}
+
+size_t value::array_length() const {
+    auto prop = get_property("length");
+    if (JS_VALUE_GET_TAG(prop.raw()) != JS_TAG_INT) {
+        return 0;
+    }
+    return JS_VALUE_GET_INT(prop.raw());
 }
 
 std::string value::debug_string() const {

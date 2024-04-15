@@ -206,6 +206,8 @@ public:
     [[nodiscard]] bool is_null() const;
     /** Check if this is undefined */
     [[nodiscard]] bool is_undefined() const;
+    /** Check if this is an array */
+    [[nodiscard]] bool is_array() const;
 
     /** Get the number from the object. */
     [[nodiscard]] double as_number() const;
@@ -246,6 +248,26 @@ public:
      */
     [[nodiscard]] std::expected<std::monostate, exception>
     set_property(std::string_view, const value&);
+
+    /**
+     * Append a property to a JavaScript array.
+     *
+     * Example: `arr.push(5)`
+     */
+    [[nodiscard]] std::expected<std::monostate, exception>
+    push_back(const value&);
+
+    /**
+     * Append a property to a JavaScript array.
+     *
+     * Example: `arr[5]`
+     */
+    [[nodiscard]] value get_element(size_t) const;
+
+    /**
+     * Get the length of a JavaScript array.
+     */
+    [[nodiscard]] size_t array_length() const;
 
     /**
      * Call toString() on the Javascript value and return the resulting value as
