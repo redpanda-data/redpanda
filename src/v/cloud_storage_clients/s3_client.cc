@@ -415,7 +415,11 @@ ss::future<ResultT> parse_head_error_response(
           code, msg, ss::sstring(rid.data(), rid.size()), key().native());
         return ss::make_exception_future<ResultT>(err);
     } catch (...) {
-        vlog(s3_log.error, "!!error parse error {}", std::current_exception());
+        vlog(
+          s3_log.error,
+          "!!error parse error {}, header: {}",
+          std::current_exception(),
+          hdr);
         throw;
     }
 }
