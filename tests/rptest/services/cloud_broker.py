@@ -33,6 +33,8 @@ class CloudBroker():
         # Backward compatibility
         # Various classes will use this var to hash and compare nodes
         self.account = self._meta
+        # Mimic Ducktape cluster node hostname field
+        self.hostname = f"{self._spec['nodeName']}/{self.name}"
 
     def _query_broker(self, path, port=None):
         """
