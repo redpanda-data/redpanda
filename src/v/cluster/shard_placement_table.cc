@@ -96,6 +96,64 @@ operator<<(std::ostream& o, const shard_placement_table::placement_state& ps) {
     return o;
 }
 
+namespace {
+
+static constexpr auto kvstore_key_space
+  = storage::kvstore::key_space::shard_placement;
+
+// enum type is irrelevant, serde will serialize to 32 bit anyway
+enum class kvstore_key_type {
+    assignment = 1,
+    current_state = 2,
+};
+
+struct assignment_marker
+  : serde::
+      envelope<assignment_marker, serde::version<0>, serde::compat_version<0>> {
+    model::revision_id log_revision;
+    model::shard_revision_id shard_revision;
+
+    auto serde_fields() { return std::tie(log_revision, shard_revision); }
+};
+
+bytes assignment_kvstore_key(const raft::group_id group) {
+    iobuf buf;
+    serde::write(buf, kvstore_key_type::assignment);
+    serde::write(buf, group);
+    return iobuf_to_bytes(buf);
+}
+
+struct current_state_marker
+  : serde::envelope<
+      current_state_marker,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    // NOTE: we need ntp in this marker because we want to be able to find and
+    // clean garbage kvstore state for old groups that have already been deleted
+    // from topic_table. Some of the partition kvstore state items use keys
+    // based on group id and some - based on ntp, so we need both.
+    model::ntp ntp;
+    model::revision_id log_revision;
+    model::shard_revision_id shard_revision;
+    bool is_complete = false;
+
+    auto serde_fields() {
+        return std::tie(ntp, log_revision, shard_revision, is_complete);
+    }
+};
+
+bytes current_state_kvstore_key(const raft::group_id group) {
+    iobuf buf;
+    serde::write(buf, kvstore_key_type::current_state);
+    serde::write(buf, group);
+    return iobuf_to_bytes(buf);
+}
+
+} // namespace
+
+shard_placement_table::shard_placement_table(storage::kvstore& kvstore)
+  : _kvstore(kvstore) {}
+
 ss::future<> shard_placement_table::initialize(
   const topic_table& topics, model::node_id self) {
     // We expect topic_table to remain unchanged throughout the loop because the
@@ -221,8 +279,6 @@ ss::future<> shard_placement_table::set_target(
         co_return;
     }
 
-    // 1. update node-wide map
-
     const model::shard_revision_id shard_rev = _cur_shard_revision;
     _cur_shard_revision += 1;
 
@@ -233,9 +289,69 @@ ss::future<> shard_placement_table::set_target(
       prev_target,
       target,
       shard_rev);
+
+    // 1. Persist the new target in kvstore
+
+    if (target) {
+        co_await container().invoke_on(
+          target->shard,
+          [&target, shard_rev, &ntp](shard_placement_table& other) {
+              auto marker_buf = serde::to_iobuf(assignment_marker{
+                .log_revision = target->log_revision,
+                .shard_revision = shard_rev,
+              });
+              vlog(
+                clusterlog.trace,
+                "[{}] put assigned marker, lr: {} sr: {}",
+                ntp,
+                target->log_revision,
+                shard_rev);
+              return other._kvstore.put(
+                kvstore_key_space,
+                assignment_kvstore_key(target->group),
+                std::move(marker_buf));
+          });
+    } else {
+        co_await container().invoke_on(
+          prev_target.value().shard,
+          [group = prev_target->group, &ntp](shard_placement_table& other) {
+              vlog(clusterlog.trace, "[{}] remove assigned marker", ntp);
+              return other._kvstore.remove(
+                kvstore_key_space, assignment_kvstore_key(group));
+          });
+    }
+
+    // 2. At this point we've successfully committed the new target to
+    // persistent storage. Update in-memory state.
+
     entry.target = target;
 
-    // 2. update shard-local state
+    if (prev_target && (!target || target->shard != prev_target->shard)) {
+        co_await container().invoke_on(
+          prev_target->shard,
+          [&ntp, shard_callback](shard_placement_table& other) {
+              auto it = other._states.find(ntp);
+              if (it == other._states.end() || !it->second.assigned) {
+                  return;
+              }
+
+              vlog(
+                clusterlog.trace,
+                "[{}] removing assigned on this shard (was: {})",
+                ntp,
+                it->second.assigned);
+
+              it->second.assigned = std::nullopt;
+              if (it->second.is_empty()) {
+                  // We are on a shard that was previously a target, but didn't
+                  // get to starting the transfer.
+                  other._states.erase(it);
+              }
+
+              // Notify the caller that something has changed on this shard.
+              shard_callback(ntp);
+          });
+    }
 
     if (target) {
         const bool is_initial
@@ -247,63 +363,50 @@ ss::future<> shard_placement_table::set_target(
         };
         co_await container().invoke_on(
           target->shard,
-          [&ntp, &as, is_initial, shard_callback](
-            shard_placement_table& other) {
-              return other.set_assigned_on_this_shard(
-                ntp, as, is_initial, shard_callback);
+          [&ntp, &as, is_initial, shard_callback](shard_placement_table& spt) {
+              auto& state = spt._states.try_emplace(ntp).first->second;
+
+              vlog(
+                clusterlog.trace,
+                "[{}] setting assigned on this shard to: {} (was: {}), "
+                "is_initial: {}",
+                ntp,
+                as,
+                state.assigned,
+                is_initial);
+
+              state.assigned = as;
+              if (is_initial) {
+                  state._is_initial_for = as.log_revision;
+              }
+
+              // Notify the caller that something has changed on this shard.
+              shard_callback(ntp);
           });
     }
+
+    // 3. Lastly, remove obsolete kvstore marker
 
     if (prev_target && (!target || target->shard != prev_target->shard)) {
         co_await container().invoke_on(
           prev_target->shard,
-          [&ntp, shard_callback](shard_placement_table& other) {
-              return other.remove_assigned_on_this_shard(ntp, shard_callback);
+          [group = prev_target->group, &ntp](shard_placement_table& other) {
+              vlog(
+                clusterlog.trace, "[{}] remove obsolete assigned marker", ntp);
+              return other._kvstore
+                .remove(kvstore_key_space, assignment_kvstore_key(group))
+                .handle_exception([group](std::exception_ptr ex) {
+                    // Ignore the exception because the update has already been
+                    // committed. Obsolete marker will be deleted after the next
+                    // restart.
+                    vlog(
+                      clusterlog.debug,
+                      "failed to remove assignment marker for group {}: {}",
+                      group,
+                      ex);
+                });
           });
     }
-}
-
-ss::future<> shard_placement_table::set_assigned_on_this_shard(
-  const model::ntp& ntp,
-  const shard_local_assignment& as,
-  bool is_initial,
-  shard_callback_t shard_callback) {
-    vlog(
-      clusterlog.trace,
-      "[{}] setting assigned on this shard to: {}, is_initial: {}",
-      ntp,
-      as,
-      is_initial);
-
-    auto& state = _states.try_emplace(ntp).first->second;
-    state.assigned = as;
-    if (is_initial) {
-        state._is_initial_for = as.log_revision;
-    }
-
-    // Notify the caller that something has changed on this shard.
-    shard_callback(ntp);
-    co_return;
-}
-
-ss::future<> shard_placement_table::remove_assigned_on_this_shard(
-  const model::ntp& ntp, shard_callback_t shard_callback) {
-    vlog(clusterlog.trace, "[{}] removing assigned on this shard", ntp);
-
-    auto it = _states.find(ntp);
-    if (it == _states.end()) {
-        co_return;
-    }
-
-    it->second.assigned = std::nullopt;
-    if (it->second.is_empty()) {
-        // We are on a shard that was previously a target, but didn't get to
-        // starting the transfer.
-        _states.erase(it);
-    }
-
-    // Notify the caller that something has changed on this shard.
-    shard_callback(ntp);
 }
 
 std::optional<shard_placement_table::placement_state>
@@ -332,11 +435,33 @@ ss::future<std::error_code> shard_placement_table::prepare_create(
         co_return errc::waiting_for_reconfiguration_finish;
     }
 
+    // copy assigned as it may change while we are updating kvstore
+    auto assigned = *state.assigned;
+
     if (!state.current) {
         if (state._is_initial_for == expected_log_rev) {
-            state.current = shard_local_state(
-              *state.assigned, hosted_status::hosted);
-            state._is_initial_for = std::nullopt;
+            auto marker_buf = serde::to_iobuf(current_state_marker{
+              .ntp = ntp,
+              .log_revision = expected_log_rev,
+              .shard_revision = assigned.shard_revision,
+              .is_complete = true,
+            });
+            vlog(
+              clusterlog.trace,
+              "[{}] put initial cur state marker, lr: {} sr: {}",
+              ntp,
+              expected_log_rev,
+              assigned.shard_revision);
+            co_await _kvstore.put(
+              kvstore_key_space,
+              current_state_kvstore_key(assigned.group),
+              std::move(marker_buf));
+
+            state.current = shard_local_state(assigned, hosted_status::hosted);
+            if (state._is_initial_for == expected_log_rev) {
+                // could have changed while we were updating kvstore.
+                state._is_initial_for = std::nullopt;
+            }
         } else {
             // x-shard transfer hasn't started yet, wait for it.
             co_return errc::waiting_for_partition_shutdown;
@@ -424,22 +549,26 @@ ss::future<result<ss::shard_id>> shard_placement_table::prepare_transfer(
                   // We are in the middle of shard_placement_table update, and
                   // the destination shard doesn't yet know that it is the
                   // destination. Wait for the update to finish.
-                  return errc::waiting_for_shard_placement_update;
+                  return ss::make_ready_future<errc>(
+                    errc::waiting_for_shard_placement_update);
               }
               auto& dest_state = dest_it->second;
 
               if (dest_state._next) {
                   // probably still finishing a previous transfer to this
                   // shard and we are already trying to transfer it back.
-                  return errc::waiting_for_partition_shutdown;
+                  return ss::make_ready_future<errc>(
+                    errc::waiting_for_partition_shutdown);
               } else if (dest_state.current) {
                   if (dest_state.current->log_revision != expected_log_rev) {
                       // someone has to delete obsolete log revision first
-                      return errc::waiting_for_reconfiguration_finish;
+                      return ss::make_ready_future<errc>(
+                        errc::waiting_for_partition_shutdown);
                   }
                   // probably still finishing a previous transfer to this
                   // shard and we are already trying to transfer it back.
-                  return errc::waiting_for_partition_shutdown;
+                  return ss::make_ready_future<errc>(
+                    errc::waiting_for_partition_shutdown);
               }
 
               // at this point we commit to the transfer on the
@@ -449,7 +578,27 @@ ss::future<result<ss::shard_id>> shard_placement_table::prepare_transfer(
               if (dest_state._is_initial_for <= expected_log_rev) {
                   dest_state._is_initial_for = std::nullopt;
               }
-              return errc::success;
+
+              // TODO: immediate hosted or _is_initial_for if source is empty.
+
+              auto marker_buf = serde::to_iobuf(current_state_marker{
+                .ntp = ntp,
+                .log_revision = expected_log_rev,
+                .shard_revision = dest_state.current.value().shard_revision,
+                .is_complete = false,
+              });
+              vlog(
+                clusterlog.trace,
+                "[{}] put receiving cur state marker, lr: {} sr: {}",
+                ntp,
+                expected_log_rev,
+                dest_state.current->shard_revision);
+              return dest._kvstore
+                .put(
+                  kvstore_key_space,
+                  current_state_kvstore_key(dest_state.current->group),
+                  std::move(marker_buf))
+                .then([] { return errc::success; });
           });
 
         if (ec != errc::success) {
@@ -477,7 +626,25 @@ ss::future<> shard_placement_table::finish_transfer_on_destination(
           "[{}] unexpected local status, current: {}",
           ntp,
           it->second.current);
-        it->second.current->status = hosted_status::hosted;
+
+        auto marker_buf = serde::to_iobuf(current_state_marker{
+          .ntp = ntp,
+          .log_revision = expected_log_rev,
+          .shard_revision = state.current->shard_revision,
+          .is_complete = true,
+        });
+        vlog(
+          clusterlog.trace,
+          "[{}] put transferred cur state marker, lr: {} sr: {}",
+          ntp,
+          expected_log_rev,
+          state.current->shard_revision);
+        co_await _kvstore.put(
+          kvstore_key_space,
+          current_state_kvstore_key(state.current->group),
+          std::move(marker_buf));
+
+        state.current->status = hosted_status::hosted;
     }
     vlog(
       clusterlog.trace,
@@ -575,7 +742,14 @@ ss::future<> shard_placement_table::finish_delete(
 ss::future<> shard_placement_table::do_delete(
   const model::ntp& ntp, placement_state& state) {
     state._next = std::nullopt;
-    state.current = std::nullopt;
+
+    if (state.current) {
+        vlog(clusterlog.trace, "[{}] remove cur state marker", ntp);
+        co_await _kvstore.remove(
+          kvstore_key_space, current_state_kvstore_key(state.current->group));
+        state.current = std::nullopt;
+    }
+
     if (state.is_empty()) {
         _states.erase(ntp);
     }

@@ -187,7 +187,10 @@ ss::future<> controller::wire_up() {
             std::ref(_partition_allocator),
             std::ref(_node_status_table));
       })
-      .then([this] { return _shard_placement.start(); })
+      .then([this] {
+          return _shard_placement.start(ss::sharded_parameter(
+            [this] { return std::ref(_storage.local().kvs()); }));
+      })
       .then([this] { _probe.start(); });
 }
 

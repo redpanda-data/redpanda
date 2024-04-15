@@ -813,7 +813,8 @@ public:
         co_await kvs.invoke_on_all(
           [](storage::kvstore& kvs) { return kvs.start(); });
 
-        co_await spt.start();
+        co_await spt.start(
+          ss::sharded_parameter([this] { return std::ref(kvs.local()); }));
 
         co_await rb.start(std::ref(ntpt), std::ref(spt), std::ref(_ntp2shards));
 

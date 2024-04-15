@@ -101,6 +101,7 @@ public:
         offset_translator = 4,
         usage = 5,
         stms = 6,
+        shard_placement = 7,
         /* your sub-system here */
     };
 

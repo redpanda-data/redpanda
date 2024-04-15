@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
+#include "storage/fwd.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>
@@ -138,6 +139,8 @@ public:
         std::optional<ss::shard_id> _next;
     };
 
+    explicit shard_placement_table(storage::kvstore&);
+
     // must be called on each shard
     ss::future<> initialize(const topic_table&, model::node_id self);
 
@@ -185,15 +188,6 @@ public:
     finish_delete(const model::ntp&, model::revision_id expected_log_rev);
 
 private:
-    ss::future<> set_assigned_on_this_shard(
-      const model::ntp&,
-      const shard_local_assignment&,
-      bool is_initial,
-      shard_callback_t);
-
-    ss::future<>
-    remove_assigned_on_this_shard(const model::ntp&, shard_callback_t);
-
     ss::future<> do_delete(const model::ntp&, placement_state&);
 
 private:
@@ -203,6 +197,7 @@ private:
     //
     // node_hash_map for pointer stability
     absl::node_hash_map<model::ntp, placement_state> _states;
+    storage::kvstore& _kvstore;
 
     // only on shard 0, _ntp2entry will hold targets for all ntps on this node.
     struct entry_t {
