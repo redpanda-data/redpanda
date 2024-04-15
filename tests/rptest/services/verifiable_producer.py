@@ -174,7 +174,8 @@ class VerifiableProducer(BackgroundThreadService):
 
         # Create and upload log properties
         log_config = self.render('tools_log4j.properties',
-                                 log_file=VerifiableProducer.LOG_FILE)
+                                 log_file=VerifiableProducer.LOG_FILE,
+                                 log_level=self.log_level)
         node.account.create_file(VerifiableProducer.LOG4J_CONFIG, log_config)
 
         # Create and upload config file
