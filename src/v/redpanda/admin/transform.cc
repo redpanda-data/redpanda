@@ -17,6 +17,7 @@
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
 #include "transform/api.h"
+#include "utils/lw_shared_container.h"
 
 #include <system_error>
 

@@ -14,23 +14,6 @@
 #pragma once
 
 namespace admin {
-
-template<typename C>
-class lw_shared_container {
-public:
-    using iterator = C::iterator;
-    using value_type = C::value_type;
-
-    explicit lw_shared_container(C&& c)
-      : c_{ss::make_lw_shared<C>(std::move(c))} {}
-
-    iterator begin() const { return c_->begin(); }
-    iterator end() const { return c_->end(); }
-
-private:
-    ss::lw_shared_ptr<C> c_;
-};
-
 /**
  * A helper to apply a schema validator to a request and on error,
  * string-ize any schema errors in the 400 response to help

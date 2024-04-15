@@ -105,6 +105,7 @@
 #include "ssx/sformat.h"
 #include "transform/api.h"
 #include "utils/fragmented_vector.h"
+#include "utils/lw_shared_container.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
 #include "vlog.h"
@@ -163,7 +164,6 @@
 using namespace std::chrono_literals;
 
 using admin::apply_validator;
-using admin::lw_shared_container;
 
 ss::logger adminlog{"admin_api_server"};
 

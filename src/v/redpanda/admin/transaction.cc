@@ -13,6 +13,7 @@
 #include "redpanda/admin/api-doc/transaction.json.hh"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
+#include "utils/lw_shared_container.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/json/json_elements.hh>
@@ -134,7 +135,7 @@ admin_server::get_all_transactions_handler(
     }
 
     co_return ss::json::json_return_type(ss::json::stream_range_as_array(
-      admin::lw_shared_container(std::move(ans)),
+      lw_shared_container(std::move(ans)),
       [](auto& tx_info) { return tx_info; }));
 }
 
