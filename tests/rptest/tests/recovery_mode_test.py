@@ -515,6 +515,22 @@ class DisablingPartitionsTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self.redpanda.wait_for_membership(first_start=False)
 
+        def all_have_leaders():
+            for n in self.redpanda.started_nodes():
+                all_partitions_have_leaders = all([
+                    partition['leader'] != -1
+                    for partition in admin.get_partitions(node=n)
+                ])
+                if not all_partitions_have_leaders:
+                    return False
+            return True
+
+        wait_until(
+            all_have_leaders,
+            30,
+            backoff_sec=1,
+            err_msg="Failed waiting for partition leadership to stabilize")
+
         # test that partitions are still disabled after restart
 
         assert all_disabled_shut_down()
