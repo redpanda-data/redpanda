@@ -630,7 +630,7 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
                   } else if (status != boost::beast::http::status::ok) {
                       vlog(
                         s3_log.warn,
-                        "S3 HEAD request failed for key: {} {:l}",
+                        "S3 HEAD request failed for key {}: {} {:l}",
                         key,
                         status,
                         ref->get_headers());
