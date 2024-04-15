@@ -9,6 +9,7 @@
 
 #include "handlers.h"
 
+#include "container/json.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/parsing/httpd.h"

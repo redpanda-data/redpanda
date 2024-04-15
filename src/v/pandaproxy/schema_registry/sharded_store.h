@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/core/sharded.hh>
@@ -69,11 +70,11 @@ public:
     ss::future<canonical_schema_definition> get_schema_definition(schema_id id);
 
     ///\brief Return a list of subject-versions for the shema id.
-    ss::future<std::vector<subject_version>>
+    ss::future<chunked_vector<subject_version>>
     get_schema_subject_versions(schema_id id);
 
     ///\brief Return a list of subjects for the schema id.
-    ss::future<std::vector<subject>>
+    ss::future<chunked_vector<subject>>
     get_schema_subjects(schema_id id, include_deleted inc_del);
 
     ///\brief Return a schema by subject and version (or latest).
@@ -83,7 +84,7 @@ public:
       include_deleted inc_dec);
 
     ///\brief Return a list of subjects.
-    ss::future<std::vector<subject>> get_subjects(include_deleted inc_del);
+    ss::future<chunked_vector<subject>> get_subjects(include_deleted inc_del);
 
     ///\brief Return a list of versions and associated schema_id.
     ss::future<std::vector<schema_version>>

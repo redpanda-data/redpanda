@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -99,8 +100,8 @@ public:
     }
 
     ///\brief Return a list of subject-versions for the shema id.
-    std::vector<subject_version> get_schema_subject_versions(schema_id id) {
-        std::vector<subject_version> svs;
+    chunked_vector<subject_version> get_schema_subject_versions(schema_id id) {
+        chunked_vector<subject_version> svs;
         for (const auto& s : _subjects) {
             for (const auto& vs : s.second.versions) {
                 if (vs.id == id && !vs.deleted) {
@@ -112,9 +113,9 @@ public:
     }
 
     ///\brief Return a list of subjects for the schema id.
-    std::vector<subject>
+    chunked_vector<subject>
     get_schema_subjects(schema_id id, include_deleted inc_del) {
-        std::vector<subject> subs;
+        chunked_vector<subject> subs;
         for (const auto& s : _subjects) {
             if (absl::c_any_of(
                   s.second.versions, [id, inc_del](const auto& vs) {
@@ -168,8 +169,8 @@ public:
     }
 
     ///\brief Return a list of subjects.
-    std::vector<subject> get_subjects(include_deleted inc_del) const {
-        std::vector<subject> res;
+    chunked_vector<subject> get_subjects(include_deleted inc_del) const {
+        chunked_vector<subject> res;
         res.reserve(_subjects.size());
         for (const auto& sub : _subjects) {
             if (inc_del || !sub.second.deleted) {
