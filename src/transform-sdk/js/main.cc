@@ -151,11 +151,14 @@ public:
         if (!value) [[unlikely]] {
             return std::unexpected(value.error());
         }
-        // TODO(rockwood): include headers
+        auto headers = extract_headers(ctx, param.get_property("headers"));
+        if (!headers) [[unlikely]] {
+            return std::unexpected(headers.error());
+        }
         auto errc = _writer->write({
           .key = *key,
           .value = *value,
-          .headers = {},
+          .headers = *headers,
         });
         _strings.clear(); // free any allocated strings
         if (errc) [[unlikely]] {
@@ -163,6 +166,35 @@ public:
               ctx, std::format("error writing record: {}", errc.message())));
         }
         return qjs::value::undefined(ctx);
+    }
+
+    std::expected<std::vector<redpanda::header_view>, qjs::exception>
+    extract_headers(JSContext* ctx, const qjs::value& val) {
+        std::vector<redpanda::header_view> headers;
+        if (val.is_undefined() || val.is_null()) {
+            return headers;
+        }
+        if (!val.is_array()) {
+            return std::unexpected(
+              qjs::exception::make(ctx, "unexpected type for headers"));
+        }
+        const size_t len = val.array_length();
+        headers.reserve(len);
+        for (size_t i = 0; i < len; ++i) {
+            auto elem = val.get_element(i);
+            auto key = extract_data(ctx, elem.get_property("key"));
+            if (!key) [[unlikely]] {
+                return std::unexpected(key.error());
+            }
+            auto value = extract_data(ctx, elem.get_property("value"));
+            if (!value) [[unlikely]] {
+                return std::unexpected(value.error());
+            }
+            auto key_str = std::string_view{
+              key->value_or(redpanda::bytes_view{})};
+            headers.emplace_back(key_str, *value);
+        }
+        return headers;
     }
 
     std::expected<std::optional<redpanda::bytes_view>, qjs::exception>
@@ -223,26 +255,51 @@ std::expected<qjs::value, qjs::exception> make_write_event(
   JSContext* ctx,
   const write_event& evt,
   qjs::class_factory<record_data>* data_factory) {
-    qjs::value record = qjs::value::object(ctx);
-    std::expected<std::monostate, qjs::exception> result;
-    if (evt.record.key) {
-        result = record.set_property(
-          "key",
-          data_factory->create(std::make_unique<record_data>(*evt.record.key)));
-    } else {
-        result = record.set_property("key", qjs::value::null(ctx));
+    auto make_kv = [ctx, data_factory](
+                     std::optional<redpanda::bytes_view> key,
+                     std::optional<redpanda::bytes_view> val)
+      -> std::expected<qjs::value, qjs::exception> {
+        qjs::value obj = qjs::value::object(ctx);
+        std::expected<std::monostate, qjs::exception> result;
+        if (key) {
+            result = obj.set_property(
+              "key", data_factory->create(std::make_unique<record_data>(*key)));
+        } else {
+            result = obj.set_property("key", qjs::value::null(ctx));
+        }
+        if (!result) [[unlikely]] {
+            return std::unexpected(result.error());
+        }
+        if (val) {
+            result = obj.set_property(
+              "value",
+              data_factory->create(std::make_unique<record_data>(*val)));
+        } else {
+            result = obj.set_property("value", qjs::value::null(ctx));
+        }
+        if (!result) [[unlikely]] {
+            return std::unexpected(result.error());
+        }
+        return obj;
+    };
+    auto maybe_record = make_kv(evt.record.key, evt.record.value);
+    if (!maybe_record) [[unlikely]] {
+        return std::unexpected(maybe_record.error());
     }
-    if (!result) [[unlikely]] {
-        return std::unexpected(result.error());
+    auto record = maybe_record.value();
+    auto headers = qjs::value::array(ctx);
+    for (const auto& header : evt.record.headers) {
+        auto maybe_header = make_kv(
+          redpanda::bytes_view(header.key), header.value);
+        if (!maybe_header) [[unlikely]] {
+            return std::unexpected(maybe_header.error());
+        }
+        auto result = headers.push_back(*maybe_header);
+        if (!result) [[unlikely]] {
+            return std::unexpected(result.error());
+        }
     }
-    if (evt.record.value) {
-        result = record.set_property(
-          "value",
-          data_factory->create(
-            std::make_unique<record_data>(*evt.record.value)));
-    } else {
-        result = record.set_property("value", qjs::value::null(ctx));
-    }
+    auto result = record.set_property("headers", headers);
     if (!result) [[unlikely]] {
         return std::unexpected(result.error());
     }
@@ -251,7 +308,6 @@ std::expected<qjs::value, qjs::exception> make_write_event(
     if (!result) [[unlikely]] {
         return std::unexpected(result.error());
     }
-    // TODO(rockwood): Also add headers to record object
     return write_event;
 }
 
