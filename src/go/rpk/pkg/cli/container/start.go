@@ -10,6 +10,7 @@
 package container
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +24,8 @@ import (
 
 	"github.com/avast/retry-go"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
@@ -280,7 +283,15 @@ func startCluster(
 	}
 	err = waitForCluster(check(nodes), retries)
 	if err != nil {
-		return false, err
+		state, sErr := common.GetState(c, nodes[0].id)
+		if sErr != nil {
+			return false, fmt.Errorf("%v\nunable to get Docker container logs: %v", err, sErr)
+		}
+		errStr, cErr := getContainerErr(state, c)
+		if cErr != nil {
+			return false, fmt.Errorf("%v\nunable to get Docker container logs: %v", err, cErr)
+		}
+		return false, fmt.Errorf("%v\n\nErrors reported from the Docker container:\n\n%v", err, errStr)
 	}
 
 	fmt.Println("Cluster started!")
@@ -336,7 +347,11 @@ func restartCluster(
 	}
 	err = waitForCluster(check(nodes), retries)
 	if err != nil {
-		return nil, err
+		errStr, cErr := getContainerErr(states[0], c)
+		if cErr != nil {
+			return nil, fmt.Errorf("%v\nunable to get Docker container logs: %v", err, cErr)
+		}
+		return nil, fmt.Errorf("%v\n\nErrors reported from the Docker container:\n%v", err, errStr)
 	}
 	return nodes, nil
 }
@@ -476,4 +491,39 @@ func nodeAddr(port uint) string {
 		"127.0.0.1:%d",
 		port,
 	)
+}
+
+// getContainerErr attempts to fetch the latest stderr output from the first
+// Redpanda node. It may reveal reasons for failing to start.
+func getContainerErr(state *common.NodeState, c common.Client) (string, error) {
+	ctx, _ := common.DefaultCtx()
+
+	json, err := c.ContainerInspect(ctx, state.ContainerID)
+	if err != nil {
+		return "", fmt.Errorf("could not inspect container: %v", err)
+	}
+
+	reader, err := c.ContainerLogs(
+		ctx,
+		state.ContainerID,
+		container.LogsOptions{
+			ShowStdout: false,
+			ShowStderr: true,
+			Since:      json.State.StartedAt,
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("could not get container logs: %v", err)
+	}
+
+	// Docker logs over the wire are multiplexed using stdcopy package. To
+	// demux this stream we need to use stdcopy.StdCopy. See:
+	// https://github.com/moby/moby/issues/32794#issuecomment-297151440
+	bErr := new(bytes.Buffer)
+	_, err = stdcopy.StdCopy(bErr, bErr, reader)
+	if err != nil {
+		return "", fmt.Errorf("unable to read docker logs: %v", err)
+	}
+
+	return bErr.String(), nil
 }
