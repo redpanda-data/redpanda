@@ -304,32 +304,31 @@ sharded_store::get_schema_definition(schema_id id) {
       });
 }
 
-ss::future<std::vector<subject_version>>
+ss::future<chunked_vector<subject_version>>
 sharded_store::get_schema_subject_versions(schema_id id) {
     auto map = [id](store& s) { return s.get_schema_subject_versions(id); };
-    auto reduce =
-      [](std::vector<subject_version> acc, std::vector<subject_version> svs) {
-          acc.insert(acc.end(), svs.begin(), svs.end());
-          return acc;
-      };
+    auto reduce = [](
+                    chunked_vector<subject_version> acc,
+                    chunked_vector<subject_version> svs) {
+        std::move(svs.begin(), svs.end(), std::back_inserter(acc));
+        return acc;
+    };
     co_return co_await _store.map_reduce0(
-      map, std::vector<subject_version>{}, reduce);
+      map, chunked_vector<subject_version>{}, reduce);
 }
 
-ss::future<std::vector<subject>>
+ss::future<chunked_vector<subject>>
 sharded_store::get_schema_subjects(schema_id id, include_deleted inc_del) {
     auto map = [id, inc_del](store& s) {
         return s.get_schema_subjects(id, inc_del);
     };
-    auto reduce = [](std::vector<subject> acc, std::vector<subject> subs) {
-        acc.insert(
-          acc.end(),
-          std::make_move_iterator(subs.begin()),
-          std::make_move_iterator(subs.end()));
+    auto reduce = [](
+                    chunked_vector<subject> acc, chunked_vector<subject> subs) {
+        std::move(subs.begin(), subs.end(), std::back_inserter(acc));
         return acc;
     };
     auto subs = co_await _store.map_reduce0(
-      map, std::vector<subject>{}, reduce);
+      map, chunked_vector<subject>{}, reduce);
     absl::c_sort(subs);
     co_return subs;
 }
@@ -354,17 +353,16 @@ ss::future<subject_schema> sharded_store::get_subject_schema(
       .deleted = v_id.deleted};
 }
 
-ss::future<std::vector<subject>>
+ss::future<chunked_vector<subject>>
 sharded_store::get_subjects(include_deleted inc_del) {
     auto map = [inc_del](store& s) { return s.get_subjects(inc_del); };
-    auto reduce = [](std::vector<subject> acc, std::vector<subject> subs) {
-        acc.insert(
-          acc.end(),
-          std::make_move_iterator(subs.begin()),
-          std::make_move_iterator(subs.end()));
+    auto reduce = [](
+                    chunked_vector<subject> acc, chunked_vector<subject> subs) {
+        std::move(subs.begin(), subs.end(), std::back_inserter(acc));
         return acc;
     };
-    co_return co_await _store.map_reduce0(map, std::vector<subject>{}, reduce);
+    co_return co_await _store.map_reduce0(
+      map, chunked_vector<subject>{}, reduce);
 }
 
 ss::future<std::vector<schema_version>>
