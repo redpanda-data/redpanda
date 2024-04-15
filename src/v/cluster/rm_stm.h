@@ -469,23 +469,8 @@ private:
           expiration_info>
           expiration;
 
-        void forget(const model::producer_identity& pid) {
-            fence_pid_epoch.erase(pid.get_id());
-            ongoing_map.erase(pid);
-            current_txes.erase(pid);
-            expiration.erase(pid);
-        }
-
-        void reset() {
-            fence_pid_epoch.clear();
-            ongoing_map.clear();
-            ongoing_set.clear();
-            current_txes.clear();
-            expiration.clear();
-            aborted.clear();
-            abort_indexes.clear();
-            last_abort_snapshot = {model::offset(-1)};
-        }
+        void forget(const model::producer_identity& pid);
+        void reset();
     };
 
     struct mem_state {
