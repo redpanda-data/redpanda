@@ -40,7 +40,7 @@ set(Seastar_API_LEVEL 6 CACHE STRING "" FORCE)
 set(Seastar_CXX_FLAGS -Wno-error)
 fetch_dep(seastar
   REPO https://github.com/redpanda-data/seastar.git
-  TAG v23.3.x
+  TAG v24.1.x
   PATCH_COMMAND sed -i "s/add_subdirectory (tests/# add_subdirectory (tests/g" CMakeLists.txt)
 
 fetch_dep(avro

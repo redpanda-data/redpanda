@@ -34,6 +34,7 @@
 
 #include <seastar/core/align.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/internal/cpu_profiler.hh>
 #include <seastar/core/posix.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -599,7 +600,13 @@ private:
         // Poll the call future to completion, yielding to the scheduler when
         // the future yields.
         auto start = ss::steady_clock_type::now();
+        // Disable profiling backtraces inside the VM - at the time of writing
+        // backtraces lead to segfaults causing deadlock in Seastar's signal
+        // handlers.
+        auto _ = ss::internal::scoped_disable_profile_temporarily();
         while (!wasmtime_call_future_poll(fut.get())) {
+            // Re-enable stacktraces before we yield control to the scheduler.
+            ss::internal::profiler_drop_stacktraces(false);
             auto end = ss::steady_clock_type::now();
             _probe.increment_cpu_time(end - start);
             if (_pending_host_function) {
@@ -609,6 +616,8 @@ private:
                 co_await ss::coroutine::maybe_yield();
             }
             start = ss::steady_clock_type::now();
+            // Disable stacktraces as we enter back into Wasmtime
+            ss::internal::profiler_drop_stacktraces(true);
         }
         auto end = ss::steady_clock_type::now();
         _probe.increment_cpu_time(end - start);

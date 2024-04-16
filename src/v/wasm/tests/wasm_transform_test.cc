@@ -11,10 +11,10 @@
 
 #include "bytes/bytes.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "serde/rw/rw.h"
 #include "wasm/errc.h"
 #include "wasm/tests/wasm_fixture.h"
 
+#include <seastar/core/internal/cpu_profiler.hh>
 #include <seastar/core/reactor.hh>
 
 #include <absl/strings/str_cat.h>
@@ -133,4 +133,21 @@ TEST_F(WasmTestFixture, LogsAreEmitted) {
     // NOLINTNEXTLINE(*-reinterpret-cast)
     expected.append(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     EXPECT_THAT(log_lines(), ElementsAre(expected));
+}
+
+TEST_F(WasmTestFixture, WorksWithCpuProfiler) {
+    bool original_enabled = ss::engine().get_cpu_profiler_enabled();
+    std::chrono::nanoseconds original_period
+      = ss::engine().get_cpu_profiler_period();
+    ss::engine().set_cpu_profiler_enabled(true);
+    ss::engine().set_cpu_profiler_period(100us);
+    load_wasm("dynamic.wasm");
+    EXPECT_THROW(execute_command("loop", 0), wasm::wasm_exception);
+    ss::engine().set_cpu_profiler_enabled(original_enabled);
+    ss::engine().set_cpu_profiler_period(original_period);
+    std::vector<ss::cpu_profiler_trace> traces;
+    ss::engine().profiler_results(traces);
+    for (const auto& t : traces) {
+        std::cout << t.user_backtrace << "\n";
+    }
 }
