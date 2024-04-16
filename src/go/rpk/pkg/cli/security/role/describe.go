@@ -50,8 +50,8 @@ func describeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "Describe a Redpanda role",
 		Long: `Describe a Redpanda role.
 
-This command describes a Role, including the ACLs associated to the role and 
-a list of members that have the role assigned.
+This command describes a role, including the ACLs associated to the role, and 
+lists members who are assigned the role.
 `,
 		Example: `
 Describe the role 'red' (print members and ACLs)

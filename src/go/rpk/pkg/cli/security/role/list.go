@@ -35,10 +35,10 @@ func listCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 List all roles in Redpanda:
   rpk security role list
 
-List all roles where the user 'red' belongs to:
+List all roles assigned to the user 'red':
   rpk security role list --principal red
 
-List all roles that start with "agent-":
+List all roles with the prefix "agent-":
   rpk security role list --prefix "agent-"`,
 		Aliases: []string{"ls"},
 		Args:    cobra.ExactArgs(0),
@@ -78,8 +78,8 @@ List all roles that start with "agent-":
 		},
 	}
 
-	cmd.Flags().StringVar(&prefix, "prefix", "", "Return the roles that matches the given prefix")
-	cmd.Flags().StringVar(&principalFlag, "principal", "", "Return the roles that matches the given principal; if no principal prefix is given, 'User:' is assumed")
+	cmd.Flags().StringVar(&prefix, "prefix", "", "Return the roles matching the specified prefix")
+	cmd.Flags().StringVar(&principalFlag, "principal", "", "Return the roles matching the specified principal; if no principal prefix is given, `User:` is used")
 
 	return cmd
 }

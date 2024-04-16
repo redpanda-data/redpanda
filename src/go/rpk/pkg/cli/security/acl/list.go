@@ -31,10 +31,10 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "List ACLs",
 		Long: `List ACLs.
 
-See the 'rpk acl' help text for a full write up on ACLs. List flags work in a
-similar multiplying effect as creating ACLs, but list is more advanced:
-listing works on a filter basis. Any unspecified flag defaults to matching
-everything (all operations, or all allowed principals, etc).
+See the 'rpk security acl' help text for a full write up on ACLs. List flags
+work in a similar multiplying effect as creating ACLs, but list is more
+advanced: listing works on a filter basis. Any unspecified flag defaults to
+matching everything (all operations, or all allowed principals, etc).
 
 As mentioned, not specifying flags matches everything. If no resources are
 specified, all resources are matched. If no operations are specified, all

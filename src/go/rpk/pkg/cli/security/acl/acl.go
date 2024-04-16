@@ -54,8 +54,8 @@ An ACL is made up of five components:
 
   * a principal (the user) or role
   * a host, which the principal (or role) is allowed or denied requests from
-  * what resource to access (topic name, group ID, ...)
-  * the operation (read, write, ...)
+  * what resource to access (such as topic name, group ID)
+  * the operation (such as read, write)
   * the permission: whether to allow or deny the above
 
 ACL commands work on a multiplicative basis. If creating, specifying two
@@ -90,8 +90,8 @@ present, it is treated as text rather than as principal type information.
 When you create a role, you must bind or associate ACLs to it before it can be
 used. You can create / delete / list ACLs for that role with "<name>" in the
 --allow-role and --deny-role flags. Note that the wildcard role name '*' is not
-permitted here. For example 'rpk acl create --allow-role '*' ...' will produce
-an error.
+permitted here. For example 'rpk security acl create --allow-role '*' ...' will 
+produce an error.
 
 HOSTS
 
@@ -137,7 +137,7 @@ Redpanda has the following operations:
 
 Check --help-operations to see which operations are required for which
 requests. In flag form to set up a general producing/consuming client, you can
-invoke 'rpk acl create' three times with the following (including your
+invoke 'rpk security acl create' three times with the following (including your
 --allow-principal):
 
     --operation write,read,describe --topic [topics]
