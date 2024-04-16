@@ -24,6 +24,7 @@ public:
 
     void reset_creds(credentials creds) override;
     std::ostream& print(std::ostream& os) const override;
+    bool is_oauth() const override { return false; }
 
 private:
     signature_v4 _signature;
