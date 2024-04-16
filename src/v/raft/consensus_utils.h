@@ -130,17 +130,6 @@ public:
 };
 
 /**
- * Extracts all configurations from underlying reader. Configuration are stored
- * in a vector passed as a reference to reader. The reader can will
- * automatically assing offsets to following batches using provided base offset
- * as a staring point
- */
-model::record_batch_reader make_config_extracting_reader(
-  model::offset,
-  std::vector<offset_configuration>&,
-  model::record_batch_reader&&);
-
-/**
  * Function that allow consuming batches with given consumer while lazily
  * extracting raft::group_configuration from the reader.
  *
@@ -152,20 +141,43 @@ auto for_each_ref_extract_configuration(
   model::record_batch_reader&& rdr,
   ReferenceConsumer c,
   model::timeout_clock::time_point tm) {
-    using conf_t = std::vector<offset_configuration>;
+    struct extracting_consumer {
+        ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
+            if (
+              batch.header().type
+              == model::record_batch_type::raft_configuration) {
+                iobuf_parser parser(
+                  batch.copy_records().begin()->release_value());
+                configurations.emplace_back(
+                  next_offset, deserialize_configuration(parser));
+            }
 
-    return ss::do_with(
-      conf_t{},
-      [tm, c = std::move(c), base_offset, rdr = std::move(rdr)](
-        conf_t& configurations) mutable {
-          return make_config_extracting_reader(
-                   base_offset, configurations, std::move(rdr))
-            .for_each_ref(std::move(c), tm)
-            .then([&configurations](auto res) {
-                return std::make_tuple(
-                  std::move(res), std::move(configurations));
-            });
-      });
+            // we have to calculate offsets manually because the batch may not
+            // yet have the base offset assigned.
+            next_offset += model::offset(batch.header().last_offset_delta)
+                           + model::offset(1);
+
+            return wrapped(batch);
+        }
+
+        auto end_of_stream() {
+            return ss::futurize_invoke(
+                     [this] { return wrapped.end_of_stream(); })
+              .then([confs = std::move(configurations)](auto ret) mutable {
+                  return std::make_tuple(std::move(ret), std::move(confs));
+              });
+        }
+
+        ReferenceConsumer wrapped;
+        model::offset next_offset;
+        std::vector<offset_configuration> configurations;
+    };
+
+    return std::move(rdr).for_each_ref(
+      extracting_consumer{
+        .wrapped = std::move(c),
+        .next_offset = model::next_offset(base_offset)},
+      tm);
 }
 
 bytes serialize_group_key(raft::group_id, metadata_key);
