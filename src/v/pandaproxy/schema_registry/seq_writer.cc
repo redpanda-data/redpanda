@@ -446,7 +446,7 @@ seq_writer::delete_subject_permanent_inner(
 
     // Deleting the subject, or the last version, deletes the subject
     if (!version.has_value() || versions.size() == 1) {
-        sequences = co_await _store.get_subject_written_at(sub);
+        rb(co_await _store.get_subject_written_at(sub));
     }
     rb(sequences);
 
