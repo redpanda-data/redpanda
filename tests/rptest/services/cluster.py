@@ -173,8 +173,14 @@ def cluster(log_allow_list=None,
                         # TODO: extend this to cover shutdown logging too, and
                         # clean up redpanda to not log so many errors on shutdown.
                         try:
-                            redpanda.raise_on_bad_logs(
-                                allow_list=log_allow_list)
+                            # We need test start time for RedpandaServiceCloud
+                            if isinstance(redpanda, RedpandaServiceCloud):
+                                redpanda.raise_on_bad_logs(
+                                    allow_list=log_allow_list,
+                                    test_start_time=t_initial)
+                            else:
+                                redpanda.raise_on_bad_logs(
+                                    allow_list=log_allow_list)
                         except:
                             # Perform diagnostics only for Local run
                             if isinstance(redpanda, RedpandaServiceBase):

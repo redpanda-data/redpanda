@@ -2120,7 +2120,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
     def cluster_healthy(self) -> bool:
         return self.cluster_unhealthy_reason is not None
 
-    def raise_on_bad_logs(self, allow_list=None):
+    def raise_on_bad_logs(self, allow_list=None, test_start_time=None):
         """
         Raise a BadLogLines exception if any nodes' logs contain errors
         not permitted by `allow_list`
@@ -2130,8 +2130,11 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         """
         allow_list = prepare_allow_list(allow_list)
 
-        lsearcher = LogSearchCloud(self._context, allow_list, self.logger,
-                                   self.kubectl)
+        lsearcher = LogSearchCloud(self._context,
+                                   allow_list,
+                                   self.logger,
+                                   self.kubectl,
+                                   test_start_time=test_start_time)
         lsearcher.search_logs(self.get_redpanda_pods())
 
 
