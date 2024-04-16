@@ -152,6 +152,7 @@ using admin::get_boolean_query_param;
 ss::logger adminlog{"admin_api_server"};
 
 static constexpr auto audit_svc_name = "Redpanda Admin HTTP Server";
+static constexpr auto retry_after_seconds = 1;
 
 namespace {
 
@@ -803,14 +804,43 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
         }
     }
 
+    std::optional<int> retry_after = std::nullopt;
+    static const ss::sstring redirect_str = "redirect";
+    req._url = req.parse_query_param();
+
+    // Check for redirect query parameter.
+    const auto num_redirects
+      = get_integer_query_param(req, redirect_str).value_or(0) + 1;
+
+    // Add some backoff to the client request every other redirect.
+    // In the case of two consecutive re-directs, it is clear that
+    // leadership has not yet become consistent. We append backoff to
+    // the client to let it settle before retrying. However, upon the
+    // next request being made, it may result in a valid redirect to the
+    // new leader, and no backoff should be added. This leads to adding
+    // client backoff every other redirect.
+    req.query_parameters[redirect_str] = ss::to_sstring(num_redirects);
+    if (num_redirects % 2 == 0) {
+        retry_after = retry_after_seconds;
+        vlog(
+          adminlog.debug,
+          "Multiple redirects ({}) detected. Setting Retry-After: {}",
+          num_redirects,
+          retry_after_seconds);
+    }
+
     auto url = fmt::format(
-      "{}://{}{}{}", req.get_protocol_name(), target_host, port, req._url);
+      "{}://{}{}{}",
+      req.get_protocol_name(),
+      target_host,
+      port,
+      req.format_url());
 
     vlog(
       adminlog.info, "Redirecting admin API call to {} leader at {}", ntp, url);
 
     co_return ss::httpd::redirect_exception(
-      url, ss::http::reply::status_type::temporary_redirect);
+      url, ss::http::reply::status_type::temporary_redirect, retry_after);
 }
 
 bool admin_server::need_redirect_to_leader(
