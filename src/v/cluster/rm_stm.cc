@@ -222,7 +222,10 @@ rm_stm::parse_tx_control_batch(const model::record_batch& b) {
 }
 
 void rm_stm::log_state::forget(const model::producer_identity& pid) {
-    fence_pid_epoch.erase(pid.get_id());
+    auto it = fence_pid_epoch.find(pid.get_id());
+    if (it != fence_pid_epoch.end() && it->second == pid.get_epoch()) {
+        fence_pid_epoch.erase(pid.get_id());
+    }
     ongoing_map.erase(pid);
     current_txes.erase(pid);
     expiration.erase(pid);
