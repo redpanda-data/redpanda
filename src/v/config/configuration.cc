@@ -2894,7 +2894,7 @@ configuration::configuration()
       "milliseconds. Value of 0 disables the balancer and makes all the "
       "throughput quotas immutable.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      750ms,
+      0ms,
       {.min = 0ms})
   , kafka_quota_balancer_min_shard_throughput_ratio(
       *this,
