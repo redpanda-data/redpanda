@@ -159,8 +159,8 @@ private:
         }
     }
 
-    ss::future<bool>
-    produce_and_check(model::offset write_at, model::record_batch batch);
+    ss::future<bool> produce_and_apply(
+      std::optional<model::offset> write_at, model::record_batch batch);
 
     /// Block until this offset is available, fetching if necessary
     ss::future<> wait_for(model::offset offset);
