@@ -2688,9 +2688,13 @@ class RedpandaService(RedpandaServiceBase):
         :param idempotent: if true, then kill-like signals are ignored if
                            the process is already gone.
         """
+
+        is_kill_like_signal = signal in {signal.SIGKILL, signal.SIGTERM}
+
         pid = self.redpanda_pid(node)
         if pid is None:
-            if idempotent and signal in {signal.SIGKILL, signal.SIGTERM}:
+            if idempotent and is_kill_like_signal:
+                self.remove_from_started_nodes(node)
                 return
             else:
                 raise RuntimeError(
@@ -2698,6 +2702,8 @@ class RedpandaService(RedpandaServiceBase):
                 )
 
         node.account.signal(pid, signal, allow_fail=False)
+        if is_kill_like_signal:
+            self.remove_from_started_nodes(node)
 
     def sockets_clear(self, node: RemoteClusterNode):
         """
