@@ -31,6 +31,7 @@
 #include "cluster/feature_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/health_manager.h"
+#include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/logger.h"
 #include "cluster/members_backend.h"

@@ -28,6 +28,7 @@
 
 namespace cluster {
 
+static constexpr ss::shard_id health_monitor_backend_shard = 0;
 /**
  * Health reports
  */
@@ -275,6 +276,9 @@ struct cluster_health_overview {
     std::vector<model::ntp> under_replicated_partitions;
     size_t under_replicated_count{};
     std::optional<size_t> bytes_in_cloud_storage;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const cluster_health_overview&);
 };
 
 using include_partitions_info = ss::bool_class<struct include_partitions_tag>;
@@ -348,23 +352,13 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
  * RPC requests
  */
 
-struct get_node_health_request
-  : serde::envelope<
+class get_node_health_request
+  : public serde::envelope<
       get_node_health_request,
       serde::version<0>,
       serde::compat_version<0>> {
+public:
     using rpc_adl_exempt = std::true_type;
-    static constexpr int8_t initial_version = 0;
-    // version -1: included revision id in partition status
-    static constexpr int8_t revision_id_version = -1;
-    // version -2: included size_bytes in partition status
-    static constexpr int8_t size_bytes_version = -2;
-
-    static constexpr int8_t current_version = size_bytes_version;
-
-    node_report_filter filter;
-    // this field is not serialized
-    int8_t decoded_version = current_version;
 
     friend bool
     operator==(const get_node_health_request&, const get_node_health_request&)
@@ -373,7 +367,14 @@ struct get_node_health_request
     friend std::ostream&
     operator<<(std::ostream&, const get_node_health_request&);
 
-    auto serde_fields() { return std::tie(filter); }
+    auto serde_fields() { return std::tie(_filter); }
+
+private:
+    /**
+     * This field is no longer used, as it never was. It was made private on
+     * purpose
+     */
+    node_report_filter _filter;
 };
 
 struct get_node_health_reply
@@ -382,7 +383,6 @@ struct get_node_health_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
     std::optional<node_health_report> report;

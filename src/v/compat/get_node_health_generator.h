@@ -21,10 +21,7 @@ namespace compat {
 template<>
 struct instance_generator<cluster::get_node_health_request> {
     static cluster::get_node_health_request random() {
-        return cluster::get_node_health_request{
-          {},
-          cluster::random_node_report_filter(),
-          random_generators::get_int<int8_t>()};
+        return cluster::get_node_health_request{};
     }
     static std::vector<cluster::get_node_health_request> limits() { return {}; }
 };

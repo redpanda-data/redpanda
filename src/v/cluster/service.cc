@@ -529,26 +529,14 @@ void clear_partition_sizes(node_health_report& report) {
 
 ss::future<get_node_health_reply>
 service::do_collect_node_health_report(get_node_health_request req) {
-    auto res = co_await _hm_frontend.local().collect_node_health(
-      std::move(req.filter));
+    auto res = co_await _hm_frontend.local().get_current_node_health();
     if (res.has_error()) {
         co_return get_node_health_reply{
           .error = map_health_monitor_error_code(res.error())};
     }
-    auto report = std::move(res.value());
-    // clear all revision ids to prevent sending them to old versioned redpanda
-    // nodes
-    if (req.decoded_version > get_node_health_request::revision_id_version) {
-        clear_partition_revisions(report);
-    }
-    // clear all partition sizes to prevent sending them to old versioned
-    // redpanda nodes
-    if (req.decoded_version > get_node_health_request::size_bytes_version) {
-        clear_partition_sizes(report);
-    }
     co_return get_node_health_reply{
       .error = errc::success,
-      .report = std::move(report),
+      .report = std::move(res.value()),
     };
 }
 
