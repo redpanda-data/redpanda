@@ -23,6 +23,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <exception>
 
@@ -389,6 +390,12 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
     rb(
       delete_subject_key{.seq{write_at}, .node{_node_id}, .sub{sub}},
       delete_subject_value{.sub{sub}});
+
+    auto conf = co_await ss::coroutine::as_future(
+      _store.get_subject_config_written_at(sub));
+    if (!conf.failed()) {
+        rb(conf.get());
+    }
 
     if (co_await produce_and_apply(write_at, std::move(rb).build())) {
         co_return versions;
