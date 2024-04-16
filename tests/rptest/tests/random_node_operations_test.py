@@ -261,7 +261,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
             assert self.consumer.consumer_status.validator.invalid_reads == 0, f"Invalid reads in topic: {self.topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
 
-    @skip_debug_mode
+    #@skip_debug_mode
     @cluster(num_nodes=8,
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
              PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
