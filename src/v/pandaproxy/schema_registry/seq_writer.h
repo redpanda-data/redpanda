@@ -85,7 +85,8 @@ private:
     ss::future<std::optional<std::vector<schema_version>>>
     do_delete_subject_impermanent(subject sub, model::offset write_at);
 
-    ss::future<std::vector<schema_version>> delete_subject_permanent_inner(
+    ss::future<std::optional<std::vector<schema_version>>>
+    delete_subject_permanent_inner(
       subject sub, std::optional<schema_version> version);
 
     simple_time_jitter<ss::lowres_clock> _jitter{std::chrono::milliseconds{50}};
