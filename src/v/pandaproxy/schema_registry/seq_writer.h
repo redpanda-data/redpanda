@@ -77,8 +77,7 @@ private:
       compatibility_level compat,
       model::offset write_at);
 
-    ss::future<std::optional<bool>>
-    do_delete_config(subject sub, model::offset write_at);
+    ss::future<std::optional<bool>> do_delete_config(subject sub);
 
     ss::future<std::optional<bool>> do_delete_subject_version(
       subject sub, schema_version version, model::offset write_at);

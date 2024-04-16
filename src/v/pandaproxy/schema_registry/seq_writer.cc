@@ -237,9 +237,8 @@ ss::future<bool> seq_writer::write_config(
       });
 }
 
-ss::future<std::optional<bool>>
-seq_writer::do_delete_config(subject sub, model::offset write_at) {
-    vlog(plog.debug, "delete config sub={} offset={}", sub, write_at);
+ss::future<std::optional<bool>> seq_writer::do_delete_config(subject sub) {
+    vlog(plog.debug, "delete config sub={}", sub);
 
     try {
         co_await _store.get_compatibility(sub, default_to_global::no);
@@ -299,8 +298,8 @@ seq_writer::do_delete_config(subject sub, model::offset write_at) {
 
 ss::future<bool> seq_writer::delete_config(subject sub) {
     return sequenced_write(
-      [sub{std::move(sub)}](model::offset write_at, seq_writer& seq) {
-          return seq.do_delete_config(sub, write_at);
+      [sub{std::move(sub)}](model::offset, seq_writer& seq) {
+          return seq.do_delete_config(sub);
       });
 }
 
