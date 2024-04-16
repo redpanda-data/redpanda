@@ -221,6 +221,27 @@ rm_stm::parse_tx_control_batch(const model::record_batch& b) {
     return parse_control_batch(b);
 }
 
+void rm_stm::log_state::forget(const model::producer_identity& pid) {
+    auto it = fence_pid_epoch.find(pid.get_id());
+    if (it != fence_pid_epoch.end() && it->second == pid.get_epoch()) {
+        fence_pid_epoch.erase(pid.get_id());
+    }
+    ongoing_map.erase(pid);
+    current_txes.erase(pid);
+    expiration.erase(pid);
+}
+
+void rm_stm::log_state::reset() {
+    fence_pid_epoch.clear();
+    ongoing_map.clear();
+    ongoing_set.clear();
+    current_txes.clear();
+    expiration.clear();
+    aborted.clear();
+    abort_indexes.clear();
+    last_abort_snapshot = {model::offset(-1)};
+}
+
 rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
