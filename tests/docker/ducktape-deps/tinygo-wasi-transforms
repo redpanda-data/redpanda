@@ -1,20 +1,39 @@
-#!/bin/sh
+#!/bin/bash
+
 set -e
 set -x
+
+function retry {
+  local retries=$1
+  shift
+
+  local count=0
+  until "$@"; do
+    exit=$?
+    count=$(($count + 1))
+    if [ $count -lt $retries ]; then
+      echo "Retry $count/$retries exited $exit, retrying..."
+    else
+      echo "Retry $count/$retries exited $exit, no more retries left."
+      return $exit
+    fi
+  done
+  return 0
+}
 
 mkdir -p /opt/transforms/tinygo/
 
 cd /transform-sdk/go/transform/internal/testdata
 
-tinygo build -target wasi -opt=z \
+retry 5 tinygo build -target wasi -opt=z \
   -panic print -scheduler none \
   -o "/opt/transforms/tinygo/identity.wasm" ./identity
 
-tinygo build -target wasi -opt=z \
+retry 5 tinygo build -target wasi -opt=z \
   -panic print -scheduler none \
   -o "/opt/transforms/tinygo/identity_logging.wasm" ./identity_logging
 
-tinygo build -target wasi -opt=z \
+retry 5 tinygo build -target wasi -opt=z \
   -panic print -scheduler none \
   -o "/opt/transforms/tinygo/tee.wasm" ./tee
 
