@@ -107,6 +107,9 @@ sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginMo
 sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthLoginCallbackHandler
 """
 
+        # security config can't be parsed by the basic props parser in many of the
+        # cli tools (e.g., because they split on whitespace but security properties may
+        # contain embedded whitespace) but we can use a config file to get around this
         if security_config_text:
             self._command_config = tempfile.NamedTemporaryFile(mode="w")
             self._command_config.write(security_config_text)
@@ -296,6 +299,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             "batch.size=%d" % batch_size,
             "bootstrap.servers=%s" % self._redpanda.brokers()
         ]
+        if self._command_config:
+            cmd += ["--producer.config", self._command_config.name]
         return self._execute(cmd, "produce")
 
     def list_acls(self):
