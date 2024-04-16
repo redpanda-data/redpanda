@@ -1262,6 +1262,84 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 {"log_message_timestamp_type": "CreateTime"},
                 incremental=False)
 
+    ABS_STATIC_CFG = {
+        'cloud_storage_enabled': 'true',
+        'cloud_storage_azure_storage_account': 'theazureaccount',
+        'cloud_storage_azure_container': 'theazurecontainer',
+        'cloud_storage_azure_shared_key': 'aGVsbG90aGVyZQ==',
+        'cloud_storage_credentials_source': 'config_file',
+    }
+    ABS_VM_INSTANCE_METADATA = {
+        'cloud_storage_enabled': 'true',
+        'cloud_storage_azure_storage_account': 'theazureaccount',
+        'cloud_storage_azure_container': 'theazurecontainer',
+        'cloud_storage_azure_managed_identity_id':
+        '00000000-0000-0000-0000-000000000000',
+        'cloud_storage_credentials_source': 'azure_vm_instance_metadata',
+    }
+    ABS_ASK_OIDC_FEDERATION = {
+        'cloud_storage_enabled': 'true',
+        'cloud_storage_azure_storage_account': 'theazureaccount',
+        'cloud_storage_azure_container': 'theazurecontainer',
+        'cloud_storage_credentials_source': 'azure_aks_oidc_federation',
+        '__env__': {
+            # Required for AKS to function correctly, the token file is just a placeholder
+            # to make the refresh credentials system boot up.
+            'AZURE_CLIENT_ID': 'client_id',
+            'AZURE_TENANT_ID': 'tenantid',
+            'AZURE_FEDERATED_TOKEN_FILE': '/etc/hosts',
+            'AZURE_AUTHORITY_HOST': 'authority.host.com'
+        }
+    }
+
+    # need to use a string as the value for an update to not trigger this error
+    # when ducktape serialized a value to create the folder for a test run
+    # `OSError: [Errno 36] File name too long`
+    @cluster(
+        num_nodes=1,
+        log_allow_list=IAM_ROLES_API_CALL_ALLOW_LIST + [
+            re.compile(
+                '.*Self configuration of the cloud storage client failed.*')
+        ])
+    @matrix(update_str=[
+        'ABS_STATIC_CFG',
+        'ABS_VM_INSTANCE_METADATA',
+        'ABS_ASK_OIDC_FEDERATION',
+    ])
+    def test_abs_cloud_validation(self, update_str: str):
+        """
+        Cloud storage configuration specific for ABS. this test is similar to test_cloud_validation,
+        but config differences between S3 and ABS makes it easier to have a specific test
+        """
+        update: dict[str, Any] = getattr(self, update_str)
+        self.logger.info(f"apply {update_str}: {update}")
+
+        # AKS requires some env variables to function correctly, set it here if the key '__env__' exists, and remove it from 'update'
+        if env := update.pop('__env__', None):
+            self.redpanda.set_environment(env)
+
+        # It is invalid to enable cloud storage without its accompanying properties
+        invalid_update = {'cloud_storage_enabled': True}
+        with expect_http_error(400):
+            self.admin.patch_cluster_config(upsert=invalid_update)
+
+        # The update should not fail validation, so this request should not fail
+        patch_result = self.admin.patch_cluster_config(upsert=update)
+
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
+
+        # Check that redpanda is able to start with this configuration (ignore connection issues due to non-existant cloud storage instance)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # Switching off cloud storage is always valid, we can leave the other
+        # properties set
+        patch_result = self.admin.patch_cluster_config(
+            upsert={'cloud_storage_enabled': False})
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
     @cluster(num_nodes=3, log_allow_list=IAM_ROLES_API_CALL_ALLOW_LIST)
     def test_cloud_validation(self):
         """
