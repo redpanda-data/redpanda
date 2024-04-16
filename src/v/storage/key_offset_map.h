@@ -179,7 +179,8 @@ private:
     hash_type::digest_type hash_key(const compaction_key&) const;
 
     mutable hash_type hasher_;
-    large_fragment_vector<entry> entries_;
+    chunked_vector<entry> entries_;
+
     size_t size_{0};
     model::offset max_offset_;
     size_t capacity_{0};
