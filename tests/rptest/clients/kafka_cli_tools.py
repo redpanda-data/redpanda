@@ -90,7 +90,7 @@ class KafkaCliTools:
                                              'SCRAM-SHA-256',
                                              tls_enabled=None)
 
-            if (sasl := security.simple_credentials()):
+            if sasl := security.simple_credentials():
                 security_config_text = f"""
 sasl.mechanism={sasl.mechanism}
 security.protocol={security.security_protocol}
