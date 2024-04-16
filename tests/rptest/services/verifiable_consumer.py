@@ -264,8 +264,10 @@ class VerifiableConsumer(BackgroundThreadService):
                  stop_timeout_sec=45,
                  on_record_consumed=None,
                  reset_policy="earliest",
-                 verify_offsets=True):
+                 verify_offsets=True,
+                 log_level="INFO"):
         super(VerifiableConsumer, self).__init__(context, num_nodes)
+
         self.redpanda = redpanda
         self.topic = topic
         self.group_id = group_id
@@ -279,6 +281,8 @@ class VerifiableConsumer(BackgroundThreadService):
         self.stop_timeout_sec = stop_timeout_sec
         self.on_record_consumed = on_record_consumed
         self.verify_offsets = verify_offsets
+        self.log_level = log_level
+
         self.last_consumed = None
 
         self.event_handlers = {}
@@ -303,7 +307,8 @@ class VerifiableConsumer(BackgroundThreadService):
 
         # Create and upload log properties
         log_config = self.render('tools_log4j.properties',
-                                 log_file=VerifiableConsumer.LOG_FILE)
+                                 log_file=VerifiableConsumer.LOG_FILE,
+                                 log_level=self.log_level)
         node.account.create_file(VerifiableConsumer.LOG4J_CONFIG, log_config)
 
         # Create and upload config file
