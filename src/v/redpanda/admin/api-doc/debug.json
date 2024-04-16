@@ -1044,6 +1044,10 @@
                     "type": "long",
                     "description": "unflushed bytes size flush trigger, used for cached writes."
                 },
+                "time_since_last_flush": {
+                    "type": "long",
+                    "description": "milliseconds since the last flush attempt."
+                },
                 "followers": {
                     "type": "array",
                     "items": {

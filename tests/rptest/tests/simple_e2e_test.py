@@ -101,7 +101,7 @@ class SimpleEndToEndTest(EndToEndTest):
                                 node=node))
                 time.sleep(5)
 
-        (acks, wc_conf) = (-1, "on") if write_caching else (1, "off")
+        (acks, wc_conf) = (-1, "true") if write_caching else (1, "false")
         # use small segment size to enable log eviction
         self.start_redpanda(num_nodes=3,
                             si_settings=SISettings(
@@ -114,7 +114,7 @@ class SimpleEndToEndTest(EndToEndTest):
                                 5242880,
                                 "default_topic_replications":
                                 3,
-                                "write_caching":
+                                "write_caching_default":
                                 wc_conf,
                                 "raft_replica_max_pending_flush_bytes":
                                 1024 * 1024 * 1024 * 1024,

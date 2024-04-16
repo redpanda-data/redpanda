@@ -714,10 +714,11 @@ ss::future<> raft_fixture::reset_background_flushing() const {
 }
 
 ss::future<> raft_fixture::set_write_caching(bool value) const {
-    auto mode = value ? model::write_caching_mode::on
-                      : model::write_caching_mode::off;
-    co_await ss::smp::invoke_on_all(
-      [mode]() { config::shard_local_cfg().write_caching.set_value(mode); });
+    auto mode = value ? model::write_caching_mode::default_true
+                      : model::write_caching_mode::default_false;
+    co_await ss::smp::invoke_on_all([mode]() {
+        config::shard_local_cfg().write_caching_default.set_value(mode);
+    });
     notify_replicas_on_config_change();
 }
 

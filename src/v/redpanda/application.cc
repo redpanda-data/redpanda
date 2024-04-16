@@ -1333,7 +1333,8 @@ void application::wire_up_redpanda_services(
                   .raft_recovery_concurrency_per_shard.bind(),
               .election_timeout_ms
               = config::shard_local_cfg().raft_election_timeout_ms.bind(),
-              .write_caching = config::shard_local_cfg().write_caching.bind(),
+              .write_caching
+              = config::shard_local_cfg().write_caching_default.bind(),
               .write_caching_flush_ms
               = config::shard_local_cfg()
                   .raft_replica_max_flush_delay_ms.bind(),

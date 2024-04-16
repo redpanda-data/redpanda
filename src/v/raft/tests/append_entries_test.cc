@@ -760,7 +760,8 @@ FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
               result<model::offset> l_offset) {
                 r = l_offset;
                 leader_offsets = leader_node.log->offsets();
-                return l_offset.has_value();
+                return l_offset.has_value()
+                       && l_offset.value() == leader_offsets.dirty_offset;
             });
       })
       .get();

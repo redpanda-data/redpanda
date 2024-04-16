@@ -362,7 +362,7 @@ metadata_cache::get_topic_write_caching_mode(
         return std::nullopt;
     }
     if (
-      config::shard_local_cfg().write_caching()
+      config::shard_local_cfg().write_caching_default()
       == model::write_caching_mode::disabled) {
         return model::write_caching_mode::disabled;
     }

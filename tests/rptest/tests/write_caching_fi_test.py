@@ -22,7 +22,7 @@ class WriteCachingFailureInjectionTest(RedpandaTest):
 
     def __init__(self, test_context):
         extra_rp_conf = dict(
-            write_caching="on",
+            write_caching_default="true",
 
             # Make data loss more likely by allowing more data to reside in
             # memory only.

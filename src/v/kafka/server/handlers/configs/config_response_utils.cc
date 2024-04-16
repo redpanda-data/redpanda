@@ -595,16 +595,17 @@ config_response_container_t make_topic_configs(
     add_topic_config_if_requested(
       config_keys,
       result,
-      config::shard_local_cfg().write_caching.name(),
-      config::shard_local_cfg().write_caching(),
+      config::shard_local_cfg().write_caching_default.name(),
+      config::shard_local_cfg().write_caching_default(),
       topic_property_write_caching,
-      (config::shard_local_cfg().write_caching()
+      (config::shard_local_cfg().write_caching_default()
        == model::write_caching_mode::disabled)
         ? model::write_caching_mode::disabled
         : topic_properties.write_caching,
       include_synonyms,
       maybe_make_documentation(
-        include_documentation, config::shard_local_cfg().write_caching.desc()),
+        include_documentation,
+        config::shard_local_cfg().write_caching_default.desc()),
       &describe_as_string<model::write_caching_mode>);
 
     add_topic_config_if_requested(

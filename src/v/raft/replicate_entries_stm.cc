@@ -50,42 +50,13 @@ ss::future<model::record_batch_reader> replicate_entries_stm::share_batches() {
     co_return std::move(readers.back());
 }
 
-ss::future<result<append_entries_reply>> replicate_entries_stm::flush_log() {
-    using ret_t = result<append_entries_reply>;
+ss::future<> replicate_entries_stm::flush_log() {
     auto flush_f = ss::now();
     if (_is_flush_required) {
         flush_f = _ptr->flush_log().discard_result();
     }
-
-    auto f = flush_f
-               .then([this]() {
-                   /**
-                    * Replicate STM _dirty_offset is set to the dirty offset of
-                    * a log after successfull self append. After flush we are
-                    * certain that data to at least `_dirty_offset` were
-                    * flushed. Sampling offset again right before the flush
-                    * isn't necessary since it will not influence result of
-                    * replication process in current `replicate_entries_stm`
-                    * instance.
-                    */
-                   auto new_committed_offset = _dirty_offset;
-                   append_entries_reply reply;
-                   reply.node_id = _ptr->_self;
-                   reply.target_node_id = _ptr->_self;
-                   reply.group = _ptr->group();
-                   reply.term = _ptr->term();
-                   // we just flushed offsets are the same
-                   reply.last_dirty_log_index = new_committed_offset;
-                   reply.last_flushed_log_index = new_committed_offset;
-                   reply.result = reply_result::success;
-                   return ret_t(reply);
-               })
-               .handle_exception(
-                 []([[maybe_unused]] const std::exception_ptr& ex) {
-                     return ret_t(errc::leader_flush_failed);
-                 });
     _dispatch_sem.signal();
-    return f;
+    return flush_f;
 }
 
 clock_type::time_point replicate_entries_stm::append_entries_timeout() {
@@ -148,38 +119,36 @@ ss::future<> replicate_entries_stm::dispatch_one(vnode id) {
     return ss::with_gate(
              _req_bg,
              [this, id]() mutable {
-                 return dispatch_single_retry(id).then(
-                   [this, id](result<append_entries_reply> reply) {
-                       raft::follower_req_seq seq{0};
-                       if (id != _ptr->self()) {
-                           auto it = _followers_seq.find(id);
-                           vassert(
-                             it != _followers_seq.end(),
-                             "Follower request sequence is required to exists "
-                             "for each follower. No follower sequence found "
-                             "for {}",
-                             id);
-                           seq = it->second;
-                       }
-
-                       if (!reply) {
-                           _ptr->get_probe().replicate_request_error();
-                       }
-                       _ptr->process_append_entries_reply(
-                         id.id(), reply, seq, _dirty_offset);
-                   });
+                 return id == _ptr->self() ? flush_log()
+                                           : dispatch_remote_append_entries(id);
              })
       .handle_exception_type([](const ss::gate_closed_exception&) {});
 }
 
-ss::future<result<append_entries_reply>>
-replicate_entries_stm::dispatch_single_retry(vnode id) {
-    if (id == _ptr->_self) {
-        return flush_log();
-    }
-    return share_batches().then(
-      [this, id](model::record_batch_reader batches) mutable {
+ss::future<> replicate_entries_stm::dispatch_remote_append_entries(vnode id) {
+    vassert(
+      id != _ptr->_self,
+      "Incorrect remote entries dispatch for local node: {}",
+      id);
+    return share_batches()
+      .then([this, id](model::record_batch_reader batches) mutable {
           return send_append_entries_request(id, std::move(batches));
+      })
+      .then([this, id](result<append_entries_reply> reply) {
+          raft::follower_req_seq seq{0};
+          auto it = _followers_seq.find(id);
+          vassert(
+            it != _followers_seq.end(),
+            "Follower request sequence is required to exists "
+            "for each follower. No follower sequence found "
+            "for {}",
+            id);
+          seq = it->second;
+          if (!reply) {
+              _ptr->get_probe().replicate_request_error();
+          }
+          _ptr->process_append_entries_reply(
+            id.id(), reply, seq, _dirty_offset);
       });
 }
 

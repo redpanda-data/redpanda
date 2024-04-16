@@ -297,7 +297,7 @@ struct write_caching_configs_validator {
             return mode != model::write_caching_mode::disabled;
         }
         // write caching cannot be turned on for internal topics.
-        return mode != model::write_caching_mode::on;
+        return mode != model::write_caching_mode::default_true;
     }
 
     static bool validate_flush_ms(const creatable_topic& c) {

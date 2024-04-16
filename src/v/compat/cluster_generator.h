@@ -642,8 +642,8 @@ struct instance_generator<cluster::topic_properties> {
             [] { return model::vcluster_id(random_xid()); }),
           tests::random_optional([] {
               return random_generators::random_choice(
-                {model::write_caching_mode::on,
-                 model::write_caching_mode::off,
+                {model::write_caching_mode::default_true,
+                 model::write_caching_mode::default_false,
                  model::write_caching_mode::disabled});
           }),
           tests::random_optional([] { return tests::random_duration_ms(); }),
