@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/avast/retry-go"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+
+	"github.com/avast/retry-go"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -322,7 +322,7 @@ func restartCluster(
 				err = c.ContainerStart(
 					ctx,
 					state.ContainerID,
-					types.ContainerStartOptions{},
+					container.StartOptions{},
 				)
 				if err != nil {
 					return err
@@ -358,7 +358,7 @@ func restartCluster(
 
 func startNode(c common.Client, containerID string) error {
 	ctx, _ := common.DefaultCtx()
-	err := c.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
+	err := c.ContainerStart(ctx, containerID, container.StartOptions{})
 	return err
 }
 
