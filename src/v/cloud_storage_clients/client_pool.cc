@@ -365,7 +365,7 @@ client_pool::acquire(ss::abort_source& as) {
                   if (!pool->_pool.empty()) {
                       vlog(
                         pool_log.debug,
-                        "disposing the the oldest client connection and "
+                        "disposing the oldest client connection and "
                         "replacing it with the borrowed one");
                       pool->_pool.push_back(std::move(client));
                       client = std::move(pool->_pool.front());
