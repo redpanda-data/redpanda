@@ -310,8 +310,12 @@ ss::future<std::optional<bool>> seq_writer::do_delete_config(subject sub) {
     batch_builder rb{model::offset{0}, sub};
     rb(co_await _store.get_subject_config_written_at(sub));
 
-    co_await produce_and_apply(std::nullopt, std::move(rb).build());
-    co_return true;
+    if (co_await produce_and_apply(std::nullopt, std::move(rb).build())) {
+        co_return true;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
 }
 
 ss::future<bool> seq_writer::delete_config(subject sub) {
@@ -409,14 +413,13 @@ seq_writer::delete_subject_impermanent(subject sub) {
 /// will hard-delete the whole subject.
 ss::future<std::vector<schema_version>> seq_writer::delete_subject_permanent(
   subject sub, std::optional<schema_version> version) {
-    return container().invoke_on(0, _smp_opts, [sub, version](seq_writer& seq) {
-        return ss::with_semaphore(seq._write_sem, 1, [sub, version, &seq]() {
-            return seq.delete_subject_permanent_inner(sub, version);
-        });
-    });
+    return sequenced_write(
+      [sub{std::move(sub)}, version](model::offset, seq_writer& seq) {
+          return seq.delete_subject_permanent_inner(sub, version);
+      });
 }
 
-ss::future<std::vector<schema_version>>
+ss::future<std::optional<std::vector<schema_version>>>
 seq_writer::delete_subject_permanent_inner(
   subject sub, std::optional<schema_version> version) {
     std::vector<seq_marker> sequences;
@@ -440,8 +443,12 @@ seq_writer::delete_subject_permanent_inner(
     }
     rb(sequences);
 
-    co_await produce_and_apply(std::nullopt, std::move(rb).build());
-    co_return versions;
+    if (co_await produce_and_apply(std::nullopt, std::move(rb).build())) {
+        co_return versions;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
 }
 
 } // namespace pandaproxy::schema_registry
