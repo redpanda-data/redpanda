@@ -758,7 +758,24 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
         model::ntp ntp(
           model::kafka_namespace, "test_topic", random_generators::get_int(10));
 
-        std::optional<shard_placement_target> target;
+        auto set_target = [&](std::optional<shard_placement_target> target) {
+            if (
+              ss::this_shard_id()
+              != shard_placement_table::assignment_shard_id) {
+                return ss::now();
+            }
+
+            return ss::yield().then([&, target] {
+                _ntp2shards.local()[ntp].target = target;
+                return spt.local().set_target(
+                  ntp,
+                  target,
+                  cur_shard_revision++,
+                  [this](const model::ntp& ntp, model::shard_revision_id rev) {
+                      rb.local().notify_reconciliation(ntp, rev);
+                  });
+            });
+        };
 
         auto pt_it = ntpt.local().ntp2meta.find(ntp);
         if (pt_it == ntpt.local().ntp2meta.end()) {
@@ -771,10 +788,10 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
                   .log_revision = revision,
                 };
                 ntpt.revision = revision;
-            });
 
-            target = shard_placement_target(
-              revision, random_generators::get_int(get_max_shard_id()));
+                return set_target(shard_placement_target(
+                  revision, random_generators::get_int(get_max_shard_id())));
+            });
         } else {
             auto ntp_meta = pt_it->second;
 
@@ -788,41 +805,32 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
               {op_t::transfer, op_t::remove, op_t::increase_log_rev});
             switch (op) {
             case op_t::transfer:
-                target = shard_placement_target(
+                co_await set_target(shard_placement_target(
                   ntp_meta.log_revision,
-                  random_generators::get_int(get_max_shard_id()));
+                  random_generators::get_int(get_max_shard_id())));
                 break;
             case op_t::remove: {
                 auto revision = cur_revision++;
-                target = std::nullopt;
                 co_await ntpt.invoke_on_all([&](ntp_table& ntpt) {
                     ntpt.ntp2meta.erase(ntp);
                     ntpt.revision = revision;
+                    return set_target(std::nullopt);
                 });
                 break;
             }
             case op_t::increase_log_rev:
                 ntp_meta.log_revision = cur_revision++;
-                target = shard_placement_target(
-                  ntp_meta.log_revision,
-                  random_generators::get_int(get_max_shard_id()));
                 co_await ntpt.invoke_on_all([&](ntp_table& ntpt) {
                     ntpt.ntp2meta[ntp] = ntp_meta;
                     ntpt.revision = ntp_meta.log_revision;
+
+                    return set_target(shard_placement_target(
+                      ntp_meta.log_revision,
+                      random_generators::get_int(get_max_shard_id())));
                 });
                 break;
             }
         }
-
-        _ntp2shards.local()[ntp].target = target;
-
-        co_await spt.local().set_target(
-          ntp,
-          target,
-          cur_shard_revision++,
-          [this](const model::ntp& ntp, model::shard_revision_id rev) {
-              rb.local().notify_reconciliation(ntp, rev);
-          });
     }
 
     vlog(clusterlog.info, "finished");
