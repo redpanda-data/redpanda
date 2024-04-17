@@ -9,7 +9,10 @@
 
 #include "kafka/server/logger.h"
 
+#include "base/units.h"
+
 namespace kafka {
+static constexpr size_t max_log_line_bytes = 128_KiB;
 ss::logger klog("kafka");
-truncating_logger kwire(klog, 1048576);
+truncating_logger kwire(klog, max_log_line_bytes);
 } // namespace kafka
