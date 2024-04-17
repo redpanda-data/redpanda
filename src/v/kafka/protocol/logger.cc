@@ -9,7 +9,7 @@
 
 #include "kafka/server/logger.h"
 
-#include "base/units.h"
+#include "units.h"
 
 namespace kafka {
 static constexpr size_t max_log_line_bytes = 128_KiB;
