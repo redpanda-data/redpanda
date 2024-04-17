@@ -90,7 +90,7 @@ class KafkaCliTools:
                                              'SCRAM-SHA-256',
                                              tls_enabled=None)
 
-            if (sasl := security.simple_credentials()):
+            if sasl := security.simple_credentials():
                 security_config_text = f"""
 sasl.mechanism={sasl.mechanism}
 security.protocol={security.security_protocol}
@@ -107,6 +107,9 @@ sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginMo
 sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthLoginCallbackHandler
 """
 
+        # security config can't be parsed by the basic props parser in many of the
+        # cli tools (e.g., because they split on whitespace but security properties may
+        # contain embedded whitespace) but we can use a config file to get around this
         if security_config_text:
             self._command_config = tempfile.NamedTemporaryFile(mode="w")
             self._command_config.write(security_config_text)
@@ -296,6 +299,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             "batch.size=%d" % batch_size,
             "bootstrap.servers=%s" % self._redpanda.brokers()
         ]
+        if self._command_config:
+            cmd += ["--producer.config", self._command_config.name]
         return self._execute(cmd, "produce")
 
     def list_acls(self):
@@ -313,7 +318,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
 
     def get_api_versions(self):
         return self._run("kafka-run-class.sh", [],
-                         "kafka.admin.BrokerApiVersionsCommand",
+                         classname="kafka.admin.BrokerApiVersionsCommand",
                          desc="get_api_versions")
 
     def reassign_partitions(self,
@@ -367,12 +372,12 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         ]
         self._redpanda.logger.debug(
             "Describe producers for topic %s partition %s", topic, partition)
-        cmd = [self._script("kafka-transactions.sh")]
-        cmd += ["--bootstrap-server", self._redpanda.brokers()]
-        cmd += ["describe-producers"]
+        cmd = ["describe-producers"]
         cmd += ["--topic", topic]
         cmd += ["--partition", str(partition)]
-        res = self._execute(cmd, "describe_producers")
+        res = self._run("kafka-transactions.sh",
+                        cmd,
+                        desc="describe_producers")
 
         producers: list[dict[str, str]] = []
         split_str = res.split("\n")
@@ -399,10 +404,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             "TransactionalId", "Coordinator", "ProducerId", "TransactionState"
         ]
         self._redpanda.logger.debug("List transactions")
-        cmd = [self._script("kafka-transactions.sh")]
-        cmd += ["--bootstrap-server", self._redpanda.brokers()]
-        cmd += ["list"]
-        res = self._execute(cmd, "list_transactions")
+        res = self._run("kafka-transactions.sh", ["list"],
+                        desc="list_transactions")
 
         txs: list[dict[str, str]] = []
         split_str = res.split("\n")
@@ -431,11 +434,10 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             "TopicPartitions"
         ]
         self._redpanda.logger.debug("Describe transaction tx_id: %s", tx_id)
-        cmd = [self._script("kafka-transactions.sh")]
-        cmd += ["--bootstrap-server", self._redpanda.brokers()]
-        cmd += ["describe"]
-        cmd += ["--transactional-id", str(tx_id)]
-        res = self._execute(cmd, "describe_transaction")
+        cmd = ["describe", "--transactional-id", str(tx_id)]
+        res = self._run("kafka-transactions.sh",
+                        cmd,
+                        desc="describe_transaction")
         # 0 - keys, 1 - tx info, 2 - empty string
         split_str = res.split("\n")
         assert len(split_str) == 3
@@ -459,6 +461,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
     def _run(self,
              script: str,
              args: list[str],
+             *,
              classname: str | None = None,
              desc: str | None = None):
         cmd = [self._script(script)]
@@ -468,10 +471,13 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         if self._command_config:
             cmd += ["--command-config", self._command_config.name]
         cmd += args
-        return self._execute(cmd, desc=desc)
+        return self._execute(cmd, desc=desc if desc else "unknown")
 
     def _execute(self, cmd: list[str], desc: str):
         """
+        Raw execution of the command give in the cmd array. Prefer _run
+        in most cases as it handles common options such as --bootstrap-servers
+        and --command-config.
 
         :param cmd: list of strings
         :return: stdout on success (raise on failure)
