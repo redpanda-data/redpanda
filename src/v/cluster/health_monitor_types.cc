@@ -20,12 +20,15 @@
 #include "utils/to_string.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <fmt/ostream.h>
 
 #include <algorithm>
 #include <chrono>
 #include <iterator>
+#include <optional>
 
 namespace cluster {
 
@@ -193,6 +196,32 @@ bool operator==(const topic_status& a, const topic_status& b) {
              a.partitions.cend(),
              b.partitions.cbegin(),
              b.partitions.cend());
+}
+
+cluster_health_report cluster_health_report::copy() const {
+    cluster_health_report r;
+    r.raft0_leader = raft0_leader;
+    r.node_states = node_states;
+    r.bytes_in_cloud_storage = bytes_in_cloud_storage;
+    r.node_reports.reserve(node_reports.size());
+    for (auto& nr : node_reports) {
+        node_health_report nr_copy;
+        nr_copy.id = nr->id;
+        nr_copy.drain_status = nr->drain_status;
+        nr_copy.topics = nr->topics.copy();
+        nr_copy.local_state = nr->local_state;
+
+        r.node_reports.emplace_back(ss::make_lw_shared(std::move(nr_copy)));
+    }
+    return r;
+}
+
+get_cluster_health_reply get_cluster_health_reply::copy() const {
+    get_cluster_health_reply reply{.error = error};
+    if (report.has_value()) {
+        reply.report = report->copy();
+    }
+    return reply;
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_status& tl) {

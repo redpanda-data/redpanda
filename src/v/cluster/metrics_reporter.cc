@@ -191,29 +191,29 @@ metrics_reporter::build_metrics_snapshot() {
 
     for (auto& report : report.value().node_reports) {
         auto [it, _] = metrics_map.emplace(
-          report.id, node_metrics{.id = report.id});
+          report->id, node_metrics{.id = report->id});
         auto& metrics = it->second;
 
-        auto nm = _members_table.local().get_node_metadata_ref(report.id);
+        auto nm = _members_table.local().get_node_metadata_ref(report->id);
         if (!nm) {
             continue;
         }
         metrics.cpu_count = nm->get().broker.properties().cores;
-        metrics.is_alive = _health_monitor.local().is_alive(report.id)
+        metrics.is_alive = _health_monitor.local().is_alive(report->id)
                            == cluster::alive::yes;
-        metrics.version = report.local_state.redpanda_version;
-        metrics.logical_version = report.local_state.logical_version;
-        metrics.disks.reserve(report.local_state.shared_disk() ? 1 : 2);
-        auto transform_disk = [](storage::disk& d) -> node_disk_space {
+        metrics.version = report->local_state.redpanda_version;
+        metrics.logical_version = report->local_state.logical_version;
+        metrics.disks.reserve(report->local_state.shared_disk() ? 1 : 2);
+        auto transform_disk = [](const storage::disk& d) -> node_disk_space {
             return node_disk_space{.free = d.free, .total = d.total};
         };
-        metrics.disks.push_back(transform_disk(report.local_state.data_disk));
-        if (!report.local_state.shared_disk()) {
+        metrics.disks.push_back(transform_disk(report->local_state.data_disk));
+        if (!report->local_state.shared_disk()) {
             metrics.disks.push_back(
-              transform_disk(*(report.local_state.cache_disk)));
+              transform_disk(*(report->local_state.cache_disk)));
         }
 
-        metrics.uptime_ms = report.local_state.uptime / 1ms;
+        metrics.uptime_ms = report->local_state.uptime / 1ms;
     }
     auto& topics = _topics.local().topics_map();
     snapshot.topic_count = 0;

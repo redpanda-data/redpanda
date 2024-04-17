@@ -618,7 +618,7 @@ FIXTURE_TEST(
         if (report.has_value()) {
             std::vector<size_t> sizes;
             for (auto& node_report : report.value().node_reports) {
-                for (auto& topic : node_report.topics) {
+                for (auto& topic : node_report->topics) {
                     if (
                       topic.tp_ns
                       != model::topic_namespace_view(

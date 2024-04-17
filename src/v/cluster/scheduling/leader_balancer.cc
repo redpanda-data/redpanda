@@ -646,7 +646,7 @@ leader_balancer::collect_group_replicas_from_health_report() {
     group_replicas_t group_replicas;
     ssx::async_counter counter;
     for (const auto& node : hr.value().node_reports) {
-        for (const auto& topic : node.topics) {
+        for (const auto& topic : node->topics) {
             auto maybe_meta = _topics.get_topic_metadata_ref(topic.tp_ns);
             if (!maybe_meta) {
                 continue;
@@ -662,7 +662,7 @@ leader_balancer::collect_group_replicas_from_health_report() {
                   if (as_it != meta.get_assignments().end()) {
                       group_replicas[as_it->group].push_back(
                         model::broker_shard{
-                          .node_id = node.id,
+                          .node_id = node->id,
                           .shard = partition.shard,
                         });
                   }
