@@ -543,6 +543,10 @@ health_monitor_backend::get_current_node_health() {
     }
 
     auto u = _report_collection_mutex.try_get_units();
+    /**
+     * If units are not available it indicates that the other fiber is
+     * collecting node health. We wait for the report to be available
+     */
     if (!u) {
         vlog(
           clusterlog.debug,
@@ -553,8 +557,16 @@ health_monitor_backend::get_current_node_health() {
             co_return it->second;
         }
     }
+    /**
+     * Current fiber will collect and cache the report
+     */
+    auto r = co_await collect_current_node_health();
+    if (r.has_value()) {
+        _reports.emplace(
+          _self, ss::make_lw_shared<node_health_report>(r.value()));
+    }
 
-    co_return co_await collect_current_node_health();
+    co_return std::move(r);
 }
 
 namespace {
