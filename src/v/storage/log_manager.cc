@@ -674,12 +674,16 @@ ss::future<> log_manager::remove_orphan_files(
   absl::flat_hash_set<model::ns> namespaces,
   ss::noncopyable_function<bool(model::ntp, partition_path::metadata)>
     orphan_filter) {
+    auto holder = _gate.hold();
     auto data_directory_exist = co_await ss::file_exists(data_directory_path);
     if (!data_directory_exist) {
         co_return;
     }
 
     for (const auto& ns : namespaces) {
+        if (_gate.is_closed()) {
+            co_return;
+        }
         auto namespace_directory = std::filesystem::path(data_directory_path)
                                    / std::filesystem::path(ss::sstring(ns));
         auto namespace_directory_exist = co_await ss::file_exists(
