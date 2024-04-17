@@ -80,6 +80,8 @@ set(schemata
   list_partition_reassignments_request.json
   list_partition_reassignments_response.json
   alter_client_quotas_request.json
-  alter_client_quotas_response.json)
+  alter_client_quotas_response.json
+  describe_client_quotas_request.json
+  describe_client_quotas_response.json)
 
 set(schemata ${schemata} PARENT_SCOPE)

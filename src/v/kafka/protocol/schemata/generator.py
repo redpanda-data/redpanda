@@ -367,7 +367,12 @@ path_type_map = {
         "Topics": {
             "Partitions": ("model::partition_id", "int32"),
         }
-    }
+    },
+    "DescribeClientQuotasRequestData": {
+        "Components": {
+            "MatchType": ("kafka::describe_client_quotas_match_type", "int8"),
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -441,11 +446,15 @@ struct_renames = {
         ("EntryData", "AlterClientQuotasRequestEntryData"),
     ("AlterClientQuotasResponseData", "Entries"):
         ("EntryData", "AlterClientQuotasResponseEntryData"),
+    ("DescribeClientQuotasResponseData", "Entries"):
+        ("EntryData", "DescribeClientQuotasResponseEntryData"),
 
     ("AlterClientQuotasRequestData", "Entries", "Entity"):
         ("EntityData", "AlterClientQuotasRequestEntityData"),
     ("AlterClientQuotasResponseData", "Entries", "Entity"):
         ("EntityData", "AlterClientQuotasResponseEntityData"),
+    ("DescribeClientQuotasResponseData", "Entries", "Entity"):
+        ("EntityData", "DescribeClientQuotasResponseEntityData"),
 }
 
 # extra header per type name
@@ -619,6 +628,8 @@ STRUCT_TYPES = [
     "EntryData",
     "EntityData",
     "OpData",
+    "ComponentData",
+    "ValueData",
 ]
 
 DROP_STREAM_OPERATOR = [

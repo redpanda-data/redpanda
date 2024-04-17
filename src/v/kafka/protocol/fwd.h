@@ -25,6 +25,7 @@ struct delete_topics_request;
 struct delete_topics_response;
 struct describe_configs_request;
 struct describe_configs_response;
+struct describe_client_quotas_request;
 struct describe_groups_request;
 struct describe_groups_request;
 struct find_coordinator_response;

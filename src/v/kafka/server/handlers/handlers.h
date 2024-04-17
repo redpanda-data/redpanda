@@ -24,6 +24,7 @@
 #include "kafka/server/handlers/delete_records.h"
 #include "kafka/server/handlers/delete_topics.h"
 #include "kafka/server/handlers/describe_acls.h"
+#include "kafka/server/handlers/describe_client_quotas.h"
 #include "kafka/server/handlers/describe_configs.h"
 #include "kafka/server/handlers/describe_groups.h"
 #include "kafka/server/handlers/describe_log_dirs.h"
@@ -101,7 +102,8 @@ using request_types = make_request_types<
   describe_producers_handler,
   describe_transactions_handler,
   list_transactions_handler,
-  alter_client_quotas_handler>;
+  alter_client_quotas_handler,
+  describe_client_quotas_handler>;
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {

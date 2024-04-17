@@ -23,6 +23,7 @@
 #include "kafka/protocol/schemata/delete_records_request.h"
 #include "kafka/protocol/schemata/delete_topics_request.h"
 #include "kafka/protocol/schemata/describe_acls_request.h"
+#include "kafka/protocol/schemata/describe_client_quotas_request.h"
 #include "kafka/protocol/schemata/describe_configs_request.h"
 #include "kafka/protocol/schemata/describe_groups_request.h"
 #include "kafka/protocol/schemata/describe_log_dirs_request.h"
@@ -471,6 +472,8 @@ event_type kafka_api_to_event_type(kafka::api_key key) {
     case kafka::describe_transactions_api::key:
         return event_type::describe;
     case kafka::list_transactions_api::key:
+        return event_type::describe;
+    case kafka::describe_client_quotas_api::key:
         return event_type::describe;
     case kafka::heartbeat_api::key:
         return event_type::heartbeat;
