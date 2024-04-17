@@ -173,9 +173,18 @@ public:
 
     ss::future<std::optional<model::offset>>
       get_leader_epoch_last_offset(kafka::leader_epoch) const final;
-
+    /**
+     * A leader epoch is used by Kafka clients to determine if a replica is up
+     * to date with the leader and to detect truncation.
+     *
+     * The leader epoch differs from Raft term as the term is updated when
+     * leader election starts. Whereas the leader epoch is updated after the
+     * state of the replica is determined. Therefore the leader epoch uses
+     * confirmed term instead of the simple term which is incremented every time
+     * the leader election starts.
+     */
     kafka::leader_epoch leader_epoch() const final {
-        return leader_epoch_from_term(_partition->term());
+        return leader_epoch_from_term(_partition->raft()->confirmed_term());
     }
 
     ss::future<error_code> validate_fetch_offset(

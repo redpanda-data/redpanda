@@ -461,13 +461,10 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
     if (reading_from_follower && !_partition->is_leader()) {
         auto ec = error_code::none;
 
-        const std::pair<model::offset, model::offset> bounds = std::minmax(
+        const auto available_to_read = std::min(
           leader_high_watermark(), log_end_offset());
-        const auto effective_log_end_offset = bounds.second;
-        const auto available_to_read = bounds.first;
-        if (
-          fetch_offset < start_offset()
-          || fetch_offset > effective_log_end_offset) {
+
+        if (fetch_offset < start_offset()) {
             ec = error_code::offset_out_of_range;
         } else if (fetch_offset > available_to_read) {
             /**

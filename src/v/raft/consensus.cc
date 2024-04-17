@@ -1912,6 +1912,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         maybe_update_last_visible_index(last_visible);
         _last_leader_visible_offset = std::max(
           request_metadata.last_visible_index, _last_leader_visible_offset);
+        _confirmed_term = _term;
         return f.then([this, reply, request_metadata] {
             return maybe_update_follower_commit_idx(
                      model::offset(request_metadata.commit_index))
@@ -1925,11 +1926,11 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 3
     if (request_metadata.prev_log_index < last_log_offset) {
-        if (unlikely(request_metadata.prev_log_index < last_visible_index())) {
+        if (unlikely(request_metadata.prev_log_index < _commit_index)) {
             reply.result = append_entries_reply::status::success;
             // clamp dirty offset to the current commit index not to allow
             // leader reasoning about follower log beyond that point
-            reply.last_dirty_log_index = last_visible_index();
+            reply.last_dirty_log_index = _commit_index;
             reply.last_flushed_log_index = _commit_index;
             vlog(
               _ctxlog.info,
@@ -1955,19 +1956,26 @@ consensus::do_append_entries(append_entries_request&& r) {
           truncate_at);
         _probe->log_truncated();
 
+        _majority_replicated_index = std::min(
+          model::prev_offset(truncate_at), _majority_replicated_index);
+        _last_quorum_replicated_index = std::min(
+          model::prev_offset(truncate_at), _last_quorum_replicated_index);
+        // update flushed offset since truncation may happen to already
+        // flushed entries
+        _flushed_offset = std::min(
+          model::prev_offset(truncate_at), _flushed_offset);
         // We are truncating the offset translator before truncating the log
         // because if saving offset translator state fails, we will retry and
         // eventually log and offset translator will become consistent. OTOH if
         // log truncation were first and saving offset translator state failed,
         // we wouldn't retry and log and offset translator could diverge.
+
         return _offset_translator.truncate(truncate_at)
           .then([this, truncate_at] {
               return _log->truncate(storage::truncate_config(
                 truncate_at, _scheduling.default_iopc));
           })
           .then([this, truncate_at] {
-              _last_quorum_replicated_index = std::min(
-                model::prev_offset(truncate_at), _last_quorum_replicated_index);
               // update flushed offset since truncation may happen to already
               // flushed entries
               _flushed_offset = std::min(
@@ -2012,6 +2020,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           maybe_update_last_visible_index(last_visible);
           _last_leader_visible_offset = std::max(
             m.last_visible_index, _last_leader_visible_offset);
+          _confirmed_term = _term;
           return maybe_update_follower_commit_idx(model::offset(m.commit_index))
             .then([this, ofs, target] {
                 return make_append_entries_reply(target, ofs);
