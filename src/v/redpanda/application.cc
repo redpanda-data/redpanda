@@ -1340,7 +1340,11 @@ void application::wire_up_redpanda_services(
                   .raft_replica_max_flush_delay_ms.bind(),
               .write_caching_flush_bytes
               = config::shard_local_cfg()
-                  .raft_replica_max_pending_flush_bytes.bind()};
+                  .raft_replica_max_pending_flush_bytes.bind(),
+              .enable_longest_log_detection
+              = config::shard_local_cfg()
+                  .raft_enable_longest_log_detection.bind(),
+            };
         },
         [] {
             return raft::recovery_memory_quota::configuration{

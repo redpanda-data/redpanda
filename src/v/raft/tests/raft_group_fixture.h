@@ -177,6 +177,7 @@ struct raft_node {
             seastar::default_scheduling_group(),
             seastar::default_priority_class()),
           config::mock_binding<std::chrono::milliseconds>(10s),
+          config::mock_binding<bool>(true),
           raft::make_rpc_client_protocol(self_id, cache),
           [this](raft::leadership_status st) { leader_callback(st); },
           storage.local(),

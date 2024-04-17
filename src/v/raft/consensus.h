@@ -13,6 +13,7 @@
 
 #include "base/likely.h"
 #include "base/seastarx.h"
+#include "config/property.h"
 #include "features/feature_table.h"
 #include "hashing/crc32c.h"
 #include "metrics/metrics.h"
@@ -99,6 +100,7 @@ public:
       ss::shared_ptr<storage::log>,
       scheduling_config,
       config::binding<std::chrono::milliseconds> disk_timeout,
+      config::binding<bool> enable_longest_log_detection,
       consensus_client_protocol,
       leader_cb_t,
       storage::api&,
@@ -778,6 +780,7 @@ private:
     ss::shared_ptr<storage::log> _log;
     scheduling_config _scheduling;
     config::binding<std::chrono::milliseconds> _disk_timeout;
+    config::binding<bool> _enable_longest_log_detection;
     consensus_client_protocol _client_protocol;
     leader_cb_t _leader_notification;
 

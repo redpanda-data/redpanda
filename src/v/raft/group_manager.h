@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/notification.h"
+#include "config/property.h"
 #include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "raft/heartbeat_manager.h"
@@ -47,6 +48,7 @@ public:
         config::binding<model::write_caching_mode> write_caching;
         config::binding<std::chrono::milliseconds> write_caching_flush_ms;
         config::binding<std::optional<size_t>> write_caching_flush_bytes;
+        config::binding<bool> enable_longest_log_detection;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 

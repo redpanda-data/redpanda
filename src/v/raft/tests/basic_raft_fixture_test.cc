@@ -413,6 +413,11 @@ TEST_P_CORO(
  * the offsets to appear.
  */
 TEST_P_CORO(quorum_acks_fixture, test_progress_on_truncation) {
+    /**
+     * Truncation detection test is expected to experience a log truncation,
+     * hence we disable longest log detection
+     */
+    set_enable_longest_log_detection(false);
     co_await create_simple_group(3);
     auto leader_id = co_await wait_for_leader(10s);
     auto params = GetParam();
@@ -484,3 +489,47 @@ INSTANTIATE_TEST_SUITE_P(
       .c_lvl = consistency_level::quorum_ack, .write_caching = false},
     test_parameters{
       .c_lvl = consistency_level::quorum_ack, .write_caching = true}));
+
+TEST_F_CORO(raft_fixture, test_prioritizing_longest_log) {
+    co_await create_simple_group(3);
+
+    /**
+     * Enable write
+     */
+    co_await set_write_caching(true);
+    auto r = co_await retry_with_leader(
+      10s + model::timeout_clock::now(),
+      [this](raft_node_instance& leader_node) {
+          return leader_node.raft()->replicate(
+            make_batches(10, 10, 128),
+            replicate_options(consistency_level::quorum_ack));
+      });
+    ASSERT_TRUE_CORO(r.has_value());
+    /**
+     * wait for all nodes
+     */
+    auto visible_offset = r.value().last_offset;
+    co_await wait_for_visible_offset(visible_offset, 10s);
+
+    /**
+     * Stop all nodes
+     */
+    auto ids_set = all_ids();
+    std::vector<model::node_id> ids(ids_set.begin(), ids_set.end());
+    auto survivor = random_generators::random_choice(ids);
+
+    for (auto& id : ids) {
+        auto data_dir = node(id).raft()->log()->config().base_directory();
+        co_await stop_node(
+          id, survivor == id ? remove_data_dir::no : remove_data_dir::yes);
+        add_node(id, model::revision_id(0), std::move(data_dir));
+    }
+
+    for (auto& [id, n] : nodes()) {
+        co_await n->init_and_start(all_vnodes());
+    }
+
+    auto leader_id = wait_for_leader(10s);
+
+    co_await wait_for_visible_offset(visible_offset, 10s);
+}

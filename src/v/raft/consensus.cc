@@ -100,6 +100,7 @@ consensus::consensus(
   ss::shared_ptr<storage::log> l,
   scheduling_config scheduling_config,
   config::binding<std::chrono::milliseconds> disk_timeout,
+  config::binding<bool> enable_longest_log_detection,
   consensus_client_protocol client,
   consensus::leader_cb_t cb,
   storage::api& storage,
@@ -116,6 +117,7 @@ consensus::consensus(
   , _log(l)
   , _scheduling(scheduling_config)
   , _disk_timeout(std::move(disk_timeout))
+  , _enable_longest_log_detection(std::move(enable_longest_log_detection))
   , _client_protocol(client)
   , _leader_notification(std::move(cb))
   , _fstats(
