@@ -40,3 +40,17 @@ licenses           @emaxerrno @dswang
 /tests/run.sh                       @redpanda-data/devprod
 /src/consistency-testing            @mmaslankaprv
 /tests/java/tx-verifier             @mmaslankaprv
+
+#
+# automatically tag docs team for configuration changes
+#
+/src/v/config/configuration.cc                      @redpanda-data/documentation
+/src/v/config/configuration.h                       @redpanda-data/documentation
+/src/v/config/node_config.cc                        @redpanda-data/documentation
+/src/v/config/node_config.h                         @redpanda-data/documentation
+/src/v/kafka/client/configuration.cc                @redpanda-data/documentation
+/src/v/kafka/client/configuration.h                 @redpanda-data/documentation
+/src/v/pandaproxy/rest/configuration.cc             @redpanda-data/documentation
+/src/v/pandaproxy/rest/configuration.h              @redpanda-data/documentation
+/src/v/pandaproxy/schema_registry/configuration.cc  @redpanda-data/documentation
+/src/v/pandaproxy/schema_registry/configuration.h   @redpanda-data/documentation
