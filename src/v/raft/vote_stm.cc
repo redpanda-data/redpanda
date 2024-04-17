@@ -10,12 +10,10 @@
 #include "raft/vote_stm.h"
 
 #include "base/vassert.h"
-#include "outcome_future_utils.h"
 #include "raft/consensus.h"
-#include "raft/consensus_utils.h"
 #include "raft/errc.h"
+#include "raft/fundamental.h"
 #include "raft/logger.h"
-#include "raft/raftgen_service.h"
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
 
