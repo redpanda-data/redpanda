@@ -522,14 +522,14 @@ std::vector<ss::metrics::metric_definition> client_probe::defs(
 
     ret.emplace_back(
       sm::make_total_bytes(
-        "in_bytes",
+        "out_bytes",
         [this] { return _out_bytes; },
         sm::description("Total number of bytes sent (including headers)"),
         labels)
         .aggregate(aggregate_labels));
 
     ret.emplace_back(sm::make_total_bytes(
-                       "out_bytes",
+                       "in_bytes",
                        [this] { return _in_bytes; },
                        sm::description("Total number of bytes received"),
                        labels)
