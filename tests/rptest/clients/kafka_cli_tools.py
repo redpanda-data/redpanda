@@ -280,6 +280,33 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
 
         return self._run("kafka-configs.sh", args, desc="alter_topic_config")
 
+    def alter_quota_config(self,
+                           entity_part: str,
+                           to_add: dict[str, Any] = {},
+                           to_remove: list[str] = []):
+        self._redpanda.logger.debug(
+            "Altering quota configuration for entity '%s' with (to_add=%s, to_remove=%s)",
+            entity_part, to_add, to_remove)
+        args = ["--alter"]
+        args.extend(entity_part.split(' '))
+        if to_add:
+            args.append("--add-config")
+            args.append(",".join(f"{k}={v}" for (k, v) in to_add.items()))
+        if to_remove:
+            args.append("--delete-config")
+            args.append(",".join(to_remove))
+
+        return self._run("kafka-configs.sh", args, desc="alter_quota_config")
+
+    def describe_quota_config(self, entity_part: str):
+        self._redpanda.logger.debug(
+            "Describing quota configuration for entity '%s'", entity_part)
+        args = ["--describe"]
+        args.extend(entity_part.split(' '))
+        return self._run("kafka-configs.sh",
+                         args,
+                         desc="describe_quota_config")
+
     def produce(self,
                 topic: str,
                 num_records: int,
