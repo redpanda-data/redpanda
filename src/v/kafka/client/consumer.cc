@@ -285,7 +285,7 @@ ss::future<> consumer::sync() {
                           chunked_vector<metadata_response::topic>>())
       .then([this](chunked_vector<metadata_response::topic> topics) {
           auto req_builder = [me{shared_from_this()},
-                              topics{std::move(topics)}]() mutable {
+                              topics{std::move(topics)}]() {
               auto assignments
                 = me->is_leader()
                     ? me->_plan->encode(me->_plan->plan(me->_members, topics))
