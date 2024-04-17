@@ -200,7 +200,7 @@ class WriteCachingFailureInjectionTest(RedpandaTest):
 
         # Crash the second node. Since it didn't fsync the data, the data
         # some messages will be locally lost on the next restart.
-        self.redpanda.signal_redpanda(self.redpanda.nodes[1])
+        self.redpanda.stop_node(self.redpanda.nodes[1], forced=True)
 
         # Isolate the 3rd node. This is the only node that has all the data.
         fi.inject_failure(
@@ -234,7 +234,7 @@ class WriteCachingFailureInjectionTest(RedpandaTest):
 
         # Kill the first node just to make sure that second and third can form
         # a new quorum.
-        self.redpanda.signal_redpanda(self.redpanda.nodes[0])
+        self.redpanda.stop_node(self.redpanda.nodes[0], forced=True)
 
         third_quorum_hwm = wait_until_result(_hwm,
                                              timeout_sec=30,
@@ -265,7 +265,7 @@ class WriteCachingFailureInjectionTest(RedpandaTest):
         Crash all nodes and restart them.
         """
         def _crash_and_start_node(n):
-            self.redpanda.signal_redpanda(n)
+            self.redpanda.stop_node(n, forced=True)
             self.redpanda.start_node(n)
 
         self.redpanda.for_nodes(self.redpanda.nodes, _crash_and_start_node)
@@ -285,7 +285,7 @@ class WriteCachingFailureInjectionTest(RedpandaTest):
         node = self.redpanda.get_node(leader_id)
 
         self.logger.debug(f"Restarting leader node: {node.name}")
-        self.redpanda.signal_redpanda(node)
+        self.redpanda.stop_node(node, forced=True)
 
         def _wait_new_leader():
             new_leader_id = admin.get_partition_leader(namespace="kafka",
