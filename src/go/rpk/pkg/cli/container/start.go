@@ -42,29 +42,73 @@ type node struct {
 	addr string
 }
 
-func collectFlags(args []string, flag string) []string {
-	flags := []string{}
-	i := 0
-	for i < len(args)-1 {
-		if args[i] == flag {
-			flags = append(flags, args[i], args[i+1])
-		}
-		i++
-	}
-	return flags
+type clusterPorts struct {
+	adminPorts  []uint
+	kafkaPorts  []uint
+	proxyPorts  []uint
+	rpcPorts    []uint
+	schemaPorts []uint
 }
 
 func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	const (
+		flagSRPorts    = "schema-registry-ports"
+		flagProxyPorts = "proxy-ports"
+		flagKafkaPorts = "kafka-ports"
+		flagAdminPorts = "admin-ports"
+		flagRPCPorts   = "rpc-ports"
+		flagAnyPort    = "any-port"
+	)
 	var (
 		nodes     uint
 		retries   uint
 		image     string
 		pull      bool
 		noProfile bool
+
+		aPorts  []string
+		kPorts  []string
+		pPorts  []string
+		rPorts  []string
+		srPorts []string
+		anyPort bool
 	)
 	command := &cobra.Command{
 		Use:   "start",
 		Short: "Start a local container cluster",
+		Long: `Start a local container cluster.
+
+This command utilizes Docker to initiate a local container cluster. Use the
+'--nodes'/'-n' flag to specify the number of brokers.
+
+The initial broker starts on default ports, with subsequent brokers' ports
+offset by 1000. You can use the listeners flag to specify ports:
+
+  * --kafka-ports
+  * --admin-ports
+  * --rpc-ports
+  * --schema-registry-ports
+  * --proxy-ports
+
+Each flag accepts a comma-separated list of ports for your listeners. Use the
+'--any-port' flag to let rpk select random available ports on the host machine.
+
+Optionally, specify a container image; the default image is
+redpandadata/redpanda:latest.
+`,
+		Example: `
+Start a 3-broker cluster:
+  rpk container start -n 3
+
+Start a 1-broker cluster, selecting random ports for every listener:
+  rpk container start --any-port
+
+Start a 3-broker cluster, selecting the seed kafka port only:
+  rpk container start --kafka-ports 9092
+
+Start a 3-broker cluster, selecting every admin API port:
+  rpk container start --admin-ports 9644,9645,9646
+`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{
 			// Allow unknown flags so that arbitrary flags can be passed
 			// through to the containers without the need to pass '--'
@@ -79,9 +123,20 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to create docker client: %v", err)
 			defer c.Close()
 
+			if anyPort {
+				aPorts, kPorts, pPorts, rPorts, srPorts = []string{"any"}, []string{"any"}, []string{"any"}, []string{"any"}, []string{"any"}
+			}
+			cPorts, err := parseContainerPortFlags(int(nodes), aPorts, kPorts, pPorts, rPorts, srPorts)
+			out.MaybeDie(err, "unable to parse container ports: %v", err)
+
 			configKvs := collectFlags(os.Args, "--set")
-			isRestarted, err := startCluster(c, nodes, checkBrokers, retries, image, pull, configKvs)
-			out.MaybeDieErr(common.WrapIfConnErr(err))
+			isRestarted, err := startCluster(c, nodes, checkBrokers, retries, image, pull, cPorts, configKvs)
+			if err != nil {
+				if errors.As(err, &portInUseErr{}) {
+					out.Die("unable to start cluster: %v\nYou may select different ports to start the cluster using our listener flags. Check '--help' text for more information", err)
+				}
+				out.Die("unable to start cluster: %v", common.WrapIfConnErr(err))
+			}
 
 			if noProfile || isRestarted {
 				return
@@ -119,8 +174,33 @@ You can retry profile creation by running:
 	command.Flags().StringVar(&image, "image", common.DefaultImage(), "An arbitrary container image to use")
 	command.Flags().BoolVar(&pull, "pull", false, "Force pull the container image used")
 	command.Flags().BoolVar(&noProfile, "no-profile", false, "If true, rpk will not create an rpk profile after creating a cluster")
+	command.Flags().StringSliceVar(&kPorts, flagKafkaPorts, nil, "Kafka protocol ports to listen on; check help text for more information")
+	command.Flags().StringSliceVar(&aPorts, flagAdminPorts, nil, "Redpanda Admin API ports to listen on; check help text for more information")
+	command.Flags().StringSliceVar(&srPorts, flagSRPorts, nil, "Schema registry ports to listen on; check help text for more information")
+	command.Flags().StringSliceVar(&pPorts, flagProxyPorts, nil, "Pandaproxy ports to listen on; check help text for more information")
+	command.Flags().StringSliceVar(&rPorts, flagRPCPorts, nil, "RPC ports to listen on; check help text for more information")
+	// opt-in for 'any' in all listeners
+	command.Flags().BoolVar(&anyPort, flagAnyPort, false, "Opt in for any (random) ports in all listeners")
+
+	command.MarkFlagsMutuallyExclusive(flagAnyPort, flagKafkaPorts)
+	command.MarkFlagsMutuallyExclusive(flagAnyPort, flagAdminPorts)
+	command.MarkFlagsMutuallyExclusive(flagAnyPort, flagSRPorts)
+	command.MarkFlagsMutuallyExclusive(flagAnyPort, flagProxyPorts)
+	command.MarkFlagsMutuallyExclusive(flagAnyPort, flagRPCPorts)
 
 	return command
+}
+
+func collectFlags(args []string, flag string) []string {
+	flags := []string{}
+	i := 0
+	for i < len(args)-1 {
+		if args[i] == flag {
+			flags = append(flags, args[i], args[i+1])
+		}
+		i++
+	}
+	return flags
 }
 
 func startCluster(
@@ -130,6 +210,7 @@ func startCluster(
 	retries uint,
 	image string,
 	pull bool,
+	clusterPorts clusterPorts,
 	extraArgs []string,
 ) (isRestarted bool, rerr error) {
 	// Check if cluster exists and start it again.
@@ -175,8 +256,7 @@ func startCluster(
 		return false, err
 	}
 
-	reqPorts := n * 5 // we need 5 ports per node
-	ports, err := vnet.GetFreePortPool(int(reqPorts))
+	err = verifyPortsInUse(clusterPorts)
 	if err != nil {
 		return false, err
 	}
@@ -184,11 +264,11 @@ func startCluster(
 	// Start a seed node.
 	var (
 		seedID            uint
-		seedKafkaPort     = ports[0]
-		seedProxyPort     = ports[1]
-		seedSchemaRegPort = ports[2]
-		seedRPCPort       = ports[3]
-		seedMetricsPort   = ports[4]
+		seedKafkaPort     = clusterPorts.kafkaPorts[0]
+		seedProxyPort     = clusterPorts.proxyPorts[0]
+		seedSchemaRegPort = clusterPorts.schemaPorts[0]
+		seedRPCPort       = clusterPorts.rpcPorts[0]
+		seedAdminPort     = clusterPorts.adminPorts[0]
 	)
 
 	seedState, err := common.CreateNode(
@@ -198,7 +278,7 @@ func startCluster(
 		seedProxyPort,
 		seedSchemaRegPort,
 		seedRPCPort,
-		seedMetricsPort,
+		seedAdminPort,
 		netID,
 		image,
 		extraArgs...,
@@ -231,11 +311,11 @@ func startCluster(
 		id := nodeID
 		grp.Go(func() error {
 			var (
-				kafkaPort     = ports[0+5*id]
-				proxyPort     = ports[1+5*id]
-				schemaRegPort = ports[2+5*id]
-				rpcPort       = ports[3+5*id]
-				metricsPort   = ports[4+5*id]
+				kafkaPort     = clusterPorts.kafkaPorts[id]
+				proxyPort     = clusterPorts.proxyPorts[id]
+				schemaRegPort = clusterPorts.schemaPorts[id]
+				rpcPort       = clusterPorts.rpcPorts[id]
+				adminPort     = clusterPorts.adminPorts[id]
 			)
 
 			args := []string{
@@ -252,7 +332,7 @@ func startCluster(
 				proxyPort,
 				schemaRegPort,
 				rpcPort,
-				metricsPort,
+				adminPort,
 				netID,
 				image,
 				append(args, extraArgs...)...,
@@ -520,10 +600,120 @@ func getContainerErr(state *common.NodeState, c common.Client) (string, error) {
 	// demux this stream we need to use stdcopy.StdCopy. See:
 	// https://github.com/moby/moby/issues/32794#issuecomment-297151440
 	bErr := new(bytes.Buffer)
-	_, err = stdcopy.StdCopy(bErr, bErr, reader)
+	_, err = stdcopy.StdCopy(nil, bErr, reader)
 	if err != nil {
 		return "", fmt.Errorf("unable to read docker logs: %v", err)
 	}
 
 	return bErr.String(), nil
+}
+
+// parsePorts parses a single port array.
+//   - If the port array is empty, we return a default port array.
+//   - If the port is 'any' we get a random port using vnet.GetFreePortPool.
+//   - If the provided port array < number of nodes, we fill the port array with succeeding ports.
+func parsePorts(ports []string, nNodes, defPort int) ([]uint, error) {
+	var ret []uint
+	// If no port is defined, we use the default as seed node port.
+	if len(ports) == 0 {
+		ret = append(ret, uint(defPort))
+	}
+	for _, p := range ports {
+		// If port == 'any', we assign a random port.
+		if p == "any" {
+			if len(ports) > 1 {
+				return nil, errors.New("cannot specify 'any' with additional ports")
+			}
+			portPool, err := vnet.GetFreePortPool(nNodes)
+			if err != nil {
+				return nil, fmt.Errorf("unable to assign random ports: %v", err)
+			}
+			return portPool, nil
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse %v: %v", p, err)
+		}
+		if n < 0 {
+			return nil, fmt.Errorf("cannot parse %v: port cannot be a negative number", p)
+		}
+		ret = append(ret, uint(n))
+	}
+	// If the user didn't specify enough ports, we fill the rest based on the last port passed.
+	if len(ret) < nNodes {
+		sort.Slice(ret, func(i, j int) bool { return ret[i] < ret[j] })
+		for nNodes-len(ret) > 0 {
+			ret = append(ret, ret[len(ret)-1]+1000)
+		}
+	}
+	return ret, nil
+}
+
+func parseContainerPortFlags(nNodes int, adminPorts, kafkaPorts, proxyPorts, rpcPorts, schemaPorts []string) (clusterPorts, error) {
+	aPorts, err := parsePorts(adminPorts, nNodes, config.DefaultAdminPort)
+	if err != nil {
+		return clusterPorts{}, fmt.Errorf("unable to parse admin ports: %v", err)
+	}
+	kPorts, err := parsePorts(kafkaPorts, nNodes, config.DefaultKafkaPort)
+	if err != nil {
+		return clusterPorts{}, fmt.Errorf("unable to parse kafka ports: %v", err)
+	}
+	pPorts, err := parsePorts(proxyPorts, nNodes, config.DefaultProxyPort)
+	if err != nil {
+		return clusterPorts{}, fmt.Errorf("unable to parse proxy ports: %v", err)
+	}
+	rPorts, err := parsePorts(rpcPorts, nNodes, config.DefaultRPCPort)
+	if err != nil {
+		return clusterPorts{}, fmt.Errorf("unable to parse rpc ports: %v", err)
+	}
+	srPorts, err := parsePorts(schemaPorts, nNodes, config.DefaultSchemaRegPort)
+	if err != nil {
+		return clusterPorts{}, fmt.Errorf("unable to parse schema registry ports: %v", err)
+	}
+	return clusterPorts{
+		adminPorts:  aPorts,
+		kafkaPorts:  kPorts,
+		proxyPorts:  pPorts,
+		rpcPorts:    rPorts,
+		schemaPorts: srPorts,
+	}, nil
+}
+
+func verifyPortsInUse(cPorts clusterPorts) error {
+	check := func(ports []uint, listener string) error {
+		for _, p := range ports {
+			server, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
+			// if it fails then the port might be in use
+			if err != nil {
+				return portInUseErr{p, listener}
+			}
+			server.Close()
+		}
+		return nil
+	}
+	if err := check(cPorts.kafkaPorts, "kafka"); err != nil {
+		return err
+	}
+	if err := check(cPorts.adminPorts, "admin"); err != nil {
+		return err
+	}
+	if err := check(cPorts.rpcPorts, "rpc"); err != nil {
+		return err
+	}
+	if err := check(cPorts.schemaPorts, "schema registry"); err != nil {
+		return err
+	}
+	if err := check(cPorts.proxyPorts, "pandaproxy"); err != nil {
+		return err
+	}
+	return nil
+}
+
+type portInUseErr struct {
+	port     uint
+	listener string
+}
+
+func (p portInUseErr) Error() string {
+	return fmt.Sprintf("%v port %v already in use", p.listener, p.port)
 }
