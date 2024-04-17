@@ -405,6 +405,16 @@ abs_client::abs_client(
 
 ss::future<result<client_self_configuration_output, error_outcome>>
 abs_client::self_configure() {
+    auto& cfg = config::shard_local_cfg();
+    auto hns_enabled
+      = cfg.cloud_storage_azure_hierarchical_namespace_enabled.value();
+
+    if (hns_enabled.has_value()) {
+        // use override cluster property to skip check
+        co_return abs_self_configuration_result{
+          .is_hns_enabled = hns_enabled.value()};
+    }
+
     auto result = co_await get_account_info(http::default_connect_timeout);
     if (!result) {
         co_return result.error();
