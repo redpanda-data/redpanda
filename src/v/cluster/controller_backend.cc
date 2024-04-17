@@ -882,9 +882,10 @@ ss::future<> controller_backend::try_reconcile_ntp(
         }
 
         if (last_error != errc::success) {
-            vassert(rs.cur_operation, "[{}] expected current operation", ntp);
-            rs.cur_operation->last_error = last_error;
-            rs.cur_operation->retries += 1;
+            if (rs.cur_operation) {
+                rs.cur_operation->last_error = last_error;
+                rs.cur_operation->retries += 1;
+            }
             vlog(
               clusterlog.trace,
               "[{}] reconciliation attempt finished, state: {}",
