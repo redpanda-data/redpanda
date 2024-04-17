@@ -878,6 +878,60 @@ abs_client::get_account_info(ss::lowres_clock::duration timeout) {
 }
 
 ss::future<abs_client::storage_account_info>
+abs_client::do_test_set_expiry_on_dummy_file(
+  ss::lowres_clock::duration timeout) {
+    // since this is one-off operation at startup, it's easier to read directly
+    // cloud_storage_azure_container than to wire it in. this is ok because if
+    // we are in abs_client it means that the required property, like
+    // azure_container, are set
+    auto container_name
+      = config::shard_local_cfg().cloud_storage_azure_container.value();
+
+    if (unlikely(!container_name.has_value())) {
+        vlog(abs_log.error, "Failed to get azure container name from config");
+        throw std::runtime_error("cloud_storage_azure_container is not set");
+    }
+
+    auto bucket = bucket_name{container_name.value()};
+    auto test_file = object_key{set_expiry_test_file};
+
+    // try set expiry
+    auto set_expiry_header = _requestor.make_set_expiry_to_blob_request(
+      bucket, test_file, std::chrono::seconds{30});
+    if (!set_expiry_header) {
+        vlog(
+          abs_log.error,
+          "Failed to create set_expiry header: {}",
+          set_expiry_header.error());
+        throw std::system_error(set_expiry_header.error());
+    }
+
+    vlog(abs_log.trace, "send https request:\n{}", set_expiry_header.value());
+
+    auto response_stream = co_await _client.request(
+      std::move(set_expiry_header.value()), timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+    auto const& headers = response_stream->get_headers();
+
+    if (headers.result() == boost::beast::http::status::bad_request) {
+        co_return storage_account_info{.is_hns_enabled = false};
+    }
+
+    if (
+      headers.result() == boost::beast::http::status::ok
+      || headers.result() == boost::beast::http::status::not_found) {
+        // not found counts as hsn_enabled, otherwise it would fail as
+        // bad_request
+        co_return storage_account_info{.is_hns_enabled = true};
+    }
+
+    // unexpected header return code
+    throw parse_header_error_response(headers);
+}
+
+ss::future<abs_client::storage_account_info>
 abs_client::do_get_account_info(ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_get_account_info_request();
     if (!header) {

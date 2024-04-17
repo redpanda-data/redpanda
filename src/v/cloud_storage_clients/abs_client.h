@@ -286,6 +286,13 @@ private:
     ss::future<storage_account_info>
     do_get_account_info(ss::lowres_clock::duration timeout);
 
+    /// \brief test if Hierarchical Namespace is enabled in the storage account
+    /// by creating a test file and calling Set Expiry on this. Set Expiry is
+    /// available only when HNS is enabled. use the result to infer if HNS is
+    /// enabled.
+    ss::future<storage_account_info>
+    do_test_set_expiry_on_dummy_file(ss::lowres_clock::duration timeout);
+
     ss::future<> do_delete_path(
       bucket_name const& name,
       object_key path,
