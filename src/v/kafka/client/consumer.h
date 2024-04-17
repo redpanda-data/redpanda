@@ -103,6 +103,7 @@ private:
     ss::future<fetch_response> dispatch_fetch(broker_reqs_t::value_type br);
 
     template<typename RequestFactory>
+    requires requires(const RequestFactory v) { v.operator()(); }
     ss::future<
       typename std::invoke_result_t<RequestFactory>::api_type::response_type>
     req_res(RequestFactory req) {
