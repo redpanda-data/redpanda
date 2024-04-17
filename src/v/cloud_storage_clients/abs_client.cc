@@ -416,6 +416,7 @@ abs_client::abs_client(
   : _data_lake_v2_client_config(
     conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
                         : std::nullopt)
+  , _is_oauth(apply_credentials->is_oauth())
   , _requestor(conf, std::move(apply_credentials))
   , _client(conf)
   , _adls_client(
@@ -432,6 +433,7 @@ abs_client::abs_client(
   : _data_lake_v2_client_config(
     conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
                         : std::nullopt)
+  , _is_oauth(apply_credentials->is_oauth())
   , _requestor(conf, std::move(apply_credentials))
   , _client(conf, &as, conf._probe, conf.max_idle_time)
   , _adls_client(
@@ -874,7 +876,12 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
 
 ss::future<result<abs_client::storage_account_info, error_outcome>>
 abs_client::get_account_info(ss::lowres_clock::duration timeout) {
-    return send_request(do_get_account_info(timeout), object_key{""});
+    if (_is_oauth) {
+        return send_request(
+          do_test_set_expiry_on_dummy_file(timeout), object_key{""});
+    } else {
+        return send_request(do_get_account_info(timeout), object_key{""});
+    }
 }
 
 ss::future<abs_client::storage_account_info>
