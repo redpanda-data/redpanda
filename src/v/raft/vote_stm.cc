@@ -199,7 +199,7 @@ ss::future<> vote_stm::process_replies() {
          * prevote phase to be successful it is enough that followers reported
          * log_ok flag. For the actual election we require that vote is granted.
          */
-        auto majority_granted = _config->majority([this](vnode id) {
+        auto majority_granted = _config->majority([this](const vnode& id) {
             const auto state = _replies.find(id)->second.get_state();
             if (_prevote) {
                 return state == vmeta::state::log_ok
@@ -215,7 +215,7 @@ ss::future<> vote_stm::process_replies() {
         }
 
         // majority votes not granted, election not successful
-        auto majority_failed = _config->majority([this](vnode id) {
+        auto majority_failed = _config->majority([this](const vnode& id) {
             auto state = _replies.find(id)->second.get_state();
             // vote not granted and not in progress, it is failed
             return state != vmeta::state::vote_granted
