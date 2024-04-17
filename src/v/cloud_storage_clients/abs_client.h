@@ -86,6 +86,13 @@ public:
     /// \brief Init http header for 'Get Account Information' request
     result<http::client::request_header> make_get_account_info_request();
 
+    /// \brief Init http header for 'Set Expiry' request. the object will be
+    /// expired in `expires_in` ms after the request is received
+    result<http::client::request_header> make_set_expiry_to_blob_request(
+      bucket_name const& name,
+      object_key const& key,
+      ss::lowres_clock::duration expires_in) const;
+
     /// \brief Create a 'Filesystem Delete' request header
     ///
     /// \param adls_ap is the acces point for the Azure Data Lake Storage v2

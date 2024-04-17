@@ -51,6 +51,12 @@ constexpr boost::beast::string_view is_hns_enabled_name = "x-ms-is-hns-enabled";
 constexpr boost::beast::string_view delete_snapshot_value = "include";
 constexpr boost::beast::string_view error_code_name = "x-ms-error-code";
 constexpr boost::beast::string_view content_type_name = "Content-Type";
+constexpr boost::beast::string_view expiry_option_name = "x-ms-expiry-option";
+constexpr boost::beast::string_view expiry_option_value = "RelativeToNow";
+constexpr boost::beast::string_view expiry_time_name = "x-ms-expiry-time";
+
+// filename for the set expiry test file
+constexpr std::string_view set_expiry_test_file = "testsetexpiry";
 
 bool is_error_retryable(
   const cloud_storage_clients::abs_rest_error_response& err) {
@@ -342,6 +348,38 @@ abs_request_creator::make_get_account_info_request() {
         return error_code;
     }
 
+    return header;
+}
+
+result<http::client::request_header>
+abs_request_creator::make_set_expiry_to_blob_request(
+  bucket_name const& name,
+  object_key const& key,
+  ss::lowres_clock::duration expires_in) const {
+    // https://learn.microsoft.com/en-us/rest/api/storageservices/set-blob-expiry?tabs=microsoft-entra-id
+    // available only if HNS are enabled for the bucket
+    // performs curl -v -X PUT -H "Authorization: Bearer ${AUTH_CODE}" -H
+    // "x-ms-version: 2023-01-03" -H "x-ms-expiry-option: RelativeToNow" -H
+    // "x-ms-expiry-time: 30000" -d {}
+    // "https://testingimds2ab.blob.core.windows.net/testingcontainer/testHNS?comp=expiry"
+
+    auto header = http::client::request_header{};
+
+    header.method(boost::beast::http::verb::put);
+    header.target(fmt::format("/{}/{}?comp=expiry", name(), key().string()));
+    header.set(boost::beast::http::field::host, {_ap().data(), _ap().size()});
+    header.set(expiry_option_name, expiry_option_value);
+    header.set(
+      expiry_time_name,
+      fmt::format(
+        "{}",
+        std::chrono::duration_cast<std::chrono::milliseconds>(expires_in)
+          .count()));
+    header.set(boost::beast::http::field::content_length, "0");
+    if (auto error_code = _apply_credentials->add_auth(header);
+        error_code != std::error_code{}) {
+        return error_code;
+    }
     return header;
 }
 
