@@ -436,6 +436,16 @@ struct_renames = {
 
     ("IncrementalAlterConfigsResponseData", "Responses"):
         ("AlterConfigsResourceResponse", "IncrementalAlterConfigsResourceResponse"),
+
+    ("AlterClientQuotasRequestData", "Entries"):
+        ("EntryData", "AlterClientQuotasRequestEntryData"),
+    ("AlterClientQuotasResponseData", "Entries"):
+        ("EntryData", "AlterClientQuotasResponseEntryData"),
+
+    ("AlterClientQuotasRequestData", "Entries", "Entity"):
+        ("EntityData", "AlterClientQuotasRequestEntityData"),
+    ("AlterClientQuotasResponseData", "Entries", "Entity"):
+        ("EntityData", "AlterClientQuotasResponseEntityData"),
 }
 
 # extra header per type name
@@ -606,6 +616,9 @@ STRUCT_TYPES = [
     "DeleteRecordsPartition",
     "DeleteRecordsTopicResult",
     "DeleteRecordsPartitionResult",
+    "EntryData",
+    "EntityData",
+    "OpData",
 ]
 
 DROP_STREAM_OPERATOR = [

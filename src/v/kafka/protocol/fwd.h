@@ -14,6 +14,7 @@ namespace kafka {
 
 struct alter_configs_request;
 struct alter_configs_response;
+struct alter_client_quotas_request;
 struct api_versions_request;
 struct api_versions_response;
 struct create_topics_request;

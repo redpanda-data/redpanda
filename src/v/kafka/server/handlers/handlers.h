@@ -12,6 +12,7 @@
 
 #include "kafka/server/handlers/add_offsets_to_txn.h"
 #include "kafka/server/handlers/add_partitions_to_txn.h"
+#include "kafka/server/handlers/alter_client_quotas.h"
 #include "kafka/server/handlers/alter_configs.h"
 #include "kafka/server/handlers/alter_partition_reassignments.h"
 #include "kafka/server/handlers/api_versions.h"
@@ -99,7 +100,8 @@ using request_types = make_request_types<
   list_partition_reassignments_handler,
   describe_producers_handler,
   describe_transactions_handler,
-  list_transactions_handler>;
+  list_transactions_handler,
+  alter_client_quotas_handler>;
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {
