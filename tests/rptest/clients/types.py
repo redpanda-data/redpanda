@@ -161,3 +161,10 @@ class TopicSpec:
     def _random_topic_suffix(self, size: int = 10):
         return "".join(
             random.choice(string.ascii_lowercase) for _ in range(size))
+
+    @staticmethod
+    def _random_cleanup_policy() -> str:
+        return random.choice([
+            TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_COMPACT_DELETE,
+            TopicSpec.CLEANUP_DELETE
+        ])

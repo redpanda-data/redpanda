@@ -187,7 +187,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                      msg_count,
                      consumers_count,
                      compaction_enabled=False,
-                     key_set_cardinality=None):
+                     key_set_cardinality=None,
+                     tolerate_data_loss=False):
             self.test_context = test_context
             self.logger = logger
             self.topic = topic_name
@@ -199,6 +200,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             self.consumer_count = consumers_count
             self.compaction_enabled = compaction_enabled
             self.key_set_cardinality = key_set_cardinality
+            self.tolerate_data_loss = tolerate_data_loss
 
         def _start_producer(self):
             self.producer = KgoVerifierProducer(
@@ -209,7 +211,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 self.msg_count,
                 custom_node=self.nodes,
                 rate_limit_bps=self.rate_limit_bps,
-                key_set_cardinality=self.key_set_cardinality)
+                key_set_cardinality=self.key_set_cardinality,
+                tolerate_data_loss=self.tolerate_data_loss)
 
             self.producer.start(clean=False)
 
@@ -227,7 +230,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 readers=self.consumer_count,
                 nodes=self.nodes,
                 debug_logs=with_logs,
-                trace_logs=with_logs)
+                trace_logs=with_logs,
+                tolerate_data_loss=self.tolerate_data_loss)
 
             self.consumer.start(clean=False)
 
@@ -293,6 +297,14 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             # upgrades as the feature is not enabled
             return supported_by_prev
 
+        def enable_write_caching_testing():
+            if num_to_upgrade == 0:
+                return True
+            # Write caching feature is available 24.x and later.
+            pre_upgrade_version = self.redpanda._installer.highest_from_prior_feature_version(
+                RedpandaInstaller.HEAD)
+            return pre_upgrade_version[0] >= 24
+
         lock = threading.Lock()
         default_segment_size = 1024 * 1024
 
@@ -310,6 +322,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         self.redpanda.set_cluster_config(
             {"controller_snapshot_max_age_sec": 1})
 
+        client = DefaultClient(self.redpanda)
+
         # create some initial topics
         self._create_topics(10)
         regular_topic = TopicSpec(name='tp-workload-deletion',
@@ -319,7 +333,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                   segment_bytes=default_segment_size,
                                   redpanda_remote_read=with_tiered_storage,
                                   redpanda_remote_write=with_tiered_storage)
-        DefaultClient(self.redpanda).create_topic(regular_topic)
+        client.create_topic(regular_topic)
 
         if with_tiered_storage:
             # change local retention policy to make some local segments will be deleted during the test
@@ -344,7 +358,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                     segment_bytes=default_segment_size,
                                     redpanda_remote_read=with_tiered_storage,
                                     redpanda_remote_write=with_tiered_storage)
-        DefaultClient(self.redpanda).create_topic(compacted_topic)
+        client.create_topic(compacted_topic)
 
         compacted_producer_consumer = RandomNodeOperationsTest.producer_consumer(
             test_context=self.test_context,
@@ -372,7 +386,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                    redpanda_remote_read=with_tiered_storage,
                                    redpanda_remote_write=with_tiered_storage)
 
-            client = DefaultClient(self.redpanda)
             client.create_topic(fast_topic)
 
             client.alter_topic_config(fast_topic.name,
@@ -393,6 +406,37 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 consumers_count=self.consumers_count,
                 compaction_enabled=False)
             fast_producer_consumer.start()
+
+        write_caching_enabled = enable_write_caching_testing()
+        if write_caching_enabled:
+            cleanup_policy = TopicSpec._random_cleanup_policy()
+            tp_suffix = cleanup_policy.replace(",", "-")
+            write_caching_topic = TopicSpec(
+                name=f'tp-workload-writecaching-{tp_suffix}',
+                partition_count=self.max_partitions,
+                cleanup_policy=cleanup_policy,
+                segment_bytes=default_segment_size,
+                redpanda_remote_read=with_tiered_storage,
+                redpanda_remote_write=with_tiered_storage)
+
+            client.create_topic(write_caching_topic)
+            client.alter_topic_config(write_caching_topic.name,
+                                      TopicSpec.PROPERTY_WRITE_CACHING, "true")
+
+            write_caching_producer_consumer = RandomNodeOperationsTest.producer_consumer(
+                test_context=self.test_context,
+                logger=self.logger,
+                topic_name=write_caching_topic.name,
+                redpanda=self.redpanda,
+                nodes=[self.preallocated_nodes[2]],
+                msg_size=self.msg_size,
+                rate_limit_bps=self.rate_limit,
+                msg_count=self.msg_count,
+                consumers_count=self.consumers_count,
+                compaction_enabled=(cleanup_policy
+                                    is not TopicSpec.CLEANUP_DELETE),
+                tolerate_data_loss=True)
+            write_caching_producer_consumer.start()
 
         # start admin operations fuzzer, it will provide a stream of
         # admin day 2 operations executed during the test
@@ -436,6 +480,10 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         # stop producer and consumer and verify results
         regular_producer_consumer.verify()
         compacted_producer_consumer.verify()
+
+        if write_caching_enabled:
+            assert write_caching_producer_consumer
+            write_caching_producer_consumer.verify()
 
         if enable_fast_partition_movement():
             fast_producer_consumer.verify()
