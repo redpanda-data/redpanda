@@ -218,6 +218,11 @@ class ScalingUpTest(PreallocNodesTest):
     @cluster(num_nodes=7)
     @matrix(partition_count=[1, 20])
     def test_adding_nodes_to_cluster(self, partition_count):
+        # The test implicitly assumes that all internal topics are rf=1
+        # As we add more nodes ensure that the health manager does not
+        # upreplicate the topics and violate the assumption
+        self.redpanda.add_extra_rp_conf(
+            {"internal_topic_replication_factor": 1})
         # start single node cluster
         self.redpanda.start(nodes=[self.redpanda.nodes[0]])
         # create some topics
