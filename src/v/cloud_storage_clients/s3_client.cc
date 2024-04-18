@@ -376,8 +376,7 @@ request_creator::make_delete_objects_request(
         std::make_unique<delete_objects_body>(std::move(body))}}};
 }
 
-std::string
-request_creator::make_host([[maybe_unused]] const bucket_name& name) const {
+std::string request_creator::make_host(const bucket_name& name) const {
     switch (_ap_style) {
     case s3_url_style::virtual_host:
         // Host: bucket-name.s3.region-code.amazonaws.com
@@ -389,7 +388,7 @@ request_creator::make_host([[maybe_unused]] const bucket_name& name) const {
 }
 
 std::string request_creator::make_target(
-  [[maybe_unused]] const bucket_name& name, const object_key& key) const {
+  const bucket_name& name, const object_key& key) const {
     switch (_ap_style) {
     case s3_url_style::virtual_host:
         // Target: /homepage.html

@@ -107,10 +107,10 @@ public:
       std::optional<char> delimiter = std::nullopt);
 
 private:
-    std::string make_host([[maybe_unused]] const bucket_name& name) const;
+    std::string make_host(const bucket_name& name) const;
 
-    std::string make_target(
-      [[maybe_unused]] const bucket_name& name, const object_key& key) const;
+    std::string
+    make_target(const bucket_name& name, const object_key& key) const;
 
     access_point_uri _ap;
 
