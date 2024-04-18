@@ -1571,8 +1571,10 @@ void config_multi_property_validation(
 
             for (auto& p : properties) {
                 if (p() == std::nullopt) {
-                    errors[ss::sstring(p.get().name())]
-                      = "Must be set when cloud storage enabled";
+                    errors[ss::sstring(p.get().name())] = ssx::sformat(
+                      "Must be set when cloud storage enabled with "
+                      "cloud_storage_credentials_source = {}",
+                      updated_config.cloud_storage_credentials_source.value());
                 }
             }
         } break;
@@ -1588,7 +1590,9 @@ void config_multi_property_validation(
             for (auto& p : properties) {
                 if (p() == std::nullopt) {
                     errors[ss::sstring(p.get().name())]
-                      = "Must be set when cloud storage enabled";
+                      = "Must be set when cloud storage enabled with "
+                        "cloud_storage_credentials_source = "
+                        "azure_aks_oidc_federation";
                 }
             }
         } break;
@@ -1604,7 +1608,9 @@ void config_multi_property_validation(
             for (auto& p : properties) {
                 if (p() == std::nullopt) {
                     errors[ss::sstring(p.get().name())]
-                      = "Must be set when cloud storage enabled";
+                      = "Must be set when cloud storage enabled with "
+                        "cloud_storage_credentials_source = "
+                        "azure_vm_instance_metadata";
                 }
             }
         } break;
