@@ -89,8 +89,8 @@ public:
 
     ss::future<> for_each_partition(
       ss::noncopyable_function<ss::stop_iteration(partition&)>);
-    ss::future<> for_each_partition_random_order(
-      ss::noncopyable_function<ss::stop_iteration(partition&)>);
+    ss::future<> for_each_replica_random_order(
+      ss::noncopyable_function<ss::stop_iteration(partition&, model::node_id)>);
     ss::future<> with_partition(
       const model::ntp&, ss::noncopyable_function<void(partition&)>);
 
@@ -561,7 +561,11 @@ public:
     };
 
     bool is_original(model::node_id replica) const {
-        return !_reallocated || _reallocated->partition.is_original(replica);
+        if (_reallocated) {
+            return _reallocated->partition.is_original(replica);
+        } else {
+            return contains_node(_orig_replicas, replica);
+        }
     }
 
     const request_context::partition_sizes& sizes() const { return _sizes; }
@@ -1038,31 +1042,47 @@ ss::future<> partition_balancer_planner::request_context::for_each_partition(
 }
 
 ss::future<>
-partition_balancer_planner::request_context::for_each_partition_random_order(
-  ss::noncopyable_function<ss::stop_iteration(partition&)> visitor) {
+partition_balancer_planner::request_context::for_each_replica_random_order(
+  ss::noncopyable_function<ss::stop_iteration(partition&, model::node_id)>
+    visitor) {
     auto start_rev = state().topics().topics_map_revision();
 
     struct item {
         const model::topic_namespace* tp_ns;
         const partition_assignment* assignment;
+        model::node_id node;
     };
 
-    fragmented_vector<item> partitions;
+    fragmented_vector<item> replicas;
     for (const auto& t : _parent._state.topics().topics_map()) {
         for (const auto& a : t.second.get_assignments()) {
-            partitions.push_back(item{.tp_ns = &t.first, .assignment = &a});
+            auto reassignment_it = _reassignments.find(
+              model::ntp(t.first.ns, t.first.tp, a.id));
+            const auto& ntp_replicas
+              = reassignment_it != _reassignments.end()
+                  ? reassignment_it->second.partition.replicas()
+                  : a.replicas;
+
+            for (const auto& bs : ntp_replicas) {
+                replicas.push_back(item{
+                  .tp_ns = &t.first, .assignment = &a, .node = bs.node_id});
+            }
             co_await maybe_yield();
             state().topics().check_topics_map_stable(start_rev);
         }
     }
 
     std::shuffle(
-      partitions.begin(), partitions.end(), random_generators::internal::gen);
+      replicas.begin(), replicas.end(), random_generators::internal::gen);
 
-    for (const auto& part : partitions) {
+    for (const auto& repl : replicas) {
         state().topics().check_topics_map_stable(start_rev);
-        model::ntp ntp(part.tp_ns->ns, part.tp_ns->tp, part.assignment->id);
-        auto stop = do_with_partition(ntp, *(part.assignment), visitor);
+        model::ntp ntp(repl.tp_ns->ns, repl.tp_ns->tp, repl.assignment->id);
+        auto part_visitor = [&visitor, node = repl.node](partition& part) {
+            return visitor(part, node);
+        };
+        auto stop = do_with_partition(
+          std::move(ntp), *(repl.assignment), part_visitor);
         if (stop == ss::stop_iteration::yes) {
             co_return;
         }
@@ -1890,46 +1910,53 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
     // haven't been able to improve the objective, this means that we've reached
     // (local) optimum and rebalance can be finished.
 
-    bool actions_added = false;
-    co_await ctx.for_each_partition_random_order([&](partition& part) {
-        part.match_variant(
-          [&](reassignable_partition& part) {
-              // copy because replicas will change under our feet
-              auto replicas = part.replicas();
-              for (const auto& bs : replicas) {
-                  if (!part.is_original(bs.node_id)) {
-                      continue;
-                  }
+    bool should_stop = true;
+    co_await ctx.for_each_replica_random_order(
+      [&](partition& part, model::node_id node) {
+          if (!ctx.can_add_reassignment()) {
+              // Finish early, even though in theory we could add more replica
+              // moves to existing reassignments. The reason is that this will
+              // bias the algorithm towards adding more moves to partitions
+              // that we already reassigned, which we want to avoid (to avoid
+              // formation of isolated replica subsets).
+              should_stop = false;
+              return ss::stop_iteration::yes;
+          }
 
-                  auto scores_before = calc_scores(part.ntp(), bs.node_id);
+          part.match_variant(
+            [&](reassignable_partition& part) {
+                if (!part.is_original(node)) {
+                    return;
+                }
 
-                  auto res = part.move_replica(
-                    bs.node_id,
-                    ctx.config().soft_max_disk_usage_ratio,
-                    change_reason::partition_count_rebalancing);
-                  if (!res) {
-                      continue;
-                  }
+                auto scores_before = calc_scores(part.ntp(), node);
 
-                  if (res.value().current().node_id != bs.node_id) {
-                      auto scores_after = calc_scores(
-                        part.ntp(), res.value().current().node_id);
+                auto res = part.move_replica(
+                  node,
+                  ctx.config().soft_max_disk_usage_ratio,
+                  change_reason::partition_count_rebalancing);
+                if (!res) {
+                    return;
+                }
 
-                      if (!scores_cmp_less(scores_after, scores_before)) {
-                          // unnecessary move, doesn't improve the scores
-                          // (probably moved to another node with the same
-                          // number of partitions)
-                          part.revert(res.value());
-                      } else {
-                          actions_added = true;
-                      }
-                  }
-              }
-          },
-          [](auto&) {});
+                if (res.value().current().node_id != node) {
+                    auto scores_after = calc_scores(
+                      part.ntp(), res.value().current().node_id);
 
-        return ss::stop_iteration::no;
-    });
+                    if (!scores_cmp_less(scores_after, scores_before)) {
+                        // unnecessary move, doesn't improve the scores
+                        // (probably moved to another node with the same
+                        // number of partitions)
+                        part.revert(res.value());
+                    } else {
+                        should_stop = false;
+                    }
+                }
+            },
+            [](auto&) {});
+
+          return ss::stop_iteration::no;
+      });
 
     for (const auto& [domain, orig_objective] : domain2orig_objective) {
         double cur_objective = calc_objective(domain);
@@ -1956,7 +1983,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         return true;
     };
 
-    if (!actions_added && all_nodes_healthy()) {
+    if (should_stop && all_nodes_healthy()) {
         ctx._counts_rebalancing_finished = true;
     }
 }

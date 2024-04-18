@@ -711,7 +711,7 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
     add_node(model::node_id{4}, 1000_GiB, 8);
     add_node_to_rebalance(model::node_id{4});
 
-    BOOST_REQUIRE(run_to_completion(1000));
+    BOOST_REQUIRE(run_to_completion(2000));
     validate_even_replica_distribution();
     validate_even_topic_distribution();
 }
