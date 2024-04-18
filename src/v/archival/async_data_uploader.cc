@@ -132,7 +132,7 @@ public:
           _buffer.size_bytes());
         co_return head_buf;
     }
-    ss::future<ss::temporary_buffer<char>> skip(uint64_t n) override {
+    ss::future<ss::temporary_buffer<char>> skip(uint64_t) override {
         ss::temporary_buffer<char> empty;
         co_return empty;
     }
