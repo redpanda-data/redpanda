@@ -33,6 +33,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		all             bool
 		disabledOnly    bool
 		partitions      []int
+		nodeIDs         []int
 		logFallbackOnce sync.Once
 	)
 	cmd := &cobra.Command{
@@ -71,6 +72,9 @@ List all partitions in the cluster.
 
 List all partitions in the cluster, filtering for topic foo and bar.
   rpk cluster partitions list foo bar
+
+List partitions which replicas are assigned to brokers 1 and 2.
+  rpk cluster partitions list foo --node-ids 1,2
 
 List only the disabled partitions.
   rpk cluster partitions list -a --disabled-only
@@ -150,12 +154,16 @@ List all in json format.
 			if partitions != nil {
 				clusterPartitions = filterPartition(clusterPartitions, partitions)
 			}
+			if len(nodeIDs) > 0 {
+				clusterPartitions = filterBroker(clusterPartitions, nodeIDs)
+			}
 			printClusterPartitions(f, clusterPartitions)
 		},
 	}
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "If true, list all partitions in the cluster")
 	cmd.Flags().BoolVar(&disabledOnly, "disabled-only", false, "If true, list disabled partitions only")
 	cmd.Flags().IntSliceVarP(&partitions, "partition", "p", nil, "List of comma-separated partitions IDs that you wish to filter the results with")
+	cmd.Flags().IntSliceVarP(&nodeIDs, "node-ids", "n", nil, "List of comma-separated broker IDs that you wish to filter the results with")
 
 	p.InstallFormatFlag(cmd)
 	return cmd
@@ -247,4 +255,30 @@ func filterPartition(cPartitions []adminapi.ClusterPartition, partitions []int) 
 		}
 	}
 	return
+}
+
+// filterBroker filters cPartition and returns a slice with only the
+// clusterPartitions with the same brokers present in the Replicas slice.
+func filterBroker(cPartitions []adminapi.ClusterPartition, nodeIDs []int) (ret []adminapi.ClusterPartition) {
+	for _, p := range cPartitions {
+		rob := replicaOnBroker(p.Replicas, nodeIDs)
+		if rob {
+			ret = append(ret, p)
+		}
+	}
+	return
+}
+
+// replicaOnBroker returns true when all nodes in the brokers slice
+// exist in the Replicas slice. Otherwise, this function returns false.
+func replicaOnBroker(replicas adminapi.Replicas, nodeIDs []int) bool {
+	foundCount := 0
+	for _, r := range replicas {
+		for _, b := range nodeIDs {
+			if r.NodeID == b {
+				foundCount++
+			}
+		}
+	}
+	return foundCount == len(nodeIDs)
 }
