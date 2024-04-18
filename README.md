@@ -6,9 +6,9 @@
 ![Go](https://github.com/redpanda-data/redpanda/workflows/Go/badge.svg)
 ![C++](https://github.com/redpanda-data/redpanda/workflows/build-test/badge.svg)
 
-[<p align="center"><img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/></p>](https://redpanda.com/redpanda)
-<img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />
-<img src="https://www.google-analytics.com/collect?v=2&tid=G-G8V239NH6H&cid=555&t=event&en=page_view&dp=redpanda-data%2Fredpanda&dt=Redpanda%20GitHub" />
+<p align="center">
+<a href="https://redpanda.com/redpanda"><img src="docs/PANDA_sitting.png" alt="redpanda sitting" width="400"></a>
+</p>
 
 Redpanda is a streaming data platform for developers. Kafka® API-compatible. ZooKeeper® free. JVM free. We built it from the ground up to eliminate complexity common to Apache Kafka, improve performance by up to 10x, and make the storage architecture safer, and more resilient. The simpler devex lets you focus on your code (instead of fighting Kafka) and develop new use cases that were never before possible. The business benefits from a significantly lower total cost and faster time to market. A new platform that scales with you from the smallest projects to petabytes of data distributed across the globe!
 
