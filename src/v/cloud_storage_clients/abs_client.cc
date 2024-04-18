@@ -55,6 +55,9 @@ constexpr boost::beast::string_view expiry_option_name = "x-ms-expiry-option";
 constexpr boost::beast::string_view expiry_option_value = "RelativeToNow";
 constexpr boost::beast::string_view expiry_time_name = "x-ms-expiry-time";
 
+constexpr std::string_view hierarchical_namespace_not_enabled_error_code
+  = "HierarchicalNamespaceNotEnabled";
+
 // filename for the set expiry test file
 constexpr std::string_view set_expiry_test_file = "testsetexpiry";
 
@@ -923,7 +926,13 @@ abs_client::do_test_set_expiry_on_dummy_file(
     auto const& headers = response_stream->get_headers();
 
     if (headers.result() == boost::beast::http::status::bad_request) {
-        co_return storage_account_info{.is_hns_enabled = false};
+        if (auto error_code_it = headers.find(error_code_name);
+            error_code_it->value()
+            == hierarchical_namespace_not_enabled_error_code) {
+            // if there is a match of error code, we can proceed, otherwise
+            // fallthrough
+            co_return storage_account_info{.is_hns_enabled = false};
+        }
     }
 
     if (
