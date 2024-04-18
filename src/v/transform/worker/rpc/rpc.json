@@ -1,6 +1,6 @@
 {
     "namespace": "transform::worker::rpc",
-    "service_name": "transform_worker_rpc_service",
+    "service_name": "transform_worker",
     "includes": [
         "transform/worker/rpc/control_plane.h",
         "transform/worker/rpc/data_plane.h"
@@ -12,14 +12,19 @@
             "output_type": "current_state_reply"
         },
         {
-            "name": "manage_vm",
-            "input_type": "manage_vm_request",
-            "output_type": "manage_vm_reply"
+            "name": "start_vm",
+            "input_type": "start_vm_request",
+            "output_type": "start_vm_reply"
+        },
+        {
+            "name": "stop_vm",
+            "input_type": "stop_vm_request",
+            "output_type": "stop_vm_reply"
         },
         {
             "name": "transform_data",
             "input_type": "transform_data_request",
             "output_type": "transform_data_reply"
-        },
+        }
     ]
 }

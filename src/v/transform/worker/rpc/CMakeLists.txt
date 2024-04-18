@@ -11,6 +11,9 @@ v_cc_library(
   NAME transform_worker_rpc
   SRCS
     types.cc
+    errc.cc
   DEPS
-    generated_transform_rpc 
+    generated_transform_worker_rpc 
+    v::model
+    v::serde
 )

@@ -11,21 +11,24 @@
 #pragma once
 
 #include "container/fragmented_vector.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
 #include "serde/envelope.h"
+#include "transform/worker/rpc/errc.h"
 
 namespace transform::worker::rpc {
 
 struct transform_data_request
-  : serde::envelope<
+  : public serde::envelope<
       transform_data_request,
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     model::transform_id id;
-    uuid_t transform_version;
+    decltype(model::transform_metadata::uuid) transform_version;
+    model::partition_id partition;
     chunked_vector<model::record_batch> batches;
 
     friend bool
@@ -35,19 +38,36 @@ struct transform_data_request
     friend std::ostream&
     operator<<(std::ostream&, const transform_data_request&);
 
-    auto serde_fields() { return std::tie(id, transform_version, batches); }
+    auto serde_fields() {
+        return std::tie(id, transform_version, partition, batches);
+    }
+};
+
+struct transformed_topic_output
+  : public serde::envelope<
+      transformed_topic_output,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    transformed_topic_output() noexcept = default;
+    transformed_topic_output(
+      model::topic topic, chunked_vector<model::transformed_data> output)
+      : topic(std::move(topic))
+      , output(std::move(output)) {}
+    model::topic topic;
+    chunked_vector<model::transformed_data> output;
+    auto serde_fields() { return std::tie(topic, output); }
 };
 
 struct transform_data_reply
-  : serde::envelope<
+  : public serde::envelope<
       transform_data_reply,
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    std::error_code error_code;
-    chunked_vector<model::record_batch> batches;
-    auto serde_fields() { return std::tie(error_code, batches); }
+    errc error_code = errc::success;
+    std::vector<transformed_topic_output> output;
+    auto serde_fields() { return std::tie(error_code, output); }
 };
 
 } // namespace transform::worker::rpc

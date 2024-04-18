@@ -21,7 +21,6 @@
 #include <seastar/core/print.hh>
 #include <seastar/util/variant_utils.hh>
 
-#include <algorithm>
 #include <optional>
 #include <stdexcept>
 
@@ -307,4 +306,19 @@ transformed_data transformed_data::copy() const {
     return transformed_data(_data.copy());
 }
 
+transformed_data
+transformed_data::serde_direct_read(iobuf_parser& in, const serde::header& h) {
+    using serde::read_nested;
+    auto bytes_left_limit = h._bytes_left_limit;
+    auto d = read_nested<iobuf>(in, bytes_left_limit);
+    return transformed_data(std::move(d));
+}
+
+ss::future<transformed_data>
+transformed_data::serde_async_direct_read(iobuf_parser& in, serde::header h) {
+    using serde::read_async_nested;
+    auto bytes_left_limit = h._bytes_left_limit;
+    iobuf d = co_await read_async_nested<iobuf>(in, bytes_left_limit);
+    co_return transformed_data(std::move(d));
+}
 } // namespace model

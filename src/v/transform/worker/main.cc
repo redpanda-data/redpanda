@@ -19,12 +19,15 @@
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/memory.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/util/file.hh>
 
 #include <boost/program_options.hpp>
 #include <sys/utsname.h>
 #include <yaml-cpp/node/parse.h>
 
+#include <chrono>
 #include <exception>
 
 namespace po = boost::program_options;
@@ -71,15 +74,19 @@ ss::future<int> run(std::filesystem::path config_file) {
       buf.release,
       buf.nodename,
       buf.machine);
+    // Set budgets
+    ss::engine().update_blocked_reactor_notify_ms(
+      std::chrono::duration_cast<std::chrono::milliseconds>(500us));
+    ss::memory::set_large_allocation_warning_threshold(128_KiB); // NOLINT
+    ss::memory::set_abort_on_allocation_failure(true);
+    // End budgets
     stop_signal signal; // TODO: Pass down abort source from signal
     ss::sharded<worker_service> service;
     config cfg;
-    {
+    try {
         ss::sstring file = co_await ss::util::read_entire_file_contiguous(
           config_file);
         cfg = config::parse(YAML::Load(file.c_str()));
-    }
-    try {
         co_await service.start(worker_service::config{
           .server = create_server_config(cfg),
         });

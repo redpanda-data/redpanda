@@ -287,7 +287,9 @@ struct cluster_transform_report
  * See: https://kafka.apache.org/documentation/#record for more information.
  *
  */
-class transformed_data {
+class transformed_data
+  : public serde::
+      envelope<transformed_data, serde::version<0>, serde::compat_version<0>> {
 public:
     /**
      * Create a transformed record - validating the format is correct.
@@ -322,6 +324,14 @@ public:
      * Explicitly make a copy of this transformed data.
      */
     transformed_data copy() const;
+
+    static transformed_data
+    serde_direct_read(iobuf_parser& in, const serde::header& h);
+
+    static ss::future<transformed_data>
+    serde_async_direct_read(iobuf_parser& in, serde::header h);
+
+    auto serde_fields() { return std::tie(_data); }
 
 private:
     explicit transformed_data(iobuf d);

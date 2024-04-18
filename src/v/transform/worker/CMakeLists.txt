@@ -1,8 +1,11 @@
+add_subdirectory(rpc)
+
 v_cc_library(
   NAME transform_worker
   SRCS
     worker.cc
     main.cc
+    service.cc
   DEPS
     v::transform_worker_rpc
     v::rpc
@@ -11,8 +14,6 @@ v_cc_library(
     v::syschecks
     v::wasm
 )
-
-add_subdirectory(rpc)
 
 add_executable(transform_worker worker.cc)
 target_link_libraries(transform_worker PUBLIC v::transform_worker)

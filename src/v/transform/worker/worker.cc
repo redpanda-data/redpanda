@@ -20,10 +20,11 @@ worker_service::worker_service(config cfg)
 ss::future<> worker_service::start() {
     _wasm_runtime = std::make_unique<wasm::caching_runtime>(
       wasm::runtime::create_default(/*sr=*/nullptr));
+    // TODO: Support injecting these from cluster config?
     constexpr wasm::runtime::config wasm_config = {
         .heap_memory = {
-            .per_core_pool_size_bytes = 10_MiB,
-            .per_engine_memory_limit = 1_MiB,
+            .per_core_pool_size_bytes = 20_MiB,
+            .per_engine_memory_limit = 2_MiB,
         },
         .stack_memory = {
             .debug_host_stack_usage = false,

@@ -20,7 +20,7 @@
 namespace transform::worker {
 
 /**
- *
+ * The entry point to the worker for Data Transforms
  */
 class worker_service {
 public:
