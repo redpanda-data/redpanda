@@ -1899,7 +1899,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     _probe->append_request();
 
     if (unlikely(is_request_target_node_invalid("append_entries", r))) {
-        return ss::make_ready_future<append_entries_reply>(reply);
+        co_return reply;
     }
     // no need to trigger timeout
     vlog(_ctxlog.trace, "Received append entries request: {}", r);
@@ -1907,7 +1907,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (request_metadata.term < _term) {
         reply.result = reply_result::failure;
-        return ss::make_ready_future<append_entries_reply>(std::move(reply));
+        co_return reply;
     }
     /**
      * When the current leader is alive, whenever a follower receives heartbeat,
@@ -1926,7 +1926,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         _voted_for = {};
         maybe_update_leader(r.source_node());
 
-        return do_append_entries(std::move(r));
+        co_return co_await do_append_entries(std::move(r));
     }
     // raft.pdf:If AppendEntries RPC received from new leader: convert to
     // follower (§5.2)
@@ -1955,7 +1955,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           request_metadata.dirty_offset > request_metadata.prev_log_index);
         reply.may_recover = _follower_recovery_state->is_active();
 
-        return ss::make_ready_future<append_entries_reply>(std::move(reply));
+        co_return reply;
     }
 
     // section 2
@@ -1988,18 +1988,66 @@ consensus::do_append_entries(append_entries_request&& r) {
           request_metadata.dirty_offset > request_metadata.prev_log_index);
         reply.may_recover = _follower_recovery_state->is_active();
 
-        return ss::make_ready_future<append_entries_reply>(std::move(reply));
+        co_return reply;
     }
 
-    // special case heartbeat case
+    model::offset adjusted_prev_log_index = request_metadata.prev_log_index;
+    if (adjusted_prev_log_index < last_log_offset) {
+        // The append point is before the end of our log. We need to skip
+        // over batches that we already have (they will have the matching
+        // term) to find the true truncation point. This is important for the
+        // case when we already have _all_ batches locally (possible if e.g.
+        // the request was delayed/duplicated). In this case we don't want to
+        // truncate, otherwise we might lose already committed data.
+
+        struct find_mismatch_consumer {
+            const consensus& parent;
+            model::offset last_log_offset;
+            model::offset last_matched;
+
+            ss::future<ss::stop_iteration>
+            operator()(const model::record_batch& b) {
+                model::offset last_batch_offset
+                  = last_matched
+                    + model::offset(b.header().last_offset_delta + 1);
+                if (
+                  last_batch_offset > last_log_offset
+                  || parent.get_term(last_batch_offset) != b.term()) {
+                    co_return ss::stop_iteration::yes;
+                }
+                last_matched = last_batch_offset;
+                co_return ss::stop_iteration::no;
+            }
+
+            model::offset end_of_stream() { return last_matched; }
+        };
+
+        model::offset last_matched = co_await r.batches().peek_each_ref(
+          find_mismatch_consumer{
+            .parent = *this,
+            .last_log_offset = last_log_offset,
+            .last_matched = adjusted_prev_log_index},
+          model::no_timeout); // no_timeout as the batches are already in memory
+        if (last_matched != adjusted_prev_log_index) {
+            vlog(
+              _ctxlog.info,
+              "skipped matching records in append_entries batch from {} to {}, "
+              "current state: {}",
+              adjusted_prev_log_index,
+              last_matched,
+              meta());
+            adjusted_prev_log_index = last_matched;
+        }
+    }
+
+    // special case for heartbeats and batches without new records.
     // we need to handle it early (before executing truncation)
     // as timeouts are asynchronous to append calls and can have stall data
     if (r.batches().is_end_of_stream()) {
-        if (request_metadata.prev_log_index < last_log_offset) {
+        if (adjusted_prev_log_index < last_log_offset) {
             // do not tuncate on heartbeat just response with false
             reply.result = reply_result::failure;
-            return ss::make_ready_future<append_entries_reply>(
-              std::move(reply));
+            co_return reply;
         }
         auto f = ss::now();
         if (r.is_flush_required() && lstats.dirty_offset > _flushed_offset) {
@@ -2022,16 +2070,15 @@ consensus::do_append_entries(append_entries_request&& r) {
             _follower_recovery_state.reset();
         }
 
-        return f.then([this, reply, request_metadata]() mutable {
-            maybe_update_follower_commit_idx(
-              model::offset(request_metadata.commit_index));
-            reply.last_flushed_log_index = _flushed_offset;
-            reply.result = reply_result::success;
-            return reply;
-        });
+        co_await std::move(f);
+        maybe_update_follower_commit_idx(
+          model::offset(request_metadata.commit_index));
+        reply.last_flushed_log_index = _flushed_offset;
+        reply.result = reply_result::success;
+        co_return reply;
     }
 
-    if (request_metadata.prev_log_index < request_metadata.dirty_offset) {
+    if (adjusted_prev_log_index < request_metadata.dirty_offset) {
         // This is a valid recovery request. In case we haven't allowed it,
         // defer to the leader and force-enter the recovery state.
         upsert_recovery_state(
@@ -2040,8 +2087,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     }
 
     // section 3
-    if (request_metadata.prev_log_index < last_log_offset) {
-        if (unlikely(request_metadata.prev_log_index < _commit_index)) {
+    if (adjusted_prev_log_index < last_log_offset) {
+        if (unlikely(adjusted_prev_log_index < _commit_index)) {
             reply.result = reply_result::success;
             // clamp dirty offset to the current commit index not to allow
             // leader reasoning about follower log beyond that point
@@ -2053,18 +2100,17 @@ consensus::do_append_entries(append_entries_request&& r) {
               "present, request: {}, current state: {}",
               request_metadata,
               meta());
-            return ss::make_ready_future<append_entries_reply>(
-              std::move(reply));
+            co_return reply;
         }
         auto truncate_at = model::next_offset(
-          model::offset(request_metadata.prev_log_index));
+          model::offset(adjusted_prev_log_index));
         vlog(
           _ctxlog.info,
           "Truncating log in term: {}, Request previous log index: {} is "
           "earlier than log end offset: {}, last visible index: {}, leader "
           "last visible index: {}. Truncating to: {}",
           request_metadata.term,
-          request_metadata.prev_log_index,
+          adjusted_prev_log_index,
           lstats.dirty_offset,
           last_visible_index(),
           _last_leader_visible_offset,
@@ -2080,95 +2126,99 @@ consensus::do_append_entries(append_entries_request&& r) {
         // flushed entries
         _flushed_offset = std::min(
           model::prev_offset(truncate_at), _flushed_offset);
-        return _log
-          ->truncate(
-            storage::truncate_config(truncate_at, _scheduling.default_iopc))
-          .then([this, truncate_at] {
-              // update flushed offset once again after truncation as flush is
-              // executed concurrently to append entries and it may race with
-              // the truncation
-              _flushed_offset = std::min(
-                model::prev_offset(truncate_at), _flushed_offset);
 
-              return _configuration_manager.truncate(truncate_at).then([this] {
-                  _probe->configuration_update();
-                  update_follower_stats(_configuration_manager.get_latest());
-              });
-          })
-          .then([this, r = std::move(r), truncate_at]() mutable {
-              auto lstats = _log->offsets();
-              if (unlikely(
-                    lstats.dirty_offset != r.metadata().prev_log_index)) {
-                  vlog(
-                    _ctxlog.warn,
-                    "Log truncation error, expected offset: {}, log "
-                    "offsets: "
-                    "{}, requested truncation at {}",
-                    r.metadata().prev_log_index,
-                    lstats,
-                    truncate_at);
-                  _flushed_offset = std::min(
-                    model::prev_offset(lstats.dirty_offset), _flushed_offset);
-              }
-              return do_append_entries(std::move(r));
-          })
-          .handle_exception([this, reply](const std::exception_ptr& e) mutable {
-              vlog(_ctxlog.warn, "Error occurred while truncating log - {}", e);
-              reply.result = reply_result::failure;
-              return ss::make_ready_future<append_entries_reply>(reply);
-          });
+        try {
+            co_await _log->truncate(
+              storage::truncate_config(truncate_at, _scheduling.default_iopc));
+            // update flushed offset once again after truncation as flush is
+            // executed concurrently to append entries and it may race with
+            // the truncation
+            _flushed_offset = std::min(
+              model::prev_offset(truncate_at), _flushed_offset);
+
+            co_await _configuration_manager.truncate(truncate_at);
+            _probe->configuration_update();
+            update_follower_stats(_configuration_manager.get_latest());
+
+            auto lstats = _log->offsets();
+            if (unlikely(lstats.dirty_offset != adjusted_prev_log_index)) {
+                vlog(
+                  _ctxlog.warn,
+                  "Log truncation error, expected offset: {}, log offsets: {}, "
+                  "requested truncation at {}",
+                  adjusted_prev_log_index,
+                  lstats,
+                  truncate_at);
+                _flushed_offset = std::min(
+                  model::prev_offset(lstats.dirty_offset), _flushed_offset);
+            }
+        } catch (...) {
+            vlog(
+              _ctxlog.warn,
+              "Error occurred while truncating log - {}",
+              std::current_exception());
+            reply.result = reply_result::failure;
+            co_return reply;
+        }
+
+        co_return co_await do_append_entries(std::move(r));
     }
 
     // success. copy entries for each subsystem
-    using offsets_ret = storage::append_result;
-    return disk_append(
-             std::move(r).release_batches(), update_last_quorum_index::no)
-      .then([this, m = request_metadata, target = reply.target_node_id](
-              offsets_ret ofs) {
-          auto last_visible = std::min(ofs.last_offset, m.last_visible_index);
-          maybe_update_last_visible_index(last_visible);
 
-          _last_leader_visible_offset = std::max(
-            m.last_visible_index, _last_leader_visible_offset);
-          _confirmed_term = _term;
+    try {
+        auto deferred = ss::defer([this] {
+            // we do not want to include our disk flush latency into
+            // the leader vote timeout
+            _hbeat = clock_type::now();
+        });
 
-          maybe_update_follower_commit_idx(model::offset(m.commit_index));
+        storage::append_result ofs = co_await disk_append(
+          std::move(r).release_batches(), update_last_quorum_index::no);
+        auto last_visible = std::min(
+          ofs.last_offset, request_metadata.last_visible_index);
+        maybe_update_last_visible_index(last_visible);
 
-          if (_follower_recovery_state) {
-              _follower_recovery_state->update_progress(
-                ofs.last_offset, std::max(m.dirty_offset, ofs.last_offset));
+        _last_leader_visible_offset = std::max(
+          request_metadata.last_visible_index, _last_leader_visible_offset);
+        _confirmed_term = _term;
 
-              if (m.dirty_offset == m.prev_log_index) {
-                  // Normal (non-recovery, non-heartbeat) append_entries
-                  // request means that recovery is over.
-                  vlog(
-                    _ctxlog.debug,
-                    "exiting follower_recovery_state, leader meta: {} "
-                    "(our offset: {})",
-                    m,
-                    ofs.last_offset);
-                  _follower_recovery_state.reset();
-              }
-              // m.dirty_offset can be bogus here if we are talking to
-              // a pre-23.3 redpanda. In this case we can't reliably
-              // distinguish between recovery and normal append_entries
-              // and will exit recovery only via heartbeats (which is okay
-              // but can inflate the number of recovering partitions
-              // statistic a bit).
-          }
-          return make_append_entries_reply(target, ofs);
-      })
-      .handle_exception([this, reply](const std::exception_ptr& e) mutable {
-          vlog(
-            _ctxlog.warn, "Error occurred while appending log entries - {}", e);
-          reply.result = reply_result::failure;
-          return ss::make_ready_future<append_entries_reply>(reply);
-      })
-      .finally([this] {
-          // we do not want to include our disk flush latency into
-          // the leader vote timeout
-          _hbeat = clock_type::now();
-      });
+        maybe_update_follower_commit_idx(request_metadata.commit_index);
+
+        if (_follower_recovery_state) {
+            _follower_recovery_state->update_progress(
+              ofs.last_offset,
+              std::max(request_metadata.dirty_offset, ofs.last_offset));
+
+            if (
+              request_metadata.dirty_offset
+              == request_metadata.prev_log_index) {
+                // Normal (non-recovery, non-heartbeat) append_entries
+                // request means that recovery is over.
+                vlog(
+                  _ctxlog.debug,
+                  "exiting follower_recovery_state, leader meta: {} "
+                  "(our offset: {})",
+                  request_metadata,
+                  ofs.last_offset);
+                _follower_recovery_state.reset();
+            }
+            // m.dirty_offset can be bogus here if we are talking to
+            // a pre-23.3 redpanda. In this case we can't reliably
+            // distinguish between recovery and normal append_entries
+            // and will exit recovery only via heartbeats (which is okay
+            // but can inflate the number of recovering partitions
+            // statistic a bit).
+        }
+        co_return make_append_entries_reply(reply.target_node_id, ofs);
+    } catch (...) {
+        vlog(
+          _ctxlog.warn,
+          "Error occurred while appending log entries - {}",
+          std::current_exception());
+        reply.result = reply_result::failure;
+        co_return reply;
+    }
 }
 
 void consensus::maybe_update_leader(vnode request_node) {

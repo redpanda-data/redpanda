@@ -257,6 +257,7 @@ struct append_entries_request
         return std::move(_batches);
     }
 
+    model::record_batch_reader& batches() { return _batches; }
     const model::record_batch_reader& batches() const { return _batches; }
 
     static append_entries_request make_foreign(append_entries_request&& req);

@@ -155,18 +155,17 @@ struct foreign_entry_fixture {
 
 ss::future<raft::group_configuration>
 extract_configuration(model::record_batch_reader&& rdr) {
-    using cfgs_t = std::vector<raft::offset_configuration>;
-    return ss::do_with(cfgs_t{}, [rdr = std::move(rdr)](cfgs_t& cfgs) mutable {
-        auto wrapping_rdr = raft::details::make_config_extracting_reader(
-          model::offset(0), cfgs, std::move(rdr));
+    struct noop_consumer {
+        ss::future<ss::stop_iteration> operator()(model::record_batch&) {
+            co_return ss::stop_iteration::no;
+        }
+        int end_of_stream() { return 0; }
+    };
 
-        return model::consume_reader_to_memory(
-                 std::move(wrapping_rdr), model::no_timeout)
-          .then([&cfgs](ss::circular_buffer<model::record_batch>) {
-              BOOST_REQUIRE(!cfgs.empty());
-              return cfgs.begin()->cfg;
-          });
-    });
+    auto [_, cfgs] = co_await raft::details::for_each_ref_extract_configuration(
+      model::offset(0), std::move(rdr), noop_consumer{}, model::no_timeout);
+    BOOST_REQUIRE(!cfgs.empty());
+    co_return cfgs.begin()->cfg;
 }
 
 FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {
