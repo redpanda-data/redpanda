@@ -10,6 +10,7 @@
 #include "base/vlog.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/tests/partition_balancer_planner_fixture.h"
+#include "model/metadata.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
 
@@ -739,14 +740,14 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_smol, partition_balancer_sim_fixture) {
-    for (size_t i = 0; i < 4; ++i) {
+    for (model::node_id::type i = 0; i < 4; ++i) {
         add_node(model::node_id{i}, 100_GiB);
     }
 
     add_topic("topic_1", 3, 3, 1_GiB, 100_MiB);
     add_topic("topic_2", 3, 3, 1_GiB, 100_MiB);
 
-    for (size_t i = 4; i < 6; ++i) {
+    for (model::node_id::type i = 4; i < 6; ++i) {
         add_node(model::node_id{i}, 100_GiB);
         add_node_to_rebalance(model::node_id{i});
     }
@@ -755,7 +756,7 @@ FIXTURE_TEST(test_smol, partition_balancer_sim_fixture) {
 }
 
 FIXTURE_TEST(test_heterogeneous_topics, partition_balancer_sim_fixture) {
-    for (size_t i = 0; i < 9; ++i) {
+    for (model::node_id::type i = 0; i < 9; ++i) {
         add_node(model::node_id{i}, 300_GiB);
     }
 
@@ -765,7 +766,7 @@ FIXTURE_TEST(test_heterogeneous_topics, partition_balancer_sim_fixture) {
     add_topic("topic_1", 200, 3, 2_GiB, 200_MiB);
     add_topic("topic_2", 800, 3, 10_MiB, 1_MiB);
 
-    for (size_t i = 9; i < 12; ++i) {
+    for (model::node_id::type i = 9; i < 12; ++i) {
         add_node(model::node_id{i}, 300_GiB);
         add_node_to_rebalance(model::node_id{i});
     }
@@ -777,7 +778,7 @@ FIXTURE_TEST(test_heterogeneous_topics, partition_balancer_sim_fixture) {
 }
 
 FIXTURE_TEST(test_many_topics, partition_balancer_sim_fixture) {
-    for (size_t i = 0; i < 4; ++i) {
+    for (model::node_id::type i = 0; i < 4; ++i) {
         add_node(model::node_id{i}, 100_GiB);
     }
 
@@ -801,7 +802,7 @@ FIXTURE_TEST(test_many_topics, partition_balancer_sim_fixture) {
           partition_size / 10);
     }
 
-    for (size_t i = 4; i < 6; ++i) {
+    for (model::node_id::type i = 4; i < 6; ++i) {
         add_node(model::node_id{i}, 100_GiB);
         add_node_to_rebalance(model::node_id{i});
     }

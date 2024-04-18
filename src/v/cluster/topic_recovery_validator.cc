@@ -112,7 +112,8 @@ partition_validator::do_validate_manifest_metadata() {
     auto anomalies_fut = co_await ss::coroutine::as_future(detector.run(
       op_rtc_,
       cloud_storage::anomalies_detector::segment_depth_t{
-        checks_.max_segment_depth}));
+        static_cast<cloud_storage::anomalies_detector::segment_depth_t::type>(
+          checks_.max_segment_depth)}));
 
     if (anomalies_fut.failed()) {
         // propagate shutdown exceptions, but treat other exceptions as hard
