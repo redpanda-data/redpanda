@@ -402,8 +402,9 @@ ss::future<> processor::when_all_shutdown(T&&... futs) {
 ss::future<> processor::handle_processor_task(ss::future<> fut) {
     try {
         co_await std::move(fut);
-    } catch (const processor_shutdown_exception&) {
+    } catch (const processor_shutdown_exception& ex) {
         // Do nothing, this is an expected error on shutdown
+        std::ignore = ex;
     } catch (const std::exception& ex) {
         vlog(_logger.warn, "error running transform: {}", ex);
         _state_callback(_id, _ntp, state::errored);
