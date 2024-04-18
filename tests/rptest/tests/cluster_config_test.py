@@ -1292,9 +1292,9 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         }
     }
 
-    # need to use a string as the value for an update to not trigger this error
-    # when ducktape serialized a value to create the folder for a test run
+    # We need to use a string as the value for `update`, to not trigger
     # `OSError: [Errno 36] File name too long`
+    # caused by ducktape creating a folder for the run + parameters.
     @cluster(
         num_nodes=1,
         log_allow_list=IAM_ROLES_API_CALL_ALLOW_LIST + [
