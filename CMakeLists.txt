@@ -36,6 +36,12 @@ if(Redpanda_ENABLE_SANITIZERS)
   add_compile_options(-fsanitize=address,leak,undefined)
 endif()
 
+# We use enums as bitflags in seastar and Redpanda, which
+# creating a constexpr enum value that is bitwise combination
+# of flags can trigger this warning as the resulting "enum",
+# isn't a valid value.
+add_compile_options(-Wno-enum-constexpr-conversion)
+
 include(dependencies)
 include(v_library)
 include(testing)

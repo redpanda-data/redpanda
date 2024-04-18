@@ -510,7 +510,7 @@ ss::future<get_cluster_health_reply> service::get_cluster_health_report(
 }
 
 ss::future<get_node_health_reply>
-service::do_collect_node_health_report(get_node_health_request req) {
+service::do_collect_node_health_report(get_node_health_request) {
     auto res = co_await _hm_frontend.local().get_current_node_health();
     if (res.has_error()) {
         co_return get_node_health_reply{
