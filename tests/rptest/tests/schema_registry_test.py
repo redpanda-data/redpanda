@@ -1987,6 +1987,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
 
         schema_registry_config = SchemaRegistryConfig()
         schema_registry_config.authn_method = 'http_basic'
+        schema_registry_config.mode_mutability = True
 
         super(SchemaRegistryBasicAuthTest,
               self).__init__(context,
@@ -2002,7 +2003,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         self.public_auth = (public_user.username, public_user.password)
 
     def _init_users(self):
-        admin = Admin(self.redpanda, auth=self.super_auth)
+        admin = Admin(self.redpanda)
         admin.create_user(username=self.user.username,
                           password=self.user.password,
                           algorithm=self.user.mechanism)
@@ -2227,16 +2228,65 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     @cluster(num_nodes=3)
     def test_mode(self):
         """
-        Smoketest get_mode endpoint
+        Smoketest mode endpoints
         """
         self._init_users()
 
+        self.logger.debug("Get initial global mode")
         result_raw = self._get_mode(auth=self.public_auth)
         assert result_raw.json()['error_code'] == 40101
 
-        self.logger.debug("Get initial global mode")
+        result_raw = self._get_mode(auth=self.user_auth)
+        assert result_raw.json()["mode"] == "READWRITE"
+
         result_raw = self._get_mode(auth=self.super_auth)
         assert result_raw.json()["mode"] == "READWRITE"
+
+        self.logger.debug("Set global mode")
+        result_raw = self._set_mode(data=json.dumps({"mode": "READONLY"}),
+                                    auth=self.public_auth)
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._set_mode(data=json.dumps({"mode": "READONLY"}),
+                                    auth=self.user_auth)
+        assert result_raw.json()['error_code'] == 403
+
+        result_raw = self._set_mode(data=json.dumps({"mode": "READONLY"}),
+                                    auth=self.super_auth)
+        assert result_raw.json()["mode"] == "READONLY"
+
+        sub = "test-sub"
+        self.logger.debug("Set subject mode")
+        result_raw = self._set_mode_subject(subject=sub,
+                                            data=json.dumps(
+                                                {"mode": "READONLY"}),
+                                            auth=self.public_auth)
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._set_mode_subject(subject=sub,
+                                            data=json.dumps(
+                                                {"mode": "READONLY"}),
+                                            auth=self.user_auth)
+        assert result_raw.json()['error_code'] == 403
+
+        result_raw = self._set_mode_subject(subject=sub,
+                                            data=json.dumps(
+                                                {"mode": "READONLY"}),
+                                            auth=self.super_auth)
+        assert result_raw.json()["mode"] == "READONLY"
+
+        self.logger.debug("Delete subject mode")
+        result_raw = self._delete_mode_subject(subject=sub,
+                                               auth=self.public_auth)
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._delete_mode_subject(subject=sub,
+                                               auth=self.user_auth)
+        assert result_raw.json()['error_code'] == 403
+
+        result_raw = self._delete_mode_subject(subject=sub,
+                                               auth=self.super_auth)
+        assert result_raw.json()["mode"] == "READONLY"
 
     @cluster(num_nodes=3)
     def test_post_compatibility_subject_version(self):
