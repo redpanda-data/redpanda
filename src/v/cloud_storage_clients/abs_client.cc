@@ -889,7 +889,7 @@ abs_client::do_test_set_expiry_on_dummy_file(
   ss::lowres_clock::duration timeout) {
     // since this is one-off operation at startup, it's easier to read directly
     // cloud_storage_azure_container than to wire it in. this is ok because if
-    // we are in abs_client it means that the required property, like
+    // we are in abs_client it means that the required properties, like
     // azure_container, are set
     auto container_name
       = config::shard_local_cfg().cloud_storage_azure_container.value();
