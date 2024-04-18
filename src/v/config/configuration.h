@@ -390,6 +390,8 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> cloud_storage_azure_shared_key;
     property<std::optional<ss::sstring>> cloud_storage_azure_adls_endpoint;
     property<std::optional<uint16_t>> cloud_storage_azure_adls_port;
+    property<std::optional<bool>>
+      cloud_storage_azure_hierarchical_namespace_enabled;
 
     // Archival upload controller
     property<std::chrono::milliseconds>

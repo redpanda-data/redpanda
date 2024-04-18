@@ -25,6 +25,7 @@ public:
 
     void reset_creds(credentials creds) override;
     std::ostream& print(std::ostream& os) const override;
+    bool is_oauth() const override { return true; }
 
 private:
     oauth_token_str _oauth_token;

@@ -86,6 +86,13 @@ public:
     /// \brief Init http header for 'Get Account Information' request
     result<http::client::request_header> make_get_account_info_request();
 
+    /// \brief Init http header for 'Set Expiry' request. the object will be
+    /// expired in `expires_in` ms after the request is received
+    result<http::client::request_header> make_set_expiry_to_blob_request(
+      bucket_name const& name,
+      object_key const& key,
+      ss::lowres_clock::duration expires_in) const;
+
     /// \brief Create a 'Filesystem Delete' request header
     ///
     /// \param adls_ap is the acces point for the Azure Data Lake Storage v2
@@ -279,6 +286,13 @@ private:
     ss::future<storage_account_info>
     do_get_account_info(ss::lowres_clock::duration timeout);
 
+    /// \brief test if Hierarchical Namespace is enabled in the storage account
+    /// by creating a test file and calling Set Expiry on this. Set Expiry is
+    /// available only when HNS is enabled. use the result to infer if HNS is
+    /// enabled.
+    ss::future<storage_account_info>
+    do_test_set_expiry_on_dummy_file(ss::lowres_clock::duration timeout);
+
     ss::future<> do_delete_path(
       bucket_name const& name,
       object_key path,
@@ -290,6 +304,14 @@ private:
       ss::lowres_clock::duration timeout);
 
     std::optional<abs_configuration> _data_lake_v2_client_config;
+
+    // currently the implementation supports Signing requests or OAuth.
+    // not all api are available for oauth, this variable is initialized at
+    // startup to allow alternative codepaths when using oauth this is fine
+    // because to change authentication method the user changes
+    // cloud_storage_credentials_source, and that requires a restart
+    bool _is_oauth;
+
     abs_request_creator _requestor;
     http::client _client;
 

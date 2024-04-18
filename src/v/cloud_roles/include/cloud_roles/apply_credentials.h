@@ -38,6 +38,10 @@ public:
 
         virtual std::ostream& print(std::ostream& os) const = 0;
 
+        /// Returns true if this implementation is based on oauth tokens.
+        /// meant to deal with API that do not support OAuth
+        virtual bool is_oauth() const = 0;
+
         virtual ~impl() = default;
     };
 
@@ -53,6 +57,8 @@ public:
     }
 
     std::ostream& print(std::ostream& os) const { return _impl->print(os); }
+
+    bool is_oauth() const { return _impl->is_oauth(); }
 
 private:
     std::unique_ptr<impl> _impl;

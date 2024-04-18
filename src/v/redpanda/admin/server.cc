@@ -1559,15 +1559,30 @@ void config_multi_property_validation(
         } break;
         case model::cloud_credentials_source::aws_instance_metadata:
         case model::cloud_credentials_source::gcp_instance_metadata:
-        case model::cloud_credentials_source::sts:
-        case model::cloud_credentials_source::azure_aks_oidc_federation: {
-            // basic config checks for cloud_storage. for sts and
-            // azure_aks_oidc_federation it is expected to receive part of the
-            // configuration via env variables, while aws_instance_metadata and
-            // gcp_instance_metadata do not require extra configuration
+        case model::cloud_credentials_source::sts: {
+            // basic config checks for cloud_storage. for sts it is expected to
+            // receive part of the configuration via env variables, while
+            // aws_instance_metadata and gcp_instance_metadata do not require
+            // extra configuration
             config_properties_seq properties = {
               std::ref(updated_config.cloud_storage_region),
               std::ref(updated_config.cloud_storage_bucket),
+            };
+
+            for (auto& p : properties) {
+                if (p() == std::nullopt) {
+                    errors[ss::sstring(p.get().name())]
+                      = "Must be set when cloud storage enabled";
+                }
+            }
+        } break;
+        case model::cloud_credentials_source::azure_aks_oidc_federation: {
+            // for azure_aks_oidc_federation it is expected to receive part of
+            // the configuration via env variables. this check is just for
+            // related cluster properties
+            config_properties_seq properties = {
+              std::ref(updated_config.cloud_storage_azure_storage_account),
+              std::ref(updated_config.cloud_storage_azure_container),
             };
 
             for (auto& p : properties) {
@@ -1581,8 +1596,8 @@ void config_multi_property_validation(
             // azure_vm_instance_metadata requires an client_id to work
             // correctly
             config_properties_seq properties = {
-              std::ref(updated_config.cloud_storage_region),
-              std::ref(updated_config.cloud_storage_bucket),
+              std::ref(updated_config.cloud_storage_azure_storage_account),
+              std::ref(updated_config.cloud_storage_azure_container),
               std::ref(updated_config.cloud_storage_azure_managed_identity_id),
             };
 

@@ -51,6 +51,12 @@ constexpr boost::beast::string_view is_hns_enabled_name = "x-ms-is-hns-enabled";
 constexpr boost::beast::string_view delete_snapshot_value = "include";
 constexpr boost::beast::string_view error_code_name = "x-ms-error-code";
 constexpr boost::beast::string_view content_type_name = "Content-Type";
+constexpr boost::beast::string_view expiry_option_name = "x-ms-expiry-option";
+constexpr boost::beast::string_view expiry_option_value = "RelativeToNow";
+constexpr boost::beast::string_view expiry_time_name = "x-ms-expiry-time";
+
+// filename for the set expiry test file
+constexpr std::string_view set_expiry_test_file = "testsetexpiry";
 
 bool is_error_retryable(
   const cloud_storage_clients::abs_rest_error_response& err) {
@@ -346,6 +352,38 @@ abs_request_creator::make_get_account_info_request() {
 }
 
 result<http::client::request_header>
+abs_request_creator::make_set_expiry_to_blob_request(
+  bucket_name const& name,
+  object_key const& key,
+  ss::lowres_clock::duration expires_in) const {
+    // https://learn.microsoft.com/en-us/rest/api/storageservices/set-blob-expiry?tabs=microsoft-entra-id
+    // available only if HNS are enabled for the bucket
+    // performs curl -v -X PUT -H "Authorization: Bearer ${AUTH_CODE}" -H
+    // "x-ms-version: 2023-01-03" -H "x-ms-expiry-option: RelativeToNow" -H
+    // "x-ms-expiry-time: 30000" -d {}
+    // "https://testingimds2ab.blob.core.windows.net/testingcontainer/testHNS?comp=expiry"
+
+    auto header = http::client::request_header{};
+
+    header.method(boost::beast::http::verb::put);
+    header.target(fmt::format("/{}/{}?comp=expiry", name(), key().string()));
+    header.set(boost::beast::http::field::host, {_ap().data(), _ap().size()});
+    header.set(expiry_option_name, expiry_option_value);
+    header.set(
+      expiry_time_name,
+      fmt::format(
+        "{}",
+        std::chrono::duration_cast<std::chrono::milliseconds>(expires_in)
+          .count()));
+    header.set(boost::beast::http::field::content_length, "0");
+    if (auto error_code = _apply_credentials->add_auth(header);
+        error_code != std::error_code{}) {
+        return error_code;
+    }
+    return header;
+}
+
+result<http::client::request_header>
 abs_request_creator::make_delete_file_request(
   const access_point_uri& adls_ap,
   bucket_name const& name,
@@ -378,6 +416,7 @@ abs_client::abs_client(
   : _data_lake_v2_client_config(
     conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
                         : std::nullopt)
+  , _is_oauth(apply_credentials->is_oauth())
   , _requestor(conf, std::move(apply_credentials))
   , _client(conf)
   , _adls_client(
@@ -394,6 +433,7 @@ abs_client::abs_client(
   : _data_lake_v2_client_config(
     conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
                         : std::nullopt)
+  , _is_oauth(apply_credentials->is_oauth())
   , _requestor(conf, std::move(apply_credentials))
   , _client(conf, &as, conf._probe, conf.max_idle_time)
   , _adls_client(
@@ -405,6 +445,16 @@ abs_client::abs_client(
 
 ss::future<result<client_self_configuration_output, error_outcome>>
 abs_client::self_configure() {
+    auto& cfg = config::shard_local_cfg();
+    auto hns_enabled
+      = cfg.cloud_storage_azure_hierarchical_namespace_enabled.value();
+
+    if (hns_enabled.has_value()) {
+        // use override cluster property to skip check
+        co_return abs_self_configuration_result{
+          .is_hns_enabled = hns_enabled.value()};
+    }
+
     auto result = co_await get_account_info(http::default_connect_timeout);
     if (!result) {
         co_return result.error();
@@ -826,7 +876,66 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
 
 ss::future<result<abs_client::storage_account_info, error_outcome>>
 abs_client::get_account_info(ss::lowres_clock::duration timeout) {
-    return send_request(do_get_account_info(timeout), object_key{""});
+    if (_is_oauth) {
+        return send_request(
+          do_test_set_expiry_on_dummy_file(timeout), object_key{""});
+    } else {
+        return send_request(do_get_account_info(timeout), object_key{""});
+    }
+}
+
+ss::future<abs_client::storage_account_info>
+abs_client::do_test_set_expiry_on_dummy_file(
+  ss::lowres_clock::duration timeout) {
+    // since this is one-off operation at startup, it's easier to read directly
+    // cloud_storage_azure_container than to wire it in. this is ok because if
+    // we are in abs_client it means that the required property, like
+    // azure_container, are set
+    auto container_name
+      = config::shard_local_cfg().cloud_storage_azure_container.value();
+
+    if (unlikely(!container_name.has_value())) {
+        vlog(abs_log.error, "Failed to get azure container name from config");
+        throw std::runtime_error("cloud_storage_azure_container is not set");
+    }
+
+    auto bucket = bucket_name{container_name.value()};
+    auto test_file = object_key{set_expiry_test_file};
+
+    // try set expiry
+    auto set_expiry_header = _requestor.make_set_expiry_to_blob_request(
+      bucket, test_file, std::chrono::seconds{30});
+    if (!set_expiry_header) {
+        vlog(
+          abs_log.error,
+          "Failed to create set_expiry header: {}",
+          set_expiry_header.error());
+        throw std::system_error(set_expiry_header.error());
+    }
+
+    vlog(abs_log.trace, "send https request:\n{}", set_expiry_header.value());
+
+    auto response_stream = co_await _client.request(
+      std::move(set_expiry_header.value()), timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+    auto const& headers = response_stream->get_headers();
+
+    if (headers.result() == boost::beast::http::status::bad_request) {
+        co_return storage_account_info{.is_hns_enabled = false};
+    }
+
+    if (
+      headers.result() == boost::beast::http::status::ok
+      || headers.result() == boost::beast::http::status::not_found) {
+        // not found counts as hsn_enabled, otherwise it would fail as
+        // bad_request
+        co_return storage_account_info{.is_hns_enabled = true};
+    }
+
+    // unexpected header return code
+    throw parse_header_error_response(headers);
 }
 
 ss::future<abs_client::storage_account_info>
