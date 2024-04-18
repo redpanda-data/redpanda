@@ -23,6 +23,7 @@ import random
 from ducktape.utils.util import wait_until
 from ducktape.errors import TimeoutError
 
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RedpandaService, SecurityConfig, SaslCredentials
@@ -974,6 +975,11 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
             else:
                 producer.abort_transaction()
             consumed += len(records)
+
+        log_viewer = OfflineLogViewer(self.redpanda)
+        for node in self.redpanda.started_nodes():
+            co_records = log_viewer.read_consumer_offsets(node=node)
+            self.logger.info(f"Read {len(co_records)} from node {node.name}")
 
         admin = Admin(self.redpanda)
         co_topic = "__consumer_offsets"
