@@ -12,6 +12,7 @@ v_cc_library(
   SRCS
     types.cc
     errc.cc
+    client.cc
   DEPS
     generated_transform_worker_rpc 
     v::model

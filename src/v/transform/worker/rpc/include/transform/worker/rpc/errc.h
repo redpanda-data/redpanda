@@ -19,6 +19,7 @@ enum class errc {
     failed_to_start_engine,
     vm_not_found,
     transform_failed,
+    network_error,
 };
 
 struct errc_category final : public std::error_category {

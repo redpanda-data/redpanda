@@ -26,6 +26,8 @@ std::string errc_category::message(int c) const {
         return "VM not found";
     case errc::transform_failed:
         return "Transform failed";
+    case errc::network_error:
+        return "Network error";
     }
     return "transform::worker::rpc::errc::unknown(" + std::to_string(c) + ")";
 }

@@ -442,6 +442,8 @@ struct method {
 /// \brief used in returned types for client::send_typed() calls
 template<typename T>
 struct client_context {
+    using data_type = T;
+
     client_context(header h, T data)
       : hdr(h)
       , data(std::move(data)) {}
