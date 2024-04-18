@@ -13,7 +13,8 @@
 namespace cloud_roles {
 apply_abs_oauth_credentials::apply_abs_oauth_credentials(
   abs_oauth_credentials const& credentials)
-  : _oauth_token{fmt::format("Bearer {}", credentials.oauth_token())} {}
+  : _oauth_token{fmt::format("Bearer {}", credentials.oauth_token())}
+  , _timesource{} {}
 
 std::error_code apply_abs_oauth_credentials::add_auth(
   http::client::request_header& header) const {
@@ -21,6 +22,8 @@ std::error_code apply_abs_oauth_credentials::add_auth(
     // x-ms-version requests a specific version for the abs api, the hardcoded
     // value is the one we test
     header.set("x-ms-version", azure_storage_api_version);
+    auto iso_ts = _timesource.format_http_datetime();
+    header.set("x-ms-date", {iso_ts.data(), iso_ts.size()});
     header.insert(
       boost::beast::http::field::authorization, {token.data(), token.size()});
     return {};
