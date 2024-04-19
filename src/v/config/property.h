@@ -811,7 +811,12 @@ private:
 class deprecated_property : public property<ss::sstring> {
 public:
     deprecated_property(config_store& conf, std::string_view name)
-      : property(conf, name, "", {.visibility = visibility::deprecated}) {}
+      : property(
+        conf,
+        name,
+        "",
+        {.needs_restart = needs_restart::no,
+         .visibility = visibility::deprecated}) {}
 
     void set_value(std::any) override { return; }
 };
