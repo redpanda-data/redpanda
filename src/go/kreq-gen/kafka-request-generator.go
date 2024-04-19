@@ -193,6 +193,8 @@ func randomFill(v reflect.Value, version int16) {
 		fallthrough
 	case reflect.Int64:
 		v.SetInt(makeRandomInt64())
+	case reflect.Float64:
+		v.SetFloat(rand.Float64())
 	case reflect.String:
 		v.SetString(makeRandomString())
 	default:

@@ -1,5 +1,5 @@
 module kafka-request-generator
 
-go 1.19
+go 1.22
 
-require github.com/twmb/franz-go/pkg/kmsg v1.2.0
+require github.com/twmb/franz-go/pkg/kmsg v1.7.0
