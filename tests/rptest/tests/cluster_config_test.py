@@ -1553,16 +1553,26 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
     def setUp(self):
         pass  # Will start cluster in test
 
+    # Retrieve a module variable from a string.
+    # The params of these tests might cause a folder name to become too long for the operating system.
+    def _get_prop_set(self, name: str) -> PropertyAliasData:
+        vars = globals()
+        assert name in vars, f"{name=} is not a variable of this module"
+        self.logger.info(f"prop_set={vars[name]}")
+        return vars[name]
+
     @cluster(num_nodes=3)
-    @matrix(prop_set=[
-        cloud_storage_graceful_transfer_timeout, log_retention_ms,
-        data_transforms_per_core_memory_reservation
+    @matrix(prop_set_str=[
+        'cloud_storage_graceful_transfer_timeout', 'log_retention_ms',
+        'data_transforms_per_core_memory_reservation'
     ])
-    def test_aliasing(self, prop_set: PropertyAliasData):
+    def test_aliasing(self, prop_set_str: str):
         """
         Validate that configuration property aliases enable the various means
         of setting a property to accept the old name (alias) as well as the new one.
         """
+        prop_set = self._get_prop_set(prop_set_str)
+
         # Aliases should work when used in bootstrap
         self.redpanda.set_extra_rp_conf({
             prop_set.aliased_name:
@@ -1611,11 +1621,11 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
                                               prop_set.test_values[2])
 
     @cluster(num_nodes=3)
-    @matrix(
-        wipe_cache=[False, True],
-        prop_set=[cloud_storage_graceful_transfer_timeout, log_retention_ms])
-    def test_aliasing_with_upgrade(self, wipe_cache: bool,
-                                   prop_set: PropertyAliasData):
+    @matrix(wipe_cache=[False, True],
+            prop_set_str=[
+                'cloud_storage_graceful_transfer_timeout', 'log_retention_ms'
+            ])
+    def test_aliasing_with_upgrade(self, wipe_cache: bool, prop_set_str: str):
         """
         Validate that a property written under an alias in a previous release
         is read correctly after upgrade.
@@ -1624,6 +1634,8 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
                            upgraded node is reading from the controller log rather
                            than just cache.
         """
+
+        prop_set = self._get_prop_set(prop_set_str)
 
         old_version = self.installer.highest_from_prior_feature_version(
             prop_set.redpanda_version)
