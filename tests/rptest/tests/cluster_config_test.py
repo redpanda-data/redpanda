@@ -1515,11 +1515,13 @@ PropertyAliasData:
     redpanda_version: RedpandaVersionLine  # this is the first version to use primary_name
     test_values: list[Any, Any, Any]  # values for this property to run the tests
     expect_restart: bool # setting property will ask for a restart
+    alias_deprecated_on_HEAD: bool = False  # True if on version HEAD the aliased_name is deprecated (setting it will not affect primary_name)
 """
 PropertyAliasData = namedtuple("PropertyAliasData", [
     "primary_name", "aliased_name", "redpanda_version", "test_values",
-    "expect_restart"
-])
+    "expect_restart", "alias_deprecated_on_HEAD"
+],
+                               defaults=(False, ))
 
 cloud_storage_graceful_transfer_timeout = PropertyAliasData(
     primary_name="cloud_storage_graceful_transfer_timeout_ms",
@@ -1531,7 +1533,8 @@ log_retention_ms = PropertyAliasData(primary_name="log_retention_ms",
                                      aliased_name="delete_retention_ms",
                                      redpanda_version=(23, 3),
                                      test_values=(1000000, 300000, 500000),
-                                     expect_restart=False)
+                                     expect_restart=False,
+                                     alias_deprecated_on_HEAD=True)
 # NOTE due to https://github.com/redpanda-data/redpanda/issues/13432 ,
 # test_values can't be -1 (a valid value nonetheless to signal infinite value)
 data_transforms_per_core_memory_reservation = PropertyAliasData(
@@ -1561,9 +1564,32 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         self.logger.info(f"prop_set={vars[name]}")
         return vars[name]
 
+    @cluster(num_nodes=1)
+    @matrix(prop_set_str=['log_retention_ms'])
+    def test_deprecation_of_alias(self, prop_set_str: str):
+        """
+        Validate that an alias that was moved to deprecated cannot affect anymore the primary name
+        """
+        prop_set = self._get_prop_set(prop_set_str)
+
+        assert prop_set.alias_deprecated_on_HEAD, f"test error: {prop_set=} is not marked as deprecated, should not appear here but in `test_aliasing"
+        # set value for primary name
+        self.redpanda.set_extra_rp_conf(
+            {prop_set.primary_name: prop_set.test_values[0]})
+        self.redpanda.start()
+        self._check_value_everywhere(prop_set.primary_name,
+                                     prop_set.test_values[0])
+
+        # Try setting via the aliased name, primary name should be unaffected
+        self.redpanda.set_cluster_config(
+            {prop_set.aliased_name: prop_set.test_values[1]},
+            expect_restart=False)
+        self._check_value_everywhere(prop_set.primary_name,
+                                     prop_set.test_values[0])
+
     @cluster(num_nodes=3)
     @matrix(prop_set_str=[
-        'cloud_storage_graceful_transfer_timeout', 'log_retention_ms',
+        'cloud_storage_graceful_transfer_timeout',
         'data_transforms_per_core_memory_reservation'
     ])
     def test_aliasing(self, prop_set_str: str):
@@ -1572,6 +1598,8 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         of setting a property to accept the old name (alias) as well as the new one.
         """
         prop_set = self._get_prop_set(prop_set_str)
+
+        assert not prop_set.alias_deprecated_on_HEAD, f"test error: {prop_set} is marked as deprecated, should not appear here but in `test_deprecation_of_alias`"
 
         # Aliases should work when used in bootstrap
         self.redpanda.set_extra_rp_conf({
@@ -1684,6 +1712,27 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
             {prop_set.aliased_name: prop_set.test_values[2]})
         self._check_value_everywhere(prop_set.primary_name,
                                      prop_set.test_values[2])
+
+        if prop_set.alias_deprecated_on_HEAD:
+            # The alias should not be usable anymore after upgrade
+            # upgrade to redpanda_version_deprecation to verify that the aliased_name does not work anymore
+            for version in self.upgrade_through_versions(
+                    versions_in=self.load_version_range(
+                        prop_set.redpanda_version),
+                    already_running=True):
+                # proceed to upgrade to HEAD, one version at a time
+                self.logger.info(f"Updated to {version}")
+
+            # Assert that on HEAD the value is persisting
+            self._check_value_everywhere(prop_set.primary_name,
+                                         prop_set.test_values[2])
+
+            # Try setting via the aliased name, primary name should be unaffected
+            self.redpanda.set_cluster_config(
+                {prop_set.aliased_name: prop_set.test_values[0]},
+                expect_restart=False)
+            self._check_value_everywhere(prop_set.primary_name,
+                                         prop_set.test_values[2])
 
 
 class ClusterConfigClusterIdTest(RedpandaTest):
