@@ -70,3 +70,35 @@ using chunked_hash_map = ankerl::unordered_dense::segmented_map<
   chunked_vector<std::pair<Key, Value>>,
   ankerl::unordered_dense::bucket_type::standard,
   chunked_vector<ankerl::unordered_dense::bucket_type::standard>>;
+
+/**
+ * @brief A hash set that uses a chunked vector as the underlying storage.
+ *
+ * Use when the hash set is expected to have a large number of elements (e.g.:
+ * scales with partitions or topics). Performance wise it's equal to the abseil
+ * hashsets.
+ *
+ * NB: References and iterators are not stable across insertions and deletions.
+ *
+ * Both std::hash and abseil's AbslHashValue are supported. We dispatch to the
+ * latter if available. Given AbslHashValue also supports std::hash we could
+ * also unconditionally dispatch to it. However, absl's hash mixing seems more
+ * extensive (and hence less performant) so we only do that when needed.
+ *
+ * For more info please see
+ * https://github.com/martinus/unordered_dense/?tab=readme-ov-file#1-overview
+ */
+template<
+  typename Key,
+  typename Hash = std::conditional_t<
+    detail::has_absl_hash<Key>,
+    detail::avalanching_absl_hash<Key>,
+    ankerl::unordered_dense::hash<Key>>,
+  typename EqualTo = std::equal_to<Key>>
+using chunked_hash_set = ankerl::unordered_dense::segmented_set<
+  Key,
+  Hash,
+  EqualTo,
+  chunked_vector<Key>,
+  ankerl::unordered_dense::bucket_type::standard,
+  chunked_vector<ankerl::unordered_dense::bucket_type::standard>>;

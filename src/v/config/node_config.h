@@ -54,6 +54,7 @@ public:
 
     // Data transforms
     property<bool> emergency_disable_data_transforms;
+    property<net::unresolved_address> data_transforms_worker_server;
 
     // HTTP server content dirs
     property<ss::sstring> admin_api_doc_dir;

@@ -32,8 +32,11 @@
 #include "ssx/future-util.h"
 #include "transform/logging/log_manager.h"
 #include "transform/logging/rpc_client.h"
+#include "transform/remote_wasm.h"
 #include "transform/rpc/client.h"
 #include "transform/rpc/deps.h"
+#include "transform/worker/rpc/client.h"
+#include "transform/worker/rpc/errc.h"
 #include "transform_logger.h"
 #include "transform_manager.h"
 #include "transform_processor.h"
@@ -357,7 +360,7 @@ private:
 
 using wasm_engine_factory = ss::noncopyable_function<
   ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>(
-    model::transform_metadata)>;
+    model::transform_id, model::transform_metadata)>;
 
 class proc_factory : public processor_factory {
 public:
@@ -379,7 +382,7 @@ public:
       model::transform_metadata meta,
       processor::state_callback cb,
       probe* p) final {
-        auto engine = co_await _wasm_engine_factory(meta);
+        auto engine = co_await _wasm_engine_factory(id, meta);
         if (!engine) {
             throw std::runtime_error("unable to create wasm engine");
         }
@@ -477,6 +480,7 @@ service::service(
   ss::sharded<cluster::partition_manager>* partition_manager,
   ss::sharded<rpc::client>* rpc_client,
   ss::sharded<cluster::metadata_cache>* metadata_cache,
+  ss::sharded<worker::rpc::client>* worker_client,
   ss::scheduling_group sg)
   : _runtime(runtime)
   , _self(self)
@@ -486,12 +490,23 @@ service::service(
   , _topic_table(topic_table)
   , _partition_manager(partition_manager)
   , _rpc_client(rpc_client)
+  , _worker_client(worker_client)
   , _metadata_cache(metadata_cache)
   , _sg(sg) {}
 
 service::~service() = default;
 
 ss::future<> service::start() {
+    if (ss::this_shard_id() == remote_wasm_manager::shard) {
+        _remote_manager = std::make_unique<remote_wasm_manager>(
+          &_rpc_client->local(),
+          _worker_client,
+          [this](model::transform_id id) {
+              return _plugin_frontend->local().lookup_transform(id);
+          });
+        co_await _remote_manager->start();
+    }
+
     _log_manager = std::make_unique<logging::manager<ss::lowres_clock>>(
       _self,
       std::make_unique<logging::rpc_client>(
@@ -510,8 +525,8 @@ ss::future<> service::start() {
       std::make_unique<registry_adapter>(
         &_plugin_frontend->local(), &_partition_manager->local()),
       std::make_unique<proc_factory>(
-        [this](model::transform_metadata meta) {
-            return create_engine(std::move(meta));
+        [this](model::transform_id id, model::transform_metadata meta) {
+            return create_engine(id, std::move(meta));
         },
         &_topic_table->local(),
         &_partition_manager->local(),
@@ -611,6 +626,9 @@ ss::future<> service::stop() {
         // destroy the existing manager to clear out any residual state or
         // unflushed log data
         _log_manager.reset();
+    }
+    if (_remote_manager) {
+        co_await _remote_manager->stop();
     }
 }
 
@@ -734,10 +752,10 @@ ss::future<> service::cleanup_wasm_binary(uuid_t key) {
 }
 
 ss::future<ss::optimized_optional<ss::shared_ptr<wasm::engine>>>
-service::create_engine(model::transform_metadata meta) {
+service::create_engine(model::transform_id id, model::transform_metadata meta) {
     auto logger = std::make_unique<transform::logger>(
       meta.name, _log_manager.get());
-    auto factory = co_await get_factory(std::move(meta));
+    auto factory = co_await get_factory(id, std::move(meta));
     if (!factory) {
         co_return ss::shared_ptr<wasm::engine>(nullptr);
     }
@@ -746,17 +764,26 @@ service::create_engine(model::transform_metadata meta) {
 
 ss::future<
   ss::optimized_optional<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>>
-service::get_factory(model::transform_metadata meta) {
+service::get_factory(model::transform_id id, model::transform_metadata meta) {
     constexpr ss::shard_id creation_shard = 0;
     // TODO(rockwood): Consider caching factories core local (or moving that
     // optimization into the caching runtime).
     if (ss::this_shard_id() != creation_shard) {
         co_return co_await container().invoke_on(
           creation_shard,
-          [](service& s, model::transform_metadata meta) {
-              return s.get_factory(std::move(meta));
+          [](
+            service& s, // NOLINT
+            model::transform_id id,
+            model::transform_metadata meta) {
+              return s.get_factory(id, std::move(meta));
           },
+          id,
           std::move(meta));
+    }
+    constexpr bool use_worker_node = true;
+    if (use_worker_node) {
+        co_return ss::make_foreign(
+          co_await _remote_manager->make_factory(id, meta));
     }
     auto cached = _runtime->get_cached_factory(meta);
     if (cached) {

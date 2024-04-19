@@ -122,6 +122,7 @@
 #include "transform/rpc/client.h"
 #include "transform/rpc/service.h"
 #include "transform/stm/transform_offsets_stm.h"
+#include "transform/worker/rpc/client.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
@@ -1263,6 +1264,17 @@ void application::wire_up_runtime_services(
           .get();
 
         construct_service(
+          _transform_worker_client,
+          ss::sharded_parameter([] {
+            rpc::transport_configuration c{
+              .server_addr = config::node().data_transforms_worker_server(),
+            };
+            auto policy = rpc::make_exponential_backoff_policy<ss::lowres_clock>(100ms, 1000ms);
+            return rpc::reconnect_transport(std::move(c), std::move(policy));
+          }), 1s)
+          .get();
+
+        construct_service(
           _transform_service,
           _wasm_runtime.get(),
           node_id,
@@ -1273,6 +1285,7 @@ void application::wire_up_runtime_services(
           &partition_manager,
           &_transform_rpc_client,
           &metadata_cache,
+          &_transform_worker_client,
           sched_groups.transforms_sg())
           .get();
     }

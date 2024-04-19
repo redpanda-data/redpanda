@@ -8,12 +8,14 @@ v_cc_library(
     transform_manager.cc
     commit_batcher.cc
     txn_reader.cc
+    remote_wasm.cc
   DEPS
     v::wasm
     v::model
     v::transform_rpc
     v::transform_logging
     v::transform_stm
+    v::transform_worker_rpc
 )
 
 add_subdirectory(tests)

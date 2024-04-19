@@ -56,6 +56,7 @@
 #include "storage/api.h"
 #include "storage/fwd.h"
 #include "transform/fwd.h"
+#include "transform/worker/rpc/fwd.h"
 #include "utils/stop_signal.h"
 #include "wasm/fwd.h"
 
@@ -317,6 +318,7 @@ private:
     ss::sharded<transform::service> _transform_service;
     ss::sharded<transform::rpc::local_service> _transform_rpc_service;
     ss::sharded<transform::rpc::client> _transform_rpc_client;
+    ss::sharded<transform::worker::rpc::client> _transform_worker_client;
 
     metrics::internal_metric_groups _metrics;
     ss::sharded<metrics::public_metrics_group_service> _public_metrics;
