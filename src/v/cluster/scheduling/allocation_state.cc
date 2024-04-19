@@ -15,18 +15,6 @@
 
 namespace cluster {
 
-void allocation_state::rollback(
-  const ss::chunked_fifo<partition_assignment>& v,
-  const partition_allocation_domain domain) {
-    verify_shard();
-    for (auto& as : v) {
-        for (auto& bs : as.replicas) {
-            remove_allocation(bs, domain);
-            remove_final_count(bs, domain);
-        }
-    }
-}
-
 int16_t allocation_state::available_nodes() const {
     verify_shard();
     return std::count_if(

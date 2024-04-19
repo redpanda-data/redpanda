@@ -64,10 +64,6 @@ public:
     void
     remove_final_count(const model::broker_shard&, partition_allocation_domain);
 
-    void rollback(
-      const ss::chunked_fifo<partition_assignment>& pa,
-      partition_allocation_domain);
-
     bool validate_shard(model::node_id node, uint32_t shard) const;
 
     // Raft group id

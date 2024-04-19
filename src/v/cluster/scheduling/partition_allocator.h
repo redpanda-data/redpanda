@@ -137,58 +137,8 @@ public:
     ss::future<> apply_snapshot(const controller_snapshot&);
 
 private:
-    class intermediate_allocation {
-    public:
-        intermediate_allocation(
-          allocation_state& state,
-          size_t res,
-          const partition_allocation_domain domain)
-          : _state(state.weak_from_this())
-          , _domain(domain) {
-            _partial.reserve(res);
-        }
-
-        template<typename... Args>
-        void emplace_back(Args&&... args) {
-            _partial.emplace_back(std::forward<Args>(args)...);
-        }
-
-        const ss::chunked_fifo<partition_assignment>& get() const {
-            return _partial;
-        }
-        ss::chunked_fifo<partition_assignment> finish() && {
-            return std::exchange(_partial, {});
-        }
-        intermediate_allocation(intermediate_allocation&&) noexcept = default;
-
-        intermediate_allocation(const intermediate_allocation&) noexcept
-          = delete;
-        intermediate_allocation& operator=(intermediate_allocation&&) noexcept
-          = default;
-        intermediate_allocation&
-        operator=(const intermediate_allocation&) noexcept
-          = delete;
-
-        ~intermediate_allocation() {
-            if (_state) {
-                _state->rollback(_partial, _domain);
-            }
-        }
-
-    private:
-        ss::chunked_fifo<partition_assignment> _partial;
-        ss::weak_ptr<allocation_state> _state;
-        partition_allocation_domain _domain;
-    };
-
     std::error_code
     check_cluster_limits(allocation_request const& request) const;
-
-    result<allocated_partition> allocate_new_partition(
-      model::topic_namespace nt,
-      partition_constraints,
-      partition_allocation_domain,
-      const std::optional<node2count_t>& node2count);
 
     result<reallocation_step> do_allocate_replica(
       allocated_partition&,

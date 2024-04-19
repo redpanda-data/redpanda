@@ -76,46 +76,6 @@ allocation_constraints partition_allocator::default_constraints() {
     return req;
 }
 
-result<allocated_partition> partition_allocator::allocate_new_partition(
-  model::topic_namespace nt,
-  partition_constraints p_constraints,
-  const partition_allocation_domain domain,
-  const std::optional<node2count_t>& node2count) {
-    vlog(
-      clusterlog.trace,
-      "allocating new partition with constraints: {}",
-      p_constraints);
-
-    uint16_t replicas_to_allocate = p_constraints.replication_factor;
-    if (
-      replicas_to_allocate == 0
-      || _state->available_nodes() < replicas_to_allocate) {
-        return errc::topic_invalid_replication_factor;
-    }
-
-    auto effective_constraints = default_constraints();
-    if (node2count) {
-        effective_constraints.ensure_new_level();
-        effective_constraints.add(
-          min_count_in_map("min topic-wise count", *node2count));
-    }
-    effective_constraints.ensure_new_level();
-    effective_constraints.add(max_final_capacity(domain));
-    effective_constraints.add(p_constraints.constraints);
-
-    model::ntp ntp{
-      std::move(nt.ns), std::move(nt.tp), p_constraints.partition_id};
-    allocated_partition ret{std::move(ntp), {}, domain, *_state};
-    for (auto r = 0; r < replicas_to_allocate; ++r) {
-        auto replica = do_allocate_replica(
-          ret, std::nullopt, effective_constraints);
-        if (!replica) {
-            return replica.error();
-        }
-    }
-    return ret;
-}
-
 /**
  * Check cluster-wide limits on total partition count vs available
  * system resources.  This is the 'sanity' check that the user doesn't
