@@ -247,7 +247,7 @@ FIXTURE_TEST(partial_assignment, partition_allocator_fixture) {
 
     BOOST_REQUIRE_EQUAL(3, max_capacity());
     BOOST_REQUIRE_EQUAL(
-      allocator.state().last_group_id()(), max_partitions_in_cluster);
+      allocator.state().last_group_id()(), max_partitions_in_cluster - 1);
 }
 FIXTURE_TEST(max_deallocation, partition_allocator_fixture) {
     register_node(0, 3);

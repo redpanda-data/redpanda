@@ -198,10 +198,6 @@ struct allocation_units {
      */
     using pointer = ss::foreign_ptr<std::unique_ptr<allocation_units>>;
 
-    allocation_units(
-      ss::chunked_fifo<partition_assignment>,
-      allocation_state&,
-      partition_allocation_domain);
     allocation_units& operator=(allocation_units&&) = default;
     allocation_units& operator=(const allocation_units&) = delete;
     allocation_units(const allocation_units&) = delete;
@@ -220,6 +216,10 @@ struct allocation_units {
           _assignments.begin(), _assignments.end(), std::back_inserter(p_as));
         return p_as;
     }
+
+private:
+    friend class partition_allocator;
+    allocation_units(allocation_state&, partition_allocation_domain);
 
 private:
     ss::chunked_fifo<partition_assignment> _assignments;

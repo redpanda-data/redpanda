@@ -19,6 +19,8 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
+#include "random/generators.h"
+#include "ssx/async_algorithm.h"
 #include "storage/segment_appender.h"
 #include "utils/human.h"
 
@@ -282,38 +284,101 @@ partition_allocator::allocate(allocation_request request) {
         co_return cluster_errc;
     }
 
-    intermediate_allocation assignments(
-      *_state, request.partitions.size(), request.domain);
-
     std::optional<node2count_t> node2count;
     if (request.existing_replica_counts) {
         node2count = std::move(*request.existing_replica_counts);
     }
 
     const auto& nt = request._nt;
+
+    struct allocation_info {
+        allocated_partition partition;
+        allocation_constraints constraints;
+        size_t replication_factor = 0;
+    };
+
+    chunked_vector<allocation_info> allocations;
+    allocations.reserve(request.partitions.size());
     for (auto& p_constraints : request.partitions) {
-        auto const partition_id = p_constraints.partition_id;
-        auto allocated = allocate_new_partition(
-          nt, std::move(p_constraints), request.domain, node2count);
-        if (!allocated) {
-            co_return allocated.error();
+        if (
+          p_constraints.replication_factor == 0
+          || _state->available_nodes() < p_constraints.replication_factor) {
+            co_return errc::topic_invalid_replication_factor;
         }
-        assignments.emplace_back(
-          _state->next_group_id(),
-          partition_id,
-          allocated.value().release_new_partition());
+
+        auto effective_constraints = default_constraints();
+        if (node2count) {
+            effective_constraints.ensure_new_level();
+            effective_constraints.add(
+              min_count_in_map("min topic-wise count", *node2count));
+        }
+        effective_constraints.ensure_new_level();
+        effective_constraints.add(max_final_capacity(request.domain));
+        effective_constraints.add(p_constraints.constraints);
+
+        auto ntp = model::ntp(nt.ns, nt.tp, p_constraints.partition_id);
+
+        vlog(
+          clusterlog.trace,
+          "allocating new partition {} with constraints: {}",
+          ntp,
+          p_constraints);
+
+        allocations.push_back(allocation_info{
+          .partition = allocated_partition(
+            std::move(ntp), {}, request.domain, *_state),
+          .constraints = std::move(effective_constraints),
+          .replication_factor = p_constraints.replication_factor,
+        });
+
+        co_await ss::coroutine::maybe_yield();
+    }
+
+    // Allocate replicas in random order (i.e. not all replicas for a partition
+    // at once) to prevent formation of replica clusters - an undesireable
+    // allocation pattern where many partitions have the exact same replica set.
+
+    chunked_vector<size_t> in_progress;
+    in_progress.reserve(allocations.size());
+    for (size_t i = 0; i < allocations.size(); ++i) {
+        in_progress.push_back(i);
+    }
+
+    while (!in_progress.empty()) {
+        size_t idx = random_generators::get_int(in_progress.size() - 1);
+        auto& allocation = allocations[in_progress[idx]];
+        auto replica = do_allocate_replica(
+          allocation.partition, std::nullopt, allocation.constraints);
+        if (!replica) {
+            co_return replica.error();
+        }
 
         if (node2count) {
-            for (const auto& bs : assignments.get().back().replicas) {
-                (*node2count)[bs.node_id] += 1;
-            }
+            (*node2count)[replica.value().current().node_id] += 1;
+        }
+
+        if (
+          allocation.partition.replicas().size()
+          == allocation.replication_factor) {
+            std::swap(in_progress[idx], in_progress.back());
+            in_progress.pop_back();
         }
 
         co_await ss::coroutine::maybe_yield();
     }
 
-    co_return ss::make_foreign(std::make_unique<allocation_units>(
-      std::move(assignments).finish(), *_state, request.domain));
+    allocation_units units(*_state, request.domain);
+    units._assignments.reserve(allocations.size());
+    co_await ssx::async_for_each(
+      allocations.begin(), allocations.end(), [&](allocation_info& p) {
+          units._assignments.emplace_back(
+            _state->next_group_id(),
+            p.partition.ntp().tp.partition,
+            p.partition.release_new_partition());
+      });
+
+    co_return ss::make_foreign(
+      std::make_unique<allocation_units>(std::move(units)));
 }
 
 result<allocated_partition> partition_allocator::reallocate_partition(

@@ -41,11 +41,8 @@ void allocation_constraints::add(allocation_constraints other) {
 }
 
 allocation_units::allocation_units(
-  ss::chunked_fifo<partition_assignment> assignments,
-  allocation_state& state,
-  const partition_allocation_domain domain)
-  : _assignments(std::move(assignments))
-  , _state(state.weak_from_this())
+  allocation_state& state, const partition_allocation_domain domain)
+  : _state(state.weak_from_this())
   , _domain(domain) {}
 
 allocation_units::~allocation_units() {

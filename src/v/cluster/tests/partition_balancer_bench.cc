@@ -48,17 +48,36 @@ PERF_TEST_C(partition_balancer_planner_fixture, unavailable_nodes) {
 
 PERF_TEST_C(partition_balancer_planner_fixture, counts_rebalancing) {
     static bool initialized = false;
+    static size_t imbalances = 0;
     if (!initialized) {
         ss::thread_attributes thread_attr;
         co_await ss::async(thread_attr, [this] {
-            allocator_register_nodes(3);
-            allocator_register_nodes(2);
+            allocator_register_nodes(5);
             // worst case: balanced partition distribution
             create_topic(
               "really_long_topic_name_to_force_sstring_allocations", 10000, 3);
             // id doesn't matter
             workers.state.local().add_node_to_rebalance(model::node_id{123});
         });
+
+        size_t expected_per_node = 10000 * 3 / 5;
+
+        for (const auto& [id, n] :
+             workers.allocator.local().state().allocation_nodes()) {
+            size_t count = n->final_partitions();
+            if (count > expected_per_node) {
+                // Sometimes node replica counts after topic allocation can be
+                // off by 1 due to unlucky order of replica allocation. Count
+                // those imbalances to later compare with the output of the
+                // balancer.
+                vassert(
+                  count == expected_per_node + 1,
+                  "unexpected partition count on node {}: {}",
+                  id,
+                  count);
+                imbalances += 1;
+            }
+        }
 
         initialized = true;
     }
@@ -77,7 +96,8 @@ PERF_TEST_C(partition_balancer_planner_fixture, counts_rebalancing) {
 
     const auto& reassignments = plan_data.reassignments;
     vassert(
-      reassignments.size() == 0,
-      "unexpected reassignments size: {}",
-      reassignments.size());
+      reassignments.size() == imbalances,
+      "unexpected reassignments size: {} (imbalances: {})",
+      reassignments.size(),
+      imbalances);
 }
