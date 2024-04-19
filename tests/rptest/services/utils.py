@@ -101,12 +101,6 @@ class LogSearch(ABC):
         """
         return ""
 
-    @staticmethod
-    def _get_badlines_exception(bad_loglines):
-        """Method to raise correct Exception class.
-        """
-        return BadLogLines(bad_loglines)
-
     def _check_if_line_allowed(self, line):
         for a in self.allow_list:
             if a.search(line) is not None:
@@ -169,7 +163,7 @@ class LogSearch(ABC):
         # If anything, raise exception
         if bad_loglines:
             # Call class overriden method to get proper Exception class
-            raise self._get_badlines_exception(bad_loglines)
+            raise BadLogLines(bad_loglines)
 
 
 class LogSearchLocal(LogSearch):
