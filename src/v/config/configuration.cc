@@ -838,10 +838,9 @@ configuration::configuration()
       *this,
       "log_retention_ms",
       "delete segments older than this - default 1 week",
-      {.needs_restart = needs_restart::no,
-       .visibility = visibility::user,
-       .aliases = {"delete_retention_ms"}},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       7 * 24h)
+  , delete_retention_ms(*this, "delete_retention_ms")
   , log_compaction_interval_ms(
       *this,
       "log_compaction_interval_ms",

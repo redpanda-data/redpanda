@@ -174,6 +174,8 @@ struct configuration final : public config_store {
     property<uint32_t> abort_index_segment_size;
     // same as log.retention.ms in kafka
     retention_duration_property log_retention_ms;
+    deprecated_property delete_retention_ms;
+
     property<std::chrono::milliseconds> log_compaction_interval_ms;
     property<bool> log_disable_housekeeping_for_tests;
     property<bool> log_compaction_use_sliding_window;
