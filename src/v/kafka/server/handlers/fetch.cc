@@ -1168,11 +1168,16 @@ class simple_fetch_planner final : public fetch_planner::impl {
 
         plan.reserve_from_partition_count(octx.fetch_partition_count());
 
+        const auto client_address = fmt::format(
+          "{}:{}",
+          octx.rctx.connection()->client_host(),
+          octx.rctx.connection()->client_port());
+
         /**
          * group fetch requests by shard
          */
         octx.for_each_fetch_partition(
-          [&resp_it, &octx, &plan, &bytes_left_in_plan](
+          [&resp_it, &octx, &plan, &bytes_left_in_plan, &client_address](
             const fetch_session_partition& fp) {
               // if this is not an initial fetch we are allowed to skip
               // partions that aleready have an error or we have enough data
@@ -1244,11 +1249,6 @@ class simple_fetch_planner final : public fetch_planner::impl {
               if (fetch_md && fetch_md->high_watermark > fp.fetch_offset) {
                   bytes_left_in_plan -= max_bytes;
               }
-
-              const auto client_address = fmt::format(
-                "{}:{}",
-                octx.rctx.connection()->client_host(),
-                octx.rctx.connection()->client_port());
 
               fetch_config config{
                 .start_offset = fp.fetch_offset,
