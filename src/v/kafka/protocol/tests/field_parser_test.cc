@@ -22,6 +22,8 @@
 
 #include <boost/iterator/counting_iterator.hpp>
 
+#include <limits>
+
 kafka::tagged_fields make_random_tags(size_t n) {
     kafka::tagged_fields::type tags;
     for (uint32_t i = 0; i < n; ++i) {
@@ -106,7 +108,8 @@ void write_flex(T& type, iobuf& buf) {
               writer.write(ts.field_b);
               writer.write_tags(kafka::tagged_fields{});
           });
-    } else if constexpr (std::is_same_v<T, kafka::uuid>) {
+    } else if constexpr (
+      std::is_same_v<T, kafka::uuid> || std::is_same_v<T, kafka::float64_t>) {
         writer.write(type);
     } else {
         writer.write_flex(type);
@@ -120,6 +123,8 @@ T read_flex(iobuf buf) {
         return reader.read_flex_string();
     } else if constexpr (std::is_same_v<T, kafka::uuid>) {
         return reader.read_uuid();
+    } else if constexpr (std::is_same_v<T, kafka::float64_t>) {
+        return reader.read_float64();
     } else if constexpr (std::is_same_v<T, std::optional<ss::sstring>>) {
         return reader.read_nullable_flex_string();
     } else if constexpr (std::is_same_v<T, bytes>) {
@@ -187,6 +192,20 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         /// flex bytes
         auto b = random_generators::get_bytes();
         BOOST_CHECK(b == serde_flex(b));
+    }
+    {
+        /// flex float64
+        auto valid = [](kafka::float64_t v) { return v == serde_flex(v); };
+
+        BOOST_CHECK(valid(0.0));
+        BOOST_CHECK(valid(1.2345));
+        BOOST_CHECK(valid(-1.2345));
+        BOOST_CHECK(valid(std::numeric_limits<kafka::float64_t>::min()));
+        BOOST_CHECK(valid(std::numeric_limits<kafka::float64_t>::max()));
+        BOOST_CHECK(valid(random_generators::get_real<kafka::float64_t>()));
+
+        auto nan = std::numeric_limits<kafka::float64_t>::quiet_NaN();
+        BOOST_CHECK(std::isnan(serde_flex(nan)));
     }
     {
         /// flex array

@@ -400,6 +400,7 @@ basic_type_map = dict(
     int16=("int16_t", "read_int16()"),
     int32=("int32_t", "read_int32()"),
     int64=("int64_t", "read_int64()"),
+    float64=("float64_t", "read_float64()"),
     uuid=("uuid", "read_uuid()"),
     iobuf=("iobuf", None, "read_fragmented_nullable_bytes()", None,
            "read_fragmented_nullable_flex_bytes()"),

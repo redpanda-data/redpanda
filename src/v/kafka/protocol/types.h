@@ -136,6 +136,12 @@ concept KafkaApi = requires(T request) {
     { T::min_flexible } -> std::convertible_to<const api_version&>;
 };
 
+// TODO: use std::float64_t from <stdfloat> when clang has it (not in 18)
+/// float64 Kafka protocol primitive type
+using float64_t = double;
+static_assert(
+  sizeof(float64_t) == 8, "Kafka float64 type should be 8 bytes long");
+
 /*
  * Data type of the configuration entry.
  */
