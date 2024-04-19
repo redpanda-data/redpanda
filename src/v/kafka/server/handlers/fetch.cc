@@ -1269,7 +1269,8 @@ class simple_fetch_planner final : public fetch_planner::impl {
               .client_address = model::client_address_t{client_address},
             };
 
-            plan.fetches_per_shard[*shard].push_back({tp, config}, &(*resp_it));
+            plan.fetches_per_shard[*shard].push_back(
+              {tp, std::move(config)}, &(*resp_it));
             ++resp_it;
         });
         return plan;
