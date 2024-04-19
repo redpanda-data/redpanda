@@ -305,11 +305,11 @@ private:
 
     std::optional<abs_configuration> _data_lake_v2_client_config;
 
-    // currently the implementation supports Signing requests or OAuth.
-    // not all api are available for oauth, this variable is initialized at
-    // startup to allow alternative codepaths when using oauth this is fine
+    // Currently the implementation supports Signing requests or OAuth.
+    // Not all api are available for oauth, this variable is initialized at
+    // startup to allow alternative codepaths when using oauth. This is fine
     // because to change authentication method the user changes
-    // cloud_storage_credentials_source, and that requires a restart
+    // cloud_storage_credentials_source, and that requires a restart.
     bool _is_oauth;
 
     abs_request_creator _requestor;

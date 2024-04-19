@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_roles/apply_credentials.h"
+#include "cloud_roles/signature.h"
 
 namespace cloud_roles {
 
@@ -29,6 +30,7 @@ public:
 
 private:
     oauth_token_str _oauth_token;
+    time_source _timesource;
 };
 
 } // namespace cloud_roles
