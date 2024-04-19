@@ -927,7 +927,7 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
                 # encourage cloud segment deletion, as we ensure
                 # nothing will be deleted for an infinite-retention
                 # topic.
-                "delete_retention_ms": self.small_interval_ms,
+                "log_retention_ms": self.small_interval_ms,
                 "retention_bytes": self.small_segment_size,
                 'cloud_storage_cache_chunk_size': self.chunk_size,
             })

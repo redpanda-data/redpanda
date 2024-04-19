@@ -927,7 +927,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                 # Disable leader balancer, as this test is doing its own
                 # partition movement and the balancer would interfere
                 'enable_leader_balancer': False,
-                'delete_retention_ms': 1000,
+                'log_retention_ms': 1000,
             },
             si_settings=si_settings,
             **kwargs)
