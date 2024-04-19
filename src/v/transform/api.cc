@@ -492,6 +492,15 @@ service::service(
 service::~service() = default;
 
 ss::future<> service::start() {
+    _log_manager = std::make_unique<logging::manager<ss::lowres_clock>>(
+      _self,
+      std::make_unique<logging::rpc_client>(
+        &_rpc_client->local(), &_metadata_cache->local()),
+      config::shard_local_cfg().data_transforms_logging_buffer_capacity_bytes(),
+      config::shard_local_cfg().data_transforms_logging_line_max_bytes.bind(),
+      config::shard_local_cfg()
+        .data_transforms_logging_flush_interval_ms.bind());
+
     _batcher = std::make_unique<commit_batcher<ss::lowres_clock>>(
       config::shard_local_cfg().data_transforms_commit_interval_ms.bind(),
       std::make_unique<rpc_offset_committer>(&_rpc_client->local()));
@@ -509,20 +518,13 @@ ss::future<> service::start() {
         &_rpc_client->local(),
         _batcher.get()),
       _sg);
-    co_await _batcher->start();
-    co_await _manager->start();
-    register_notifications();
-
-    _log_manager = std::make_unique<logging::manager<ss::lowres_clock>>(
-      _self,
-      std::make_unique<logging::rpc_client>(
-        &_rpc_client->local(), &_metadata_cache->local()),
-      config::shard_local_cfg().data_transforms_logging_buffer_capacity_bytes(),
-      config::shard_local_cfg().data_transforms_logging_line_max_bytes.bind(),
-      config::shard_local_cfg()
-        .data_transforms_logging_flush_interval_ms.bind());
 
     co_await _log_manager->start();
+    co_await _batcher->start();
+    co_await _manager->start();
+
+    // This will start loading the transforms
+    register_notifications();
 }
 
 void service::register_notifications() {
