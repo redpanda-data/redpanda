@@ -337,10 +337,24 @@ class OpenMessagingBenchmark(Service):
         if bad_lines:
             raise BadLogLines(bad_lines)
 
-    def check_succeed(self,
-                      validate_metrics=True,
-                      return_latency_metrics=False,
-                      raise_exceptions=True):
+    def check_succeed(self, validate_metrics=True, raise_exceptions=True):
+        """
+        Evaluates the success of a benchmark test based on various metrics and conditions.
+        
+        Parameters:
+        - validate_metrics (bool): If True, performs validation checks on the benchmark metrics to determine if
+        the test results are within expected limits. Default is True.
+        
+        - raise_exceptions (bool): If True, the method raises an exception if the benchmark test fails based
+        on the validation of the metrics. Default is True.
+
+        Returns:
+        - A tuple (is_successful, results) where `is_successful` is a boolean indicating the success of the test,
+        and `results` is validation results
+
+        Raises:
+        - Exception: If `raise_exceptions` is True and the test is determined to fail based on the metrics validation.
+        """
         assert self.workers
         self.workers.check_has_errors()
         for node in self.nodes:
@@ -373,81 +387,111 @@ class OpenMessagingBenchmark(Service):
         if validate_metrics and not raise_exceptions:
             is_valid, results = OMBSampleConfigurations.validate_metrics(
                 self._metrics, self.validator, raise_exceptions=False)
-            #if not raise_exceptions:
             return is_valid, results
 
     def detect_spikes_by_percentile(self,
                                     results,
-                                    significant_factor=1.5,
                                     max_spike_width=1,
                                     expected_max_latencies=None):
-        def detect_spikes_in_series(latency_series, expected_max):
-            # Sort the series to calculate the median value
-            sorted_series = sorted(latency_series)
-            median_value = sorted_series[len(sorted_series) // 2]
-            # Determine the upper bound for spike detection
-            upper_bound = min(median_value * significant_factor, expected_max)
+        """
+        Detects and evaluates latency spikes in multiple series of latency data based on predefined thresholds.
+        This function analyzes each series to determine if there are isolated spikes or sustained high latency events that exceed the allowed maximum thresholds.
 
+        Why?
+            There are cases where we may have latency spikes due to disk activity.
+            By detecting these spikes, we can retry the test to help ensure that the results are not influenced by temporary anomalies.
+            Additionally, this allows some degree of latency during specified periods which is controlled by the max_spike_width parameter.
+            Related GH issue: https://github.com/redpanda-data/core-internal/issues/1180
+        
+        Parameters:
+            results (dict): A dictionary where each key is a series identifier and each value is a list of latency measurements for that series.
+            max_spike_width (int): The maximum number of consecutive measurements that can exceed the expected maximum before being considered a sustained high latency rather than an isolated spike.
+            expected_max_latencies (dict): A dictionary where each key is a series identifier and each value is the maximum allowed latency for that series.
+
+        Returns:
+            bool: A boolean indicating whether a retry is advised based on the spike detection analysis.
+
+        Notes:
+            - "Isolated spike" is defined as a spike where the number of consecutive measurements exceeding the threshold does not surpass `max_spike_width`.
+            - "Sustained high latency" is defined as a situation where more than `max_spike_width` consecutive measurements exceed the allowed maximum, suggesting a more serious issue that a retry might not resolve.
+            - If any sustained high latency is detected, the function advises against a retry regardless of other findings.
+        """
+        def detect_spikes_in_series(latency_series, expected_max):
             high_latency_start = None
             consecutive_high_latency_count = 0
             isolated_spikes = []
+            sustained_detected = False  # Track if sustained high latency is detected
 
             for i, value in enumerate(latency_series):
-                if value > upper_bound:
+                if value > expected_max:
                     if high_latency_start is None:
                         high_latency_start = i
-                        self.logger.debug(
-                            f"Potential high latency sequence started at index {i} with value {value}."
-                        )
                     consecutive_high_latency_count += 1
                     if consecutive_high_latency_count > max_spike_width:
-                        # Sustained high latency detected
-                        self.logger.info(
-                            f"Sustained high latency detected, not considered a spike. Sequence starts at index {high_latency_start} and ends at index {i}."
+                        self.logger.debug(
+                            f"Sustained high latency detected in series {key}, not considered a spike. Sequence starts at index {high_latency_start} and ends at index {i}. Values: {latency_series[high_latency_start:i+1]}"
                         )
-                        return False
+                        sustained_detected = True
                 else:
-                    if 0 < consecutive_high_latency_count <= max_spike_width:
-                        # Isolated spike detected
-                        isolated_spikes.extend(range(high_latency_start, i))
-                        self.logger.info(
-                            f"Isolated spike detected between indices {high_latency_start} and {i-1}."
-                        )
+                    if high_latency_start is not None and 0 < consecutive_high_latency_count <= max_spike_width:
+                        if high_latency_start == i - 1:
+                            self.logger.debug(
+                                f"Isolated spike detected at index {high_latency_start}. Value: {latency_series[high_latency_start]}"
+                            )
+                        else:
+                            self.logger.debug(
+                                f"Isolated spike detected between indices {high_latency_start} and {i-1}. Values: {latency_series[high_latency_start:i]}"
+                            )
+                        isolated_spikes.append((high_latency_start, i - 1))
                     consecutive_high_latency_count = 0
                     high_latency_start = None
 
-            # Handle case where series ends with a potential spike within allowed width
             if 0 < consecutive_high_latency_count <= max_spike_width:
-                isolated_spikes.extend(
-                    range(high_latency_start, len(latency_series)))
-                self.logger.info(
-                    f"Ending isolated spike detected starting from index {high_latency_start}."
-                )
-
-            detected = len(isolated_spikes) > 0
-            if detected:
-                self.logger.info("Spike(s) detected in the series.")
-            else:
                 self.logger.debug(
-                    "No significant spikes detected in the series.")
-            return detected
+                    f"Ending isolated spike detected from index {high_latency_start} to {len(latency_series)-1}. Values: {latency_series[high_latency_start:]}"
+                )
+                isolated_spikes.append(
+                    (high_latency_start, len(latency_series) - 1))
 
-        # Iterate over each series in the results to check for spikes
+            return isolated_spikes, sustained_detected
+
+        should_retry = False
+        sustained_anywhere = False  # Flag to track sustained high latency across different series
         for key, series in results.items():
-            self.logger.debug(f"Checking for spikes in series: {key}")
             if key in expected_max_latencies:
                 expected_max = expected_max_latencies[key]
-                if detect_spikes_in_series(series, expected_max):
-                    self.logger.info(
-                        f"Spikes detected in series: {key}. Advising retry.")
-                    return True  # Spike detected, advising retry
+                self.logger.debug(f"Checking for spikes in series: {key}")
+                isolated_spikes, sustained_detected = detect_spikes_in_series(
+                    series, expected_max)
+                if isolated_spikes:
+                    self.logger.debug(f"Spikes detected in series: {key}.")
+                    should_retry = True
+                if sustained_detected:
+                    self.logger.debug(
+                        f"Sustained high latency detected in series: {key}. Advising against retry."
+                    )
+                    sustained_anywhere = True
+                else:
+                    self.logger.debug(
+                        f"Latency data for {key} series is within allowed max values"
+                    )
             else:
                 self.logger.debug(
                     f"Series {key} not in expected max latencies mapping, skipping."
                 )
 
-        self.logger.info("Retry is not advised.")
-        return False  # No spikes detected, no retry needed
+        if sustained_anywhere:
+            self.logger.info(
+                "No retry advised due to sustained high latency in one or more series."
+            )
+            should_retry = False
+        elif should_retry:
+            self.logger.info("Advising retry due to isolated spikes.")
+        else:
+            self.logger.info(
+                "Retry is not needed. Data is within allowed max values")
+
+        return should_retry
 
     def wait_node(self, node, timeout_sec):
         assert timeout_sec is not None
