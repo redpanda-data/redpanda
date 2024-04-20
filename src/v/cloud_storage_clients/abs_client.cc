@@ -927,8 +927,9 @@ abs_client::do_test_set_expiry_on_dummy_file(
 
     if (headers.result() == boost::beast::http::status::bad_request) {
         if (auto error_code_it = headers.find(error_code_name);
-            error_code_it->value()
-            == hierarchical_namespace_not_enabled_error_code) {
+            error_code_it != headers.end()
+            && error_code_it->value()
+                 == hierarchical_namespace_not_enabled_error_code) {
             // if there is a match of error code, we can proceed, otherwise
             // fallthrough
             co_return storage_account_info{.is_hns_enabled = false};
