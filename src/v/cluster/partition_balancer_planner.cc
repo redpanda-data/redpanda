@@ -1379,20 +1379,14 @@ void partition_balancer_planner::force_reassignable_partition::
       replicas,
       replicas_to_remove);
     auto constraints = get_allocation_constraints(max_disk_usage_ratio);
-    auto replicas_size = static_cast<uint16_t>(replicas.size());
-    model::topic_namespace tn{_ntp.ns, _ntp.tp.topic};
     node2count_t* node2count = nullptr;
     if (_ctx.config().topic_aware) {
-        node2count = &_ctx._topic2node_counts.at(tn);
+        node2count = &_ctx._topic2node_counts.at(
+          model::topic_namespace_view(_ntp.ns, _ntp.tp.topic));
     }
-    _reallocation = _ctx._parent._partition_allocator.reallocate_partition(
-      tn,
-      partition_constraints{
-        _original_assignment, replicas_size, std::move(constraints)},
-      get_allocation_domain(tn),
-      replicas_to_remove,
-      node2count);
 
+    _reallocation = _ctx._parent._partition_allocator.reallocate_partition(
+      _ntp, replicas, replicas_to_remove, std::move(constraints), node2count);
     if (_reallocation.has_error()) {
         if (_ctx.increment_failure_count()) {
             vlog(

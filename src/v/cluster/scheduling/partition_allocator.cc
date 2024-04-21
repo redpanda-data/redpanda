@@ -358,33 +358,23 @@ partition_allocator::allocate(allocation_request request) {
 }
 
 result<allocated_partition> partition_allocator::reallocate_partition(
-  model::topic_namespace nt,
-  partition_constraints p_constraints,
-  const partition_allocation_domain domain,
+  model::ntp ntp,
+  std::vector<model::broker_shard> current_replicas,
   const std::vector<model::node_id>& replicas_to_reallocate,
+  allocation_constraints constraints,
   node2count_t* existing_replica_counts) {
     vlog(
       clusterlog.debug,
-      "reallocating {}, to move: {}",
-      p_constraints,
+      "reallocating {}, current replicas: {}, to move: {}",
+      ntp,
+      current_replicas,
       replicas_to_reallocate);
 
-    int16_t num_new_replicas = p_constraints.replication_factor
-                               - p_constraints.existing_replicas.size();
-    if (
-      _state->available_nodes() < p_constraints.replication_factor
-      || num_new_replicas < 0) {
-        return errc::topic_invalid_replication_factor;
-    }
-
+    auto domain = get_allocation_domain(ntp);
     allocated_partition res{
-      model::ntp{
-        std::move(nt.ns), std::move(nt.tp), p_constraints.partition_id},
-      std::move(p_constraints.existing_replicas),
-      domain,
-      *_state};
+      std::move(ntp), std::move(current_replicas), domain, *_state};
 
-    if (num_new_replicas == 0 && replicas_to_reallocate.empty()) {
+    if (replicas_to_reallocate.empty()) {
         // nothing to do
         return res;
     }
@@ -401,10 +391,9 @@ result<allocated_partition> partition_allocator::reallocate_partition(
           min_count_in_map("min topic-wise count", *node2count));
     }
     effective_constraints.ensure_new_level();
-    effective_constraints.add(max_final_capacity(domain));
-    effective_constraints.add(std::move(p_constraints.constraints));
+    effective_constraints.add(max_final_capacity(res._domain));
+    effective_constraints.add(std::move(constraints));
 
-    // first, move existing replicas
     for (model::node_id prev : replicas_to_reallocate) {
         auto replica = do_allocate_replica(res, prev, effective_constraints);
         if (!replica) {
@@ -417,18 +406,6 @@ result<allocated_partition> partition_allocator::reallocate_partition(
             if (prev_count == 0) {
                 node2count.value().erase(prev);
             }
-        }
-    }
-
-    // next, allocate new ones
-    for (int i = 0; i < num_new_replicas; ++i) {
-        auto replica = do_allocate_replica(
-          res, std::nullopt, effective_constraints);
-        if (!replica) {
-            return replica.error();
-        }
-        if (node2count) {
-            node2count.value()[replica.value().current().node_id] += 1;
         }
     }
 

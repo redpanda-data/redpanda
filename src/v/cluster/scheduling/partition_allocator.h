@@ -47,20 +47,19 @@ public:
      */
     ss::future<result<allocation_units::pointer>> allocate(allocation_request);
 
-    /// Reallocate an already existing partition. Existing replicas from
-    /// replicas_to_reallocate will be reallocated, and a number of additional
-    /// replicas to reach the requested replication factor will be allocated
-    /// anew.
+    /// Reallocate some replicas of an already existing partition without
+    /// changing its replication factor.
+    ///
     /// If existing_replica_counts is non-null, new replicas will be allocated
     /// using topic-aware counts objective and (if all allocations are
     /// successful) existing_replica_counts will be updated with newly allocated
     /// replicas.
     result<allocated_partition> reallocate_partition(
-      model::topic_namespace,
-      partition_constraints,
-      partition_allocation_domain,
-      const std::vector<model::node_id>& replicas_to_reallocate = {},
-      node2count_t* existing_replica_counts = nullptr);
+      model::ntp ntp,
+      std::vector<model::broker_shard> current_replicas,
+      const std::vector<model::node_id>& replicas_to_reallocate,
+      allocation_constraints,
+      node2count_t* existing_replica_counts);
 
     /// Create allocated_partition object from current replicas for use with the
     /// allocate_replica method.
