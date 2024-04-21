@@ -468,30 +468,49 @@ FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
 }
 
 FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
-    register_node(0, 2);
+    register_node(0, 4);
     register_node(1, 4);
-    auto req = make_allocation_request(1, 1);
+    auto req = make_allocation_request(2, 1);
     auto res = allocator.allocate(std::move(req)).get();
 
     BOOST_CHECK_EQUAL(res.has_value(), true);
+    const auto& orig_assignments = res.value()->get_assignments();
 
-    cluster::partition_constraints reallocate_req(
-      res.value()->get_assignments().front(), 3);
+    auto make_reallocate_req = [&] {
+        cluster::allocation_request req(
+          tn, cluster::partition_allocation_domains::common);
+        for (const auto& assignment : orig_assignments) {
+            req.partitions.push_back(
+              cluster::partition_constraints(assignment, 3));
+        }
+        return req;
+    };
 
-    // try to allocate 3 replicas no 2 nodes - should fail
-    auto expected_failure = allocator.reallocate_partition(
-      tn, reallocate_req, cluster::partition_allocation_domains::common);
+    // try to allocate 3 replicas on 2 nodes - should fail
+    auto expected_failure = allocator.allocate(make_reallocate_req()).get();
 
     BOOST_CHECK_EQUAL(expected_failure.has_error(), true);
 
     // add new node and allocate again
-    register_node(3, 4);
+    register_node(2, 4);
 
-    auto expected_success = allocator.reallocate_partition(
-      tn, reallocate_req, cluster::partition_allocation_domains::common);
+    auto expected_success = allocator.allocate(make_reallocate_req()).get();
 
     BOOST_CHECK_EQUAL(expected_success.has_value(), true);
-    validate_replica_set_diversity({expected_success.value().replicas()});
+    BOOST_REQUIRE_EQUAL(
+      expected_success.value()->get_assignments().size(),
+      orig_assignments.size());
+    const auto& new_assignments = expected_success.value()->get_assignments();
+
+    for (auto [it1, it2] = std::make_pair(
+           orig_assignments.begin(), new_assignments.begin());
+         it1 != orig_assignments.end();
+         ++it1, ++it2) {
+        BOOST_CHECK_EQUAL(it1->id, it2->id);
+        BOOST_CHECK_EQUAL(it1->group, it2->group);
+        BOOST_CHECK_EQUAL(it2->replicas.size(), 3);
+    }
+    validate_replica_set_diversity(expected_success.value()->get_assignments());
 }
 FIXTURE_TEST(rack_aware_assignment_1, partition_allocator_fixture) {
     std::vector<std::tuple<int, model::rack_id, int>> id_rack_ncpu = {
