@@ -1387,8 +1387,8 @@ void partition_balancer_planner::force_reassignable_partition::
     }
     _reallocation = _ctx._parent._partition_allocator.reallocate_partition(
       tn,
-      {_original_assignment.id, replicas_size, std::move(constraints)},
-      _original_assignment,
+      partition_constraints{
+        _original_assignment, replicas_size, std::move(constraints)},
       get_allocation_domain(tn),
       replicas_to_remove,
       node2count);

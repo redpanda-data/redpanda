@@ -118,7 +118,10 @@ std::error_code partition_allocator::check_cluster_limits(
     // Partition-replicas requested
     uint64_t create_count{0};
     for (const auto& i : request.partitions) {
-        create_count += uint64_t(i.replication_factor);
+        if (i.replication_factor > i.existing_replicas.size()) {
+            create_count += uint64_t(
+              i.replication_factor - i.existing_replicas.size());
+        }
     }
 
     uint64_t proposed_total_partitions = existent_partitions + create_count;
@@ -255,14 +258,17 @@ partition_allocator::allocate(allocation_request request) {
         allocated_partition partition;
         allocation_constraints constraints;
         size_t replication_factor = 0;
+        std::optional<raft::group_id> existing_group;
     };
 
     chunked_vector<allocation_info> allocations;
     allocations.reserve(request.partitions.size());
     for (auto& p_constraints : request.partitions) {
+        int16_t num_new_replicas = p_constraints.replication_factor
+                                   - p_constraints.existing_replicas.size();
         if (
-          p_constraints.replication_factor == 0
-          || _state->available_nodes() < p_constraints.replication_factor) {
+          _state->available_nodes() < p_constraints.replication_factor
+          || num_new_replicas < 0) {
             co_return errc::topic_invalid_replication_factor;
         }
 
@@ -286,9 +292,13 @@ partition_allocator::allocate(allocation_request request) {
 
         allocations.push_back(allocation_info{
           .partition = allocated_partition(
-            std::move(ntp), {}, request.domain, *_state),
+            std::move(ntp),
+            std::move(p_constraints.existing_replicas),
+            request.domain,
+            *_state),
           .constraints = std::move(effective_constraints),
           .replication_factor = p_constraints.replication_factor,
+          .existing_group = p_constraints.existing_group,
         });
 
         co_await ss::coroutine::maybe_yield();
@@ -301,7 +311,11 @@ partition_allocator::allocate(allocation_request request) {
     chunked_vector<size_t> in_progress;
     in_progress.reserve(allocations.size());
     for (size_t i = 0; i < allocations.size(); ++i) {
-        in_progress.push_back(i);
+        if (
+          allocations[i].replication_factor
+          > allocations[i].partition.replicas().size()) {
+            in_progress.push_back(i);
+        }
     }
 
     while (!in_progress.empty()) {
@@ -331,10 +345,12 @@ partition_allocator::allocate(allocation_request request) {
     units._assignments.reserve(allocations.size());
     co_await ssx::async_for_each(
       allocations.begin(), allocations.end(), [&](allocation_info& p) {
+          raft::group_id group = p.existing_group ? *p.existing_group
+                                                  : _state->next_group_id();
           units._assignments.emplace_back(
-            _state->next_group_id(),
+            group,
             p.partition.ntp().tp.partition,
-            p.partition.release_new_partition());
+            p.partition.release_new_partition(units._added_replicas));
       });
 
     co_return ss::make_foreign(
@@ -344,29 +360,29 @@ partition_allocator::allocate(allocation_request request) {
 result<allocated_partition> partition_allocator::reallocate_partition(
   model::topic_namespace nt,
   partition_constraints p_constraints,
-  const partition_assignment& current_assignment,
   const partition_allocation_domain domain,
   const std::vector<model::node_id>& replicas_to_reallocate,
   node2count_t* existing_replica_counts) {
     vlog(
       clusterlog.debug,
-      "reallocating {}, current replicas: {}, to move: {}",
+      "reallocating {}, to move: {}",
       p_constraints,
-      current_assignment.replicas,
       replicas_to_reallocate);
 
     int16_t num_new_replicas = p_constraints.replication_factor
-                               - current_assignment.replicas.size();
+                               - p_constraints.existing_replicas.size();
     if (
       _state->available_nodes() < p_constraints.replication_factor
       || num_new_replicas < 0) {
         return errc::topic_invalid_replication_factor;
     }
 
-    model::ntp ntp{
-      std::move(nt.ns), std::move(nt.tp), p_constraints.partition_id};
     allocated_partition res{
-      std::move(ntp), current_assignment.replicas, domain, *_state};
+      model::ntp{
+        std::move(nt.ns), std::move(nt.tp), p_constraints.partition_id},
+      std::move(p_constraints.existing_replicas),
+      domain,
+      *_state};
 
     if (num_new_replicas == 0 && replicas_to_reallocate.empty()) {
         // nothing to do

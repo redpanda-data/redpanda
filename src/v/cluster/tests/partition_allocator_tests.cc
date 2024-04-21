@@ -475,12 +475,12 @@ FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
 
     BOOST_CHECK_EQUAL(res.has_value(), true);
 
+    cluster::partition_constraints reallocate_req(
+      res.value()->get_assignments().front(), 3);
+
     // try to allocate 3 replicas no 2 nodes - should fail
     auto expected_failure = allocator.reallocate_partition(
-      tn,
-      cluster::partition_constraints(model::partition_id(0), 3),
-      res.value()->get_assignments().front(),
-      cluster::partition_allocation_domains::common);
+      tn, reallocate_req, cluster::partition_allocation_domains::common);
 
     BOOST_CHECK_EQUAL(expected_failure.has_error(), true);
 
@@ -488,10 +488,7 @@ FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
     register_node(3, 4);
 
     auto expected_success = allocator.reallocate_partition(
-      tn,
-      cluster::partition_constraints(model::partition_id(0), 3),
-      res.value()->get_assignments().front(),
-      cluster::partition_allocation_domains::common);
+      tn, reallocate_req, cluster::partition_allocation_domains::common);
 
     BOOST_CHECK_EQUAL(expected_success.has_value(), true);
     validate_replica_set_diversity({expected_success.value().replicas()});
@@ -814,8 +811,7 @@ FIXTURE_TEST(reallocate_partition_with_move, partition_allocator_fixture) {
         auto res = allocator.reallocate_partition(
           tn,
           cluster::partition_constraints(
-            model::partition_id(0), 4, not_on_old_nodes),
-          original_assignment,
+            original_assignment, 4, not_on_old_nodes),
           domain,
           {model::node_id{0}});
         BOOST_REQUIRE(res.has_value());
@@ -836,8 +832,7 @@ FIXTURE_TEST(reallocate_partition_with_move, partition_allocator_fixture) {
         auto res = allocator.reallocate_partition(
           tn,
           cluster::partition_constraints(
-            model::partition_id(0), 5, not_on_old_nodes),
-          original_assignment,
+            original_assignment, 5, not_on_old_nodes),
           domain,
           {model::node_id{0}});
         BOOST_REQUIRE(res.has_error());
@@ -849,8 +844,7 @@ FIXTURE_TEST(reallocate_partition_with_move, partition_allocator_fixture) {
         auto res = allocator.reallocate_partition(
           tn,
           cluster::partition_constraints(
-            model::partition_id(0), 4, not_on_old_nodes),
-          original_assignment,
+            original_assignment, 4, not_on_old_nodes),
           domain,
           {model::node_id{3}});
         BOOST_REQUIRE(res.has_error());
@@ -1061,8 +1055,7 @@ FIXTURE_TEST(topic_aware_reallocate_partition, partition_allocator_fixture) {
 
     auto reallocated = allocator.reallocate_partition(
       tn,
-      cluster::partition_constraints(model::partition_id(0), 3),
-      topic2->get_assignments().front(),
+      cluster::partition_constraints(topic2->get_assignments().front(), 3),
       cluster::partition_allocation_domains::common,
       {},
       &topic2_counts);

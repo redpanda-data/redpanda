@@ -1587,26 +1587,29 @@ ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
 namespace {
 
 partition_constraints get_partition_constraints(
-  model::partition_id id,
+  const partition_assignment& assignment,
   cluster::replication_factor new_replication_factor,
   double max_disk_usage_ratio,
   const topics_frontend::capacity_info& info) {
     allocation_constraints allocation_constraints;
 
-    auto partition_size_it = info.ntp_sizes.find(id);
-    if (partition_size_it == info.ntp_sizes.end()) {
-        return {id, new_replication_factor, std::move(allocation_constraints)};
+    auto partition_size_it = info.ntp_sizes.find(assignment.id);
+    if (partition_size_it != info.ntp_sizes.end()) {
+        // Add constraint on partition max_disk_usage_ratio overfill
+        allocation_constraints.add(disk_not_overflowed_by_partition(
+          max_disk_usage_ratio,
+          partition_size_it->second,
+          info.node_disk_reports));
+
+        // Add constraint on least disk usage
+        allocation_constraints.add(least_disk_filled(
+          max_disk_usage_ratio,
+          partition_size_it->second,
+          info.node_disk_reports));
     }
 
-    // Add constraint on partition max_disk_usage_ratio overfill
-    allocation_constraints.add(disk_not_overflowed_by_partition(
-      max_disk_usage_ratio, partition_size_it->second, info.node_disk_reports));
-
-    // Add constraint on least disk usage
-    allocation_constraints.add(least_disk_filled(
-      max_disk_usage_ratio, partition_size_it->second, info.node_disk_reports));
-
-    return {id, new_replication_factor, std::move(allocation_constraints)};
+    return {
+      assignment, new_replication_factor, std::move(allocation_constraints)};
 }
 
 // Executed on the partition_allocator shard
@@ -1649,8 +1652,7 @@ do_increase_replication_factor(
           auto reallocated = al.reallocate_partition(
             model::topic_namespace(ns_tp),
             get_partition_constraints(
-              p_id, new_rf, max_disk_usage_ratio, capacity_info),
-            assignment,
+              assignment, new_rf, max_disk_usage_ratio, capacity_info),
             get_allocation_domain(ns_tp),
             {},
             existing_replica_counts ? &existing_replica_counts.value()

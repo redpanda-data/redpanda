@@ -58,7 +58,6 @@ public:
     result<allocated_partition> reallocate_partition(
       model::topic_namespace,
       partition_constraints,
-      const partition_assignment&,
       partition_allocation_domain,
       const std::vector<model::node_id>& replicas_to_reallocate = {},
       node2count_t* existing_replica_counts = nullptr);
