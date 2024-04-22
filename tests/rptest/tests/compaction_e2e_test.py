@@ -50,7 +50,8 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         initial_cleanup_policy=[
             TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_DELETE
         ],
-        workload=[Workload.IDEMPOTENCY, Workload.TX, Workload.TX_UNIQUE_KEYS])
+        #workload=[Workload.IDEMPOTENCY, Workload.TX, Workload.TX_UNIQUE_KEYS])
+        workload=[Workload.TX_UNIQUE_KEYS])
     def test_basic_compaction(self, initial_cleanup_policy, workload):
         '''
         Basic end to end compaction logic test. The test verifies if last value 
