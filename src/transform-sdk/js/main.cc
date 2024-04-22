@@ -144,15 +144,15 @@ public:
               ctx, "expected only object parameters to writer.write"));
         }
         auto key = extract_data(ctx, param.get_property("key"));
-        if (!key) [[unlikely]] {
+        if (!key.has_value()) [[unlikely]] {
             return std::unexpected(key.error());
         }
         auto value = extract_data(ctx, param.get_property("value"));
-        if (!value) [[unlikely]] {
+        if (!value.has_value()) [[unlikely]] {
             return std::unexpected(value.error());
         }
         auto headers = extract_headers(ctx, param.get_property("headers"));
-        if (!headers) [[unlikely]] {
+        if (!headers.has_value()) [[unlikely]] {
             return std::unexpected(headers.error());
         }
         auto errc = _writer->write({
@@ -182,12 +182,16 @@ public:
         headers.reserve(len);
         for (size_t i = 0; i < len; ++i) {
             auto elem = val.get_element(i);
+            if (!elem.is_object()) [[unlikely]] {
+                return std::unexpected(qjs::exception::make(
+                  ctx, "expected only objects as headers"));
+            }
             auto key = extract_data(ctx, elem.get_property("key"));
-            if (!key) [[unlikely]] {
+            if (!key.has_value()) [[unlikely]] {
                 return std::unexpected(key.error());
             }
             auto value = extract_data(ctx, elem.get_property("value"));
-            if (!value) [[unlikely]] {
+            if (!value.has_value()) [[unlikely]] {
                 return std::unexpected(value.error());
             }
             auto key_str = std::string_view{
@@ -267,7 +271,7 @@ std::expected<qjs::value, qjs::exception> make_write_event(
         } else {
             result = obj.set_property("key", qjs::value::null(ctx));
         }
-        if (!result) [[unlikely]] {
+        if (!result.has_value()) [[unlikely]] {
             return std::unexpected(result.error());
         }
         if (val) {
@@ -277,13 +281,13 @@ std::expected<qjs::value, qjs::exception> make_write_event(
         } else {
             result = obj.set_property("value", qjs::value::null(ctx));
         }
-        if (!result) [[unlikely]] {
+        if (!result.has_value()) [[unlikely]] {
             return std::unexpected(result.error());
         }
         return obj;
     };
     auto maybe_record = make_kv(evt.record.key, evt.record.value);
-    if (!maybe_record) [[unlikely]] {
+    if (!maybe_record.has_value()) [[unlikely]] {
         return std::unexpected(maybe_record.error());
     }
     auto record = maybe_record.value();
@@ -291,21 +295,21 @@ std::expected<qjs::value, qjs::exception> make_write_event(
     for (const auto& header : evt.record.headers) {
         auto maybe_header = make_kv(
           redpanda::bytes_view(header.key), header.value);
-        if (!maybe_header) [[unlikely]] {
+        if (!maybe_header.has_value()) [[unlikely]] {
             return std::unexpected(maybe_header.error());
         }
         auto result = headers.push_back(*maybe_header);
-        if (!result) [[unlikely]] {
+        if (!result.has_value()) [[unlikely]] {
             return std::unexpected(result.error());
         }
     }
     auto result = record.set_property("headers", headers);
-    if (!result) [[unlikely]] {
+    if (!result.has_value()) [[unlikely]] {
         return std::unexpected(result.error());
     }
     qjs::value write_event = qjs::value::object(ctx);
     result = write_event.set_property("record", record);
-    if (!result) [[unlikely]] {
+    if (!result.has_value()) [[unlikely]] {
         return std::unexpected(result.error());
     }
     return write_event;
