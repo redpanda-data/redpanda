@@ -296,8 +296,13 @@ class OMBValidationTest(RedpandaCloudTest):
                                  warmup_duration) + warm_up_time_s
         records_per_producer = messages_per_sec_per_producer * target_runtime_s
 
-        self._ctx.logger.warn(
-            f"Producers per node: {_conn_per_node} Messages per producer: {records_per_producer} Message rate: {messages_per_sec_per_producer} msg/s"
+        self.logger.warn(
+            f"OMB nodes: {OMB_WORKERS}, omb producers: {total_producers}, omb consumers: "
+            f"{total_consumers}, producer rate: {producer_rate / 10**6} MB/s")
+
+        self.logger.warn(
+            f"Swarm nodes: {SWARM_WORKERS}, producers per node: {_conn_per_node}, messages per producer: "
+            f"{records_per_producer} Message rate: {messages_per_sec_per_producer} msg/s"
         )
 
         producer_kwargs[
@@ -338,8 +343,8 @@ class OMBValidationTest(RedpandaCloudTest):
             s.start()
 
         # Allow time for the producers in the swarm to authenticate and start
-        self._ctx.logger.info(
-            f"waiting {warm_up_time_s} seconds to producer swarm to start")
+        self.logger.info(
+            f"waiting {warm_up_time_s} seconds for producer swarm to start")
         sleep(warm_up_time_s)
 
         benchmark.start()
