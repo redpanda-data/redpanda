@@ -55,7 +55,8 @@ constexpr boost::beast::string_view expiry_option_name = "x-ms-expiry-option";
 constexpr boost::beast::string_view expiry_option_value = "RelativeToNow";
 constexpr boost::beast::string_view expiry_time_name = "x-ms-expiry-time";
 
-constexpr std::string_view hierarchical_namespace_not_enabled_error_code
+constexpr boost::beast::string_view
+  hierarchical_namespace_not_enabled_error_code
   = "HierarchicalNamespaceNotEnabled";
 
 // filename for the set expiry test file
@@ -417,8 +418,8 @@ abs_client::abs_client(
   const abs_configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : _data_lake_v2_client_config(
-    conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
-                        : std::nullopt)
+      conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
+                          : std::nullopt)
   , _is_oauth(apply_credentials->is_oauth())
   , _requestor(conf, std::move(apply_credentials))
   , _client(conf)
@@ -434,8 +435,8 @@ abs_client::abs_client(
   const ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : _data_lake_v2_client_config(
-    conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
-                        : std::nullopt)
+      conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
+                          : std::nullopt)
   , _is_oauth(apply_credentials->is_oauth())
   , _requestor(conf, std::move(apply_credentials))
   , _client(conf, &as, conf._probe, conf.max_idle_time)
