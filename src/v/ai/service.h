@@ -44,11 +44,17 @@ public:
         int32_t max_tokens;
     };
 
+    // Compute embeddings based on the prompt.
+    ss::future<std::vector<float>> compute_embeddings(ss::sstring text);
+
     // Generate text based on the prompt.
-    ss::future<std::vector<float>> compute_embeddings(ss::sstring prompt);
+    ss::future<ss::sstring>
+    generate_text(ss::sstring prompt, generate_text_options);
 
 private:
     ss::future<std::vector<float>> do_compute_embeddings(ss::sstring prompt);
+    ss::future<ss::sstring>
+    do_generate_text(ss::sstring prompt, generate_text_options opts);
 
     std::unique_ptr<model> _model;
 };

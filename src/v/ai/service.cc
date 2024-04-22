@@ -316,11 +316,7 @@ ss::future<std::vector<float>> service::compute_embeddings(ss::sstring text) {
         return ss::make_ready_future<std::vector<float>>();
     }
     return container().invoke_on(
-      model_shard,
-      [](service& s, ss::sstring text) {
-          return s.do_compute_embeddings(std::move(text));
-      },
-      std::move(text));
+      model_shard, &service::do_compute_embeddings, std::move(text));
 }
 
 ss::future<std::vector<float>>
@@ -328,4 +324,20 @@ service::do_compute_embeddings(ss::sstring text) {
     auto resp = co_await _model->submit({.text = std::move(text)});
     co_return std::move(resp.embeddings);
 }
+
+ss::future<ss::sstring>
+service::generate_text(ss::sstring prompt, generate_text_options opts) {
+    if (prompt.empty()) {
+        return ss::make_ready_future<ss::sstring>();
+    }
+    return container().invoke_on(
+      model_shard, &service::do_generate_text, std::move(prompt), opts);
+}
+
+ss::future<ss::sstring>
+service::do_generate_text(ss::sstring, generate_text_options) {
+    // auto resp = co_await _model->submit({.text = std::move(text)});
+    co_return "";
+}
+
 } // namespace ai
