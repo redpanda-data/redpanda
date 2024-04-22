@@ -55,7 +55,8 @@ constexpr boost::beast::string_view expiry_option_name = "x-ms-expiry-option";
 constexpr boost::beast::string_view expiry_option_value = "RelativeToNow";
 constexpr boost::beast::string_view expiry_time_name = "x-ms-expiry-time";
 
-constexpr std::string_view hierarchical_namespace_not_enabled_error_code
+constexpr boost::beast::string_view
+  hierarchical_namespace_not_enabled_error_code
   = "HierarchicalNamespaceNotEnabled";
 
 // filename for the set expiry test file

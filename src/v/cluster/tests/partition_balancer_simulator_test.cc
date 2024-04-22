@@ -890,12 +890,12 @@ FIXTURE_TEST(test_many_topics, partition_balancer_sim_fixture) {
 }
 
 FIXTURE_TEST(test_replica_pair_frequency, partition_balancer_sim_fixture) {
-    for (size_t i = 0; i < 3; ++i) {
+    for (model::node_id::type i = 0; i < 3; ++i) {
         add_node(model::node_id{i}, 300_GiB);
     }
     add_topic("topic_1", 150, 3, 1_GiB);
 
-    for (size_t i = 3; i < 6; ++i) {
+    for (model::node_id::type i = 3; i < 6; ++i) {
         add_node(model::node_id{i}, 300_GiB);
         add_node_to_rebalance(model::node_id{i});
     }
@@ -909,7 +909,7 @@ FIXTURE_TEST(test_replica_pair_frequency, partition_balancer_sim_fixture) {
     validate_even_replica_distribution();
     validate_replica_pair_frequencies();
 
-    for (size_t i = 6; i < 9; ++i) {
+    for (model::node_id::type i = 6; i < 9; ++i) {
         add_node(model::node_id{i}, 300_GiB);
         add_node_to_rebalance(model::node_id{i});
     }
