@@ -152,8 +152,12 @@ value value::uint8_array(JSContext* ctx, std::span<uint8_t> data) {
         ctx, data.data(), data.size(), func, opaque, /*is_shared=*/0)};
 }
 
-void value::detach_buffer() { JS_DetachArrayBuffer(_ctx, _underlying); }
+void value::detach_buffer() {
+    assert(is_array_buffer());
+    JS_DetachArrayBuffer(_ctx, _underlying);
+}
 std::expected<std::monostate, exception> value::detach_uint8_array() {
+    assert(is_uint8_array());
     auto val = value(
       _ctx,
       JS_GetTypedArrayBuffer(_ctx, _underlying, nullptr, nullptr, nullptr));
@@ -165,18 +169,21 @@ std::expected<std::monostate, exception> value::detach_uint8_array() {
 }
 
 std::span<uint8_t> value::array_buffer_data() const {
+    assert(is_array_buffer());
     size_t size = 0;
     uint8_t* ptr = JS_GetArrayBuffer(_ctx, &size, _underlying);
     return {ptr, size};
 }
 
 std::span<uint8_t> value::uint8_array_data() const {
+    assert(is_uint8_array());
     size_t size = 0;
     uint8_t* ptr = JS_GetUint8Array(_ctx, &size, _underlying);
     return {ptr, size};
 }
 
 cstring value::string_data() const {
+    assert(is_string());
     size_t size = 0;
     const char* ptr = JS_ToCStringLen(_ctx, &size, _underlying);
     return {_ctx, ptr, size};
@@ -205,6 +212,7 @@ JSValue value::raw() const { return _underlying; }
 JSValue value::raw_dup() const { return JS_DupValue(_ctx, _underlying); }
 
 double value::as_number() const {
+    assert(is_number());
     if (JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(_underlying))) {
         return JS_VALUE_GET_FLOAT64(_underlying);
     }
@@ -235,6 +243,7 @@ std::expected<value, exception> value::call(std::span<value> values) {
 }
 
 value value::get_property(std::string_view key) const {
+    assert(is_object());
     const JSAtom atom = JS_NewAtomLen(_ctx, key.data(), key.size());
     const JSValue val = JS_GetProperty(_ctx, _underlying, atom);
     JS_FreeAtom(_ctx, atom);
@@ -243,6 +252,7 @@ value value::get_property(std::string_view key) const {
 
 std::expected<std::monostate, exception>
 value::set_property(std::string_view key, const value& val) {
+    assert(is_object());
     const JSAtom atom = JS_NewAtomLen(_ctx, key.data(), key.size());
     const int result = JS_SetProperty(_ctx, _underlying, atom, val.raw_dup());
     JS_FreeAtom(_ctx, atom);
@@ -253,6 +263,7 @@ value::set_property(std::string_view key, const value& val) {
 }
 
 std::expected<std::monostate, exception> value::push_back(const value& val) {
+    assert(is_array());
     const size_t len = array_length();
     constexpr auto flags = JS_PROP_C_W_E; // NOLINT
     const int result = JS_DefinePropertyValueUint32(
@@ -264,11 +275,13 @@ std::expected<std::monostate, exception> value::push_back(const value& val) {
 }
 
 value value::get_element(size_t idx) const {
+    assert(is_array());
     auto raw = JS_GetPropertyUint32(_ctx, _underlying, idx);
     return {_ctx, raw};
 }
 
 size_t value::array_length() const {
+    assert(is_array());
     auto prop = get_property("length");
     if (JS_VALUE_GET_TAG(prop.raw()) != JS_TAG_INT) {
         return 0;
@@ -277,6 +290,12 @@ size_t value::array_length() const {
 }
 
 std::string value::debug_string() const {
+    if (is_null()) {
+        return "null";
+    }
+    if (is_undefined()) {
+        return "undefined";
+    }
     size_t size = 0;
     const char* str = JS_ToCStringLen(_ctx, &size, _underlying);
     if (str != nullptr) {
@@ -586,7 +605,7 @@ cstring::~cstring() {
         js_free(context, const_cast<char*>(ptr));
     }
 }
-cstring::cstring(cstring&& other)
+cstring::cstring(cstring&& other) noexcept
   : context(other.context)
   , ptr(std::exchange(other.ptr, nullptr))
   , size(other.size) {}

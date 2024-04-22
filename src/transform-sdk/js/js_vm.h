@@ -57,7 +57,7 @@ struct cstring {
 public:
     cstring(JSContext* context, const char* ptr, size_t size);
     cstring(const cstring&) = delete;
-    cstring(cstring&& other);
+    cstring(cstring&& other) noexcept;
     cstring& operator=(const cstring&) = delete;
     cstring& operator=(cstring&&) = delete;
     ~cstring();
@@ -122,7 +122,12 @@ public:
     string(JSContext* ctx, std::string_view);
     /** Create an error class */
     static value error(JSContext* ctx, std::string_view);
-    /** Parse a value from JSON. */
+    /**
+     * Parse a value from JSON.
+     *
+     * NOTE: This must be `std::string` because quickjs requires a trailing null
+     * byte.
+     */
     static std::expected<value, exception>
     parse_json(JSContext* ctx, const std::string&);
     /**
@@ -257,7 +262,7 @@ public:
     push_back(const value&);
 
     /**
-     * Append a property to a JavaScript array.
+     * Get a value at an index within a JavaScript array.
      *
      * Example: `arr[5]`
      */
