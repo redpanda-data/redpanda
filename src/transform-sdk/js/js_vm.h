@@ -376,7 +376,7 @@ public:
     runtime& operator=(const runtime&) = delete;
     runtime(runtime&&) = default;
     runtime& operator=(runtime&&) = default;
-    ~runtime();
+    ~runtime() = default;
 
     /**
      * Compile javascript into qjs bytecode.
@@ -399,7 +399,7 @@ public:
     [[nodiscard]] JSContext* context() const { return _ctx.get(); }
 
 private:
-    struct state {
+    struct runtime_state {
         struct class_info {
             JSClassID class_id;
             std::vector<JSCFunctionListEntry> entries;
@@ -408,9 +408,24 @@ private:
         std::unordered_map<std::string, class_info> classes;
     };
 
+    struct named_native_function {
+        std::unique_ptr<std::string> name;
+        native_function func;
+    };
+
+    struct context_state {
+        std::vector<named_native_function> named_functions;
+        // For each module, the functions that are defined for it.
+        std::unordered_map<JSModuleDef*, std::vector<JSCFunctionListEntry>>
+          module_functions;
+    };
+
     template<typename>
     friend class class_builder;
+    friend class module_builder;
 
+    std::unique_ptr<runtime_state> _runtime_state;
+    std::unique_ptr<context_state> _context_state;
     handle<JSRuntime, JS_FreeRuntime> _rt;
     handle<JSContext, JS_FreeContext> _ctx;
 };
@@ -518,14 +533,14 @@ public:
           .call = nullptr,
           .exotic = nullptr,
         };
-        auto* state = static_cast<runtime::state*>(
+        auto* state = static_cast<runtime::runtime_state*>(
           JS_GetRuntimeOpaque(runtime));
         for (auto& entry : _entries) {
             entry.magic = static_cast<int16_t>(class_id);
         }
         auto [it, inserted] = state->classes.emplace(
           _class_name,
-          runtime::state::class_info{
+          runtime::runtime_state::class_info{
             .class_id = class_id,
             .entries = std::move(_entries),
           });

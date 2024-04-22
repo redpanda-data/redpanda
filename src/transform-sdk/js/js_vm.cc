@@ -30,21 +30,6 @@
 
 namespace qjs {
 
-namespace {
-
-struct named_native_function {
-    std::unique_ptr<std::string> name;
-    native_function func;
-};
-
-struct context_state {
-    std::vector<named_native_function> named_functions;
-    // For each module, the functions that are defined for it.
-    std::unordered_map<JSModuleDef*, std::vector<JSCFunctionListEntry>>
-      module_functions;
-};
-} // namespace
-
 value::value() noexcept
   : _ctx(nullptr)
   , _underlying(JS_UNINITIALIZED) {}
@@ -355,12 +340,12 @@ compiled_bytecode::view::iterator compiled_bytecode::end() const {
 }
 
 runtime::runtime()
-  : _rt(JS_NewRuntime())
+  : _runtime_state(std::make_unique<runtime_state>())
+  , _context_state(std::make_unique<context_state>())
+  , _rt(JS_NewRuntime())
   , _ctx(JS_NewContext(_rt.get())) {
-    // NOLINTNEXTLINE(*-owning-memory)
-    JS_SetRuntimeOpaque(_rt.get(), new state());
-    // NOLINTNEXTLINE(*-owning-memory)
-    JS_SetContextOpaque(_ctx.get(), new context_state());
+    JS_SetRuntimeOpaque(_rt.get(), _runtime_state.get());
+    JS_SetContextOpaque(_ctx.get(), _context_state.get());
 }
 
 namespace {
@@ -420,20 +405,6 @@ std::expected<std::monostate, exception> runtime::create_builtins() {
       "console",
       factory.create(std::make_unique<console>(
         console::config{.info = stdout, .warn = stderr})));
-}
-
-runtime::~runtime() {
-    // Delete the context first incase it references any memory in
-    // `context_state`.
-    auto* ctx_state = static_cast<context_state*>(
-      JS_GetContextOpaque(_ctx.get()));
-    _ctx = nullptr;
-    auto* rt_state = static_cast<state*>(JS_GetRuntimeOpaque(_rt.get()));
-    // NOLINTNEXTLINE(*-owning-memory)
-    delete ctx_state;
-    _rt = nullptr;
-    // NOLINTNEXTLINE(*-owning-memory)
-    delete rt_state;
 }
 
 std::expected<compiled_bytecode, exception>
@@ -529,12 +500,13 @@ module_builder::add_function(std::string name, native_function func) {
 }
 
 std::expected<std::monostate, exception> module_builder::build(JSContext* ctx) {
-    auto* ctx_state = static_cast<context_state*>(JS_GetContextOpaque(ctx));
+    auto* ctx_state = static_cast<runtime::context_state*>(
+      JS_GetContextOpaque(ctx));
     std::vector<JSCFunctionListEntry> entries;
     entries.reserve(_exports.size());
     for (auto& [name, func] : _exports) {
         auto my_magic = static_cast<int16_t>(ctx_state->named_functions.size());
-        named_native_function& function
+        runtime::named_native_function& function
           = ctx_state->named_functions.emplace_back(
             std::make_unique<std::string>(name), std::move(func));
 
@@ -556,7 +528,7 @@ std::expected<std::monostate, exception> module_builder::build(JSContext* ctx) {
                                    int argc,
                                    JSValue* argv,
                                    int magic) -> JSValue {
-                    auto* ctx_state = static_cast<context_state*>(
+                    auto* ctx_state = static_cast<runtime::context_state*>(
                       JS_GetContextOpaque(ctx));
                     const native_function& func
                       = ctx_state->named_functions[magic].func;
@@ -576,7 +548,7 @@ std::expected<std::monostate, exception> module_builder::build(JSContext* ctx) {
 
     JSModuleDef* mod = JS_NewCModule(
       ctx, _name.c_str() /*copied*/, [](JSContext* ctx, JSModuleDef* mod) {
-          auto* ctx_state = static_cast<context_state*>(
+          auto* ctx_state = static_cast<runtime::context_state*>(
             JS_GetContextOpaque(ctx));
           auto& func_exports = ctx_state->module_functions.at(mod);
           return JS_SetModuleExportList(
