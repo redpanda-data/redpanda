@@ -359,7 +359,8 @@ raft_node_instance::raft_node_instance(
   model::revision_id revision,
   raft_node_map& node_map,
   ss::sharded<features::feature_table>& feature_table,
-  leader_update_clb_t leader_update_clb)
+  leader_update_clb_t leader_update_clb,
+  bool enable_longest_log_detection)
   : _id(id)
   , _revision(revision)
   , _logger(test_log, fmt::format("[node: {}]", _id))
@@ -376,7 +377,8 @@ raft_node_instance::raft_node_instance(
   })
   , _recovery_scheduler(
       config::mock_binding<size_t>(64), config::mock_binding(10ms))
-  , _leader_clb(std::move(leader_update_clb)) {
+  , _leader_clb(std::move(leader_update_clb))
+  , _enable_longest_log_detection(enable_longest_log_detection) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
@@ -386,7 +388,8 @@ raft_node_instance::raft_node_instance(
   ss::sstring base_directory,
   raft_node_map& node_map,
   ss::sharded<features::feature_table>& feature_table,
-  leader_update_clb_t leader_update_clb)
+  leader_update_clb_t leader_update_clb,
+  bool enable_longest_log_detection)
   : _id(id)
   , _revision(revision)
   , _logger(test_log, fmt::format("[node: {}]", _id))
@@ -402,7 +405,8 @@ raft_node_instance::raft_node_instance(
   })
   , _recovery_scheduler(
       config::mock_binding<size_t>(64), config::mock_binding(10ms))
-  , _leader_clb(std::move(leader_update_clb)) {
+  , _leader_clb(std::move(leader_update_clb))
+  , _enable_longest_log_detection(enable_longest_log_detection) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
@@ -446,6 +450,7 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       scheduling_config(
         ss::default_scheduling_group(), ss::default_priority_class()),
       config::mock_binding<std::chrono::milliseconds>(1s),
+      config::mock_binding<bool>(_enable_longest_log_detection),
       consensus_client_protocol(_protocol),
       [this](leadership_status ls) { leadership_notification_callback(ls); },
       _storage.local(),
@@ -588,9 +593,12 @@ seastar::future<> raft_fixture::SetUpAsync() {
 raft_node_instance&
 raft_fixture::add_node(model::node_id id, model::revision_id rev) {
     auto instance = std::make_unique<raft_node_instance>(
-      id, rev, *this, _features, [id, this](leadership_status lst) {
-          _leaders_view[id] = lst;
-      });
+      id,
+      rev,
+      *this,
+      _features,
+      [id, this](leadership_status lst) { _leaders_view[id] = lst; },
+      _enable_longest_log_detection);
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;
@@ -604,7 +612,8 @@ raft_node_instance& raft_fixture::add_node(
       std::move(base_dir),
       *this,
       _features,
-      [id, this](leadership_status lst) { _leaders_view[id] = lst; });
+      [id, this](leadership_status lst) { _leaders_view[id] = lst; },
+      _enable_longest_log_detection);
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;

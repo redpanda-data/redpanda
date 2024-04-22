@@ -163,14 +163,16 @@ public:
       ss::sstring base_directory,
       raft_node_map& node_map,
       ss::sharded<features::feature_table>& feature_table,
-      leader_update_clb_t leader_update_clb);
+      leader_update_clb_t leader_update_clb,
+      bool enable_longest_log_detection);
 
     raft_node_instance(
       model::node_id id,
       model::revision_id revision,
       raft_node_map& node_map,
       ss::sharded<features::feature_table>& feature_table,
-      leader_update_clb_t leader_update_clb);
+      leader_update_clb_t leader_update_clb,
+      bool enable_longest_log_detection);
 
     raft_node_instance(const raft_node_instance&) = delete;
     raft_node_instance(raft_node_instance&&) noexcept = delete;
@@ -248,6 +250,7 @@ private:
     leader_update_clb_t _leader_clb;
     ss::lw_shared_ptr<consensus> _raft;
     bool started = false;
+    bool _enable_longest_log_detection;
 };
 
 class raft_fixture
@@ -462,6 +465,10 @@ public:
     ss::future<> reset_background_flushing() const;
     ss::future<> set_write_caching(bool) const;
 
+    void set_enable_longest_log_detection(bool value) {
+        _enable_longest_log_detection = value;
+    }
+
 private:
     void validate_leaders();
 
@@ -471,6 +478,7 @@ private:
     absl::flat_hash_map<model::node_id, leadership_status> _leaders_view;
 
     ss::sharded<features::feature_table> _features;
+    bool _enable_longest_log_detection = true;
 };
 
 std::ostream& operator<<(std::ostream& o, msg_type type);

@@ -87,7 +87,9 @@ struct simple_raft_fixture {
                     model::write_caching_mode::default_false),
                   .write_caching_flush_ms = config::mock_binding(100ms),
                   .write_caching_flush_bytes
-                  = config::mock_binding<std::optional<size_t>>(std::nullopt)};
+                  = config::mock_binding<std::optional<size_t>>(std::nullopt),
+                  .enable_longest_log_detection = config::mock_binding<bool>(
+                    true)};
             },
             [] {
                 return raft::recovery_memory_quota::configuration{

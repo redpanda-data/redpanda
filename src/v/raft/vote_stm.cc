@@ -10,12 +10,10 @@
 #include "raft/vote_stm.h"
 
 #include "base/vassert.h"
-#include "outcome_future_utils.h"
 #include "raft/consensus.h"
-#include "raft/consensus_utils.h"
 #include "raft/errc.h"
+#include "raft/fundamental.h"
 #include "raft/logger.h"
-#include "raft/raftgen_service.h"
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
 
@@ -183,7 +181,7 @@ ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
 ss::future<election_success> vote_stm::do_vote() {
     // dispatch requests to all voters
     _config->for_each_voter([this](vnode id) { (void)dispatch_one(id); });
-
+    _requests_dispatched_ts = clock_type::now();
     co_await process_replies();
 
     auto u = co_await _ptr->_op_lock.get_units();
@@ -192,14 +190,65 @@ ss::future<election_success> vote_stm::do_vote() {
     co_return election_success(_success);
 }
 
+bool vote_stm::has_request_in_progress() const {
+    return std::any_of(
+      _replies.begin(),
+      _replies.end(),
+      [](const absl::flat_hash_map<vnode, vmeta>::value_type& p) {
+          return p.second.get_state() == vmeta::state::in_progress;
+      });
+}
+
+bool vote_stm::can_wait_for_all() const {
+    return clock_type::now()
+           < _requests_dispatched_ts + _ptr->_jit.base_duration();
+}
+
 ss::future<> vote_stm::process_replies() {
     return ss::repeat([this] {
+        const bool request_in_progress = has_request_in_progress();
+
+        /**
+         * Try to wait for vote replies from all of the nodes or use information
+         * from all replies if it is already available. Waiting for all the
+         * replies allow candidate to verify if any other protocol participant
+         * has log which is longer.
+         *
+         * If any of the replicas log is longer than current candidate the
+         * election is failed allowing the other node to become a leader.
+         */
+        if (
+          (!request_in_progress || can_wait_for_all())
+          && _ptr->_enable_longest_log_detection()) {
+            if (request_in_progress) {
+                return wait_for_next_reply().then(
+                  [] { return ss::stop_iteration::no; });
+            }
+            auto is_more_up_to_date_it = std::find_if(
+              _replies.begin(),
+              _replies.end(),
+              [](const absl::flat_hash_map<vnode, vmeta>::value_type& p) {
+                  return p.second.has_more_up_to_date_log();
+              });
+
+            if (is_more_up_to_date_it != _replies.end()) {
+                vlog(
+                  _ctxlog.info,
+                  "[pre-vote {}] vote failed - node {} has log which is more "
+                  "up to date than the current candidate",
+                  _prevote,
+                  is_more_up_to_date_it->first);
+                _success = false;
+                return ss::make_ready_future<ss::stop_iteration>(
+                  ss::stop_iteration::yes);
+            }
+        }
         /**
          * The check if the election is successful is different for prevote, for
          * prevote phase to be successful it is enough that followers reported
          * log_ok flag. For the actual election we require that vote is granted.
          */
-        auto majority_granted = _config->majority([this](vnode id) {
+        auto majority_granted = _config->majority([this](const vnode& id) {
             const auto state = _replies.find(id)->second.get_state();
             if (_prevote) {
                 return state == vmeta::state::log_ok
@@ -215,7 +264,7 @@ ss::future<> vote_stm::process_replies() {
         }
 
         // majority votes not granted, election not successful
-        auto majority_failed = _config->majority([this](vnode id) {
+        auto majority_failed = _config->majority([this](const vnode& id) {
             auto state = _replies.find(id)->second.get_state();
             // vote not granted and not in progress, it is failed
             return state != vmeta::state::vote_granted
@@ -230,12 +279,7 @@ ss::future<> vote_stm::process_replies() {
         // neither majority votes granted nor failed, check if we have all
         // replies (is there any vote request in progress)
 
-        auto has_request_in_progress = std::any_of(
-          std::cbegin(_replies), std::cend(_replies), [](const auto& p) {
-              return p.second.get_state() == vmeta::state::in_progress;
-          });
-
-        if (!has_request_in_progress) {
+        if (!request_in_progress) {
             _success = false;
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::yes);
@@ -245,6 +289,39 @@ ss::future<> vote_stm::process_replies() {
             return ss::stop_iteration::no;
         });
     });
+}
+
+ss::future<> vote_stm::wait_for_next_reply() {
+    vlog(
+      _ctxlog.debug,
+      "[pre-vote {}] trying to wait for vote replies from all of "
+      "the nodes",
+      _prevote);
+    auto h = _vote_bg.hold();
+    const auto timeout = std::max(
+      clock_type::duration(0),
+      _ptr->_jit.base_duration()
+        - (clock_type::now() - _requests_dispatched_ts));
+
+    /**
+     * Return early if we are not allowed to wait
+     */
+    if (timeout == clock_type::duration(0)) {
+        co_return;
+    }
+    /**
+     * The wait for all replies loop will exit if it can not longer wait for
+     * replies regardless of the result of this particular response semaphore
+     * wait.
+     */
+    try {
+        co_await _sem.wait(timeout, 1);
+    } catch (const ss::semaphore_timed_out&) {
+        vlog(
+          _ctxlog.debug,
+          "[pre-vote {}] timed out waiting for all the replies",
+          _prevote);
+    }
 }
 
 ss::future<> vote_stm::wait() { return _vote_bg.close(); }

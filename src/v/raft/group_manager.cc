@@ -111,6 +111,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       log,
       scheduling_config(_raft_sg, raft_priority()),
       _configuration.raft_io_timeout_ms,
+      _configuration.enable_longest_log_detection,
       _client,
       [this](raft::leadership_status st) {
           trigger_leadership_notification(std::move(st));
