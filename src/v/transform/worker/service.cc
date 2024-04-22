@@ -10,21 +10,21 @@
 
 #include "service.h"
 
+#include "base/vlog.h"
 #include "model/transform.h"
-#include "random/generators.h"
 #include "transform/worker/rpc/control_plane.h"
 #include "transform/worker/rpc/data_plane.h"
 #include "wasm/api.h"
 #include "wasm/transform_probe.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <absl/algorithm/container.h>
 
-#include <algorithm>
 #include <exception>
 #include <utility>
 
@@ -72,6 +72,11 @@ local_service::local_service(wasm::caching_runtime* wasm_runtime)
 
 local_service::~local_service() = default;
 
+ss::future<> local_service::stop() {
+    return ss::parallel_for_each(
+      _vms, [](auto& vm) { return vm.second->engine->stop(); });
+}
+
 ss::future<rpc::current_state_reply>
 local_service::compute_current_state(rpc::current_state_request) {
     using result
@@ -80,28 +85,39 @@ local_service::compute_current_state(rpc::current_state_request) {
     // cores don't agree.
     auto results = co_await container().map_reduce0(
       &local_service::do_compute_current_state,
-      result{},
-      [](const result& a, const result& b) { // NOLINT
+      std::optional<result>(),
+      [](std::optional<result> a, result b) -> result {
+          if (!a.has_value()) {
+              return b;
+          }
           result c;
           // The common case is that all cores have the same set of VMs.
-          c.reserve(a.size());
-          auto combos = {std::tie(a, b), std::tie(b, a)};
+          c.reserve(a->size());
+          auto combos = {std::tie(*a, b), std::tie(b, *a)};
           // Ensure that every entry in the resulting map has the same status on
           // both cores, otherwise the result is unknown.
           for (const auto& [src, other] : combos) {
               for (const auto& [k, v] : src) {
                   auto it = other.find(k);
-                  if (it != other.end() && v == it->second) {
-                      c.emplace(k, v);
-                  } else {
+                  if (it == other.end()) {
+                      vlog(log.info, "missing vm an other core");
                       c.emplace(k, rpc::vm_state::unknown);
+                  } else if (v != it->second) {
+                      vlog(
+                        log.info,
+                        "vm status mismatch: {} vs {}",
+                        int(v),
+                        int(it->second));
+                      c.emplace(k, rpc::vm_state::unknown);
+                  } else {
+                      c.emplace(k, v);
                   }
               }
           }
           return c;
       });
     rpc::current_state_reply reply;
-    for (const auto& [pair, state] : results) {
+    for (const auto& [pair, state] : *results) {
         reply.state.emplace_back(pair.first, pair.second, state);
     }
     co_return reply;
@@ -319,21 +335,37 @@ local_service::do_transform(vm* machine, rpc::transform_data_request req) {
 
 ss::future<rpc::current_state_reply> network_service::compute_current_state(
   rpc::current_state_request req, ::rpc::streaming_context&) {
+    vlog(
+      log.debug,
+      "handling {} request",
+      std::source_location::current().function_name());
     return _service->local().compute_current_state(req);
 }
 
 ss::future<rpc::start_vm_reply> network_service::start_vm(
   rpc::start_vm_request req, ::rpc::streaming_context&) {
+    vlog(
+      log.debug,
+      "handling {} request",
+      std::source_location::current().function_name());
     return _service->local().start_vm(std::move(req));
 }
 
 ss::future<rpc::stop_vm_reply>
 network_service::stop_vm(rpc::stop_vm_request req, ::rpc::streaming_context&) {
+    vlog(
+      log.debug,
+      "handling {} request",
+      std::source_location::current().function_name());
     return _service->local().stop_vm(req);
 }
 
 ss::future<rpc::transform_data_reply> network_service::transform_data(
   rpc::transform_data_request req, ::rpc::streaming_context&) {
+    vlog(
+      log.debug,
+      "handling {} request",
+      std::source_location::current().function_name());
     return _service->local().transform_data(std::move(req));
 }
 

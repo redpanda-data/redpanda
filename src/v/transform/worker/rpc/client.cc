@@ -21,22 +21,29 @@
 
 namespace transform::worker::rpc {
 
+namespace {
+static ss::logger log{"transform/worker/rpc/client"}; // NOLINT
+}
+
 client::client(
   ::rpc::reconnect_transport transport, model::timeout_clock::duration timeout)
   : _transport(std::move(transport))
   , _timeout(timeout) {}
 
+ss::future<> client::stop() { return _transport.stop(); }
+
 template<auto Method>
-auto client::call(auto request) -> ss::future<result<
-  typename std::invoke_result_t<
-    decltype(Method),
-    transform_worker_client_protocol&,
-    std::decay_t<decltype(request)>,
-    ::rpc::client_opts>::value_type::value_type::data_type,
-  errc>> {
+auto client::call(auto request)
+  -> ss::future<result<
+    typename std::invoke_result_t<
+      decltype(Method),
+      transform_worker_client_protocol&,
+      std::decay_t<decltype(request)>,
+      ::rpc::client_opts>::value_type::value_type::data_type,
+    errc>> {
     auto transport = co_await _transport.get_connected(_timeout);
     if (!transport) {
-        // TODO(rockwood): log error
+        vlog(log.warn, "unable to connect: {}", transport.error());
         co_return errc::network_error;
     }
     // TODO: Retry network errors?
@@ -47,8 +54,8 @@ auto client::call(auto request) -> ss::future<result<
       protocol,
       std::move(request),
       ::rpc::client_opts(::rpc::timeout_spec::from_now(_timeout)));
-    if (result.error()) {
-        // TODO(rockwood): log error
+    if (result.has_error()) {
+        vlog(log.warn, "unable to make rpc: {}", result.error());
         co_return errc::network_error;
     }
     co_return std::move(result.value().data);

@@ -497,6 +497,10 @@ service::service(
 service::~service() = default;
 
 ss::future<> service::start() {
+    vlog(
+      tlog.info,
+      "running transforms in worker mode: {}",
+      _worker_client != nullptr);
     if (_worker_client && ss::this_shard_id() == remote_wasm_manager::shard) {
         _remote_manager = std::make_unique<remote_wasm_manager>(
           &_rpc_client->local(),

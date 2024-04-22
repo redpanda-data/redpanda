@@ -161,7 +161,7 @@ ss::future<> remote_wasm_manager::stop() {
       "running: {}",
       _ref_counts.size());
     _reconciliation_needed_event.set();
-    co_await _reconciliation_waiters.wait();
+    co_await _gate.close();
     if (!_active_vms.empty()) {
         // In the case of network failures, this can happen, so just log that we
         // couldn't cleanly shutdown.
@@ -171,8 +171,6 @@ ss::future<> remote_wasm_manager::stop() {
           "{} still active",
           _active_vms.size());
     }
-    _reconciliation_needed_event.set();
-    co_await _gate.close();
 }
 
 ss::future<ss::shared_ptr<wasm::factory>> remote_wasm_manager::make_factory(
@@ -196,14 +194,11 @@ ss::future<> remote_wasm_manager::reconciliation_loop() {
     while (!_gate.is_closed()) {
         // TODO: Add jitter
         co_await _reconciliation_needed_event.wait(10s);
-        if (_gate.is_closed()) {
-            break;
-        }
         try {
             co_await do_reconciliation();
         } catch (...) {
             vlog(
-              tlog.warn,
+              tlog.error,
               "error during reconciliation loop: {}",
               std::current_exception());
         }
@@ -211,19 +206,26 @@ ss::future<> remote_wasm_manager::reconciliation_loop() {
 }
 
 ss::future<> remote_wasm_manager::do_reconciliation() {
-    while (true) {
+    // Bound this loop in case of bugz
+    for (int i = 0; i < 3; ++i) {
         auto result = co_await _worker_client->local().list_status();
         if (!result) {
             vlog(
               tlog.warn,
               "error listing status of worker: {}",
-              worker::rpc::make_error_code(result.error()));
+              worker::rpc::make_error_code(result.error()).message());
             // Backoff by waiting for the next pass of the reconciliation loop.
             co_return;
         }
         auto report = std::move(result.value());
         _active_vms.clear();
         for (const auto& status : report) {
+            vlog(
+              tlog.info,
+              "vm {}/{} in state: {}",
+              status.id,
+              status.transform_version,
+              int(status.state));
             if (status.state == worker::rpc::vm_state::running) {
                 _active_vms.emplace(status.id, status.transform_version);
             }
@@ -235,6 +237,8 @@ ss::future<> remote_wasm_manager::do_reconciliation() {
         for (const auto& [key, _] : _ref_counts) {
             if (!_active_vms.contains(key)) {
                 needs_update.emplace(key, needs_started::yes);
+                vlog(
+                  tlog.info, "vm {}/{} needs started", key.first, key.second);
             }
         }
         // Anything running that we don't have an active ref count for we need
@@ -242,8 +246,11 @@ ss::future<> remote_wasm_manager::do_reconciliation() {
         for (const auto& key : _active_vms) {
             if (!_ref_counts.contains(key)) {
                 needs_update.emplace(key, needs_started::no);
+                vlog(
+                  tlog.info, "vm {}/{} needs stopped", key.first, key.second);
             }
         }
+        vlog(tlog.info, "reconciling {} VMs", needs_update.size());
         // If there are no differences, then we can abort the loop and notify
         // any waiters things are as expected.
         if (needs_update.empty()) {
@@ -290,7 +297,7 @@ ss::future<> remote_wasm_manager::start_vm(vm_key key) {
           "failed to find load wasm binary for vm {}/{}: {}",
           key.first,
           key.second,
-          cluster::make_error_code(load_result.error()));
+          cluster::make_error_code(load_result.error()).message());
         co_return;
     }
     auto start_result = co_await _worker_client->local().start_vm(
@@ -302,7 +309,7 @@ ss::future<> remote_wasm_manager::start_vm(vm_key key) {
       "starting vm {}/{} result: {}",
       key.first,
       key.second,
-      worker::rpc::make_error_code(start_result));
+      worker::rpc::make_error_code(start_result).message());
 }
 
 ss::future<> remote_wasm_manager::stop_vm(vm_key key) {
@@ -315,7 +322,7 @@ ss::future<> remote_wasm_manager::stop_vm(vm_key key) {
       "stopping vm {}/{} result: {}",
       key.first,
       key.second,
-      worker::rpc::make_error_code(result));
+      worker::rpc::make_error_code(result).message());
 }
 
 remote_wasm_manager::~remote_wasm_manager() {

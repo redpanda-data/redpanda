@@ -61,6 +61,8 @@ net::server_configuration create_server_config(const config& cfg) {
     server_cfg.addrs.emplace_back(ss::socket_address(
       ss::net::inet_address(cfg.listener.host), cfg.listener.port));
     server_cfg.disable_public_metrics = net::public_metrics_disabled::yes;
+    server_cfg.max_service_memory_per_core = int64_t(
+      ss::memory::stats().total_memory());
     return server_cfg;
 }
 

@@ -38,21 +38,16 @@ ss::future<> worker_service::start(config cfg) {
     co_await _wasm_runtime->start(wasm_config);
     co_await _service.start(_wasm_runtime.get());
     co_await _rpc_server.start(cfg.server);
-    co_await _rpc_server.invoke_on_all(&::rpc::rpc_server::start);
     co_await _rpc_server.invoke_on_all([this](::rpc::rpc_server& s) {
-        auto network = std::make_unique<network_service>(
+        s.register_service<network_service>(
           ss::default_scheduling_group(),
           ss::default_smp_service_group(),
           &_service);
-        std::vector<std::unique_ptr<::rpc::service>> services;
-        services.push_back(std::move(network));
-        s.add_services(std::move(services));
         s.set_all_services_added();
     });
+    co_await _rpc_server.invoke_on_all(&::rpc::rpc_server::start);
 }
 ss::future<> worker_service::stop() {
-    co_await _rpc_server.invoke_on_all(&::rpc::rpc_server::shutdown_input);
-    co_await _rpc_server.invoke_on_all(&::rpc::rpc_server::wait_for_shutdown);
     co_await _rpc_server.stop();
     co_await _service.stop();
     co_await _wasm_runtime->stop();

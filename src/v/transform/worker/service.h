@@ -32,6 +32,8 @@ public:
     local_service& operator=(local_service&&) = delete;
     ~local_service();
 
+    ss::future<> stop();
+
     ss::future<rpc::current_state_reply>
       compute_current_state(rpc::current_state_request);
 

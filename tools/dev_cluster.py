@@ -56,6 +56,7 @@ class RedpandaConfig:
     rpc_server: NetworkAddress
     advertised_rpc_api: NetworkAddress
     advertised_kafka_api: NetworkAddress
+    data_transforms_worker_server: NetworkAddress
     kafka_api: NetworkAddress
     admin: NetworkAddress
     seed_servers: list[NetworkAddress]
@@ -197,6 +198,7 @@ async def main():
                                   advertised_rpc_api=rpc_address,
                                   advertised_kafka_api=make_address(
                                       args.base_kafka_port),
+                                  data_transforms_worker_server=make_address(7777),
                                   kafka_api=make_address(args.base_kafka_port),
                                   admin=make_address(args.base_admin_port),
                                   seed_servers=rpc_addresses[:3],

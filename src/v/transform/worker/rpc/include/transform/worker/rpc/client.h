@@ -26,6 +26,8 @@ public:
     client(
       ::rpc::reconnect_transport transport, model::timeout_clock::duration);
 
+    ss::future<> stop();
+
     /**
      * List the current status of all VMs on the node.
      */
@@ -53,13 +55,14 @@ public:
 
 private:
     template<auto Method>
-    auto call(auto request) -> ss::future<result<
-      typename std::invoke_result_t<
-        decltype(Method),
-        transform_worker_client_protocol&,
-        std::decay_t<decltype(request)>,
-        ::rpc::client_opts>::value_type::value_type::data_type,
-      errc>>;
+    auto call(auto request)
+      -> ss::future<result<
+        typename std::invoke_result_t<
+          decltype(Method),
+          transform_worker_client_protocol&,
+          std::decay_t<decltype(request)>,
+          ::rpc::client_opts>::value_type::value_type::data_type,
+        errc>>;
 
     ::rpc::reconnect_transport _transport;
     model::timeout_clock::duration _timeout;

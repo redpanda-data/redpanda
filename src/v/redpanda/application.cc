@@ -349,9 +349,10 @@ static void log_system_resources(
      */
     const size_t default_reserve_memory = std::max<size_t>(
       1536_MiB, 0.07 * total_mem);
-    auto reserve = cfg.contains("reserve-memory") ? ss::parse_memory_size(
-                     cfg["reserve-memory"].as<std::string>())
-                                                  : default_reserve_memory;
+    auto reserve = cfg.contains("reserve-memory")
+                     ? ss::parse_memory_size(
+                         cfg["reserve-memory"].as<std::string>())
+                     : default_reserve_memory;
     vlog(
       log.info,
       "System resources: {{ cpus: {}, available memory: {}, reserved memory: "
@@ -1266,6 +1267,7 @@ void application::wire_up_runtime_services(
         bool worker_mode
           = config::node().data_transforms_worker_server().has_value();
         if (worker_mode) {
+            vlog(_log.info, "running with transform worker node");
             construct_service(
               _transform_worker_client,
               ss::sharded_parameter([] {
