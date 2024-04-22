@@ -128,7 +128,7 @@ node_config::node_config() noexcept
       "data_transforms_worker_server",
       "The host/port of the server containing the worker for Data Transforms",
       {.visibility = visibility::user},
-      net::unresolved_address("127.0.0.1", 5566))
+      std::nullopt)
   , admin_api_doc_dir(
       *this,
       "admin_api_doc_dir",

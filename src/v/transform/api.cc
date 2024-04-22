@@ -497,7 +497,7 @@ service::service(
 service::~service() = default;
 
 ss::future<> service::start() {
-    if (ss::this_shard_id() == remote_wasm_manager::shard) {
+    if (_worker_client && ss::this_shard_id() == remote_wasm_manager::shard) {
         _remote_manager = std::make_unique<remote_wasm_manager>(
           &_rpc_client->local(),
           _worker_client,
@@ -780,8 +780,7 @@ service::get_factory(model::transform_id id, model::transform_metadata meta) {
           id,
           std::move(meta));
     }
-    constexpr bool use_worker_node = true;
-    if (use_worker_node) {
+    if (_remote_manager != nullptr) {
         co_return ss::make_foreign(
           co_await _remote_manager->make_factory(id, meta));
     }

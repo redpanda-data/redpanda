@@ -1263,16 +1263,25 @@ void application::wire_up_runtime_services(
           }))
           .get();
 
-        construct_service(
-          _transform_worker_client,
-          ss::sharded_parameter([] {
-            rpc::transport_configuration c{
-              .server_addr = config::node().data_transforms_worker_server(),
-            };
-            auto policy = rpc::make_exponential_backoff_policy<ss::lowres_clock>(100ms, 1000ms);
-            return rpc::reconnect_transport(std::move(c), std::move(policy));
-          }), 1s)
-          .get();
+        bool worker_mode
+          = config::node().data_transforms_worker_server().has_value();
+        if (worker_mode) {
+            construct_service(
+              _transform_worker_client,
+              ss::sharded_parameter([] {
+                  auto addr = *config::node().data_transforms_worker_server();
+                  rpc::transport_configuration c{
+                    .server_addr = addr,
+                  };
+                  auto policy
+                    = rpc::make_exponential_backoff_policy<ss::lowres_clock>(
+                      100ms, 1000ms);
+                  return rpc::reconnect_transport(
+                    std::move(c), std::move(policy));
+              }),
+              1s)
+              .get();
+        }
 
         construct_service(
           _transform_service,
@@ -1285,7 +1294,7 @@ void application::wire_up_runtime_services(
           &partition_manager,
           &_transform_rpc_client,
           &metadata_cache,
-          &_transform_worker_client,
+          worker_mode ? &_transform_worker_client : nullptr,
           sched_groups.transforms_sg())
           .get();
     }
