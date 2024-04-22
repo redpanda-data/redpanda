@@ -42,6 +42,10 @@ redpanda:
     address: "0.0.0.0"
     port: 9644
 
+  data_transforms_worker_server:
+    address: "127.0.0.1"
+    port: 7777
+
   # Skips most of the checks performed at startup (i.e. memory, xfs)
   # not recomended for production use
   developer_mode: true

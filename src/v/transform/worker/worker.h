@@ -12,6 +12,7 @@
 
 #include "base/seastarx.h"
 #include "rpc/rpc_server.h"
+#include "service.h"
 #include "wasm/cache.h"
 
 #include <seastar/util/defer.hh>
@@ -27,14 +28,13 @@ public:
     struct config {
         net::server_configuration server;
     };
-    explicit worker_service(config cfg);
-
-    ss::future<> start();
+    ss::future<> start(config cfg);
     ss::future<> stop();
 
 private:
     std::unique_ptr<wasm::caching_runtime> _wasm_runtime;
-    rpc::rpc_server _rpc_server;
+    ss::sharded<local_service> _service;
+    ss::sharded<::rpc::rpc_server> _rpc_server;
 };
 
 } // namespace transform::worker

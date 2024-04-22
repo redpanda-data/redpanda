@@ -81,7 +81,7 @@ ss::future<int> run(std::filesystem::path config_file) {
     ss::memory::set_abort_on_allocation_failure(true);
     // End budgets
     stop_signal signal; // TODO: Pass down abort source from signal
-    ss::sharded<worker_service> service;
+    worker_service service;
     config cfg;
     try {
         ss::sstring file = co_await ss::util::read_entire_file_contiguous(
@@ -90,9 +90,6 @@ ss::future<int> run(std::filesystem::path config_file) {
         co_await service.start(worker_service::config{
           .server = create_server_config(cfg),
         });
-        co_await service.invoke_on_all(
-          // NOLINTNEXTLINE(*-coroutine-*)
-          [](worker_service& s) { return s.start(); });
     } catch (...) {
         vlog(
           log.warn,
@@ -123,7 +120,7 @@ int main(int ac, char** av) {
       po::value<std::string>(),
       ".yaml file config for redpanda worker nodes");
     return app.run(ac, av, [&app]() noexcept {
-        return transform::worker::run(app.configuration()["redpanda-worker-cfg"]
-                                        .as<std::filesystem::path>());
+        return transform::worker::run(
+          app.configuration()["redpanda-worker-cfg"].as<std::string>());
     });
 }

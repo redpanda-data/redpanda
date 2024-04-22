@@ -67,6 +67,11 @@ struct probe
     wasm::transform_probe underlying;
 };
 
+local_service::local_service(wasm::caching_runtime* wasm_runtime)
+  : _runtime(wasm_runtime) {}
+
+local_service::~local_service() = default;
+
 ss::future<rpc::current_state_reply>
 local_service::compute_current_state(rpc::current_state_request) {
     using result

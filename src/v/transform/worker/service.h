@@ -23,15 +23,14 @@ namespace transform::worker {
 struct vm;
 struct probe;
 
-class local_service : ss::peering_sharded_service<local_service> {
+class local_service : public ss::peering_sharded_service<local_service> {
 public:
-    explicit local_service(wasm::caching_runtime* wasm_runtime)
-      : _runtime(wasm_runtime) {}
+    explicit local_service(wasm::caching_runtime* wasm_runtime);
     local_service(const local_service&) = delete;
     local_service(local_service&&) = delete;
     local_service& operator=(const local_service&) = delete;
     local_service& operator=(local_service&&) = delete;
-    ~local_service() = default;
+    ~local_service();
 
     ss::future<rpc::current_state_reply>
       compute_current_state(rpc::current_state_request);
