@@ -389,6 +389,23 @@ public:
         }
     }
 
+    /// Validate that all possible replica pairings are represented
+    /// approximately equally in topic partition assignments.
+    void validate_topic_replica_pair_frequencies(const ss::sstring& topic) {
+        do_validate_replica_pair_frequencies(topic);
+    }
+
+    /// Validate that all possible replica pairings are represented
+    /// approximately equally in overall partition assignments, as well as for
+    /// each topic assignments.
+    void validate_replica_pair_frequencies() {
+        for (const auto& [tp_ns, topic_md] :
+             _workers.table.local().all_topics_metadata()) {
+            do_validate_replica_pair_frequencies(tp_ns.tp());
+        }
+        do_validate_replica_pair_frequencies(std::nullopt);
+    }
+
     bool should_schedule_balancer_run() const {
         auto current_in_progress
           = _workers.table.local().updates_in_progress().size();
@@ -398,6 +415,66 @@ public:
     }
 
 private:
+    void
+    do_validate_replica_pair_frequencies(std::optional<ss::sstring> topic) {
+        absl::flat_hash_map<
+          model::node_id,
+          absl::flat_hash_map<model::node_id, size_t>>
+          pair_freqs;
+        size_t total_pairs = 0;
+        for (const auto& [tp_ns, topic_md] :
+             _workers.table.local().all_topics_metadata()) {
+            if (topic && tp_ns.tp() != topic) {
+                continue;
+            }
+
+            for (const auto& p_as : topic_md.get_assignments()) {
+                for (const auto& r1 : p_as.replicas) {
+                    for (const auto& r2 : p_as.replicas) {
+                        if (r1.node_id != r2.node_id) {
+                            pair_freqs[r1.node_id][r2.node_id] += 1;
+                            total_pairs += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        size_t node_count = allocation_nodes().size();
+        double expected_freq = double(total_pairs)
+                               / (node_count * (node_count - 1));
+
+        // Generous boundaries to allow for fluctuations. But they will catch
+        // pathological cases.
+        double expected_min = expected_freq - sqrt(expected_freq) * 3;
+        double expected_max = expected_freq + sqrt(expected_freq) * 3;
+
+        logger.info(
+          "validating replica pair frequencies, topic filter: {}, "
+          "expected: {:.4} (interval: [{:.4}, {:.4}])",
+          topic,
+          expected_freq,
+          expected_min,
+          expected_max);
+        std::optional<std::pair<model::node_id, model::node_id>> offending_pair;
+        for (const auto& [id1, _] : allocation_nodes()) {
+            for (const auto& [id2, _] : allocation_nodes()) {
+                if (id1 == id2) {
+                    continue;
+                }
+                size_t freq = pair_freqs[id1][id2];
+                logger.info("node pair {} - {} frequency: {}", id1, id2, freq);
+                if (freq < expected_min || freq > expected_max) {
+                    offending_pair = {id1, id2};
+                }
+            }
+        }
+        BOOST_REQUIRE_MESSAGE(
+          !offending_pair,
+          "validation failed, offending pair: " << offending_pair->first << ", "
+                                                << offending_pair->second);
+    }
+
     cluster::cluster_health_report create_health_report() const {
         cluster::cluster_health_report report;
         for (const auto& [id, state] : _nodes) {
@@ -711,7 +788,7 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
     add_node(model::node_id{4}, 1000_GiB, 8);
     add_node_to_rebalance(model::node_id{4});
 
-    BOOST_REQUIRE(run_to_completion(1000));
+    BOOST_REQUIRE(run_to_completion(2000));
     validate_even_replica_distribution();
     validate_even_topic_distribution();
 }
@@ -810,4 +887,35 @@ FIXTURE_TEST(test_many_topics, partition_balancer_sim_fixture) {
     BOOST_REQUIRE(run_to_completion(1000));
 
     validate_even_replica_distribution();
+}
+
+FIXTURE_TEST(test_replica_pair_frequency, partition_balancer_sim_fixture) {
+    for (size_t i = 0; i < 3; ++i) {
+        add_node(model::node_id{i}, 300_GiB);
+    }
+    add_topic("topic_1", 150, 3, 1_GiB);
+
+    for (size_t i = 3; i < 6; ++i) {
+        add_node(model::node_id{i}, 300_GiB);
+        add_node_to_rebalance(model::node_id{i});
+    }
+
+    add_topic("topic_2", 150, 3, 1_GiB);
+    logger.info("topic_2 created");
+    validate_topic_replica_pair_frequencies("topic_2");
+
+    BOOST_REQUIRE(run_to_completion(1000));
+    logger.info("first rebalance finished");
+    validate_even_replica_distribution();
+    validate_replica_pair_frequencies();
+
+    for (size_t i = 6; i < 9; ++i) {
+        add_node(model::node_id{i}, 300_GiB);
+        add_node_to_rebalance(model::node_id{i});
+    }
+
+    BOOST_REQUIRE(run_to_completion(1000));
+    logger.info("second rebalance finished");
+    validate_even_replica_distribution();
+    validate_replica_pair_frequencies();
 }

@@ -824,4 +824,5 @@ class CreateTopicReplicaDistributionTest(RedpandaTest):
         # Check topic2 counts
         counts = topic2node_counts['topic2']
         expected_count = int(sum(counts.values()) / 5)
-        assert all(v == expected_count for v in counts.values())
+        # allow +/- 1 fluctuations that can arise from unlucky replica allocation order.
+        assert all(abs(v - expected_count) <= 1 for v in counts.values())

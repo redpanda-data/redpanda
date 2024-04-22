@@ -41,20 +41,15 @@ void allocation_constraints::add(allocation_constraints other) {
 }
 
 allocation_units::allocation_units(
-  ss::chunked_fifo<partition_assignment> assignments,
-  allocation_state& state,
-  const partition_allocation_domain domain)
-  : _assignments(std::move(assignments))
-  , _state(state.weak_from_this())
+  allocation_state& state, const partition_allocation_domain domain)
+  : _state(state.weak_from_this())
   , _domain(domain) {}
 
 allocation_units::~allocation_units() {
     oncore_debug_verify(_oncore);
-    for (auto& pas : _assignments) {
-        for (auto& replica : pas.replicas) {
-            _state->remove_allocation(replica, _domain);
-            _state->remove_final_count(replica, _domain);
-        }
+    for (const auto& replica : _added_replicas) {
+        _state->remove_allocation(replica, _domain);
+        _state->remove_final_count(replica, _domain);
     }
 }
 
@@ -119,10 +114,16 @@ model::broker_shard allocated_partition::add_replica(
     return replica;
 }
 
-std::vector<model::broker_shard> allocated_partition::release_new_partition() {
-    vassert(
-      _original_node2shard && _original_node2shard->empty(),
-      "new partition shouldn't have previous replicas");
+replicas_t allocated_partition::release_new_partition(
+  chunked_vector<model::broker_shard>& added_replicas) {
+    for (const auto& bs : _replicas) {
+        if (
+          !_original_node2shard
+          || !_original_node2shard->contains(bs.node_id)) {
+            added_replicas.push_back(bs);
+        }
+    }
+    _original_node2shard.reset();
     _state = nullptr;
     return std::move(_replicas);
 }
@@ -217,25 +218,16 @@ allocated_partition::~allocated_partition() {
     }
 }
 
-partition_constraints::partition_constraints(
-  model::partition_id id, uint16_t replication_factor)
-  : partition_constraints(id, replication_factor, allocation_constraints{}) {}
-
-partition_constraints::partition_constraints(
-  model::partition_id id,
-  uint16_t replication_factor,
-  allocation_constraints constraints)
-  : partition_id(id)
-  , replication_factor(replication_factor)
-  , constraints(std::move(constraints)) {}
-
 std::ostream& operator<<(std::ostream& o, const partition_constraints& pc) {
     fmt::print(
       o,
-      "{{partition_id: {}, replication_factor: {}, constrains: {}}}",
+      "{{partition_id: {}, replication_factor: {}, constraints: {}, "
+      "existing_group: {}, existing_replicas: {}}}",
       pc.partition_id,
       pc.replication_factor,
-      pc.constraints);
+      pc.constraints,
+      pc.existing_group,
+      pc.existing_replicas);
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const allocation_request& req) {

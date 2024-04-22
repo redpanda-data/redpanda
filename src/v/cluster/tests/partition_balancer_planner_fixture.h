@@ -106,6 +106,8 @@ public:
             req.partitions.emplace_back(
               model::partition_id(p), replication_factor);
         }
+        // enable topic-aware placement
+        req.existing_replica_counts = cluster::node2count_t{};
 
         auto pas = allocator.local()
                      .allocate(std::move(req))

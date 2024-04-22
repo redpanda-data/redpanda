@@ -198,10 +198,6 @@ struct allocation_units {
      */
     using pointer = ss::foreign_ptr<std::unique_ptr<allocation_units>>;
 
-    allocation_units(
-      ss::chunked_fifo<partition_assignment>,
-      allocation_state&,
-      partition_allocation_domain);
     allocation_units& operator=(allocation_units&&) = default;
     allocation_units& operator=(const allocation_units&) = delete;
     allocation_units(const allocation_units&) = delete;
@@ -222,7 +218,12 @@ struct allocation_units {
     }
 
 private:
+    friend class partition_allocator;
+    allocation_units(allocation_state&, partition_allocation_domain);
+
+private:
     ss::chunked_fifo<partition_assignment> _assignments;
+    chunked_vector<model::broker_shard> _added_replicas;
     // keep the pointer to make this type movable
     ss::weak_ptr<allocation_state> _state;
     partition_allocation_domain _domain;
@@ -292,7 +293,8 @@ private:
     add_replica(model::node_id, const std::optional<previous_replica>&);
 
     // used to move the allocation to allocation_units
-    replicas_t release_new_partition();
+    replicas_t
+    release_new_partition(chunked_vector<model::broker_shard>& added_replicas);
 
 private:
     model::ntp _ntp;
@@ -312,14 +314,32 @@ private:
  * replica
  */
 struct partition_constraints {
-    partition_constraints(model::partition_id, uint16_t);
-
+    // Constructor for allocating a new partition
     partition_constraints(
-      model::partition_id, uint16_t, allocation_constraints);
+      model::partition_id id,
+      uint16_t rf,
+      allocation_constraints constraints = {})
+      : partition_id(id)
+      , replication_factor(rf)
+      , constraints(std::move(constraints)) {}
+
+    // Constructor for reallocating an partition
+    partition_constraints(
+      const partition_assignment& assignment,
+      uint16_t rf,
+      allocation_constraints constraints = {})
+      : partition_id(assignment.id)
+      , replication_factor(rf)
+      , constraints(std::move(constraints))
+      , existing_group(assignment.group)
+      , existing_replicas(assignment.replicas) {}
 
     model::partition_id partition_id;
     uint16_t replication_factor;
     allocation_constraints constraints;
+    std::optional<raft::group_id> existing_group;
+    replicas_t existing_replicas;
+
     friend std::ostream&
     operator<<(std::ostream&, const partition_constraints&);
 };

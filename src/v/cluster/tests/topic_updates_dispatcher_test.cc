@@ -217,6 +217,7 @@ FIXTURE_TEST(
           });
         BOOST_REQUIRE(it != new_replicas.end());
         it->node_id = model::node_id{4};
+        it->shard = random_generators::get_int(3);
 
         return std::tuple{
           ntp,
