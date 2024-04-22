@@ -27,7 +27,7 @@ set(FETCHCONTENT_QUIET FALSE)
 FetchContent_Declare(
   quickjs
   GIT_REPOSITORY https://github.com/quickjs-ng/quickjs.git
-  GIT_TAG        bb674c0c3b4c141be0e399b4c76e3530066a6dfd
+  GIT_TAG        f227746c6ebe7f0c7ddb0e5152d52cd41f5a7cdd
 )
 
 FetchContent_Declare(
@@ -74,7 +74,7 @@ add_executable(
 )
 target_link_libraries(
   js_vm_test
-  GTest::gtest_main Redpanda::js_vm
+  GTest::gtest_main Redpanda::js_vm GTest::gmock
 )
 
 include(GoogleTest)

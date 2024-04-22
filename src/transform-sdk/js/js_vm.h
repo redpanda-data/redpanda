@@ -279,6 +279,8 @@ public:
      */
     [[nodiscard]] std::string debug_string() const;
 
+    friend bool operator==(const value&, const value&);
+
 private:
     JSContext* _ctx;
     JSValue _underlying;

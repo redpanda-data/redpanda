@@ -291,6 +291,11 @@ std::string value::debug_string() const {
     return "[exception]";
 }
 
+bool operator==(const value& lhs, const value& rhs) {
+    return lhs._ctx == rhs._ctx
+           && JS_IsStrictEqual(lhs._ctx, lhs.raw(), rhs.raw()) != 0;
+}
+
 exception exception::current(JSContext* ctx) {
     return {value::current_exception(ctx)};
 }
