@@ -214,3 +214,76 @@ jobs:
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
+
+  test-js:
+    name: Test JS Transform SDK
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:40
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Clang
+        run: dnf install -y clang clang-tools-extra libcxx libcxxabi libcxx-devel libcxxabi-devel cmake git
+
+      - name: Run tests
+        working-directory: src/transform-sdk/js
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake --preset debug
+          cmake --build --preset debug
+          ctest --output-on-failure --test-dir build/debug
+
+      - name: Run clang-tidy
+        working-directory: src/transform-sdk/js
+        run: clang-tidy --quiet -p build/debug/compile_commands.json js_vm.cc js_vm_test.cc main.cc
+
+  integration-test-js:
+    name: Integration Test JS Transform SDK
+    needs: [test-js, build-integration-tests]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-21
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Build integration tests
+        working-directory: src/transform-sdk/js
+        run: |
+          apt update
+          apt install -y git curl
+          cmake --preset release-static
+          cmake --build --preset release-static -- redpanda_js_transform
+          cat identity.js | ./generate_js_provider.py > identity_source.wat
+          cat identity_logging.js | ./generate_js_provider.py > logging_source.wat
+          curl -SLO https://github.com/WebAssembly/binaryen/releases/download/version_117/binaryen-version_117-x86_64-linux.tar.gz
+          tar xf binaryen-version_117-x86_64-linux.tar.gz
+          rm binaryen-version_117-x86_64-linux.tar.gz
+          ./binaryen-version_117/bin/wasm-merge \
+            ./build/release-static/redpanda_js_transform js_vm \
+            ./identity_source.wat redpanda_js_provider \
+            -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
+            -o identity.wasm
+          ./binaryen-version_117/bin/wasm-merge \
+            ./build/release-static/redpanda_js_transform js_vm \
+            ./logging_source.wat redpanda_js_provider \
+            -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
+            -o logging.wasm
+      - name: Download integration test suite
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/js
+      - name: Run integration tests
+        working-directory: src/transform-sdk/js
+        env:
+          IDENTITY: identity.wasm
+          LOGGING: logging.wasm
+          TEE: "@UNIMPLEMENTED@"
+          SCHEMA_REGISTRY: "@UNIMPLEMENTED@"
+        run: |
+          chmod +x wasm-integration-test
+          ./wasm-integration-test -test.v
