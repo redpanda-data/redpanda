@@ -13,6 +13,7 @@
 #include "archival/types.h"
 #include "cloud_roles/types.h"
 #include "cloud_storage/configuration.h"
+#include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
@@ -204,6 +205,7 @@ public:
     explicit redpanda_thread_fixture(
       init_cloud_storage_tag,
       std::optional<uint16_t> port = std::nullopt,
+      cloud_storage_clients::s3_url_style url_style = default_url_style,
       model::node_id node_id = model::node_id(1))
       : redpanda_thread_fixture(
         node_id,
@@ -215,9 +217,9 @@ public:
         ssx::sformat("test.dir_{}", time(0)),
         std::nullopt,
         true,
-        get_s3_config(port),
+        get_s3_config(port, url_style),
         get_archival_config(),
-        get_cloud_config(port)) {}
+        get_cloud_config(port, url_style)) {}
 
     struct init_cloud_storage_no_archiver_tag {};
 
@@ -226,7 +228,8 @@ public:
     // the upload code, to later set it up manually in a test.
     explicit redpanda_thread_fixture(
       init_cloud_storage_no_archiver_tag,
-      std::optional<uint16_t> port = std::nullopt)
+      std::optional<uint16_t> port = std::nullopt,
+      cloud_storage_clients::s3_url_style url_style = default_url_style)
       : redpanda_thread_fixture(
         model::node_id(1),
         9092,
@@ -237,7 +240,7 @@ public:
         ssx::sformat("test.dir_{}", time(0)),
         std::nullopt,
         true,
-        get_s3_config(port),
+        get_s3_config(port, url_style),
         get_archival_config(),
         std::nullopt) {}
 
@@ -274,15 +277,16 @@ public:
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
-    static cloud_storage_clients::s3_configuration
-    get_s3_config(std::optional<uint16_t> port = std::nullopt) {
+    static cloud_storage_clients::s3_configuration get_s3_config(
+      std::optional<uint16_t> port = std::nullopt,
+      cloud_storage_clients::s3_url_style url_style = default_url_style) {
         net::unresolved_address server_addr("127.0.0.1", port.value_or(4430));
         cloud_storage_clients::s3_configuration s3conf;
         s3conf.uri = cloud_storage_clients::access_point_uri("127.0.0.1");
-        s3conf.access_key = cloud_roles::public_key_str("acess-key");
+        s3conf.access_key = cloud_roles::public_key_str("access-key");
         s3conf.secret_key = cloud_roles::private_key_str("secret-key");
         s3conf.region = cloud_roles::aws_region_name("us-east-1");
-        s3conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
+        s3conf.url_style = url_style;
         s3conf.server_addr = server_addr;
         return s3conf;
     }
@@ -301,9 +305,10 @@ public:
         return aconf;
     }
 
-    static cloud_storage::configuration
-    get_cloud_config(std::optional<uint16_t> port = std::nullopt) {
-        auto s3conf = get_s3_config(port);
+    static cloud_storage::configuration get_cloud_config(
+      std::optional<uint16_t> port = std::nullopt,
+      cloud_storage_clients::s3_url_style url_style = default_url_style) {
+        auto s3conf = get_s3_config(port, url_style);
         cloud_storage::configuration cconf;
         cconf.client_config = s3conf;
         cconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
@@ -370,6 +375,8 @@ public:
                   .set_value(std::make_optional((s3_config->url_style)));
                 config.get("cloud_storage_api_endpoint")
                   .set_value(std::make_optional(s3_config->server_addr.host()));
+                config.get("cloud_storage_url_style")
+                  .set_value(std::make_optional(s3_config->url_style));
                 config.get("cloud_storage_api_endpoint_port")
                   .set_value(
                     static_cast<int16_t>(s3_config->server_addr.port()));
