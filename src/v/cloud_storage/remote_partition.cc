@@ -566,6 +566,10 @@ private:
                           "Manifest query raced with retention and the result "
                           "is below the clean/start offset for {}",
                           query_ts);
+                        throw std::runtime_error(fmt::format(
+                          "Timequery raced with retention and the result is "
+                          "below the clean/start offset for {}",
+                          query_ts));
                         return true;
                     }
 
