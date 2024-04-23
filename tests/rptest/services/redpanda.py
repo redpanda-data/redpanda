@@ -3272,6 +3272,9 @@ class RedpandaService(RedpandaServiceBase):
 
             # Gather manifest.json and topic_manifest.json files
             if 'manifest.json' in key or 'manifest.bin' in key and manifest_dump_limit > 0:
+                if key.endswith("topic_manifest.bin"):
+                    self.logger.warn(f"rp-storage-tool can't decode binary topic manifests yet; skipping {key}")
+                    continue
                 manifests_to_dump.append(key)
                 manifest_dump_limit -= 1
 
