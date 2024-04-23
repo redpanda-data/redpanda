@@ -27,6 +27,12 @@
 #include <map>
 #include <vector>
 
+static const cloud_storage_clients::bucket_name test_bucket_name
+  = cloud_storage_clients::bucket_name{"test-bucket"};
+
+static constexpr cloud_storage_clients::s3_url_style default_url_style
+  = cloud_storage_clients::s3_url_style::virtual_host;
+
 /// Emulates S3 REST API for testing purposes.
 /// The imposter is a simple KV-store that contains a set of expectations.
 /// Expectations are accessible by url via GET, PUT, and DELETE http calls.
@@ -42,7 +48,8 @@ public:
     uint16_t httpd_port_number();
     static constexpr const char* httpd_host_name = "127.0.0.1";
 
-    s3_imposter_fixture();
+    s3_imposter_fixture(
+      cloud_storage_clients::s3_url_style url_style = default_url_style);
     ~s3_imposter_fixture();
 
     s3_imposter_fixture(const s3_imposter_fixture&) = delete;
@@ -67,13 +74,13 @@ public:
     /// to null but there was PUT call that sent some data, subsequent GET call
     /// will retrieve this data.
     void set_expectations_and_listen(
-      const std::vector<expectation>& expectations,
+      std::vector<expectation> expectations,
       std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
       = std::nullopt);
 
     /// Update expectations for the REST API.
-    void add_expectations(const std::vector<expectation>& expectations);
-    void remove_expectations(const std::vector<ss::sstring>& urls);
+    void add_expectations(std::vector<expectation> expectations);
+    void remove_expectations(std::vector<ss::sstring> urls);
 
     /// Get object from S3 or nullopt if it doesn't exist
     std::optional<ss::sstring> get_object(const ss::sstring& url) const;
@@ -95,6 +102,13 @@ public:
     cloud_storage_clients::s3_configuration get_configuration();
 
     void set_search_on_get_list(bool should) { _search_on_get_list = should; }
+
+    ss::sstring url_base() const;
+    const cloud_storage_clients::bucket_name bucket_name = test_bucket_name;
+
+protected:
+    cloud_storage_clients::s3_url_style url_style;
+    cloud_storage_clients::s3_configuration conf;
 
 private:
     void set_routes(

@@ -373,10 +373,10 @@ s3_imposter_fixture::get_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number());
     cloud_storage_clients::s3_configuration conf;
     conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
-    conf.access_key = cloud_roles::public_key_str("acess-key");
+    conf.access_key = cloud_roles::public_key_str("access-key");
     conf.secret_key = cloud_roles::private_key_str("secret-key");
     conf.region = cloud_roles::aws_region_name("us-east-1");
-    conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
+    conf.url_style = url_style;
     conf.server_addr = server_addr;
     conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
       net::metrics_disabled::yes,
@@ -386,7 +386,10 @@ s3_imposter_fixture::get_configuration() {
     return conf;
 }
 
-s3_imposter_fixture::s3_imposter_fixture() {
+s3_imposter_fixture::s3_imposter_fixture(
+  cloud_storage_clients::s3_url_style url_style)
+  : url_style(url_style)
+  , conf(get_configuration()) {
     _server = ss::make_shared<ss::httpd::http_server_control>();
     _server->start().get();
     ss::ipv4_addr ip_addr = {httpd_host_name, httpd_port_number()};
@@ -422,8 +425,13 @@ s3_imposter_fixture::get_targets() const {
 }
 
 void s3_imposter_fixture::set_expectations_and_listen(
-  const std::vector<s3_imposter_fixture::expectation>& expectations,
+  std::vector<s3_imposter_fixture::expectation> expectations,
   std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store) {
+    const ss::sstring url_prefix = "/" + url_base();
+    for (auto& expectation : expectations) {
+        expectation.url.insert(
+          expectation.url.begin(), url_prefix.begin(), url_prefix.end());
+    }
     _server
       ->set_routes(
         [this, &expectations, headers_to_store = std::move(headers_to_store)](
@@ -435,14 +443,22 @@ void s3_imposter_fixture::set_expectations_and_listen(
 }
 
 void s3_imposter_fixture::add_expectations(
-  const std::vector<s3_imposter_fixture::expectation>& expectations) {
+  std::vector<s3_imposter_fixture::expectation> expectations) {
     vassert(_content_handler != nullptr, "Imposter is not initialized");
+    const ss::sstring url_prefix = "/" + url_base();
+    for (auto& expectation : expectations) {
+        expectation.url.insert(
+          expectation.url.begin(), url_prefix.begin(), url_prefix.end());
+    }
     _content_handler->insert(expectations);
 }
 
-void s3_imposter_fixture::remove_expectations(
-  const std::vector<ss::sstring>& urls) {
+void s3_imposter_fixture::remove_expectations(std::vector<ss::sstring> urls) {
     vassert(_content_handler != nullptr, "Imposter is not initialized");
+    const ss::sstring url_prefix = "/" + url_base();
+    for (auto& url : urls) {
+        url.insert(url.begin(), url_prefix.begin(), url_prefix.end());
+    }
     _content_handler->remove(urls);
 }
 
@@ -453,6 +469,15 @@ s3_imposter_fixture::get_object(const ss::sstring& url) const {
         return std::nullopt;
     }
     return it->second.body;
+}
+
+ss::sstring s3_imposter_fixture::url_base() const {
+    switch (conf.url_style) {
+    case cloud_storage_clients::s3_url_style::virtual_host:
+        return fmt::format("");
+    case cloud_storage_clients::s3_url_style::path:
+        return fmt::format("{}/", bucket_name);
+    }
 }
 
 void s3_imposter_fixture::set_routes(
@@ -486,7 +511,7 @@ enable_cloud_storage_fixture::enable_cloud_storage_fixture() {
         cfg.cloud_storage_region.set_value(
           std::optional<ss::sstring>{"us-east1"});
         cfg.cloud_storage_bucket.set_value(
-          std::optional<ss::sstring>{"test-bucket"});
+          std::optional<ss::sstring>{test_bucket_name()});
     }).get();
 }
 
