@@ -190,7 +190,11 @@ ss::future<> cpu_profiler::collect_results_for_period_impl(
     _override_enabled--;
     // check if profiler should be disabled post-override.
     on_enabled_change();
-    // prof.poll_samples();
+
+    // The timer to reap events from seastar only fires ~128 * sample period so
+    // by default we would only collect samples every 13 seconds. To make sure
+    // we get samples for something like wait_ms=5s we reap explicitly.
+    poll_samples();
 }
 
 ss::future<std::vector<cpu_profiler::shard_samples>>
