@@ -44,6 +44,8 @@ private:
     ss::sstring client_id_;
     ss::sstring tenant_id_;
     ss::sstring federated_token_file_;
+
+    friend class aks_test_helper;
 };
 
 } // namespace cloud_roles

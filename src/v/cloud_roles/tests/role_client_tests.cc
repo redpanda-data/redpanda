@@ -10,6 +10,7 @@
 
 #include "cloud_roles/aws_refresh_impl.h"
 #include "cloud_roles/aws_sts_refresh_impl.h"
+#include "cloud_roles/azure_aks_refresh_impl.h"
 #include "cloud_roles/gcp_refresh_impl.h"
 #include "http/tests/http_imposter.h"
 #include "test_definitions.h"
@@ -133,4 +134,82 @@ FIXTURE_TEST(test_sts_credentials_fetch, fixture) {
     BOOST_REQUIRE(ba::contains(posted, "Action=AssumeRoleWithWebIdentity"));
     BOOST_REQUIRE(ba::contains(posted, "RoleArn=tomato"));
     BOOST_REQUIRE(ba::contains(posted, "WebIdentityToken=token"));
+}
+
+class cloud_roles::aks_test_helper {
+public:
+    static auto get_address(azure_aks_refresh_impl const& aks) {
+        return aks.address();
+    }
+};
+
+BOOST_AUTO_TEST_CASE(ask_authority_host_read_test) {
+    // test that we can correctly read various forms of AZURE_AUTHORITY_HOST
+
+    // boilerplate
+    using helper_t = cloud_roles::aks_test_helper;
+    setenv("AZURE_CLIENT_ID", "dummy_client_id", 0);
+    setenv("AZURE_TENANT_ID", "dummy_tenant_id", 0);
+    setenv("AZURE_FEDERATED_TOKEN_FILE", "dummy_fed_token_file", 0);
+
+    auto dummy_as = ss::abort_source{};
+    BOOST_TEST_CONTEXT("env variable simple hostname") {
+        setenv("AZURE_AUTHORITY_HOST", "simple.com", 1);
+        auto aks = cloud_roles::azure_aks_refresh_impl{
+          net::unresolved_address{},
+          cloud_roles::aws_region_name{},
+          dummy_as,
+          cloud_roles::retry_params{}};
+        BOOST_CHECK_EQUAL(
+          helper_t::get_address(aks),
+          net::unresolved_address("simple.com", uint16_t(443)));
+    }
+
+    BOOST_TEST_CONTEXT("env variable url http") {
+        setenv("AZURE_AUTHORITY_HOST", "http://simple.com/", 1);
+        auto aks = cloud_roles::azure_aks_refresh_impl{
+          net::unresolved_address{},
+          cloud_roles::aws_region_name{},
+          dummy_as,
+          cloud_roles::retry_params{}};
+        BOOST_CHECK_EQUAL(
+          helper_t::get_address(aks),
+          net::unresolved_address("simple.com", uint16_t(80)));
+    }
+
+    BOOST_TEST_CONTEXT("env variable url https") {
+        setenv("AZURE_AUTHORITY_HOST", "https://simple.com/", 1);
+        auto aks = cloud_roles::azure_aks_refresh_impl{
+          net::unresolved_address{},
+          cloud_roles::aws_region_name{},
+          dummy_as,
+          cloud_roles::retry_params{}};
+        BOOST_CHECK_EQUAL(
+          helper_t::get_address(aks),
+          net::unresolved_address("simple.com", uint16_t(443)));
+    }
+
+    BOOST_TEST_CONTEXT("env variable url https and port") {
+        setenv("AZURE_AUTHORITY_HOST", "https://simple.com:9999/", 1);
+        auto aks = cloud_roles::azure_aks_refresh_impl{
+          net::unresolved_address{},
+          cloud_roles::aws_region_name{},
+          dummy_as,
+          cloud_roles::retry_params{}};
+        BOOST_CHECK_EQUAL(
+          helper_t::get_address(aks),
+          net::unresolved_address("simple.com", uint16_t(9999)));
+    }
+
+    BOOST_TEST_CONTEXT("external override") {
+        setenv("AZURE_AUTHORITY_HOST", "https://simple.com:9999/", 1);
+        auto external_override = net::unresolved_address{
+          "this is not actually a valid host", 1234};
+        auto aks = cloud_roles::azure_aks_refresh_impl{
+          external_override,
+          cloud_roles::aws_region_name{},
+          dummy_as,
+          cloud_roles::retry_params{}};
+        BOOST_CHECK_EQUAL(helper_t::get_address(aks), external_override);
+    }
 }
