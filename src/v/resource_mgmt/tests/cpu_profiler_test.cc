@@ -16,6 +16,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/internal/cpu_profiler.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/core/timer.hh>
@@ -119,10 +120,18 @@ SEASTAR_TEST_CASE(test_cpu_profiler_enable_override_nested) {
       },
       [&]() { return busy_loop(10 * wait_ms); });
 
-    auto samples_p = results_p[ss::this_shard_id()];
-    auto samples_10p = results_10p[ss::this_shard_id()];
+    auto samples_p = std::accumulate(
+      results_p[ss::this_shard_id()].samples.begin(),
+      results_p[ss::this_shard_id()].samples.end(),
+      0,
+      [](auto acc, auto& s) { return acc + s.occurrences; });
+    auto samples_10p = std::accumulate(
+      results_10p[ss::this_shard_id()].samples.begin(),
+      results_10p[ss::this_shard_id()].samples.end(),
+      0,
+      [](auto acc, auto& s) { return acc + s.occurrences; });
 
-    BOOST_REQUIRE(samples_p.samples.size() < samples_10p.samples.size());
+    BOOST_REQUIRE_LT(samples_p, samples_10p);
 
     co_await cp.stop();
 }
@@ -167,6 +176,8 @@ SEASTAR_TEST_CASE(test_cpu_profiler_enable_override_filter_old_samples) {
 
     BOOST_TEST(results[ss::this_shard_id()].samples.size() >= 1);
 
+    ss::engine().set_cpu_profiler_period(std::chrono::seconds(10));
+
     co_await busy_loop(2 * one_poll_dur);
 
     wait_ms = 1ms;
@@ -180,4 +191,26 @@ SEASTAR_TEST_CASE(test_cpu_profiler_enable_override_filter_old_samples) {
     // returned. If samples were returned then they must've come from the
     // previous override.
     BOOST_TEST(override_results[ss::this_shard_id()].samples.size() == 0);
+}
+
+SEASTAR_TEST_CASE(test_cpu_profiler_enable_override_sub_collection_period) {
+    // Ensures that cpu_profiler::override_and_get_results returns results even
+    // for periods shorter than `ss::max_number_of_traces * sample_rate`
+
+    std::chrono::milliseconds sample_rate = 100ms;
+
+    ss::sharded<resources::cpu_profiler> cp;
+    co_await cp.start(
+      config::mock_binding(false),
+      config::mock_binding<std::chrono::milliseconds>(sample_rate));
+    co_await cp.invoke_on_all(&resources::cpu_profiler::start);
+
+    auto wait_ms = std::chrono::seconds(3);
+    auto [results] = co_await ss::coroutine::all(
+      [&]() {
+          return cp.local().collect_results_for_period(wait_ms, std::nullopt);
+      },
+      [&]() { return busy_loop(wait_ms); });
+
+    BOOST_TEST(results[ss::this_shard_id()].samples.size() >= 1);
 }
