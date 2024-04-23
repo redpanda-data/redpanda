@@ -52,6 +52,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/all.hh>
@@ -2164,6 +2165,7 @@ ss::future<> ntp_archiver::housekeeping() {
                 co_await garbage_collect();
             } else {
                 co_await apply_archive_retention();
+                co_await ss::sleep(30s);
                 co_await garbage_collect_archive();
                 co_await garbage_collect();
             }
