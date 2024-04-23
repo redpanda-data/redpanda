@@ -21,6 +21,7 @@ If this PR is a backport, link to the original with `Backport of PR`, e.g.
 - [ ] none - this is a backport
 - [ ] none - issue does not exist in previous branches
 - [ ] none - papercut/not impactful enough to backport
+- [ ] v24.1.x
 - [ ] v23.3.x
 - [ ] v23.2.x
 
