@@ -2165,7 +2165,7 @@ ss::future<> ntp_archiver::housekeeping() {
                 co_await garbage_collect();
             } else {
                 co_await apply_archive_retention();
-                co_await ss::sleep(30s);
+                co_await ss::sleep(3s);
                 co_await garbage_collect_archive();
                 co_await garbage_collect();
             }
