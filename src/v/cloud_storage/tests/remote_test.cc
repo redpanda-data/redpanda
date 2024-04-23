@@ -145,6 +145,7 @@ public:
         remote.stop().get();
         pool.stop().get();
     }
+
     ss::sharded<cloud_storage_clients::client_pool> pool;
     ss::sharded<remote> remote;
 };
@@ -155,6 +156,7 @@ using gcs_remote_fixture = remote_fixture_base<
 
 static auto run_manifest_download_and_check(
   auto& remote,
+  const cloud_storage_clients::bucket_name& bucket_name,
   partition_manifest expected_manifest,
   manifest_format expected_download_format,
   std::string_view test_context) {
@@ -162,9 +164,7 @@ static auto run_manifest_download_and_check(
     retry_chain_node fib(never_abort, 100ms, 20ms);
     auto [res, fmt] = remote.local()
                         .try_download_partition_manifest(
-                          cloud_storage_clients::bucket_name("bucket"),
-                          actual,
-                          fib)
+                          bucket_name, actual, fib)
                         .get();
     BOOST_TEST_INFO(test_context);
     BOOST_CHECK(res == download_result::success);
@@ -174,10 +174,11 @@ static auto run_manifest_download_and_check(
 
 FIXTURE_TEST(test_download_manifest_json, remote_fixture) {
     set_expectations_and_listen({expectation{
-      .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)}});
+      .url = manifest_url, .body = ss::sstring(manifest_payload)}});
     auto subscription = remote.local().subscribe(allow_all);
     run_manifest_download_and_check(
       remote,
+      bucket_name,
       load_manifest_from_str(manifest_payload),
       manifest_format::json,
       "manifest load from json");
@@ -193,12 +194,13 @@ FIXTURE_TEST(test_download_manifest_serde, remote_fixture) {
       = serialized.stream.read_exactly(serialized.size_bytes).get();
 
     set_expectations_and_listen({expectation{
-      .url = "/" + manifest_serde_url,
+      .url = manifest_serde_url,
       .body = ss::sstring{manifest_binary.begin(), manifest_binary.end()}}});
 
     auto subscription = remote.local().subscribe(allow_all);
     run_manifest_download_and_check(
       remote,
+      bucket_name,
       std::move(translator),
       manifest_format::serde,
       "manifest load from serde");
@@ -214,10 +216,7 @@ FIXTURE_TEST(test_download_manifest_timeout, remote_fixture) { // NOLINT
     retry_chain_node fib(never_abort, 100ms, 20ms);
     auto res = remote.local()
                  .download_manifest(
-                   cloud_storage_clients::bucket_name("bucket"),
-                   json_manifest_format_path,
-                   actual,
-                   fib)
+                   bucket_name, json_manifest_format_path, actual, fib)
                  .get();
     BOOST_REQUIRE(res == download_result::timedout);
     BOOST_REQUIRE(subscription.available());
@@ -242,12 +241,7 @@ FIXTURE_TEST(test_upload_segment, remote_fixture) { // NOLINT
     retry_chain_node fib(never_abort, 100ms, 20ms);
     auto res = remote.local()
                  .upload_segment(
-                   cloud_storage_clients::bucket_name("bucket"),
-                   path,
-                   clen,
-                   reset_stream,
-                   fib,
-                   always_continue)
+                   bucket_name, path, clen, reset_stream, fib, always_continue)
                  .get();
     BOOST_REQUIRE(res == upload_result::success);
     const auto& req = get_requests().front();
@@ -277,12 +271,7 @@ FIXTURE_TEST(test_upload_segment_lost_leadership, remote_fixture) { // NOLINT
       []() { return "lost leadership"; }};
     auto res = remote.local()
                  .upload_segment(
-                   cloud_storage_clients::bucket_name("bucket"),
-                   path,
-                   clen,
-                   reset_stream,
-                   fib,
-                   lost_leadership)
+                   bucket_name, path, clen, reset_stream, fib, lost_leadership)
                  .get();
     BOOST_REQUIRE_EQUAL(res, upload_result::cancelled);
     BOOST_REQUIRE(get_requests().empty());
@@ -306,12 +295,7 @@ FIXTURE_TEST(test_upload_segment_timeout, remote_fixture) { // NOLINT
     retry_chain_node fib(never_abort, 100ms, 20ms);
     auto res = remote.local()
                  .upload_segment(
-                   cloud_storage_clients::bucket_name("bucket"),
-                   path,
-                   clen,
-                   reset_stream,
-                   fib,
-                   always_continue)
+                   bucket_name, path, clen, reset_stream, fib, always_continue)
                  .get();
     BOOST_REQUIRE(res == upload_result::timedout);
     BOOST_REQUIRE(subscription.available());
@@ -320,7 +304,6 @@ FIXTURE_TEST(test_upload_segment_timeout, remote_fixture) { // NOLINT
 
 FIXTURE_TEST(test_download_segment, remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -334,10 +317,11 @@ FIXTURE_TEST(test_download_segment, remote_fixture) { // NOLINT
           make_iobuf_input_stream(std::move(out)));
     };
     retry_chain_node fib(never_abort, 100ms, 20ms);
-    auto upl_res = remote.local()
-                     .upload_segment(
-                       bucket, path, clen, reset_stream, fib, always_continue)
-                     .get();
+    auto upl_res
+      = remote.local()
+          .upload_segment(
+            bucket_name, path, clen, reset_stream, fib, always_continue)
+          .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
 
     iobuf downloaded;
@@ -350,8 +334,9 @@ FIXTURE_TEST(test_download_segment, remote_fixture) { // NOLINT
                 [&downloaded] { return downloaded.size_bytes(); });
           });
     };
-    auto dnl_res
-      = remote.local().download_segment(bucket, path, try_consume, fib).get();
+    auto dnl_res = remote.local()
+                     .download_segment(bucket_name, path, try_consume, fib)
+                     .get();
 
     BOOST_REQUIRE(dnl_res == download_result::success);
     iobuf_parser p(std::move(downloaded));
@@ -362,7 +347,6 @@ FIXTURE_TEST(test_download_segment, remote_fixture) { // NOLINT
 }
 
 FIXTURE_TEST(test_download_segment_timeout, remote_fixture) { // NOLINT
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -373,8 +357,9 @@ FIXTURE_TEST(test_download_segment_timeout, remote_fixture) { // NOLINT
     };
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
-    auto dnl_res
-      = remote.local().download_segment(bucket, path, try_consume, fib).get();
+    auto dnl_res = remote.local()
+                     .download_segment(bucket_name, path, try_consume, fib)
+                     .get();
     BOOST_REQUIRE(dnl_res == download_result::timedout);
     BOOST_REQUIRE(subscription.available());
     BOOST_REQUIRE(
@@ -382,7 +367,6 @@ FIXTURE_TEST(test_download_segment_timeout, remote_fixture) { // NOLINT
 }
 
 FIXTURE_TEST(test_download_segment_range, remote_fixture) {
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto subscription = remote.local().subscribe(allow_all);
 
     auto path = generate_remote_segment_path(
@@ -398,7 +382,7 @@ FIXTURE_TEST(test_download_segment_range, remote_fixture) {
     auto upl_res
       = remote.local()
           .upload_segment(
-            bucket,
+            bucket_name,
             path,
             manifest_payload.size(),
             []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -415,7 +399,7 @@ FIXTURE_TEST(test_download_segment_range, remote_fixture) {
     iobuf downloaded;
     auto dnl_res = remote.local()
                      .download_segment(
-                       bucket,
+                       bucket_name,
                        path,
                        [&downloaded](uint64_t len, ss::input_stream<char> is) {
                            downloaded.clear();
@@ -452,7 +436,6 @@ FIXTURE_TEST(test_download_segment_range, remote_fixture) {
 
 FIXTURE_TEST(test_segment_exists, remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -468,7 +451,7 @@ FIXTURE_TEST(test_segment_exists, remote_fixture) { // NOLINT
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     auto expected_notfound
-      = remote.local().segment_exists(bucket, path, fib).get();
+      = remote.local().segment_exists(bucket_name, path, fib).get();
     BOOST_REQUIRE(expected_notfound == download_result::notfound);
     auto upl_res = remote.local()
                      .upload_segment(
@@ -477,26 +460,24 @@ FIXTURE_TEST(test_segment_exists, remote_fixture) { // NOLINT
     BOOST_REQUIRE(upl_res == upload_result::success);
 
     auto expected_success
-      = remote.local().segment_exists(bucket, path, fib).get();
+      = remote.local().segment_exists(bucket_name, path, fib).get();
 
     BOOST_REQUIRE(expected_success == download_result::success);
 }
 
 FIXTURE_TEST(test_segment_exists_timeout, remote_fixture) { // NOLINT
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
     auto expect_timeout
-      = remote.local().segment_exists(bucket, path, fib).get();
+      = remote.local().segment_exists(bucket_name, path, fib).get();
     BOOST_REQUIRE(expect_timeout == download_result::timedout);
 }
 
 FIXTURE_TEST(test_segment_delete, remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto name = segment_name("0-1-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{1});
@@ -510,10 +491,11 @@ FIXTURE_TEST(test_segment_delete, remote_fixture) { // NOLINT
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    auto upl_res = remote.local()
-                     .upload_segment(
-                       bucket, path, clen, reset_stream, fib, always_continue)
-                     .get();
+    auto upl_res
+      = remote.local()
+          .upload_segment(
+            bucket_name, path, clen, reset_stream, fib, always_continue)
+          .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
 
     // NOTE: we have to upload something as segment in order for the
@@ -521,14 +503,16 @@ FIXTURE_TEST(test_segment_delete, remote_fixture) { // NOLINT
 
     auto subscription = remote.local().subscribe(allow_all);
 
-    auto expected_success
-      = remote.local()
-          .delete_object(bucket, cloud_storage_clients::object_key(path), fib)
-          .get();
+    auto expected_success = remote.local()
+                              .delete_object(
+                                bucket_name,
+                                cloud_storage_clients::object_key(path),
+                                fib)
+                              .get();
     BOOST_REQUIRE(expected_success == upload_result::success);
 
     auto expected_notfound
-      = remote.local().segment_exists(bucket, path, fib).get();
+      = remote.local().segment_exists(bucket_name, path, fib).get();
     BOOST_REQUIRE(expected_notfound == download_result::notfound);
     BOOST_REQUIRE(subscription.available());
     BOOST_REQUIRE(subscription.get().type == api_activity_type::segment_delete);
@@ -556,8 +540,6 @@ FIXTURE_TEST(test_concat_segment_upload, remote_fixture) {
         start_offset = segment.offsets().get_dirty_offset() + model::offset{1};
     }
 
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
-
     auto path = generate_remote_segment_path(
       test_ntp,
       manifest_revision,
@@ -584,14 +566,13 @@ FIXTURE_TEST(test_concat_segment_upload, remote_fixture) {
     auto upl_res
       = remote.local()
           .upload_segment(
-            bucket, path, upload_size, reset_stream, fib, always_continue)
+            bucket_name, path, upload_size, reset_stream, fib, always_continue)
           .get();
     BOOST_REQUIRE_EQUAL(upl_res, upload_result::success);
 }
 
 FIXTURE_TEST(test_list_bucket, remote_fixture) {
     set_expectations_and_listen({});
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 10s, 20ms);
 
     int first = 2;
@@ -606,7 +587,7 @@ FIXTURE_TEST(test_list_bucket, remote_fixture) {
                   = remote.local()
                       .upload_object(
                         {.transfer_details
-                         = {.bucket = bucket, .key = path, .parent_rtc = fib},
+                         = {.bucket = bucket_name, .key = path, .parent_rtc = fib},
                          .payload = iobuf{}})
                       .get();
                 BOOST_REQUIRE_EQUAL(
@@ -615,30 +596,36 @@ FIXTURE_TEST(test_list_bucket, remote_fixture) {
         }
     }
     {
-        auto result = remote.local().list_objects(bucket, fib).get();
+        auto result = remote.local().list_objects(bucket_name, fib).get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE_EQUAL(
           result.value().contents.size(), first * second * third);
         BOOST_REQUIRE(result.value().common_prefixes.empty());
     }
     {
-        auto result
-          = remote.local().list_objects(bucket, fib, std::nullopt, '/').get();
+        auto result = remote.local()
+                        .list_objects(
+                          bucket_name,
+                          fib,
+                          cloud_storage_clients::object_key{url_base()},
+                          '/')
+                        .get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE(result.value().contents.empty());
         BOOST_REQUIRE_EQUAL(result.value().common_prefixes.size(), first);
     }
     {
-        cloud_storage_clients::object_key prefix("1/");
-        auto result = remote.local().list_objects(bucket, fib, prefix).get();
+        cloud_storage_clients::object_key prefix{url_base() + "1/"};
+        auto result
+          = remote.local().list_objects(bucket_name, fib, prefix).get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE_EQUAL(result.value().contents.size(), second * third);
         BOOST_REQUIRE(result.value().common_prefixes.empty());
     }
     {
-        cloud_storage_clients::object_key prefix("1/");
+        cloud_storage_clients::object_key prefix{url_base() + "1/"};
         auto result
-          = remote.local().list_objects(bucket, fib, prefix, '/').get();
+          = remote.local().list_objects(bucket_name, fib, prefix, '/').get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE(result.value().contents.empty());
         BOOST_REQUIRE_EQUAL(result.value().common_prefixes.size(), second);
@@ -647,19 +634,19 @@ FIXTURE_TEST(test_list_bucket, remote_fixture) {
 
 FIXTURE_TEST(test_list_bucket_with_max_keys, remote_fixture) {
     set_expectations_and_listen({});
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 10s, 20ms);
 
     const auto s3_imposter_max_keys = s3_imposter_fixture::default_max_keys;
     const auto size = s3_imposter_max_keys + 50;
     for (int i = 0; i < size; i++) {
         cloud_storage_clients::object_key path{fmt::format("{}", i)};
-        auto result = remote.local()
-                        .upload_object(
-                          {.transfer_details
-                           = {.bucket = bucket, .key = path, .parent_rtc = fib},
-                           .payload = iobuf{}})
-                        .get();
+        auto result
+          = remote.local()
+              .upload_object(
+                {.transfer_details
+                 = {.bucket = bucket_name, .key = path, .parent_rtc = fib},
+                 .payload = iobuf{}})
+              .get();
         BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
     }
 
@@ -668,16 +655,21 @@ FIXTURE_TEST(test_list_bucket_with_max_keys, remote_fixture) {
         // results. Here, we know that that size > s3_imposter_max_keys, and the
         // result will end up truncated.
         auto max_keys = s3_imposter_max_keys;
-        auto result
-          = remote.local()
-              .list_objects(
-                bucket, fib, std::nullopt, std::nullopt, std::nullopt, max_keys)
-              .get();
+        auto result = remote.local()
+                        .list_objects(
+                          bucket_name,
+                          fib,
+                          std::nullopt,
+                          std::nullopt,
+                          std::nullopt,
+                          max_keys)
+                        .get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE(result.value().is_truncated);
-        // This continuation token is /54 because objects are sorted
+        // This continuation token is 54 because objects are sorted
         // lexicographically.
-        BOOST_REQUIRE_EQUAL(result.value().next_continuation_token, "/54");
+        BOOST_REQUIRE_EQUAL(
+          result.value().next_continuation_token, "/" + url_base() + "54");
         BOOST_REQUIRE_EQUAL(
           result.value().contents.size(), s3_imposter_max_keys);
         BOOST_REQUIRE(result.value().common_prefixes.empty());
@@ -688,7 +680,7 @@ FIXTURE_TEST(test_list_bucket_with_max_keys, remote_fixture) {
         // this request is not truncated.
         auto next_result = remote.local()
                              .list_objects(
-                               bucket,
+                               bucket_name,
                                fib,
                                std::nullopt,
                                std::nullopt,
@@ -708,11 +700,15 @@ FIXTURE_TEST(test_list_bucket_with_max_keys, remote_fixture) {
         // be read in a loop, we should expect no truncation in the return
         // value), and the result contents should be full.
         auto max_keys = std::nullopt;
-        auto result
-          = remote.local()
-              .list_objects(
-                bucket, fib, std::nullopt, std::nullopt, std::nullopt, max_keys)
-              .get();
+        auto result = remote.local()
+                        .list_objects(
+                          bucket_name,
+                          fib,
+                          std::nullopt,
+                          std::nullopt,
+                          std::nullopt,
+                          max_keys)
+                        .get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE(!result.value().is_truncated);
         BOOST_REQUIRE_EQUAL(result.value().contents.size(), size);
@@ -720,44 +716,54 @@ FIXTURE_TEST(test_list_bucket_with_max_keys, remote_fixture) {
     }
     {
         auto max_keys = 2;
-        auto result
-          = remote.local()
-              .list_objects(
-                bucket, fib, std::nullopt, std::nullopt, std::nullopt, max_keys)
-              .get();
+        auto result = remote.local()
+                        .list_objects(
+                          bucket_name,
+                          fib,
+                          std::nullopt,
+                          std::nullopt,
+                          std::nullopt,
+                          max_keys)
+                        .get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE(result.value().is_truncated);
-        // This continuation token is /10 because objects are sorted
+        // This continuation token is 10 because objects are sorted
         // lexicographically.
-        BOOST_REQUIRE_EQUAL(result.value().next_continuation_token, "/10");
+        BOOST_REQUIRE_EQUAL(
+          result.value().next_continuation_token, "/" + url_base() + "10");
         const auto& contents = result.value().contents;
         BOOST_REQUIRE_EQUAL(contents.size(), max_keys);
-        BOOST_REQUIRE_EQUAL(contents[0].key, "0");
-        BOOST_REQUIRE_EQUAL(contents[1].key, "1");
+        BOOST_REQUIRE_EQUAL(contents[0].key, url_base() + "0");
+        BOOST_REQUIRE_EQUAL(contents[1].key, url_base() + "1");
         BOOST_REQUIRE(result.value().common_prefixes.empty());
     }
     {
         // This will also be truncated, since size > s3_imposter_max_keys.
         auto max_keys = size;
-        auto result
-          = remote.local()
-              .list_objects(
-                bucket, fib, std::nullopt, std::nullopt, std::nullopt, max_keys)
-              .get();
+        auto result = remote.local()
+                        .list_objects(
+                          bucket_name,
+                          fib,
+                          std::nullopt,
+                          std::nullopt,
+                          std::nullopt,
+                          max_keys)
+                        .get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE(result.value().is_truncated);
         BOOST_REQUIRE_EQUAL(
           result.value().contents.size(), s3_imposter_max_keys);
-        // This continuation token is /54 because objects are sorted
+        // This continuation token is 54 because objects are sorted
         // lexicographically.
-        BOOST_REQUIRE_EQUAL(result.value().next_continuation_token, "/54");
+        BOOST_REQUIRE_EQUAL(
+          result.value().next_continuation_token, "/" + url_base() + "54");
         BOOST_REQUIRE(result.value().common_prefixes.empty());
 
         // Reissue another request with continuation-token. This should capture
         // the rest of the object keys, we expect a non-truncated result.
         auto next_result = remote.local()
                              .list_objects(
-                               bucket,
+                               bucket_name,
                                fib,
                                std::nullopt,
                                std::nullopt,
@@ -775,7 +781,6 @@ FIXTURE_TEST(test_list_bucket_with_max_keys, remote_fixture) {
 
 FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
     set_expectations_and_listen({});
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
     for (const char first : {'x', 'y'}) {
         for (const char second : {'a', 'b'}) {
@@ -785,7 +790,7 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
               = remote.local()
                   .upload_object(
                     {.transfer_details
-                     = {.bucket = bucket, .key = path, .parent_rtc = fib},
+                     = {.bucket = bucket_name, .key = path, .parent_rtc = fib},
                      .payload = iobuf{}})
                   .get();
             BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
@@ -794,61 +799,66 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
 
     auto result = remote.local()
                     .list_objects(
-                      bucket, fib, cloud_storage_clients::object_key{"x/"})
+                      bucket_name,
+                      fib,
+                      cloud_storage_clients::object_key{url_base() + "x/"})
                     .get();
     BOOST_REQUIRE(result.has_value());
     auto items = result.value().contents;
     BOOST_REQUIRE_EQUAL(items.size(), 2);
-    BOOST_REQUIRE_EQUAL(items[0].key, "x/a");
-    BOOST_REQUIRE_EQUAL(items[1].key, "x/b");
+    BOOST_REQUIRE_EQUAL(items[0].key, url_base() + "x/a");
+    BOOST_REQUIRE_EQUAL(items[1].key, url_base() + "x/b");
     auto request = get_requests().back();
     BOOST_REQUIRE_EQUAL(request.method, "GET");
     BOOST_REQUIRE_EQUAL(request.q_list_type, "2");
-    BOOST_REQUIRE_EQUAL(request.q_prefix, "x/");
+    BOOST_REQUIRE_EQUAL(request.q_prefix, url_base() + "x/");
 }
 
 FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
     set_expectations_and_listen({});
     retry_chain_node fib(never_abort, 100ms, 20ms);
-    cloud_storage_clients::bucket_name bucket{"test"};
     cloud_storage_clients::object_key path{"b"};
-    auto upl_result = remote.local()
-                        .upload_object(
-                          {.transfer_details
-                           = {.bucket = bucket, .key = path, .parent_rtc = fib},
-                           .payload = iobuf{}})
-                        .get();
+    auto upl_result
+      = remote.local()
+          .upload_object(
+            {.transfer_details
+             = {.bucket = bucket_name, .key = path, .parent_rtc = fib},
+             .payload = iobuf{}})
+          .get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, upl_result);
 
+    auto path_with_prefix = ss::sstring{url_base() + "b"};
     auto result = remote.local()
                     .list_objects(
-                      bucket,
+                      bucket_name,
                       fib,
+                      cloud_storage_clients::object_key{url_base()},
                       std::nullopt,
-                      std::nullopt,
-                      [](const auto& item) { return item.key == "b"; })
+                      [path_with_prefix](const auto& item) {
+                          return item.key == path_with_prefix;
+                      })
                     .get();
     BOOST_REQUIRE(result.has_value());
     auto items = result.value().contents;
     BOOST_REQUIRE_EQUAL(items.size(), 1);
-    BOOST_REQUIRE_EQUAL(items[0].key, "b");
+    BOOST_REQUIRE_EQUAL(items[0].key, path_with_prefix);
 }
 
 FIXTURE_TEST(test_put_string, remote_fixture) {
     set_expectations_and_listen({});
     auto conf = get_configuration();
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
     auto subscription = remote.local().subscribe(allow_all);
-    auto result = remote.local()
-                    .upload_object(
-                      {.transfer_details
-                       = {.bucket = bucket, .key = path, .parent_rtc = fib},
-                       .payload = make_iobuf_from_string("p")})
-                    .get();
+    auto result
+      = remote.local()
+          .upload_object(
+            {.transfer_details
+             = {.bucket = bucket_name, .key = path, .parent_rtc = fib},
+             .payload = make_iobuf_from_string("p")})
+          .get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
 
     auto request = get_requests()[0];
@@ -862,34 +872,35 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
 FIXTURE_TEST(test_delete_objects, remote_fixture) {
     set_expectations_and_listen({});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     std::vector<cloud_storage_clients::object_key> to_delete{
       cloud_storage_clients::object_key{"a"},
       cloud_storage_clients::object_key{"b"}};
-    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    auto result
+      = remote.local().delete_objects(bucket_name, to_delete, fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
     auto request = get_requests()[0];
     BOOST_REQUIRE_EQUAL(request.method, "POST");
-    BOOST_REQUIRE_EQUAL(request.url, "/?delete");
+    BOOST_REQUIRE_EQUAL(request.url, "/" + url_base() + "?delete");
     BOOST_REQUIRE(request.has_q_delete);
 }
 
 FIXTURE_TEST(test_delete_objects_multiple_batches, remote_fixture) {
     set_expectations_and_listen({});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 500ms, 20ms);
 
-    std::deque<cloud_storage_clients::object_key> to_delete;
+    std::vector<cloud_storage_clients::object_key> to_delete;
     for (auto k :
          boost::irange(remote.local().delete_objects_max_keys() * 2.6)) {
         to_delete.emplace_back(fmt::format("{}", k));
     }
 
-    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    auto result
+      = remote.local().delete_objects(bucket_name, to_delete, fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+
     auto requests = get_requests();
     BOOST_REQUIRE_EQUAL(requests.size(), 3);
 
@@ -897,7 +908,7 @@ FIXTURE_TEST(test_delete_objects_multiple_batches, remote_fixture) {
 
     for (const auto& request : requests) {
         BOOST_REQUIRE_EQUAL(request.method, "POST");
-        BOOST_REQUIRE_EQUAL(request.url, "/?delete");
+        BOOST_REQUIRE_EQUAL(request.url, "/" + url_base() + "?delete");
         BOOST_REQUIRE(request.has_q_delete);
 
         auto request_keys = keys_from_delete_objects_request(request);
@@ -920,9 +931,8 @@ FIXTURE_TEST(test_delete_objects_multiple_batches, remote_fixture) {
 FIXTURE_TEST(
   test_delete_objects_multiple_batches_single_failure, remote_fixture) {
     set_expectations_and_listen({expectation{
-      .url = "/?delete", .body = ss::sstring(plural_delete_error)}});
+      .url = "?delete", .body = ss::sstring(plural_delete_error)}});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 500ms, 20ms);
 
     std::vector<cloud_storage_clients::object_key> to_delete;
@@ -931,7 +941,8 @@ FIXTURE_TEST(
         to_delete.emplace_back(fmt::format("{}", k));
     }
 
-    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    auto result
+      = remote.local().delete_objects(bucket_name, to_delete, fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::failed, result);
     auto requests = get_requests();
     BOOST_REQUIRE_EQUAL(requests.size(), 3);
@@ -940,7 +951,7 @@ FIXTURE_TEST(
 
     for (const auto& request : requests) {
         BOOST_REQUIRE_EQUAL(request.method, "POST");
-        BOOST_REQUIRE_EQUAL(request.url, "/?delete");
+        BOOST_REQUIRE_EQUAL(request.url, "/" + url_base() + "?delete");
         BOOST_REQUIRE(request.has_q_delete);
 
         auto request_keys = keys_from_delete_objects_request(request);
@@ -964,27 +975,26 @@ FIXTURE_TEST(test_delete_objects_failure_handling, remote_fixture) {
     // Test that the failure to delete one key via the plural form
     // fails the entire operation.
     set_expectations_and_listen({expectation{
-      .url = "/?delete", .body = ss::sstring(plural_delete_error)}});
+      .url = "?delete", .body = ss::sstring(plural_delete_error)}});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     std::vector<cloud_storage_clients::object_key> to_delete{
       cloud_storage_clients::object_key{"0"},
       cloud_storage_clients::object_key{"1"}};
-    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    auto result
+      = remote.local().delete_objects(bucket_name, to_delete, fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::failed, result);
 
     auto request = get_requests()[0];
     BOOST_REQUIRE_EQUAL(request.method, "POST");
-    BOOST_REQUIRE_EQUAL(request.url, "/?delete");
+    BOOST_REQUIRE_EQUAL(request.url, "/" + url_base() + "?delete");
     BOOST_REQUIRE(request.has_q_delete);
 }
 
 FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
     set_expectations_and_listen({});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 60s, 20ms);
 
     BOOST_REQUIRE_EQUAL(
@@ -992,7 +1002,7 @@ FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
       remote.local()
         .upload_object(
           {.transfer_details
-           = {.bucket = bucket, .key = cloud_storage_clients::object_key{"p"}, .parent_rtc = fib},
+           = {.bucket = bucket_name, .key = cloud_storage_clients::object_key{"p"}, .parent_rtc = fib},
            .payload = make_iobuf_from_string("p")})
         .get());
     BOOST_REQUIRE_EQUAL(
@@ -1000,20 +1010,22 @@ FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
       remote.local()
         .upload_object(
           {.transfer_details
-           = {.bucket = bucket, .key = cloud_storage_clients::object_key{"q"}, .parent_rtc = fib},
+           = {.bucket = bucket_name, .key = cloud_storage_clients::object_key{"q"}, .parent_rtc = fib},
            .payload = make_iobuf_from_string("q")})
         .get());
 
     std::vector<cloud_storage_clients::object_key> to_delete{
       cloud_storage_clients::object_key{"p"},
       cloud_storage_clients::object_key{"q"}};
-    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    auto result
+      = remote.local().delete_objects(bucket_name, to_delete, fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
     auto first_delete = get_requests()[2];
 
-    std::unordered_set<ss::sstring> expected_urls{"/p", "/q"};
+    std::unordered_set<ss::sstring> expected_urls{
+      "/" + url_base() + "p", "/" + url_base() + "q"};
     BOOST_REQUIRE_EQUAL(first_delete.method, "DELETE");
     BOOST_REQUIRE(expected_urls.contains(first_delete.url));
 
@@ -1027,7 +1039,6 @@ FIXTURE_TEST(
   test_delete_objects_on_unknown_backend_result_reduction, gcs_remote_fixture) {
     set_expectations_and_listen({});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 5s, 20ms);
 
     BOOST_REQUIRE_EQUAL(
@@ -1035,7 +1046,7 @@ FIXTURE_TEST(
       remote.local()
         .upload_object(
           {.transfer_details
-           = {.bucket = bucket, .key = cloud_storage_clients::object_key{"p"}, .parent_rtc = fib},
+           = {.bucket = bucket_name, .key = cloud_storage_clients::object_key{"p"}, .parent_rtc = fib},
            .payload = make_iobuf_from_string("p")})
         .get());
 
@@ -1045,13 +1056,22 @@ FIXTURE_TEST(
       // will time out
       cloud_storage_clients::object_key{"failme"}};
 
-    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
-    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::timedout, result);
+    auto result
+      = remote.local().delete_objects(bucket_name, to_delete, fib).get();
+    if (conf.url_style == cloud_storage_clients::s3_url_style::virtual_host) {
+        // Due to virtual-host style addressing, this will timeout as DNS tries
+        // to resolve the request with the provided bucket name.
+        BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::timedout, result);
+    } else {
+        // But, if we have path style addressing, the object won't be found, a
+        // warning will be issued, and the request will return success instead.
+        BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+    }
 }
 
 FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     set_expectations_and_listen({expectation{
-      .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)}});
+      .url = manifest_url, .body = ss::sstring(manifest_payload)}});
     auto conf = get_configuration();
     retry_chain_node root_rtc(never_abort, 100ms, 20ms);
     remote::event_filter flt;
@@ -1065,10 +1085,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     retry_chain_node child_rtc(&root_rtc);
     auto res = remote.local()
                  .download_manifest(
-                   cloud_storage_clients::bucket_name("bucket"),
-                   json_manifest_format_path,
-                   actual,
-                   child_rtc)
+                   bucket_name, json_manifest_format_path, actual, child_rtc)
                  .get();
     BOOST_REQUIRE(res == download_result::success);
     BOOST_REQUIRE(!subscription.available());
@@ -1078,10 +1095,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     retry_chain_node other_rtc(never_abort, 100ms, 20ms);
     res = remote.local()
             .download_manifest(
-              cloud_storage_clients::bucket_name("bucket"),
-              json_manifest_format_path,
-              actual,
-              other_rtc)
+              bucket_name, json_manifest_format_path, actual, other_rtc)
             .get();
     BOOST_REQUIRE(res == download_result::success);
     BOOST_REQUIRE(subscription.available());
@@ -1092,10 +1106,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     subscription = remote.local().subscribe(flt);
     res = remote.local()
             .download_manifest(
-              cloud_storage_clients::bucket_name("bucket"),
-              json_manifest_format_path,
-              actual,
-              other_rtc)
+              bucket_name, json_manifest_format_path, actual, other_rtc)
             .get();
     BOOST_REQUIRE(res == download_result::success);
     BOOST_REQUIRE(subscription.available());
@@ -1108,10 +1119,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     subscription = remote.local().subscribe(flt);
     res = remote.local()
             .download_manifest(
-              cloud_storage_clients::bucket_name("bucket"),
-              json_manifest_format_path,
-              actual,
-              child_rtc)
+              bucket_name, json_manifest_format_path, actual, child_rtc)
             .get();
     BOOST_REQUIRE(res == download_result::success);
     BOOST_REQUIRE(subscription.available());
@@ -1121,7 +1129,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
 
 FIXTURE_TEST(test_filter_by_type, remote_fixture) { // NOLINT
     set_expectations_and_listen({expectation{
-      .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)}});
+      .url = manifest_url, .body = ss::sstring(manifest_payload)}});
     retry_chain_node root_rtc(never_abort, 100ms, 20ms);
     partition_manifest actual(manifest_ntp, manifest_revision);
 
@@ -1132,10 +1140,7 @@ FIXTURE_TEST(test_filter_by_type, remote_fixture) { // NOLINT
 
     auto dl_res = remote.local()
                     .download_manifest(
-                      cloud_storage_clients::bucket_name("bucket"),
-                      json_manifest_format_path,
-                      actual,
-                      root_rtc)
+                      bucket_name, json_manifest_format_path, actual, root_rtc)
                     .get();
 
     BOOST_REQUIRE(dl_res == download_result::success);
@@ -1144,12 +1149,8 @@ FIXTURE_TEST(test_filter_by_type, remote_fixture) { // NOLINT
     BOOST_REQUIRE(
       subscription2.get().type == api_activity_type::manifest_download);
 
-    auto upl_res = remote.local()
-                     .upload_manifest(
-                       cloud_storage_clients::bucket_name("bucket"),
-                       actual,
-                       root_rtc)
-                     .get();
+    auto upl_res
+      = remote.local().upload_manifest(bucket_name, actual, root_rtc).get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     BOOST_REQUIRE(subscription1.available());
     BOOST_REQUIRE(
@@ -1158,7 +1159,7 @@ FIXTURE_TEST(test_filter_by_type, remote_fixture) { // NOLINT
 
 FIXTURE_TEST(test_filter_lifetime_1, remote_fixture) { // NOLINT
     set_expectations_and_listen({expectation{
-      .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)}});
+      .url = manifest_url, .body = ss::sstring(manifest_payload)}});
     retry_chain_node root_rtc(never_abort, 100ms, 20ms);
     partition_manifest actual(manifest_ntp, manifest_revision);
 
@@ -1168,10 +1169,7 @@ FIXTURE_TEST(test_filter_lifetime_1, remote_fixture) { // NOLINT
     retry_chain_node child_rtc(&root_rtc);
     auto res = remote.local()
                  .download_manifest(
-                   cloud_storage_clients::bucket_name("bucket"),
-                   json_manifest_format_path,
-                   actual,
-                   child_rtc)
+                   bucket_name, json_manifest_format_path, actual, child_rtc)
                  .get();
     flt.reset();
     // Notification should be received despite the fact that the filter object
@@ -1211,7 +1209,6 @@ using throttle_remote_fixture = remote_fixture_base<throttle_low_limit>;
 FIXTURE_TEST(
   test_download_segment_throttle, throttle_remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -1225,10 +1222,11 @@ FIXTURE_TEST(
           make_iobuf_input_stream(std::move(out)));
     };
     retry_chain_node fib(never_abort, 100ms, 20ms);
-    auto upl_res = remote.local()
-                     .upload_segment(
-                       bucket, path, clen, reset_stream, fib, always_continue)
-                     .get();
+    auto upl_res
+      = remote.local()
+          .upload_segment(
+            bucket_name, path, clen, reset_stream, fib, always_continue)
+          .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
 
     auto download_one = [](cloud_storage::remote& api, auto path, auto bucket) {
@@ -1255,13 +1253,13 @@ FIXTURE_TEST(
         // segment and manifest has the same synthetic payload in this test
         BOOST_REQUIRE(actual == manifest_payload);
     };
-    download_one(remote.local(), path, bucket);
+    download_one(remote.local(), path, bucket_name);
     auto s1 = remote.local()
                 .materialized()
                 .get_read_path_probe()
                 .get_downloads_throttled_sum();
     BOOST_REQUIRE(s1 == 0);
-    download_one(remote.local(), path, bucket);
+    download_one(remote.local(), path, bucket_name);
     auto s2 = remote.local()
                 .materialized()
                 .get_read_path_probe()
@@ -1291,7 +1289,6 @@ using no_throttle_remote_fixture = remote_fixture_base<no_throttle>;
 FIXTURE_TEST(
   test_download_segment_no_throttle, no_throttle_remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -1307,10 +1304,11 @@ FIXTURE_TEST(
     static const auto timeout = 1s;
     static const auto backoff = 10ms;
     retry_chain_node fib(never_abort, timeout, backoff);
-    auto upl_res = remote.local()
-                     .upload_segment(
-                       bucket, path, clen, reset_stream, fib, always_continue)
-                     .get();
+    auto upl_res
+      = remote.local()
+          .upload_segment(
+            bucket_name, path, clen, reset_stream, fib, always_continue)
+          .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
 
     auto download_one =
@@ -1337,7 +1335,7 @@ FIXTURE_TEST(
           BOOST_REQUIRE(actual == manifest_payload);
       };
     for (int i = 0; i < 100; i++) {
-        download_one(remote.local(), path, bucket);
+        download_one(remote.local(), path, bucket_name);
         auto times_throttled = remote.local()
                                  .materialized()
                                  .get_read_path_probe()
@@ -1348,15 +1346,14 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(test_notification_retry_meta, remote_fixture) {
     set_expectations_and_listen(
-      {expectation{.url = "/" + manifest_serde_url, .slowdown = true}});
+      {expectation{.url = manifest_serde_url, .slowdown = true}});
 
     retry_chain_node fib(never_abort, 500ms, 10ms);
     partition_manifest actual(manifest_ntp, manifest_revision);
-    const auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto filter = remote::event_filter{};
 
     auto fut = remote.local().try_download_partition_manifest(
-      bucket, actual, fib);
+      bucket_name, actual, fib);
 
     RPTEST_REQUIRE_EVENTUALLY(2s, [&] {
         auto sub = remote.local().subscribe(filter);
@@ -1373,7 +1370,6 @@ FIXTURE_TEST(test_get_object, remote_fixture) {
     set_expectations_and_listen({});
     auto conf = get_configuration();
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 1s, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
@@ -1383,26 +1379,27 @@ FIXTURE_TEST(test_get_object, remote_fixture) {
       remote.local()
         .upload_object({
           .transfer_details
-          = {.bucket = bucket, .key = path, .parent_rtc = fib},
+          = {.bucket = bucket_name, .key = path, .parent_rtc = fib},
           .payload = make_iobuf_from_string("p"),
         })
         .get());
 
     auto subscription = remote.local().subscribe(allow_all);
     iobuf buf;
-    auto dl_res = remote.local()
-                    .download_object(
-                      {.transfer_details
-                       = {.bucket = bucket, .key = path, .parent_rtc = fib},
-                       .payload = buf})
-                    .get();
+    auto dl_res
+      = remote.local()
+          .download_object(
+            {.transfer_details
+             = {.bucket = bucket_name, .key = path, .parent_rtc = fib},
+             .payload = buf})
+          .get();
 
     const auto requests = get_requests();
     BOOST_REQUIRE_EQUAL(requests.size(), 2);
 
     const auto last_request = requests.back();
     BOOST_REQUIRE_EQUAL(last_request.method, "GET");
-    BOOST_REQUIRE_EQUAL(last_request.url, "/p");
+    BOOST_REQUIRE_EQUAL(last_request.url, "/" + url_base() + "p");
 
     BOOST_REQUIRE(dl_res == download_result::success);
     BOOST_REQUIRE_EQUAL(iobuf_to_bytes(buf), "p");

@@ -139,16 +139,19 @@ static model::record_batch_header read_single_batch_from_remote_partition(
   model::offset target,
   bool expect_exists = true) {
     auto conf = fixture.get_configuration();
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     storage::log_reader_config reader_config(
       target, target, ss::default_priority_class());
 
-    auto manifest = hydrate_manifest(fixture.api.local(), bucket);
+    auto manifest = hydrate_manifest(fixture.api.local(), fixture.bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      fixture.api, fixture.cache, manifest, bucket);
+      fixture.api, fixture.cache, manifest, fixture.bucket_name);
     auto partition = ss::make_shared<remote_partition>(
-      manifest_view, fixture.api.local(), fixture.cache.local(), bucket, probe);
+      manifest_view,
+      fixture.api.local(),
+      fixture.cache.local(),
+      fixture.bucket_name,
+      probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     auto reader = partition->make_reader(reader_config).get().reader;
@@ -207,13 +210,12 @@ FIXTURE_TEST(
   test_remote_partition_cache_size_estimate_no_partitions,
   cloud_storage_fixture) {
     auto segments = setup_s3_imposter(*this, 0, 0);
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
-    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket);
+      api, cache, manifest, bucket_name);
     auto partition = ss::make_shared<remote_partition>(
-      manifest_view, api.local(), cache.local(), bucket, probe);
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
     partition->start().get();
 
@@ -262,13 +264,12 @@ test_remote_partition_cache_size_estimate_materialized_segments_args(
   cloud_storage::segment_name_format sname_format) {
     auto segments = setup_s3_imposter(
       context, 3, 10, manifest_inconsistency::none, sname_format);
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
-    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto manifest = hydrate_manifest(api.local(), context.bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket);
+      api, cache, manifest, context.bucket_name);
     auto partition = ss::make_shared<remote_partition>(
-      manifest_view, api.local(), cache.local(), bucket, probe);
+      manifest_view, api.local(), cache.local(), context.bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     // synchronize with remote_partition::get_cache_usage
@@ -415,8 +416,7 @@ FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
       body.find(to_replace), to_replace.size(), "\"committed_offset\":6");
     // overwrite uploaded manifest with a json version
     expectations.back() = {
-      .url = "/"
-             + manifest.get_legacy_manifest_format_and_path().second().string(),
+      .url = manifest.get_legacy_manifest_format_and_path().second().string(),
       .body = body};
     set_expectations_and_listen(expectations);
     BOOST_REQUIRE(check_scan(*this, kafka::offset(0), 9));
@@ -1019,11 +1019,10 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
     auto conf = get_configuration();
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
-    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
 
     // starting max_bytes
     constexpr size_t max_bytes_limit = 4_KiB;
@@ -1033,9 +1032,9 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     {
         partition_probe probe(manifest.get_ntp());
         auto manifest_view = ss::make_shared<async_manifest_view>(
-          api, cache, manifest, bucket);
+          api, cache, manifest, bucket_name);
         auto partition = ss::make_shared<remote_partition>(
-          manifest_view, api.local(), cache.local(), bucket, probe);
+          manifest_view, api.local(), cache.local(), bucket_name, probe);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();
@@ -1057,9 +1056,9 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     {
         partition_probe probe(manifest.get_ntp());
         auto manifest_view = ss::make_shared<async_manifest_view>(
-          api, cache, manifest, bucket);
+          api, cache, manifest, bucket_name);
         auto partition = ss::make_shared<remote_partition>(
-          manifest_view, api.local(), cache.local(), bucket, probe);
+          manifest_view, api.local(), cache.local(), bucket_name, probe);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();
@@ -1121,15 +1120,13 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
     // create a reader that consumes segments one by one
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
-
-    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket);
+      api, cache, manifest, bucket_name);
     auto partition = ss::make_shared<remote_partition>(
-      manifest_view, api.local(), cache.local(), bucket, probe);
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -1154,7 +1151,8 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
         BOOST_REQUIRE(headers_read.size() == 1);
         BOOST_REQUIRE(headers_read.front().base_offset == model::offset(0));
 
-        remove_segment_from_s3(manifest, model::offset(0), api.local(), bucket);
+        remove_segment_from_s3(
+          manifest, model::offset(0), api.local(), bucket_name);
         BOOST_REQUIRE(manifest.advance_start_offset(model::offset(400)));
         manifest.truncate();
         manifest.advance_insync_offset(model::offset(10000));
@@ -1225,22 +1223,21 @@ FIXTURE_TEST(
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
     // create a reader that consumes segments one by one
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
-
-    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket);
+      api, cache, manifest, bucket_name);
     auto partition = ss::make_shared<remote_partition>(
-      manifest_view, api.local(), cache.local(), bucket, probe);
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
 
     model::offset cutoff_offset(500);
 
-    remove_segment_from_s3(manifest, model::offset(0), api.local(), bucket);
+    remove_segment_from_s3(
+      manifest, model::offset(0), api.local(), bucket_name);
     BOOST_REQUIRE(manifest.advance_start_offset(cutoff_offset));
     manifest.truncate();
     manifest.advance_insync_offset(model::offset(10000));
@@ -1315,15 +1312,13 @@ FIXTURE_TEST(
     auto compacted_segments = make_segments(compacted_layout);
 
     // create a reader that consumes segments one by one
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
-
-    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket);
+      api, cache, manifest, bucket_name);
     auto partition = ss::make_shared<remote_partition>(
-      manifest_view, api.local(), cache.local(), bucket, probe);
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -1383,7 +1378,7 @@ FIXTURE_TEST(
               manifest,
               model::offset(i * batches_per_segment),
               api.local(),
-              bucket);
+              bucket_name);
         }
         reupload_compacted_segments(*this, manifest, compacted_segments);
         manifest.advance_insync_offset(model::offset(10000));
@@ -1525,13 +1520,12 @@ FIXTURE_TEST(test_remote_partition_abort_eos_race, cloud_storage_fixture) {
     print_segments(segments);
 
     ss::lowres_clock::update();
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket);
+      api, cache, manifest, bucket_name);
     auto partition = ss::make_shared<remote_partition>(
-      manifest_view, api.local(), cache.local(), bucket, probe);
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
     partition->start().get();
 
@@ -1994,7 +1988,6 @@ std::vector<model::record_batch_header> scan_remote_partition_with_replacements(
     vlog(test_log.debug, "offset range: {}-{}", base, max);
     ss::lowres_clock::update();
     auto conf = imposter.get_configuration();
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     if (maybe_max_segments) {
         config::shard_local_cfg()
           .cloud_storage_max_materialized_segments_per_shard.set_value(
@@ -2017,17 +2010,18 @@ std::vector<model::record_batch_header> scan_remote_partition_with_replacements(
     // 5. Make sure that the reuploaded segment is hydrated, not the replaced
     // one.
 
-    auto manifest = hydrate_manifest(imposter.api.local(), bucket);
+    auto manifest = hydrate_manifest(
+      imposter.api.local(), imposter.bucket_name);
     partition_probe probe(manifest.get_ntp());
 
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, bucket);
+      imposter.api, imposter.cache, manifest, imposter.bucket_name);
 
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
       imposter.api.local(),
       imposter.cache.local(),
-      bucket,
+      imposter.bucket_name,
       probe);
 
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -2287,7 +2281,7 @@ FIXTURE_TEST(test_out_of_range_query, cloud_storage_fixture) {
       manifest.get_manifest_path(),
       ostr.str());
 
-    auto manifest_url = "/" + manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path()().string();
     remove_expectations({manifest_url});
     add_expectations({
       cloud_storage_fixture::expectation{
@@ -2363,7 +2357,7 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
         auto s_data = spm.serialize().get();
         auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
         add_expectations({cloud_storage_fixture::expectation{
-          .url = "/" + spm.get_manifest_path()().string(),
+          .url = spm.get_manifest_path()().string(),
           .body = ss::sstring(buf.begin(), buf.end()),
         }});
     }
@@ -2391,7 +2385,7 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
       manifest.get_manifest_path(),
       ostr.str());
 
-    auto manifest_url = "/" + manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path()().string();
     remove_expectations({manifest_url});
     add_expectations({
       cloud_storage_fixture::expectation{

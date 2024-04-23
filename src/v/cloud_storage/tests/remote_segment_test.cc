@@ -60,8 +60,6 @@ inline ss::logger test_log("test"); // NOLINT
 
 static ss::abort_source never_abort;
 
-static const cloud_storage_clients::bucket_name bucket("bucket");
-
 static cloud_storage::lazy_abort_source always_continue([]() {
     return std::nullopt;
 });
@@ -100,10 +98,11 @@ FIXTURE_TEST(
       .sname_format = segment_name_format::v2};
     auto path = m.generate_segment_path(meta);
     set_expectations_and_listen({});
-    auto upl_res = api.local()
-                     .upload_segment(
-                       bucket, path, clen, reset_stream, fib, always_continue)
-                     .get();
+    auto upl_res
+      = api.local()
+          .upload_segment(
+            bucket_name, path, clen, reset_stream, fib, always_continue)
+          .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     m.add(meta);
 
@@ -113,7 +112,7 @@ FIXTURE_TEST(
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -158,7 +157,7 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -199,7 +198,7 @@ void upload_index(
       = f.api.local()
           .upload_object({
             .transfer_details
-            = {.bucket = bucket, .key = cloud_storage_clients::object_key{path().native() + ".index"}, .parent_rtc = fib},
+            = {.bucket = cloud_storage_clients::bucket_name{f.bucket_name}, .key = cloud_storage_clients::object_key{path().native() + ".index"}, .parent_rtc = fib},
             .payload = std::move(ixbuf),
           })
           .get();
@@ -230,10 +229,11 @@ FIXTURE_TEST(
 
     upload_index(*this, meta, segment_bytes, path, fib);
 
-    auto upl_res = api.local()
-                     .upload_segment(
-                       bucket, path, clen, reset_stream, fib, always_continue)
-                     .get();
+    auto upl_res
+      = api.local()
+          .upload_segment(
+            bucket_name, path, clen, reset_stream, fib, always_continue)
+          .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     m.add(meta);
 
@@ -245,7 +245,7 @@ FIXTURE_TEST(
     auto segment = ss::make_lw_shared<remote_segment>(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -330,7 +330,12 @@ void test_remote_segment_batch_reader(
     auto reset_stream = make_reset_fn(segment_bytes);
     auto upl_res = fixture.api.local()
                      .upload_segment(
-                       bucket, path, clen, reset_stream, fib, always_continue)
+                       cloud_storage_clients::bucket_name{fixture.bucket_name},
+                       path,
+                       clen,
+                       reset_stream,
+                       fib,
+                       always_continue)
                      .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     m.add(meta);
@@ -348,7 +353,7 @@ void test_remote_segment_batch_reader(
     auto segment = ss::make_lw_shared<remote_segment>(
       fixture.api.local(),
       fixture.cache.local(),
-      bucket,
+      cloud_storage_clients::bucket_name{fixture.bucket_name},
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -447,10 +452,11 @@ FIXTURE_TEST(
     auto path = m.generate_segment_path(meta);
     auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(never_abort, 1000ms, 200ms);
-    auto upl_res = api.local()
-                     .upload_segment(
-                       bucket, path, clen, reset_stream, fib, always_continue)
-                     .get();
+    auto upl_res
+      = api.local()
+          .upload_segment(
+            bucket_name, path, clen, reset_stream, fib, always_continue)
+          .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     m.add(meta);
 
@@ -459,7 +465,7 @@ FIXTURE_TEST(
     auto segment = ss::make_lw_shared<remote_segment>(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -541,7 +547,13 @@ static partition_manifest chunk_read_baseline(
 
     BOOST_REQUIRE(
       f.api.local()
-        .upload_segment(bucket, path, clen, reset_stream, fib, always_continue)
+        .upload_segment(
+          cloud_storage_clients::bucket_name{f.bucket_name},
+          path,
+          clen,
+          reset_stream,
+          fib,
+          always_continue)
         .get()
       == upload_result::success);
     m.add(meta);
@@ -574,7 +586,7 @@ FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -640,7 +652,7 @@ FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -727,7 +739,7 @@ FIXTURE_TEST(test_chunks_initialization, cloud_storage_fixture) {
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -791,7 +803,7 @@ FIXTURE_TEST(test_chunk_hydration, cloud_storage_fixture) {
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -877,7 +889,7 @@ FIXTURE_TEST(test_chunk_future_reader_stats, cloud_storage_fixture) {
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -934,7 +946,7 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
     auto segment = ss::make_lw_shared<remote_segment>(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -1015,7 +1027,7 @@ FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -1173,7 +1185,7 @@ FIXTURE_TEST(test_abort_hydration_timeout, cloud_storage_fixture) {
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -1207,7 +1219,7 @@ FIXTURE_TEST(test_abort_hydration_triggered_externally, cloud_storage_fixture) {
     remote_segment segment(
       api.local(),
       cache.local(),
-      bucket,
+      bucket_name,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,

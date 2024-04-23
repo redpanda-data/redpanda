@@ -80,22 +80,22 @@ const ss::sstring topic_manifest_json = R"JSON({
 const model::topic_namespace tp_ns{model::ns{"kafka"}, model::topic{"test"}};
 
 const s3_imposter_fixture::expectation root_level{
-  .url = "/?list-type=2&delimiter=/",
+  .url = "?list-type=2&delimiter=/",
   .body = top_level_result,
 };
 
 const s3_imposter_fixture::expectation meta_level{
-  .url = "/?list-type=2&prefix=b0000000/",
+  .url = "?list-type=2&prefix=b0000000/",
   .body = valid_manifest_list,
 };
 
 const s3_imposter_fixture::expectation manifest{
-  .url = "/b0000000/meta/kafka/test/topic_manifest.json",
+  .url = "b0000000/meta/kafka/test/topic_manifest.json",
   .body = topic_manifest_json,
 };
 
 const s3_imposter_fixture::expectation recovery_state{
-  .url = "/?list-type=2&prefix=recovery_state",
+  .url = "?list-type=2&prefix=recovery_state",
   .body = recovery_results,
 };
 
@@ -108,7 +108,7 @@ generate_no_manifests_expectations(
     std::vector<s3_imposter_fixture::expectation> expectations;
     for (int i = 0; i < 16; ++i) {
         expectations.emplace_back(s3_imposter_fixture::expectation{
-          .url = fmt::format("/?list-type=2&prefix={}0000000/", hex_chars[i]),
+          .url = fmt::format("?list-type=2&prefix={}0000000/", hex_chars[i]),
           .body = no_manifests,
         });
     }
@@ -119,7 +119,7 @@ generate_no_manifests_expectations(
 }
 
 bool is_manifest_list_request(const http_test_utils::request_info& req) {
-    return req.method == "GET" && req.url.starts_with("/?list-type=2&prefix=")
+    return req.method == "GET" && req.url.contains("?list-type=2&prefix=")
            && req.url.ends_with("0000000/");
 }
 
@@ -227,7 +227,8 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
     wait_for_n_requests(16, equals::yes, is_manifest_list_request);
 
     const auto& list_topics_req = get_requests()[0];
-    BOOST_REQUIRE_EQUAL(list_topics_req.url, "/?list-type=2&prefix=00000000/");
+    BOOST_REQUIRE_EQUAL(
+      list_topics_req.url, "/" + url_base() + "?list-type=2&prefix=00000000/");
 
     // Wait until recovery exits after finding no topics to create
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
@@ -254,7 +255,8 @@ void do_test(fixture& f) {
     f.wait_for_n_requests(17, fixture::equals::yes);
 
     const auto& get_manifest_req = f.get_requests()[16];
-    BOOST_REQUIRE_EQUAL(get_manifest_req.url, manifest.url);
+    BOOST_REQUIRE_EQUAL(
+      get_manifest_req.url, "/" + f.url_base() + manifest.url);
 
     // Wait until recovery exits after finding no topics to create
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
@@ -361,7 +363,7 @@ FIXTURE_TEST(recovery_result_clear_before_start, fixture) {
     // 16 to check each manifest prefix, 1 to download the topic manifest, 1 to
     // check recovery results, 1 to delete.
     const auto& delete_request = get_requests()[18];
-    BOOST_REQUIRE_EQUAL(delete_request.url, "/?delete");
+    BOOST_REQUIRE_EQUAL(delete_request.url, "/" + url_base() + "?delete");
     BOOST_REQUIRE_EQUAL(delete_request.method, "POST");
 }
 

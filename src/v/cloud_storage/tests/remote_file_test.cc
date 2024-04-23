@@ -25,7 +25,6 @@
 
 namespace {
 
-const cloud_storage_clients::bucket_name bucket{"bucket"};
 ss::abort_source never_abort;
 cloud_storage::lazy_abort_source always_continue{[]() { return std::nullopt; }};
 constexpr model::cloud_credentials_source config_file{
@@ -87,7 +86,7 @@ public:
         ss::file f = ss::open_file_dma(file_path.string(), flags).get();
         return remote.local()
           .upload_controller_snapshot(
-            bucket, remote_path, f, retry_node, always_continue)
+            bucket_name, remote_path, f, retry_node, always_continue)
           .get();
     }
 
@@ -121,7 +120,7 @@ FIXTURE_TEST(test_cached_file, remote_file_fixture) {
     remote_file rfile(
       remote.local(),
       sharded_cache.local(),
-      bucket,
+      bucket_name,
       remote_path,
       retry_node,
       ss::sstring("log_prefix"));
@@ -152,7 +151,7 @@ FIXTURE_TEST(test_missing_file, remote_file_fixture) {
     remote_file rfile(
       remote.local(),
       sharded_cache.local(),
-      bucket,
+      bucket_name,
       remote_path,
       retry_node,
       ss::sstring("log_prefix"));

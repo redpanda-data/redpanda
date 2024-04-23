@@ -275,7 +275,7 @@ public:
         listen();
 
         _detector.emplace(
-          cloud_storage_clients::bucket_name{"test_bucket"},
+          cloud_storage_clients::bucket_name{"test-bucket"},
           _stm_manifest.get_ntp(),
           _stm_manifest.get_revision_id(),
           _remote.local(),
