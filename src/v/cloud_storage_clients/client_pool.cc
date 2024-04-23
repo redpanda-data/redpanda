@@ -121,7 +121,7 @@ client_pool::do_client_self_configure(http_client_ptr client) {
 
             if (result.error() == cloud_storage_clients::error_outcome::retry) {
                 vlog(
-                  pool_log.error,
+                  pool_log.warn,
                   "Self configuration attempt {}/{} failed with retryable "
                   "error. "
                   "Will retry in {}s.",
