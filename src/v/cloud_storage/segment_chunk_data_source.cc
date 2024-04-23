@@ -106,7 +106,7 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
     } catch (...) {
         eptr = std::current_exception();
         vlog(
-          _ctxlog.error,
+          _ctxlog.debug,
           "Hydrating chunk {} failed with error {}",
           chunk_start,
           eptr);
