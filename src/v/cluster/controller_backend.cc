@@ -1685,6 +1685,14 @@ controller_backend::force_abort_replica_set_update(
         }
         co_return errc::waiting_for_recovery;
     } else {
+        auto leader_id = partition->get_leader_id();
+        if (leader_id && leader_id != _self) {
+            // The leader is alive and we are a follower. Wait for the leader to
+            // replicate the aborting configuration, but don't append it
+            // ourselves to minimize the chance of log inconsistency.
+            co_return errc::not_leader;
+        }
+
         vlog(
           clusterlog.debug,
           "[{}] force-aborting reconfiguration",
