@@ -216,7 +216,7 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
         }
     } catch (const std::exception& ex) {
         vlog(
-          _ctxlog.error,
+          _ctxlog.debug,
           "Failed to hydrate chunk start {}, error: {}",
           chunk_start,
           ex.what());
