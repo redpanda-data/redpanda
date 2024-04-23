@@ -70,9 +70,13 @@ SEASTAR_TEST_CASE(test_cpu_profiler_enable_override) {
       [&]() {
           return cp.local().collect_results_for_period(wait_ms, std::nullopt);
       },
-      [&]() { return busy_loop(wait_ms); });
+      [&]() {
+          return ss::smp::invoke_on_all([&]() { return busy_loop(wait_ms); });
+      });
 
-    BOOST_TEST(results[ss::this_shard_id()].samples.size() >= 1);
+    for (auto& shard_results : results) {
+        BOOST_TEST(shard_results.samples.size() >= 1);
+    }
 
     // CPU profiler should be disabled so if we wait some time and collect the
     // samples again there should be no new samples.

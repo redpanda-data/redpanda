@@ -23,6 +23,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/util/later.hh>
 
+#include <chrono>
 #include <iterator>
 
 namespace resources {
@@ -174,19 +175,11 @@ void cpu_profiler::on_sample_period_change() {
     }
 }
 
-ss::future<std::vector<cpu_profiler::shard_samples>>
-cpu_profiler::collect_results_for_period(
-  std::chrono::milliseconds timeout, std::optional<ss::shard_id> shard_id) {
-    if (_gate.is_closed()) {
-        co_return std::vector<shard_samples>{};
-    }
-    auto holder = _gate.hold();
-
+ss::future<> cpu_profiler::collect_results_for_period_impl(
+  std::chrono::milliseconds timeout) {
     _override_enabled++;
     // enable the profiler if disabled pre-override.
     on_enabled_change();
-
-    auto polling_start_time = ss::lowres_clock::now();
 
     try {
         co_await ss::sleep_abortable(timeout, _as);
@@ -197,6 +190,23 @@ cpu_profiler::collect_results_for_period(
     _override_enabled--;
     // check if profiler should be disabled post-override.
     on_enabled_change();
+    // prof.poll_samples();
+}
+
+ss::future<std::vector<cpu_profiler::shard_samples>>
+cpu_profiler::collect_results_for_period(
+  std::chrono::milliseconds timeout, std::optional<ss::shard_id> shard_id) {
+    if (_gate.is_closed()) {
+        co_return std::vector<shard_samples>{};
+    }
+    auto holder = _gate.hold();
+
+    auto polling_start_time = ss::lowres_clock::now();
+
+    co_await container().invoke_on_all(
+      [timeout](cpu_profiler& prof) -> ss::future<> {
+          return prof.collect_results_for_period_impl(timeout);
+      });
 
     co_return co_await results(shard_id, polling_start_time);
 }
