@@ -598,7 +598,7 @@ private:
         size_t bandwidth_left = recovery_throttle_burst;
         size_t ticks_since_refill = 0;
 
-        cluster::node_health_report get_health_report() const {
+        cluster::node_health_report_ptr get_health_report() const {
             cluster::node_health_report report;
             storage::disk node_disk{.free = total - used, .total = total};
             report.id = id;
@@ -623,7 +623,8 @@ private:
                   cluster::topic_status(topic, std::move(partitions)));
             }
 
-            return report;
+            return ss::make_foreign(
+              ss::make_lw_shared<const cluster::node_health_report>(report));
         }
     };
 

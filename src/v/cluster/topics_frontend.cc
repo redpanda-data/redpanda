@@ -1504,16 +1504,17 @@ ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
 
         // This health report is just on the data disk.  If the cache has
         // a separate disk, it is not reflected in the node health.
-        total += node_report.local_state.data_disk.total;
-        free += node_report.local_state.data_disk.free;
+        total += node_report->local_state.data_disk.total;
+        free += node_report->local_state.data_disk.free;
 
         info.node_disk_reports.emplace(
-          node_report.id, node_disk_space(node_report.id, total, total - free));
+          node_report->id,
+          node_disk_space(node_report->id, total, total - free));
     }
 
     for (auto& node_report : health_report.value().node_reports) {
         co_await ss::max_concurrent_for_each(
-          std::move(node_report.topics),
+          std::move(node_report->topics),
           32,
           [&info](const topic_status& status) {
               for (const auto& partition : status.partitions) {

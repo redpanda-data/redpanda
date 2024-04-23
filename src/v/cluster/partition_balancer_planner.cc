@@ -341,9 +341,11 @@ void partition_balancer_planner::init_per_node_state(
     }
 
     for (const auto& node_report : health_report.node_reports) {
-        const auto [total, free] = get_node_bytes_info(node_report.local_state);
+        const auto [total, free] = get_node_bytes_info(
+          node_report->local_state);
         ctx.node_disk_reports.emplace(
-          node_report.id, node_disk_space(node_report.id, total, total - free));
+          node_report->id,
+          node_disk_space(node_report->id, total, total - free));
     }
 
     for (model::node_id id : ctx.all_nodes) {
@@ -375,7 +377,7 @@ void partition_balancer_planner::init_per_node_state(
 ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
   const cluster_health_report& health_report, request_context& ctx) {
     for (const auto& node_report : health_report.node_reports) {
-        for (const auto& tp_ns : node_report.topics) {
+        for (const auto& tp_ns : node_report->topics) {
             for (const auto& partition : tp_ns.partitions) {
                 model::ntp ntp{tp_ns.tp_ns.ns, tp_ns.tp_ns.tp, partition.id};
                 size_t reclaimable = partition.reclaimable_size_bytes.value_or(
@@ -384,12 +386,12 @@ ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
                   clusterlog.trace,
                   "ntp {} on node {}: size {}, reclaimable: {}",
                   ntp,
-                  node_report.id,
+                  node_report->id,
                   human::bytes(partition.size_bytes),
                   human::bytes(reclaimable));
 
                 auto& sizes = ctx._ntp2sizes[ntp];
-                sizes.current[node_report.id] = partition.size_bytes;
+                sizes.current[node_report->id] = partition.size_bytes;
 
                 size_t non_reclaimable = 0;
                 if (reclaimable < partition.size_bytes) {

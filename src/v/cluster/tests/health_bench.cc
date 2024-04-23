@@ -14,6 +14,7 @@
 #include "random/generators.h"
 #include "vassert.h"
 
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/testing/perf_tests.hh>
 
 #include <limits>
@@ -36,7 +37,7 @@ struct health_bench : health_report_accessor {
           leaderless, urp;
 
         for (const auto& [_, report] : reports) {
-            for (const auto& [tp_ns, partitions] : report.topics) {
+            for (const auto& [tp_ns, partitions] : report->topics) {
                 for (const auto& partition : partitions) {
                     if (
                       !partition.leader_id.has_value()
@@ -66,7 +67,9 @@ struct health_bench : health_report_accessor {
         constexpr int nodes = 32;
 
         // genreate a random health report
-        absl::node_hash_map<model::node_id, cluster::node_health_report>
+        absl::node_hash_map<
+          model::node_id,
+          ss::lw_shared_ptr<const cluster::node_health_report>>
           reports;
 
         for (int topic = 0; topic < topic_count; topic++) {
@@ -92,7 +95,10 @@ struct health_bench : health_report_accessor {
             }
 
             for (model::node_id node{0}; node < nodes; node++) {
-                reports[node].topics.emplace_back(statuses.at(node));
+                node_health_report report;
+                report.topics.emplace_back(statuses.at(node));
+                reports[node] = ss::make_lw_shared<const node_health_report>(
+                  std::move(report));
             }
         }
 

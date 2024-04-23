@@ -133,7 +133,8 @@ public:
      * IMPORTANT: node_report must be kept alive during the execution of this
      * method
      */
-    ss::future<> update_with_node_report(const node_health_report& node_report);
+    ss::future<>
+    update_with_node_report(const node_health_report_ptr& node_report);
 
     struct leader_info_t {
         model::topic_namespace tp_ns;
