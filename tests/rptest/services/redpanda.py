@@ -435,6 +435,7 @@ class SISettings:
                  cloud_storage_region: str = 'panda-region',
                  cloud_storage_api_endpoint: str = 'minio-s3',
                  cloud_storage_api_endpoint_port: int = 9000,
+                 cloud_storage_url_style: str = 'virtual_host',
                  cloud_storage_cache_size: Optional[int] = None,
                  cloud_storage_cache_max_objects: Optional[int] = None,
                  cloud_storage_enable_remote_read: bool = True,
@@ -477,12 +478,20 @@ class SISettings:
             self.cloud_storage_secret_key = cloud_storage_secret_key
             self.cloud_storage_region = cloud_storage_region
             self._cloud_storage_bucket = f'panda-bucket-{uuid.uuid1()}'
+            self.cloud_storage_url_style = cloud_storage_url_style
 
             self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
             if test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER,
                                         'aws') == 'gcp':
                 self.cloud_storage_api_endpoint = 'storage.googleapis.com'
             self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
+
+            if hasattr(test_context, 'injected_args') \
+            and test_context.injected_args is not None \
+            and 'cloud_storage_url_style' in test_context.injected_args:
+                self.cloud_storage_url_style = test_context.injected_args[
+                    'cloud_storage_url_style']
+
         elif self.cloud_storage_type == CloudStorageType.ABS:
             self.cloud_storage_azure_shared_key = self.ABS_AZURITE_KEY
             self.cloud_storage_azure_storage_account = self.ABS_AZURITE_ACCOUNT
@@ -628,6 +637,7 @@ class SISettings:
             conf["cloud_storage_secret_key"] = self.cloud_storage_secret_key
             conf["cloud_storage_region"] = self.cloud_storage_region
             conf["cloud_storage_bucket"] = self._cloud_storage_bucket
+            conf["cloud_storage_url_style"] = self.cloud_storage_url_style
         elif self.cloud_storage_type == CloudStorageType.ABS:
             conf[
                 'cloud_storage_azure_storage_account'] = self.cloud_storage_azure_storage_account
@@ -3750,6 +3760,11 @@ class RedpandaService(RedpandaServiceBase):
                 "Setting custom cluster configuration options: {}".format(
                     self._extra_rp_conf))
             conf.update(self._extra_rp_conf)
+
+        if cur_ver != RedpandaInstaller.HEAD and cur_ver < (24, 1, 1):
+            # this configuration property was introduced in 24.1, ensure
+            # it doesn't appear in older configurations
+            conf.pop("cloud_storage_url_style", None)
 
         if cur_ver != RedpandaInstaller.HEAD and cur_ver < (23, 3, 1):
             # this configuration property was introduced in 23.3, ensure

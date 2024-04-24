@@ -73,6 +73,7 @@ request_creator::request_creator(
   const s3_configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : _ap(conf.uri)
+  , _ap_style(conf.url_style)
   , _apply_credentials{std::move(apply_credentials)} {}
 
 result<http::client::request_header> request_creator::make_get_object_request(
@@ -80,13 +81,18 @@ result<http::client::request_header> request_creator::make_get_object_request(
   object_key const& key,
   std::optional<http_byte_range> byte_range) {
     http::client::request_header header{};
+    // Virtual Style:
     // GET /{object-id} HTTP/1.1
-    // Host: {bucket-name}.s3.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // GET /{bucket-name}/{object-id} HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // x-amz-date:{req-datetime}
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-    auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key().string());
+    auto host = make_host(name);
+    auto target = make_target(name, key);
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(
@@ -111,13 +117,18 @@ result<http::client::request_header> request_creator::make_get_object_request(
 result<http::client::request_header> request_creator::make_head_object_request(
   bucket_name const& name, object_key const& key) {
     http::client::request_header header{};
+    // Virtual Style:
     // HEAD /{object-id} HTTP/1.1
-    // Host: {bucket-name}.s3.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // HEAD /{bucket-name}/{object-id} HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // x-amz-date:{req-datetime}
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-    auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key().string());
+    auto host = make_host(name);
+    auto target = make_target(name, key);
     header.method(boost::beast::http::verb::head);
     header.target(target);
     header.insert(
@@ -134,8 +145,13 @@ result<http::client::request_header> request_creator::make_head_object_request(
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
   bucket_name const& name, object_key const& key, size_t payload_size_bytes) {
+    // Virtual Style:
     // PUT /my-image.jpg HTTP/1.1
-    // Host: myBucket.s3.<Region>.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // PUT /{bucket-name}/{object-id} HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // Date: Wed, 12 Oct 2009 17:50:00 GMT
     // Authorization: authorization string
     // Content-Type: text/plain
@@ -144,8 +160,8 @@ request_creator::make_unsigned_put_object_request(
     // Expect: 100-continue
     // [11434 bytes of object data]
     http::client::request_header header{};
-    auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key().string());
+    auto host = make_host(name);
+    auto target = make_target(name, key);
     header.method(boost::beast::http::verb::put);
     header.target(target);
     header.insert(
@@ -172,19 +188,25 @@ request_creator::make_list_objects_v2_request(
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
   std::optional<char> delimiter) {
+    // Virtual Style:
     // GET /?list-type=2&prefix=photos/2006/&delimiter=/ HTTP/1.1
-    // Host: example-bucket.s3.<Region>.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // GET /{bucket-name}/?list-type=2&prefix=photos/2006/&delimiter=/ HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // x-amz-date: 20160501T000433Z
     // Authorization: authorization string
     http::client::request_header header{};
-    auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/?list-type=2");
+    auto host = make_host(name);
+    auto key = fmt::format("?list-type=2");
     if (prefix.has_value()) {
-        target = fmt::format("{}&prefix={}", target, (*prefix)().string());
+        key = fmt::format("{}&prefix={}", key, (*prefix)().string());
     }
     if (delimiter.has_value()) {
-        target = fmt::format("{}&delimiter={}", target, *delimiter);
+        key = fmt::format("{}&delimiter={}", key, *delimiter);
     }
+    auto target = make_target(name, object_key{key});
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(
@@ -224,15 +246,20 @@ result<http::client::request_header>
 request_creator::make_delete_object_request(
   bucket_name const& name, object_key const& key) {
     http::client::request_header header{};
+    // Virtual Style:
     // DELETE /{object-id} HTTP/1.1
     // Host: {bucket-name}.s3.amazonaws.com
+    // Path Style:
+    // DELETE /{bucket-name}/{object-id} HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // x-amz-date:{req-datetime}
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
     //
     // NOTE: x-amz-mfa, x-amz-bypass-governance-retention are not used for now
-    auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key().string());
+    auto host = make_host(name);
+    auto target = make_target(name, key);
     header.method(boost::beast::http::verb::delete_);
     header.target(target);
     header.insert(
@@ -262,8 +289,13 @@ request_creator::make_delete_objects_request(
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
     // will generate this request:
     //
+    // Virtual Style:
     // POST /?delete HTTP/1.1
-    // Host: <Bucket>.s3.amazonaws.com
+    // Host: {bucket-name}.s3.{region}.amazonaws.com
+    // Path Style:
+    // POST /{bucket-name}/?delete HTTP/1.1
+    // Host: s3.{region}.amazonaws.com
+    //
     // Content-MD5: <Computer from body>
     // Authorization: <applied by _requestor>
     // Content-Length: <...>
@@ -317,11 +349,12 @@ request_creator::make_delete_objects_request(
         return bytes_to_base64(to_bytes_view(bin_digest));
     }();
 
-    auto header = http::client::request_header{};
+    http::client::request_header header{};
     header.method(boost::beast::http::verb::post);
-    header.target("/?delete");
-    header.insert(
-      boost::beast::http::field::host, fmt::format("{}.{}", name(), _ap()));
+    auto host = make_host(name);
+    auto target = make_target(name, object_key{"?delete"});
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
     // from experiments, minio is sloppy in checking this field. It will check
     // that it's valid base64, but seems not to actually check the value
     header.insert(
@@ -341,6 +374,29 @@ request_creator::make_delete_objects_request(
       std::move(header),
       ss::input_stream<char>{ss::data_source{
         std::make_unique<delete_objects_body>(std::move(body))}}};
+}
+
+std::string request_creator::make_host(const bucket_name& name) const {
+    switch (_ap_style) {
+    case s3_url_style::virtual_host:
+        // Host: bucket-name.s3.region-code.amazonaws.com
+        return fmt::format("{}.{}", name(), _ap());
+    case s3_url_style::path:
+        // Host: s3.region-code.amazonaws.com
+        return fmt::format("{}", _ap());
+    }
+}
+
+std::string request_creator::make_target(
+  const bucket_name& name, const object_key& key) const {
+    switch (_ap_style) {
+    case s3_url_style::virtual_host:
+        // Target: /homepage.html
+        return fmt::format("/{}", key().string());
+    case s3_url_style::path:
+        // Target: /example.com/homepage.html
+        return fmt::format("/{}/{}", name(), key().string());
+    }
 }
 
 // client //

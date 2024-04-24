@@ -10,6 +10,8 @@
  */
 
 #pragma once
+
+#include "cloud_storage_clients/types.h"
 #include "config/bounded_property.h"
 #include "config/broker_endpoint.h"
 #include "config/client_group_byte_rate_quota.h"
@@ -306,6 +308,7 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> cloud_storage_region;
     property<std::optional<ss::sstring>> cloud_storage_bucket;
     property<std::optional<ss::sstring>> cloud_storage_api_endpoint;
+    enum_property<cloud_storage_clients::s3_url_style> cloud_storage_url_style;
     enum_property<model::cloud_credentials_source>
       cloud_storage_credentials_source;
     property<std::optional<ss::sstring>>

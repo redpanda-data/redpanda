@@ -14,6 +14,7 @@
 #include "cloud_roles/apply_credentials.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
+#include "cloud_storage_clients/types.h"
 #include "http/client.h"
 #include "model/fundamental.h"
 
@@ -106,7 +107,14 @@ public:
       std::optional<char> delimiter = std::nullopt);
 
 private:
+    std::string make_host(const bucket_name& name) const;
+
+    std::string
+    make_target(const bucket_name& name, const object_key& key) const;
+
     access_point_uri _ap;
+
+    s3_url_style _ap_style;
     /// Applies credentials to http requests by adding headers and signing
     /// request payload. Shared pointer so that the credentials can be rotated
     /// through the client pool.

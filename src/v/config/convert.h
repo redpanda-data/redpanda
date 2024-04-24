@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cloud_storage_clients/types.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -219,6 +220,23 @@ struct convert<model::timestamp_type> {
     static bool decode(const Node& node, type& rhs) {
         auto value = node.as<std::string>();
         rhs = boost::lexical_cast<type>(value);
+
+        return true;
+    }
+};
+
+template<>
+struct convert<cloud_storage_clients::s3_url_style> {
+    using type = cloud_storage_clients::s3_url_style;
+    static Node encode(const type& rhs) {
+        Node node;
+        return node = fmt::format("{}", rhs);
+    }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        rhs = string_switch<type>(std::string_view{value})
+                .match("virtual_host", type::virtual_host)
+                .match("path", type::path);
 
         return true;
     }

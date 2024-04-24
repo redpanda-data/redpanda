@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "cloud_storage_clients/s3_client.h"
 #include "cloud_storage_clients/s3_error.h"
+#include "cloud_storage_clients/types.h"
 #include "http/client.h"
 #include "syschecks/syschecks.h"
 
@@ -77,6 +78,11 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
       "aws region");
 
     opt(
+      "url_style",
+      po::value<std::string>()->default_value("virtual_host"),
+      "aws addressing style");
+
+    opt(
       "in",
       po::value<std::string>()->default_value(""),
       "file to send to the S3 object");
@@ -120,9 +126,10 @@ struct fmt::formatter<test_conf> : public fmt::formatter<std::string_view> {
         // make the output json-able so we can consume it in python for analysis
         return formatter<std::string_view>::format(
           fmt::format(
-            "[ 'bucket': '{}', 'objects': ['{}'] ]",
+            "[ 'bucket': '{}', 'objects': ['{}'], 'path style': {} ]",
             cfg.bucket,
-            fmt::join(cfg.objects, "', '")),
+            fmt::join(cfg.objects, "', '"),
+            cfg.client_cfg.url_style),
           ctx);
     }
 };
@@ -162,6 +169,13 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
                     return m["port"].as<uint16_t>();
                 }
                 return std::nullopt;
+            }(),
+            .url_style = [&]() -> cloud_storage_clients::s3_url_style {
+                if (m["url_style"].as<std::string>() == "virtual_host") {
+                    return cloud_storage_clients::s3_url_style::virtual_host;
+                } else {
+                    return cloud_storage_clients::s3_url_style::path;
+                }
             }(),
             .disable_tls = m.contains("disable-tls") > 0,
           })
@@ -358,7 +372,7 @@ int main(int args, char** argv, char** env) {
                         } else {
                             vlog(
                               test_log.error,
-                              "DeleteObject request failes: {}",
+                              "DeleteObject request failed: {}",
                               undeleted.error());
                         }
                     }

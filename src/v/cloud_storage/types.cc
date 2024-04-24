@@ -28,6 +28,7 @@ cloud_storage_clients::default_overrides get_default_overrides() {
         optep.has_value()) {
         overrides.endpoint = cloud_storage_clients::endpoint_url(*optep);
     }
+    overrides.url_style = config::shard_local_cfg().cloud_storage_url_style();
     overrides.disable_tls = config::shard_local_cfg().cloud_storage_disable_tls;
     if (auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
         cert.has_value()) {

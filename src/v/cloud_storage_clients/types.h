@@ -16,6 +16,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <filesystem>
+#include <iostream>
 #include <system_error>
 
 namespace cloud_storage_clients {
@@ -60,6 +61,17 @@ inline const std::error_category& error_category() noexcept {
 
 inline std::error_code make_error_code(error_outcome e) noexcept {
     return {static_cast<int>(e), error_category()};
+}
+
+enum class s3_url_style { virtual_host = 0, path };
+
+inline std::ostream& operator<<(std::ostream& os, const s3_url_style& us) {
+    switch (us) {
+    case s3_url_style::virtual_host:
+        return os << "virtual_host";
+    case s3_url_style::path:
+        return os << "path";
+    }
 }
 
 } // namespace cloud_storage_clients

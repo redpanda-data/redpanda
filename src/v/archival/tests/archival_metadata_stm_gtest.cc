@@ -41,6 +41,7 @@ cloud_storage_clients::s3_configuration get_configuration() {
     conf.access_key = cloud_roles::public_key_str("acess-key");
     conf.secret_key = cloud_roles::private_key_str("secret-key");
     conf.region = cloud_roles::aws_region_name("us-east-1");
+    conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
     conf.server_addr = server_addr;
     conf.disable_metrics = net::metrics_disabled::yes;
     conf.disable_public_metrics = net::public_metrics_disabled::yes;
