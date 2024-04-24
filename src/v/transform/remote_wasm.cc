@@ -17,7 +17,9 @@
 #include "transform/rpc/client.h"
 #include "transform/worker/rpc/client.h"
 #include "transform/worker/rpc/errc.h"
+#include "utils/log_hist.h"
 #include "wasm/api.h"
+#include "wasm/transform_probe.h"
 
 #include <seastar/core/loop.hh>
 
@@ -63,20 +65,24 @@ public:
 
     ss::future<> transform(
       model::record_batch batch,
-      wasm::transform_probe*,
+      wasm::transform_probe* probe,
       wasm::transform_callback cb) override {
         chunked_vector<model::record_batch> batches;
         batches.reserve(1);
         batches.push_back(std::move(batch));
+        auto start = log_hist_public::clock_type::now();
         auto response = co_await _client->transform(
           _id, _meta.uuid, model::partition_id{}, std::move(batches));
         if (response.has_error()) {
+            probe->transform_error();
             throw std::runtime_error(ss::format(
               "error transforming records: {}",
               worker::rpc::error_category().message(
                 static_cast<int>(response.error()))));
         }
         // TODO: log messages returned in the response using the logger.
+        auto end = log_hist_public::clock_type::now();
+        size_t count = 0;
         for (auto& data : response.value()) {
             for (auto& record : data.output) {
                 wasm::write_success ok = co_await cb(
@@ -84,6 +90,15 @@ public:
                 // The worker validates the output topic is valid
                 std::ignore = ok;
             }
+            count += data.output.size();
+        }
+        auto avg_duration
+          = std::chrono::duration_cast<log_hist_public::duration_type>(
+              end - start)
+              .count()
+            / count;
+        for (size_t i = 0; i < count; ++i) {
+            probe->record_latency(avg_duration);
         }
     }
 
