@@ -63,7 +63,8 @@ memory_sampling::get_oom_diagnostics_callback() {
     return [allocation_sites = std::move(allocation_sites),
             format_buf = std::move(format_buf)](
              seastar::memory::memory_diagnostics_writer writer) mutable {
-        auto num_sites = ss::memory::sampled_memory_profile(allocation_sites);
+        auto num_sites = ss::memory::sampled_memory_profile(
+          allocation_sites.data(), allocation_sites.size());
 
         const size_t top_n = std::min(size_t(10), num_sites);
         top_n_allocation_sites(allocation_sites, top_n);
