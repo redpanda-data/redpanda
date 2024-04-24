@@ -2272,6 +2272,17 @@ configuration::configuration()
       // Enough for a >1TiB cache of 16MiB objects.  Decrease this in case
       // of issues with trim performance.
       100000)
+  , cloud_storage_cache_trim_carryover(
+      *this,
+      "cloud_storage_cache_trim_carryover",
+      "The cache performs a recursive directory inspection during the cache "
+      "trim. The information obtained during the inspection can be carried "
+      "over to the next trim operation. This parameter sets a limit on the "
+      "number of objects that can be carried over from one trim to next, and "
+      "allows cache to quickly unblock readers before starting the directory "
+      "inspection.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      512)
   , cloud_storage_cache_check_interval_ms(
       *this,
       "cloud_storage_cache_check_interval",
