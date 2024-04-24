@@ -139,7 +139,11 @@ void WasmTestFixture::SetUp() {
     _sr = sr.get();
     _runtime = wasm::wasmtime::create_runtime(std::move(sr));
     // Support creating up to 4 instances in a test
-    constexpr wasm::runtime::config wasm_runtime_config {
+    wasm::runtime::config wasm_runtime_config {
+        .ai = {
+          .llm_dir = "/tmp/ai/llm/",
+          .embeddings_dir = "/tmp/ai/embd/",
+        },
         .heap_memory = {
           .per_core_pool_size_bytes = MAX_MEMORY * 4,
           .per_engine_memory_limit = MAX_MEMORY,

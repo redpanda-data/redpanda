@@ -52,7 +52,11 @@ public:
         _engine = nullptr;
         if (!_runtime) {
             _runtime = wasm::wasmtime::create_runtime(nullptr);
-            constexpr wasm::runtime::config wasm_runtime_config {
+            wasm::runtime::config wasm_runtime_config {
+                .ai = {
+                  .llm_dir = "/tmp/ai/llm/",
+                  .embeddings_dir = "/tmp/ai/embd/",
+                },
                 .heap_memory = {
                   .per_core_pool_size_bytes = 20_MiB,
                   .per_engine_memory_limit = 20_MiB,

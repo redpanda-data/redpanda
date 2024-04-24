@@ -348,9 +348,10 @@ static void log_system_resources(
      */
     const size_t default_reserve_memory = std::max<size_t>(
       1536_MiB, 0.07 * total_mem);
-    auto reserve = cfg.contains("reserve-memory") ? ss::parse_memory_size(
-                     cfg["reserve-memory"].as<std::string>())
-                                                  : default_reserve_memory;
+    auto reserve = cfg.contains("reserve-memory")
+                     ? ss::parse_memory_size(
+                         cfg["reserve-memory"].as<std::string>())
+                     : default_reserve_memory;
     vlog(
       log.info,
       "System resources: {{ cpus: {}, available memory: {}, reserved memory: "
@@ -2549,6 +2550,10 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
       wasm_data_transforms_enabled() && !config::node().recovery_mode_enabled) {
         const auto& cluster = config::shard_local_cfg();
         wasm::runtime::config config = {
+          .ai = {
+            .llm_dir = config::node().ai_llm_directory(),
+            .embeddings_dir = config::node().ai_embedding_models_directory(),
+          },
           .heap_memory = {
             .per_core_pool_size_bytes = cluster.data_transforms_per_core_memory_reservation.value(),
             .per_engine_memory_limit = cluster.data_transforms_per_function_memory_limit.value(),

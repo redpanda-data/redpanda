@@ -21,6 +21,7 @@
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 
@@ -101,7 +102,14 @@ public:
     runtime(runtime&&) = delete;
     runtime& operator=(runtime&&) = delete;
 
-    struct config {
+    struct config { // NOLINT
+        struct ai {
+            // Where llms live on disk
+            std::filesystem::path llm_dir;
+            // Where embeddings models live on disk
+            std::filesystem::path embeddings_dir;
+        };
+        ai ai;
         struct heap_memory {
             // per core how many bytes to reserve
             size_t per_core_pool_size_bytes;

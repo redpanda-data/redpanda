@@ -1470,7 +1470,11 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
     co_await _engine_probe_cache.start();
     register_metrics();
 
-    co_await _ai_service.start();
+    ai::service::config ai_config{
+      .llm_path = c.ai.llm_dir,
+      .embeddings_path = c.ai.embeddings_dir,
+    };
+    co_await _ai_service.start(std::move(ai_config));
     co_await _ai_service.invoke_on_all(&ai::service::start);
 }
 
