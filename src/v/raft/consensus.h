@@ -36,6 +36,7 @@
 #include "raft/replication_monitor.h"
 #include "raft/state_machine_manager.h"
 #include "raft/timeout_jitter.h"
+#include "raft/transfer_leadership.h"
 #include "raft/types.h"
 #include "ssx/semaphore.h"
 #include "storage/log.h"

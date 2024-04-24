@@ -10,21 +10,17 @@
 #include "raft/types.h"
 
 #include "base/vassert.h"
-#include "base/vlog.h"
 #include "model/async_adl_serde.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
-#include "raft/logger.h"
+#include "raft/transfer_leadership.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
-#include "serde/serde.h"
-#include "utils/to_string.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
 
@@ -32,8 +28,6 @@
 #include <fmt/ostream.h>
 
 #include <chrono>
-#include <type_traits>
-
 namespace {
 template<typename T>
 T decode_signed(T value) {
