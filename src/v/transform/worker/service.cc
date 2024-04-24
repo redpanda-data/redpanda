@@ -252,7 +252,7 @@ ss::future<> local_service::do_stop_vm(model::transform_id id, uuid_t version) {
 
 ss::future<rpc::transform_data_reply>
 local_service::transform_data(rpc::transform_data_request req) {
-    auto shard = random_generators::get_int<ss::shard_id>(ss::smp::count);
+    auto shard = random_generators::get_int<ss::shard_id>(ss::smp::count - 1);
     return container().invoke_on(
       shard, &local_service::do_local_transform_data, std::move(req));
 }

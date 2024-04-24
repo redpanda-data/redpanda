@@ -10,6 +10,8 @@
 
 #include "transform/worker/rpc/data_plane.h"
 
+#include <seastar/core/smp.hh>
+
 namespace transform::worker::rpc {
 
 transform_data_request transform_data_request::serde_direct_read(
@@ -23,8 +25,9 @@ transform_data_request transform_data_request::serde_direct_read(
     chunked_vector<ss::foreign_ptr<std::unique_ptr<model::record_batch>>>
       batches;
     for (size_t i = 0; i < count; ++i) {
+        // TODO: read the correct serde header
         batches.emplace_back(std::make_unique<model::record_batch>(
-          read_nested<model::record_batch>(in, h._bytes_left_limit)));
+          model::record_batch::serde_direct_read(in, h)));
     }
     return transform_data_request{
       .id = id,
@@ -46,9 +49,9 @@ transform_data_request::serde_async_direct_read(
     chunked_vector<ss::foreign_ptr<std::unique_ptr<model::record_batch>>>
       batches;
     for (size_t i = 0; i < count; ++i) {
+        // TODO: read the correct serde header
         batches.emplace_back(std::make_unique<model::record_batch>(
-          co_await read_async_nested<model::record_batch>(
-            in, h._bytes_left_limit)));
+          co_await model::record_batch::serde_async_direct_read(in, h)));
     }
     co_return transform_data_request{
       .id = id,
@@ -64,7 +67,14 @@ void transform_data_request::serde_write(iobuf& out) {
     write(out, partition);
     write(out, batches.size());
     for (auto& batch : batches) {
-        write(out, std::move(batch));
+        // TODO: write serde header
+        auto [h, d] = batch->serde_fields();
+        write(out, h);
+        if (batch.get_owner_shard() == ss::this_shard_id()) {
+            write(out, std::move(d));
+        } else {
+            write(out, d.copy());
+        }
     }
 }
 
@@ -75,7 +85,13 @@ ss::future<> transform_data_request::serde_async_write(iobuf& out) {
     co_await write_async(out, partition);
     co_await write_async(out, batches.size());
     for (auto& batch : batches) {
-        co_await write_async(out, std::move(batch));
+        auto [h, d] = batch->serde_fields();
+        write(out, h);
+        if (batch.get_owner_shard() == ss::this_shard_id()) {
+            co_await write_async(out, std::move(d));
+        } else {
+            co_await write_async(out, d.copy());
+        }
     }
 }
 
@@ -87,8 +103,9 @@ transformed_topic_output transformed_topic_output::serde_direct_read(
     chunked_vector<ss::foreign_ptr<std::unique_ptr<model::transformed_data>>>
       output;
     for (size_t i = 0; i < count; ++i) {
+        // TODO: Pass in the correct header
         output.emplace_back(std::make_unique<model::transformed_data>(
-          read_nested<model::transformed_data>(in, h._bytes_left_limit)));
+          model::transformed_data::serde_direct_read(in, h)));
     }
     return {topic, std::move(output)};
 }
@@ -103,9 +120,9 @@ transformed_topic_output::serde_async_direct_read(
     chunked_vector<ss::foreign_ptr<std::unique_ptr<model::transformed_data>>>
       output;
     for (size_t i = 0; i < count; ++i) {
+        // TODO: Pass in the correct header
         output.emplace_back(std::make_unique<model::transformed_data>(
-          co_await read_async_nested<model::transformed_data>(
-            in, h._bytes_left_limit)));
+          co_await model::transformed_data::serde_async_direct_read(in, h)));
     }
     co_return transformed_topic_output(topic, std::move(output));
 }
@@ -115,7 +132,13 @@ void transformed_topic_output::serde_write(iobuf& out) {
     write(out, topic);
     write(out, output.size());
     for (auto& data : output) {
-        write(out, std::move(data));
+        // TODO: Write the header
+        auto [d] = data->serde_fields();
+        if (data.get_owner_shard() == ss::this_shard_id()) {
+            write(out, std::move(d));
+        } else {
+            write(out, d.copy());
+        }
     }
 }
 
@@ -124,7 +147,13 @@ ss::future<> transformed_topic_output::serde_async_write(iobuf& out) {
     co_await write_async(out, topic);
     co_await write_async(out, output.size());
     for (auto& data : output) {
-        co_await write_async(out, std::move(data));
+        // TODO: Write the header
+        auto [d] = data->serde_fields();
+        if (data.get_owner_shard() == ss::this_shard_id()) {
+            co_await write_async(out, std::move(d));
+        } else {
+            co_await write_async(out, d.copy());
+        }
     }
 }
 } // namespace transform::worker::rpc

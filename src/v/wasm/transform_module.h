@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "ffi.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -78,7 +79,7 @@ public:
 // The data needed during a single transformation of a record_batch
 struct batch_transform_context {
     model::record_batch_header batch_header;
-    iobuf* batch_data;
+    iobuf_const_parser batch_data;
     // The largest record size for the input batch, used so SDKs can
     // correctly allocate a batch of the right size.
     size_t max_input_record_size{0};

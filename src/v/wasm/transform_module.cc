@@ -101,10 +101,9 @@ ss::future<> transform_module::for_each_record_async(
         });
     }
 
-    auto data = std::move(*input).release_data();
     _call_ctx.emplace(batch_transform_context{
       .batch_header = header,
-      .batch_data = &data,
+      .batch_data = iobuf_const_parser(input->data()),
       .max_input_record_size = max_size,
       .records = std::move(records),
       .callback = cb,
@@ -208,14 +207,10 @@ ss::future<int32_t> transform_module::read_next_record(
     *offset = record.offset;
 
     // Drop the metadata we already parsed
-    _call_ctx->batch_data->trim_front(record.metadata_size);
+    _call_ctx->batch_data.skip(record.metadata_size);
+
     // Copy out the payload
-    {
-        iobuf_const_parser parser(*_call_ctx->batch_data);
-        parser.consume_to(record.payload_size, buf.data());
-    }
-    // Skip over the payload
-    _call_ctx->batch_data->trim_front(record.payload_size);
+    _call_ctx->batch_data.consume_to(record.payload_size, buf.data());
 
     // Call back so we can refuel.
     _call_ctx->callback->pre_record();

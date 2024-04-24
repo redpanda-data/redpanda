@@ -170,7 +170,7 @@ remote_wasm_manager::remote_wasm_manager(
   , _metadata_lookup(std::move(meta_lookup)) {}
 
 ss::future<> remote_wasm_manager::start() {
-    ssx::background = reconciliation_loop();
+    ssx::spawn_with_gate(_gate, [this]() { return do_reconciliation(); });
     co_return;
 }
 
@@ -180,7 +180,8 @@ ss::future<> remote_wasm_manager::stop() {
       "expected all wasm engines to be shutdown before stopping, engines "
       "running: {}",
       _ref_counts.size());
-    _reconciliation_needed_event.set();
+    _reconciliation_needed_event.broken();
+    _reconciliation_waiters.broadcast();
     co_await _gate.close();
     if (!_active_vms.empty()) {
         // In the case of network failures, this can happen, so just log that we
@@ -203,14 +204,14 @@ ss::future<ss::shared_ptr<wasm::factory>> remote_wasm_manager::make_factory(
     if (!_active_vms.contains(key)) {
         // Wait for the VM to start remotely
         _reconciliation_needed_event.set();
-        co_await _reconciliation_waiters.wait(
-          [this, key] { return _active_vms.contains(key); });
+        co_await _reconciliation_waiters.wait([this, key] {
+            return _active_vms.contains(key) || _gate.is_closed();
+        });
     }
     co_return factory;
 }
 
 ss::future<> remote_wasm_manager::reconciliation_loop() {
-    auto h = _gate.hold();
     while (!_gate.is_closed()) {
         // TODO: Add jitter
         co_await _reconciliation_needed_event.wait(10s);
