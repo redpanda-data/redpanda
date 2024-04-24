@@ -539,6 +539,29 @@ public:
         }
     }
 
+    ss::future<> transform(
+      ss::foreign_ptr<std::unique_ptr<model::record_batch>> batch,
+      transform_probe* probe,
+      transform_callback cb) override {
+        vlog(wasm_log.trace, "Transforming batch: {}", batch->header());
+        if (batch->record_count() == 0) {
+            co_return;
+        }
+        if (batch->compressed()) {
+            co_return co_await transform(
+              co_await storage::internal::decompress_batch(*batch),
+              probe,
+              std::move(cb));
+        }
+        ss::future<> fut = co_await ss::coroutine::as_future(
+          invoke_transform(std::move(batch), probe, std::move(cb)));
+        report_memory_usage();
+        if (fut.failed()) {
+            probe->transform_error();
+            std::rethrow_exception(fut.get_exception());
+        }
+    }
+
     template<typename T>
     T* get_module() noexcept {
         if constexpr (std::is_same_v<T, wasi::preview1_module>) {
@@ -794,7 +817,9 @@ private:
     }
 
     ss::future<> invoke_transform(
-      model::record_batch batch, transform_probe* p, transform_callback cb) {
+      ss::foreign_ptr<std::unique_ptr<model::record_batch>> batch,
+      transform_probe* p,
+      transform_callback cb) {
         class callback_impl final : public record_callback {
         public:
             callback_impl(
@@ -836,7 +861,52 @@ private:
           p);
 
         co_await _transform_module.for_each_record_async(
-          std::move(batch), &callback);
+          batch.get(), &callback);
+    }
+
+    ss::future<> invoke_transform(
+      model::record_batch batch, transform_probe* p, transform_callback cb) {
+        class callback_impl final : public record_callback {
+        public:
+            callback_impl(
+              wasmtime_context_t* context,
+              size_t fuel_amt,
+              transform_callback cb,
+              transform_probe* p)
+              : _context(context)
+              , _fuel_amt(fuel_amt)
+              , _cb(std::move(cb))
+              , _probe(p) {}
+
+            void pre_record() final {
+                handle<wasmtime_error_t, wasmtime_error_delete> error(
+                  wasmtime_context_set_fuel(_context, _fuel_amt));
+                check_error(error.get());
+                _measurement = _probe->latency_measurement();
+            }
+
+            ss::future<write_success> emit(
+              std::optional<model::topic_view> topic,
+              model::transformed_data data) final {
+                return _cb(topic, std::move(data));
+            }
+
+            void post_record() final { _measurement = nullptr; }
+
+        private:
+            wasmtime_context_t* _context;
+            size_t _fuel_amt;
+            transform_callback _cb;
+            transform_probe* _probe;
+            std::unique_ptr<transform_probe::hist_t::measurement> _measurement;
+        };
+        callback_impl callback(
+          wasmtime_store_context(_store.get()),
+          _runtime->per_invocation_fuel_amount(),
+          std::move(cb),
+          p);
+
+        co_await _transform_module.for_each_record_async(&batch, &callback);
     }
 
     wasmtime_runtime* _runtime;

@@ -12,6 +12,7 @@
 
 #include "base/vlog.h"
 #include "model/transform.h"
+#include "random/generators.h"
 #include "transform/worker/rpc/control_plane.h"
 #include "transform/worker/rpc/data_plane.h"
 #include "wasm/api.h"
@@ -19,7 +20,9 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/coroutine/as_future.hh>
 
@@ -249,9 +252,9 @@ ss::future<> local_service::do_stop_vm(model::transform_id id, uuid_t version) {
 
 ss::future<rpc::transform_data_reply>
 local_service::transform_data(rpc::transform_data_request req) {
-    // TODO: We should be able to route to other cores... Maybe we need a
-    // foreign_ptr?
-    return do_local_transform_data(std::move(req));
+    auto shard = random_generators::get_int<ss::shard_id>(ss::smp::count);
+    return container().invoke_on(
+      shard, &local_service::do_local_transform_data, std::move(req));
 }
 
 ss::future<rpc::transform_data_reply>
@@ -263,9 +266,6 @@ local_service::do_local_transform_data(rpc::transform_data_request req) {
           .error_code = rpc::errc::vm_not_found,
         };
     }
-    absl::
-      flat_hash_map<model::topic_view, chunked_vector<model::transformed_data>>
-        output;
     auto& machine = it->second;
     if (!machine->engine) {
         // Still starting
@@ -287,12 +287,16 @@ local_service::do_local_transform_data(rpc::transform_data_request req) {
 
 ss::future<rpc::transform_data_reply>
 local_service::do_transform(vm* machine, rpc::transform_data_request req) {
-    absl::
-      flat_hash_map<model::topic_view, chunked_vector<model::transformed_data>>
-        output;
+    absl::flat_hash_map<
+      model::topic_view,
+      chunked_vector<ss::foreign_ptr<std::unique_ptr<model::transformed_data>>>>
+      output;
     model::topic_view default_topic = machine->meta.output_topics.front().tp;
     for (const auto& topic : machine->meta.output_topics) {
-        output.emplace(topic.tp, chunked_vector<model::transformed_data>{});
+        output.emplace(
+          topic.tp,
+          chunked_vector<
+            ss::foreign_ptr<std::unique_ptr<model::transformed_data>>>{});
     }
     try {
         for (auto& batch : req.batches) {
@@ -306,7 +310,8 @@ local_service::do_transform(vm* machine, rpc::transform_data_request req) {
                   if (it == output.end()) {
                       return ssx::now(wasm::write_success::no);
                   }
-                  it->second.push_back(std::move(data));
+                  it->second.emplace_back(
+                    std::make_unique<model::transformed_data>(std::move(data)));
                   return ssx::now(wasm::write_success::yes);
               });
         }

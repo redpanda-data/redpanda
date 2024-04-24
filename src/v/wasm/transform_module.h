@@ -78,7 +78,7 @@ public:
 // The data needed during a single transformation of a record_batch
 struct batch_transform_context {
     model::record_batch_header batch_header;
-    iobuf batch_data;
+    iobuf* batch_data;
     // The largest record size for the input batch, used so SDKs can
     // correctly allocate a batch of the right size.
     size_t max_input_record_size{0};
@@ -109,7 +109,7 @@ public:
      * batch, transform all the records, with a callback everytime a record is
      * consumed by the VM.
      */
-    ss::future<> for_each_record_async(model::record_batch, record_callback*);
+    ss::future<> for_each_record_async(model::record_batch*, record_callback*);
 
     /**
      * Start the transform module, marking it that the guest is about to start

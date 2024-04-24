@@ -18,6 +18,7 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "wasm/fwd.h"
 
+#include <seastar/core/sharded.hh>
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -47,6 +48,14 @@ class engine {
 public:
     virtual ss::future<>
     transform(model::record_batch, transform_probe*, transform_callback) = 0;
+
+    virtual ss::future<> transform(
+      ss::foreign_ptr<std::unique_ptr<model::record_batch>> batch,
+      transform_probe* p,
+      transform_callback cb) {
+        // Slow but works for testing and other implementations
+        return transform(std::move(*batch), p, std::move(cb));
+    }
 
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() = 0;

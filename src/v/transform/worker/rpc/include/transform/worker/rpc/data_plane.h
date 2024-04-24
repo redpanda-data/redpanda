@@ -17,6 +17,8 @@
 #include "serde/envelope.h"
 #include "transform/worker/rpc/errc.h"
 
+#include <seastar/core/sharded.hh>
+
 namespace transform::worker::rpc {
 
 struct transform_data_request
@@ -29,7 +31,8 @@ struct transform_data_request
     model::transform_id id;
     decltype(model::transform_metadata::uuid) transform_version;
     model::partition_id partition;
-    chunked_vector<model::record_batch> batches;
+    chunked_vector<ss::foreign_ptr<std::unique_ptr<model::record_batch>>>
+      batches;
 
     friend bool
     operator==(const transform_data_request&, const transform_data_request&)
@@ -38,9 +41,12 @@ struct transform_data_request
     friend std::ostream&
     operator<<(std::ostream&, const transform_data_request&);
 
-    auto serde_fields() {
-        return std::tie(id, transform_version, partition, batches);
-    }
+    static transform_data_request
+    serde_direct_read(iobuf_parser& in, const serde::header& h);
+    static ss::future<transform_data_request>
+    serde_async_direct_read(iobuf_parser& in, serde::header h);
+    void serde_write(iobuf& out);
+    ss::future<> serde_async_write(iobuf& out);
 };
 
 struct transformed_topic_output
@@ -50,12 +56,21 @@ struct transformed_topic_output
       serde::compat_version<0>> {
     transformed_topic_output() noexcept = default;
     transformed_topic_output(
-      model::topic topic, chunked_vector<model::transformed_data> output)
+      model::topic topic,
+      chunked_vector<ss::foreign_ptr<std::unique_ptr<model::transformed_data>>>
+        output)
       : topic(std::move(topic))
       , output(std::move(output)) {}
     model::topic topic;
-    chunked_vector<model::transformed_data> output;
-    auto serde_fields() { return std::tie(topic, output); }
+    chunked_vector<ss::foreign_ptr<std::unique_ptr<model::transformed_data>>>
+      output;
+
+    static transformed_topic_output
+    serde_direct_read(iobuf_parser& in, const serde::header& h);
+    static ss::future<transformed_topic_output>
+    serde_async_direct_read(iobuf_parser& in, serde::header h);
+    void serde_write(iobuf& out);
+    ss::future<> serde_async_write(iobuf& out);
 };
 
 struct transform_data_reply

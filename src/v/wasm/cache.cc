@@ -97,6 +97,29 @@ public:
         std::rethrow_exception(fut.get_exception());
     }
 
+    ss::future<> transform(
+      ss::foreign_ptr<std::unique_ptr<model::record_batch>> batch,
+      transform_probe* probe,
+      transform_callback cb) override {
+        auto u = co_await _mu.get_units();
+        auto fut = co_await ss::coroutine::as_future(
+          _underlying->transform(std::move(batch), probe, std::move(cb)));
+        if (!fut.failed()) {
+            co_return;
+        }
+        // Restart the engine
+        try {
+            co_await _underlying->stop();
+            co_await _underlying->start();
+        } catch (...) {
+            vlog(
+              wasm_log.warn,
+              "failed to restart wasm engine: {}",
+              std::current_exception());
+        }
+        std::rethrow_exception(fut.get_exception());
+    }
+
     ss::future<> start() override {
         auto u = co_await _mu.get_units();
         if (_ref_count++ == 0) {

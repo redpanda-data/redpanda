@@ -51,7 +51,7 @@ public:
       model::transform_id,
       uuid_t,
       model::partition_id,
-      chunked_vector<model::record_batch>);
+      chunked_vector<ss::foreign_ptr<std::unique_ptr<model::record_batch>>>);
 
 private:
     template<auto Method>

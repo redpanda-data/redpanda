@@ -64,17 +64,18 @@ transform_module::transform_module(wasi::preview1_module* m)
   : _wasi_module(m) {}
 
 ss::future<> transform_module::for_each_record_async(
-  model::record_batch input, record_callback* cb) {
+  model::record_batch* input, record_callback* cb) {
     vassert(
-      input.header().attrs.compression() == model::compression::none,
+      input->header().attrs.compression() == model::compression::none,
       "wasm transforms expect uncompressed batches");
 
-    iobuf_const_parser parser(input.data());
+    iobuf_const_parser parser(input->data());
 
     ss::chunked_fifo<record_metadata> records;
-    records.reserve(input.record_count());
+    records.reserve(input->record_count());
     size_t max_size = 0;
 
+    auto header = input->header();
     while (parser.bytes_left() > 0) {
         auto [record_size, rs_amt] = parser.read_varlong();
         auto attrs = parser.consume_type<model::record_attributes::type>();
@@ -84,31 +85,32 @@ ss::future<> transform_module::for_each_record_async(
         size_t payload_size = record_size - meta_size;
         max_size = std::max(payload_size, max_size);
         parser.skip(payload_size);
-        model::timestamp ts = input.header().max_timestamp;
+        model::timestamp ts = input->header().max_timestamp;
         if (
-          input.header().attrs.timestamp_type()
+          input->header().attrs.timestamp_type()
           == model::timestamp_type::create_time) {
             ts = model::timestamp(
-              input.header().first_timestamp() + timestamp_delta);
+              input->header().first_timestamp() + timestamp_delta);
         }
         records.push_back({
           .metadata_size = rs_amt + meta_size,
           .payload_size = payload_size,
           .attributes = model::record_attributes(attrs),
           .timestamp = ts,
-          .offset = input.base_offset() + offset_delta,
+          .offset = input->base_offset() + offset_delta,
         });
     }
 
+    auto data = std::move(*input).release_data();
     _call_ctx.emplace(batch_transform_context{
-      .batch_header = input.header(),
-      .batch_data = std::move(input).release_data(),
+      .batch_header = header,
+      .batch_data = &data,
       .max_input_record_size = max_size,
       .records = std::move(records),
       .callback = cb,
     });
 
-    return host_wait_for_proccessing().finally(
+    co_await host_wait_for_proccessing().finally(
       [this] { _call_ctx = std::nullopt; });
 }
 
@@ -206,14 +208,14 @@ ss::future<int32_t> transform_module::read_next_record(
     *offset = record.offset;
 
     // Drop the metadata we already parsed
-    _call_ctx->batch_data.trim_front(record.metadata_size);
+    _call_ctx->batch_data->trim_front(record.metadata_size);
     // Copy out the payload
     {
-        iobuf_const_parser parser(_call_ctx->batch_data);
+        iobuf_const_parser parser(*_call_ctx->batch_data);
         parser.consume_to(record.payload_size, buf.data());
     }
     // Skip over the payload
-    _call_ctx->batch_data.trim_front(record.payload_size);
+    _call_ctx->batch_data->trim_front(record.payload_size);
 
     // Call back so we can refuel.
     _call_ctx->callback->pre_record();

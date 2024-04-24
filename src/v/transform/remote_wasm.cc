@@ -22,6 +22,7 @@
 #include "wasm/transform_probe.h"
 
 #include <seastar/core/loop.hh>
+#include <seastar/core/smp.hh>
 
 #include <exception>
 
@@ -67,9 +68,11 @@ public:
       model::record_batch batch,
       wasm::transform_probe* probe,
       wasm::transform_callback cb) override {
-        chunked_vector<model::record_batch> batches;
+        chunked_vector<ss::foreign_ptr<std::unique_ptr<model::record_batch>>>
+          batches;
         batches.reserve(1);
-        batches.push_back(std::move(batch));
+        batches.emplace_back(
+          std::make_unique<model::record_batch>(std::move(batch)));
         auto start = log_hist_public::clock_type::now();
         auto response = co_await _client->transform(
           _id, _meta.uuid, model::partition_id{}, std::move(batches));
@@ -85,10 +88,12 @@ public:
         size_t count = 0;
         for (auto& data : response.value()) {
             for (auto& record : data.output) {
-                wasm::write_success ok = co_await cb(
-                  data.topic, std::move(record));
                 // The worker validates the output topic is valid
-                std::ignore = ok;
+                if (record.get_owner_shard() == ss::this_shard_id()) {
+                    std::ignore = co_await cb(data.topic, std::move(*record));
+                } else {
+                    std::ignore = co_await cb(data.topic, record->copy());
+                }
             }
             count += data.output.size();
         }

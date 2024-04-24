@@ -102,7 +102,8 @@ client::transform(
   model::transform_id id,
   uuid_t version,
   model::partition_id partition,
-  chunked_vector<model::record_batch> batches) {
+  chunked_vector<ss::foreign_ptr<std::unique_ptr<model::record_batch>>>
+    batches) {
     auto result
       = co_await call<&transform_worker_client_protocol::transform_data>(
         transform_data_request{
