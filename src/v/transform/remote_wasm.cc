@@ -173,7 +173,7 @@ ss::future<> remote_wasm_manager::start() {
     ssx::background
       = ssx::spawn_with_gate_then(_gate, [this]() {
             vlog(tlog.info, "starting remote wasm reconciliation loop");
-            return do_reconciliation();
+            return reconciliation_loop();
         }).then([] {
             vlog(tlog.info, "stopping remote wasm reconciliation loop");
         });
