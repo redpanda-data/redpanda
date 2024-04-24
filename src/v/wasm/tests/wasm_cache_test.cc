@@ -121,13 +121,13 @@ public:
     ss::future<> stop() override { co_return; }
 
     ss::future<ss::shared_ptr<factory>>
-    make_factory(model::transform_metadata, iobuf) override {
+    make_factory(model::transform_metadata, model::wasm_binary_iobuf) override {
         co_return ss::make_shared<fake_factory>(&_state);
     }
 
     state* get_state() { return &_state; }
 
-    ss::future<> validate(iobuf) override { co_return; }
+    ss::future<> validate(model::wasm_binary_iobuf) override { co_return; }
 
 private:
     state _state;
@@ -173,7 +173,9 @@ public:
     ss::future<ss::shared_ptr<factory>>
     make_factory_async(model::transform_metadata metadata) {
         return _caching_runtime->make_factory(
-          std::move(metadata), _wasm_module.copy());
+          std::move(metadata),
+          model::wasm_binary_iobuf(
+            std::make_unique<iobuf>(_wasm_module.copy())));
     }
 
     template<typename Func>

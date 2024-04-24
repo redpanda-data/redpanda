@@ -114,7 +114,7 @@ struct store_wasm_binary_request
 
     store_wasm_binary_request() = default;
     explicit store_wasm_binary_request(
-      iobuf d, model::timeout_clock::duration t)
+      model::wasm_binary_iobuf d, model::timeout_clock::duration t)
       : data(std::move(d))
       , timeout(t) {}
 
@@ -123,7 +123,7 @@ struct store_wasm_binary_request
     friend std::ostream&
     operator<<(std::ostream&, const store_wasm_binary_request&);
 
-    iobuf data;
+    model::wasm_binary_iobuf data;
     model::timeout_clock::duration timeout{};
 };
 
@@ -241,7 +241,7 @@ struct load_wasm_binary_reply
     using rpc_adl_exempt = std::true_type;
 
     load_wasm_binary_reply() = default;
-    explicit load_wasm_binary_reply(cluster::errc e, iobuf b)
+    explicit load_wasm_binary_reply(cluster::errc e, model::wasm_binary_iobuf b)
       : ec(e)
       , data(std::move(b)) {}
 
@@ -251,7 +251,7 @@ struct load_wasm_binary_reply
     operator<<(std::ostream&, const load_wasm_binary_reply&);
 
     cluster::errc ec = cluster::errc::success;
-    iobuf data;
+    model::wasm_binary_iobuf data;
 };
 
 struct find_coordinator_request

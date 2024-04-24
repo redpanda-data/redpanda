@@ -229,7 +229,7 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
         .output_topics = output_topics,
         .environment = std::move(env),
       },
-      std::move(body));
+      model::wasm_binary_iobuf(std::make_unique<iobuf>(std::move(body))));
 
     co_await throw_on_error(*req, ec, model::controller_ntp);
     co_return ss::json::json_void();

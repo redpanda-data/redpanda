@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model/transform.h"
 #include "utils/mutex.h"
 #include "wasm/api.h"
 
@@ -56,8 +57,8 @@ public:
     /**
      * Create a factory, must be called only on a single shard.
      */
-    ss::future<ss::shared_ptr<factory>>
-      make_factory(model::transform_metadata, iobuf) override;
+    ss::future<ss::shared_ptr<factory>> make_factory(
+      model::transform_metadata, model::wasm_binary_iobuf) override;
 
     /**
      * If a factory exists in cached, return it without needing the binary.
@@ -65,7 +66,7 @@ public:
     ss::optimized_optional<ss::shared_ptr<factory>>
     get_cached_factory(const model::transform_metadata&);
 
-    ss::future<> validate(iobuf) override;
+    ss::future<> validate(model::wasm_binary_iobuf) override;
 
 private:
     friend class WasmCacheTest;

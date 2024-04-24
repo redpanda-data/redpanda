@@ -12,6 +12,7 @@
 #include "wasm/cache.h"
 
 #include "logger.h"
+#include "model/transform.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
@@ -296,8 +297,8 @@ ss::future<> caching_runtime::stop() {
     co_await _underlying->stop();
 }
 
-ss::future<ss::shared_ptr<factory>>
-caching_runtime::make_factory(model::transform_metadata meta, iobuf binary) {
+ss::future<ss::shared_ptr<factory>> caching_runtime::make_factory(
+  model::transform_metadata meta, model::wasm_binary_iobuf binary) {
     model::offset offset = meta.source_ptr;
     // Look in the cache outside the lock
     auto cached = get_cached_factory(meta);
@@ -361,7 +362,7 @@ ss::future<int64_t> caching_runtime::gc_engines() {
       &engine_cache::gc, int64_t(0), std::plus<>());
 }
 
-ss::future<> caching_runtime::validate(iobuf buf) {
+ss::future<> caching_runtime::validate(model::wasm_binary_iobuf buf) {
     return _underlying->validate(std::move(buf));
 }
 

@@ -140,7 +140,7 @@ public:
      * can be used on any shard and is thread-safe.
      */
     virtual ss::future<ss::shared_ptr<factory>>
-      make_factory(model::transform_metadata, iobuf) = 0;
+      make_factory(model::transform_metadata, model::wasm_binary_iobuf) = 0;
 
     /**
      * Verify a WebAssembly module is valid and loosely adheres to our ABI
@@ -148,7 +148,7 @@ public:
      *
      * Throws an exception when validation fails.
      */
-    virtual ss::future<> validate(iobuf) = 0;
+    virtual ss::future<> validate(model::wasm_binary_iobuf) = 0;
 
     virtual ~runtime() = default;
 };

@@ -188,17 +188,21 @@ public:
         kafka::partition_proxy*)>)
       = 0;
 
-    virtual ss::future<result<iobuf, cluster::errc>> invoke_on_shard(
+    virtual ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
+    invoke_on_shard(
       ss::shard_id shard_id,
       const model::ktp& ktp,
       ss::noncopyable_function<
-        ss::future<result<iobuf, cluster::errc>>(kafka::partition_proxy*)>)
+        ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
+          kafka::partition_proxy*)>)
       = 0;
-    virtual ss::future<result<iobuf, cluster::errc>> invoke_on_shard(
+    virtual ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
+    invoke_on_shard(
       ss::shard_id,
       const model::ntp&,
       ss::noncopyable_function<
-        ss::future<result<iobuf, cluster::errc>>(kafka::partition_proxy*)>)
+        ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
+          kafka::partition_proxy*)>)
       = 0;
 
     virtual ss::future<find_coordinator_response>
