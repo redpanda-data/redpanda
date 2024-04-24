@@ -1255,8 +1255,8 @@ void admin_server::register_config_routes() {
               writer.String(name);
               if (include_levels) {
                   writer.Key("level");
-                  writer.String(fmt::to_string(
-                    ss::global_logger_registry().get_logger_level(name)));
+                  writer.String(fmt::format(
+                    "{}", ss::global_logger_registry().get_logger_level(name)));
               }
               writer.EndObject();
           }
