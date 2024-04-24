@@ -6,11 +6,19 @@ from abc import ABC, abstractmethod
 from typing import Generator, Optional
 
 from rptest.clients.kubectl import KubectlTool, KubeNodeShell
+from rptest.services.cloud_broker import CloudBroker
 
 
 class BadLogLines(Exception):
     def __init__(self, node_to_lines):
         self.node_to_lines = node_to_lines
+
+    @staticmethod
+    def _get_hostname(node):
+        if isinstance(node, CloudBroker):
+            return node.hostname
+        else:
+            return node.account.hostname
 
     def __str__(self):
         # Pick the first line from the first node as an example, and include it
@@ -20,7 +28,7 @@ class BadLogLines(Exception):
         example = next(iter(example_lines))
 
         summary = ','.join([
-            f'{i[0].account.hostname}({len(i[1])})'
+            f'{self._get_hostname(i[0])}({len(i[1])})'
             for i in self.node_to_lines.items()
         ])
         return f"<BadLogLines nodes={summary} example=\"{example}\">"
@@ -154,6 +162,7 @@ class LogSearch(ABC):
         bad_loglines = self._search(nodes)
         # If anything, raise exception
         if bad_loglines:
+            # Call class overriden method to get proper Exception class
             raise BadLogLines(bad_loglines)
 
 
@@ -195,8 +204,7 @@ class LogSearchCloud(LogSearch):
 
         # Load log, output is in binary form
         loglines = []
-        pod_name = self._get_hostname(pod)
-        node_name = pod['spec']['nodeName']
+        node_name = pod._spec['nodeName']
         tz = "+00:00"
         with KubeNodeShell(self.kubectl, node_name) as ksh:
             try:
@@ -208,16 +216,16 @@ class LogSearchCloud(LogSearch):
                 # Find all log files for target pod
                 logfiles = ksh(f"find /var/log/pods -type f")
                 for logfile in logfiles:
-                    if pod_name in logfile and \
+                    if pod.name in logfile and \
                         'redpanda-configurator' not in logfile:
                         self.logger.info(f"Inspecting '{logfile}'")
                         lines = ksh(f"cat {logfile} | grep {expr}")
                         loglines += lines
             except Exception as e:
-                self.logger.warning(f"Error getting logs for {pod_name}: {e}")
+                self.logger.warning(f"Error getting logs for {pod.name}: {e}")
             else:
                 _size = len(loglines)
-                self.logger.debug(f"Received {_size}B of data from {pod_name}")
+                self.logger.debug(f"Received {_size}B of data from {pod.name}")
 
         # check log lines for proper timing.
         # Log lines will have two timing objects:
@@ -238,4 +246,4 @@ class LogSearchCloud(LogSearch):
             yield line
 
     def _get_hostname(self, host) -> str:
-        return host['metadata']['name']
+        return host.hostname

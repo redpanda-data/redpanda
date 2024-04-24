@@ -2145,7 +2145,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                                    self.logger,
                                    self.kubectl,
                                    test_start_time=test_start_time)
-        lsearcher.search_logs(self.get_redpanda_pods())
+        lsearcher.search_logs(self.pods)
 
 
 class RedpandaService(RedpandaServiceBase):
