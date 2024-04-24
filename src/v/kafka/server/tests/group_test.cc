@@ -9,6 +9,7 @@
 
 #include "cluster/partition.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"
 #include "utils/to_string.h"
@@ -77,7 +78,7 @@ static member_ptr get_group_member(
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),
-      protos);
+      chunked_vector<member_protocol>{protos.begin(), protos.end()});
 }
 
 static join_group_response join_resp() {
@@ -181,7 +182,8 @@ SEASTAR_THREAD_TEST_CASE(rebalance_timeout) {
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),
-      test_group_protos);
+      chunked_vector<member_protocol>{
+        test_group_protos.begin(), test_group_protos.end()});
 
     auto m1 = ss::make_lw_shared<group_member>(
       kafka::member_id("n"),
@@ -192,7 +194,8 @@ SEASTAR_THREAD_TEST_CASE(rebalance_timeout) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      test_group_protos);
+      chunked_vector<member_protocol>{
+        test_group_protos.begin(), test_group_protos.end()});
 
     (void)g.add_member(m0);
     BOOST_TEST(g.rebalance_timeout() == std::chrono::milliseconds(2));
@@ -371,7 +374,7 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
 
     // empty group -> request needs protocol type
     r.data.protocol_type = kafka::protocol_type("");
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name(""), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
 
@@ -382,7 +385,7 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
 
     // group is empty and request can init group state
     r.data.protocol_type = kafka::protocol_type("p");
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name(""), bytes()}};
     BOOST_TEST(g.supports_protocols(r));
 
@@ -396,14 +399,15 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      test_group_protos);
+      chunked_vector<member_protocol>{
+        test_group_protos.begin(), test_group_protos.end()});
 
     (void)g.add_member(m);
     g.set_state(group_state::preparing_rebalance);
 
     // protocol type doesn't match the group's protocol type
     r.data.protocol_type = kafka::protocol_type("x");
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name(""), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
 
@@ -412,7 +416,7 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
     BOOST_TEST(!g.supports_protocols(r));
 
     // now it contains a matching protocol
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name("n0"), bytes()}};
     BOOST_TEST(g.supports_protocols(r));
 
@@ -426,11 +430,11 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      std::vector<member_protocol>{{kafka::protocol_name("n2"), "d0"}});
+      chunked_vector<member_protocol>{{kafka::protocol_name("n2"), "d0"}});
     (void)g.add_member(m2);
 
     // n2 is not supported bc the first member doesn't support it
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name("n2"), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
 }
@@ -447,8 +451,8 @@ SEASTAR_THREAD_TEST_CASE(leader_rejoined) {
     // leader is joining
     BOOST_TEST(g.leader_rejoined());
 
-    // simulate that the leader is now not joining for some reason. since there
-    // is only one member, a replacement can't be chosen.
+    // simulate that the leader is now not joining for some reason. since
+    // there is only one member, a replacement can't be chosen.
     m0->set_join_response(join_resp());
     BOOST_TEST(!g.leader_rejoined());
 

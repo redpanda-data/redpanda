@@ -13,6 +13,7 @@
 
 #include "base/likely.h"
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/protocol/schemata/fetch_response.h"
@@ -92,8 +93,9 @@ struct fetch_request final {
      */
     class const_iterator {
     public:
-        using const_topic_iterator = std::vector<topic>::const_iterator;
-        using const_partition_iterator = std::vector<partition>::const_iterator;
+        using const_topic_iterator = chunked_vector<topic>::const_iterator;
+        using const_partition_iterator
+          = chunked_vector<partition>::const_iterator;
 
         struct value_type {
             bool new_topic;
@@ -211,7 +213,7 @@ struct fetch_response final {
      */
     class iterator {
     public:
-        using partition_iterator = std::vector<partition>::iterator;
+        using partition_iterator = chunked_vector<partition>::iterator;
         using partition_response_iterator
           = small_fragment_vector<partition_response>::iterator;
 

@@ -33,6 +33,7 @@ v_cc_library(
     v::ssx
     v::utils
     v::pandaproxy_schema_registry_protobuf
+    v::container
     Avro::avro
     Boost::iostreams
     protobuf::libprotobuf

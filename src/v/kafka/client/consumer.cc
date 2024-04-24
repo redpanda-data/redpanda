@@ -76,11 +76,10 @@ struct partition_comp {
 fetch_response
 reduce_fetch_response(fetch_response result, fetch_response val) {
     result.data.throttle_time_ms += val.data.throttle_time_ms;
-    result.data.topics.insert(
-      result.data.topics.end(),
-      std::make_move_iterator(val.data.topics.begin()),
-      std::make_move_iterator(val.data.topics.end()));
-
+    std::move(
+      val.data.topics.begin(),
+      val.data.topics.end(),
+      std::back_inserter(result.data.topics));
     return result;
 };
 
@@ -207,7 +206,7 @@ ss::future<> consumer::join() {
       });
 }
 
-ss::future<> consumer::subscribe(std::vector<model::topic> topics) {
+ss::future<> consumer::subscribe(chunked_vector<model::topic> topics) {
     refresh_inactivity_timer();
     _topics = std::move(topics);
     return join();
@@ -220,8 +219,7 @@ void consumer::on_leader_join(const join_group_response& res) {
         _members.push_back(m.member_id);
     }
     std::sort(_members.begin(), _members.end());
-    _members.erase(
-      std::unique(_members.begin(), _members.end()), _members.end());
+    _members.erase_to_end(std::unique(_members.begin(), _members.end()));
 
     _subscribed_topics.clear();
     for (auto const& m : res.data.members) {
@@ -233,9 +231,8 @@ void consumer::on_leader_join(const join_group_response& res) {
           topics.begin(), topics.end(), std::back_inserter(_subscribed_topics));
     }
     std::sort(_subscribed_topics.begin(), _subscribed_topics.end());
-    _subscribed_topics.erase(
-      std::unique(_subscribed_topics.begin(), _subscribed_topics.end()),
-      _subscribed_topics.end());
+    _subscribed_topics.erase_to_end(
+      std::unique(_subscribed_topics.begin(), _subscribed_topics.end()));
 
     vlog(
       kclog.info,
@@ -255,17 +252,15 @@ ss::future<leave_group_response> consumer::leave() {
     });
 }
 
-ss::future<std::vector<metadata_response::topic>>
+ss::future<chunked_vector<metadata_response::topic>>
 consumer::get_subscribed_topic_metadata() {
     return req_res([]() { return metadata_request{.list_all_topics = true}; })
       .then([this](metadata_response res) {
-          std::vector<sync_group_request_assignment> assignments;
-
           std::sort(
             res.data.topics.begin(),
             res.data.topics.end(),
             detail::topic_comp{});
-          std::vector<metadata_response::topic> topics;
+          chunked_vector<metadata_response::topic> topics;
           topics.reserve(_subscribed_topics.size());
           std::set_intersection(
             std::make_move_iterator(res.data.topics.begin()),
@@ -285,22 +280,22 @@ consumer::get_subscribed_topic_metadata() {
 }
 
 ss::future<> consumer::sync() {
-    return (is_leader()
-              ? get_subscribed_topic_metadata()
-              : ss::make_ready_future<std::vector<metadata_response::topic>>())
-      .then([this](std::vector<metadata_response::topic> topics) {
+    return (is_leader() ? get_subscribed_topic_metadata()
+                        : ss::make_ready_future<
+                          chunked_vector<metadata_response::topic>>())
+      .then([this](chunked_vector<metadata_response::topic> topics) {
           auto req_builder = [me{shared_from_this()},
-                              topics{std::move(topics)}]() mutable {
+                              topics{std::move(topics)}]() {
               auto assignments
                 = me->is_leader()
                     ? me->_plan->encode(me->_plan->plan(me->_members, topics))
-                    : std::vector<sync_group_request_assignment>{};
+                    : chunked_vector<sync_group_request_assignment>{};
               return sync_group_request{.data{
                 .group_id = me->_group_id,
                 .generation_id = me->_generation_id,
                 .member_id = me->_member_id,
                 .group_instance_id = std::nullopt,
-                .assignments = assignments}};
+                .assignments = std::move(assignments)}};
           };
 
           return req_res(std::move(req_builder))
@@ -365,7 +360,7 @@ ss::future<describe_groups_response> consumer::describe_group() {
 ss::future<offset_fetch_response>
 consumer::offset_fetch(std::vector<offset_fetch_request_topic> topics) {
     refresh_inactivity_timer();
-    auto req_builder = [topics{std::move(topics)}, group_id{_group_id}] {
+    auto req_builder = [topics{std::move(topics)}, group_id{_group_id}]() {
         return offset_fetch_request{
           .data{.group_id = group_id, .topics = topics}};
     };
@@ -386,10 +381,7 @@ consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
     if (topics.empty()) { // commit all offsets
         for (const auto& s : _fetch_sessions) {
             auto res = s.second.make_offset_commit_request();
-            topics.insert(
-              topics.end(),
-              std::make_move_iterator(res.begin()),
-              std::make_move_iterator(res.end()));
+            std::move(res.begin(), res.end(), std::back_inserter(topics));
         }
     } else { // set epoch for requests tps
         for (auto& t : topics) {

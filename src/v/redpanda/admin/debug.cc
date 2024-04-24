@@ -20,6 +20,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "container/lw_shared_container.h"
 #include "json/validator.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -262,7 +263,7 @@ void admin_server::register_debug_routes() {
             .then([](leaders leaders_info) {
                 return ss::make_ready_future<ss::json::json_return_type>(
                   ss::json::stream_range_as_array(
-                    admin::lw_shared_container(std::move(leaders_info)),
+                    lw_shared_container(std::move(leaders_info)),
                     [](const auto& leader_info) {
                         result_t info;
                         info.ns = leader_info.tp_ns.ns;

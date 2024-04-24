@@ -30,11 +30,11 @@ serialize_apis(type_list<RequestTypes...>) {
     return apis;
 }
 
-static std::vector<api_versions_response_key>
+static chunked_vector<api_versions_response_key>
 get_supported_apis(bool is_idempotence_enabled, bool are_transactions_enabled) {
     auto all_api = serialize_apis(request_types{});
 
-    std::vector<api_versions_response_key> filtered;
+    chunked_vector<api_versions_response_key> filtered;
     std::copy_if(
       all_api.begin(),
       all_api.end(),
@@ -72,14 +72,14 @@ struct APIs {
         transactions = get_supported_apis(true, true);
     }
 
-    std::vector<api_versions_response_key> base;
-    std::vector<api_versions_response_key> idempotence;
-    std::vector<api_versions_response_key> transactions;
+    chunked_vector<api_versions_response_key> base;
+    chunked_vector<api_versions_response_key> idempotence;
+    chunked_vector<api_versions_response_key> transactions;
 };
 
 static thread_local APIs supported_apis;
 
-std::vector<api_versions_response_key> get_supported_apis() {
+chunked_vector<api_versions_response_key> get_supported_apis() {
     return get_supported_apis(
       config::shard_local_cfg().enable_idempotence.value(),
       config::shard_local_cfg().enable_transactions.value());
@@ -106,11 +106,11 @@ api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
       r.data.error_code == error_code::none
       || r.data.error_code == error_code::unsupported_version) {
         if (!ctx.is_idempotence_enabled()) {
-            r.data.api_keys = supported_apis.base;
+            r.data.api_keys = supported_apis.base.copy();
         } else if (!ctx.are_transactions_enabled()) {
-            r.data.api_keys = supported_apis.idempotence;
+            r.data.api_keys = supported_apis.idempotence.copy();
         } else {
-            r.data.api_keys = supported_apis.transactions;
+            r.data.api_keys = supported_apis.transactions.copy();
         }
     }
     return r;

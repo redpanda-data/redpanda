@@ -9,6 +9,8 @@
 
 #include "handlers.h"
 
+#include "container/json.h"
+#include "container/lw_shared_container.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/parsing/httpd.h"
@@ -25,6 +27,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/print.hh>
 #include <seastar/core/sstring.hh>
 
 #include <limits>
@@ -237,6 +240,41 @@ get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
     co_return rp;
 }
 
+struct schema_version_json : public ss::json::json_base {
+    ss::json::json_element<ss::sstring> subject;
+    ss::json::json_element<long> version;
+
+    void register_params() {
+        add(&subject, "subject");
+        add(&version, "version");
+    }
+
+    schema_version_json() { register_params(); }
+
+    schema_version_json(const schema_version_json& e) {
+        register_params();
+        subject = e.subject;
+        version = e.version;
+    }
+    template<class T>
+    schema_version_json& operator=(const T& e) {
+        subject = e.subject;
+        version = e.version;
+        return *this;
+    }
+    schema_version_json& operator=(const schema_version_json& e) {
+        subject = e.subject;
+        version = e.version;
+        return *this;
+    }
+    template<class T>
+    schema_version_json& update(T& e) {
+        e.subject = subject;
+        e.version = version;
+        return *this;
+    }
+};
+
 ss::future<server::reply_t>
 get_schemas_ids_id_versions(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
@@ -252,9 +290,16 @@ get_schemas_ids_id_versions(server::request_t rq, server::reply_t rp) {
     auto svs = co_await rq.service().schema_store().get_schema_subject_versions(
       id);
 
-    auto json_rslt = ppj::rjson_serialize(
-      get_schemas_ids_id_versions_response{.subject_versions{std::move(svs)}});
-    rp.rep->write_body("json", json_rslt);
+    rp.rep->write_body(
+      "json",
+      ss::json::stream_range_as_array(
+        lw_shared_container(std::move(svs)), [](const subject_version& sv) {
+            schema_version_json j;
+            j.subject = sv.sub;
+            j.version = sv.version;
+            return j;
+        }));
+
     co_return rp;
 }
 
@@ -275,8 +320,11 @@ ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_subjects(
 
     auto subjects = co_await rq.service().schema_store().get_schema_subjects(
       id, incl_del);
-    auto json_rslt{json::rjson_serialize(subjects)};
-    rp.rep->write_body("json", json_rslt);
+    rp.rep->write_body(
+      "json",
+      ss::json::stream_range_as_array(
+        lw_shared_container(std::move(subjects)),
+        [](const subject& subj) { return subj; }));
     co_return rp;
 }
 
@@ -292,8 +340,11 @@ get_subjects(server::request_t rq, server::reply_t rp) {
     co_await rq.service().writer().read_sync();
 
     auto subjects = co_await rq.service().schema_store().get_subjects(inc_del);
-    auto json_rslt{json::rjson_serialize(subjects)};
-    rp.rep->write_body("json", json_rslt);
+    rp.rep->write_body(
+      "json",
+      ss::json::stream_range_as_array(
+        lw_shared_container(std::move(subjects)),
+        [](const subject& subj) { return subj; }));
     co_return rp;
 }
 

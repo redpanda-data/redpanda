@@ -822,7 +822,7 @@ public:
           .key = kafka::fetch_handler::api::key,
           .version = kafka::fetch_handler::max_supported};
 
-        return make_request_context(request, header);
+        return make_request_context(std::move(request), header);
     }
 
     iobuf rand_iobuf(size_t data_size) const {

@@ -11,6 +11,7 @@
 
 #include "cluster/metadata_cache.h"
 #include "cluster/shard_table.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/offset_for_leader_epoch_response.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
@@ -118,10 +119,10 @@ static ss::future<> fetch_offsets_from_shards(
       });
 }
 
-static ss::future<std::vector<offset_for_leader_topic_result>>
+static ss::future<chunked_vector<offset_for_leader_topic_result>>
 get_offsets_for_leader_epochs(
-  request_context& ctx, std::vector<offset_for_leader_topic> topics) {
-    std::vector<offset_for_leader_topic_result> result;
+  request_context& ctx, chunked_vector<offset_for_leader_topic> topics) {
+    chunked_vector<offset_for_leader_topic_result> result;
     result.reserve(topics.size());
 
     absl::flat_hash_map<ss::shard_id, shard_op_ctx> requests_per_shard;
@@ -239,7 +240,7 @@ ss::future<response_ptr> offset_for_leader_epoch_handler::handle(
               return res;
           });
         // remove unauthorized topics
-        request.data.topics.erase(it, request.data.topics.end());
+        request.data.topics.erase_to_end(it);
     }
 
     if (!ctx.audit()) {

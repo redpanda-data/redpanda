@@ -10,6 +10,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "container/fragmented_vector.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_request.h"
@@ -102,7 +103,7 @@ private:
     // produce requests. Each request, once sent, will correspond to a
     // replicated Raft batch.
     // NOTE: input must remain valid for the lifetimes of the returned requests.
-    static std::vector<kafka::partition_produce_data>
+    static chunked_vector<kafka::partition_produce_data>
     produce_partition_requests(
       const pid_to_kvs_map_t& records_per_partition,
       std::optional<model::timestamp> ts);
