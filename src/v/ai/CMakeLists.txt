@@ -9,6 +9,8 @@ v_cc_library(
     llama
     v::metrics
     v::config
+    v::http
+    ada
 )
 
 add_subdirectory(tests)

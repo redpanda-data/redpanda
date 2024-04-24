@@ -1469,12 +1469,7 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
     register_metrics();
 
     co_await _ai_service.start();
-    co_await _ai_service.invoke_on_all([](ai::service& s) {
-        return s.start({
-          .model_file
-          = "/home/rockwood/code/llama.cpp/models/llama-2-7b.Q4_K_M.gguf",
-        });
-    });
+    co_await _ai_service.invoke_on_all(&ai::service::start);
 }
 
 void wasmtime_runtime::register_metrics() {

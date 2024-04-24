@@ -72,6 +72,17 @@ initialize_context(llama_model* model, const model::config& cfg) {
 }
 } // namespace
 
+ss::sstring model::description() const {
+    ss::sstring out;
+    // Guess large so we don't truncate
+    constexpr size_t initial_size = 64;
+    out.resize(initial_size);
+    auto actual = static_cast<uint32_t>(
+      llama_model_desc(_underlying.get(), out.data(), out.size()));
+    out.resize(actual);
+    return out;
+}
+
 bool model::decode(batch_view b) {
     int32_t result = llama_decode(_context.get(), b._underlying);
     if (result < 0) {
@@ -269,17 +280,17 @@ batch_view batch::subspan(position start, uint32_t size) const {
 // NOLINTBEGIN(*-pointer-arithmetic)
 batch_view::batch_view(const batch& b, position start, uint32_t size)
   : _underlying({
-    .n_tokens = int32_t(size),
-    .token = b._underlying.token + start(),
-    .embd = nullptr,
-    .pos = b._underlying.pos + start(),
-    .n_seq_id = b._underlying.n_seq_id + start(),
-    .seq_id = b._underlying.seq_id + start(),
-    .logits = b._underlying.logits + start(),
-    // everything below can be ignored
-    .all_pos_0 = b._underlying.all_pos_0,
-    .all_pos_1 = b._underlying.all_pos_1,
-    .all_seq_id = b._underlying.all_seq_id,
-  }) {}
+      .n_tokens = int32_t(size),
+      .token = b._underlying.token + start(),
+      .embd = nullptr,
+      .pos = b._underlying.pos + start(),
+      .n_seq_id = b._underlying.n_seq_id + start(),
+      .seq_id = b._underlying.seq_id + start(),
+      .logits = b._underlying.logits + start(),
+      // everything below can be ignored
+      .all_pos_0 = b._underlying.all_pos_0,
+      .all_pos_1 = b._underlying.all_pos_1,
+      .all_seq_id = b._underlying.all_seq_id,
+    }) {}
 // NOLINTEND(*-pointer-arithmetic)
 } // namespace ai::llama

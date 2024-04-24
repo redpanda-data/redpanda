@@ -26,20 +26,31 @@ bool readline(std::string& line) {
 
 ss::future<> run(const boost::program_options::variables_map& cfg) {
     ss::sharded<service> s;
-    co_await s.start();
     service::config service_config{
-      .model_file = cfg["model_file"].as<std::filesystem::path>(),
+      .llm_path = "/tmp/ai/llm/",
+      .embeddings_path = "/tmp/ai/embd/",
     };
-    co_await s.invoke_on_all(
-      [&service_config](service& s) { return s.start(service_config); });
-    service::generate_text_options opts = {
-      .max_tokens = cfg["max_tokens"].as<int32_t>(),
-    };
-    std::string line;
-    while (readline(line)) {
-        auto response = co_await s.local().generate_text(line, opts);
-        std::cout << response << "\n";
-        fflush(stdout);
+    try {
+        co_await s.start(service_config);
+        co_await s.invoke_on_all(&service::start);
+        co_await s.local().deploy_text_generation_model(huggingface_file{
+          .repo = "IlyaGusev/saiga_llama3_8b_gguf",
+          .filename = "model-q4_K.gguf",
+        });
+        for (const auto& [id, name] : co_await s.local().list_models()) {
+            std::cout << "name: " << name() << "\n";
+        }
+        service::generate_text_options opts = {
+          .max_tokens = cfg["max_tokens"].as<int32_t>(),
+        };
+        std::string line;
+        while (readline(line)) {
+            // auto response = co_await s.local().generate_text(line, opts);
+            // std::cout << response << "\n";
+            fflush(stdout);
+        }
+    } catch (const std::exception& ex) {
+        std::cout << "error: " << ex.what() << "\n";
     }
     co_await s.stop();
 }
@@ -50,9 +61,9 @@ int main(int argc, char** argv) {
 
     namespace po = boost::program_options;
     app.add_options()(
-      "model_file",
-      po::value<std::filesystem::path>(),
-      "The path to the ML model");
+      "repo", po::value<ss::sstring>(), "The hugging face model");
+    app.add_options()(
+      "file", po::value<ss::sstring>(), "The path to the ML model");
     constexpr int32_t default_max_tokens = 150;
     app.add_options()(
       "max_tokens",

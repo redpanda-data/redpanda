@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/print.hh>
@@ -51,6 +52,9 @@ public:
     };
     using underlying = handle<llama_model, llama_free_model>;
     using context = handle<llama_context, llama_free>;
+
+    // Return a string description of the model
+    ss::sstring description() const;
 
     // Tokenize a prompt into tokens.
     std::vector<token> tokenize(const seastar::sstring& prompt) const noexcept;

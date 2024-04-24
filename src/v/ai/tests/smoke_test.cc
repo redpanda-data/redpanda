@@ -32,13 +32,7 @@ public:
 
     static void SetUpTestSuite() {
         s.start().get();
-        service::config service_config{
-          .model_file
-          = "/home/rockwood/code/llama.cpp/models/all-MiniLM-L6-v2.Q4_K_M.gguf",
-        };
-        s.invoke_on_all(
-           [&service_config](service& s) { return s.start(service_config); })
-          .get();
+        s.invoke_on_all(&ai::service::start).get();
     }
     static void TearDownTestSuite() { s.stop().get(); }
 };

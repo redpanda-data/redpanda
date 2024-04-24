@@ -3200,13 +3200,13 @@ configuration::configuration()
       "ai_parallel_requests",
       "TODO",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
-      8)
+      4)
   , n_threads(
       *this,
       "ai_nthreads",
       "TODO",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
-      std::thread::hardware_concurrency())
+      1)
   , context_window(
       *this,
       "ai_context_window",
