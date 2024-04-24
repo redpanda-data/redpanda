@@ -14,7 +14,7 @@
 #include "cluster/types.h"
 #include "model/record.h"
 #include "raft/errc.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/coroutine.hh>

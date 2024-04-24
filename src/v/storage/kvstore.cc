@@ -16,7 +16,6 @@
 #include "model/async_adl_serde.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "raft/types.h"
 #include "reflection/adl.h"
 #include "storage/parser.h"
 #include "storage/record_batch_builder.h"

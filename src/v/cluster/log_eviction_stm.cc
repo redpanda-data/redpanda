@@ -15,7 +15,7 @@
 #include "cluster/prefix_truncate_record.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "serde/serde.h"
 
 #include <seastar/core/future-util.hh>

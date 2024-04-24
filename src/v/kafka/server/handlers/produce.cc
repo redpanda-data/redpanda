@@ -27,7 +27,6 @@
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/validation.h"
 #include "raft/errc.h"
-#include "raft/types.h"
 #include "ssx/future-util.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"

@@ -18,7 +18,6 @@
 #include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "raft/types.h"
 #include "storage/parser_utils.h"
 
 #include <seastar/core/smp.hh>

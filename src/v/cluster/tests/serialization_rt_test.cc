@@ -24,7 +24,7 @@
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"

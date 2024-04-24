@@ -15,7 +15,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "test_utils/fixture.h"
 #include "topic_table_fixture.h"
 

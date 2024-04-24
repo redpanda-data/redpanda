@@ -36,7 +36,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/ntp_config.h"

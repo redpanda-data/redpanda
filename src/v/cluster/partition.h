@@ -21,7 +21,6 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/replicate.h"
-#include "raft/types.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 

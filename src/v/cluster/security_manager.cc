@@ -14,7 +14,7 @@
 #include "cluster/commands.h"
 #include "cluster/controller_snapshot.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "security/role_store.h"
