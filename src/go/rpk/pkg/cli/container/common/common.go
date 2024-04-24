@@ -36,8 +36,9 @@ var (
 )
 
 const (
-	redpandaNetwork   = "redpanda"
-	externalKafkaPort = 9093
+	redpandaNetwork        = "redpanda"
+	externalKafkaPort      = 19092
+	externalPandaproxyPort = 18082
 
 	defaultDockerClientTimeout = 60 * time.Second
 )
@@ -247,7 +248,7 @@ func RemoveNetwork(c Client) error {
 
 func CreateNode(
 	c Client,
-	nodeID, kafkaPort, proxyPort, schemaRegPort, rpcPort, metricsPort uint,
+	nodeID, kafkaPort, proxyPort, schemaRegPort, rpcPort, adminPort uint,
 	netID, image string,
 	args ...string,
 ) (*NodeState, error) {
@@ -260,7 +261,7 @@ func CreateNode(
 	}
 	kPort, err := nat.NewPort(
 		"tcp",
-		strconv.Itoa(int(externalKafkaPort)),
+		strconv.Itoa(externalKafkaPort),
 	)
 	if err != nil {
 		return nil, err
@@ -279,7 +280,7 @@ func CreateNode(
 	if err != nil {
 		return nil, err
 	}
-	metPort, err := nat.NewPort(
+	admPort, err := nat.NewPort(
 		"tcp",
 		strconv.Itoa(config.DefaultAdminPort),
 	)
@@ -294,22 +295,14 @@ func CreateNode(
 	cmd := []string{
 		"redpanda",
 		"start",
-		"--node-id",
-		fmt.Sprintf("%d", nodeID),
-		"--kafka-addr",
-		ListenAddresses(ip, config.DefaultKafkaPort, externalKafkaPort),
-		"--pandaproxy-addr",
-		ListenAddresses(ip, config.DefaultProxyPort, proxyPort),
-		"--schema-registry-addr",
-		net.JoinHostPort(ip, strconv.Itoa(config.DefaultSchemaRegPort)),
-		"--rpc-addr",
-		net.JoinHostPort(ip, strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port)),
-		"--advertise-kafka-addr",
-		AdvertiseAddresses(ip, config.DefaultKafkaPort, kafkaPort),
-		"--advertise-pandaproxy-addr",
-		AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
-		"--advertise-rpc-addr",
-		net.JoinHostPort(ip, strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port)),
+		"--node-id", fmt.Sprintf("%d", nodeID),
+		"--kafka-addr", ListenAddresses(ip, config.DefaultKafkaPort, externalKafkaPort),
+		"--advertise-kafka-addr", AdvertiseAddresses(ip, config.DefaultKafkaPort, kafkaPort),
+		"--pandaproxy-addr", ListenAddresses(ip, config.DefaultProxyPort, externalPandaproxyPort),
+		"--advertise-pandaproxy-addr", AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
+		"--schema-registry-addr", net.JoinHostPort(ip, strconv.Itoa(config.DefaultSchemaRegPort)),
+		"--rpc-addr", net.JoinHostPort(ip, strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port)),
+		"--advertise-rpc-addr", net.JoinHostPort(ip, strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port)),
 		"--mode dev-container",
 	}
 	containerConfig := container.Config{
@@ -341,8 +334,8 @@ func CreateNode(
 			sPort: []nat.PortBinding{{
 				HostPort: fmt.Sprint(schemaRegPort),
 			}},
-			metPort: []nat.PortBinding{{
-				HostPort: fmt.Sprint(metricsPort),
+			admPort: []nat.PortBinding{{
+				HostPort: fmt.Sprint(adminPort),
 			}},
 		},
 	}
