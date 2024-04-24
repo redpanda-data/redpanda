@@ -116,7 +116,7 @@ TEST_F(WasmTestFixture, CpuIsLimited) {
     // on shared vCPUs, we make this much higher.
     ss::engine().update_blocked_reactor_notify_ms(50ms);
     bool stalled = false;
-    ss::engine().set_stall_detector_report_function(
+    ss::reactor::test::set_stall_detector_report_function(
       [&stalled] { stalled = true; });
     EXPECT_THROW(execute_command("loop", 0), wasm::wasm_exception);
     EXPECT_FALSE(stalled);
