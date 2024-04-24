@@ -1209,3 +1209,20 @@ class Admin:
     def get_tx_manager_recovery_status(self,
                                        node: Optional[ClusterNode] = None):
         return self._request("GET", "recovery/migrate_tx_manager", node=node)
+
+    def get_broker_uuids(self, node: Optional[ClusterNode] = None):
+        return self._request("GET", "broker_uuids", node=node).json()
+
+    def get_broker_uuid(self, node: ClusterNode):
+        return self._request("GET", "debug/broker_uuid", node=node).json()
+
+    def override_node_id(self, node, current_uuid: str, new_node_id: int,
+                         new_node_uuid: str):
+        return self._request("PUT",
+                             "debug/broker_uuid",
+                             node=node,
+                             json={
+                                 "current_node_uuid": current_uuid,
+                                 "new_node_uuid": new_node_uuid,
+                                 "new_node_id": new_node_id,
+                             })

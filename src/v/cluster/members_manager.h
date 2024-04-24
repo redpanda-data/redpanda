@@ -178,6 +178,11 @@ public:
     // when bootstrapping a cluster.
     ss::future<> set_initial_state(std::vector<model::broker>, uuid_map_t);
 
+    // Returns a reference to a map containing mapping between node ids and node
+    // uuids. Node UUID is node globally unique identifier which has an id
+    // assigned during join.
+    const uuid_map_t& get_id_by_uuid_map() const { return _id_by_uuid; }
+
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
     struct changed_nodes {
