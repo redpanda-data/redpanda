@@ -222,6 +222,9 @@ class CloudStorageType(IntEnum):
     ABS = 2
 
 
+CloudStorageTypeAndUrlStyle = Tuple[CloudStorageType, str]
+
+
 def prepare_allow_list(allow_list):
     if allow_list is None:
         allow_list = DEFAULT_LOG_ALLOW_LIST
@@ -288,6 +291,32 @@ def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
         cloud_storage_type = list(
             set(applies_only_on).intersection(cloud_storage_type))
     return cloud_storage_type
+
+
+def get_cloud_storage_url_style(cloud_storage_type: CloudStorageType
+                                | None = None) -> str:
+    if cloud_storage_type is None:
+        return ['virtual_host', 'path']
+
+    if cloud_storage_type == CloudStorageType.S3:
+        return ['virtual_host', 'path']
+    else:
+        return ['virtual_host']
+
+
+def get_cloud_storage_type_and_url_style(
+) -> List[CloudStorageTypeAndUrlStyle]:
+    """
+    Returns a list of compatible cloud storage types and url styles.
+    I.e, Returns [(CloudStorageType.S3, 'virtual_host'),
+                  (CloudStorageType.S3, 'path'),
+                  (CloudStorageType.ABS, 'virtual_host')]
+    """
+    return [
+        tus for tus_list in map(
+            lambda t: [(t, us) for us in get_cloud_storage_url_style(t)],
+            get_cloud_storage_type()) for tus in tus_list
+    ]
 
 
 def is_redpanda_cloud(context: TestContext):
@@ -480,11 +509,15 @@ class SISettings:
 
         self.cloud_storage_type = get_cloud_storage_type()[0]
         if hasattr(test_context, 'injected_args') \
-        and test_context.injected_args is not None \
-        and 'cloud_storage_type' in test_context.injected_args:
-            self.cloud_storage_type = cast(
-                CloudStorageType,
-                test_context.injected_args['cloud_storage_type'])
+        and test_context.injected_args is not None:
+            if 'cloud_storage_type' in test_context.injected_args:
+                self.cloud_storage_type = cast(
+                    CloudStorageType,
+                    test_context.injected_args['cloud_storage_type'])
+            elif 'cloud_storage_type_and_url_style' in test_context.injected_args:
+                self.cloud_storage_type = cast(
+                    CloudStorageType, test_context.
+                    injected_args['cloud_storage_type_and_url_style'][0])
 
         if self.cloud_storage_type == CloudStorageType.S3:
             self.cloud_storage_credentials_source = cloud_storage_credentials_source
@@ -501,10 +534,13 @@ class SISettings:
             self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
 
             if hasattr(test_context, 'injected_args') \
-            and test_context.injected_args is not None \
-            and 'cloud_storage_url_style' in test_context.injected_args:
-                self.cloud_storage_url_style = test_context.injected_args[
-                    'cloud_storage_url_style']
+            and test_context.injected_args is not None:
+                if 'cloud_storage_url_style' in test_context.injected_args:
+                    self.cloud_storage_url_style = test_context.injected_args[
+                        'cloud_storage_url_style']
+                elif 'cloud_storage_type_and_url_style' in test_context.injected_args:
+                    self.cloud_storage_url_style = test_context.injected_args[
+                        'cloud_storage_type_and_url_style'][1]
 
         elif self.cloud_storage_type == CloudStorageType.ABS:
             self.cloud_storage_azure_shared_key = self.ABS_AZURITE_KEY
