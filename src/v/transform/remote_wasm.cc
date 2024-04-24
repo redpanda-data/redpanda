@@ -170,7 +170,13 @@ remote_wasm_manager::remote_wasm_manager(
   , _metadata_lookup(std::move(meta_lookup)) {}
 
 ss::future<> remote_wasm_manager::start() {
-    ssx::spawn_with_gate(_gate, [this]() { return do_reconciliation(); });
+    ssx::background
+      = ssx::spawn_with_gate_then(_gate, [this]() {
+            vlog(tlog.info, "starting remote wasm reconciliation loop");
+            return do_reconciliation();
+        }).then([] {
+            vlog(tlog.info, "stopping remote wasm reconciliation loop");
+        });
     co_return;
 }
 
@@ -196,6 +202,7 @@ ss::future<> remote_wasm_manager::stop() {
 
 ss::future<ss::shared_ptr<wasm::factory>> remote_wasm_manager::make_factory(
   model::transform_id id, model::transform_metadata meta) {
+    vlog(tlog.info, "attempting to make factory for transform {}", meta.name);
     auto h = _gate.hold();
     auto key = std::make_pair(id, meta.uuid);
     _ref_counts[key] += 1;
@@ -208,6 +215,7 @@ ss::future<ss::shared_ptr<wasm::factory>> remote_wasm_manager::make_factory(
             return _active_vms.contains(key) || _gate.is_closed();
         });
     }
+    vlog(tlog.info, "completed making factory for transform {}", meta.name);
     co_return factory;
 }
 
