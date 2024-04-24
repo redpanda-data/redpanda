@@ -40,6 +40,9 @@
 #include <seastar/util/variant_utils.hh>
 
 #include <absl/container/fixed_array.h>
+#include <absl/strings/escaping.h>
+#include <absl/strings/str_join.h>
+#include <absl/strings/str_split.h>
 #include <absl/strings/strip.h>
 
 #include <ada.h>
@@ -57,6 +60,7 @@ static seastar::logger logger("ai");
 
 struct model_parameters {
     llama::backend* backend;
+    huggingface_file source;
     llama::model::config config;
 };
 
@@ -115,12 +119,14 @@ public:
     ~embeddings_model() final = default;
 
     ss::sstring description() const { return _llm->description(); }
+    huggingface_file source() const { return _source; }
     int64_t prompt_tokens_processed() const { return _prompt_tokens; }
 
 protected:
     void initialize(model_parameters p) noexcept final {
         vlog(logger.info, "initializing model at {}", p.config.model_file);
         _llm = std::make_unique<llama::model>(p.backend->load(p.config));
+        _source = p.source;
         _batch = llama::batch({
           .n_tokens = _llm->n_batch(),
           .embd = 0,
@@ -255,6 +261,7 @@ private:
 
     size_t _max_parallel_requests;
     llama::batch _batch;
+    huggingface_file _source;
     std::unique_ptr<llama::model> _llm;
     std::atomic_int64_t _prompt_tokens;
     metrics::internal_metric_groups _internal_metrics;
@@ -303,6 +310,7 @@ public:
     ~text_generation_model() final = default;
 
     ss::sstring description() const { return _llm->description(); }
+    huggingface_file source() const { return _source; }
     int64_t prompt_tokens_processed() const { return _prompt_tokens; }
     int64_t response_tokens_processed() const { return _response_tokens; }
 
@@ -310,6 +318,7 @@ protected:
     void initialize(model_parameters p) noexcept final {
         vlog(logger.info, "initializing model at {}", p.config.model_file);
         _llm = std::make_unique<llama::model>(p.backend->load(p.config));
+        _source = p.source;
         _batch = llama::batch({
           .n_tokens = _llm->n_batch(),
           .embd = 0,
@@ -491,6 +500,7 @@ private:
 
     size_t _max_parallel_requests;
     llama::batch _batch;
+    huggingface_file _source;
     std::unique_ptr<llama::model> _llm;
     std::atomic_int64_t _prompt_tokens;
     std::atomic_int64_t _response_tokens;
@@ -532,7 +542,7 @@ ss::future<> service::start() {
               return ss::remove_file(std::string(
                 _config.embeddings_path / std::string_view(de.name)));
           }
-          return load_llm(de.name);
+          return load_embeddings_model(de.name);
       });
 
     auto llm_dir = std::string(_config.llm_path);
@@ -548,7 +558,7 @@ ss::future<> service::start() {
               return ss::remove_file(
                 std::string(_config.llm_path / std::string_view(de.name)));
           }
-          return load_embeddings_model(de.name);
+          return load_llm(de.name);
       });
 }
 
@@ -672,47 +682,55 @@ struct downloader {
 
 } // namespace
 
-ss::future<model_id> service::deploy_embeddings_model(ss::sstring url) {
+ss::future<model_id>
+service::deploy_embeddings_model(huggingface_file hg_file) {
     auto uuid = uuid_t::create();
-    auto tmp_out = _config.embeddings_path
-                   / std::string_view(
-                     ss::format("{}.gguf.tmp", ss::sstring(uuid)));
+    auto tmp_out = _config.embeddings_path / fmt::format("{}.tmp", uuid);
     downloader d;
-    co_await d.download_model_to_file(url, tmp_out);
-    auto final_out = _config.embeddings_path
-                     / std::string_view(
-                       ss::format("{}.gguf", ss::sstring(uuid)));
+    co_await d.download_model_to_file(hg_file.to_url(), tmp_out);
+    auto name = absl::StrJoin(
+      {fmt::format("{}", uuid),
+       absl::Base64Escape(hg_file.repo),
+       absl::Base64Escape(hg_file.filename),
+       std::string("gguf")},
+      ".");
+    auto final_out = _config.embeddings_path / name;
     co_await ss::rename_file(std::string(tmp_out), std::string(final_out));
-
+    co_await ss::sync_directory(std::string(_config.embeddings_path));
+    co_await load_embeddings_model(name);
     co_return model_id(uuid);
 }
 
-ss::future<model_id> service::deploy_text_generation_model(ss::sstring url) {
+ss::future<model_id>
+service::deploy_text_generation_model(huggingface_file hg_file) {
     auto uuid = uuid_t::create();
-    auto tmp_out = _config.llm_path
-                   / std::string_view(
-                     ss::format("{}.gguf.tmp", ss::sstring(uuid)));
+    auto tmp_out = _config.llm_path / fmt::format("{}.tmp", uuid);
     downloader d;
-    co_await d.download_model_to_file(url, tmp_out);
-    auto final_out = _config.llm_path
-                     / std::string_view(
-                       ss::format("{}.gguf", ss::sstring(uuid)));
+    co_await d.download_model_to_file(hg_file.to_url(), tmp_out);
+    auto name = absl::StrJoin(
+      {fmt::format("{}", uuid),
+       absl::Base64Escape(hg_file.repo),
+       absl::Base64Escape(hg_file.filename),
+       std::string("gguf")},
+      ".");
+    auto final_out = _config.llm_path / name;
     co_await ss::rename_file(std::string(tmp_out), std::string(final_out));
-
+    co_await ss::sync_directory(std::string(_config.llm_path));
+    co_await load_llm(name);
     co_return model_id(uuid);
 }
 
-ss::future<absl::flat_hash_map<model_id, model_name>> service::list_models() {
-    return container().invoke_on(model_shard, &service::list_models);
+ss::future<std::vector<model_info>> service::list_models() {
+    return container().invoke_on(model_shard, &service::do_list_models);
 }
 
-ss::future<absl::flat_hash_map<model_id, model_name>>
-service::do_list_models() {
-    absl::flat_hash_map<model_id, model_name> models;
+ss::future<std::vector<model_info>> service::do_list_models() {
+    std::vector<model_info> models;
     for (const auto& [id, model] : _models) {
         auto desc = ss::visit(
           model->kind, [](auto& m) { return m->description(); });
-        models.emplace(id, std::move(desc));
+        auto hf = ss::visit(model->kind, [](auto& m) { return m->source(); });
+        models.emplace_back(id, model_name(std::move(desc)), std::move(hf));
     }
     co_return models;
 }
@@ -729,7 +747,7 @@ service::compute_embeddings(model_id id, ss::sstring text) {
 ss::future<std::vector<float>>
 service::do_compute_embeddings(model_id id, ss::sstring text) {
     auto it = _models.find(id);
-    if (it != _models.end()) {
+    if (it == _models.end()) {
         throw std::runtime_error("model does not exist");
     }
     auto response = co_await ss::visit(
@@ -758,7 +776,7 @@ ss::future<ss::sstring> service::generate_text(
 ss::future<ss::sstring> service::do_generate_text(
   model_id id, ss::sstring prompt, generate_text_options opts) {
     auto it = _models.find(id);
-    if (it != _models.end()) {
+    if (it == _models.end()) {
         throw std::runtime_error("model does not exist");
     }
     auto response = co_await ss::visit(
@@ -777,22 +795,42 @@ ss::future<ss::sstring> service::do_generate_text(
     co_return std::move(response.output);
 }
 
-ss::future<> service::load_embeddings_model(const ss::sstring& filename) {
-    std::string_view fn = filename;
-    if (!absl::ConsumeSuffix(&fn, ".gguf")) {
+namespace {
+std::tuple<model_id, std::string, std::string>
+parse_filename(std::string_view disk_filename) {
+    std::vector<std::string> parts = absl::StrSplit(disk_filename, '.');
+    if (parts.size() != 4) {
         throw std::runtime_error("invalid file");
     }
-    auto id = model_id(uuid_t::from_string(fn));
+    auto id = model_id(uuid_t::from_string(parts[0]));
+    std::string repo;
+    if (!absl::Base64Unescape(parts[1], &repo)) {
+        throw std::runtime_error("invalid file");
+    }
+    std::string file;
+    if (!absl::Base64Unescape(parts[2], &file)) {
+        throw std::runtime_error("invalid file");
+    }
+    return std::make_tuple(id, repo, file);
+}
+} // namespace
+
+ss::future<> service::load_embeddings_model(const ss::sstring& filename) {
+    auto [id, repo, file] = parse_filename(filename);
     const auto& cluster_cfg = ::config::shard_local_cfg();
     // TODO(ai): All of these params should be per model, not cluster configs
     auto embdm = std::make_unique<embeddings_model>(
       /*max_parallel_requests=*/cluster_cfg.parallel_requests);
-    embdm->start({
+    co_await embdm->start({
         .name = "ai-" + ss::sstring(id()).substr(0, 8),  // NOLINT
         .parameters = {
             .backend = _backend.get(),
+            .source = {
+              .repo = repo,
+              .filename = file,
+            },
             .config = {
-               .model_file = _config.llm_path / std::string_view(filename),
+               .model_file = _config.embeddings_path / std::string_view(filename),
                .nthreads = cluster_cfg.n_threads,
                .context_window = cluster_cfg.context_window,
                .max_sequences = cluster_cfg.max_seqs,
@@ -806,21 +844,21 @@ ss::future<> service::load_embeddings_model(const ss::sstring& filename) {
 }
 
 ss::future<> service::load_llm(const ss::sstring& filename) {
-    std::string_view fn = filename;
-    if (!absl::ConsumeSuffix(&fn, ".gguf")) {
-        throw std::runtime_error("invalid file");
-    }
-    auto id = model_id(uuid_t::from_string(fn));
+    auto [id, repo, file] = parse_filename(filename);
     const auto& cluster_cfg = ::config::shard_local_cfg();
     // TODO(ai): All of these params should be per model, not cluster configs
     auto tgm = std::make_unique<text_generation_model>(
       /*max_parallel_requests=*/cluster_cfg.parallel_requests);
-    tgm->start({
+    co_await tgm->start({
         .name = "ai-" + ss::sstring(id()).substr(0, 8),  // NOLINT
         .parameters = {
             .backend = _backend.get(),
+            .source = {
+              .repo = repo,
+              .filename = file,
+            },
             .config = {
-               .model_file = _config.embeddings_path / std::string_view(filename),
+               .model_file = _config.llm_path / std::string_view(filename),
                .nthreads = cluster_cfg.n_threads,
                .context_window = cluster_cfg.context_window,
                .max_sequences = cluster_cfg.max_seqs,
@@ -830,7 +868,6 @@ ss::future<> service::load_llm(const ss::sstring& filename) {
         },
     });
     _models.emplace(id, std::make_unique<model>(std::move(tgm)));
-    co_return;
 }
 
 ss::sstring huggingface_file::to_url() const {

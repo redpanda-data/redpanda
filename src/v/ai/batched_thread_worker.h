@@ -84,13 +84,17 @@ public:
     batched_thread_worker& operator=(batched_thread_worker&&) = delete;
     virtual ~batched_thread_worker() = default;
 
-    void start(config c) {
-        _worker = std::thread([this, c = std::move(c)]() mutable {
+    ss::future<> start(config c) {
+        ss::promise<> p;
+        _worker = std::thread([this, c = std::move(c), &p]() mutable {
             configure_thread(std::move(c.name));
             initialize(std::move(c.parameters));
+            ss::alien::run_on(
+              *_alien, _shard_id, [&p]() mutable noexcept { p.set_value(); });
             run();
             deinitialize();
         });
+        co_await p.get_future();
     }
 
     ss::future<> stop() {

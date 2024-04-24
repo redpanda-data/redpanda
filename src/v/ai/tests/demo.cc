@@ -33,12 +33,17 @@ ss::future<> run(const boost::program_options::variables_map& cfg) {
     try {
         co_await s.start(service_config);
         co_await s.invoke_on_all(&service::start);
-        co_await s.local().deploy_text_generation_model(huggingface_file{
-          .repo = "IlyaGusev/saiga_llama3_8b_gguf",
-          .filename = "model-q4_K.gguf",
-        });
-        for (const auto& [id, name] : co_await s.local().list_models()) {
-            std::cout << "name: " << name() << "\n";
+        // co_await s.local().deploy_embeddings_model(huggingface_file{
+        //   .repo = "leliuga/all-MiniLM-L12-v2-GGUF",
+        //   .filename = "all-MiniLM-L12-v2.Q8_0.gguf",
+        // });
+        // co_await s.local().deploy_text_generation_model(huggingface_file{
+        //   .repo = "Trelis/TinyLlama-1.1B-intermediate-step-480k-1T-GGUF",
+        //   .filename = "TinyLlama-1.1B-intermediate-step-480k-1T.Q4_K.gguf",
+        // });
+        for (const auto& [id, name, info] : co_await s.local().list_models()) {
+            std::cout << "name: " << name() << "hf: " << info.repo << "/"
+                      << info.filename << "\n";
         }
         service::generate_text_options opts = {
           .max_tokens = cfg["max_tokens"].as<int32_t>(),

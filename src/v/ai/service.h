@@ -34,7 +34,16 @@ struct huggingface_file {
     ss::sstring repo;
     ss::sstring filename;
 
+    friend bool operator==(const huggingface_file&, const huggingface_file&)
+      = default;
+
     ss::sstring to_url() const;
+};
+
+struct model_info {
+    model_id id;
+    model_name name;
+    huggingface_file file;
 };
 
 // A service for interacting with an AI model.
@@ -56,16 +65,9 @@ public:
 
     ss::future<> start();
 
-    ss::future<model_id> deploy_embeddings_model(ss::sstring url);
-    ss::future<model_id> deploy_text_generation_model(ss::sstring url);
-    ss::future<model_id> deploy_embeddings_model(const huggingface_file& hff) {
-        return deploy_embeddings_model(hff.to_url());
-    }
-    ss::future<model_id>
-    deploy_text_generation_model(const huggingface_file& hff) {
-        return deploy_text_generation_model(hff.to_url());
-    }
-    ss::future<absl::flat_hash_map<model_id, model_name>> list_models();
+    ss::future<model_id> deploy_embeddings_model(huggingface_file);
+    ss::future<model_id> deploy_text_generation_model(huggingface_file);
+    ss::future<std::vector<model_info>> list_models();
     ss::future<> delete_model(model_id url);
 
     ss::future<> stop();
@@ -83,7 +85,7 @@ public:
     generate_text(model_id, ss::sstring prompt, generate_text_options);
 
 private:
-    ss::future<absl::flat_hash_map<model_id, model_name>> do_list_models();
+    ss::future<std::vector<model_info>> do_list_models();
     ss::future<std::vector<float>>
     do_compute_embeddings(model_id, ss::sstring prompt);
     ss::future<ss::sstring>
