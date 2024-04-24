@@ -118,6 +118,12 @@ public:
     ss::future<> put(key_space ks, bytes key, iobuf value);
     ss::future<> remove(key_space ks, bytes key);
 
+    /// Iterate over all key-value pairs in a keyspace.
+    /// NOTE: this will stall all updates, so use with a lot of caution.
+    ss::future<> for_each(
+      key_space ks,
+      ss::noncopyable_function<void(bytes_view, const iobuf&)> visitor);
+
     bool empty() const {
         vassert(_started, "kvstore has not been started");
         return _db.empty();

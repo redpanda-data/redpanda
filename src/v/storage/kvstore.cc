@@ -17,6 +17,7 @@
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "reflection/adl.h"
+#include "ssx/async_algorithm.h"
 #include "storage/parser.h"
 #include "storage/record_batch_builder.h"
 #include "storage/segment.h"
@@ -195,6 +196,25 @@ ss::future<> kvstore::put(key_space ks, bytes key, std::optional<iobuf> value) {
               _timer.arm(_conf.commit_interval());
           }
           return w.done.get_future();
+      });
+}
+
+ss::future<> kvstore::for_each(
+  key_space ks,
+  ss::noncopyable_function<void(bytes_view, const iobuf&)> visitor) {
+    vassert(_started, "kvstore has not been started");
+    auto gh = _gate.hold();
+    auto units = co_await _db_mut.get_units();
+
+    auto prefix = make_spaced_key(ks, bytes_view{});
+    co_await ssx::async_for_each(
+      _db.begin(), _db.end(), [&](const map_t::value_type& kv) {
+          auto spaced_key = bytes_view{kv.first};
+          if (!spaced_key.starts_with(prefix)) {
+              return;
+          }
+          auto key = spaced_key.substr(prefix.length());
+          visitor(key, kv.second);
       });
 }
 
