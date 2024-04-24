@@ -11,13 +11,9 @@
 
 #pragma once
 
-#include "base/outcome.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/record_batch_reader.h"
-#include "raft/errc.h"
 #include "raft/fundamental.h"
-#include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/replicate.h"
 #include "reflection/adl.h"
