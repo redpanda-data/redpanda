@@ -14,10 +14,12 @@
 #include "base/vlog.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
+#include "ssx/watchdog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/sstring.hh>
 
 #include <algorithm>
@@ -94,6 +96,13 @@ ss::future<walk_result> recursive_directory_walker::walk(
   std::optional<filter_type> collect_filter) {
     auto guard = _gate.hold();
 
+    watchdog wd1m(std::chrono::seconds(60), [] {
+        vlog(cst_log.info, "Directory walk is taking more than 1 min");
+    });
+    watchdog wd10m(std::chrono::seconds(600), [] {
+        vlog(cst_log.warn, "Directory walk is taking more than 10 min");
+    });
+
     // Object to accumulate data as we walk directories
     walk_accumulator state(start_dir, tracker, std::move(collect_filter));
 
@@ -103,7 +112,8 @@ ss::future<walk_result> recursive_directory_walker::walk(
         auto target = state.pop();
         vassert(
           std::string_view(target).starts_with(start_dir),
-          "Looking at directory {}, which is outside of initial dir {}.",
+          "Looking at directory {}, which is outside of initial dir "
+          "{}.",
           target,
           start_dir);
 
