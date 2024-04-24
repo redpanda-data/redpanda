@@ -11,6 +11,7 @@
 #pragma once
 #include "absl/container/flat_hash_map.h"
 #include "base/seastarx.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/partition_manager.h"
 #include "cluster/scheduling/leader_balancer_probe.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
@@ -105,12 +106,14 @@ private:
 
     using group_replicas_t = absl::btree_map<raft::group_id, replicas_t>;
     ss::future<std::optional<group_replicas_t>>
-    collect_group_replicas_from_health_report();
+    collect_group_replicas_from_health_report(const cluster_health_report&);
     leader_balancer_types::group_id_to_topic_revision_t
     build_group_id_to_topic_rev() const;
     index_type build_index(std::optional<group_replicas_t>);
+    absl::flat_hash_set<model::node_id>
+    collect_muted_nodes(const cluster_health_report&);
+
     leader_balancer_types::muted_groups_t muted_groups() const;
-    absl::flat_hash_set<model::node_id> muted_nodes() const;
 
     ss::future<bool> do_transfer(reassignment);
     ss::future<bool> do_transfer_local(reassignment) const;
