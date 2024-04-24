@@ -9,4 +9,5 @@ v_cc_library(
     v::model
     v::config
     v::compression
+    v::net
 )

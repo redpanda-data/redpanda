@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "conn_quota.h"
+#include "net/conn_quota.h"
 
 #include "base/vlog.h"
 #include "config/configuration.h"
