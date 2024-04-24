@@ -10,7 +10,6 @@
  */
 #include "transform_processor.h"
 
-#include "base/units.h"
 #include "logger.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -82,10 +81,6 @@ class processor_shutdown_exception : public std::exception {
     }
 };
 
-// TODO(rockwood): This is an arbitrary value, we should instead be
-// limiting the size based on the amount of memory in the transform subsystem.
-constexpr size_t max_buffer_size = 128_KiB;
-
 } // namespace
 
 processor::processor(
@@ -97,7 +92,8 @@ processor::processor(
   std::unique_ptr<source> source,
   std::vector<std::unique_ptr<sink>> sinks,
   std::unique_ptr<offset_tracker> offset_tracker,
-  probe* p)
+  probe* p,
+  memory_limits* mem_limits)
   : _id(id)
   , _ntp(std::move(ntp))
   , _meta(std::move(meta))
@@ -106,7 +102,7 @@ processor::processor(
   , _offset_tracker(std::move(offset_tracker))
   , _state_callback(std::move(cb))
   , _probe(p)
-  , _consumer_transform_pipe(max_buffer_size)
+  , _consumer_transform_pipe(&mem_limits->read_buffer_semaphore)
   , _outputs()
   , _task(ss::now())
   , _logger(tlog, ss::format("{}/{}", _meta.name(), _ntp.tp.partition())) {
@@ -121,7 +117,8 @@ processor::processor(
           outputs[i].tp,
           output{
             .index = model::output_topic_index(i),
-            .queue = transfer_queue<transformed_output>(max_buffer_size),
+            .queue = transfer_queue<transformed_output>(
+              &mem_limits->write_buffer_semaphore),
             .sink = std::move(sinks[i])});
         _last_reported_lag.push_back(0);
     }

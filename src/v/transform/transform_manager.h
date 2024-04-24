@@ -10,22 +10,21 @@
  */
 #pragma once
 
-#include "cluster/types.h"
-#include "io.h"
+#include "memory_limiter.h"
 #include "model/fundamental.h"
-#include "model/ktp.h"
 #include "model/metadata.h"
 #include "model/transform.h"
 #include "ssx/work_queue.h"
 #include "transform/fwd.h"
 #include "transform_processor.h"
-#include "wasm/fwd.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/bool_class.hh>
+
+#include <absl/container/flat_hash_set.h>
 
 namespace transform {
 
@@ -76,7 +75,8 @@ public:
       model::ntp,
       model::transform_metadata,
       processor::state_callback,
-      probe*)
+      probe*,
+      memory_limits*)
       = 0;
 };
 
@@ -109,7 +109,8 @@ public:
       model::node_id self,
       std::unique_ptr<registry>,
       std::unique_ptr<processor_factory>,
-      ss::scheduling_group);
+      ss::scheduling_group,
+      std::unique_ptr<memory_limits>);
     manager(const manager&) = delete;
     manager& operator=(const manager&) = delete;
     manager(manager&&) = delete;
@@ -157,6 +158,7 @@ private:
 
     model::node_id _self;
     ssx::work_queue _queue;
+    std::unique_ptr<memory_limits> _memory_limits;
     std::unique_ptr<registry> _registry;
     std::unique_ptr<processor_table<ClockType>> _processors;
     std::unique_ptr<processor_factory> _processor_factory;

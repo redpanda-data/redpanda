@@ -83,3 +83,18 @@ rp_test(
   ARGS "-- -c 1"
   LABELS transform
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME
+    memory_limiter_test
+  SOURCES
+    memory_limiter_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::model_test_utils
+    v::transform
+  ARGS "-- -c 1"
+  LABELS transform
+)

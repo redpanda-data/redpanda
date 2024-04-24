@@ -61,7 +61,8 @@ public:
       ss::sharded<cluster::partition_manager>* partition_manager,
       ss::sharded<rpc::client>* rpc_client,
       ss::sharded<cluster::metadata_cache>* metadata_cache,
-      ss::scheduling_group sg);
+      ss::scheduling_group sg,
+      size_t memory_limit);
     service(const service&) = delete;
     service(service&&) = delete;
     service& operator=(const service&) = delete;
@@ -150,6 +151,9 @@ private:
       _notification_cleanups;
     ss::scheduling_group _sg;
     std::unique_ptr<logging::manager<ss::lowres_clock>> _log_manager;
+
+    // The total amount of memory available to transforms
+    size_t _total_memory_limit;
 };
 
 } // namespace transform

@@ -251,6 +251,30 @@ configuration::configuration()
       "after any character escaping.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_KiB)
+  , data_transforms_read_buffer_memory_percentage(
+      *this,
+      "data_transforms_read_buffer_memory_percentage",
+      "The percentage of available memory in the transform subsystem to use "
+      "for read buffers",
+      {
+        .needs_restart = needs_restart::yes,
+        .example = "25",
+        .visibility = visibility::tunable,
+      },
+      45,
+      {.min = 1, .max = 99})
+  , data_transforms_write_buffer_memory_percentage(
+      *this,
+      "data_transforms_write_buffer_memory_percentage",
+      "The percentage of available memory in the transform subsystem to use "
+      "for write buffers",
+      {
+        .needs_restart = needs_restart::yes,
+        .example = "25",
+        .visibility = visibility::tunable,
+      },
+      45,
+      {.min = 1, .max = 99})
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",

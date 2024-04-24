@@ -11,6 +11,7 @@
 
 #include "base/units.h"
 #include "test_utils/async.h"
+#include "transform/memory_limiter.h"
 #include "transform/transfer_queue.h"
 
 #include <seastar/core/abort_source.hh>
@@ -37,7 +38,8 @@ struct entry {
 
 TEST(TransferQueue, IsFifo) {
     ss::abort_source as;
-    transfer_queue<entry> q(32_KiB);
+    memory_limiter ml(32_KiB);
+    transfer_queue<entry> q(&ml);
     for (int i = 1; i <= 3; ++i) {
         q.push(entry{i * 1_KiB}, &as).get();
     }
@@ -55,7 +57,8 @@ TEST(TransferQueue, IsFifo) {
 
 TEST(TransferQueue, IsBatchFifo) {
     ss::abort_source as;
-    transfer_queue<entry> q(32_KiB);
+    memory_limiter ml(32_KiB);
+    transfer_queue<entry> q(&ml);
     for (int i = 1; i <= 3; ++i) {
         q.push(entry{i * 1_KiB}, &as).get();
     }
@@ -69,7 +72,8 @@ TEST(TransferQueue, IsBatchFifo) {
 
 TEST(TransferQueue, PopCanBeAborted) {
     ss::abort_source as;
-    transfer_queue<entry> q(2_KiB);
+    memory_limiter ml(2_KiB);
+    transfer_queue<entry> q(&ml);
     auto fut = q.pop_all(&as);
     EXPECT_FALSE(fut.available());
     tests::drain_task_queue().get();
@@ -81,7 +85,8 @@ TEST(TransferQueue, PopCanBeAborted) {
 
 TEST(TransferQueue, LimitsMemoryUsage) {
     ss::abort_source as;
-    transfer_queue<entry> q(8);
+    memory_limiter ml(8);
+    transfer_queue<entry> q(&ml);
     q.push(entry{4}, &as).get();
     q.push(entry{2}, &as).get();
     q.push(entry{1}, &as).get();
@@ -101,7 +106,8 @@ TEST(TransferQueue, LimitsMemoryUsage) {
 
 TEST(TransferQueue, CanAlwaysPushAtLeastOneEntry) {
     ss::abort_source as;
-    transfer_queue<entry> q(1);
+    memory_limiter ml(1);
+    transfer_queue<entry> q(&ml);
     q.push(entry{10}, &as).get();
     auto fut = q.push(entry{20}, &as);
     tests::drain_task_queue().get();
@@ -112,7 +118,8 @@ TEST(TransferQueue, CanAlwaysPushAtLeastOneEntry) {
 
 TEST(TransferQueue, PushCanBeAborted) {
     ss::abort_source as;
-    transfer_queue<entry> q(1);
+    memory_limiter ml(1);
+    transfer_queue<entry> q(&ml);
     q.push(entry{10}, &as).get();
     auto fut = q.push(entry{20}, &as);
     tests::drain_task_queue().get();

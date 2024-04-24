@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "io.h"
+#include "memory_limiter.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
@@ -31,6 +32,31 @@
 #include <variant>
 
 namespace transform {
+
+// The limits to various buffers for this shard within the transform
+// subsystem. We have two main "buffers" we need to limit, the amount of
+// data we have ingress to the Wasm VM, and the amount of data we have
+// egress from the Wasm VM. We split statically the memory available between
+// these buffers so that there are starvation issues where we have to write
+// more data in order to get data out of our write buffers and the read
+// buffers have taken up all the memory.
+//
+// In addition to these semaphores, we also reserve 10% of this subsystem's
+// memory as flex space.
+//
+// All of these memory limits have tunable overrides in the case of a
+// miscalculation causing memory pressure on shards.
+struct memory_limits {
+    struct config {
+        size_t read;
+        size_t write;
+    };
+    explicit memory_limits(config cfg)
+      : read_buffer_semaphore(cfg.read)
+      , write_buffer_semaphore(cfg.write) {}
+    memory_limiter read_buffer_semaphore;
+    memory_limiter write_buffer_semaphore;
+};
 
 /**
  * A holder of the result of a transform, which is either a batch of data or a
@@ -64,7 +90,8 @@ public:
       std::unique_ptr<source>,
       std::vector<std::unique_ptr<sink>>,
       std::unique_ptr<offset_tracker>,
-      probe*);
+      probe*,
+      memory_limits*);
     processor(const processor&) = delete;
     processor(processor&&) = delete;
     processor& operator=(const processor&) = delete;

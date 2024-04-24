@@ -2,6 +2,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/transform.h"
+#include "ssx/semaphore.h"
 #include "test_utils/async.h"
 #include "transform/logger.h"
 #include "transform/tests/test_fixture.h"
@@ -187,7 +188,8 @@ class processor_tracker : public processor_factory {
           model::transform_id id,
           model::ntp ntp,
           model::transform_metadata meta,
-          probe* p)
+          probe* p,
+          memory_limits* ml)
           : processor(
             id,
             std::move(ntp),
@@ -197,7 +199,8 @@ class processor_tracker : public processor_factory {
             std::make_unique<testing::fake_source>(),
             make_sink(),
             std::make_unique<testing::fake_offset_tracker>(),
-            p)
+            p,
+            ml)
           , _track_fn(std::move(cb)) {
             _track_fn(lifecycle_status::created);
         }
@@ -229,7 +232,8 @@ public:
       model::ntp ntp,
       model::transform_metadata meta,
       processor::state_callback,
-      probe* probe) override {
+      probe* probe,
+      memory_limits* ml) override {
         EXPECT_NE(probe, nullptr);
         co_return std::make_unique<tracked_processor>(
           [this, id, ntp](lifecycle_status change) {
@@ -238,7 +242,8 @@ public:
           id,
           ntp,
           meta,
-          probe);
+          probe,
+          ml);
     }
 
     absl::flat_hash_map<
@@ -290,11 +295,14 @@ public:
         _registry = r.get();
         auto t = std::make_unique<processor_tracker>();
         _tracker = t.get();
+        constexpr size_t memory_limit = 10_MiB;
         _manager = std::make_unique<manager<ss::manual_clock>>(
           /*self=*/model::node_id(0),
           std::move(r),
           std::move(t),
-          ss::current_scheduling_group());
+          ss::current_scheduling_group(),
+          std::make_unique<memory_limits>(memory_limits::config{
+            .read = memory_limit, .write = memory_limit}));
         _manager->start().get();
     }
     void TearDown() override {

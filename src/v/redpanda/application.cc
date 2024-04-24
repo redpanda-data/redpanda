@@ -1273,7 +1273,8 @@ void application::wire_up_runtime_services(
           &partition_manager,
           &_transform_rpc_client,
           &metadata_cache,
-          sched_groups.transforms_sg())
+          sched_groups.transforms_sg(),
+          memory_groups().data_transforms_max_memory())
           .get();
     }
 

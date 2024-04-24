@@ -249,13 +249,15 @@ manager<ClockType>::manager(
   model::node_id self,
   std::unique_ptr<registry> r,
   std::unique_ptr<processor_factory> f,
-  ss::scheduling_group sg)
+  ss::scheduling_group sg,
+  std::unique_ptr<memory_limits> memory_limits)
   : _self(self)
   , _queue(
       sg,
       [](const std::exception_ptr& ex) {
           vlog(tlog.error, "unexpected transform manager error: {}", ex);
       })
+  , _memory_limits(std::move(memory_limits))
   , _registry(std::move(r))
   , _processors(std::make_unique<processor_table<ClockType>>())
   , _processor_factory(std::move(f)) {}
@@ -426,7 +428,7 @@ ss::future<> manager<ClockType>::create_processor(
       };
     auto fut = co_await ss::coroutine::as_future(
       _processor_factory->create_processor(
-        id, ntp, meta, std::move(cb), p.get()));
+        id, ntp, meta, std::move(cb), p.get(), _memory_limits.get()));
     if (fut.failed()) {
         vlog(
           tlog.warn,
