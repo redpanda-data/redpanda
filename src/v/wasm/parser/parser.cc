@@ -234,6 +234,34 @@ declaration::global parse_global_type(iobuf_parser_base* parser) {
     return {.valtype = valtype, .is_mutable = bool(mut)};
 }
 
+void skip_global_constexpr(iobuf_parser_base* parser) {
+    auto opcode = parser->consume_type<uint8_t>();
+    // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
+    switch (opcode) {
+    case 0x041:
+        std::ignore = leb128::decode<uint32_t>(parser);
+        break;
+    case 0x042:
+        std::ignore = leb128::decode<uint64_t>(parser);
+        break;
+    case 0x043:
+        std::ignore = parser->consume_type<float>();
+        break;
+    case 0x044:
+        std::ignore = parser->consume_type<double>();
+        break;
+    default:
+        throw parse_exception(
+          fmt::format("unimplemented global opcode: {}", opcode));
+    }
+    auto end = parser->consume_type<uint8_t>();
+    if (end != 0x0B) {
+        throw parse_exception(
+          fmt::format("expected end of global initalizer, got: {}", end));
+    }
+    // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
+}
+
 class module_extractor {
 public:
     explicit module_extractor(iobuf_parser_base* parser)
@@ -457,21 +485,8 @@ private:
         _globals.reserve(vector_size);
         for (uint32_t i = 0; i < vector_size; ++i) {
             _globals.push_back(parse_global_type(_parser));
-            // We currently don't care about the global constexpr, so just skip
-            // it (the end is delimited by 0x0B)
-            skip_global_constexpr();
+            skip_global_constexpr(_parser);
         }
-    }
-
-    void skip_global_constexpr() {
-        constexpr int max_constexpr_bytes = 64;
-        for (int i = 0; i < max_constexpr_bytes; ++i) {
-            // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-            if (_parser->consume_type<uint8_t>() == 0x0b) {
-                return;
-            }
-        }
-        throw parse_exception("unexpectedly large global constexpr");
     }
 
     void parse_export_section() {
