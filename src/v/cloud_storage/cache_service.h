@@ -177,6 +177,10 @@ public:
 
     uint64_t get_usage_bytes() { return _current_cache_size; }
 
+    uint64_t get_max_bytes() { return _max_bytes; }
+
+    uint64_t get_max_objects() { return _max_objects(); }
+
     /// Administrative trim, that specifies its own limits instead of using
     /// the configured limits (skips throttling, and can e.g. trim to zero bytes
     /// if they want to)
