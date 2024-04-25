@@ -1,4 +1,5 @@
 import json
+from rptest.services.utils import KubeNodeShell
 
 
 class CloudBroker():
@@ -40,11 +41,16 @@ class CloudBroker():
         self._spec = pod['spec']
         self._status = pod['status']
 
-        # Backward compatibility
-        # Various classes will use this var to hash and compare nodes
-        self.account = self._meta
         # Mimic Ducktape cluster node hostname field
         self.hostname = f"{self._spec['nodeName']}/{self.name}"
+        self.nodename = self._spec['nodeName']
+        # Create node shell pod
+        self.nodeshell = KubeNodeShell(self._kubeclient,
+                                       self.nodename,
+                                       clean=False)
+        # Init node shell pod beforehand
+        self.nodeshell.initialize_nodeshell()
+        # Prepare log extraction script
 
     def _query_broker(self, path, port=None):
         """

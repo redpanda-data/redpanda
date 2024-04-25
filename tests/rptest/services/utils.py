@@ -229,28 +229,28 @@ class LogSearchCloud(LogSearch):
 
         # Load log, output is in binary form
         loglines = []
-        node_name = pod._spec['nodeName']
         tz = "+00:00"
-        with KubeNodeShell(self.kubectl, node_name) as ksh:
-            try:
-                # get time zone in +00:00 format
-                tz = ksh("date +'%:z'")
-                # Assume UTC if output is empty
-                # But this should never happen
-                tz = tz[0] if len(tz) > 0 else "+00:00"
-                # Find all log files for target pod
-                logfiles = ksh(f"find /var/log/pods -type f")
-                for logfile in logfiles:
-                    if pod.name in logfile and \
-                        'redpanda-configurator' not in logfile:
-                        self.logger.info(f"Inspecting '{logfile}'")
-                        lines = ksh(f"cat {logfile} | grep {expr}")
-                        loglines += lines
-            except Exception as e:
-                self.logger.warning(f"Error getting logs for {pod.name}: {e}")
-            else:
-                _size = len(loglines)
-                self.logger.debug(f"Received {_size}B of data from {pod.name}")
+        try:
+            # get time zone in +00:00 format
+            tz = pod.nodeshell("date +'%:z'")
+            # Assume UTC if output is empty
+            # But this should never happen
+            tz = tz[0] if len(tz) > 0 else "+00:00"
+            # Find all log files for target pod
+            # Return type without capture is always str, so ignore type
+            logfiles = pod.nodeshell(
+                f"find /var/log/pods -type f")  # type: ignore
+            for logfile in logfiles:
+                if pod.name in logfile and \
+                        'redpanda-configurator' not in logfile:  # type: ignore
+                    self.logger.info(f"Inspecting '{logfile}'")
+                    lines = pod.nodeshell(f"cat {logfile} | grep {expr}")
+                    loglines += lines
+        except Exception as e:
+            self.logger.warning(f"Error getting logs for {pod.name}: {e}")
+        else:
+            _size = len(loglines)
+            self.logger.debug(f"Received {_size}B of data from {pod.name}")
 
         # check log lines for proper timing.
         # Log lines will have two timing objects:
