@@ -363,7 +363,6 @@ private:
 
     bool is_known_session(model::producer_identity pid) const {
         auto is_known = false;
-        is_known |= _mem_state.estimated.contains(pid);
         is_known |= _log_state.ongoing_map.contains(pid);
         is_known |= _log_state.current_txes.contains(pid);
         return is_known;
@@ -373,7 +372,7 @@ private:
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
     ss::future<> apply(const model::record_batch&) override;
-    void apply_fence(model::record_batch&&);
+    void apply_fence(model::producer_identity, model::record_batch);
     void apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, const model::record_batch_header&);
 
@@ -476,11 +475,7 @@ private:
 
     struct mem_state {
         explicit mem_state(util::mem_tracker& parent)
-          : _tracker(parent.create_child("mem-state"))
-          , estimated(mt::map<
-                      absl::flat_hash_map,
-                      model::producer_identity,
-                      model::offset>(_tracker)) {}
+          : _tracker(parent.create_child("mem-state")) {}
 
         ss::shared_ptr<util::mem_tracker> _tracker;
         // once raft's term has passed mem_state::term we wipe mem_state
@@ -488,22 +483,12 @@ private:
         // with this approach a combination of mem_state and log_state is
         // always up to date
         model::term_id term;
-        // before we replicate the first batch of a transaction we don't know
-        // its offset but we must prevent read_comitted fetch from getting it
-        // so we use last seen offset to estimate it
-        mt::unordered_map_t<
-          absl::flat_hash_map,
-          model::producer_identity,
-          model::offset>
-          estimated;
 
         // depending on the inflight state we may use last_applied or
         // committed_index as LSO; the alternation between them may
         // violate LSO monotonicity so we need to explicitly maintain
         // it with last_lso
         model::offset last_lso{-1};
-
-        void forget(model::producer_identity pid) { estimated.erase(pid); }
     };
 
     ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
