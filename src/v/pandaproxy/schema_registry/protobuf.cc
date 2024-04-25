@@ -522,9 +522,16 @@ struct compatibility_checker {
                                     == pb::FieldDescriptor::Type::TYPE_MESSAGE
                                   || reader->type()
                                        == pb::FieldDescriptor::Type::TYPE_GROUP;
-            return type_is_compat
-                   && check_compatible(
-                     reader->message_type(), writer->message_type());
+
+            if (
+              !type_is_compat
+              || reader->message_type()->name()
+                   != writer->message_type()->name()) {
+                return false;
+            } else {
+                return check_compatible(
+                  reader->message_type(), writer->message_type());
+            }
         }
         case pb::FieldDescriptor::Type::TYPE_FLOAT:
         case pb::FieldDescriptor::Type::TYPE_DOUBLE:
