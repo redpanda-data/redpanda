@@ -66,7 +66,7 @@ from rptest.services.cloud_broker import CloudBroker
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
-from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud
+from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Stopwatch
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 
@@ -2163,6 +2163,80 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                                    self.kubectl,
                                    test_start_time=test_start_time)
         lsearcher.search_logs(self.pods)
+
+    def copy_cloud_logs(self, test_start_time):
+        """Method makes sure that agent and cloud logs is copied after the test
+        """
+        def create_dest_path(service_name):
+            # Create directory into which service logs will be copied
+            dest = os.path.join(
+                TestContext.results_dir(self._context,
+                                        self._context.test_index),
+                service_name)
+            if not os.path.isdir(dest):
+                mkdir_p(dest)
+
+            return dest
+
+        def copy_from_agent(since):
+            service_name = f"{self._cloud_cluster.cluster_id}-agent"
+            # Example path:
+            # '/home/ubuntu/redpanda/tests/results/2024-04-11--019/SelfRedpandaCloudTest/test_healthy/2/coc12bfs0etj2dg9a5ig-agent'
+            dest = create_dest_path(service_name)
+
+            logfile = os.path.join(dest, "agent.log")
+            # Query journalctl to copy logs from
+            with open(logfile, 'wb') as lfile:
+                for line in self.kubectl._cmd_capture(
+                        f"journalctl -u redpanda-agent -S '{since}'".split()):
+                    lfile.writelines([line])
+            return
+
+        def copy_from_pod(params):
+            """Function copies logs from agent and all RP pods
+            """
+            pod = params["pod"]
+            test_start_time = params["s_time"]
+            dest = create_dest_path(pod.name)
+            try:
+                remote_path = os.path.join("/tmp", "pod_log_extract.sh")
+                logfile = os.path.join(dest, f"{pod.name}.log")
+                with open(logfile, 'wb') as lfile:
+                    for line in pod.nodeshell(
+                            f"bash {remote_path} '{pod.name}' "
+                            f"'{test_start_time}'".split(),
+                            capture=True):
+                        lfile.writelines([line])  # type: ignore
+            except Exception as e:
+                self.logger.warning(f"Error getting logs for {pod.name}: {e}")
+            return pod.name
+
+        # Safeguard if CloudService not created
+        if self.pods is None or self._cloud_cluster is None:
+            return {}
+        # Prepare time for different occasions
+        t_start_time = time.gmtime(test_start_time)
+
+        # Do not include seconds on purpose to improve chances
+        time_format = "%Y-%m-%d %H:%M"
+        f_start_time = time.strftime(time_format, t_start_time)
+
+        # Collect-agent-logs
+        self._context.logger.debug("Copying cloud agent logs...")
+        sw = Stopwatch()
+        copy_from_agent(f_start_time)
+        self.logger.info(sw.elapsedf("# Done log copy from agent"))
+
+        # Collect pod logs
+        # Use CloudBrokers as a source of metadata and the rest
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+        params = []
+        for pod in self.pods:
+            params.append({"pod": pod, "s_time": f_start_time})
+        sw.reset()
+        for name in pool.map(copy_from_pod, params):
+            self.logger.info(sw.elapsedf(f"# Done log copy for {name}"))
+        return {}
 
 
 class RedpandaService(RedpandaServiceBase):
