@@ -139,8 +139,7 @@ public:
     // must be called on each shard
     ss::future<> initialize(const topic_table&, model::node_id self);
 
-    using shard_callback_t
-      = std::function<void(const model::ntp&, model::shard_revision_id)>;
+    using shard_callback_t = std::function<void(const model::ntp&)>;
 
     /// Must be called only on assignment_shard_id. Shard callback will be
     /// called on shards that have been modified by this invocation.

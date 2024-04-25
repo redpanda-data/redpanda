@@ -245,28 +245,26 @@ std::error_code check_configuration_update(
 } // namespace
 
 struct controller_backend::ntp_reconciliation_state {
-    std::optional<model::revision_id> changed_at;
+    // A counter to avoid losing notifications that arrived concurrently with
+    // reconciliation.
+    size_t pending_notifies = 0;
+
     std::optional<model::revision_id> properties_changed_at;
-    std::optional<model::shard_revision_id> shard_changed_at;
-    bool removed = false;
+    std::optional<model::revision_id> removed_at;
 
     ssx::event wakeup_event{"c/cb/rfwe"};
     ss::lowres_clock::time_point last_retried_at = ss::lowres_clock::now();
     std::optional<in_progress_operation> cur_operation;
 
-    bool is_reconciled() const {
-        return !changed_at.has_value() && !shard_changed_at.has_value();
-    }
+    bool is_reconciled() const { return pending_notifies == 0; }
 
-    void mark_reconciled(
-      model::revision_id rev, model::shard_revision_id shard_rev) {
-        mark_properties_reconciled(rev);
-        if (changed_at && *changed_at <= rev) {
-            changed_at = std::nullopt;
-        }
-        if (shard_changed_at && *shard_changed_at <= shard_rev) {
-            shard_changed_at = std::nullopt;
-        }
+    void mark_reconciled(size_t notifies) {
+        vassert(
+          pending_notifies >= notifies,
+          "unexpected pending_notifies: {}",
+          pending_notifies);
+        pending_notifies -= notifies;
+
         cur_operation = std::nullopt;
     }
 
@@ -292,12 +290,11 @@ struct controller_backend::ntp_reconciliation_state {
     operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
         fmt::print(
           o,
-          "{{changed_at: {}, properties_changed_at: {}, shard_changed_at: {}, "
-          "removed: {}, cur_operation: {}}}",
-          rs.changed_at,
+          "{{pending_notifies: {},  properties_changed_at: {}, removed_at: {}, "
+          "cur_operation: {}}}",
+          rs.pending_notifies,
           rs.properties_changed_at,
-          rs.shard_changed_at,
-          rs.removed,
+          rs.removed_at,
           rs.cur_operation);
         return o;
     }
@@ -635,29 +632,19 @@ ss::future<> controller_backend::fetch_deltas() {
                     = ss::make_lw_shared<ntp_reconciliation_state>();
               }
               auto& rs = *rs_it->second;
-
-              if (rs.changed_at) {
-                  vassert(
-                    *rs.changed_at <= d.revision,
-                    "[{}]: delta revision unexpectedly decreased, "
-                    "was: {}, update: {}",
-                    d.ntp,
-                    rs.changed_at,
-                    d.revision);
-              }
-              rs.changed_at = d.revision;
+              rs.pending_notifies += 1;
 
               if (d.type == topic_table_delta_type::added) {
-                  rs.removed = false;
+                  rs.removed_at.reset();
               } else {
                   vassert(
-                    !rs.removed,
+                    !rs.removed_at,
                     "[{}] unexpected delta: {}, state: {}",
                     d.ntp,
                     d,
                     rs);
                   if (d.type == topic_table_delta_type::removed) {
-                      rs.removed = true;
+                      rs.removed_at = d.revision;
                   }
               }
 
@@ -673,24 +660,19 @@ ss::future<> controller_backend::fetch_deltas() {
       });
 }
 
-void controller_backend::notify_reconciliation(
-  const model::ntp& ntp, model::shard_revision_id shard_rev) {
-    vlog(
-      clusterlog.trace,
-      "[{}] notify reconciliation fiber, shard rev: {}",
-      ntp,
-      shard_rev);
-
+void controller_backend::notify_reconciliation(const model::ntp& ntp) {
     auto [rs_it, inserted] = _states.try_emplace(ntp);
     if (inserted) {
         rs_it->second = ss::make_lw_shared<ntp_reconciliation_state>();
     }
     auto& rs = *rs_it->second;
-    if (rs.shard_changed_at) {
-        rs.shard_changed_at = std::max(*rs.shard_changed_at, shard_rev);
-    } else {
-        rs.shard_changed_at = shard_rev;
-    }
+
+    rs.pending_notifies += 1;
+    vlog(
+      clusterlog.trace,
+      "[{}] notify reconciliation fiber, current state: {}",
+      ntp,
+      rs);
     rs.wakeup_event.set();
     if (inserted) {
         ssx::background = reconcile_ntp_fiber(ntp, rs_it->second);
@@ -838,28 +820,22 @@ ss::future<> controller_backend::try_reconcile_ntp(
 
     if (should_skip(ntp)) {
         vlog(clusterlog.debug, "[{}] skipping reconcilation", ntp);
-        rs.mark_reconciled(
-          rs.changed_at.value_or(model::revision_id{}),
-          rs.shard_changed_at.value_or(model::shard_revision_id{}));
+        rs.mark_reconciled(rs.pending_notifies);
         co_return;
     }
 
     while (!rs.is_reconciled() && !_as.local().abort_requested()) {
-        model::revision_id changed_at = rs.changed_at.value_or(
-          model::revision_id{});
-        model::shard_revision_id shard_changed_at
-          = rs.shard_changed_at.value_or(model::shard_revision_id{});
+        size_t notifies = rs.pending_notifies;
         cluster::errc last_error = errc::success;
         try {
             auto res = co_await reconcile_ntp_step(ntp, rs);
             if (res.has_value() && res.value() == ss::stop_iteration::yes) {
-                rs.mark_reconciled(changed_at, shard_changed_at);
+                rs.mark_reconciled(notifies);
                 vlog(
                   clusterlog.debug,
-                  "[{}] reconciled at revision {}, shard table revision {}",
+                  "[{}] reconciled, notify count: {}",
                   ntp,
-                  changed_at,
-                  shard_changed_at);
+                  notifies);
                 break;
             } else if (res.has_error() && res.error()) {
                 if (res.error().category() == error_category()) {
@@ -999,7 +975,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
     std::optional<topic_table::partition_replicas_view> maybe_replicas_view
       = _topics.local().get_replicas_view(ntp);
     if (!maybe_replicas_view) {
-        if (!(rs.changed_at && rs.removed)) {
+        if (!rs.removed_at) {
             // Even if the partition is not found in the topic table, just to be
             // on the safe side, we don't delete it until we receive the
             // corresponding delta (to protect against topic table
@@ -1007,9 +983,9 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
             co_return ss::stop_iteration::yes;
         }
 
-        rs.set_cur_operation(*rs.changed_at, partition_operation_type::remove);
+        rs.set_cur_operation(*rs.removed_at, partition_operation_type::remove);
         auto ec = co_await delete_partition(
-          ntp, maybe_placement, *rs.changed_at, partition_removal_mode::global);
+          ntp, maybe_placement, *rs.removed_at, partition_removal_mode::global);
         if (ec) {
             co_return ec;
         }
