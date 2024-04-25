@@ -490,6 +490,15 @@ struct compatibility_checker {
         if (!_seen_descriptors.insert(reader).second) {
             return true;
         }
+
+        for (int i = 0; i < writer->nested_type_count(); ++i) {
+            auto w = writer->nested_type(i);
+            auto r = reader->FindNestedTypeByName(w->full_name());
+            if (!r || !check_compatible(r, w)) {
+                return false;
+            }
+        }
+
         for (int i = 0; i < writer->field_count(); ++i) {
             if (reader->IsReservedNumber(i) || writer->IsReservedNumber(i)) {
                 continue;
