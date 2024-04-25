@@ -45,6 +45,9 @@ class OfflineLogViewer:
     def read_controller(self, node):
         return self._json_cmd(node, "--type controller")
 
+    def read_controller_snapshot(self, node):
+        return self._json_cmd(node, "--type controller_snapshot")
+
     def read_consumer_offsets(self, node):
         return self._json_cmd(node, "--type consumer_offsets")
 

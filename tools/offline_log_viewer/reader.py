@@ -119,6 +119,14 @@ class Reader:
             ret.append(type_read(self))
         return ret
 
+    def read_map(self, k_reader, v_reader):
+        ret = {}
+        for _ in range(self.read_uint32()):
+            key = k_reader(self)
+            val = v_reader(self)
+            ret[key] = val
+        return ret
+
     def read_envelope(self, type_read=None, max_version=0):
         header = self.read_bytes(SERDE_ENVELOPE_SIZE)
         envelope = SerdeEnvelope(*struct.unpack(SERDE_ENVELOPE_FORMAT, header))
