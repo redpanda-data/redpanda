@@ -24,8 +24,8 @@
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "raft/errc.h"
-#include "raft/fundamental.h"
 #include "raft/fwd.h"
+#include "raft/transfer_leadership.h"
 #include "security/acl.h"
 #include "security/license.h"
 #include "security/role.h"
@@ -2662,6 +2662,9 @@ struct delete_acls_reply
 
     auto serde_fields() { return std::tie(results); }
 };
+
+using transfer_leadership_request = raft::transfer_leadership_request;
+using transfer_leadership_reply = raft::transfer_leadership_reply;
 
 struct backend_operation
   : serde::

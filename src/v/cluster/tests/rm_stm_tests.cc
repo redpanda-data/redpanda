@@ -20,7 +20,6 @@
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
 #include "raft/tests/raft_group_fixture.h"
-#include "raft/types.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"

@@ -33,7 +33,7 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "raft/errc.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
 

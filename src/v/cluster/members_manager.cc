@@ -29,7 +29,6 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
-#include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "storage/api.h"

@@ -10,7 +10,7 @@
 #include "base/outcome.h"
 #include "cluster/tests/partition_allocator_fixture.h"
 #include "cluster/types.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>

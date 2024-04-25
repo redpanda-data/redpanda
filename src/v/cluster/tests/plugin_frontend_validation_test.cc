@@ -18,7 +18,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/transform.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/chunked_fifo.hh>

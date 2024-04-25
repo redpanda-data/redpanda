@@ -18,11 +18,11 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "raft/fundamental.h"
 #include "raft/persisted_stm.h"
 #include "raft/state_machine_manager.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/tests/simple_raft_fixture.h"
-#include "raft/types.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
 

@@ -13,6 +13,7 @@
 #include "base/outcome.h"
 #include "model/metadata.h"
 #include "raft/heartbeats.h"
+#include "raft/transfer_leadership.h"
 #include "raft/types.h"
 #include "rpc/types.h"
 

@@ -21,7 +21,6 @@
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
-#include "raft/types.h"
 #include "storage/log_reader.h"
 #include "storage/types.h"
 

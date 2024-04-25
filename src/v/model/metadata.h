@@ -34,32 +34,6 @@
 #include <vector>
 
 namespace model {
-using node_id = named_type<int32_t, struct node_id_model_type>;
-
-/**
- * Reserved to represent the node_id value yet to be assigned
- * when node is configured for automatic assignment of node_ids.
- * Never used in node configuration.
- */
-constexpr node_id unassigned_node_id(-1);
-
-/**
- * We use revision_id to identify entities evolution in time. f.e. NTP that was
- * first created and then removed, raft configuration
- */
-using revision_id = named_type<int64_t, struct revision_id_model_type>;
-
-/**
- * Revision id that the partition had when the topic was just created.
- * The revision_id of the partition might change when the partition is moved
- * between the nodes.
- */
-using initial_revision_id
-  = named_type<int64_t, struct initial_revision_id_model_type>;
-
-// tracking evolution of the shard table
-using shard_revision_id
-  = named_type<int64_t, struct shard_revision_id_model_type>;
 
 /// Rack id type
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;

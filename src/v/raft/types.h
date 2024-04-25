@@ -11,13 +11,9 @@
 
 #pragma once
 
-#include "base/outcome.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/record_batch_reader.h"
-#include "raft/errc.h"
 #include "raft/fundamental.h"
-#include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/replicate.h"
 #include "reflection/adl.h"
@@ -707,51 +703,6 @@ struct timeout_now_reply
           r.target_node_id,
           r.term,
           static_cast<std::underlying_type_t<status>>(r.result));
-        return o;
-    }
-};
-
-// if not target is specified then the most up-to-date node will be selected
-struct transfer_leadership_request
-  : serde::envelope<
-      transfer_leadership_request,
-      serde::version<1>,
-      serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-    group_id group;
-    std::optional<model::node_id> target;
-    std::optional<std::chrono::milliseconds> timeout;
-
-    raft::group_id target_group() const { return group; }
-
-    friend bool operator==(
-      const transfer_leadership_request&, const transfer_leadership_request&)
-      = default;
-
-    auto serde_fields() { return std::tie(group, target, timeout); }
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const transfer_leadership_request& r);
-};
-
-struct transfer_leadership_reply
-  : serde::envelope<
-      transfer_leadership_reply,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-    bool success{false};
-    raft::errc result;
-
-    friend bool operator==(
-      const transfer_leadership_reply&, const transfer_leadership_reply&)
-      = default;
-
-    auto serde_fields() { return std::tie(success, result); }
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const transfer_leadership_reply& r) {
-        fmt::print(o, "success {} result {}", r.success, r.result);
         return o;
     }
 };

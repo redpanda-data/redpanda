@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
 #include "raft/types.h"

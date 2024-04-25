@@ -16,7 +16,7 @@
 #include "model/namespace.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 

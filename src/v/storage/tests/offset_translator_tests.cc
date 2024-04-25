@@ -9,7 +9,7 @@
 
 #include "bytes/random.h"
 #include "model/fundamental.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "random/generators.h"
 #include "storage/api.h"
 #include "storage/fwd.h"

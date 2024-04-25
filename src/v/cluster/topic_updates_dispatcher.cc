@@ -19,7 +19,7 @@
 #include "cluster/topic_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "ssx/future-util.h"
 
 #include <seastar/coroutine/maybe_yield.hh>

@@ -11,7 +11,7 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/testing/thread_test_case.hh>

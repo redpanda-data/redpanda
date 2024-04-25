@@ -38,7 +38,7 @@
 #include "model/validation.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "random/generators.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"

@@ -26,7 +26,6 @@
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
-#include "raft/types.h"
 #include "ssx/future-util.h"
 #include "storage/types.h"
 

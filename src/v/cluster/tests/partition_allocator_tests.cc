@@ -13,7 +13,7 @@
 #include "cluster/scheduling/types.h"
 #include "cluster/tests/partition_allocator_fixture.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
