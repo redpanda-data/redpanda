@@ -2,6 +2,12 @@ import json
 
 
 class CloudBroker():
+    # Mimic ducktape cluster node structure
+    class account():
+        def __init__(self, pod) -> None:
+            self.hostname = f"{pod['spec']['nodeName']}/" \
+                f"{pod['metadata']['name']}"
+
     def __init__(self, pod, kubectl, logger) -> None:
         self.logger = logger
         # Validate
@@ -15,6 +21,10 @@ class CloudBroker():
         self.operating_system = 'k8s'
         self._meta = pod['metadata']
         self.name = self._meta['name']
+
+        # Backward compatibility
+        # Various classes will use this to hash and compare nodes
+        self.account(pod)
 
         # It appears that the node-id label will only be added if the cluster
         # is still being managed by the operator - if managed=false then this

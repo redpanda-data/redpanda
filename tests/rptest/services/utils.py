@@ -40,13 +40,6 @@ class BadLogLines(Exception):
     def __init__(self, node_to_lines):
         self.node_to_lines = node_to_lines
 
-    @staticmethod
-    def _get_hostname(node):
-        if isinstance(node, CloudBroker):
-            return node.hostname
-        else:
-            return node.account.hostname
-
     def __str__(self):
         # Pick the first line from the first node as an example, and include it
         # in the string output so that for single line failures, it isn't necessary
@@ -55,7 +48,7 @@ class BadLogLines(Exception):
         example = next(iter(example_lines))
 
         summary = ','.join([
-            f'{self._get_hostname(i[0])}({len(i[1])})'
+            f'{i[0].account.hostname}({len(i[1])})'
             for i in self.node_to_lines.items()
         ])
         return f"<BadLogLines nodes={summary} example=\"{example}\">"
