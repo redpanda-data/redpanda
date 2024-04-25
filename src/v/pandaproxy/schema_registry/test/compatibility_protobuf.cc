@@ -670,3 +670,10 @@ message Bar {
 }
 )");
 }
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_message_removed) {
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Outer { message Inner { int32 id = 1;}; Inner x = 1; })",
+      R"(syntax = "proto3"; message Outer { message Inner { int32 id = 1;}; message Inner2 { int32 id = 1;}; Inner x = 1; })"));
+}
