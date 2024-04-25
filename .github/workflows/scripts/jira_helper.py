@@ -193,8 +193,12 @@ class JiraHelper():
         labels = self._get_gh_issue_labels()
         issue_type = self._get_issue_type(labels)
 
+        # Replace "```" with "{code}" because Jira's format is different than
+        # GitHubs
+        jira_issue_body = issue_body.replace("```", "{code}")
+
         fields = {
-            "description": f"{issue_body}",
+            "description": f"{jira_issue_body}",
             "summary": f"{issue_title}",
             "issuetype": {
                 "name": f"{issue_type}"
@@ -236,6 +240,7 @@ issue that triggered this issue's creation.
         return issue_id
 
     def _add_comment_to_issue(self, issue_id, comment):
+        comment = comment.replace("```", "{code}")
         self.logger.debug(
             f'Updating issue {issue_id} with comment "{comment}"')
         try:
