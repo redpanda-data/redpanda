@@ -15,6 +15,7 @@
 #include "service.h"
 #include "wasm/cache.h"
 
+#include <seastar/http/httpd.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -35,6 +36,7 @@ private:
     std::unique_ptr<wasm::caching_runtime> _wasm_runtime;
     ss::sharded<local_service> _service;
     ss::sharded<::rpc::rpc_server> _rpc_server;
+    ss::sharded<ss::httpd::http_server> _http_server;
 };
 
 } // namespace transform::worker

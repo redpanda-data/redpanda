@@ -10,8 +10,10 @@
 
 #include "worker.h"
 
+#include "metrics/metrics.h"
 #include "rpc/rpc_server.h"
 
+#include <seastar/core/prometheus.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/smp.hh>
 
@@ -46,8 +48,33 @@ ss::future<> worker_service::start(config cfg) {
         s.set_all_services_added();
     });
     co_await _rpc_server.invoke_on_all(&::rpc::rpc_server::start);
+    co_await _http_server.start(ss::sstring("admin"));
+    co_await _http_server.invoke_on_all(
+      &ss::httpd::http_server::set_content_streaming, true);
+    constexpr uint16_t http_server_port = 9644;
+    co_await _http_server.invoke_on_all<
+      ss::future<> (ss::httpd::http_server::*)(ss::socket_address),
+      ss::socket_address>(
+      &ss::httpd::http_server::listen, ss::socket_address(http_server_port));
+    co_await ss::prometheus::add_prometheus_routes(
+      _http_server,
+      {
+        .metric_help = "redpanda wasm worker metrics",
+        .prefix = "vectorized",
+        .handle = ss::metrics::default_handle(),
+        .route = "/metrics",
+      });
+    co_await ss::prometheus::add_prometheus_routes(
+      _http_server,
+      {
+        .metric_help = "redpanda wasm worker metrics",
+        .prefix = "redpanda",
+        .handle = metrics::public_metrics_handle,
+        .route = "/public_metrics",
+      });
 }
 ss::future<> worker_service::stop() {
+    co_await _http_server.stop();
     co_await _rpc_server.stop();
     co_await _service.stop();
     co_await _wasm_runtime->stop();
