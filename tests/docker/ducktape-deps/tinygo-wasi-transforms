@@ -10,7 +10,7 @@ function retry {
   local count=0
   until "$@"; do
     exit=$?
-    count=$(($count + 1))
+    count=$((count + 1))
     if [ $count -lt $retries ]; then
       echo "Retry $count/$retries exited $exit, retrying..."
     else
