@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 from rptest.services.utils import KubeNodeShell
 
 
@@ -51,6 +53,34 @@ class CloudBroker():
         # Init node shell pod beforehand
         self.nodeshell.initialize_nodeshell()
         # Prepare log extraction script
+        self.inject_script("pod_log_extract.sh")
+
+    def inject_script(self, script_name):
+        # Modified version of inject_script func
+        self.logger.info(f"Injecting '{script_name}' to {self.nodename}")
+        rptest_dir = os.path.dirname(os.path.realpath(__file__))
+        scripts_dir = os.path.join(rptest_dir, os.path.pardir,
+                                   "remote_scripts", "cloud")
+        scripts_dir = os.path.abspath(scripts_dir)
+        assert os.path.exists(scripts_dir)
+        script_path = os.path.join(scripts_dir, script_name)
+        assert os.path.exists(script_path)
+
+        # not using paramiko due to complexity of routing to actual node
+        # Copy ducktape -> agent
+        _scp_cmd = self._kubeclient._scp_cmd(
+            script_path, f"{self._kubeclient._remote_uri}:")
+        self.logger.debug(_scp_cmd)
+        res = subprocess.check_output(_scp_cmd)
+        # Copy agent -> broker node
+        remote_path = os.path.join("/tmp", script_name)
+        _cp_cmd = self._kubeclient._ssh_prefix() + [
+            'kubectl', 'cp', script_name,
+            f"{self.nodeshell.pod_name}:{remote_path}"
+        ]
+        self.logger.debug(_cp_cmd)
+        res = subprocess.check_output(_cp_cmd)
+        return
 
     def _query_broker(self, path, port=None):
         """
