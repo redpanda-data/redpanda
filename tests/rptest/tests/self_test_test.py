@@ -10,17 +10,19 @@
 import re
 import time
 from rptest.services.cluster import cluster
+from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 from ducktape.utils.util import wait_until
+from ducktape.mark import matrix
 from rptest.utils.functional import flat_map
 from rptest.util import wait_until_result
 from math import comb
 
 
-class SelfTestTest(RedpandaTest):
+class SelfTestTest(EndToEndTest):
     """Tests for the redpanda self test feature."""
 
     SELF_TEST_SHUTDOWN_LOG = [
@@ -29,11 +31,7 @@ class SelfTestTest(RedpandaTest):
     ]
 
     def __init__(self, ctx):
-
-        super(SelfTestTest,
-              self).__init__(test_context=ctx,
-                             si_settings=SISettings(test_context=ctx))
-        self._rpk = RpkTool(self.redpanda)
+        super(SelfTestTest, self).__init__(test_context=ctx)
 
     def wait_for_self_test_completion(self):
         """
@@ -41,39 +39,63 @@ class SelfTestTest(RedpandaTest):
         status in the self_test_status() API
         """
         def all_idle():
-            node_reports = self._rpk.self_test_status()
+            node_reports = self.rpk_client().self_test_status()
             return not any([x['status'] == 'running'
                             for x in node_reports]), node_reports
 
         return wait_until_result(all_idle, timeout_sec=30, backoff_sec=1)
 
     @cluster(num_nodes=3)
-    def test_self_test(self):
+    @matrix(remote_read=[True, False], remote_write=[True, False])
+    def test_self_test(self, remote_read, remote_write):
         """Assert the self test starts/completes with success."""
-        self._rpk.self_test_start(2000, 2000, 5000, 100)
+        num_nodes = 3
+        self.start_redpanda(
+            num_nodes=num_nodes,
+            si_settings=SISettings(
+                test_context=self.test_context,
+                cloud_storage_enable_remote_read=remote_read,
+                cloud_storage_enable_remote_write=remote_write))
+        self.rpk_client().self_test_start(2000, 2000, 5000, 100)
 
         # Wait for completion
         node_reports = self.wait_for_self_test_completion()
 
         # Verify returned results
+        def assert_pass(report):
+            assert 'error' not in report
+            assert 'warning' not in report
+
+        def assert_fail(report, error_msg):
+            assert 'error' in report
+            assert report['error'] == error_msg
+
+        read_tests = ['list', 'download']
+        write_tests = ['upload', 'delete']
+
         for node in node_reports:
             assert node['status'] == 'idle'
             assert node.get('results') is not None
             for report in node['results']:
                 if report['test_type'] == 'cloud_storage':
-                    if (self.si_settings.cloud_storage_enable_remote_read
-                            and report['info'] in ['download']
-                        ) or (
-                            self.si_settings.cloud_storage_enable_remote_write
-                            and report['info'] in ['upload', 'delete']):
-                        assert 'error' not in report
-                        assert 'warning' not in report
+                    if report['info'] in read_tests:
+                        if remote_read:
+                            assert_pass(report)
+                        else:
+                            assert_fail(
+                                report,
+                                'Remote read is not enabled for this cluster.')
+                    else:
+                        assert report['info'] in write_tests
+                        if remote_write:
+                            assert_pass(report)
+                        else:
+                            assert_fail(
+                                report,
+                                'Remote write is not enabled for this cluster.'
+                            )
                 else:
-                    assert 'error' not in report
-                    assert 'warning' not in report
-                    assert report['duration'] > 0, report['duration']
-
-        num_nodes = 3
+                    assert_pass(report)
 
         # Ensure the results appear as expected. Assertions aren't performed
         # on specific results, but rather what tests are oberved to have run
@@ -92,6 +114,13 @@ class SelfTestTest(RedpandaTest):
         cloud_results = [
             r for r in reports if r['test_type'] == 'cloud_storage'
         ]
+
+        num_expected_cloud_storage_read_tests = num_nodes * len(read_tests)
+        num_expected_cloud_storage_write_tests = num_nodes * len(write_tests)
+        assert len(
+            cloud_results
+        ) == num_expected_cloud_storage_write_tests + num_expected_cloud_storage_read_tests
+
         # Ensure no other result sets exist
         assert len(disk_results) + len(network_results) + len(
             cloud_results) == len(reports)
@@ -131,7 +160,10 @@ class SelfTestTest(RedpandaTest):
              log_allow_list=RESTART_LOG_ALLOW_LIST + SELF_TEST_SHUTDOWN_LOG)
     def test_self_test_node_crash(self):
         """Assert the self test starts/completes with success."""
-        self._rpk.self_test_start(3000, 3000)
+        num_nodes = 3
+        self.start_redpanda(num_nodes=num_nodes)
+
+        self.rpk_client().self_test_start(3000, 3000)
 
         # Allow for some work be done
         time.sleep(1)
@@ -152,14 +184,13 @@ class SelfTestTest(RedpandaTest):
             assert node['status'] == 'idle'
             assert node.get('results') is not None
             for report in node['results']:
+                # Errors related to crashed node are allowed, for example a network test on a good node that had attempted to connect to the crashed node
                 if report['test_type'] == 'network':
-                    # Errors related to crashed node are allowed, for example a network test on a good node that had attempted to connect to the crashed node
                     if 'error' in report:
                         assert report[
                             'error'] == f'Failed to reach peer with node_id: {stopped_nid}'
                     else:
                         assert 'warning' not in report
-                        assert report['duration'] > 0, report['duration']
         crashed_nodes_report = [
             x for x in node_reports if x['node_id'] == stopped_nid
         ][0]
@@ -169,18 +200,20 @@ class SelfTestTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_self_test_cancellable(self):
         """Assert the self test can cancel an action on command."""
+        num_nodes = 3
+        self.start_redpanda(num_nodes=num_nodes)
         disk_test_time = 5000  # ms
         network_test_time = 5000  # ms
 
         # Launch the self test with the options above
-        self._rpk.self_test_start(disk_test_time, network_test_time)
+        self.rpk_client().self_test_start(disk_test_time, network_test_time)
         start = time.time()
 
         # Wait a second, then send a stop() request
         time.sleep(1)
 
         # Stop is synchronous and will return when all jobs have stopped
-        self._rpk.self_test_stop()
+        self.rpk_client().self_test_stop()
 
         # Assert that at least a second of total recorded test time has
         # passed between start & stop calls
@@ -189,7 +222,7 @@ class SelfTestTest(RedpandaTest):
         assert total_time_sec < (disk_test_time + network_test_time)
 
         # Ensure system is in an idle state and contains expected report
-        node_reports = self._rpk.self_test_status()
+        node_reports = self.rpk_client().self_test_status()
         for node in node_reports:
             assert node['status'] == 'idle'
             assert node.get('results') is not None
