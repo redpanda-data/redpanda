@@ -139,24 +139,38 @@ class KubectlTool:
     def logger(self) -> Logger:
         return self._redpanda.logger
 
-    def _local_cmd(self, cmd: list[str]):
+    def _local_cmd(self, cmd: list[str], capture=False):
         """Run the given command locally and return the stdout as bytes.
            Logs stdout and stderr on failure."""
         self._redpanda.logger.info(cmd)
-        try:
-            return subprocess.check_output(cmd, stderr=subprocess.PIPE)
-        except subprocess.CalledProcessError as e:
-            self.logger.info(
-                f'Command failed (rc={e.returncode}).\n' +
-                f'--------- stdout -----------\n{e.stdout.decode()}' +
-                f'--------- stderr -----------\n{e.stderr.decode()}')
-            raise
+        if capture:
+            process = subprocess.Popen(cmd,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT)
+            return_code = process.returncode
 
-    def _ssh_cmd(self, cmd: list[str]):
+            if return_code:
+                raise RuntimeError(process.stdout, return_code)
+
+            for line in process.stdout:  # type: ignore
+                yield line
+
+            return
+        else:
+            try:
+                return subprocess.check_output(cmd, stderr=subprocess.PIPE)
+            except subprocess.CalledProcessError as e:
+                self.logger.info(
+                    f'Command failed (rc={e.returncode}).\n' +
+                    f'--------- stdout -----------\n{e.stdout.decode()}' +
+                    f'--------- stderr -----------\n{e.stderr.decode()}')
+                raise
+
+    def _ssh_cmd(self, cmd: list[str], capture=False):
         """Execute a command on a the remote node using ssh/tsh as appropriate."""
-        return self._local_cmd(self._ssh_prefix() + cmd)
+        return self._local_cmd(self._ssh_prefix() + cmd, capture=capture)
 
-    def cmd(self, kcmd: list[str] | str):
+    def cmd(self, kcmd: list[str] | str, capture=False):
         """Execute a kubectl command on the agent node.
         """
         # prepare
@@ -167,7 +181,7 @@ class KubectlTool:
         _kcmd = kcmd if isinstance(kcmd, list) else kcmd.split()
         # Format command
         cmd = _kubectl + _kcmd
-        return self._ssh_cmd(cmd)
+        return self._ssh_cmd(cmd, capture=capture)
 
     def exec(self, remote_cmd, pod_name=None):
         """Execute a command inside of a redpanda pod container.
