@@ -473,24 +473,6 @@ private:
         void reset();
     };
 
-    struct mem_state {
-        explicit mem_state(util::mem_tracker& parent)
-          : _tracker(parent.create_child("mem-state")) {}
-
-        ss::shared_ptr<util::mem_tracker> _tracker;
-        // once raft's term has passed mem_state::term we wipe mem_state
-        // and wait until log_state catches up with current committed index.
-        // with this approach a combination of mem_state and log_state is
-        // always up to date
-        model::term_id term;
-
-        // depending on the inflight state we may use last_applied or
-        // committed_index as LSO; the alternation between them may
-        // violate LSO monotonicity so we need to explicitly maintain
-        // it with last_lso
-        model::offset last_lso{-1};
-    };
-
     ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
         auto lock_it = _tx_locks.find(pid);
         if (lock_it == _tx_locks.end()) {
@@ -518,7 +500,6 @@ private:
           features::feature::transaction_partitioning);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const mem_state&);
     friend std::ostream& operator<<(std::ostream&, const log_state&);
     ss::future<> maybe_log_tx_stats();
     void log_tx_stats();
@@ -535,7 +516,6 @@ private:
       ss::lw_shared_ptr<mutex>>
       _tx_locks;
     log_state _log_state;
-    mem_state _mem_state;
     ss::timer<clock_type> auto_abort_timer;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _tx_timeout_delay;
@@ -561,6 +541,8 @@ private:
     ss::gate _gate;
     // Highest producer ID applied to this stm.
     model::producer_id _highest_producer_id;
+    // for monotonicity of computed LSO.
+    model::offset _last_known_lso{-1};
 
     friend struct ::rm_stm_test_fixture;
 };

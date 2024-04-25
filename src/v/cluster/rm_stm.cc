@@ -255,7 +255,6 @@ rm_stm::rm_stm(
         map<absl::flat_hash_map, model::producer_id, ss::lw_shared_ptr<mutex>>(
           _tx_root_tracker.create_child("tx-locks")))
   , _log_state(_tx_root_tracker)
-  , _mem_state(_tx_root_tracker)
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
   , _abort_interval_ms(config::shard_local_cfg()
@@ -1309,9 +1308,7 @@ model::offset rm_stm::last_stable_offset() {
         }
     }
 
-    auto synced_leader = _raft->is_leader() && _raft->term() == _insync_term
-                         && _mem_state.term == _insync_term;
-
+    auto synced_leader = _raft->is_leader() && _raft->term() == _insync_term;
     model::offset lso{-1};
     auto last_visible_index = _raft->last_visible_index();
     auto next_to_apply = model::next_offset(last_applied);
@@ -1329,8 +1326,8 @@ model::offset rm_stm::last_stable_offset() {
         // should not advance lso beyond last_applied
         lso = next_to_apply;
     }
-    _mem_state.last_lso = std::max(_mem_state.last_lso, lso);
-    return _mem_state.last_lso;
+    _last_known_lso = std::max(_last_known_lso, lso);
+    return _last_known_lso;
 }
 
 static void filter_intersecting(
@@ -1402,11 +1399,11 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
 }
 
 ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
+    auto current_insync_term = _insync_term;
     auto ready = co_await persisted_stm::sync(timeout);
     if (ready) {
-        if (_mem_state.term != _insync_term) {
-            _mem_state = mem_state{_tx_root_tracker};
-            _mem_state.term = _insync_term;
+        if (current_insync_term != _insync_term) {
+            _last_known_lso = model::offset{-1};
         }
     }
     co_return ready;
@@ -2271,7 +2268,6 @@ ss::future<> rm_stm::apply_raft_snapshot(const iobuf&) {
       "Resetting all state, reason: log eviction, offset: {}",
       _raft->start_offset());
     _log_state.reset();
-    _mem_state = mem_state{_tx_root_tracker};
     co_await reset_producers();
     set_next(_raft->start_offset());
     co_return;
@@ -2284,11 +2280,6 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
       as.first,
       as.last,
       as.aborted.size());
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const rm_stm::mem_state&) {
-    fmt::print(o, "{{ to be removed }} ");
     return o;
 }
 
@@ -2358,11 +2349,7 @@ ss::future<> rm_stm::maybe_log_tx_stats() {
     _ctx_log.debug(
       "tx mem tracker breakdown: {}", _tx_root_tracker.pretty_print_json());
     auto units = co_await _state_lock.hold_read_lock();
-    _ctx_log.debug(
-      "tx memory snapshot stats: {{mem_state: {}, log_state: "
-      "{}}}",
-      _mem_state,
-      _log_state);
+    _ctx_log.debug("tx memory snapshot stats: {{log_state: {}}}", _log_state);
 }
 
 void rm_stm::log_tx_stats() {
