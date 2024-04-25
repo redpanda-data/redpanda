@@ -354,6 +354,16 @@ class EC2Client:
                     buckets.append(bucket)
             return buckets
 
+    def query_bucket_lastmodified_date(self, name):
+        """Function returns last modified date 
+           based on first object key in the bucket
+        """
+        objects = self._s3cli.list_objects_v2(Bucket=name, MaxKeys=1)
+        if objects['KeyCount'] == 0:
+            return None
+        else:
+            return objects['Contents'][0]['LastModified']
+
     def list_bucket_objects(self, name, max_objects=3000):
         # Numner of objects collected
         objects_collected = 0
