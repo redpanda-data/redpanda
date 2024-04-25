@@ -423,7 +423,8 @@ static void fill_fetch_responses(
   op_context& octx,
   std::vector<read_result> results,
   const std::vector<op_context::response_placeholder_ptr>& responses,
-  op_context::latency_point start_time) {
+  op_context::latency_point start_time,
+  bool record_latency = true) {
     auto range = boost::irange<size_t>(0, results.size());
     if (unlikely(results.size() != responses.size())) {
         // soft assert & recovery attempt
@@ -519,10 +520,13 @@ static void fill_fetch_responses(
         }
 
         resp_it->set(std::move(resp));
-        std::chrono::microseconds fetch_latency
-          = std::chrono::duration_cast<std::chrono::microseconds>(
-            op_context::latency_clock::now() - start_time);
-        octx.rctx.probe().record_fetch_latency(fetch_latency);
+
+        if (record_latency) {
+            std::chrono::microseconds fetch_latency
+              = std::chrono::duration_cast<std::chrono::microseconds>(
+                op_context::latency_clock::now() - start_time);
+            octx.rctx.probe().record_fetch_latency(fetch_latency);
+        }
     }
 }
 
@@ -1159,7 +1163,8 @@ private:
           octx,
           std::move(results.read_results),
           fetch.responses,
-          fetch.start_time);
+          fetch.start_time,
+          false);
 
         octx.rctx.probe().record_fetch_latency(
           results.first_run_latency_result);
