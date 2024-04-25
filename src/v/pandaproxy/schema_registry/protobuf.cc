@@ -499,14 +499,26 @@ struct compatibility_checker {
             }
         }
 
+        // check writer fields
         for (int i = 0; i < writer->field_count(); ++i) {
-            if (reader->IsReservedNumber(i) || writer->IsReservedNumber(i)) {
-                continue;
-            }
-            int number = writer->field(i)->number();
+            auto w = writer->field(i);
+            int number = w->number();
             auto r = reader->FindFieldByNumber(number);
-            // A reader may ignore a writer field
-            if (r && !check_compatible(r, writer->field(i))) {
+            // A reader may ignore a writer field iff it is not `required`
+            if (!r && w->is_required()) {
+                return false;
+            } else if (r && !check_compatible(r, w)) {
+                return false;
+            }
+        }
+
+        // check reader required fields
+        for (int i = 0; i < reader->field_count(); ++i) {
+            auto r = reader->field(i);
+            int number = r->number();
+            auto w = writer->FindFieldByNumber(number);
+            // A writer may ignore a reader field iff it is not `required`
+            if ((!w || !w->is_required()) && r->is_required()) {
                 return false;
             }
         }
