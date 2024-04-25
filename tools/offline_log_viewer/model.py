@@ -54,26 +54,51 @@ def read_incremental_properties_update(reader):
     return u
 
 
-def read_endpoint(r):
+
+def read_unresolved_address(rdr: Reader, v: int):
     ep = {}
-    ep['name'] = r.read_string()
-    ep['address'] = r.read_string()
-    ep['port'] = r.read_uint16()
+    ep['host'] = rdr.read_string()
+    ep['port'] = rdr.read_uint16()
+    ep['family'] = rdr.read_optional(Reader.read_serde_enum)
     return ep
 
 
-def read_broker(rdr):
+def read_broker_endpoint(r: Reader, v: int):
+    ep = {}
+    ep['name'] = r.read_string()
+
+    ep['address'] = r.read_envelope(type_read=read_unresolved_address)
+    return ep
+
+
+def read_broker_properties(r: Reader, v: int):
+    p = {}
+    p |= {"cores": r.read_uint32()}
+    p |= {"available_memory_gb": r.read_uint32()}
+    p |= {"available_disk_gb": r.read_uint32()}
+    p |= {"mount_paths": r.read_serde_vector(Reader.read_string)}
+    p |= {"etc": r.read_serde_map(Reader.read_string, Reader.read_string)}
+    p |= {"available_memory_bytes": r.read_int64()}
+    return p
+
+
+def read_broker(rdr: Reader):
     br = {}
     br['id'] = rdr.read_int32()
-    br['kafka_endpoints'] = rdr.read_vector(lambda r: read_endpoint(r))
-    br['rpc_address'] = rdr.read_string()
-    br['rpc_port'] = rdr.read_uint16()
+    br['kafka_advertised_listeners'] = rdr.read_serde_vector(
+        lambda r: r.read_envelope(type_read=read_broker_endpoint))
+    br['rpc_address'] = rdr.read_envelope(read_unresolved_address)
     br['rack'] = rdr.read_optional(lambda r: r.read_string())
-    br['cores'] = rdr.read_uint32()
-    br['memory'] = rdr.read_uint32()
-    br['disk'] = rdr.read_uint32()
-    br['mount_paths'] = rdr.read_vector(lambda r: r.read_string())
-    br['etc'] = rdr.read_vector(lambda r: (r.read_string(), r.read_string()))
+    br['properties'] = rdr.read_envelope(type_read=read_broker_properties,
+                                         max_version=1)
+    return br
+
+
+def read_broker_state(rdr: Reader):
+    br = {}
+    br['membership_state'] = rdr.read_serde_enum()
+    br['maintenance_state'] = rdr.read_serde_enum()
+
     return br
 
 
