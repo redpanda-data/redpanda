@@ -72,6 +72,9 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		rPorts  []string
 		srPorts []string
 		anyPort bool
+
+		subnet  string
+		gateway string
 	)
 	command := &cobra.Command{
 		Use:   "start",
@@ -95,6 +98,9 @@ Each flag accepts a comma-separated list of ports for your listeners. Use the
 
 Optionally, specify a container image; the default image is
 redpandadata/redpanda:latest.
+
+In case of IP address pool conflict, you may specify a custom subnet and gateway
+using the '--subnet' and '--gateway' flags respectively.
 `,
 		Example: `
 Start a 3-broker cluster:
@@ -130,7 +136,7 @@ Start a 3-broker cluster, selecting every admin API port:
 			out.MaybeDie(err, "unable to parse container ports: %v", err)
 
 			configKvs := collectFlags(os.Args, "--set")
-			isRestarted, err := startCluster(c, nodes, checkBrokers, retries, image, pull, cPorts, configKvs)
+			isRestarted, err := startCluster(c, nodes, checkBrokers, retries, image, pull, cPorts, configKvs, subnet, gateway)
 			if err != nil {
 				if errors.As(err, &portInUseErr{}) {
 					out.Die("unable to start cluster: %v\nYou may select different ports to start the cluster using our listener flags. Check '--help' text for more information", err)
@@ -182,6 +188,9 @@ You can retry profile creation by running:
 	// opt-in for 'any' in all listeners
 	command.Flags().BoolVar(&anyPort, flagAnyPort, false, "Opt in for any (random) ports in all listeners")
 
+	command.Flags().StringVar(&subnet, "subnet", "172.24.1.0/24", "Subnet to create the cluster network on")
+	command.Flags().StringVar(&gateway, "gateway", "172.24.1.1", "Gateway IP address for the subnet. Must be in the subnet address range")
+
 	command.MarkFlagsMutuallyExclusive(flagAnyPort, flagKafkaPorts)
 	command.MarkFlagsMutuallyExclusive(flagAnyPort, flagAdminPorts)
 	command.MarkFlagsMutuallyExclusive(flagAnyPort, flagSRPorts)
@@ -212,6 +221,7 @@ func startCluster(
 	pull bool,
 	clusterPorts clusterPorts,
 	extraArgs []string,
+	subnet, gateway string,
 ) (isRestarted bool, rerr error) {
 	// Check if cluster exists and start it again.
 	restarted, err := restartCluster(c, check, retries)
@@ -251,7 +261,7 @@ func startCluster(
 	}
 
 	// Create the docker network if it doesn't exist already
-	netID, err := common.CreateNetwork(c)
+	netID, err := common.CreateNetwork(c, subnet, gateway)
 	if err != nil {
 		return false, err
 	}

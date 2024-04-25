@@ -191,9 +191,9 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	}, nil
 }
 
-// Creates a network for the cluster's containers and returns its ID. If it
-// exists already, it returns the existing network's ID.
-func CreateNetwork(c Client) (string, error) {
+// CreateNetwork Creates a network for the cluster's containers and returns its
+// ID. If it exists already, it returns the existing network's ID.
+func CreateNetwork(c Client, subnet, gateway string) (string, error) {
 	ctx, _ := DefaultCtx()
 
 	args := filters.NewArgs()
@@ -212,7 +212,7 @@ func CreateNetwork(c Client) (string, error) {
 		}
 	}
 
-	fmt.Printf("Creating network %s\n", redpandaNetwork)
+	fmt.Printf("Creating network %q\n", redpandaNetwork)
 	resp, err := c.NetworkCreate(
 		ctx, redpandaNetwork, types.NetworkCreate{
 			Driver: "bridge",
@@ -220,8 +220,8 @@ func CreateNetwork(c Client) (string, error) {
 				Driver: "default",
 				Config: []network.IPAMConfig{
 					{
-						Subnet:  "172.24.1.0/24",
-						Gateway: "172.24.1.1",
+						Subnet:  subnet,
+						Gateway: gateway,
 					},
 				},
 			},
