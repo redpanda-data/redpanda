@@ -301,7 +301,10 @@ class KubectlTool:
 
 
 class KubeNodeShell():
-    def __init__(self, kubectl: KubectlTool, node_name: str) -> None:
+    def __init__(self,
+                 kubectl: KubectlTool,
+                 node_name: str,
+                 clean=False) -> None:
         self.kubectl = kubectl
         self.node_name = node_name
         # It is bad, but it works
@@ -317,8 +320,8 @@ class KubeNodeShell():
             # Cut them to fit
             self.pod_name = self.pod_name[:63]
 
-        # In case of concurrent tests, just reuse existing pod
-        self.pod_reused = True if self._is_shell_running() else False
+        # Set cleaning flag on exit
+        self.clean = clean
 
     def _is_shell_running(self):
         # Check if such pod exists
@@ -370,10 +373,13 @@ class KubeNodeShell():
             }
         }
 
-    def __enter__(self):
-        if not self.pod_reused:
+    def initialize_nodeshell(self):
+        if not self._is_shell_running():
             # Init node shell
             overrides = self._build_overrides()
+            # We do not require timeout option to fail
+            # if pod is not running at this point
+            # Feel free to uncomment
             _out = self.kubectl.cmd([
                 f"--context={self.current_context}",
                 "run",
@@ -386,7 +392,24 @@ class KubeNodeShell():
             self.logger.debug(f"Response: {_out.decode()}")
         return self
 
-    def __call__(self, cmd: list[str] | str) -> list:
+    def destroy_nodeshell(self):
+        if self._is_shell_running():
+            try:
+                self.kubectl.cmd(f"delete pod {self.pod_name}")
+            except Exception as e:
+                self.logger.warning("Failed to delete node shell pod "
+                                    f"'{self.pod_name}': {e}")
+        return
+
+    def __enter__(self):
+        return self.initialize_nodeshell()
+
+    def __exit__(self, *args, **kwargs):
+        if self.clean:
+            self.destroy_nodeshell()
+        return
+
+    def __call__(self, cmd: list[str] | str, capture=False):
         self.logger.info(f"Running command inside node '{self.node_name}'")
         # Prefix for running inside proper pod
         _kcmd = ["exec", self.pod_name, "--"]
@@ -394,15 +417,8 @@ class KubeNodeShell():
         _cmd = cmd if isinstance(cmd, list) else cmd.split()
         _kcmd += _cmd
         # exception handler is inside subclass
-        _out = self.kubectl.cmd(_kcmd)
-        return _out.decode().splitlines()
-
-    def __exit__(self, *args, **kwargs):
-        # If this instance created this pod, delete it
-        if not self.pod_reused:
-            try:
-                self.kubectl.cmd(f"delete pod {self.pod_name}")
-            except Exception as e:
-                self.logger.warning("Failed to delete node shell pod "
-                                    f"'{self.pod_name}': {e}")
-        return
+        _out = self.kubectl.cmd(_kcmd, capture=capture)
+        if capture:
+            return _out
+        else:
+            return _out.decode().splitlines()
