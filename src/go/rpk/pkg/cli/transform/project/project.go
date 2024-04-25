@@ -23,12 +23,16 @@ const (
 	WasmLangTinygoWithGoroutines WasmLang = "tinygo-with-goroutines"
 	WasmLangTinygoNoGoroutines   WasmLang = "tinygo-no-goroutines"
 	WasmLangRust                 WasmLang = "rust"
+	WasmLangJavaScript           WasmLang = "javascript"
+	WasmLangTypeScript           WasmLang = "typescript"
 )
 
 var AllWasmLangs = []string{
 	string(WasmLangTinygoNoGoroutines),
 	string(WasmLangTinygoWithGoroutines),
 	string(WasmLangRust),
+	string(WasmLangJavaScript),
+	string(WasmLangTypeScript),
 }
 
 // AllWasmLangsWithDescriptions is AllWasmLangs but with extended descriptions.
@@ -38,6 +42,8 @@ var AllWasmLangsWithDescriptions = []string{
 	"Tinygo (no goroutines) - higher throughput",
 	"Tinygo (with goroutines)",
 	"Rust",
+	"JavaScript",
+	"TypeScript",
 }
 
 func (l *WasmLang) Set(str string) error {

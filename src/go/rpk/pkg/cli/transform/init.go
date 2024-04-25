@@ -216,6 +216,31 @@ func generateManifest(p transformProject) (map[string][]genFile, error) {
 				genFile{name: "main.rs", content: template.WasmRustMain()},
 			},
 		}, nil
+	case project.WasmLangJavaScript:
+		return map[string][]genFile{
+			p.Path: {
+				genFile{name: project.ConfigFileName, content: string(rpConfig)},
+				genFile{name: "package.json", content: template.WasmPackageJson(p.Name, false)},
+				genFile{name: "README.md", content: template.WasmJavaScriptReadme(false)},
+				genFile{name: "esbuild.js", content: template.WasmEsbuildFile(p.Name, false)},
+			},
+			path.Join(p.Path, "src"): {
+				genFile{name: "index.js", content: template.WasmJavaScriptMain()},
+			},
+		}, nil
+	case project.WasmLangTypeScript:
+		return map[string][]genFile{
+			p.Path: {
+				genFile{name: project.ConfigFileName, content: string(rpConfig)},
+				genFile{name: "package.json", content: template.WasmPackageJson(p.Name, true)},
+				genFile{name: "README.md", content: template.WasmJavaScriptReadme(true)},
+				genFile{name: "tsconfig.json", content: template.WasmTsConfig()},
+				genFile{name: "esbuild.js", content: template.WasmEsbuildFile(p.Name, true)},
+			},
+			path.Join(p.Path, "src"): {
+				genFile{name: "index.ts", content: template.WasmTypeScriptMain()},
+			},
+		}, nil
 	}
 	return nil, fmt.Errorf("unknown language %q", p.Lang)
 }
@@ -283,6 +308,20 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		}
 		if err := runCli(cargo, "add", "redpanda-transform-sdk"); err != nil {
 			return fmt.Errorf("unable to add redpanda-transform-sdk crate: %v", err)
+		}
+		return nil
+	case project.WasmLangJavaScript:
+		fallthrough
+	case project.WasmLangTypeScript:
+		npm, err := exec.LookPath("npm")
+		if err != nil {
+			return fmt.Errorf("npm is not available on $PATH, please download and install it: https://nodejs.org/")
+		}
+		if err := runCli(npm, "install"); err != nil {
+			return fmt.Errorf("unable to install node modules: %v", err)
+		}
+		if _, err := buildpack.JavaScript.Install(ctx, fs); err != nil {
+			return fmt.Errorf("unable to install javascript buildpack: %v", err)
 		}
 		return nil
 	}

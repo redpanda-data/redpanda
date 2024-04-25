@@ -12,12 +12,14 @@ package transform
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/buildpack"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
@@ -94,6 +96,10 @@ Tinygo - By default tinygo are release builds (-opt=2) for maximum performance.
 				out.MaybeDieErr(execFn(tinygo, args))
 			case project.WasmLangRust:
 				out.MaybeDieErr(buildRust(cmd.Context(), fs, cfg, extraArgs))
+			case project.WasmLangTypeScript:
+				fallthrough
+			case project.WasmLangJavaScript:
+				out.MaybeDieErr(buildJavaScript(cmd.Context(), fs, cfg))
 			default:
 				out.Die("unknown language: %q", cfg.Language)
 			}
@@ -137,6 +143,98 @@ func buildRust(ctx context.Context, fs afero.Fs, cfg project.Config, extraArgs [
 	buildArtifact := path.Join(meta.TargetDir, "wasm32-wasi", "release", fileName)
 	if err = fs.Rename(buildArtifact, fileName); err != nil {
 		return fmt.Errorf("unable to move build artifact: %v", err)
+	}
+	return nil
+}
+
+const watTemplate = `
+(module
+	(memory (import "js_vm" "memory") 0)
+
+	(func (export "file_length") (result i32)
+          (i32.const %d)
+        )
+
+	(func (export "get_file") (param $buffer_ptr i32)
+		;; Copy the source from data segment 0.
+		(memory.init $source
+			(local.get $buffer_ptr) ;; Memory destination
+			(i32.const 0)           ;; Start index
+			(i32.const %d)          ;; Length
+                )
+		(data.drop $source)
+        )
+	(data $source "%s"))
+`
+
+// createWatFromJavaScript generates a webassembly file in the text format: http://mdn.io/wasm-text-format
+//
+// We export two functions in our template, one to get the length of the file, and another to copy the file
+// into a buffer. This is an expected from our transform JS SDK.
+func createWatFromJavaScript(code []byte) string {
+	encoded := hex.EncodeToString(code)
+	escaped := strings.Builder{}
+	escaped.Grow(len(code) * 3)
+	// WebAssembly text format expects each escaped hex character (two ascii letters) to be preceeded by a backslash.
+	// So that hex a hex string where encoded = "deedbeef", escaped = "\de\ed\be\ef"
+	// See the spec here: https://webassembly.github.io/spec/core/text/values.html#text-string
+	for i := 0; i < len(encoded); i += 2 {
+		escaped.WriteRune('\\')
+		escaped.WriteByte(encoded[i])
+		escaped.WriteByte(encoded[i+1])
+	}
+	return fmt.Sprintf(watTemplate, len(code), len(code), escaped.String())
+}
+
+func buildJavaScript(ctx context.Context, fs afero.Fs, cfg project.Config) error {
+	npm, err := exec.LookPath("npm")
+	if err != nil {
+		return fmt.Errorf("npm is not available on $PATH, please download and install it: https://nodejs.org/")
+	}
+	cmd := exec.CommandContext(ctx, npm, "run", "build")
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("build failed %v", err)
+	}
+	bundled := fmt.Sprintf("dist/%s.js", cfg.Name)
+	b, err := os.ReadFile(bundled)
+	if err != nil {
+		return fmt.Errorf("unable to read %q: %v", bundled, err)
+	}
+	watFile := createWatFromJavaScript(b)
+	if err := afero.WriteFile(fs, "dist/source.wat", []byte(watFile), os.FileMode(0o644)); err != nil {
+		return fmt.Errorf("unable to write %q: %v", "dist/source.wat", err)
+	}
+	if _, err = buildpack.JavaScript.Install(ctx, fs); err != nil {
+		return err
+	}
+	bpRoot, err := buildpack.JavaScript.RootPath()
+	if err != nil {
+		return err
+	}
+	wasmMerge := path.Join(bpRoot, "wasm-merge")
+	jsVmWasm := path.Join(bpRoot, "redpanda_js_transform")
+	cmd = exec.CommandContext(
+		ctx,
+		wasmMerge,
+		jsVmWasm,
+		"js_vm",
+		"dist/source.wat",
+		"redpanda_js_provider",
+		"-mvp",
+		"--enable-simd",
+		"--enable-bulk-memory",
+		"--enable-multimemory",
+		"-o",
+		fmt.Sprintf("%s.wasm", cfg.Name),
+	)
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("build failed %v", err)
 	}
 	return nil
 }
