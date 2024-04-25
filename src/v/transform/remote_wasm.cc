@@ -11,6 +11,7 @@
 #include "remote_wasm.h"
 
 #include "base/vlog.h"
+#include "container/fragmented_vector.h"
 #include "model/record.h"
 #include "ssx/future-util.h"
 #include "transform/logger.h"
@@ -68,11 +69,22 @@ public:
       model::record_batch batch,
       wasm::transform_probe* probe,
       wasm::transform_callback cb) override {
+        chunked_vector<model::record_batch> batches;
+        batches.reserve(1);
+        batches.push_back(std::move(batch));
+        return transform(std::move(batches), probe, std::move(cb));
+    }
+    ss::future<> transform(
+      chunked_vector<model::record_batch> input,
+      wasm::transform_probe* probe,
+      wasm::transform_callback cb) override {
         chunked_vector<ss::foreign_ptr<std::unique_ptr<model::record_batch>>>
           batches;
-        batches.reserve(1);
-        batches.emplace_back(
-          std::make_unique<model::record_batch>(std::move(batch)));
+        batches.reserve(input.size());
+        for (auto& batch : input) {
+            batches.emplace_back(
+              std::make_unique<model::record_batch>(std::move(batch)));
+        }
         auto start = log_hist_public::clock_type::now();
         auto response = co_await _client->transform(
           _id, _meta.uuid, model::partition_id{}, std::move(batches));

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
@@ -48,6 +49,17 @@ class engine {
 public:
     virtual ss::future<>
     transform(model::record_batch, transform_probe*, transform_callback) = 0;
+
+    virtual ss::future<> transform(
+      chunked_vector<model::record_batch> batches,
+      transform_probe* p,
+      transform_callback cb) {
+        for (auto& batch : batches) {
+            co_await transform(std::move(batch), p, [&cb](auto t, auto d) {
+                return cb(t, std::move(d));
+            });
+        }
+    }
 
     virtual ss::future<> transform(
       ss::foreign_ptr<std::unique_ptr<model::record_batch>> batch,

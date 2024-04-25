@@ -38,11 +38,9 @@ namespace transform {
 namespace {
 
 class queue_output_consumer {
-    static constexpr size_t buffer_chunk_size = 8;
-
 public:
     queue_output_consumer(
-      transfer_queue<model::record_batch, buffer_chunk_size>* output,
+      transfer_queue<model::record_batch>* output,
       ss::abort_source* as,
       probe* probe)
       : _output(output)
@@ -62,7 +60,7 @@ public:
 
 private:
     std::optional<kafka::offset> _last_offset;
-    transfer_queue<model::record_batch, buffer_chunk_size>* _output;
+    transfer_queue<model::record_batch>* _output;
     ss::abort_source* _as;
     probe* _probe;
 };
@@ -286,15 +284,14 @@ ss::future<> processor::run_consumer_loop(kafka::offset offset) {
 
 ss::future<> processor::run_transform_loop() {
     while (!_as.abort_requested()) {
-        auto batch = co_await _consumer_transform_pipe.pop_one(&_as);
-        if (!batch) {
+        auto batches = co_await _consumer_transform_pipe.pop_all(&_as);
+        if (batches.empty()) {
             continue;
         }
-        auto offset = model::offset_cast(batch->last_offset());
-        ss::chunked_fifo<model::transformed_data> transformed;
+        auto offset = model::offset_cast(batches.back().last_offset());
         vlog(_logger.trace, "transforming offset {}", offset);
         co_await _engine->transform(
-          std::move(*batch),
+          std::move(batches),
           _probe,
           [this](
             std::optional<model::topic_view> topic,

@@ -10,10 +10,9 @@
  */
 
 #include "base/seastarx.h"
-#include "ssx/semaphore.h"
+#include "container/fragmented_vector.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/semaphore.hh>
 
@@ -43,7 +42,7 @@ constexpr size_t default_items_per_chunk = 128;
  * `ss::abort_source`.
  *
  */
-template<MemoryMeasurable T, size_t items_per_chunk = default_items_per_chunk>
+template<MemoryMeasurable T>
 class transfer_queue {
 public:
     /**
@@ -77,34 +76,15 @@ public:
     }
 
     /**
-     * Take a single element out of the queue waiting until there is one.
-     *
-     * If the provided about_source is aborted, then this method will return
-     * `std::nullopt`.
-     */
-    ss::future<std::optional<T>> pop_one(ss::abort_source* as) noexcept {
-        co_await wait_for_non_empty(as);
-        if (as->abort_requested() || _entries.empty()) {
-            co_return std::nullopt;
-        }
-        T entry = std::move(_entries.front());
-        _entries.pop_front();
-        _used_memory -= std::min(entry.memory_usage(), _max_memory);
-        _cond_var.signal();
-        co_return entry;
-    }
-
-    /**
      * Extract all entries from this queue as soon as it is non-empty.
      *
      * If the abort_source is aborted, then this method will return an empty
      * container.
      */
-    ss::future<ss::chunked_fifo<T, items_per_chunk>>
-    pop_all(ss::abort_source* as) noexcept {
+    ss::future<chunked_vector<T>> pop_all(ss::abort_source* as) noexcept {
         co_await wait_for_non_empty(as);
         if (as->abort_requested()) {
-            co_return ss::chunked_fifo<T, items_per_chunk>{};
+            co_return chunked_vector<T>{};
         }
         _used_memory = 0;
         _cond_var.signal();
@@ -142,7 +122,7 @@ private:
         }
     }
 
-    ss::chunked_fifo<T, items_per_chunk> _entries;
+    chunked_vector<T> _entries;
     ss::condition_variable _cond_var;
     size_t _max_memory;
     // A semaphore is a natural fit here, but at the time of writing there is a

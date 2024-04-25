@@ -109,8 +109,7 @@ private:
 
     static constexpr size_t buffer_chunk_size = 8;
 
-    transfer_queue<model::record_batch, buffer_chunk_size>
-      _consumer_transform_pipe;
+    transfer_queue<model::record_batch> _consumer_transform_pipe;
 
     struct output {
         model::output_topic_index index;

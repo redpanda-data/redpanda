@@ -54,8 +54,7 @@ ss::future<> worker_service::start(config cfg) {
     constexpr uint16_t http_server_port = 9644;
     co_await _http_server.invoke_on_all<
       ss::future<> (ss::httpd::http_server::*)(ss::socket_address),
-      ss::socket_address>(
-      &ss::httpd::http_server::listen, ss::socket_address(http_server_port));
+      uint16_t>(&ss::httpd::http_server::listen, http_server_port);
     co_await ss::prometheus::add_prometheus_routes(
       _http_server,
       {
