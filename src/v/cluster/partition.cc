@@ -642,8 +642,8 @@ partition::timequery(storage::timequery_config cfg) {
 }
 
 bool partition::may_read_from_cloud() const {
-    return _cloud_storage_partition
-           && _cloud_storage_partition->is_data_available();
+    return is_remote_fetch_enabled()
+           && (_cloud_storage_partition && _cloud_storage_partition->is_data_available());
 }
 
 ss::future<std::optional<storage::timequery_result>>
