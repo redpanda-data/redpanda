@@ -35,7 +35,8 @@ public:
        retry_chain_node&,
        std::optional<cloud_storage_clients::object_key>,
        std::optional<char>,
-       std::optional<cloud_storage_clients::client::item_filter>),
+       std::optional<cloud_storage_clients::client::item_filter>,
+       std::optional<size_t>),
       (override));
     MOCK_METHOD(
       ss::future<cloud_storage::download_result>,
