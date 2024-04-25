@@ -513,19 +513,44 @@ struct compatibility_checker {
             }
         }
 
+        // check writer fields
         for (int i = 0; i < writer->field_count(); ++i) {
+            // TODO(oren): Need special handling here?
             if (reader->IsReservedNumber(i) || writer->IsReservedNumber(i)) {
                 continue;
             }
-            int number = writer->field(i)->number();
+            auto w = writer->field(i);
+            int number = w->number();
             auto r = reader->FindFieldByNumber(number);
-            // A reader may ignore a writer field
-            if (!r) {
+            // A reader may ignore a writer field iff it is not `required`
+            if (!r && w->is_required()) {
+                compat_result.emplace<proto_incompatibility>(
+                  p / std::to_string(w->number()),
+                  proto_incompatibility::Type::required_field_removed);
+            } else if (r) {
+                auto oneof = r->containing_oneof();
+                compat_result.merge(check_compatible(
+                  r,
+                  w,
+                  p / (oneof ? oneof->name() : "")
+                    / std::to_string(w->number())));
+            }
+        }
+
+        // check reader required fields
+        for (int i = 0; i < reader->field_count(); ++i) {
+            // TODO(oren): Need special handling here?
+            if (writer->IsReservedNumber(i) || reader->IsReservedNumber(i)) {
                 continue;
             }
-
-            compat_result.merge(
-              check_compatible(r, writer->field(i), p / std::to_string(i + 1)));
+            int number = reader->field(i)->number();
+            auto w = writer->FindFieldByNumber(number);
+            // A writer may ignore a reader field iff it is not `required`
+            if ((!w || !w->is_required()) && reader->field(i)->is_required()) {
+                compat_result.emplace<proto_incompatibility>(
+                  p / std::to_string(reader->field(i)->number()),
+                  proto_incompatibility::Type::required_field_added);
+            }
         }
         return compat_result;
     }
