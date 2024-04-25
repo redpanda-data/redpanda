@@ -502,6 +502,17 @@ struct compatibility_checker {
             return compat_result;
         }
 
+        for (int i = 0; i < writer->nested_type_count(); ++i) {
+            auto w = writer->nested_type(i);
+            auto r = reader->FindNestedTypeByName(w->full_name());
+            if (!r) {
+                compat_result.emplace<proto_incompatibility>(
+                  p / w->name(), proto_incompatibility::Type::message_removed);
+            } else {
+                compat_result.merge(check_compatible(r, w, p / w->name()));
+            }
+        }
+
         for (int i = 0; i < writer->field_count(); ++i) {
             if (reader->IsReservedNumber(i) || writer->IsReservedNumber(i)) {
                 continue;
