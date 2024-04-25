@@ -684,3 +684,43 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_field_name_type_changed) {
       R"(syntax = "proto3"; message Outer { message Inner { int32 id = 1;}; message Inner2 { int32 id = 1;}; Inner2 x = 1; })",
       R"(syntax = "proto3"; message Outer { message Inner { int32 id = 1;}; message Inner2 { int32 id = 1;}; Inner  x = 1; })"));
 }
+
+SEASTAR_THREAD_TEST_CASE(
+  test_protobuf_compatibility_required_field_added_removed) {
+    // field added
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; required int32 new_id = 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; })"));
+    // field removed
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; required int32 new_id = 2; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_field_made_reserved) {
+    // required
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; reserved 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; required int32 new_id = 2; })"));
+    // not required
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; reserved 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; optional int32 new_id = 2; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_field_unmade_reserved) {
+    // required
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; required int32 new_id = 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; reserved 2; })"));
+    // not required
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; optional int32 new_id = 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; reserved 2; })"));
+}
