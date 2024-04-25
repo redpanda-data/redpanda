@@ -6,7 +6,34 @@ from abc import ABC, abstractmethod
 from typing import Generator, Optional
 
 from rptest.clients.kubectl import KubectlTool, KubeNodeShell
-from rptest.services.cloud_broker import CloudBroker
+
+
+class Stopwatch():
+    def __init__(self):
+        self.reset()
+
+    def reset(self, note=None):
+        self._start = time.time()
+        self._end = 0
+
+    @property
+    def elapsed(self) -> float:
+        if self._end > 0:
+            return self._end - self._start
+        else:
+            return time.time() - self._start
+
+    def start(self):
+        self._start = time.time()
+
+    def stop(self):
+        self._end = time.time()
+
+    def elapseds(self):
+        return f"{self.elapsed:.2f}s"
+
+    def elapsedf(self, note) -> str:
+        return f"{note}: {self.elapseds()}"
 
 
 class BadLogLines(Exception):
@@ -135,7 +162,9 @@ class LogSearch(ABC):
     def _search(self, nodes):
         bad_lines = collections.defaultdict(list)
         test_name = self._context.function_name
+        sw = Stopwatch()
         for node in nodes:
+            sw.start()
             hostname = self._get_hostname(node)
             self.logger.info(f"Scanning node {hostname} log for errors...")
             # Prepare/Build capture func shortcut
@@ -155,6 +184,9 @@ class LogSearch(ABC):
                     bad_lines[node].append(line)
                     self.logger.warn(f"[{test_name}] Unexpected log line on "
                                      f"{hostname}: {line}")
+            self.logger.info(
+                sw.elapsedf(
+                    f"##### Time spent to scan bad logs on '{hostname}'"))
         return bad_lines
 
     def search_logs(self, nodes):
