@@ -143,7 +143,7 @@ public:
     }
 };
 
-BOOST_AUTO_TEST_CASE(ask_authority_host_read_test) {
+SEASTAR_THREAD_TEST_CASE(aks_authority_host_read_test) {
     // test that we can correctly read various forms of AZURE_AUTHORITY_HOST
 
     // boilerplate
