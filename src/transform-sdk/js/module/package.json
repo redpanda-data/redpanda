@@ -8,7 +8,7 @@
   "module": "index.js",
   "files": [
     "index.js",
-    "index.d.ts",
+    "index.d.ts"
   ],
   "publishConfig": {
     "access": "public"
@@ -16,5 +16,5 @@
   "engines": {
     "node": ">=14"
   },
-  "repository": "github:redpanda-data/redpanda",
+  "repository": "github:redpanda-data/redpanda"
 }
