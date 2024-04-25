@@ -334,8 +334,60 @@ ss::future<> log_reader::find_next_valid_iterator() {
     return ss::make_ready_future<>();
 }
 
+bool log_reader::log_load_slice_depth_warning() const {
+    const auto& depth
+      = config::shard_local_cfg().debug_load_slice_warning_depth();
+    return depth.has_value() && _load_slice_depth >= *depth;
+}
+
+void log_reader::maybe_log_load_slice_depth_warning(
+  std::string_view context) const {
+    if (!log_load_slice_depth_warning()) {
+        return;
+    }
+
+    vlog(
+      stlog.warn,
+      "load_slice recursion warning ({}, depth {}). _last_base {} config {}",
+      context,
+      _load_slice_depth,
+      _last_base,
+      _config);
+
+    if (_lease->range.empty()) {
+        return;
+    }
+
+    const auto& segs = _lease->range;
+    const auto size = segs.size();
+    auto count = 0;
+    constexpr auto max_segments = 10;
+    for (int i = (int)size - 1; i >= 0; --i) {
+        auto& seg = segs[i];
+        vlog(
+          stlog.warn,
+          "load_slice recursion warning. lease range segment {}/{} "
+          "empty {}: {}",
+          i,
+          size,
+          seg->empty(),
+          seg);
+        if (!seg->empty() && ++count > max_segments) {
+            // only show the last 10 segments. there could be a ton.
+            break;
+        }
+    }
+}
+
 ss::future<log_reader::storage_t>
 log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
+    _load_slice_depth = 0;
+    return load_slice(timeout);
+}
+
+ss::future<log_reader::storage_t>
+log_reader::load_slice(model::timeout_clock::time_point timeout) {
+    _load_slice_depth++;
     if (is_done()) {
         // must keep this function because, the segment might not be done
         // but offsets might have exceeded the read
@@ -359,6 +411,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
         set_end_of_stream();
         return ss::make_ready_future<storage_t>();
     }
+    maybe_log_load_slice_depth_warning("reading more");
     _last_base = _config.start_offset;
     ss::future<> fut = find_next_valid_iterator();
     if (is_end_of_stream()) {
@@ -407,7 +460,8 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
                * instead, we recurse which will advance the iterator and check
                * end of stream.
                */
-              return do_load_slice(timeout);
+              maybe_log_load_slice_depth_warning("load next slice");
+              return load_slice(timeout);
           }
           // Update the probe without the ghost batches.
           _probe.add_batches_read(recs.value().size());

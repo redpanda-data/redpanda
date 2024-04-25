@@ -1230,6 +1230,13 @@ configuration::configuration()
        .visibility = visibility::tunable},
       2,
       {.min = 1})
+  , debug_load_slice_warning_depth(
+      *this,
+      "debug_load_slice_warning_depth",
+      "The recursion depth after which debug logging will be enabled "
+      "automatically for the log reader.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , tx_registry_log_capacity(*this, "tx_registry_log_capacity")
   , id_allocator_log_capacity(
       *this,

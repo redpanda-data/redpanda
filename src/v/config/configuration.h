@@ -238,6 +238,7 @@ struct configuration final : public config_store {
       storage_ignore_timestamps_in_future_sec;
     property<bool> storage_ignore_cstore_hints;
     bounded_property<int16_t> storage_reserve_min_segments;
+    property<std::optional<uint32_t>> debug_load_slice_warning_depth;
 
     deprecated_property tx_registry_log_capacity;
     property<int16_t> id_allocator_log_capacity;
