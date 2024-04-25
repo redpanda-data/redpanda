@@ -17,9 +17,9 @@
 #include "json/document.h"
 #include "json/json.h"
 #include "model/fundamental.h"
-#include "net/unresolved_address.h"
 #include "security/acl.h"
 #include "utils/base64.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/net/inet_address.hh>
 

@@ -10,7 +10,7 @@
 #include "node_config.h"
 
 #include "config/configuration.h"
-#include "net/unresolved_address.h"
+#include "utils/unresolved_address.h"
 
 namespace config {
 

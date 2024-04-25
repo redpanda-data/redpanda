@@ -49,7 +49,6 @@
 #include "kafka/protocol/schemata/txn_offset_commit_request.h"
 #include "kafka/protocol/types.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "security/acl.h"
 #include "security/audit/schemas/application_activity.h"
 #include "security/audit/schemas/iam.h"
@@ -62,6 +61,7 @@
 #include "security/oidc_authenticator.h"
 #include "security/request_auth.h"
 #include "security/scram_authenticator.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/smp.hh>

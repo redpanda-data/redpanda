@@ -63,7 +63,6 @@
 #include "model/timeout_clock.h"
 #include "net/dns.h"
 #include "net/tls_certificate_probe.h"
-#include "net/unresolved_address.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
@@ -92,6 +91,7 @@
 #include "strings/string_switch.h"
 #include "strings/utf8.h"
 #include "transform/api.h"
+#include "utils/unresolved_address.h"
 #include "wasm/errc.h"
 
 #include <seastar/core/coroutine.hh>

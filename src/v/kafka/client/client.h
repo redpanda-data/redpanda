@@ -27,9 +27,9 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/list_offsets.h"
 #include "kafka/types.h"
-#include "net/unresolved_address.h"
 #include "ssx/semaphore.h"
 #include "utils/retry.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/condition-variable.hh>
 

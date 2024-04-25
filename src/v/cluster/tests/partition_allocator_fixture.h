@@ -21,9 +21,9 @@
 #include "config/mock_property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/chunked_fifo.hh>
 

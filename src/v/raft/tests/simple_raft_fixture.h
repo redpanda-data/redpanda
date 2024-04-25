@@ -13,7 +13,6 @@
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "raft/consensus.h"
 #include "raft/group_manager.h"
 #include "raft/types.h"
@@ -23,6 +22,7 @@
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "test_utils/async.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>

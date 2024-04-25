@@ -17,8 +17,8 @@
 #include "kafka/protocol/produce.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "pandaproxy/test/utils.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/util/defer.hh>
 

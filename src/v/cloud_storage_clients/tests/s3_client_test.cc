@@ -17,9 +17,9 @@
 #include "hashing/secure.h"
 #include "net/dns.h"
 #include "net/types.h"
-#include "net/unresolved_address.h"
 #include "test_utils/fixture.h"
 #include "utils/base64.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>

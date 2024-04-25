@@ -27,9 +27,9 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "net/unresolved_address.h"
 #include "random/generators.h"
 #include "ssx/future-util.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>

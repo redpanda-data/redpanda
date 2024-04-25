@@ -14,8 +14,8 @@
 #include "config/configuration.h"
 #include "features/feature_table_snapshot.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "test_utils/fixture.h"
+#include "utils/unresolved_address.h"
 
 using namespace std::chrono_literals; // NOLINT
 

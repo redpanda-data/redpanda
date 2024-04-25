@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "config/convert.h"
-#include "net/unresolved_address.h"
+#include "utils/unresolved_address.h"
 
 #include <model/metadata.h>
 #include <yaml-cpp/yaml.h>

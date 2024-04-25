@@ -32,11 +32,11 @@
 #include "model/timeout_clock.h"
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
-#include "net/unresolved_address.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "security/role_store.h"
 #include "ssx/sformat.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

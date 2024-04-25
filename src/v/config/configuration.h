@@ -26,8 +26,8 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
-#include "net/unresolved_address.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/net/inet_address.hh>
