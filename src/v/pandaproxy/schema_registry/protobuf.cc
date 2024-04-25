@@ -542,14 +542,22 @@ struct compatibility_checker {
                                     == pb::FieldDescriptor::Type::TYPE_MESSAGE
                                   || reader->type()
                                        == pb::FieldDescriptor::Type::TYPE_GROUP;
-            if (type_is_compat) {
+
+            if (!type_is_compat) {
+                compat_result.emplace<proto_incompatibility>(
+                  std::move(p),
+                  proto_incompatibility::Type::field_kind_changed);
+            } else if (
+              reader->message_type()->name()
+              != writer->message_type()->name()) {
+                compat_result.emplace<proto_incompatibility>(
+                  std::move(p),
+                  proto_incompatibility::Type::field_named_type_changed);
+            } else {
                 compat_result.merge(check_compatible(
                   reader->message_type(),
                   writer->message_type(),
                   std::move(p)));
-            } else {
-                compat_result.emplace_error(
-                  p, proto_incompatibility::Type::field_kind_changed);
             }
             break;
         }
