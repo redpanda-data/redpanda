@@ -37,7 +37,7 @@ public:
           "archival_upload", 100);
         _node_status = co_await ss::create_scheduling_group("node_status", 50);
         _self_test = co_await ss::create_scheduling_group("self_test", 100);
-        _fetch = co_await ss::create_scheduling_group("fetch", 1000);
+        _fetch = co_await ss::create_scheduling_group("fetch", 500);
         _transforms = co_await ss::create_scheduling_group("transforms", 100);
     }
 
