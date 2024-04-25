@@ -100,7 +100,7 @@ public:
     }
 
     ss::future<> start() {
-        for (const auto& [ntp, _] : _ntpt.ntp2meta) {
+        for (const auto& [ntp, _] : _shard_placement.shard_local_states()) {
             notify_reconciliation(ntp);
         }
         co_return;

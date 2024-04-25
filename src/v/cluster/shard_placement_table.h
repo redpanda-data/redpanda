@@ -153,6 +153,11 @@ public:
 
     std::optional<placement_state> state_on_this_shard(const model::ntp&) const;
 
+    const absl::node_hash_map<model::ntp, placement_state>&
+    shard_local_states() const {
+        return _states;
+    }
+
     // partition lifecycle methods
 
     ss::future<std::error_code>

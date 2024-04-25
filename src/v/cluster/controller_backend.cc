@@ -348,6 +348,9 @@ bool controller_backend::command_based_membership_active() const {
 
 ss::future<> controller_backend::stop() {
     vlog(clusterlog.info, "Stopping Controller Backend...");
+
+    _topics.local().unregister_delta_notification(_topic_table_notify_handle);
+
     for (auto& [_, rs] : _states) {
         rs->wakeup_event.set();
     }
@@ -449,18 +452,23 @@ ss::future<> controller_backend::start() {
         constexpr size_t max_reconciliation_concurrency = 1024;
         _reconciliation_sem.signal(max_reconciliation_concurrency);
 
-        start_fetch_deltas_loop();
         ssx::background = stuck_ntp_watchdog_fiber();
     });
 }
 
 ss::future<> controller_backend::bootstrap_controller_backend() {
-    if (!_topics.local().has_pending_changes()) {
-        vlog(clusterlog.trace, "no pending changes, skipping bootstrap");
-        co_return;
+    for (const auto& [ntp, _] : _shard_placement.shard_local_states()) {
+        notify_reconciliation(ntp);
     }
 
-    co_await fetch_deltas();
+    _topic_table_notify_handle = _topics.local().register_delta_notification(
+      [this](topic_table::delta_range_t deltas_range) {
+          for (const auto& d : deltas_range) {
+              process_delta(d);
+          }
+      });
+
+    co_return;
 }
 
 namespace {
@@ -619,45 +627,34 @@ controller_backend::calculate_learner_initial_offset(
       std::min(cloud_storage_safe_offset, *retention_offset));
 }
 
-ss::future<> controller_backend::fetch_deltas() {
-    return _topics.local()
-      .wait_for_changes(_as.local())
-      .then([this](fragmented_vector<topic_table::delta> deltas) {
-          for (auto& d : deltas) {
-              vlog(clusterlog.trace, "got delta: {}", d);
+void controller_backend::process_delta(const topic_table::delta& d) {
+    vlog(clusterlog.trace, "got delta: {}", d);
 
-              auto [rs_it, inserted] = _states.try_emplace(d.ntp);
-              if (inserted) {
-                  rs_it->second
-                    = ss::make_lw_shared<ntp_reconciliation_state>();
-              }
-              auto& rs = *rs_it->second;
-              rs.pending_notifies += 1;
+    auto [rs_it, inserted] = _states.try_emplace(d.ntp);
+    if (inserted) {
+        rs_it->second = ss::make_lw_shared<ntp_reconciliation_state>();
+    }
+    auto& rs = *rs_it->second;
+    rs.pending_notifies += 1;
 
-              if (d.type == topic_table_delta_type::added) {
-                  rs.removed_at.reset();
-              } else {
-                  vassert(
-                    !rs.removed_at,
-                    "[{}] unexpected delta: {}, state: {}",
-                    d.ntp,
-                    d,
-                    rs);
-                  if (d.type == topic_table_delta_type::removed) {
-                      rs.removed_at = d.revision;
-                  }
-              }
+    if (d.type == topic_table_delta_type::added) {
+        rs.removed_at.reset();
+    } else {
+        vassert(
+          !rs.removed_at, "[{}] unexpected delta: {}, state: {}", d.ntp, d, rs);
+        if (d.type == topic_table_delta_type::removed) {
+            rs.removed_at = d.revision;
+        }
+    }
 
-              if (d.type == topic_table_delta_type::properties_updated) {
-                  rs.properties_changed_at = d.revision;
-              }
+    if (d.type == topic_table_delta_type::properties_updated) {
+        rs.properties_changed_at = d.revision;
+    }
 
-              rs.wakeup_event.set();
-              if (inserted) {
-                  ssx::background = reconcile_ntp_fiber(d.ntp, rs_it->second);
-              }
-          }
-      });
+    rs.wakeup_event.set();
+    if (inserted) {
+        ssx::background = reconcile_ntp_fiber(d.ntp, rs_it->second);
+    }
 }
 
 void controller_backend::notify_reconciliation(const model::ntp& ntp) {
@@ -756,27 +753,6 @@ ss::future<> controller_backend::clear_orphan_topic_files(
           return topic_files_are_orphan(
             ntp, p, topic_table_snapshot, bootstrap_revision);
       });
-}
-
-void controller_backend::start_fetch_deltas_loop() {
-    ssx::spawn_with_gate(_gate, [this] {
-        return ss::do_until(
-          [this] { return _as.local().abort_requested(); },
-          [this] {
-              return fetch_deltas()
-                .handle_exception_type(
-                  [](const ss::abort_requested_exception&) {
-                      // Shutting down: don't log this exception as an error
-                      vlog(
-                        clusterlog.debug,
-                        "Abort requested while fetching deltas");
-                  })
-                .handle_exception([](const std::exception_ptr& e) {
-                    vlog(
-                      clusterlog.error, "Error while fetching deltas - {}", e);
-                });
-          });
-    });
 }
 
 ss::future<> controller_backend::reconcile_ntp_fiber(

@@ -252,8 +252,7 @@ private:
       model::revision_id bootstrap_revision,
       absl::flat_hash_map<model::ntp, model::revision_id> topic_table_snapshot);
 
-    void start_fetch_deltas_loop();
-    ss::future<> fetch_deltas();
+    void process_delta(const topic_table::delta&);
 
     ss::future<> reconcile_ntp_fiber(
       model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>);
@@ -380,6 +379,7 @@ private:
     absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
       _states;
 
+    cluster::notification_id_type _topic_table_notify_handle;
     // Limits the number of concurrently executing reconciliation fibers.
     // Initially reconciliation is blocked and we deposit a non-zero amount of
     // units when we are ready to start reconciling.
