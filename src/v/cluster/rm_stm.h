@@ -298,6 +298,7 @@ private:
     ss::future<raft::stm_snapshot> do_take_local_snapshot(uint8_t version);
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
     ss::future<> save_abort_snapshot(abort_snapshot);
+    void update_tx_offsets(producer_ptr, const model::record_batch_header&);
 
     ss::future<result<kafka_result>> do_replicate(
       model::batch_identity,

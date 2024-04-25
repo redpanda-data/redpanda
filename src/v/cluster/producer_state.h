@@ -209,6 +209,8 @@ public:
         return _current_txn_start_offset;
     }
 
+    model::producer_identity id() const { return _id; }
+
     void update_current_txn_start_offset(std::optional<kafka::offset> offset) {
         _current_txn_start_offset = offset;
     }

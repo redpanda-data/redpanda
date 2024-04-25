@@ -949,6 +949,29 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
     co_return ans;
 }
 
+void rm_stm::update_tx_offsets(
+  producer_ptr producer, const model::record_batch_header& header) {
+    const auto& pid = producer->id();
+    const auto base_offset = header.base_offset;
+    const auto last_offset = header.last_offset();
+    auto ongoing_it = _log_state.ongoing_map.find(pid);
+    if (ongoing_it != _log_state.ongoing_map.end()) {
+        // transaction already known, update the end offset.
+        if (ongoing_it->second.last < last_offset) {
+            ongoing_it->second.last = last_offset;
+        }
+    } else {
+        // we do no have to check if the value is empty as it is already
+        // done with ongoing map
+        producer->update_current_txn_start_offset(from_log_offset(base_offset));
+
+        _log_state.ongoing_map.emplace(
+          pid, tx_range{.pid = pid, .first = base_offset, .last = last_offset});
+        _log_state.ongoing_set.insert(header.base_offset);
+        _mem_state.estimated.erase(pid);
+    }
+}
+
 ss::future<std::error_code> rm_stm::mark_expired(model::producer_identity pid) {
     return _state_lock.hold_read_lock().then(
       [this, pid](ss::basic_rwlock<>::holder unit) mutable {
@@ -1811,7 +1834,6 @@ void rm_stm::apply_data(
   model::batch_identity bid, const model::record_batch_header& header) {
     if (bid.is_idempotent()) {
         _highest_producer_id = std::max(_highest_producer_id, bid.pid.get_id());
-        const auto last_offset = header.last_offset();
         const auto last_kafka_offset = from_log_offset(header.last_offset());
         auto producer = maybe_create_producer(bid.pid);
         auto needs_touch = producer->update(bid, last_kafka_offset);
@@ -1826,28 +1848,9 @@ void rm_stm::apply_data(
               "[{},{}], last kafka offset: {}",
               bid,
               header.base_offset,
-              last_offset,
+              header.last_offset(),
               last_kafka_offset);
-            auto ongoing_it = _log_state.ongoing_map.find(bid.pid);
-            if (ongoing_it != _log_state.ongoing_map.end()) {
-                if (ongoing_it->second.last < last_offset) {
-                    ongoing_it->second.last = last_offset;
-                }
-            } else {
-                // we do no have to check if the value is empty as it is already
-                // done with ongoing map
-                producer->update_current_txn_start_offset(
-                  from_log_offset(header.base_offset));
-
-                _log_state.ongoing_map.emplace(
-                  bid.pid,
-                  tx_range{
-                    .pid = bid.pid,
-                    .first = header.base_offset,
-                    .last = last_offset});
-                _log_state.ongoing_set.insert(header.base_offset);
-                _mem_state.estimated.erase(bid.pid);
-            }
+            update_tx_offsets(producer, header);
         }
     }
 }
