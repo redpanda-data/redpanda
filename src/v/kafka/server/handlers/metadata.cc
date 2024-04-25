@@ -27,6 +27,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "utils/fragmented_vector.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/coroutine.hh>

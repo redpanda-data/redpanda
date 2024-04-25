@@ -27,6 +27,7 @@
 #include "redpanda/admin/util.h"
 #include "serde/rw/rw.h"
 #include "storage/kvstore.h"
+#include "utils/lw_shared_container.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/json/json_elements.hh>
@@ -248,7 +249,7 @@ void admin_server::register_debug_routes() {
           auto leaders_info = _metadata_cache.local().get_leaders();
           return ss::make_ready_future<ss::json::json_return_type>(
             ss::json::stream_range_as_array(
-              admin::lw_shared_container(std::move(leaders_info)),
+              lw_shared_container(std::move(leaders_info)),
               [](const auto& leader_info) {
                   result_t info;
                   info.ns = leader_info.tp_ns.ns;

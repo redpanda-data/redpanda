@@ -13,6 +13,7 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
@@ -170,11 +171,12 @@ public:
         // query the server for this topic's metadata
         kafka::metadata_request metadata_req;
         metadata_req.data.topics
-          = std::make_optional<std::vector<kafka::metadata_request_topic>>();
+          = std::make_optional<chunked_vector<kafka::metadata_request_topic>>();
         metadata_req.data.topics->push_back(
           kafka::metadata_request_topic{request_topic.name});
         auto metadata_resp
-          = client.dispatch(metadata_req, kafka::api_version(1)).get0();
+          = client.dispatch(std::move(metadata_req), kafka::api_version(1))
+              .get0();
 
         // yank out the metadata for the topic from the response
         auto topic_metadata = std::find_if(

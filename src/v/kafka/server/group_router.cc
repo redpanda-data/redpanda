@@ -189,7 +189,7 @@ ss::future<> group_router::parallel_route_delete_groups(
 }
 
 ss::future<std::vector<deletable_group_result>>
-group_router::delete_groups(std::vector<group_id> groups) {
+group_router::delete_groups(chunked_vector<group_id> groups) {
     // partial results
     std::vector<deletable_group_result> results;
 

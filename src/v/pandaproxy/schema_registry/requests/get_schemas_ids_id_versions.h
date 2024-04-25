@@ -13,11 +13,12 @@
 
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "utils/fragmented_vector.h"
 
 namespace pandaproxy::schema_registry {
 
 struct get_schemas_ids_id_versions_response {
-    std::vector<subject_version> subject_versions;
+    chunked_vector<subject_version> subject_versions;
 };
 
 inline void rjson_serialize(

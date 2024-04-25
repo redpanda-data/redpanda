@@ -93,7 +93,7 @@ public:
     ss::future<described_group> describe_group(kafka::group_id g);
 
     ss::future<std::vector<deletable_group_result>>
-    delete_groups(std::vector<group_id> groups);
+    delete_groups(chunked_vector<group_id> groups);
 
     ss::sharded<coordinator_ntp_mapper>& coordinator_mapper() {
         return _coordinators;

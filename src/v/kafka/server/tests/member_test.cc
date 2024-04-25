@@ -11,6 +11,7 @@
 #include "kafka/server/group_manager.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
+#include "utils/fragmented_vector.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
@@ -21,7 +22,7 @@
 
 namespace kafka {
 
-static const std::vector<member_protocol> test_protos = {
+static const chunked_vector<member_protocol> test_protos = {
   {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};
 
 static group_member get_member() {
@@ -34,7 +35,7 @@ static group_member get_member() {
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),
-      test_protos);
+      test_protos.copy());
 }
 
 static join_group_response make_join_response() {
@@ -92,12 +93,12 @@ SEASTAR_THREAD_TEST_CASE(protocols) {
     BOOST_TEST(m.protocols() == test_protos);
 
     // and the negative test
-    auto protos = test_protos;
+    auto protos = test_protos.copy();
     protos[0].name = kafka::protocol_name("x");
     BOOST_TEST(m.protocols() != protos);
 
     // can set new protocols
-    m.set_protocols(protos);
+    m.set_protocols(protos.copy());
     BOOST_TEST(m.protocols() != test_protos);
     BOOST_TEST(m.protocols() == protos);
 }
@@ -177,7 +178,7 @@ SEASTAR_THREAD_TEST_CASE(member_serde) {
       std::move(m1_state),
       m0.group_id(),
       kafka::protocol_type("p"),
-      test_protos);
+      test_protos.copy());
 
     BOOST_REQUIRE(m1.state() == m0.state());
 }

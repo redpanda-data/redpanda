@@ -22,6 +22,7 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/types.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -65,12 +66,12 @@ public:
     const kafka::member_id& name() const {
         return _name != kafka::no_member ? _name : _member_id;
     }
-    const std::vector<model::topic>& topics() const { return _topics; }
+    const chunked_vector<model::topic>& topics() const { return _topics; }
     const assignment_t& assignment() const { return _assignment; }
 
     ss::future<> initialize();
     ss::future<leave_group_response> leave();
-    ss::future<> subscribe(std::vector<model::topic> topics);
+    ss::future<> subscribe(chunked_vector<model::topic> topics);
     ss::future<offset_fetch_response>
     offset_fetch(std::vector<offset_fetch_request_topic> topics);
     ss::future<offset_commit_response>
@@ -91,7 +92,7 @@ private:
     ss::future<> join();
     ss::future<> sync();
 
-    ss::future<std::vector<metadata_response::topic>>
+    ss::future<chunked_vector<metadata_response::topic>>
     get_subscribed_topic_metadata();
 
     ss::future<> heartbeat();
@@ -102,6 +103,7 @@ private:
     ss::future<fetch_response> dispatch_fetch(broker_reqs_t::value_type br);
 
     template<typename RequestFactory>
+    requires requires(const RequestFactory v) { v.operator()(); }
     ss::future<
       typename std::invoke_result_t<RequestFactory>::api_type::response_type>
     req_res(RequestFactory req) {
@@ -165,9 +167,9 @@ private:
     kafka::member_id _member_id{no_member};
     kafka::member_id _name{no_member};
     kafka::member_id _leader_id{no_leader};
-    std::vector<model::topic> _topics{};
-    std::vector<kafka::member_id> _members{};
-    std::vector<model::topic> _subscribed_topics{};
+    chunked_vector<model::topic> _topics{};
+    chunked_vector<kafka::member_id> _members{};
+    chunked_vector<model::topic> _subscribed_topics{};
     std::unique_ptr<assignment_plan> _plan{};
     assignment_t _assignment{};
     absl::node_hash_map<shared_broker_t, fetch_session> _fetch_sessions;

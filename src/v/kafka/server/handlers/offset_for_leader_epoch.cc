@@ -20,6 +20,7 @@
 #include "model/namespace.h"
 #include "security/acl.h"
 #include "ssx/future-util.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
@@ -120,10 +121,10 @@ static ss::future<> fetch_offsets_from_shards(
       });
 }
 
-static ss::future<std::vector<offset_for_leader_topic_result>>
+static ss::future<chunked_vector<offset_for_leader_topic_result>>
 get_offsets_for_leader_epochs(
-  request_context& ctx, std::vector<offset_for_leader_topic> topics) {
-    std::vector<offset_for_leader_topic_result> result;
+  request_context& ctx, chunked_vector<offset_for_leader_topic> topics) {
+    chunked_vector<offset_for_leader_topic_result> result;
     result.reserve(topics.size());
 
     absl::flat_hash_map<ss::shard_id, shard_op_ctx> requests_per_shard;
@@ -241,7 +242,7 @@ ss::future<response_ptr> offset_for_leader_epoch_handler::handle(
               return res;
           });
         // remove unauthorized topics
-        request.data.topics.erase(it, request.data.topics.end());
+        request.data.topics.erase_to_end(it);
     }
 
     if (!ctx.audit()) {
