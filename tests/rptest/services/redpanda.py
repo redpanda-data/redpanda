@@ -3739,7 +3739,7 @@ class RedpandaService(RedpandaServiceBase):
     def write_bootstrap_cluster_config(self):
         conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
 
-        cur_ver = self._installer.installed_version
+        cur_ver = self._installer.installed_version(self.nodes[0])
         if cur_ver != RedpandaInstaller.HEAD and cur_ver < (22, 2, 7):
             # this configuration property was introduced in 22.2, ensure
             # it doesn't appear in older configurations

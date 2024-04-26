@@ -191,14 +191,17 @@ class RedpandaInstaller:
         # (i.e. root_for_version(), etc).
         self._install_lock_fd = None
 
-        self._installed_version: RedpandaVersion = self.HEAD
+        self._installed_versions = {
+            node: self.HEAD
+            for node in self._redpanda.nodes
+        }
 
         # memoize result of self.arch()
         self._arch = None
 
-    @property
-    def installed_version(self) -> RedpandaVersion:
-        return self._installed_version
+    def installed_version(self, node) -> RedpandaVersion:
+        assert node in self._installed_versions, f'Node {node} not in installed versions dictionary {self._installed_versions}'
+        return self._installed_versions[node]
 
     def _acquire_install_lock(self, timeout_sec=600):
         """
@@ -604,7 +607,8 @@ class RedpandaInstaller:
         try:
             self._acquire_install_lock()
             self._install_unlocked(nodes, install_target)
-            self._installed_version = install_target
+            for n in nodes:
+                self._installed_versions[n] = install_target
         finally:
             self._release_install_lock()
 
