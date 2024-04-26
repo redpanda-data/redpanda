@@ -58,6 +58,7 @@
 #include <exception>
 #include <iterator>
 #include <numeric>
+#include <stdexcept>
 #include <system_error>
 
 using namespace std::chrono_literals;
@@ -2214,4 +2215,70 @@ FIXTURE_TEST(test_scan_by_timestamp, cloud_storage_fixture) {
 
     test_log.debug("Timestamp undershoots the partition");
     BOOST_REQUIRE(timequery(*this, model::timestamp(100), num_data_batches));
+}
+
+FIXTURE_TEST(test_out_of_range_query, cloud_storage_fixture) {
+    auto data = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::raft_data,
+          .timestamp = model::timestamp(t)};
+    };
+
+    const std::vector<std::vector<batch_t>> batches = {
+      {data(1000), data(1002), data(1004), data(1006), data(1008), data(1010)},
+      {data(1012), data(1014), data(1016), data(1018), data(1020), data(1022)},
+    };
+
+    auto segments = make_segments(batches, false, false);
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
+
+    auto expectations = make_imposter_expectations(manifest, segments);
+    set_expectations_and_listen(expectations);
+
+    // Advance start offset as-if archiver did apply retention but didn't
+    // run GC yet (the clean offset is not updated).
+    BOOST_REQUIRE(manifest.advance_start_offset(segments[1].base_offset));
+    auto serialize_manifest = [](const cloud_storage::partition_manifest& m) {
+        auto s_data = m.serialize().get();
+        auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
+        return ss::sstring(buf.begin(), buf.end());
+    };
+    std::ostringstream ostr;
+    manifest.serialize_json(ostr);
+
+    vlog(
+      test_util_log.info,
+      "Rewriting manifest at {}:\n{}",
+      manifest.get_manifest_path(),
+      ostr.str());
+
+    auto manifest_url = "/" + manifest.get_manifest_path()().string();
+    remove_expectations({manifest_url});
+    add_expectations({
+      cloud_storage_fixture::expectation{
+        .url = manifest_url, .body = serialize_manifest(manifest)},
+    });
+
+    auto base = segments[0].base_offset;
+    auto max = segments[segments.size() - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    BOOST_REQUIRE(
+      scan_remote_partition(*this, segments[1].base_offset, max).size() == 6);
+
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, base, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    test_log.debug("Timestamp undershoots the partition");
+    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp(100), 6));
+
+    test_log.debug("Timestamp withing segment");
+    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp(1014), 5));
 }

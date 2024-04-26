@@ -565,27 +565,40 @@ private:
                 co_return;
             }
 
+            // Out of range queries are unexpected. The caller must take care
+            // to send only valid queries to remote_partition. I.e. the fetch
+            // handler does such validation. Similar validation is done inside
+            // remote partition.
+            //
+            // Out of range at this point is due to a race condition or due to
+            // a bug. In both cases the only valid action is to throw an
+            // exception and let the caller deal with it. If the caller doesn't
+            // handle it it leads to a closed kafka connection which the
+            // end clients retry.
             if (
               cur.error() == error_outcome::out_of_range
               && ss::visit(
                 query,
-                [&](model::offset) { return false; },
+                [&](model::offset) {
+                    vassert(
+                      false,
+                      "Unreachable code. Remote partition doesn't know how to "
+                      "handle model::offset queries.");
+                    return false;
+                },
                 [&](kafka::offset query_offset) {
-                    // Special case queries below the start offset of the log.
-                    // The start offset may have advanced while the request was
-                    // in progress. This is expected, so log at debug level.
+                    // Bug or retention racing with the query.
                     const auto log_start_offset
                       = _partition->_manifest_view->stm_manifest()
                           .full_log_start_kafka_offset();
 
                     if (log_start_offset && query_offset < *log_start_offset) {
                         vlog(
-                          _ctxlog.debug,
+                          _ctxlog.warn,
                           "Manifest query below the log's start Kafka offset: "
                           "{} < {}",
                           query_offset(),
                           log_start_offset.value()());
-                        return true;
                     }
                     return false;
                 },
