@@ -162,6 +162,15 @@ val_type parse_val_type(iobuf_parser_base* parser) {
     }
 }
 
+val_type parse_ref_type(iobuf_parser_base* parser) {
+    auto reftype = parse_val_type(parser);
+    if (reftype != val_type::externref && reftype != val_type::funcref) {
+        throw parse_exception(
+          fmt::format("invalid reftype: {}", uint8_t(reftype)));
+    }
+    return reftype;
+}
+
 ss::sstring parse_name(iobuf_parser_base* parser) {
     auto str_len = leb128::decode<uint32_t>(parser);
     if (str_len > max_name_length) {
@@ -215,11 +224,7 @@ declaration::limits parse_limits(iobuf_parser_base* parser) {
 }
 
 declaration::table parse_table_type(iobuf_parser_base* parser) {
-    auto reftype = parse_val_type(parser);
-    if (reftype != val_type::externref && reftype != val_type::funcref) {
-        throw parse_exception(
-          fmt::format("invalid tabletype type: {}", uint8_t(reftype)));
-    }
+    auto reftype = parse_ref_type(parser);
     auto limits = parse_limits(parser);
     return {.reftype = reftype, .limits = limits};
 }
@@ -238,17 +243,21 @@ void skip_global_constexpr(iobuf_parser_base* parser) {
     auto opcode = parser->consume_type<uint8_t>();
     // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
     switch (opcode) {
-    case 0x041:
+    case 0x23: // global.get
+    case 0x41: // i32.const
         std::ignore = leb128::decode<uint32_t>(parser);
         break;
-    case 0x042:
+    case 0x42: // i64.const
         std::ignore = leb128::decode<uint64_t>(parser);
         break;
-    case 0x043:
+    case 0x43: // f32.const
         std::ignore = parser->consume_type<float>();
         break;
-    case 0x044:
+    case 0x44: // f64.const
         std::ignore = parser->consume_type<double>();
+        break;
+    case 0xD0: // ref.null
+        std::ignore = parse_ref_type(parser);
         break;
     default:
         throw parse_exception(
