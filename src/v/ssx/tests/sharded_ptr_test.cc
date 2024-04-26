@@ -103,3 +103,23 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_ptr_move) {
     BOOST_REQUIRE(shared && *shared == 42);
     BOOST_REQUIRE(p0 && p0.local() && *p0 == 42);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_sharded_ptr_update) {
+    ssx::sharded_ptr<int> p0;
+    p0.update([](auto x) { return x + 1; }).get();
+    p0.update([](auto x) { return x + 1; }).get();
+
+    std::shared_ptr<int> shared = p0.local();
+    BOOST_REQUIRE(shared && *shared == 2);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_sharded_ptr_update_shared) {
+    ssx::sharded_ptr<int> p0;
+    p0.update_shared([](auto /* x */) { return std::make_shared<int>(1); })
+      .get();
+    p0.update_shared([](auto x) { return std::make_shared<int>(*x + 1); })
+      .get();
+
+    std::shared_ptr<int> shared = p0.local();
+    BOOST_REQUIRE(shared && *shared == 2);
+}
