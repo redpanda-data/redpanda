@@ -1303,6 +1303,7 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
     if (!_last_trim_carryover.has_value()) {
         co_return result;
     }
+    probe.carryover_trim();
     auto it = _last_trim_carryover->begin();
     for (; it < _last_trim_carryover->end(); it++) {
         vlog(
