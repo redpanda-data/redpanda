@@ -2,6 +2,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME test_kafka_server
   SOURCES
+    atomic_token_bucket_test.cc
     error_mapping_test.cc
     timeouts_conversion_test.cc
     types_conversion_tests.cc
