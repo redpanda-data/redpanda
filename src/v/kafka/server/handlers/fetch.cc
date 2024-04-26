@@ -604,6 +604,73 @@ bool shard_fetch::empty() const {
     return requests.empty();
 }
 
+/**
+ * Top-level handler for fetching from single shard. The result is
+ * unwrapped and any errors from the storage sub-system are translated
+ * into kafka specific response codes. On failure or success the
+ * partition response is finalized and placed into its position in the
+ * response message.
+ */
+static ss::future<>
+handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
+    // if over budget skip the fetch.
+    if (octx.bytes_left <= 0) {
+        return ss::now();
+    }
+    // no requests for this shard, do nothing
+    if (fetch.empty()) {
+        return ss::now();
+    }
+
+    const bool foreign_read = shard != ss::this_shard_id();
+
+    // dispatch to remote core
+    return octx.rctx.partition_manager()
+      .invoke_on(
+        shard,
+        octx.ssg,
+        [foreign_read, configs = std::move(fetch.requests), &octx](
+          cluster::partition_manager& mgr) mutable {
+            // &octx is captured only to immediately use its accessors here so
+            // that there is a list of all objects accessed next to `invoke_on`.
+            // This is meant to help avoiding unintended cross shard access
+            return fetch_ntps_in_parallel(
+              mgr,
+              octx.rctx.server().local().get_replica_selector(),
+              std::move(configs),
+              foreign_read,
+              octx.deadline,
+              octx.bytes_left,
+              octx.rctx.server().local().memory(),
+              octx.rctx.server().local().memory_fetch_sem());
+        })
+      .then([responses = std::move(fetch.responses),
+             start_time = fetch.start_time,
+             &octx](std::vector<read_result> results) mutable {
+          fill_fetch_responses(octx, std::move(results), responses, start_time);
+      });
+}
+
+class parallel_fetch_plan_executor final : public fetch_plan_executor::impl {
+    ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
+        std::vector<ss::future<>> fetches;
+        fetches.reserve(ss::smp::count);
+
+        // start fetching from random shard to make sure that we fetch data from
+        // all the partition even if we reach fetch message size limit
+        const ss::shard_id start_shard_idx = random_generators::get_int(
+          ss::smp::count - 1);
+        for (size_t i = 0; i < ss::smp::count; ++i) {
+            auto shard = (start_shard_idx + i) % ss::smp::count;
+
+            fetches.push_back(handle_shard_fetch(
+              shard, octx, std::move(plan.fetches_per_shard[shard])));
+        }
+
+        return ss::when_all_succeed(fetches.begin(), fetches.end());
+    }
+};
+
 class fetch_worker {
 public:
     // Passed from the coordinator shard to fetch workers.
@@ -1286,6 +1353,49 @@ class simple_fetch_planner final : public fetch_planner::impl {
     }
 };
 
+/**
+ * Process partition fetch requests.
+ *
+ * Each request is handled serially in the order they appear in the request.
+ * There are a couple reasons why we are not **yet** processing these in
+ * parallel. First, Kafka expects to some extent that the order of the
+ * partitions in the request is an implicit priority on which partitions to
+ * read from. This is closely related to the request budget limits specified
+ * in terms of maximum bytes and maximum time delay.
+ *
+ * Once we start processing requests in parallel we'll have to work through
+ * various challenges. First, once we dispatch in parallel, we'll need to
+ * develop heuristics for dealing with the implicit priority order. We'll
+ * also need to develop techniques and heuristics for dealing with budgets
+ * since global budgets aren't trivially divisible onto each core when
+ * partition requests may produce non-uniform amounts of data.
+ *
+ * w.r.t. what is needed to parallelize this, there are no data dependencies
+ * between partition requests within the fetch request, and so they can be
+ * run fully in parallel. The only dependency that exists is that the
+ * response must be reassembled such that the responses appear in these
+ * order as the partitions in the request.
+ */
+static ss::future<> fetch_topic_partitions(op_context& octx) {
+    auto planner = make_fetch_planner<simple_fetch_planner>();
+
+    auto fetch_plan = planner.create_plan(octx);
+
+    fetch_plan_executor executor
+      = make_fetch_plan_executor<parallel_fetch_plan_executor>();
+    co_await executor.execute_plan(octx, std::move(fetch_plan));
+
+    if (octx.should_stop_fetch()) {
+        co_return;
+    }
+
+    octx.reset_context();
+    // debounce next read retry
+    co_await ss::sleep(std::min(
+      config::shard_local_cfg().fetch_reads_debounce_timeout(),
+      octx.request.data.max_wait_ms));
+}
+
 namespace testing {
 kafka::fetch_plan make_simple_fetch_plan(op_context& octx) {
     auto planner = make_fetch_planner<simple_fetch_planner>();
@@ -1295,11 +1405,26 @@ kafka::fetch_plan make_simple_fetch_plan(op_context& octx) {
 
 namespace {
 ss::future<> do_fetch(op_context& octx) {
-    auto planner = make_fetch_planner<simple_fetch_planner>();
-    auto fetch_plan = planner.create_plan(octx);
+    switch (config::shard_local_cfg().fetch_read_strategy) {
+    case model::fetch_read_strategy::polling: {
+        // first fetch, do not wait
+        co_await fetch_topic_partitions(octx).then([&octx] {
+            return ss::do_until(
+              [&octx] { return octx.should_stop_fetch(); },
+              [&octx] { return fetch_topic_partitions(octx); });
+        });
+    } break;
+    case model::fetch_read_strategy::non_polling: {
+        auto planner = make_fetch_planner<simple_fetch_planner>();
+        auto fetch_plan = planner.create_plan(octx);
 
-    nonpolling_fetch_plan_executor executor;
-    co_await executor.execute_plan(octx, std::move(fetch_plan));
+        nonpolling_fetch_plan_executor executor;
+        co_await executor.execute_plan(octx, std::move(fetch_plan));
+    } break;
+    default: {
+        vassert(false, "not implemented");
+    } break;
+    }
 }
 } // namespace
 
