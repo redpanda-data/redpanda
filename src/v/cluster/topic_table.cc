@@ -87,12 +87,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     return ss::make_ready_future<std::error_code>(errc::success);
 }
 
-ss::future<> topic_table::stop() {
-    for (auto& w : _waiters) {
-        w->promise.set_exception(ss::abort_requested_exception());
-    }
-    return ss::now();
-}
+ss::future<> topic_table::stop() { return ss::now(); }
 
 ss::future<std::error_code>
 topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
@@ -1352,86 +1347,20 @@ void topic_table::reset_partitions_to_force_reconfigure(
 }
 
 void topic_table::notify_waiters() {
-    /// If by invocation of this method there are no waiters, notify
-    /// function_ptrs stored in \ref notifications, without consuming all
-    /// pending_deltas for when a subsequent waiter does arrive
-
     // \ref notify_waiters is called after every apply. Hence for the most
-    // part there should only be a few items towards the end of \ref
-    // _pending_deltas that need to be sent to callbacks in \ref
-    // notifications. \ref _last_consumed_by_notifier_offset allows us to
-    // skip ahead to the items added since the last \ref notify_waiters
-    // call.
-    auto starting_iter = _pending_deltas.cbegin()
-                         + _last_consumed_by_notifier_offset;
-
-    delta_range_t changes{starting_iter, _pending_deltas.cend()};
-
+    // part there should only be a few items in \ref _pending_deltas that need
+    // to be sent to callbacks in \ref notifications.
+    delta_range_t changes{_pending_deltas.cbegin(), _pending_deltas.cend()};
     if (!changes.empty()) {
         for (auto& cb : _notifications) {
             cb.second(changes);
         }
     }
-
-    _last_consumed_by_notifier_offset = _pending_deltas.end()
-                                        - _pending_deltas.begin();
-
-    /// Consume all pending deltas
-    if (!_waiters.empty()) {
-        std::vector<std::unique_ptr<waiter>> active_waiters;
-        active_waiters.swap(_waiters);
-        for (auto& w :
-             std::span{active_waiters.begin(), active_waiters.size() - 1}) {
-            w->promise.set_value(_pending_deltas.copy());
-        }
-
-        active_waiters[active_waiters.size() - 1]->promise.set_value(
-          std::move(_pending_deltas));
-        std::exchange(_pending_deltas, {});
-        _last_consumed_by_notifier_offset = 0;
-    }
+    _pending_deltas.clear();
 
     for (auto& cb : _lw_notifications) {
         cb.second();
     }
-}
-
-ss::future<fragmented_vector<topic_table::delta>>
-topic_table::wait_for_changes(ss::abort_source& as) {
-    using ret_t = fragmented_vector<topic_table::delta>;
-    if (!_pending_deltas.empty()) {
-        ret_t ret;
-        ret.swap(_pending_deltas);
-        // \ref notify_waiters uses this member to skip ahead in \ref
-        // _pending_deltas to items not yet sent to callbacks in \ref
-        // _notifications. Since we are clearing \ref _pending_deltas here we
-        // need to clear this member too.
-        _last_consumed_by_notifier_offset = 0;
-        return ss::make_ready_future<ret_t>(std::move(ret));
-    }
-    auto w = std::make_unique<waiter>(_waiter_id++);
-    auto opt_sub = as.subscribe(
-      [this, &pr = w->promise, id = w->id]() noexcept {
-          pr.set_exception(ss::abort_requested_exception{});
-          auto it = std::find_if(
-            _waiters.begin(),
-            _waiters.end(),
-            [id](std::unique_ptr<waiter>& ptr) { return ptr->id == id; });
-          if (it != _waiters.end()) {
-              _waiters.erase(it);
-          }
-      });
-
-    if (unlikely(!opt_sub)) {
-        return ss::make_exception_future<ret_t>(
-          ss::abort_requested_exception{});
-    } else {
-        w->sub = std::move(*opt_sub);
-    }
-
-    auto f = w->promise.get_future();
-    _waiters.push_back(std::move(w));
-    return f;
 }
 
 std::vector<model::topic_namespace> topic_table::all_topics() const {

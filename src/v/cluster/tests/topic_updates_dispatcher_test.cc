@@ -140,8 +140,10 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_dispatching_conflicts, topic_table_updates_dispatcher_fixture) {
     create_topics();
-    // discard create delta
-    table.local().wait_for_changes(as).get0();
+
+    std::vector<cluster::topic_table_delta> deltas;
+    table.local().register_delta_notification(
+      [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
 
     auto res_1 = table.local()
                    .apply(
@@ -156,7 +158,7 @@ FIXTURE_TEST(
                      make_create_topic_cmd("test_tp_1", 2, 3), model::offset(0))
                    .get0();
     BOOST_REQUIRE_EQUAL(res_2, cluster::errc::topic_already_exists);
-    BOOST_REQUIRE_EQUAL(table.local().has_pending_changes(), false);
+    BOOST_REQUIRE_EQUAL(deltas.size(), 0);
 
     BOOST_REQUIRE_EQUAL(
       current_cluster_capacity(allocator.local().state().allocation_nodes()),

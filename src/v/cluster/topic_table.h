@@ -377,17 +377,6 @@ public:
 
     ss::future<> stop();
 
-    /// Delta API
-    /// NOTE: This API should only be consumed by a single entity, unless
-    /// careful consideration is taken. This is because once notifications are
-    /// fired, all events are consumed, and if both waiters aren't enqueued in
-    /// the \ref _waiters collection by the time the notify occurs, only one
-    /// waiter will recieve the updates, leaving the second one to observe
-    /// skipped events upon recieving its subsequent notification.
-    ss::future<fragmented_vector<delta>> wait_for_changes(ss::abort_source&);
-
-    bool has_pending_changes() const { return !_pending_deltas.empty(); }
-
     /// Query API
 
     /// Returns list of all topics that exists in the cluster.
@@ -685,15 +674,12 @@ private:
     model::revision_id _topics_map_revision{0};
 
     fragmented_vector<delta> _pending_deltas;
-    std::vector<std::unique_ptr<waiter>> _waiters;
     cluster::notification_id_type _notification_id{0};
     cluster::notification_id_type _lw_notification_id{0};
     std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
       _notifications;
     std::vector<std::pair<cluster::notification_id_type, lw_cb_t>>
       _lw_notifications;
-    uint64_t _waiter_id{0};
-    std::vector<delta>::difference_type _last_consumed_by_notifier_offset{0};
     topic_table_probe _probe;
     force_recoverable_partitions_t _partitions_to_force_reconfigure;
     model::revision_id _partitions_to_force_reconfigure_revision{0};
