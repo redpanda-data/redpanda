@@ -197,8 +197,11 @@ class JiraHelper():
         # GitHubs
         jira_issue_body = issue_body.replace("```", "{code}")
 
+        # When creating a bug, must use customfield_10083 as 'description' is not part of
+        # bug creation screen anymore
         fields = {
-            "description": f"{jira_issue_body}",
+            "description" if issue_type == 'Task' else "customfield_10083":
+            f"{jira_issue_body}",
             "summary": f"{issue_title}",
             "issuetype": {
                 "name": f"{issue_type}"
