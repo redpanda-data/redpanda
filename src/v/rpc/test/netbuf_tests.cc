@@ -13,7 +13,7 @@
 #include <seastar/testing/thread_test_case.hh>
 
 // utils
-#include "rpc/test/test_types.h"
+#include "test_types.h"
 
 #include <fmt/ostream.h>
 

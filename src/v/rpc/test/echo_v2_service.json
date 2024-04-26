@@ -2,7 +2,7 @@
     "namespace": "echo_v2",
     "service_name": "echo",
     "includes": [
-        "rpc/test/rpc_gen_types.h"
+        "rpc_gen_types.h"
     ],
     "methods": [
         {

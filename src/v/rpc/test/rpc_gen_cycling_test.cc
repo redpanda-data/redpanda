@@ -18,9 +18,9 @@
 #include "rpc/test/cycling_service.h"
 #include "rpc/test/echo_service.h"
 #include "rpc/test/echo_v2_service.h"
-#include "rpc/test/rpc_gen_types.h"
-#include "rpc/test/rpc_integration_fixture.h"
 #include "rpc/types.h"
+#include "rpc_gen_types.h"
+#include "rpc_integration_fixture.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 

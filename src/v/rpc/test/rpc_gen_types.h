@@ -145,7 +145,7 @@ static_assert(rpc::is_rpc_adl_exempt<echo_resp_serde_only>);
 namespace echo_v2 {
 
 /// This type is meant to be the evolution of the echo_req_serde_only type
-/// defined in `rpc/test/rpc_gen_types.h`, the issue being that a redefinition
+/// defined in `rpc_gen_types.h`, the issue being that a redefinition
 /// of a new type with a different parent class and new fields cannot be done
 /// within the same binary/library.
 ///

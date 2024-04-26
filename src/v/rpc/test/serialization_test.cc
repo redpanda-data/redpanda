@@ -10,7 +10,7 @@
 #include "bytes/iobuf.h"
 #include "reflection/adl.h"
 #include "reflection/arity.h"
-#include "rpc/test/test_types.h"
+#include "test_types.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
