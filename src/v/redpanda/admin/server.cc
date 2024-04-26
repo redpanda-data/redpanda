@@ -1148,6 +1148,7 @@ ss::future<> admin_server::throw_on_error(
         case rpc::errc::disconnected_endpoint:
         case rpc::errc::exponential_backoff:
         case rpc::errc::shutting_down:
+        case rpc::errc::service_unavailable:
         case rpc::errc::missing_node_rpc_client:
             throw ss::httpd::base_exception(
               fmt::format("Not ready: {}", ec.message()),
@@ -1160,7 +1161,6 @@ ss::future<> admin_server::throw_on_error(
         case rpc::errc::service_error:
         case rpc::errc::method_not_found:
         case rpc::errc::version_not_supported:
-        case rpc::errc::service_unavailable:
         case rpc::errc::unknown:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected error: {}", ec.message()));
