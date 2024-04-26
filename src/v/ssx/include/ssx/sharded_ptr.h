@@ -71,6 +71,7 @@ public:
             _state.resize(ss::smp::count);
         }
 
+        auto copy_to_deallocate_on_owner_shard = local();
         co_await ss::smp::invoke_on_all([this, u]() noexcept { local() = u; });
     }
 
@@ -88,6 +89,7 @@ public:
     /// Must be called on the home shard and is safe to call concurrently.
     /// returns an ss::broken_semaphore if stop() has been called.
     ss::future<> stop() {
+        assert_shard();
         co_await _mutex.with([this] { _mutex.broken(); });
         _state = {};
     }
@@ -115,7 +117,7 @@ private:
     void assert_shard() const {
         vassert(
           ss::this_shard_id() == _shard,
-          "reset must be called on home shard: ",
+          "must be called on home shard: ",
           _shard);
     }
     ss::shard_id _shard;
