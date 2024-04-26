@@ -82,6 +82,17 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    enum class cursor_base_t {
+        archive_start_offset,
+
+        /// Special case that is used when computing retention.
+        ///
+        /// For details, see:
+        /// GitHub: https://github.com/redpanda-data/redpanda/pull/12177
+        /// Commit: 1b6ab7be8818e3878a32f9037694ae5c4cf4fea2
+        archive_clean_offset,
+    };
+
     /// Get active spillover manifests asynchronously
     ///
     /// \note the method may hydrate manifests in the cache or
@@ -91,7 +102,8 @@ public:
       result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
     get_cursor(
       async_view_search_query_t q,
-      std::optional<model::offset> end_inclusive = std::nullopt) noexcept;
+      std::optional<model::offset> end_inclusive = std::nullopt,
+      cursor_base_t cursor_base = cursor_base_t::archive_start_offset) noexcept;
 
     /// Get inactive spillover manifests which are waiting for
     /// retention
