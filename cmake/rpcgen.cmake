@@ -14,7 +14,8 @@ function(rpcgen)
 
   add_library(${args_TARGET} STATIC ${args_OUT_FILE})
   set_target_properties(${args_TARGET} PROPERTIES LINKER_LANGUAGE CXX)
-  target_include_directories(${args_TARGET} PUBLIC ${args_INCLUDES})
+  target_include_directories(${args_TARGET} PUBLIC ${args_INCLUDES}
+    ${CMAKE_CURRENT_LIST_DIR})
   target_link_libraries(${args_TARGET} PUBLIC v::rpc)
   set(${args_OUT_FILE} ${args_TARGET} PARENT_SCOPE)
 endfunction ()

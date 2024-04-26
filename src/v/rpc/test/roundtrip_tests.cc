@@ -12,7 +12,7 @@
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 // utils
-#include "rpc/test/test_types.h"
+#include "test_types.h"
 
 SEASTAR_THREAD_TEST_CASE(roundtrip_pod) {
     auto expected = reflection::adl<pod>{}.from(reflection::to_iobuf(pod{}));

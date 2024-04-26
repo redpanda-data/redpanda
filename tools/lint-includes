@@ -18,7 +18,10 @@ import re
 # but since there is no file on the filesystem, we need to teach 
 # this script that the file is there.
 GENERATED_CODE = {
-    pathlib.Path("transform/rpc/rpc_service.h")
+    pathlib.Path("transform/rpc/rpc_service.h"),
+    pathlib.Path("rpc/test/cycling_service.h"),
+    pathlib.Path("rpc/test/echo_service.h"),
+    pathlib.Path("rpc/test/echo_v2_service.h"),
 }
 
 def get_modules(root):

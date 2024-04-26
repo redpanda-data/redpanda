@@ -38,6 +38,7 @@ v_cc_library(
     v::random
     v::version
     v::bytes_random
+    v::rpc
     absl::flat_hash_map
     absl::flat_hash_set
     cryptopp
