@@ -1,5 +1,5 @@
 {
-  "name": "@redpanda-data/transforms",
+  "name": "@redpanda-data/transform-sdk",
   "version": "0.1.0",
   "description": "A JavaScript/TypeScript library for authoring Redpanda Data Transforms",
   "license": "Apache-2.0",

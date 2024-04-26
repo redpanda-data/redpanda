@@ -111,7 +111,7 @@ export type OnRecordWrittenCallback = (event: OnRecordWrittenEvent, writer: Reco
 // This method should be called in your script's entrypoint.
 //
 // @example
-// import {onRecordWritten} from "@redpanda-data/transforms";
+// import {onRecordWritten} from "@redpanda-data/transform-sdk";
 //
 // // Copy the input data to the output topic.
 // onRecordWritten((event, writer) => {
