@@ -39,6 +39,7 @@ public:
 
     void fast_trim() { ++_fast_trims; }
     void exhaustive_trim() { ++_exhaustive_trims; }
+    void carryover_trim() { ++_carryover_trims; }
     void failed_trim() { ++_failed_trims; }
 
 private:
@@ -55,6 +56,7 @@ private:
 
     int64_t _fast_trims{0};
     int64_t _exhaustive_trims{0};
+    int64_t _carryover_trims{0};
     int64_t _failed_trims{0};
 
     metrics::internal_metric_groups _metrics;
