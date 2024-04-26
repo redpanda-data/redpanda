@@ -549,9 +549,9 @@ connection_context::record_tp_and_calculate_throttle(
         auto fetch_delay = co_await _server.quota_mgr().throttle_fetch_tp(
           r_data.client_id, now);
         auto fetch_enforced = _throttling_state.update_fetch_delay(
-          fetch_delay.duration, now);
+          fetch_delay, now);
         client_quota_delay = delay_t{
-          .request = fetch_delay.duration,
+          .request = fetch_delay,
           .enforce = fetch_enforced,
         };
     } else if (r_data.request_key == produce_api::key) {
@@ -559,9 +559,9 @@ connection_context::record_tp_and_calculate_throttle(
           = co_await _server.quota_mgr().record_produce_tp_and_throttle(
             r_data.client_id, request_size, now);
         auto produce_enforced = _throttling_state.update_produce_delay(
-          produce_delay.duration, now);
+          produce_delay, now);
         client_quota_delay = delay_t{
-          .request = produce_delay.duration,
+          .request = produce_delay,
           .enforce = produce_enforced,
         };
     }
