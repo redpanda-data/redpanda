@@ -513,6 +513,11 @@ struct compatibility_checker {
             }
         }
 
+        for (int i = 0; i < writer->real_oneof_decl_count(); ++i) {
+            auto w = writer->oneof_decl(i);
+            compat_result.merge(check_compatible(reader, w, p / w->name()));
+        }
+
         for (int i = 0; i < reader->real_oneof_decl_count(); ++i) {
             auto r = reader->oneof_decl(i);
             compat_result.merge(check_compatible(r, writer, p / r->name()));
@@ -560,6 +565,32 @@ struct compatibility_checker {
 
         return compat_result;
     }
+
+    proto_compatibility_result check_compatible(
+      const pb::Descriptor* reader,
+      const pb::OneofDescriptor* writer,
+      std::filesystem::path p) {
+        proto_compatibility_result compat_result;
+
+        // If the oneof in question doesn't appear in the reader descriptor,
+        // then we don't need to account for any difference in fields.
+        if (!reader->FindOneofByName(writer->name())) {
+            return compat_result;
+        }
+
+        for (int i = 0; i < writer->field_count(); ++i) {
+            auto w = writer->field(i);
+            auto r = reader->FindFieldByNumber(w->number());
+
+            if (!r || !r->real_containing_oneof()) {
+                compat_result.emplace<proto_incompatibility>(
+                  p / std::to_string(w->number()),
+                  proto_incompatibility::Type::oneof_field_removed);
+            }
+        }
+        return compat_result;
+    }
+
     proto_compatibility_result check_compatible(
       const pb::OneofDescriptor* reader,
       const pb::Descriptor* writer,
