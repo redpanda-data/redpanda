@@ -18,10 +18,10 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "net/tests/randoms.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
+#include "utils/tests/randoms.h"
 
 namespace model {
 inline model::topic_namespace random_topic_namespace() {

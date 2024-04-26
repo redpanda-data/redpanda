@@ -101,12 +101,12 @@ add_subdirectory(io)
 add_subdirectory(ssx)
 add_subdirectory(wasm)
 add_subdirectory(transform)
+add_subdirectory(net)
 
 # libraries
 add_subdirectory(test_utils)
 add_subdirectory(finjector)
 add_subdirectory(utils)
-add_subdirectory(net)
 add_subdirectory(rpc)
 add_subdirectory(metrics)
 add_subdirectory(model)

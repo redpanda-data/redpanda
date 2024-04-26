@@ -13,7 +13,7 @@
 #include "net/batched_output_stream.h"
 #include "net/client_probe.h"
 #include "net/types.h"
-#include "net/unresolved_address.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>

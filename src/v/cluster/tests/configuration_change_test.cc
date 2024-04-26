@@ -15,8 +15,8 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "test_utils/fixture.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sstring.hh>

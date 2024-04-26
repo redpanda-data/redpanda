@@ -27,7 +27,6 @@
 #include "model/metadata.h"
 #include "model/record_batch_types.h"
 #include "net/types.h"
-#include "net/unresolved_address.h"
 #include "ssx/sformat.h"
 #include "storage/disk_log_impl.h"
 #include "storage/parser.h"
@@ -37,6 +36,7 @@
 #include "test_utils/fixture.h"
 #include "test_utils/scoped_config.h"
 #include "utils/retry_chain_node.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sstring.hh>

@@ -41,7 +41,6 @@
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "net/dns.h"
-#include "net/unresolved_address.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/application.h"
@@ -54,6 +53,7 @@
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>

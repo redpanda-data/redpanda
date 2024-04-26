@@ -9,7 +9,7 @@
 
 #include "config/node_config.h"
 #include "config/seed_server.h"
-#include "net/unresolved_address.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

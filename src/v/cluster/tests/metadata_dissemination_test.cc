@@ -17,9 +17,9 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "net/unresolved_address.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/util/defer.hh>
 

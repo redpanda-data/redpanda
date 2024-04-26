@@ -28,7 +28,6 @@
 #include "model/transform.h"
 #include "net/server.h"
 #include "net/types.h"
-#include "net/unresolved_address.h"
 #include "random/generators.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
@@ -41,6 +40,7 @@
 #include "transform/rpc/logger.h"
 #include "transform/rpc/serde.h"
 #include "transform/rpc/service.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>

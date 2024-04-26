@@ -10,7 +10,7 @@
 
 #include "net/dns.h"
 
-#include "net/unresolved_address.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

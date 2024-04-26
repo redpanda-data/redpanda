@@ -17,7 +17,7 @@
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
+#include "utils/unresolved_address.h"
 
 #include <chrono>
 

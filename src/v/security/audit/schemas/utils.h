@@ -10,7 +10,6 @@
 
 #pragma once
 #include "kafka/protocol/types.h"
-#include "net/unresolved_address.h"
 #include "security/acl.h"
 #include "security/audit/schemas/types.h"
 #include "security/audit/types.h"
@@ -19,6 +18,7 @@
 #include "security/request_auth.h"
 #include "security/types.h"
 #include "strings/string_switch.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/http/handlers.hh>
 #include <seastar/http/request.hh>

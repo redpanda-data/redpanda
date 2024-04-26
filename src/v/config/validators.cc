@@ -15,8 +15,8 @@
 #include "config/configuration.h"
 #include "model/namespace.h"
 #include "model/validation.h"
-#include "net/inet_address_wrapper.h"
 #include "ssx/sformat.h"
+#include "utils/inet_address_wrapper.h"
 
 #include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_set.h>

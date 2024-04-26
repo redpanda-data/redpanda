@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include "net/unresolved_address.h"
 #include "random/generators.h"
+#include "utils/unresolved_address.h"
 
 namespace tests {
 

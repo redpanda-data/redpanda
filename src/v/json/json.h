@@ -17,8 +17,8 @@
 #include "json/stream.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "net/unresolved_address.h"
 #include "utils/named_type.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/circular_buffer.hh>
 

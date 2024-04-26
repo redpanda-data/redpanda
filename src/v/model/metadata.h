@@ -14,9 +14,9 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "model/fundamental.h"
-#include "net/unresolved_address.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
+#include "utils/unresolved_address.h"
 #include "utils/xid.h"
 
 #include <seastar/core/sstring.hh>

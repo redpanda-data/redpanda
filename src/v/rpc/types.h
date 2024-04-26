@@ -17,9 +17,9 @@
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "net/types.h"
-#include "net/unresolved_address.h"
 #include "ssx/semaphore.h"
 #include "utils/log_hist.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>

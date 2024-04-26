@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "raft/group_configuration.h"
+#include "utils/unresolved_address.h"
 
 #include <boost/test/tools/old/interface.hpp>
 #include <fmt/ostream.h>

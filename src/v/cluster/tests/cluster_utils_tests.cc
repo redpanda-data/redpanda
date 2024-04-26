@@ -11,10 +11,10 @@
 #include "cluster/members_table.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "storage/tests/kvstore_fixture.h"
 #include "test_utils/fixture.h"
 #include "utils/prefix_logger.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/net/inet_address.hh>
