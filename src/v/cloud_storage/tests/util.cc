@@ -743,6 +743,10 @@ std::vector<model::record_batch_header> scan_remote_partition(
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
       imposter.api, imposter.cache, manifest, bucket);
+    auto manifest_view_stop = ss::defer(
+      [&manifest_view] { manifest_view->stop().get(); });
+    manifest_view->start().get();
+
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
       imposter.api.local(),
@@ -795,6 +799,10 @@ scan_result scan_remote_partition(
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
       imposter.api, imposter.cache, manifest, bucket);
+    auto manifest_view_stop = ss::defer(
+      [&manifest_view] { manifest_view->stop().get(); });
+
+    manifest_view->start().get();
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
       imposter.api.local(),
