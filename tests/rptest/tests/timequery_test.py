@@ -23,7 +23,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.util import (wait_until, segments_count,
+from rptest.util import (firewall_blocked, wait_until, segments_count,
                          wait_for_local_storage_truncate)
 
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
@@ -457,6 +457,52 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                     self.logger.info(f"Query at {o} succeeded on retry")
 
         assert not any([e > 0 for e in errors])
+
+    @cluster(num_nodes=4)
+    def test_timequery_with_spillover_gc_delayed(self):
+        self.set_up_cluster(cloud_storage=True,
+                            batch_cache=False,
+                            spillover=True)
+        total_segments = 16
+        record_size = 1024
+        base_ts = 1664453149000
+        msg_count = (self.log_segment_size * total_segments) // record_size
+        local_retention = self.log_segment_size * 4
+        topic_retention = self.log_segment_size * 8
+        topic, timestamps = self._create_and_produce(self.redpanda, True,
+                                                     local_retention, base_ts,
+                                                     record_size, msg_count)
+
+        # Confirm messages written
+        rpk = RpkTool(self.redpanda)
+        p = next(rpk.describe_topic(topic.name))
+        assert p.high_watermark == msg_count
+
+        # If using cloud storage, we must wait for some segments
+        # to fall out of local storage, to ensure we are really
+        # hitting the cloud storage read path when querying.
+        wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                        topic=topic.name,
+                                        target_bytes=local_retention)
+
+        # Update the retention to trigger archive retention mechanisms but
+        # keep firewall blocked to prevent garbage collection.
+        with firewall_blocked(
+                self.redpanda.nodes,
+                self.si_settings.cloud_storage_api_endpoint_port):
+            self.client().alter_topic_config(topic.name, 'retention.bytes',
+                                             topic_retention)
+            self.logger.info("Waiting for start offset to advance...")
+            wait_until(
+                lambda: next(rpk.describe_topic(topic.name)).start_offset > 0,
+                timeout_sec=120,
+                backoff_sec=5,
+                err_msg="Start offset did not advance")
+
+            # Query below valid timestamps the offset of the first message.
+            kcat = KafkaCat(self.redpanda)
+            offset = kcat.query_offset(topic.name, 0, timestamps[0] - 1000)
+            assert offset > 0
 
 
 class TimeQueryKafkaTest(Test, BaseTimeQuery):
