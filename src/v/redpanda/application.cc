@@ -97,6 +97,7 @@
 #include "net/dns.h"
 #include "net/server.h"
 #include "net/tls_certificate_probe.h"
+
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/api.h"
@@ -214,8 +215,7 @@ set_sr_kafka_client_defaults(kafka::client::configuration& client_config) {
 static void set_auditing_kafka_client_defaults(
   kafka::client::configuration& client_config) {
     if (!client_config.produce_batch_delay.is_overriden()) {
-        client_config.produce_batch_delay.set_value(0ms);
-    }
+        client_config.produce_batch_delay.set_value(0ms); }
     if (!client_config.produce_batch_record_count.is_overriden()) {
         client_config.produce_batch_record_count.set_value(int32_t(0));
     }
