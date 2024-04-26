@@ -48,7 +48,10 @@ struct test_data {
     std::vector<module_import> imports;
 };
 
-void PrintTo(const test_data& d, std::ostream* os) { *os << d.wat; }
+void PrintTo(const test_data& d, std::ostream* os) {
+    constexpr size_t max_len = 128;
+    *os << d.wat.substr(0, std::min(d.wat.size(), max_len));
+}
 
 class ParserTest : public testing::TestWithParam<test_data> {};
 
@@ -363,6 +366,91 @@ INSTANTIATE_TEST_SUITE_P(
 (module
   (memory 1)
   (data (i32.const 0) "a")
+)
+)WAT",
+        .exports = {},
+        .imports = {},
+      },
+      {
+        .wat = R"WAT(
+(module
+  (global (;0;) (mut i32) (i32.const 306464))
+  (global (;1;) i32 (i32.const 0))
+  (global (;2;) i32 (i32.const 239492))
+  (global (;3;) i32 (i32.const 448))
+  (global (;4;) i32 (i32.const 1))
+  (global (;5;) i32 (i32.const 193520))
+  (global (;6;) i32 (i32.const 449))
+  (global (;7;) i32 (i32.const 234008))
+  (global (;8;) i32 (i32.const 233968))
+  (global (;9;) i32 (i32.const 233868))
+  (global (;10;) i32 (i32.const 233920))
+  (global (;11;) i32 (i32.const 237064))
+  (global (;12;) i32 (i32.const 237072))
+  (global (;13;) i32 (i32.const 237048))
+  (global (;14;) i32 (i32.const 237056))
+  (global (;15;) i32 (i32.const 237236))
+  (global (;16;) i32 (i32.const 237164))
+  (global (;17;) i32 (i32.const 237228))
+  (global (;18;) i32 (i32.const 237172))
+  (global (;19;) i32 (i32.const 220524))
+  (global (;20;) i32 (i32.const 238992))
+  (global (;21;) i32 (i32.const 236496))
+  (global (;22;) i32 (i32.const 236508))
+  (global (;23;) i32 (i32.const 236452))
+  (global (;24;) i32 (i32.const 236416))
+  (global (;25;) i32 (i32.const 237160))
+  (global (;26;) i32 (i32.const 236352))
+  (global (;27;) i32 (i32.const 236280))
+  (global (;28;) i32 (i32.const 235592))
+  (global (;29;) i32 (i32.const 235528))
+  (global (;30;) i32 (i32.const 235396))
+  (global (;31;) i32 (i32.const 235256))
+  (global (;32;) i32 (i32.const 236212))
+  (global (;33;) i32 (i32.const 236144))
+  (global (;34;) i32 (i32.const 236076))
+  (global (;35;) i32 (i32.const 236008))
+  (global (;36;) i32 (i32.const 235920))
+  (global (;37;) i32 (i32.const 235832))
+  (global (;38;) i32 (i32.const 235744))
+  (global (;39;) i32 (i32.const 235648))
+  (global (;40;) i32 (i32.const 235148))
+  (global (;41;) i32 (i32.const 235032))
+  (global (;42;) i32 (i32.const 234912))
+  (global (;43;) i32 (i32.const 234784))
+  (global (;44;) i32 (i32.const 234516))
+  (global (;45;) i32 (i32.const 234356))
+  (global (;46;) i32 (i32.const 234436))
+  (global (;47;) i32 (i32.const 234276))
+  (global (;48;) i32 (i32.const 234188))
+  (global (;49;) i32 (i32.const 234080))
+  (global (;50;) i32 (i32.const 234752))
+  (global (;51;) i32 (i32.const 234720))
+  (global (;52;) i32 (i32.const 450))
+  (global (;53;) i32 (i32.const 233820))
+  (global (;54;) i32 (i32.const 237120))
+  (global (;55;) i32 (i32.const 237112))
+  (global (;56;) i32 (i32.const 237040))
+  (global (;57;) i32 (i32.const 237032))
+  (global (;58;) i32 (i32.const 237024))
+  (global (;59;) i32 (i32.const 237016))
+  (global (;60;) i32 (i32.const 237104))
+  (global (;61;) i32 (i32.const 237096))
+  (global (;62;) i32 (i32.const 237088))
+  (global (;63;) i32 (i32.const 237080))
+  (global (;64;) i32 (i32.const 237008))
+  (global (;65;) i32 (i32.const 237000))
+  (global (;66;) i32 (i32.const 236992))
+  (global (;67;) i32 (i32.const 236984))
+  (global (;68;) i32 (i32.const 237220))
+  (global (;69;) i32 (i32.const 237204))
+  (global (;70;) i32 (i32.const 237212))
+  (global (;71;) i32 (i32.const 237196))
+  (global (;72;) i32 (i32.const 237188))
+  (global (;73;) i32 (i32.const 237180))
+  (global (;74;) i32 (i32.const 236976))
+  (global (;75;) i32 (i32.const 236968))
+  (global (;76;) i32 (i32.const 234048))
 )
 )WAT",
         .exports = {},
