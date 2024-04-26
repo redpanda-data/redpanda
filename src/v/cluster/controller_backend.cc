@@ -630,6 +630,14 @@ controller_backend::calculate_learner_initial_offset(
 void controller_backend::process_delta(const topic_table::delta& d) {
     vlog(clusterlog.trace, "got delta: {}", d);
 
+    // update partition_leaders_table if needed
+
+    if (d.type == topic_table_delta_type::removed) {
+        _partition_leaders_table.local().remove_leader(d.ntp, d.revision);
+    }
+
+    // notify reconciliation fiber
+
     auto [rs_it, inserted] = _states.try_emplace(d.ntp);
     if (inserted) {
         rs_it->second = ss::make_lw_shared<ntp_reconciliation_state>();
@@ -1736,17 +1744,6 @@ ss::future<std::error_code> controller_backend::delete_partition(
       placement,
       cmd_revision,
       mode == partition_removal_mode::global);
-
-    // The partition leaders table contains partition leaders for all
-    // partitions accross the cluster. For this reason, when deleting a
-    // partition (i.e. removal mode is global), we need to delete from the table
-    // regardless of whether a replica of 'ntp' is present on the node.
-    if (mode == partition_removal_mode::global) {
-        co_await _partition_leaders_table.invoke_on_all(
-          [ntp, cmd_revision](partition_leaders_table& leaders) {
-              leaders.remove_leader(ntp, cmd_revision);
-          });
-    }
 
     if (!placement) {
         // nothing to delete
