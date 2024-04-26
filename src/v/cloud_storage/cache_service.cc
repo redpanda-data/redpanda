@@ -673,20 +673,21 @@ ss::future<cache::trim_result> cache::trim_fast(
         result.deleted_size += op_res.deleted_size;
     }
 
-    auto max_carryover_files = config::shard_local_cfg()
-                                 .cloud_storage_cache_trim_carryover.value()
-                                 .value_or(0);
+    ssize_t max_carryover_bytes
+      = config::shard_local_cfg()
+          .cloud_storage_cache_trim_carryover_bytes.value();
     fragmented_vector<file_list_item> tmp;
     auto estimated_size = std::min(
-      static_cast<size_t>(max_carryover_files),
+      static_cast<size_t>(max_carryover_bytes),
       candidates.size() - candidate_i);
     tmp.reserve(estimated_size);
-    while (max_carryover_files > 0 && candidate_i < candidates.size()) {
+    while (max_carryover_bytes > 0 && candidate_i < candidates.size()) {
         const auto& fs = candidates[candidate_i++];
         if (need_to_skip(fs)) {
             continue;
         }
-        max_carryover_files--;
+        max_carryover_bytes -= static_cast<ssize_t>(
+          sizeof(fs) + fs.path.size());
         tmp.push_back(fs);
     }
 
