@@ -20,6 +20,8 @@
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
+#include "net/connection.h"
 #include "ssx/future-util.h"
 #include "ssx/watchdog.h"
 #include "storage/log_reader.h"
@@ -564,27 +566,23 @@ private:
                 [&](model::timestamp query_ts) {
                     // Special case, it can happen when a timequery falls below
                     // the clean offset. Caused when the query races with
-                    // retention/gc. log a warning, since the kafka client can
-                    // handle a failed query
+                    // retention/gc.
                     auto const& spillovers = _partition->_manifest_view
                                                ->stm_manifest()
                                                .get_spillover_map();
-                    if (
-                      spillovers.empty()
-                      || spillovers.get_max_timestamp_column()
-                             .last_value()
-                             .value_or(model::timestamp::max()())
-                           >= query_ts()) {
+
+                    bool timestamp_inside_spillover
+                      = query_ts() <= spillovers.get_max_timestamp_column()
+                                        .last_value()
+                                        .value_or(model::timestamp::min()());
+
+                    if (timestamp_inside_spillover) {
                         vlog(
                           _ctxlog.debug,
                           "Manifest query raced with retention and the result "
                           "is below the clean/start offset for {}",
                           query_ts);
-                        return true;
                     }
-
-                    // query was not meant for archive region. fallthrough and
-                    // log an error
                     return false;
                 })) {
                 // error was handled

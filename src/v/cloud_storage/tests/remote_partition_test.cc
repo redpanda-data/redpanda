@@ -2417,9 +2417,17 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
           return what.find("Failed to query spillover manifests") != what.npos;
       });
 
-    // BUG: This assertion is disabled because it currently fails.
-    // test_log.debug("Timestamp undershoots the partition");
-    // BOOST_TEST_REQUIRE(timequery(*this, model::timestamp(100), 3 * 6));
+    // Timestamp undershoots the partition.
+    // It shouldn't throw. But as an interim workaround we throw until
+    // clean offset catches up with start offset.
+    // The clients will retry.
+    BOOST_REQUIRE_EXCEPTION(
+      timequery(*this, model::timestamp(100), 3 * 6),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
 
     test_log.debug("Timestamp within valid spillover but below archive start");
     BOOST_TEST_REQUIRE(
@@ -2435,4 +2443,22 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
 
     test_log.debug("Timestamp overshoots the partition");
     BOOST_TEST_REQUIRE(timequery(*this, model::timestamp::max(), 0));
+
+    // Rewrite the manifest with clean offset to match start offset.
+    manifest.set_archive_clean_offset(
+      archive_start, manifest.archive_size_bytes() / 2);
+    vlog(
+      test_util_log.info,
+      "Rewriting manifest at {}:\n{}",
+      manifest.get_manifest_path(),
+      ostr.str());
+
+    remove_expectations({manifest_url});
+    add_expectations({
+      cloud_storage_fixture::expectation{
+        .url = manifest_url, .body = serialize_manifest(manifest)},
+    });
+
+    // This query should now succeed.
+    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp(100), 3 * 6));
 }
