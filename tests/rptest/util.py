@@ -375,7 +375,8 @@ class firewall_blocked:
         """Isolate certain ips from the nodes using firewall rules"""
         cmd = [
             f"iptables -A INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP",
-            f"iptables -A OUTPUT -p tcp --dport {self._port} -j DROP"
+            f"iptables -A OUTPUT -p tcp --dport {self._port} -j DROP",
+            f"ss -K dport {self._port}",
         ]
         cmd = " && ".join(cmd)
         for node in self._nodes:
