@@ -12,6 +12,7 @@
 #include "base/vlog.h"
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
+#include <seastar/core/shard_id.hh>
 
 #include <fmt/chrono.h>
 
@@ -56,10 +57,9 @@ ss::future<> quota_manager::start() {
     return ss::make_ready_future<>();
 }
 
-quota_manager::client_quotas_t::iterator
+ss::future<quota_manager::client_quotas_t::iterator>
 quota_manager::maybe_add_and_retrieve_quota(
-  const std::optional<std::string_view>& quota_id,
-  const clock::time_point& now) {
+  std::optional<std::string_view> quota_id, clock::time_point now) {
     // requests without a client id are grouped into an anonymous group that
     // shares a default quota. the anonymous group is keyed on empty string.
     auto qid = quota_id ? *quota_id : "";
@@ -90,7 +90,7 @@ quota_manager::maybe_add_and_retrieve_quota(
         it->second.last_seen = now;
     }
 
-    return it;
+    co_return it;
 }
 
 // If client is part of some group then client quota ID is a group
@@ -153,7 +153,8 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
       });
 }
 
-std::chrono::milliseconds quota_manager::do_record_partition_mutations(
+ss::future<std::chrono::milliseconds>
+quota_manager::do_record_partition_mutations(
   std::optional<std::string_view> client_id,
   uint32_t mutations,
   clock::time_point now) {
@@ -162,7 +163,7 @@ std::chrono::milliseconds quota_manager::do_record_partition_mutations(
       "This method can only be executed from quota manager home shard");
 
     auto quota_id = get_client_quota_id(client_id, {});
-    auto it = maybe_add_and_retrieve_quota(quota_id, now);
+    auto it = co_await maybe_add_and_retrieve_quota(quota_id, now);
     const auto units = it->second.pm_rate->record_and_measure(mutations, now);
     auto delay_ms = 0ms;
     if (units < 0) {
@@ -188,7 +189,7 @@ std::chrono::milliseconds quota_manager::do_record_partition_mutations(
             delay_ms = max_delay_ms;
         }
     }
-    return delay_ms;
+    co_return delay_ms;
 }
 
 static std::chrono::milliseconds calculate_delay(
@@ -232,45 +233,45 @@ std::chrono::milliseconds quota_manager::throttle(
 }
 
 // record a new observation and return <previous delay, new delay>
-throttle_delay quota_manager::record_produce_tp_and_throttle(
+ss::future<throttle_delay> quota_manager::record_produce_tp_and_throttle(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
     auto quota_id = get_client_quota_id(
       client_id, _target_produce_tp_rate_per_client_group());
-    auto it = maybe_add_and_retrieve_quota(quota_id, now);
+    auto it = co_await maybe_add_and_retrieve_quota(quota_id, now);
 
     it->second.tp_produce_rate.record(bytes, now);
     auto target_tp_rate = get_client_target_produce_tp_rate(quota_id);
     auto delay_ms = throttle(
       quota_id, target_tp_rate, now, it->second.tp_produce_rate);
-    return {.duration = delay_ms};
+    co_return throttle_delay{.duration = delay_ms};
 }
 
-void quota_manager::record_fetch_tp(
+ss::future<> quota_manager::record_fetch_tp(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
     auto quota_id = get_client_quota_id(
       client_id, _target_fetch_tp_rate_per_client_group());
-    auto it = maybe_add_and_retrieve_quota(quota_id, now);
+    auto it = co_await maybe_add_and_retrieve_quota(quota_id, now);
     it->second.tp_fetch_rate.record(bytes, now);
 }
 
-throttle_delay quota_manager::throttle_fetch_tp(
+ss::future<throttle_delay> quota_manager::throttle_fetch_tp(
   std::optional<std::string_view> client_id, clock::time_point now) {
     auto quota_id = get_client_quota_id(
       client_id, _target_fetch_tp_rate_per_client_group());
     auto target_tp_rate = get_client_target_fetch_tp_rate(quota_id);
 
     if (!target_tp_rate) {
-        return {};
+        co_return throttle_delay{};
     }
-    auto it = maybe_add_and_retrieve_quota(quota_id, now);
+    auto it = co_await maybe_add_and_retrieve_quota(quota_id, now);
     it->second.tp_fetch_rate.maybe_advance_current(now);
     auto delay_ms = throttle(
       quota_id, *target_tp_rate, now, it->second.tp_fetch_rate);
-    return {.duration = delay_ms};
+    co_return throttle_delay{.duration = delay_ms};
 }
 
 // erase inactive tracked quotas. windows are considered inactive if

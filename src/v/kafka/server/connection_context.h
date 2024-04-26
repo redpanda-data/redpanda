@@ -39,6 +39,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace kafka {
@@ -100,7 +101,7 @@ private:
 
 struct request_data {
     api_key request_key;
-    ss::sstring client_id;
+    std::optional<ss::sstring> client_id;
 };
 
 // Used to hold resources associated with a given request until
@@ -237,8 +238,8 @@ private:
     /// Update throughput trackers (per-client, per-shard, and whatever are
     /// going to emerge) on ingress traffic and claculate aggregated throttle
     /// delays from all of them.
-    delay_t record_tp_and_calculate_throttle(
-      const request_header& hdr, size_t request_size);
+    ss::future<delay_t>
+    record_tp_and_calculate_throttle(request_data r_data, size_t request_size);
 
     // Apply backpressure sequence, where the request processing may be
     // delayed for various reasons, including throttling but also because
@@ -248,7 +249,7 @@ private:
     // the associated resouces have been obtained and are tracked by the
     // contained session_resources object.
     ss::future<session_resources>
-    throttle_request(const request_header&, size_t sz);
+    throttle_request(request_data r_data, size_t sz);
 
     ss::future<> do_process(request_context);
 

@@ -536,27 +536,28 @@ bool connection_context::is_finished_parsing() const {
     return conn->input().eof() || abort_requested();
 }
 
-connection_context::delay_t
+ss::future<connection_context::delay_t>
 connection_context::record_tp_and_calculate_throttle(
-  const request_header& hdr, const size_t request_size) {
+  request_data r_data, const size_t request_size) {
     using clock = quota_manager::clock;
     static_assert(std::is_same_v<clock, delay_t::clock>);
     const auto now = clock::now();
 
     // Throttle on client based quotas
     connection_context::delay_t client_quota_delay{};
-    if (hdr.key == fetch_api::key) {
-        auto fetch_delay = _server.quota_mgr().throttle_fetch_tp(
-          hdr.client_id, now);
+    if (r_data.request_key == fetch_api::key) {
+        auto fetch_delay = co_await _server.quota_mgr().throttle_fetch_tp(
+          r_data.client_id, now);
         auto fetch_enforced = _throttling_state.update_fetch_delay(
           fetch_delay.duration, now);
         client_quota_delay = delay_t{
           .request = fetch_delay.duration,
           .enforce = fetch_enforced,
         };
-    } else if (hdr.key == produce_api::key) {
-        auto produce_delay = _server.quota_mgr().record_produce_tp_and_throttle(
-          hdr.client_id, request_size, now);
+    } else if (r_data.request_key == produce_api::key) {
+        auto produce_delay
+          = co_await _server.quota_mgr().record_produce_tp_and_throttle(
+            r_data.client_id, request_size, now);
         auto produce_enforced = _throttling_state.update_produce_delay(
           produce_delay.duration, now);
         client_quota_delay = delay_t{
@@ -567,9 +568,9 @@ connection_context::record_tp_and_calculate_throttle(
 
     // Throttle on shard wide quotas
     connection_context::delay_t snc_delay;
-    if (_kafka_throughput_controlled_api_keys().at(hdr.key)) {
+    if (_kafka_throughput_controlled_api_keys().at(r_data.request_key)) {
         _server.snc_quota_mgr().get_or_create_quota_context(
-          _snc_quota_context, hdr.client_id);
+          _snc_quota_context, r_data.client_id);
         _server.snc_quota_mgr().record_request_receive(
           *_snc_quota_context, request_size, now);
         auto shard_delays = _server.snc_quota_mgr().get_shard_delays(
@@ -600,14 +601,14 @@ connection_context::record_tp_and_calculate_throttle(
           client_quota_delay.request,
           snc_delay.enforce,
           client_quota_delay.enforce,
-          hdr.key,
+          r_data.request_key,
           request_size);
     }
-    return delay_t{.request = delay_request, .enforce = delay_enforce};
+    co_return delay_t{.request = delay_request, .enforce = delay_enforce};
 }
 
 ss::future<session_resources> connection_context::throttle_request(
-  const request_header& hdr, size_t request_size) {
+  const request_data r_data, size_t request_size) {
     // note that when throttling is first determined, the request is
     // allowed to pass through, and only subsequent requests are
     // delayed. this is a similar strategy used by kafka 2.0: the
@@ -615,11 +616,8 @@ ss::future<session_resources> connection_context::throttle_request(
     // distinguish throttling delays from real delays. delays
     // applied to subsequent messages allow backpressure to take
     // affect.
-
-    const delay_t delay = record_tp_and_calculate_throttle(hdr, request_size);
-    request_data r_data = request_data{
-      .request_key = hdr.key,
-      .client_id = ss::sstring{hdr.client_id.value_or("")}};
+    const delay_t delay = co_await record_tp_and_calculate_throttle(
+      r_data, request_size);
     auto& h_probe = _server.handler_probe(r_data.request_key);
     auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
     auto fut = ss::now();
@@ -632,9 +630,9 @@ ss::future<session_resources> connection_context::throttle_request(
           delay.enforce);
         fut = ss::sleep_abortable(delay.enforce, abort_source().local());
     }
-    auto track = track_latency(hdr.key);
-    return fut
-      .then([this, key = hdr.key, request_size] {
+    auto track = track_latency(r_data.request_key);
+    co_return co_await fut
+      .then([this, key = r_data.request_key, request_size] {
           return reserve_request_units(key, request_size);
       })
       .then([this,
@@ -692,7 +690,13 @@ connection_context::reserve_request_units(api_key key, size_t size) {
 
 ss::future<>
 connection_context::dispatch_method_once(request_header hdr, size_t size) {
-    auto sres_in = co_await throttle_request(hdr, size);
+    auto r_data = request_data{
+      .request_key = hdr.key,
+      .client_id = hdr.client_id
+                     ? std::make_optional<ss::sstring>(*hdr.client_id)
+                     : std::nullopt,
+    };
+    auto sres_in = co_await throttle_request(std::move(r_data), size);
     if (abort_requested()) {
         // protect against shutdown behavior
         co_return;
@@ -918,7 +922,7 @@ connection_context::client_protocol_state::do_process_responses(
 
     auto msg = response_as_scattered(std::move(resp_and_res.response));
     if (resp_and_res.resources->request_data.request_key == fetch_api::key) {
-        connection_ctx->_server.quota_mgr().record_fetch_tp(
+        co_await connection_ctx->_server.quota_mgr().record_fetch_tp(
           resp_and_res.resources->request_data.client_id, msg.size());
     }
     // Respose sizes only take effect on throttling at the next

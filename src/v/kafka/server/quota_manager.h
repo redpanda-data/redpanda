@@ -70,18 +70,18 @@ public:
     ss::future<> start();
 
     // record a new observation
-    throttle_delay record_produce_tp_and_throttle(
+    ss::future<throttle_delay> record_produce_tp_and_throttle(
       std::optional<std::string_view> client_id,
       uint64_t bytes,
       clock::time_point now = clock::now());
 
     // record a new observation
-    void record_fetch_tp(
+    ss::future<> record_fetch_tp(
       std::optional<std::string_view> client_id,
       uint64_t bytes,
       clock::time_point now = clock::now());
 
-    throttle_delay throttle_fetch_tp(
+    ss::future<throttle_delay> throttle_fetch_tp(
       std::optional<std::string_view> client_id,
       clock::time_point now = clock::now());
 
@@ -98,7 +98,7 @@ public:
       clock::time_point now = clock::now());
 
 private:
-    std::chrono::milliseconds do_record_partition_mutations(
+    ss::future<std::chrono::milliseconds> do_record_partition_mutations(
       std::optional<std::string_view> client_id,
       uint32_t mutations,
       clock::time_point now);
@@ -128,8 +128,8 @@ private:
     // have not received any updates in ten window's worth of time.
     void gc(clock::duration full_window);
 
-    client_quotas_t::iterator maybe_add_and_retrieve_quota(
-      const std::optional<std::string_view>&, const clock::time_point&);
+    ss::future<client_quotas_t::iterator> maybe_add_and_retrieve_quota(
+      std::optional<std::string_view>, const clock::time_point);
     int64_t get_client_target_produce_tp_rate(
       const std::optional<std::string_view>& quota_id);
     std::optional<int64_t> get_client_target_fetch_tp_rate(
