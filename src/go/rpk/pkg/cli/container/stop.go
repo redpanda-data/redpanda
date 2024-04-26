@@ -55,23 +55,22 @@ func stopCluster(c common.Client) error {
 		}
 		go func(state *common.NodeState) {
 			defer wg.Done()
+			name := common.RedpandaName(state.ID)
+			if state.Console {
+				name = common.ConsoleContainerName
+			}
 			// If the node was stopped already, do nothing.
 			if !state.Running {
-				printf("Node %d was stopped already.", state.ID)
+				printf("%s was stopped already.", name)
 				return
 			}
-			printf("Stopping node %d", state.ID)
 			ctx := context.Background()
 			// Redpanda sometimes takes a while to stop, so 20
 			// seconds is a safe estimate
 			timeout := 20 // seconds
-			err := c.ContainerStop(
-				ctx,
-				common.Name(state.ID),
-				container.StopOptions{
-					Timeout: &timeout,
-				},
-			)
+
+			printf("Stopping %s", name)
+			err := c.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
 			if err != nil {
 				printf("Unable to stop node %d: %v", state.ID, err)
 				return

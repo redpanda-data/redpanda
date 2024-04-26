@@ -19,6 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/image"
+	"gopkg.in/yaml.v3"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -33,9 +36,11 @@ import (
 var (
 	tag               = "latest"
 	redpandaImageBase = "redpandadata/redpanda:" + tag
+	consoleImageBase  = "redpandadata/console:latest"
 )
 
 const (
+	ConsoleContainerName   = "rp-console"
 	redpandaNetwork        = "redpanda"
 	externalKafkaPort      = 19092
 	externalPandaproxyPort = 18082
@@ -44,17 +49,19 @@ const (
 )
 
 type NodeState struct {
-	Status         string
-	Running        bool
-	ConfigFile     string
-	HostRPCPort    uint
-	HostKafkaPort  uint
-	HostAdminPort  uint
-	HostProxyPort  uint
-	HostSchemaPort uint
-	ID             uint
-	ContainerIP    string
-	ContainerID    string
+	Status          string
+	Running         bool
+	ConfigFile      string
+	Console         bool
+	HostRPCPort     uint
+	HostKafkaPort   uint
+	HostAdminPort   uint
+	HostProxyPort   uint
+	HostSchemaPort  uint
+	HostConsolePort uint
+	ID              uint
+	ContainerIP     string
+	ContainerID     string
 }
 
 func ListenAddresses(ip string, internalPort, externalPort uint) string {
@@ -73,13 +80,17 @@ func AdvertiseAddresses(ip string, internalPort, externalPort uint) string {
 	)
 }
 
-// Returns the container name for the given node ID.
-func Name(nodeID uint) string {
+// RedpandaName returns the container name for the given node ID.
+func RedpandaName(nodeID uint) string {
 	return fmt.Sprintf("rp-node-%d", nodeID)
 }
 
-func DefaultImage() string {
+func DefaultRedpandaImage() string {
 	return redpandaImageBase
+}
+
+func DefaultConsoleImage() string {
+	return consoleImageBase
 }
 
 func DefaultCtx() (context.Context, context.CancelFunc) {
@@ -87,7 +98,7 @@ func DefaultCtx() (context.Context, context.CancelFunc) {
 }
 
 func GetExistingNodes(c Client) ([]*NodeState, error) {
-	regExp := `^/rp-node-[\d]+`
+	regExp := `^/rp-((node-[\d])|console)+`
 	filters := filters.NewArgs()
 	filters.Add("name", regExp)
 	ctx, _ := DefaultCtx()
@@ -108,14 +119,22 @@ func GetExistingNodes(c Client) ([]*NodeState, error) {
 	nodes := make([]*NodeState, len(containers))
 	for i, cont := range containers {
 		nodeIDStr := cont.Labels["node-id"]
-		nodeID, err := strconv.ParseUint(nodeIDStr, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"Couldn't parse node ID: '%s'",
-				nodeIDStr,
-			)
+		var nodeID uint64
+		var isConsole bool
+		if nodeIDStr == ConsoleContainerName {
+			isConsole = true
+			nodeID = uint64(len(nodes))
+		} else {
+			nodeID, err = strconv.ParseUint(nodeIDStr, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"couldn't parse node ID: %q",
+					nodeIDStr,
+				)
+			}
 		}
-		nodes[i], err = GetState(c, uint(nodeID))
+
+		nodes[i], err = GetState(c, uint(nodeID), isConsole)
 		if err != nil {
 			return nil, err
 		}
@@ -123,14 +142,18 @@ func GetExistingNodes(c Client) ([]*NodeState, error) {
 	return nodes, nil
 }
 
-func GetState(c Client, nodeID uint) (*NodeState, error) {
+func GetState(c Client, nodeID uint, isConsole bool) (*NodeState, error) {
 	ctx, _ := DefaultCtx()
-	containerJSON, err := c.ContainerInspect(ctx, Name(nodeID))
+	name := RedpandaName(nodeID)
+	if isConsole {
+		name = ConsoleContainerName
+	}
+	containerJSON, err := c.ContainerInspect(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 	if containerJSON.NetworkSettings == nil || containerJSON.ContainerJSONBase == nil {
-		return nil, fmt.Errorf("unable to inspect the container %v, please make sure you have Docker installed and running", Name(nodeID))
+		return nil, fmt.Errorf("unable to inspect the container %v, please make sure you have Docker installed and running", RedpandaName(nodeID))
 	}
 	var ipAddress string
 	network, exists := containerJSON.NetworkSettings.Networks[redpandaNetwork]
@@ -174,20 +197,26 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 		config.DefaultSchemaRegPort,
 		containerJSON,
 	)
+	hostConsolePort, err := getHostPort(
+		config.DefaultConsolePort,
+		containerJSON,
+	)
 	if err != nil {
 		return nil, err
 	}
 	return &NodeState{
-		Running:        containerJSON.State.Running,
-		Status:         containerJSON.State.Status,
-		ContainerID:    containerJSON.ID,
-		ContainerIP:    ipAddress,
-		HostKafkaPort:  hostKafkaPort,
-		HostRPCPort:    hostRPCPort,
-		HostAdminPort:  hostAdminPort,
-		HostProxyPort:  hostProxyPort,
-		HostSchemaPort: hostSchemaPort,
-		ID:             nodeID,
+		Running:         containerJSON.State.Running,
+		Status:          containerJSON.State.Status,
+		Console:         isConsole,
+		ContainerID:     containerJSON.ID,
+		ContainerIP:     ipAddress,
+		HostKafkaPort:   hostKafkaPort,
+		HostRPCPort:     hostRPCPort,
+		HostAdminPort:   hostAdminPort,
+		HostProxyPort:   hostProxyPort,
+		HostSchemaPort:  hostSchemaPort,
+		HostConsolePort: hostConsolePort,
+		ID:              nodeID,
 	}, nil
 }
 
@@ -236,7 +265,7 @@ func CreateNetwork(c Client, subnet, gateway string) (string, error) {
 	return resp.ID, nil
 }
 
-// Delete the Redpanda network if it exists.
+// RemoveNetwork deletes the Redpanda network if it exists.
 func RemoveNetwork(c Client) error {
 	ctx, _ := DefaultCtx()
 	err := c.NetworkRemove(ctx, redpandaNetwork)
@@ -291,7 +320,7 @@ func CreateNode(
 	if err != nil {
 		return nil, err
 	}
-	hostname := Name(nodeID)
+	hostname := RedpandaName(nodeID)
 	cmd := []string{
 		"redpanda",
 		"start",
@@ -387,18 +416,91 @@ func PullImage(c Client, image string) error {
 	return ctx.Err()
 }
 
-func CheckIfImgPresent(c Client, image string) (bool, error) {
-	ctx, _ := DefaultCtx()
-	filters := filters.NewArgs(
-		filters.Arg("reference", image),
+func CreateConsoleNode(
+	c Client,
+	nodeID uint,
+	netID, image string,
+	consolePort uint,
+	kafkaAddr, srAddr, adminAddr []string,
+) (*NodeState, error) {
+	cPort, err := nat.NewPort(
+		"tcp",
+		strconv.Itoa(config.DefaultConsolePort),
 	)
-	imgs, err := c.ImageList(ctx, types.ImageListOptions{
-		Filters: filters,
+	if err != nil {
+		return nil, err
+	}
+	cfgStr, err := parseConsoleConfigFile(kafkaAddr, srAddr, adminAddr)
+	if err != nil {
+		return nil, err
+	}
+	containerConfig := container.Config{
+		Image:      image,
+		Hostname:   ConsoleContainerName,
+		Entrypoint: []string{"/bin/sh", "-c", fmt.Sprintf("echo \"%v\" > /tmp/redpanda-console-config.yaml; /app/console", cfgStr)},
+		Env:        []string{"CONFIG_FILEPATH=/tmp/redpanda-console-config.yaml"},
+		ExposedPorts: nat.PortSet{
+			cPort: {},
+		},
+		Labels: map[string]string{
+			"cluster-id": "redpanda",
+			"node-id":    ConsoleContainerName,
+		},
+	}
+	hostConfig := container.HostConfig{
+		PortBindings: nat.PortMap{
+			cPort: []nat.PortBinding{{
+				HostPort: fmt.Sprint(consolePort),
+			}},
+		},
+	}
+	ip, err := nodeIP(c, netID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	networkConfig := network.NetworkingConfig{
+		EndpointsConfig: map[string]*network.EndpointSettings{
+			redpandaNetwork: {
+				IPAMConfig: &network.EndpointIPAMConfig{
+					IPv4Address: ip,
+				},
+				Aliases: []string{ConsoleContainerName},
+			},
+		},
+	}
+	ctx, _ := DefaultCtx()
+	consoleContainer, err := c.ContainerCreate(
+		ctx,
+		&containerConfig,
+		&hostConfig,
+		&networkConfig,
+		nil,
+		ConsoleContainerName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &NodeState{
+		Console:         true,
+		ContainerID:     consoleContainer.ID,
+		ContainerIP:     ip,
+		HostConsolePort: consolePort,
+		ID:              nodeID,
+	}, nil
+}
+
+func CheckIfImgPresent(c Client, img string) (bool, error) {
+	ctx, _ := DefaultCtx()
+	imgFilters := filters.NewArgs(
+		filters.Arg("reference", img),
+	)
+	listedImages, err := c.ImageList(ctx, image.ListOptions{
+		Filters: imgFilters,
 	})
 	if err != nil {
 		return false, err
 	}
-	return len(imgs) > 0, nil
+	return len(listedImages) > 0, nil
 }
 
 func getHostPort(
@@ -473,6 +575,9 @@ func CreateProfile(fs afero.Fs, c Client, y *config.RpkYaml) error {
 		return fmt.Errorf("unable to get the existing nodes: %v", err)
 	}
 	for _, n := range existingNodes {
+		if n.Console {
+			continue
+		}
 		kaAddresses = append(kaAddresses, fmt.Sprintf("127.0.0.1:%d", n.HostKafkaPort))
 		aAddresses = append(aAddresses, fmt.Sprintf("127.0.0.1:%d", n.HostAdminPort))
 		srAddresses = append(srAddresses, fmt.Sprintf("127.0.0.1:%d", n.HostSchemaPort))
@@ -506,3 +611,41 @@ const ContainerProfileName = "rpk-container"
 // ErrContainerProfileExists is returned when we attempt to create a container
 // profile but a profile named 'rpk-container' already exists.
 var ErrContainerProfileExists = fmt.Errorf("%q profile already exists", ContainerProfileName)
+
+func parseConsoleConfigFile(kafkaAddr, srAddr, adminAddr []string) (string, error) {
+	type Listener struct {
+		Enabled bool     `yaml:"enabled"`
+		Urls    []string `yaml:"urls"`
+	}
+	type Kafka struct {
+		Brokers        []string `yaml:"brokers"`
+		SchemaRegistry Listener `yaml:"schemaRegistry"`
+	}
+	type Redpanda struct {
+		AdminAPI Listener `yaml:"adminApi"`
+	}
+	type ConsoleCfg struct {
+		Kafka    Kafka    `yaml:"kafka"`
+		Redpanda Redpanda `yaml:"redpanda"`
+	}
+	cfg := ConsoleCfg{
+		Kafka: Kafka{
+			Brokers: kafkaAddr,
+			SchemaRegistry: Listener{
+				Enabled: true,
+				Urls:    srAddr,
+			},
+		},
+		Redpanda: Redpanda{
+			AdminAPI: Listener{
+				Enabled: true,
+				Urls:    adminAddr,
+			},
+		},
+	}
+	b, err := yaml.Marshal(cfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal console config: %v", err)
+	}
+	return string(b), nil
+}
