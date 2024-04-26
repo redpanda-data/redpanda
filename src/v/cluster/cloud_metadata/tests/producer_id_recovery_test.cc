@@ -28,6 +28,9 @@ class ProducerIdRecoveryTest
   : public cloud_storage_manual_multinode_test_base
   , public seastar_test {
 public:
+    ProducerIdRecoveryTest()
+      : cloud_storage_manual_multinode_test_base(
+        cloud_storage_clients::bucket_name("test-bucket")) {}
     ss::future<> SetUpAsync() override {
         cluster::topic_properties props;
         props.cleanup_policy_bitflags

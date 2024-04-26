@@ -46,12 +46,13 @@ class cluster_metadata_uploader_fixture
   , public enable_cloud_storage_fixture {
 public:
     cluster_metadata_uploader_fixture()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{}, httpd_port_number())
+      : s3_imposter_fixture(cloud_storage_clients::bucket_name("test-bucket"))
+      , redpanda_thread_fixture(
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number())
       , raft0(app.partition_manager.local().get(model::controller_ntp)->raft())
       , controller_stm(app.controller->get_controller_stm().local())
-      , remote(app.cloud_storage_api.local())
-      , bucket(cloud_storage_clients::bucket_name("test-bucket")) {
+      , remote(app.cloud_storage_api.local()) {
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
         RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
@@ -68,7 +69,7 @@ public:
         retry_chain_node retry_node(
           never_abort, ss::lowres_clock::time_point::max(), 10ms);
         auto m_res = co_await download_highest_manifest_for_cluster(
-          remote, cluster_uuid, bucket, retry_node);
+          remote, cluster_uuid, _bucket_name, retry_node);
         if (!m_res.has_value()) {
             vlog(
               logger.debug,
@@ -98,7 +99,7 @@ public:
         ss::abort_source as;
         retry_chain_node retry_node(
           as, ss::lowres_clock::time_point::max(), 10ms);
-        auto list_res = co_await remote.list_objects(bucket, retry_node);
+        auto list_res = co_await remote.list_objects(_bucket_name, retry_node);
         BOOST_REQUIRE(!list_res.has_error());
         const auto& items = list_res.value().contents;
         if (items.empty()) {
@@ -128,7 +129,6 @@ protected:
     cluster::consensus_ptr raft0;
     cluster::controller_stm& controller_stm;
     cloud_storage::remote& remote;
-    const cloud_storage_clients::bucket_name bucket;
     model::cluster_uuid cluster_uuid;
 };
 
@@ -154,7 +154,7 @@ FIXTURE_TEST(
     m.metadata_id = cluster_metadata_id(10);
 
     // Upload a manifest and check that we download it.
-    auto up_res = remote.upload_manifest(bucket, m, retry_node).get();
+    auto up_res = remote.upload_manifest(_bucket_name, m, retry_node).get();
     BOOST_REQUIRE_EQUAL(up_res, cloud_storage::upload_result::success);
     down_res = uploader.download_highest_manifest_or_create(retry_node).get();
     BOOST_REQUIRE(down_res.has_value());
@@ -163,7 +163,7 @@ FIXTURE_TEST(
     // If we upload a manifest with a lower metadata ID, the higher one should
     // be downloaded.
     m.metadata_id = cluster_metadata_id(9);
-    up_res = remote.upload_manifest(bucket, m, retry_node).get();
+    up_res = remote.upload_manifest(_bucket_name, m, retry_node).get();
     m.metadata_id = cluster_metadata_id(10);
     BOOST_REQUIRE_EQUAL(up_res, cloud_storage::upload_result::success);
     down_res = uploader.download_highest_manifest_or_create(retry_node).get();
@@ -223,7 +223,7 @@ FIXTURE_TEST(test_upload_next_metadata, cluster_metadata_uploader_fixture) {
     cloud_storage::remote_file remote_file(
       remote,
       app.shadow_index_cache.local(),
-      bucket,
+      _bucket_name,
       cloud_storage::remote_segment_path(first_controller_snapshot_path),
       retry_node,
       "controller");

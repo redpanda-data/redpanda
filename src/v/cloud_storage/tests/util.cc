@@ -644,7 +644,7 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
     // incorrectly.
     ss::lowres_clock::update();
     auto conf = imposter.get_configuration();
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    static auto bucket = imposter.bucket;
     if (maybe_max_segments) {
         config::shard_local_cfg()
           .cloud_storage_max_materialized_segments_per_shard.set_value(
@@ -725,7 +725,7 @@ std::vector<model::record_batch_header> scan_remote_partition(
     // incorrectly.
     ss::lowres_clock::update();
     auto conf = imposter.get_configuration();
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    static auto bucket = imposter.bucket;
     if (maybe_max_segments) {
         config::shard_local_cfg()
           .cloud_storage_max_materialized_segments_per_shard.set_value(
@@ -776,7 +776,7 @@ scan_result scan_remote_partition(
     // incorrectly.
     ss::lowres_clock::update();
     auto conf = imposter.get_configuration();
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    static auto bucket = imposter.bucket;
     if (maybe_max_segments) {
         config::shard_local_cfg()
           .cloud_storage_max_materialized_segments_per_shard.set_value(
@@ -834,7 +834,7 @@ scan_remote_partition_incrementally_with_closest_lso(
   size_t maybe_max_readers) {
     ss::lowres_clock::update();
     auto conf = imposter.get_configuration();
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    static auto bucket = imposter.bucket;
     if (maybe_max_segments) {
         config::shard_local_cfg()
           .cloud_storage_max_materialized_segments_per_shard.set_value(
@@ -958,7 +958,7 @@ void reupload_compacted_segments(
             };
             auto result = fixture.api.local()
                             .upload_segment(
-                              cloud_storage_clients::bucket_name("bucket"),
+                              fixture.bucket,
                               url,
                               meta.size_bytes,
                               std::move(reset_stream),

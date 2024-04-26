@@ -150,11 +150,14 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
     auto secret_key = cloud_roles::private_key_str(
       m["secretkey"].as<std::string>());
     auto region = cloud_roles::aws_region_name(m["region"].as<std::string>());
+    auto bucket_name = cloud_storage_clients::bucket_name(
+      m["bucket"].as<std::string>());
     cloud_storage_clients::s3_configuration client_cfg
       = cloud_storage_clients::s3_configuration::make_configuration(
           access_key,
           secret_key,
           region,
+          bucket_name,
           cloud_storage_clients::default_overrides{
             .endpoint =
               [&]() -> std::optional<cloud_storage_clients::endpoint_url> {
@@ -182,8 +185,7 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
           .get0();
     vlog(test_log.info, "connecting to {}", client_cfg.server_addr);
     return test_conf{
-      .bucket = cloud_storage_clients::bucket_name(
-        m["bucket"].as<std::string>()),
+      .bucket = bucket_name,
       .objects =
         [&] {
             auto keys = m["object"].as<std::vector<std::string>>();

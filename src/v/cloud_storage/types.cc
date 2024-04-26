@@ -417,11 +417,15 @@ ss::future<configuration> configuration::get_s3_config() {
     auto disable_public_metrics = net::public_metrics_disabled(
       config::shard_local_cfg().disable_public_metrics());
 
+    auto bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
+      config::shard_local_cfg().cloud_storage_bucket, "cloud_storage_bucket"));
+
     auto s3_conf
       = co_await cloud_storage_clients::s3_configuration::make_configuration(
         access_key,
         secret_key,
         region,
+        bucket_name,
         get_default_overrides(),
         disable_metrics,
         disable_public_metrics);
@@ -432,9 +436,7 @@ ss::future<configuration> configuration::get_s3_config() {
         config::shard_local_cfg().cloud_storage_max_connections.value()),
       .metrics_disabled = remote_metrics_disabled(
         static_cast<bool>(disable_metrics)),
-      .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
-        config::shard_local_cfg().cloud_storage_bucket,
-        "cloud_storage_bucket")),
+      .bucket_name = bucket_name,
       .cloud_credentials_source = cloud_credentials_source,
     };
 

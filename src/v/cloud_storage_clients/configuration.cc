@@ -11,6 +11,7 @@
 #include "cloud_storage_clients/configuration.h"
 
 #include "cloud_storage_clients/logger.h"
+#include "cloud_storage_clients/types.h"
 #include "config/configuration.h"
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
@@ -74,15 +75,20 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
   const std::optional<cloud_roles::public_key_str>& pkey,
   const std::optional<cloud_roles::private_key_str>& skey,
   const cloud_roles::aws_region_name& region,
+  const bucket_name& bucket,
   const default_overrides& overrides,
   net::metrics_disabled disable_metrics,
   net::public_metrics_disabled disable_public_metrics) {
     s3_configuration client_cfg;
     const auto endpoint_uri = [&]() -> ss::sstring {
-        if (overrides.endpoint) {
-            return overrides.endpoint.value();
+        auto endpoint = overrides.endpoint.value_or(
+          endpoint_url{ssx::sformat("s3.{}.amazoneaws.com", region())});
+        switch (overrides.url_style) {
+        case s3_url_style::virtual_host:
+            return ssx::sformat("{}.{}", bucket(), endpoint());
+        case s3_url_style::path:
+            return endpoint();
         }
-        return ssx::sformat("s3.{}.amazonaws.com", region());
     }();
     client_cfg.tls_sni_hostname = endpoint_uri;
 
@@ -98,6 +104,10 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
           "s3", overrides.trust_file, s3_log);
     }
 
+    // When using virtual host addressing, the client must connect to the
+    // s3 endpoint with the bucket name, e.g.
+    // <bucket>.s3.<region>.amazonaws.com.  This is especially required for
+    // S3 FIPS endpoints: <bucket>.s3-fips.<region>.amazonaws.com
     client_cfg.server_addr = net::unresolved_address(
       client_cfg.uri(),
       overrides.port ? *overrides.port : default_port,

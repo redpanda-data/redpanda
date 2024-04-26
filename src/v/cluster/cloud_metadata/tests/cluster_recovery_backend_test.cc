@@ -56,12 +56,13 @@ class ClusterRecoveryBackendTest
   , public enable_cloud_storage_fixture {
 public:
     ClusterRecoveryBackendTest()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{}, httpd_port_number())
+      : s3_imposter_fixture(cloud_storage_clients::bucket_name("test-bucket"))
+      , redpanda_thread_fixture(
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number())
       , raft0(app.partition_manager.local().get(model::controller_ntp)->raft())
       , controller_stm(app.controller->get_controller_stm().local())
-      , remote(app.cloud_storage_api.local())
-      , bucket(cloud_storage_clients::bucket_name("test-bucket")) {}
+      , remote(app.cloud_storage_api.local()) {}
     ss::future<> SetUpAsync() override {
         co_await ss::async([&] { set_expectations_and_listen({}); });
         co_await wait_for_controller_leadership();
@@ -75,7 +76,6 @@ protected:
     cluster::consensus_ptr raft0;
     cluster::controller_stm& controller_stm;
     cloud_storage::remote& remote;
-    const cloud_storage_clients::bucket_name bucket;
     model::cluster_uuid cluster_uuid;
 };
 
@@ -217,7 +217,7 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     // Perform recovery.
     auto recover_err = app.controller->get_cluster_recovery_manager()
                          .local()
-                         .initialize_recovery(bucket)
+                         .initialize_recovery(_bucket_name)
                          .get();
     ASSERT_TRUE(recover_err.has_value());
     ASSERT_EQ(recover_err.value(), cluster::errc::success);
@@ -395,7 +395,7 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoverMissingTopicManifest) {
         // Attempt a recovery.
         auto recover_err = app.controller->get_cluster_recovery_manager()
                              .local()
-                             .initialize_recovery(bucket)
+                             .initialize_recovery(_bucket_name)
                              .get();
         ASSERT_TRUE(recover_err.has_value());
         ASSERT_EQ(recover_err.value(), cluster::errc::success);
@@ -484,7 +484,7 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoverFailedDownload) {
 
     auto res = app.cloud_storage_api.local()
                  .delete_object(
-                   bucket,
+                   _bucket_name,
                    cloud_storage_clients::object_key{
                      manifest.controller_snapshot_path},
                    retry_node)
@@ -494,7 +494,7 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoverFailedDownload) {
     // Attempt a recovery.
     auto recover_err = app.controller->get_cluster_recovery_manager()
                          .local()
-                         .initialize_recovery(bucket)
+                         .initialize_recovery(_bucket_name)
                          .get();
     BOOST_REQUIRE(recover_err.has_value());
     BOOST_REQUIRE_EQUAL(recover_err.value(), cluster::errc::success);

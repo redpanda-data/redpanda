@@ -122,12 +122,17 @@ struct backend_override_mixin_t {
     model::cloud_storage_backend _default_backend;
 };
 
+namespace {
+const cloud_storage_clients::bucket_name bucket{"bucket"};
+}
+
 template<class Mixin>
 class remote_fixture_base
   : public s3_imposter_fixture
   , Mixin {
 public:
-    remote_fixture_base() {
+    remote_fixture_base()
+      : s3_imposter_fixture(bucket) {
         auto conf = get_configuration();
         pool
           .start(
@@ -320,7 +325,7 @@ FIXTURE_TEST(test_upload_segment_timeout, remote_fixture) { // NOLINT
 
 FIXTURE_TEST(test_download_segment, remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
+
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -362,7 +367,7 @@ FIXTURE_TEST(test_download_segment, remote_fixture) { // NOLINT
 }
 
 FIXTURE_TEST(test_download_segment_timeout, remote_fixture) { // NOLINT
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
+
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -382,7 +387,6 @@ FIXTURE_TEST(test_download_segment_timeout, remote_fixture) { // NOLINT
 }
 
 FIXTURE_TEST(test_download_segment_range, remote_fixture) {
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto subscription = remote.local().subscribe(allow_all);
 
     auto path = generate_remote_segment_path(
@@ -452,7 +456,7 @@ FIXTURE_TEST(test_download_segment_range, remote_fixture) {
 
 FIXTURE_TEST(test_segment_exists, remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
+
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -483,7 +487,7 @@ FIXTURE_TEST(test_segment_exists, remote_fixture) { // NOLINT
 }
 
 FIXTURE_TEST(test_segment_exists_timeout, remote_fixture) { // NOLINT
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
+
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -496,7 +500,7 @@ FIXTURE_TEST(test_segment_exists_timeout, remote_fixture) { // NOLINT
 
 FIXTURE_TEST(test_segment_delete, remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
+
     auto name = segment_name("0-1-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{1});
@@ -556,8 +560,6 @@ FIXTURE_TEST(test_concat_segment_upload, remote_fixture) {
         start_offset = segment.offsets().get_dirty_offset() + model::offset{1};
     }
 
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
-
     auto path = generate_remote_segment_path(
       test_ntp,
       manifest_revision,
@@ -591,7 +593,7 @@ FIXTURE_TEST(test_concat_segment_upload, remote_fixture) {
 
 FIXTURE_TEST(test_list_bucket, remote_fixture) {
     set_expectations_and_listen({});
-    cloud_storage_clients::bucket_name bucket{"test"};
+
     retry_chain_node fib(never_abort, 10s, 20ms);
 
     int first = 2;
@@ -775,7 +777,7 @@ FIXTURE_TEST(test_list_bucket_with_max_keys, remote_fixture) {
 
 FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
     set_expectations_and_listen({});
-    cloud_storage_clients::bucket_name bucket{"test"};
+
     retry_chain_node fib(never_abort, 100ms, 20ms);
     for (const char first : {'x', 'y'}) {
         for (const char second : {'a', 'b'}) {
@@ -810,7 +812,7 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
 FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
     set_expectations_and_listen({});
     retry_chain_node fib(never_abort, 100ms, 20ms);
-    cloud_storage_clients::bucket_name bucket{"test"};
+
     cloud_storage_clients::object_key path{"b"};
     auto upl_result = remote.local()
                         .upload_object(
@@ -838,7 +840,6 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
     set_expectations_and_listen({});
     auto conf = get_configuration();
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
@@ -862,7 +863,6 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
 FIXTURE_TEST(test_delete_objects, remote_fixture) {
     set_expectations_and_listen({});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     std::vector<cloud_storage_clients::object_key> to_delete{
@@ -879,7 +879,6 @@ FIXTURE_TEST(test_delete_objects, remote_fixture) {
 FIXTURE_TEST(test_delete_objects_multiple_batches, remote_fixture) {
     set_expectations_and_listen({});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 500ms, 20ms);
 
     std::deque<cloud_storage_clients::object_key> to_delete;
@@ -922,7 +921,6 @@ FIXTURE_TEST(
     set_expectations_and_listen({expectation{
       .url = "/?delete", .body = ss::sstring(plural_delete_error)}});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 500ms, 20ms);
 
     std::vector<cloud_storage_clients::object_key> to_delete;
@@ -966,7 +964,6 @@ FIXTURE_TEST(test_delete_objects_failure_handling, remote_fixture) {
     set_expectations_and_listen({expectation{
       .url = "/?delete", .body = ss::sstring(plural_delete_error)}});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     std::vector<cloud_storage_clients::object_key> to_delete{
@@ -984,7 +981,6 @@ FIXTURE_TEST(test_delete_objects_failure_handling, remote_fixture) {
 FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
     set_expectations_and_listen({});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 60s, 20ms);
 
     BOOST_REQUIRE_EQUAL(
@@ -1027,7 +1023,6 @@ FIXTURE_TEST(
   test_delete_objects_on_unknown_backend_result_reduction, gcs_remote_fixture) {
     set_expectations_and_listen({});
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 5s, 20ms);
 
     BOOST_REQUIRE_EQUAL(
@@ -1211,7 +1206,7 @@ using throttle_remote_fixture = remote_fixture_base<throttle_low_limit>;
 FIXTURE_TEST(
   test_download_segment_throttle, throttle_remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
+
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -1291,7 +1286,7 @@ using no_throttle_remote_fixture = remote_fixture_base<no_throttle>;
 FIXTURE_TEST(
   test_download_segment_no_throttle, no_throttle_remote_fixture) { // NOLINT
     set_expectations_and_listen({});
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
+
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -1352,7 +1347,7 @@ FIXTURE_TEST(test_notification_retry_meta, remote_fixture) {
 
     retry_chain_node fib(never_abort, 500ms, 10ms);
     partition_manifest actual(manifest_ntp, manifest_revision);
-    const auto bucket = cloud_storage_clients::bucket_name("bucket");
+
     auto filter = remote::event_filter{};
 
     auto fut = remote.local().try_download_partition_manifest(
@@ -1373,7 +1368,6 @@ FIXTURE_TEST(test_get_object, remote_fixture) {
     set_expectations_and_listen({});
     auto conf = get_configuration();
 
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 1s, 20ms);
 
     cloud_storage_clients::object_key path{"p"};

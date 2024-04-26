@@ -47,6 +47,7 @@ rp_test(
   FIXTURE_TEST
   BINARY_NAME cloud_storage
   SOURCES
+    cloud_storage_fixture.cc
     util.cc
     s3_imposter.cc
     remote_test.cc
@@ -77,6 +78,7 @@ rp_test(
   FIXTURE_TEST
   BINARY_NAME cloud_storage_fuzzy
   SOURCES
+    cloud_storage_fixture.cc
     util.cc
     s3_imposter.cc
     remote_partition_fuzz_test.cc

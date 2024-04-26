@@ -372,7 +372,8 @@ cloud_storage_clients::s3_configuration
 s3_imposter_fixture::get_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number());
     cloud_storage_clients::s3_configuration conf;
-    conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
+    conf.uri = cloud_storage_clients::access_point_uri(
+      ssx::sformat("{}.{}", _bucket_name(), httpd_host_name));
     conf.access_key = cloud_roles::public_key_str("acess-key");
     conf.secret_key = cloud_roles::private_key_str("secret-key");
     conf.region = cloud_roles::aws_region_name("us-east-1");
@@ -386,10 +387,12 @@ s3_imposter_fixture::get_configuration() {
     return conf;
 }
 
-s3_imposter_fixture::s3_imposter_fixture() {
+s3_imposter_fixture::s3_imposter_fixture(
+  cloud_storage_clients::bucket_name bucket)
+  : _bucket_name(std::move(bucket)) {
     _server = ss::make_shared<ss::httpd::http_server_control>();
     _server->start().get();
-    ss::ipv4_addr ip_addr = {httpd_host_name, httpd_port_number()};
+    ss::ipv4_addr ip_addr = {httpd_ip_addr, httpd_port_number()};
     _server_addr = ss::socket_address(ip_addr);
 }
 

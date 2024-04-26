@@ -59,6 +59,7 @@ struct s3_configuration : common_configuration {
     /// \param pkey is an AWS access key
     /// \param skey is an AWS secret key
     /// \param region is an AWS region code
+    /// \param bucket is the bucket to use
     /// \param overrides contains a bunch of property overrides like
     ///        non-standard SSL port and alternative location of the
     ///        truststore
@@ -67,6 +68,7 @@ struct s3_configuration : common_configuration {
       const std::optional<cloud_roles::public_key_str>& pkey,
       const std::optional<cloud_roles::private_key_str>& skey,
       const cloud_roles::aws_region_name& region,
+      const bucket_name& bucket,
       const default_overrides& overrides = {},
       net::metrics_disabled disable_metrics = net::metrics_disabled::yes,
       net::public_metrics_disabled disable_public_metrics

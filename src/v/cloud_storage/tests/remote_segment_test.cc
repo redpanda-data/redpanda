@@ -60,8 +60,6 @@ inline ss::logger test_log("test"); // NOLINT
 
 static ss::abort_source never_abort;
 
-static const cloud_storage_clients::bucket_name bucket("bucket");
-
 static cloud_storage::lazy_abort_source always_continue([]() {
     return std::nullopt;
 });
@@ -199,7 +197,7 @@ void upload_index(
       = f.api.local()
           .upload_object({
             .transfer_details
-            = {.bucket = bucket, .key = cloud_storage_clients::object_key{path().native() + ".index"}, .parent_rtc = fib},
+            = {.bucket = f.bucket, .key = cloud_storage_clients::object_key{path().native() + ".index"}, .parent_rtc = fib},
             .payload = std::move(ixbuf),
           })
           .get();
@@ -328,10 +326,11 @@ void test_remote_segment_batch_reader(
     upload_index(fixture, meta, segment_bytes, path, fib);
 
     auto reset_stream = make_reset_fn(segment_bytes);
-    auto upl_res = fixture.api.local()
-                     .upload_segment(
-                       bucket, path, clen, reset_stream, fib, always_continue)
-                     .get();
+    auto upl_res
+      = fixture.api.local()
+          .upload_segment(
+            fixture.bucket, path, clen, reset_stream, fib, always_continue)
+          .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     m.add(meta);
 
@@ -348,7 +347,7 @@ void test_remote_segment_batch_reader(
     auto segment = ss::make_lw_shared<remote_segment>(
       fixture.api.local(),
       fixture.cache.local(),
-      bucket,
+      fixture.bucket,
       m.generate_segment_path(meta),
       m.get_ntp(),
       meta,
@@ -541,7 +540,8 @@ static partition_manifest chunk_read_baseline(
 
     BOOST_REQUIRE(
       f.api.local()
-        .upload_segment(bucket, path, clen, reset_stream, fib, always_continue)
+        .upload_segment(
+          f.bucket, path, clen, reset_stream, fib, always_continue)
         .get()
       == upload_result::success);
     m.add(meta);
