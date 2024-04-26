@@ -1400,44 +1400,73 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
       _reservations_pending,
       _reservations_pending_objects);
 
+    auto units = co_await ss::get_units(_cleanup_sm, 1);
+
+    // Situation may change after a scheduling point. Another fiber could
+    // trigger carryover trim which released some resources. Exit early in this
+    // case.
+    if (may_reserve_space(bytes, objects)) {
+        _reserved_cache_size += bytes;
+        _reserved_cache_objects += objects;
+        co_return;
+    }
+
+    // Do not increment _reservations_pending* before carryover trim is
+    // completed.
+    if (_last_trim_carryover.has_value()) {
+        // Slow path: try to run carryover trim if we have data
+        // from the previous trim.
+
+        auto short_term_hydrations_estimate
+          = config::shard_local_cfg().cloud_storage_max_connections()
+            * ss::smp::count;
+
+        // Here we're trying to estimate how much space do we need to
+        // free to allow all TS resources to be used again to download
+        // data from S3. This is only a crude estimate.
+        auto trim_bytes = std::min(
+          config::shard_local_cfg().log_segment_size()
+            * short_term_hydrations_estimate / 3,
+          _max_bytes);
+        auto trim_objects = std::min(
+          short_term_hydrations_estimate * 3, _max_objects());
+
+        vlog(
+          cst_log.debug,
+          "Carryover trim list has {} elements, trying to remove {} bytes "
+          "and {} objects",
+          _last_trim_carryover->size(),
+          human::bytes(trim_bytes),
+          trim_objects);
+
+        co_await trim_carryover(trim_bytes, trim_objects);
+    } else {
+        vlog(cst_log.debug, "Carryover trim list is empty");
+    }
+
+    if (may_reserve_space(bytes, objects)) {
+        _reserved_cache_size += bytes;
+        _reserved_cache_objects += objects;
+        // Carryover trim released enough space for this fiber to continue. But
+        // we are starting the trim in the background to release more space and
+        // refresh the carryover list. Without this subsequent 'reserve_space'
+        // calls will be removing elements from the carryover list until it's
+        // empty. After that the blocking trim will be forced and the readers
+        // will be blocked for the duration of the trim. To avoid this we need
+        // to run trim  in the background even if the fiber is unblocked.
+        // We want number of full trims to match number of carryover trims.
+        vlog(cst_log.debug, "Spawning background trim_throttled");
+        ssx::spawn_with_gate(_gate, [this, u = std::move(units)]() mutable {
+            return trim_throttled().finally([u = std::move(u)] {});
+        });
+        co_return;
+    }
+
+    // Slowest path: register a pending need for bytes that will be used in
+    // clean_up_cache to make space available, and then proceed to
+    // cooperatively call clean_up_cache along with anyone else who is
+    // waiting.
     try {
-        auto units = co_await ss::get_units(_cleanup_sm, 1);
-
-        if (_last_trim_carryover.has_value()) {
-            // Slow path: try to run carryover trim if we have data
-            // from the previous trim.
-
-            auto short_term_hydrations_estimate
-              = config::shard_local_cfg().cloud_storage_max_connections()
-                * ss::smp::count;
-
-            // Here we're trying to estimate how much space do we need to
-            // free to allow all TS resources to be used again to download
-            // data from S3. This is only a crude estimate.
-            auto trim_bytes = std::min(
-              config::shard_local_cfg().log_segment_size()
-                * short_term_hydrations_estimate / 3,
-              _max_bytes);
-            auto trim_objects = std::min(
-              short_term_hydrations_estimate * 3, _max_objects());
-
-            vlog(
-              cst_log.debug,
-              "Carryover trim list has {} elements, trying to remove {} bytes "
-              "and {} objects",
-              _last_trim_carryover->size(),
-              human::bytes(trim_bytes),
-              trim_objects);
-
-            co_await trim_carryover(trim_bytes, trim_objects);
-        } else {
-            vlog(cst_log.debug, "Carryover trim list is empty");
-        }
-
-        // Slowest path: register a pending need for bytes that will be used in
-        // clean_up_cache to make space available, and then proceed to
-        // cooperatively call clean_up_cache along with anyone else who is
-        // waiting.
         _reservations_pending += bytes;
         _reservations_pending_objects += objects;
 
