@@ -2369,8 +2369,8 @@ configuration::configuration()
       "next, and allows cache to quickly unblock readers before starting the "
       "directory inspection.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      // This roughly translates to around 4000 carryover file names
-      1_MiB)
+      // This roughly translates to around 1000 carryover file names
+      256_KiB)
   , cloud_storage_cache_check_interval_ms(
       *this,
       "cloud_storage_cache_check_interval",
