@@ -536,57 +536,55 @@ private:
             // exception and let the caller deal with it. If the caller doesn't
             // handle it it leads to a closed kafka connection which the
             // end clients retry.
-            if (
-              cur.error() == error_outcome::out_of_range
-              && ss::visit(
-                query,
-                [&](model::offset) {
-                    vassert(
-                      false,
-                      "Unreachable code. Remote partition doesn't know how to "
-                      "handle model::offset queries.");
-                    return false;
-                },
-                [&](kafka::offset query_offset) {
-                    // Bug or retention racing with the query.
-                    const auto log_start_offset
-                      = _partition->_manifest_view->stm_manifest()
-                          .full_log_start_kafka_offset();
+            if (cur.error() == error_outcome::out_of_range) {
+                ss::visit(
+                  query,
+                  [&](model::offset) {
+                      vassert(
+                        false,
+                        "Unreachable code. Remote partition doesn't know how "
+                        "to "
+                        "handle model::offset queries.");
+                  },
+                  [&](kafka::offset query_offset) {
+                      // Bug or retention racing with the query.
+                      const auto log_start_offset
+                        = _partition->_manifest_view->stm_manifest()
+                            .full_log_start_kafka_offset();
 
-                    if (log_start_offset && query_offset < *log_start_offset) {
-                        vlog(
-                          _ctxlog.warn,
-                          "Manifest query below the log's start Kafka offset: "
-                          "{} < {}",
-                          query_offset(),
-                          log_start_offset.value()());
-                    }
-                    return false;
-                },
-                [&](model::timestamp query_ts) {
-                    // Special case, it can happen when a timequery falls below
-                    // the clean offset. Caused when the query races with
-                    // retention/gc.
-                    auto const& spillovers = _partition->_manifest_view
-                                               ->stm_manifest()
-                                               .get_spillover_map();
+                      if (
+                        log_start_offset && query_offset < *log_start_offset) {
+                          vlog(
+                            _ctxlog.warn,
+                            "Manifest query below the log's start Kafka "
+                            "offset: "
+                            "{} < {}",
+                            query_offset(),
+                            log_start_offset.value()());
+                      }
+                  },
+                  [&](model::timestamp query_ts) {
+                      // Special case, it can happen when a timequery falls
+                      // below the clean offset. Caused when the query races
+                      // with retention/gc.
+                      auto const& spillovers = _partition->_manifest_view
+                                                 ->stm_manifest()
+                                                 .get_spillover_map();
 
-                    bool timestamp_inside_spillover
-                      = query_ts() <= spillovers.get_max_timestamp_column()
-                                        .last_value()
-                                        .value_or(model::timestamp::min()());
+                      bool timestamp_inside_spillover
+                        = query_ts() <= spillovers.get_max_timestamp_column()
+                                          .last_value()
+                                          .value_or(model::timestamp::min()());
 
-                    if (timestamp_inside_spillover) {
-                        vlog(
-                          _ctxlog.debug,
-                          "Manifest query raced with retention and the result "
-                          "is below the clean/start offset for {}",
-                          query_ts);
-                    }
-                    return false;
-                })) {
-                // error was handled
-                co_return;
+                      if (timestamp_inside_spillover) {
+                          vlog(
+                            _ctxlog.debug,
+                            "Manifest query raced with retention and the "
+                            "result "
+                            "is below the clean/start offset for {}",
+                            query_ts);
+                      }
+                  });
             }
 
             throw std::runtime_error(fmt::format(
