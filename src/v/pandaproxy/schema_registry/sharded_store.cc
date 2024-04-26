@@ -364,6 +364,11 @@ sharded_store::get_subjects(include_deleted inc_del) {
     co_return co_await _store.map_reduce0(map, subjects{}, reduce);
 }
 
+ss::future<bool> sharded_store::has_subjects(include_deleted inc_del) {
+    auto map = [inc_del](store& s) { return s.has_subjects(inc_del); };
+    return _store.map_reduce0(map, false, std::logical_or<>{});
+}
+
 ss::future<std::vector<schema_version>>
 sharded_store::get_versions(subject sub, include_deleted inc_del) {
     auto sub_shard{shard_for(sub)};

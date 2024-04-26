@@ -87,6 +87,9 @@ public:
     ///\brief Return a list of subjects.
     ss::future<chunked_vector<subject>> get_subjects(include_deleted inc_del);
 
+    ///\brief Return whether there are any subjects.
+    ss::future<bool> has_subjects(include_deleted inc_del);
+
     ///\brief Return a list of versions and associated schema_id.
     ss::future<std::vector<schema_version>>
     get_versions(subject sub, include_deleted inc_del);
