@@ -438,7 +438,14 @@ FIXTURE_TEST(test_scan_by_kafka_offset_truncated, cloud_storage_fixture) {
       *this, model::offset(6), model::offset_delta(3), batch_types);
     print_segments(segments);
     for (int i = 0; i <= 2; i++) {
-        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), false));
+        BOOST_REQUIRE_EXCEPTION(
+          check_fetch(*this, kafka::offset(i), false),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(
+                       "Failed to query spillover manifests")
+                     != std::string::npos;
+          });
     }
     for (int i = 3; i <= 8; i++) {
         BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 9 - i));
@@ -490,7 +497,14 @@ FIXTURE_TEST(
     auto segments = setup_s3_imposter(
       *this, model::offset(6), model::offset_delta(3), batch_types);
     print_segments(segments);
-    BOOST_REQUIRE(check_fetch(*this, kafka::offset(2), false));
+    BOOST_REQUIRE_EXCEPTION(
+      check_fetch(*this, kafka::offset(2), false),
+      std::runtime_error,
+      [](const std::runtime_error& e) {
+          return std::string(e.what()).find(
+                   "Failed to query spillover manifests")
+                 != std::string::npos;
+      });
     BOOST_REQUIRE(check_scan(*this, kafka::offset(3), 1));
     BOOST_REQUIRE(check_fetch(*this, kafka::offset(3), true));
     BOOST_REQUIRE(check_scan(*this, kafka::offset(4), 0));
@@ -538,7 +552,14 @@ FIXTURE_TEST(
       *this, model::offset(6), model::offset_delta(0), batch_types);
     print_segments(segments);
     for (int i = 0; i < 6; i++) {
-        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), false));
+        BOOST_REQUIRE_EXCEPTION(
+          check_fetch(*this, kafka::offset(i), false),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(
+                       "Failed to query spillover manifests")
+                     != std::string::npos;
+          });
     }
     BOOST_REQUIRE(check_scan(*this, kafka::offset(6), 1));
     BOOST_REQUIRE(check_fetch(*this, kafka::offset(6), true));
@@ -1243,12 +1264,14 @@ FIXTURE_TEST(
         vlog(test_log.debug, "Creating new reader {}", reader_config);
 
         // After truncation reading from the old end should be impossible
-        auto reader = partition->make_reader(reader_config).get().reader;
-        auto headers_read
-          = reader.consume(counting_batch_consumer(100), model::no_timeout)
-              .get();
-
-        BOOST_REQUIRE(headers_read.size() == 0);
+        BOOST_REQUIRE_EXCEPTION(
+          partition->make_reader(reader_config).get(),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(
+                       "Failed to query spillover manifests")
+                     != std::string::npos;
+          });
     }
 }
 

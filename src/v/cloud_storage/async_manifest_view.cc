@@ -43,6 +43,7 @@
 #include <exception>
 #include <functional>
 #include <iterator>
+#include <optional>
 #include <system_error>
 #include <variant>
 
@@ -560,7 +561,8 @@ ss::future<> async_manifest_view::run_bg_loop() {
 ss::future<result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
 async_manifest_view::get_cursor(
   async_view_search_query_t query,
-  std::optional<model::offset> end_inclusive) noexcept {
+  std::optional<model::offset> end_inclusive,
+  cursor_base_t cursor_base) noexcept {
     try {
         ss::gate::holder h(_gate);
         if (
@@ -580,7 +582,14 @@ async_manifest_view::get_cursor(
         if (_stm_manifest.get_archive_start_offset() == model::offset{}) {
             begin = _stm_manifest.get_start_offset().value_or(begin);
         } else {
-            begin = _stm_manifest.get_archive_clean_offset();
+            switch (cursor_base) {
+            case cursor_base_t::archive_start_offset:
+                begin = _stm_manifest.get_archive_start_offset();
+                break;
+            case cursor_base_t::archive_clean_offset:
+                begin = _stm_manifest.get_archive_clean_offset();
+                break;
+            }
         }
 
         if (end < begin) {
@@ -958,7 +967,8 @@ async_manifest_view::offset_based_retention() noexcept {
     archive_start_offset_advance result;
     try {
         auto boundary = _stm_manifest.get_start_kafka_offset_override();
-        auto res = co_await get_cursor(boundary);
+        auto res = co_await get_cursor(
+          boundary, std::nullopt, cursor_base_t::archive_clean_offset);
         if (res.has_failure()) {
             if (res.error() == error_outcome::out_of_range) {
                 vlog(
@@ -1022,7 +1032,8 @@ async_manifest_view::time_based_retention(
 
         auto res = co_await get_cursor(
           _stm_manifest.get_archive_start_offset(),
-          model::prev_offset(_stm_manifest.get_start_offset().value()));
+          model::prev_offset(_stm_manifest.get_start_offset().value()),
+          cursor_base_t::archive_clean_offset);
         if (res.has_failure()) {
             if (res.error() == error_outcome::out_of_range) {
                 // The cutoff point is outside of the offset range, no need to
@@ -1148,7 +1159,8 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
 
             auto res = co_await get_cursor(
               _stm_manifest.get_archive_clean_offset(),
-              model::prev_offset(_stm_manifest.get_start_offset().value()));
+              model::prev_offset(_stm_manifest.get_start_offset().value()),
+              cursor_base_t::archive_clean_offset);
             if (res.has_failure()) {
                 vlogl(
                   _ctxlog,

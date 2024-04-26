@@ -455,8 +455,19 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
 
     model::offset so = model::offset{0};
     auto maybe_cursor = view.get_cursor(so).get();
+    BOOST_REQUIRE(
+      maybe_cursor.has_error()
+      && maybe_cursor.error() == cloud_storage::error_outcome::out_of_range);
+
     // The clean offset should still be accesible such that retention
     // can operate above it.
+    maybe_cursor = view
+                     .get_cursor(
+                       so,
+                       std::nullopt,
+                       cloud_storage::async_manifest_view::cursor_base_t::
+                         archive_clean_offset)
+                     .get();
     BOOST_REQUIRE(!maybe_cursor.has_failure());
 
     maybe_cursor = view.get_cursor(new_so).get();
