@@ -192,6 +192,15 @@ public:
         return res;
     }
 
+    ///\brief Return if there are subjects.
+    bool has_subjects(include_deleted inc_del) const {
+        return absl::c_any_of(_subjects, [inc_del](auto const& sub) {
+            return absl::c_any_of(
+              sub.second.versions,
+              [inc_del](auto const& v) { return inc_del || !v.deleted; });
+        });
+    }
+
     ///\brief Return a list of versions and associated schema_id.
     result<std::vector<schema_version>>
     get_versions(const subject& sub, include_deleted inc_del) const {
