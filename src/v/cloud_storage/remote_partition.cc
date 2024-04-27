@@ -1222,7 +1222,8 @@ remote_partition::timequery(storage::timequery_config cfg) {
     vlog(_ctxlog.debug, "timequery: {} batches", batches.size());
 
     if (batches.size()) {
-        co_return storage::batch_timequery(*(batches.begin()), cfg.time);
+        co_return storage::batch_timequery(
+          *(batches.begin()), cfg.min_offset, cfg.time, cfg.max_offset);
     } else {
         co_return std::nullopt;
     }

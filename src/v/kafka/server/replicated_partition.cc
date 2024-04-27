@@ -356,7 +356,8 @@ replicated_partition::timequery(storage::timequery_config cfg) {
     if (batches.empty()) {
         co_return std::nullopt;
     }
-    co_return storage::batch_timequery(*(batches.begin()), cfg.time);
+    co_return storage::batch_timequery(
+      *(batches.begin()), cfg.min_offset, cfg.time, cfg.max_offset);
 }
 
 ss::future<result<model::offset>> replicated_partition::replicate(

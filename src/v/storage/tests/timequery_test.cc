@@ -16,6 +16,8 @@
 
 #include <seastar/core/file.hh>
 
+#include <boost/test/tools/context.hpp>
+
 namespace {
 
 // Make a batch that is big enough to trigger the indexing threshold.
@@ -69,11 +71,35 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
         BOOST_TEST(seg->index().batch_timestamps_are_monotonic());
     }
 
+    BOOST_TEST_CONTEXT(
+      "undershoot the timestamp but keep increasing the start offset") {
+        auto log = b.get_log();
+        for (auto start_offset = log->offsets().start_offset;
+             start_offset < model::offset(10);
+             start_offset++) {
+            BOOST_TEST_INFO_SCOPE(
+              fmt::format("start_offset: {}", start_offset));
+
+            storage::timequery_config config(
+              start_offset,
+              model::timestamp(0),
+              log->offsets().dirty_offset,
+              ss::default_priority_class(),
+              std::nullopt);
+
+            auto res = log->timequery(config).get0();
+            BOOST_TEST(res);
+            BOOST_TEST(res->time == model::timestamp(start_offset));
+            BOOST_TEST(res->offset == start_offset);
+        }
+    }
+
     // in the first segment check that query(ts) -> batch.offset = ts.
     for (auto ts = 0; ts < 100; ts++) {
         auto log = b.get_log();
 
         storage::timequery_config config(
+          log->offsets().start_offset,
           model::timestamp(ts),
           log->offsets().dirty_offset,
           ss::default_priority_class(),
@@ -96,6 +122,7 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
         auto log = b.get_log();
 
         storage::timequery_config config(
+          log->offsets().start_offset,
           model::timestamp(ts),
           log->offsets().dirty_offset,
           ss::default_priority_class(),
@@ -107,6 +134,68 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
         BOOST_TEST(res);
         BOOST_TEST(res->time == model::timestamp(ts));
         BOOST_TEST(res->offset == model::offset(offset));
+    }
+
+    b | stop();
+}
+
+FIXTURE_TEST(timequery_multiple_messages_per_batch, log_builder_fixture) {
+    using namespace storage; // NOLINT
+
+    b | start();
+
+    b | add_segment(0);
+
+    int num_batches = 10;
+    int records_per_batch = 10;
+
+    // Half share the same timestamp.
+    for (auto ts = 0; ts < num_batches * records_per_batch / 2;
+         ts += records_per_batch) {
+        b
+          | add_batch(
+            model::test::make_random_batch(model::test::record_batch_spec{
+              .offset = model::offset(ts),
+              // It is sad but we can't properly query for timestamps inside
+              // compressed batches.
+              .allow_compression = false,
+              .count = records_per_batch,
+              .timestamp = model::timestamp(ts),
+              .all_records_have_same_timestamp = true,
+            }));
+    }
+
+    // Half have different timestamps.
+    for (auto ts = num_batches * records_per_batch / 2;
+         ts < num_batches * records_per_batch;
+         ts += records_per_batch) {
+        auto batch = make_random_batch(
+          model::offset(ts), model::timestamp(ts), records_per_batch);
+        b | add_batch(std::move(batch));
+    }
+
+    for (const auto& seg : b.get_log_segments()) {
+        BOOST_TEST(seg->index().batch_timestamps_are_monotonic());
+    }
+
+    auto log = b.get_log();
+
+    for (auto start_offset = log->offsets().start_offset;
+         start_offset < model::offset(num_batches * records_per_batch);
+         start_offset++) {
+        BOOST_TEST_INFO_SCOPE(fmt::format("start_offset: {}", start_offset));
+
+        storage::timequery_config config(
+          start_offset,
+          model::timestamp(0),
+          log->offsets().dirty_offset,
+          ss::default_priority_class(),
+          std::nullopt);
+
+        auto res = log->timequery(config).get0();
+        BOOST_TEST(res);
+        BOOST_TEST(res->time == model::timestamp(start_offset));
+        BOOST_TEST(res->offset == start_offset);
     }
 
     b | stop();
@@ -128,6 +217,7 @@ FIXTURE_TEST(timequery_single_value, log_builder_fixture) {
     // ask for time greater than last timestamp f.e 1200
     auto log = b.get_log();
     storage::timequery_config config(
+      log->offsets().start_offset,
       model::timestamp(1200),
       log->offsets().dirty_offset,
       ss::default_priority_class(),
@@ -169,6 +259,7 @@ FIXTURE_TEST(timequery_sparse_index, log_builder_fixture) {
 
     auto log = b.get_log();
     storage::timequery_config config(
+      log->offsets().start_offset,
       model::timestamp(1600),
       log->offsets().dirty_offset,
       ss::default_priority_class(),
@@ -201,6 +292,7 @@ FIXTURE_TEST(timequery_one_element_index, log_builder_fixture) {
 
     auto log = b.get_log();
     storage::timequery_config config(
+      log->offsets().start_offset,
       model::timestamp(1000),
       log->offsets().dirty_offset,
       ss::default_priority_class(),
@@ -248,6 +340,7 @@ FIXTURE_TEST(timequery_non_monotonic_log, log_builder_fixture) {
     auto log = b.get_log();
     for (const auto& [offset, ts] : batch_spec) {
         storage::timequery_config config(
+          log->offsets().start_offset,
           model::timestamp(ts),
           log->offsets().dirty_offset,
           ss::default_priority_class(),
@@ -273,6 +366,7 @@ FIXTURE_TEST(timequery_non_monotonic_log, log_builder_fixture) {
     // Query for a bogus, really small timestamp.
     // We should return the first element in the log
     storage::timequery_config config(
+      log->offsets().start_offset,
       model::timestamp(-5000),
       log->offsets().dirty_offset,
       ss::default_priority_class(),
@@ -313,6 +407,7 @@ FIXTURE_TEST(timequery_clamp, log_builder_fixture) {
 
     auto log = b.get_log();
     storage::timequery_config config(
+      log->offsets().start_offset,
       model::timestamp(storage::offset_time_index::delta_time_max * 2 + 1),
       log->offsets().dirty_offset,
       ss::default_priority_class(),
