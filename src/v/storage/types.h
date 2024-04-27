@@ -301,6 +301,8 @@ struct truncate_prefix_config {
     operator<<(std::ostream&, const truncate_prefix_config&);
 };
 
+using translate_offsets = ss::bool_class<struct translate_tag>;
+
 /**
  * Log reader configuration.
  *
@@ -312,9 +314,22 @@ struct truncate_prefix_config {
  * search when the size of the filter set is small (e.g. < 5). If you need to
  * use a larger filter then this design should be revisited.
  *
- * Start and max offset are inclusive.
+ * Start and max offset are inclusive. Because the reader only looks at batch
+ * headers the first batch may start before the start offset and the last batch
+ * may end after the max offset.
+ *
+ * Consider the following case:
+ *
+ *         cfg = {start offset = 14, max offset = 17}
+ *                    +                      +
+ *                    v                      v
+ *  //-------+-------------+------------+-------------+-------//
+ *  \\...9   |   10...14   |   15..15   |  16.....22  |  23...\\
+ *  //-------+-------------+------------+-------------+-------//
+ *           ^                                        ^
+ *           |                                        |
+ * The reader will actually return whole batches: [10, 14], [15, 15], [16, 22].
  */
-using translate_offsets = ss::bool_class<struct translate_tag>;
 struct log_reader_config {
     model::offset start_offset;
     model::offset max_offset;
