@@ -710,7 +710,7 @@ FIXTURE_TEST(test_local_timequery, e2e_fixture) {
         bool expect_value = false,
         std::optional<model::offset> expected_o = std::nullopt) {
           auto timequery_conf = storage::timequery_config(
-            t, o, ss::default_priority_class(), std::nullopt);
+            model::offset(0), t, o, ss::default_priority_class(), std::nullopt);
 
           auto result = partition->timequery(timequery_conf).get();
 
@@ -797,7 +797,7 @@ FIXTURE_TEST(test_cloud_storage_timequery, e2e_fixture) {
         bool expect_value = false,
         std::optional<model::offset> expected_o = std::nullopt) {
           auto timequery_conf = storage::timequery_config(
-            t, o, ss::default_priority_class(), std::nullopt);
+            model::offset(0), t, o, ss::default_priority_class(), std::nullopt);
 
           auto result = partition->timequery(timequery_conf).get();
 
@@ -903,7 +903,7 @@ FIXTURE_TEST(test_mixed_timequery, e2e_fixture) {
         bool expect_value = false,
         std::optional<model::offset> expected_o = std::nullopt) {
           auto timequery_conf = storage::timequery_config(
-            t, o, ss::default_priority_class(), std::nullopt);
+            model::offset(0), t, o, ss::default_priority_class(), std::nullopt);
 
           auto result = partition->timequery(timequery_conf).get();
 

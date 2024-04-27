@@ -9,8 +9,8 @@
 
 #pragma once
 
-#include "base/vassert.h"
 #include "model/fundamental.h"
+#include "vassert.h"
 
 namespace model {
 /// A non-empty, bounded, closed interval of offsets [min offset, max offset].

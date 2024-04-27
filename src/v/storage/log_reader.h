@@ -238,14 +238,33 @@ private:
 
 /**
  * Assuming caller has already determined that this batch contains
- * the record that should be the result to the timequery, traverse
- * the batch to find which record matches.
+ * the record that should be the result to the timequery (critical!),
+ * traverse the batch to find the record with with timestamp >= \ref t.
+ *
+ * The min and max offsets are used to limit the search to a specific
+ * range inside the batch. This is necessary to support the case where
+ * log was requested to be prefix-truncated (trim-prefix) to an offset
+ * which lies in the middle of a batch.
+ *
+ * If the preconditions aren't met, the result is the timestamp of the first
+ * record in the batch.
  *
  * This is used by both storage's disk_log_impl and by cloud_storage's
  * remote_partition, to seek to their final result after finding
  * the batch.
+ *
+ * To read more about trim-prefix:
+ * https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-trim-prefix/
+ *
+ * \param b The batch to search in.
+ * \param min_offset The minimum offset to consider
+ * \param t The timestamp to search for
+ * \param max_offset The maximum offset to consider
  */
-timequery_result
-batch_timequery(const model::record_batch& b, model::timestamp t);
+timequery_result batch_timequery(
+  const model::record_batch& b,
+  model::offset min_offset,
+  model::timestamp t,
+  model::offset max_offset);
 
 } // namespace storage

@@ -10,6 +10,8 @@
 #include "storage/log_reader.h"
 
 #include "bytes/iobuf.h"
+#include "model/fundamental.h"
+#include "model/offset_interval.h"
 #include "model/record.h"
 #include "storage/logger.h"
 #include "storage/parser_errc.h"
@@ -391,23 +393,28 @@ bool log_reader::is_done() {
            || is_finished_offset(_lease->range, _config.start_offset);
 }
 
-timequery_result
-batch_timequery(const model::record_batch& b, model::timestamp t) {
+timequery_result batch_timequery(
+  const model::record_batch& b,
+  model::offset min_offset,
+  model::timestamp t,
+  model::offset max_offset) {
+    auto query_interval = model::bounded_offset_interval::checked(
+      min_offset, max_offset);
+
     // If the timestamp matches something mid-batch, then
     // parse into the batch far enough to find it: this
     // happens when we had CreateTime input, such that
     // records in the batch have different timestamps.
     model::offset result_o = b.base_offset();
     model::timestamp result_t = b.header().first_timestamp;
-    if (b.header().first_timestamp < t && !b.compressed()) {
+    if (!b.compressed()) {
         b.for_each_record(
-          [&result_o, &result_t, t, &b](
+          [&result_o, &result_t, &b, query_interval, t](
             const model::record& r) -> ss::stop_iteration {
+              auto record_o = model::offset{r.offset_delta()} + b.base_offset();
               auto record_t = model::timestamp(
                 b.header().first_timestamp() + r.timestamp_delta());
-              if (record_t >= t) {
-                  auto record_o = model::offset{r.offset_delta()}
-                                  + b.base_offset();
+              if (record_t >= t && query_interval.contains(record_o)) {
                   result_o = record_o;
                   result_t = record_t;
                   return ss::stop_iteration::yes;
