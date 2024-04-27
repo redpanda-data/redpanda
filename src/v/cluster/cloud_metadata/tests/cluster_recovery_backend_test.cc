@@ -164,7 +164,8 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     cluster::random_tx_generator{}.run_workload(
       spec, remote_p->raft()->term(), remote_p->rm_stm(), remote_p->log());
 
-    for (const auto& [ntp, p] : app.partition_manager.local().partitions()) {
+    auto partitions = app.partition_manager.local().partitions();
+    for (const auto& [ntp, p] : partitions) {
         if (ntp == model::controller_ntp) {
             continue;
         }
@@ -178,6 +179,7 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
         archiver.upload_topic_manifest().get();
         archiver.upload_manifest("test").get();
     }
+    partitions.clear();
 
     // Write a controller snapshot and upload it.
     RPTEST_REQUIRE_EVENTUALLY(
@@ -257,8 +259,8 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
         auto topic_count
           = app.controller->get_topics_state().local().all_topics_count();
         ASSERT_LE(2, topic_count);
-        for (const auto& [ntp, p] :
-             app.partition_manager.local().partitions()) {
+        auto partitions = app.partition_manager.local().partitions();
+        for (const auto& [ntp, p] : partitions) {
             if (!model::is_user_topic(ntp)) {
                 continue;
             }
