@@ -712,7 +712,10 @@ private:
         }
 
         void forget(const model::producer_identity& pid) {
-            fence_pid_epoch.erase(pid.get_id());
+            auto it = fence_pid_epoch.find(pid.get_id());
+            if (it != fence_pid_epoch.end() && it->second == pid.get_epoch()) {
+                fence_pid_epoch.erase(pid.get_id());
+            }
             ongoing_map.erase(pid);
             prepared.erase(pid);
             erase_pid_from_seq_table(pid);
