@@ -149,6 +149,7 @@ public:
     ss::future<kafka::offset>
     offset_at_timestamp(model::timestamp ts, ss::abort_source* as) final {
         auto result = co_await _partition.timequery(storage::timequery_config(
+          _partition.start_offset(),
           ts,
           model::offset::max(),
           /*iop=*/wasm_read_priority(),
