@@ -799,6 +799,42 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
         assert num_consumed == should_be_consumed
 
+    @cluster(num_nodes=3)
+    def check_progress_after_fencing_test(self):
+        """Checks that a fencing producer makes progress after fenced producers are evicted."""
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': 'test',
+            'transaction.timeout.ms': 100000,
+        })
+
+        topic_name = self.topics[0].name
+
+        # create a pid, do not commit/abort transaction.
+        producer.init_transactions()
+        producer.begin_transaction()
+        producer.produce(topic_name, "0", "0", 0, self.on_delivery)
+        producer.flush()
+
+        # fence the above pid with another producer
+        producer0 = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': 'test',
+            'transaction.timeout.ms': 100000,
+        })
+        producer0.init_transactions()
+        producer0.begin_transaction()
+        producer0.produce(topic_name, "0", "0", 0, self.on_delivery)
+
+        max_concurrent_pids = 1
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("max_concurrent_producer_ids",
+                               str(max_concurrent_pids))
+        sleep(5)
+
+        producer0.commit_transaction()
+
 
 class GATransaction_MixedVersionsTest(RedpandaTest):
     def consume(self, consumer, max_records=10, timeout_s=2):
