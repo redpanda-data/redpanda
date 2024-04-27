@@ -8,7 +8,9 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/tests/random_batch.h"
+#include "model/timestamp.h"
 #include "storage/tests/disk_log_builder_fixture.h"
 #include "test_utils/fixture.h"
 
@@ -17,8 +19,11 @@
 namespace {
 
 // Make a batch that is big enough to trigger the indexing threshold.
-model::record_batch
-make_random_batch(model::offset o, bool big_enough_for_index = true) {
+model::record_batch make_random_batch(
+  model::offset o,
+  model::timestamp ts,
+  int num_records = 1,
+  bool big_enough_for_index = true) {
     auto batch_size = storage::segment_index::default_data_buffer_step + 1;
     if (!big_enough_for_index) {
         batch_size = 1024;
@@ -26,11 +31,11 @@ make_random_batch(model::offset o, bool big_enough_for_index = true) {
 
     return model::test::make_random_batch(
       model::offset(o),
-      1,
+      num_records,
       false,
       model::record_batch_type::raft_data,
-      std::vector<size_t>{batch_size},
-      std::nullopt);
+      std::vector<size_t>(num_records, batch_size),
+      ts);
 }
 
 } // namespace
@@ -43,23 +48,20 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
     // seg0: timestamps 0..99, offset = timestamp
     b | add_segment(0);
     for (auto ts = 0; ts < 100; ts++) {
-        auto batch = make_random_batch(model::offset(ts));
-        batch.header().first_timestamp = model::timestamp(ts);
-        batch.header().max_timestamp = model::timestamp(ts);
+        auto batch = make_random_batch(model::offset(ts), model::timestamp(ts));
         b | add_batch(std::move(batch));
     }
 
     // seg1: [(offset, ts)..]
     //  - (100, 100), (101, 100), ... (104, 100)
-    //  - (105, 101), (105, 101), ... (109, 101)
+    //  - (105, 101), (106, 101), ... (109, 101)
     //  ...
     //  - (195, 119), (196, 119), ... (200, 119)
     b | add_segment(100);
     for (auto offset = 100; offset <= 200; offset++) {
         auto ts = 100 + (offset - 100) / 5;
-        auto batch = make_random_batch(model::offset(offset));
-        batch.header().first_timestamp = model::timestamp(ts);
-        batch.header().max_timestamp = model::timestamp(ts);
+        auto batch = make_random_batch(
+          model::offset(offset), model::timestamp(ts));
         b | add_batch(std::move(batch));
     }
 
@@ -118,9 +120,8 @@ FIXTURE_TEST(timequery_single_value, log_builder_fixture) {
     // seg0: timestamps [1000...1099], offsets = [0...99]
     b | add_segment(0);
     for (auto offset = 0; offset < 100; ++offset) {
-        auto batch = make_random_batch(model::offset(offset));
-        batch.header().first_timestamp = model::timestamp(offset + 1000);
-        batch.header().max_timestamp = model::timestamp(offset + 1000);
+        auto batch = make_random_batch(
+          model::offset(offset), model::timestamp(offset + 1000));
         b | add_batch(std::move(batch));
     }
 
@@ -151,20 +152,15 @@ FIXTURE_TEST(timequery_sparse_index, log_builder_fixture) {
     b | start();
 
     b | add_segment(0);
-    auto batch1 = make_random_batch(model::offset(0));
-    batch1.header().first_timestamp = model::timestamp(1000);
-    batch1.header().max_timestamp = model::timestamp(1000);
+    auto batch1 = make_random_batch(model::offset(0), model::timestamp(1000));
     b | add_batch(std::move(batch1));
 
     // This batch will not be indexed.
-    auto batch2 = make_random_batch(model::offset(1), false);
-    batch2.header().first_timestamp = model::timestamp(1600);
-    batch2.header().max_timestamp = model::timestamp(1600);
+    auto batch2 = make_random_batch(
+      model::offset(1), model::timestamp(1600), 1, false);
     b | add_batch(std::move(batch2));
 
-    auto batch3 = make_random_batch(model::offset(2));
-    batch3.header().first_timestamp = model::timestamp(2000);
-    batch3.header().max_timestamp = model::timestamp(2000);
+    auto batch3 = make_random_batch(model::offset(2), model::timestamp(2000));
     b | add_batch(std::move(batch3));
 
     const auto& seg = b.get_log_segments().front();
@@ -195,9 +191,8 @@ FIXTURE_TEST(timequery_one_element_index, log_builder_fixture) {
 
     // This batch doesn't trigger the size indexing threshold,
     // but it's the first one so it gets indexed regardless.
-    auto batch = make_random_batch(model::offset(0), false);
-    batch.header().first_timestamp = model::timestamp(1000);
-    batch.header().max_timestamp = model::timestamp(1000);
+    auto batch = make_random_batch(
+      model::offset(0), model::timestamp(1000), 1, false);
     b | add_batch(std::move(batch));
 
     const auto& seg = b.get_log_segments().front();
@@ -242,9 +237,7 @@ FIXTURE_TEST(timequery_non_monotonic_log, log_builder_fixture) {
 
     b | add_segment(0);
     for (const auto& [offset, ts] : batch_spec) {
-        auto batch = make_random_batch(model::offset(offset));
-        batch.header().first_timestamp = model::timestamp(ts);
-        batch.header().max_timestamp = model::timestamp(ts);
+        auto batch = make_random_batch(offset, ts);
         b | add_batch(std::move(batch));
     }
 
@@ -310,9 +303,7 @@ FIXTURE_TEST(timequery_clamp, log_builder_fixture) {
 
     b | add_segment(0);
     for (const auto& [offset, ts] : batch_spec) {
-        auto batch = make_random_batch(model::offset(offset));
-        batch.header().first_timestamp = model::timestamp(ts);
-        batch.header().max_timestamp = model::timestamp(ts);
+        auto batch = make_random_batch(offset, ts);
         b | add_batch(std::move(batch));
     }
 
