@@ -9,8 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "cache.h"
-#include "page.h"
+#include "io/cache.h"
+#include "io/page.h"
 
 namespace experimental::io {
 

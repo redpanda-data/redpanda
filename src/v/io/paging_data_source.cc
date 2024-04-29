@@ -8,10 +8,10 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "paging_data_source.h"
+#include "io/paging_data_source.h"
 
 #include "base/vassert.h"
-#include "pager.h"
+#include "io/pager.h"
 
 #include <seastar/core/coroutine.hh>
 

@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include "page.h"
-#include "persistence.h"
+#include "io/page.h"
+#include "io/persistence.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>

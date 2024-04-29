@@ -10,9 +10,9 @@
  */
 #pragma once
 
-#include "cache.h"
-#include "page_set.h"
-#include "scheduler.h"
+#include "io/cache.h"
+#include "io/page_set.h"
+#include "io/scheduler.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/temporary_buffer.hh>
