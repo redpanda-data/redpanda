@@ -80,13 +80,6 @@ public:
     const chunk_map_t& chunk_map() const { return _chunks; }
 
 private:
-    // Attempts to download chunk into cache and return the file handle for
-    // segment_chunk. Should be retried if there is a failure due to cache
-    // eviction between download and opening the file handle.
-    ss::future<ss::file> do_hydrate_and_materialize(
-      chunk_start_offset_t chunk_start,
-      std::optional<uint16_t> prefetch_override = std::nullopt);
-
     // Periodically closes chunk file handles for the space to be reclaimable by
     // cache eviction. The chunks are evicted when they are no longer opened for
     // reading by any readers. We also take into account any readers that may
