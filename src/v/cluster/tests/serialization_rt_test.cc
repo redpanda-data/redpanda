@@ -92,7 +92,8 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
         .available_disk_gb = static_cast<uint32_t>(10000000000),
         .mount_paths = {"/", "/var/lib"},
         .etc_props = {{"max_segment_size", "1233451"}},
-        .available_memory_bytes = 1024 * 1_GiB});
+        .available_memory_bytes = 1024 * 1_GiB,
+        .in_fips_mode = true});
     auto d = serialize_roundtrip_rpc(std::move(b));
 
     BOOST_REQUIRE_EQUAL(d.id(), model::node_id(0));
@@ -111,6 +112,7 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
       d.properties().etc_props.find("max_segment_size")->second, "1233451");
     BOOST_CHECK(d.rack() == std::optional<ss::sstring>("test"));
     BOOST_REQUIRE_EQUAL(d.properties().available_memory_bytes, 1024 * 1_GiB);
+    BOOST_REQUIRE(d.properties().in_fips_mode);
 }
 
 SEASTAR_THREAD_TEST_CASE(partition_assignment_rt_test) {

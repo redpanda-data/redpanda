@@ -318,6 +318,10 @@
                 "maintenance_status": {
                     "type": "maintenance_status",
                     "description": "Node maintenance status"
+                },
+                "in_fips_mode": {
+                    "type": "boolean",
+                    "description": "indicates if node is operating in FIPS Mode"
                 }
             }
         },

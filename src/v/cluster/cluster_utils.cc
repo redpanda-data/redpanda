@@ -82,7 +82,8 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
         .cores = ss::smp::count,
         .available_memory_gb = total_mem_gb,
         .available_disk_gb = disk_gb,
-        .available_memory_bytes = total_mem});
+        .available_memory_bytes = total_mem,
+        .in_fips_mode = node_cfg.fips_mode()});
 }
 
 bool are_replica_sets_equal(

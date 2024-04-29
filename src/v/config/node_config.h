@@ -87,6 +87,15 @@ public:
     bounded_property<std::optional<std::chrono::seconds>>
       verbose_logging_timeout_sec_max;
 
+    // Flag indicating whether or not Redpanda will start in FIPS mode
+    property<bool> fips_mode;
+
+    // Path to the OpenSSL config file
+    property<std::optional<std::filesystem::path>> openssl_config_file;
+
+    // Path to the directory that holds the OpenSSL FIPS module
+    property<std::optional<std::filesystem::path>> openssl_module_directory;
+
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
         return data_directory().path / "pid.lock";
