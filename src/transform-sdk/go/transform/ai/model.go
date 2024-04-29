@@ -49,7 +49,7 @@ func LoadLargeLanguageModel(m HuggingFaceModel) (*LargeLanguageModel, error) {
 }
 
 // LoadEmbeddingsModel from hugging face
-func LoadEmbeddingsModel(m HuggingFaceModel) (*LargeLanguageModel, error) {
+func LoadEmbeddingsModel(m HuggingFaceModel) (*EmbeddingsModel, error) {
 	r := loadHfEmbeddings(
 		unsafe.Pointer(unsafe.StringData(m.Repo)),
 		int32(len(m.Repo)),
@@ -59,7 +59,7 @@ func LoadEmbeddingsModel(m HuggingFaceModel) (*LargeLanguageModel, error) {
 	if r < 0 {
 		return nil, errors.New("unable to load model, errorcode: " + strconv.Itoa(int(r)))
 	}
-	return &LargeLanguageModel{modelHandle(r)}, nil
+	return &EmbeddingsModel{modelHandle(r)}, nil
 }
 
 // Wrapper around LLM

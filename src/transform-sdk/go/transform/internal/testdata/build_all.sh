@@ -9,6 +9,7 @@ PKGS=(
   wasi
   dynamic
   llm-prompt-forward
+  make-embeddings
 )
 
 for PKG in "${PKGS[@]}"; do
