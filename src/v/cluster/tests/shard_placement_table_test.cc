@@ -114,6 +114,11 @@ public:
         }
         auto& rs = *rs_it->second;
         rs.pending_notifies += 1;
+        vlog(
+          clusterlog.trace,
+          "[{}] notify reconciliation, pending_notifies: {}",
+          ntp,
+          rs.pending_notifies);
         rs.wakeup_event.set();
         if (inserted) {
             ssx::background = reconcile_ntp_fiber(ntp, rs_it->second);
@@ -181,21 +186,35 @@ private:
 
     ss::future<>
     try_reconcile_ntp(const model::ntp& ntp, ntp_reconciliation_state& rs) {
+        size_t step = 0;
         while (!rs.is_reconciled() && !_gate.is_closed()) {
             size_t notifies = rs.pending_notifies;
             try {
+                // Check that we are not busy-looping with successful steps. In
+                // this mock reconciliation process we need max 3 steps:
+                // 1. delete previous log revision
+                // 2. create/transfer current log revision
+                // 3. control step to check that everything is reconciled
+                vassert(
+                  step <= 3,
+                  "[{}] too many reconciliation steps: {}",
+                  ntp,
+                  step);
+
                 auto res = co_await reconcile_ntp_step(ntp, rs);
                 if (res.has_value()) {
-                    if (res.value() == ss::stop_iteration::no) {
-                        continue;
-                    } else {
+                    if (res.value() == ss::stop_iteration::yes) {
                         vlog(
                           clusterlog.trace,
                           "[{}] reconciled, notify count: {}",
                           ntp,
                           notifies);
                         rs.mark_reconciled(notifies);
+                        step = 0;
+                    } else {
+                        step += 1;
                     }
+                    continue;
                 } else {
                     vlog(
                       clusterlog.trace,
