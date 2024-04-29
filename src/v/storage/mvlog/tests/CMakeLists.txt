@@ -5,6 +5,7 @@ rp_test(
   BINARY_NAME mvlog
   SOURCES
     batch_collector_test.cc
+    skipping_data_source_test.cc
   LIBRARIES
     v::gtest_main
     v::model
