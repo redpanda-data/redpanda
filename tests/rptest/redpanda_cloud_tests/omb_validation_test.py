@@ -75,6 +75,72 @@ class OMBValidationTest(RedpandaCloudTest):
         "endToEndLatency999pct": OMBSampleConfigurations.E2E_LATENCY_999PCT,
     }
 
+    def run_benchmark_with_retries(self, benchmark, max_retries):
+        for try_count in range(1, max_retries + 1):
+            self.logger.info(
+                f"Starting benchmark attempt {try_count}/{max_retries}.")
+            benchmark.start()
+            benchmark_time_min = benchmark.benchmark_time() + 5
+            benchmark.wait(timeout_sec=benchmark_time_min * 60)
+
+            is_valid, validation_results = benchmark.check_succeed(
+                raise_exceptions=False)
+            if is_valid:
+                self.logger.info(
+                    "Benchmark passed without significant latency issues.")
+                return True
+            else:
+                self.handle_failed_attempt(try_count, max_retries, benchmark,
+                                           validation_results)
+
+        return False
+
+    def handle_failed_attempt(self, try_count, max_retries, benchmark,
+                              validation_results):
+        self.logger.info(f"Benchmark test attempt {try_count} failed.")
+        for result in validation_results:
+            self.logger.info(f"Result is: {result}")
+
+        self.logger.info("Checking test results for possible latency spikes.")
+        latency_metrics = self.extract_latency_metrics(benchmark)
+        spikes_detected = benchmark.detect_spikes_by_percentile(
+            latency_metrics, self.expected_max_latencies())
+
+        if spikes_detected and try_count < max_retries:
+            self.logger.info(
+                f"Latency spikes detected. Preparing for attempt {try_count+1}/{max_retries}."
+            )
+            self.logger.info("Stopping and freeing worker nodes and retrying.")
+            benchmark.stop()
+            benchmark.clean()
+            benchmark.workers.free()
+        else:
+            self.logger.info(
+                "Persistent high latency detected or maximum retries reached. No further retries."
+            )
+            benchmark.check_succeed()
+
+    def extract_latency_metrics(self, benchmark):
+        latency_metrics = {
+            key: benchmark.metrics[key]
+            for key in self.LATENCY_SERIES_AND_MAX if key in benchmark.metrics
+        }
+        self.log_latency_metrics(latency_metrics)
+        return latency_metrics
+
+    def log_latency_metrics(self, latency_metrics):
+        self.logger.info("Latency metrics for spikes detection:")
+        for key, value in latency_metrics.items():
+            series_values = ", ".join(str(v) for v in value)
+            self.logger.info(f"{key}: [{series_values}]")
+
+    def expected_max_latencies(self):
+        return {
+            series_key: OMBValidationTest.EXPECTED_MAX_LATENCIES[config_key]
+            for series_key, config_key in
+            OMBValidationTest.LATENCY_SERIES_AND_MAX.items()
+        }
+
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         self._ctx = test_ctx
 
@@ -442,72 +508,8 @@ class OMBValidationTest(RedpandaCloudTest):
                                            topology="ensemble")
         # Latency spikes detection and retry
         max_retries = 2
+        self.run_benchmark_with_retries(benchmark, max_retries)
 
-        for try_count in range(1, max_retries + 1):
-            self.logger.info(
-                f"Starting benchmark attempt {try_count}/{max_retries}.")
-
-            # Run the benchmark test
-            benchmark.start()
-            benchmark_time_min = benchmark.benchmark_time() + 5
-            benchmark.wait(timeout_sec=benchmark_time_min * 60)
-
-            is_valid, validation_results = benchmark.check_succeed(
-                raise_exceptions=False)
-
-            if is_valid:
-                self.logger.info(
-                    "Benchmark passed without significant latency issues.")
-                break
-
-            else:
-                self.logger.info(f"Benchmark test attempt {try_count} failed.")
-                for result in validation_results:
-                    self.logger.info(f"Result is: {result}")
-                self.logger.info(
-                    "Checking test results for possible latency spikes.")
-                latency_metrics = {
-                    key: benchmark.metrics[key]
-                    for key in self.LATENCY_SERIES_AND_MAX
-                    if key in benchmark.metrics
-                }
-
-                self.logger.info("Latency metrics for spikes detection:")
-                for key, value in latency_metrics.items():
-                    # Assuming value is a list of latency values for each series
-                    series_values = ", ".join(str(v) for v in value)
-                    self.logger.info(f"{key}: [{series_values}]")
-
-                # Prepare the expected_max_latencies dictionary for spike detection
-                expected_max_latencies_for_detection = {
-                    series_key:
-                    OMBValidationTest.EXPECTED_MAX_LATENCIES[config_key]
-                    for series_key, config_key in
-                    OMBValidationTest.LATENCY_SERIES_AND_MAX.items()
-                }
-
-                spikes_detected = benchmark.detect_spikes_by_percentile(
-                    latency_metrics,
-                    expected_max_latencies=expected_max_latencies_for_detection
-                )
-
-                if spikes_detected and try_count < max_retries:
-                    self.logger.info(
-                        f"Latency spikes detected. Preparing for attempt {try_count+1}/{max_retries}."
-                    )
-
-                    ## TODO Need to release nodes for retry
-                    self.logger.info(
-                        "Here we should release nodes and retry Benchmark test"
-                    )
-                    ## Temp fail the test and be able to see logs
-                    break
-                else:
-                    self.logger.info(
-                        "Persistent high latency detected or maximum retries reached. No further retries."
-                    )
-                    benchmark.check_succeed()
-                    break
         self.redpanda.assert_cluster_is_reusable()
 
     @cluster(num_nodes=CLUSTER_NODES)
@@ -571,8 +573,7 @@ class OMBValidationTest(RedpandaCloudTest):
                                            driver, (workload, validator),
                                            num_workers=self.CLUSTER_NODES - 1,
                                            topology="ensemble")
-        benchmark.start()
-        benchmark_time_min = benchmark.benchmark_time() + 5
-        benchmark.wait(timeout_sec=benchmark_time_min * 60)
-        benchmark.check_succeed()
+
+        max_retries = 2
+        self.run_benchmark_with_retries(benchmark, max_retries)
         self.redpanda.assert_cluster_is_reusable()
