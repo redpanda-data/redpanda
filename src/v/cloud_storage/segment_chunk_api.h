@@ -73,6 +73,12 @@ public:
     iterator_t begin();
     iterator_t end();
 
+    /// Returns a map of chunk start offset to metadata. The map is initialized
+    /// once per remote segment, when the segment chunk API is started. The
+    /// contents of the map are fixed and contain one entry per chunk in the
+    /// segment.
+    const chunk_map_t& chunk_map() const { return _chunks; }
+
 private:
     // Attempts to download chunk into cache and return the file handle for
     // segment_chunk. Should be retried if there is a failure due to cache
