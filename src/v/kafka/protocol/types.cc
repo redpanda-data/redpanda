@@ -66,4 +66,17 @@ std::ostream& operator<<(std::ostream& os, describe_configs_type t) {
     return os << "{unsupported type}";
 }
 
+std::ostream&
+operator<<(std::ostream& os, describe_client_quotas_match_type t) {
+    switch (t) {
+    case describe_client_quotas_match_type::exact_name:
+        return os << "{exact_name}";
+    case describe_client_quotas_match_type::default_name:
+        return os << "{default_name}";
+    case describe_client_quotas_match_type::any_specified_name:
+        return os << "{any_specified_name}";
+    }
+    return os << "{unsupported type}";
+}
+
 } // namespace kafka

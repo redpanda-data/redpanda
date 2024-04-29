@@ -25,6 +25,7 @@
 
 #include <fmt/format.h>
 
+#include <limits>
 #include <optional>
 #include <type_traits>
 
@@ -71,6 +72,12 @@ public:
     uint32_t read_unsigned_varint() {
         auto [i, _] = _parser.read_unsigned_varint();
         return i;
+    }
+    float64_t read_float64() {
+        static_assert(
+          std::numeric_limits<float64_t>::is_iec559,
+          "Kafka float64 type should be IEEE 754 (IEC599)");
+        return std::bit_cast<float64_t>(read_int64());
     }
 
     static ss::sstring apply_control_validation(ss::sstring val) {
@@ -449,6 +456,13 @@ public:
         /// This type is not prepended with its size
         _out->append(uuid.view().data(), uuid::length);
         return uuid::length;
+    }
+
+    uint32_t write(float64_t v) {
+        static_assert(
+          std::numeric_limits<float64_t>::is_iec559,
+          "Kafka float64 type should be IEEE 754 (IEC599)");
+        return serialize_int<int64_t>(std::bit_cast<int64_t>(v));
     }
 
     uint32_t write(bytes_view bv) {

@@ -136,6 +136,12 @@ concept KafkaApi = requires(T request) {
     { T::min_flexible } -> std::convertible_to<const api_version&>;
 };
 
+// TODO: use std::float64_t from <stdfloat> when clang has it (not in 18)
+/// float64 Kafka protocol primitive type
+using float64_t = double;
+static_assert(
+  sizeof(float64_t) == 8, "Kafka float64 type should be 8 bytes long");
+
 /*
  * Data type of the configuration entry.
  */
@@ -155,5 +161,23 @@ enum class describe_configs_type : int8_t {
 std::ostream& operator<<(std::ostream&, describe_configs_type t);
 
 inline const kafka::protocol_type consumer_group_protocol_type("consumer");
+
+/*
+ * Data type for the match type of describe client quotas requests.
+ * DO NOT CHANGE the values of the enum variants, as they correspond to the set
+ * of match type values defined in the describe_client_quotas_request.json
+ * schemata.
+ */
+enum class describe_client_quotas_match_type : int8_t {
+    /// Return only values matching the specified match field
+    exact_name = 0,
+    /// Return only the default value (ignoring the match field)
+    default_name = 1,
+    /// Return only the specified values, that is everything but the default
+    /// value (ignoring the match field)
+    any_specified_name = 2,
+};
+
+std::ostream& operator<<(std::ostream&, describe_client_quotas_match_type t);
 
 } // namespace kafka

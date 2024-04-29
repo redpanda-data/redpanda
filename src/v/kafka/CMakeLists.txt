@@ -27,6 +27,8 @@ set(handlers_srcs
   server/handlers/describe_producers.cc
   server/handlers/describe_transactions.cc
   server/handlers/handler_probe.cc
+  server/handlers/alter_client_quotas.cc
+  server/handlers/describe_client_quotas.cc
 )
 
 v_cc_library(

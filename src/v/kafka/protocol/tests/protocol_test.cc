@@ -64,17 +64,21 @@ bytes invoke_franz_harness(
           }),
           boost::process::std_out > is);
 
-        /// If the program doesn't exit with success, issue is with test binary
-        /// fail hard as author should fix to account for diff in feature set
         c.wait();
-        vassert(
-          c.exit_code() == 0,
-          "kafka-request-generator exited with non-zero status");
 
         /// Capture data on stdout
         std::stringstream ss;
         ss << is.rdbuf();
         stdout = ss.str();
+
+        /// If the program doesn't exit with success, issue is with test binary
+        /// fail hard as author should fix to account for diff in feature set
+        vassert(
+          c.exit_code() == 0,
+          "kafka-request-generator exited with non-zero status, status: {}, "
+          "output: {}",
+          c.exit_code(),
+          stdout);
     }
     auto result = ss::uninitialized_string<bytes>(stdout.size());
     std::copy_n(stdout.begin(), stdout.size(), result.begin());

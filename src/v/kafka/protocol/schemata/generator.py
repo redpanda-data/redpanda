@@ -367,7 +367,12 @@ path_type_map = {
         "Topics": {
             "Partitions": ("model::partition_id", "int32"),
         }
-    }
+    },
+    "DescribeClientQuotasRequestData": {
+        "Components": {
+            "MatchType": ("kafka::describe_client_quotas_match_type", "int8"),
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -400,6 +405,7 @@ basic_type_map = dict(
     int16=("int16_t", "read_int16()"),
     int32=("int32_t", "read_int32()"),
     int64=("int64_t", "read_int64()"),
+    float64=("float64_t", "read_float64()"),
     uuid=("uuid", "read_uuid()"),
     iobuf=("iobuf", None, "read_fragmented_nullable_bytes()", None,
            "read_fragmented_nullable_flex_bytes()"),
@@ -435,6 +441,20 @@ struct_renames = {
 
     ("IncrementalAlterConfigsResponseData", "Responses"):
         ("AlterConfigsResourceResponse", "IncrementalAlterConfigsResourceResponse"),
+
+    ("AlterClientQuotasRequestData", "Entries"):
+        ("EntryData", "AlterClientQuotasRequestEntryData"),
+    ("AlterClientQuotasResponseData", "Entries"):
+        ("EntryData", "AlterClientQuotasResponseEntryData"),
+    ("DescribeClientQuotasResponseData", "Entries"):
+        ("EntryData", "DescribeClientQuotasResponseEntryData"),
+
+    ("AlterClientQuotasRequestData", "Entries", "Entity"):
+        ("EntityData", "AlterClientQuotasRequestEntityData"),
+    ("AlterClientQuotasResponseData", "Entries", "Entity"):
+        ("EntityData", "AlterClientQuotasResponseEntityData"),
+    ("DescribeClientQuotasResponseData", "Entries", "Entity"):
+        ("EntityData", "DescribeClientQuotasResponseEntityData"),
 }
 
 # extra header per type name
@@ -605,6 +625,11 @@ STRUCT_TYPES = [
     "DeleteRecordsPartition",
     "DeleteRecordsTopicResult",
     "DeleteRecordsPartitionResult",
+    "EntryData",
+    "EntityData",
+    "OpData",
+    "ComponentData",
+    "ValueData",
 ]
 
 DROP_STREAM_OPERATOR = [
