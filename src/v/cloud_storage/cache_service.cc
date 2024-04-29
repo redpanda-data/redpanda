@@ -13,9 +13,13 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/recursive_directory_walker.h"
+#include "config/configuration.h"
 #include "seastar/util/file.hh"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 #include "storage/segment.h"
+#include "utils/human.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
@@ -529,6 +533,99 @@ ss::future<> cache::trim(
     _last_trim_failed = false;
 }
 
+ss::future<cache::trim_result>
+cache::remove_segment_full(const file_list_item& file_stat) {
+    trim_result result;
+    try {
+        uint64_t this_segment_deleted_bytes{0};
+
+        auto deleted_parents = co_await delete_file_and_empty_parents(
+          file_stat.path);
+        result.deleted_size += file_stat.size;
+        this_segment_deleted_bytes += file_stat.size;
+        _current_cache_size -= file_stat.size;
+        _current_cache_objects -= 1;
+        result.deleted_count += 1;
+
+        // Determine whether we should delete indices along with the
+        // object we have just deleted
+        std::optional<std::string> tx_file;
+        std::optional<std::string> index_file;
+
+        if (RE2::FullMatch(file_stat.path.data(), segment_expr)) {
+            // If this was a legacy whole-segment item, delete the index
+            // and tx file along with the segment
+            tx_file = fmt::format("{}.tx", file_stat.path);
+            index_file = fmt::format("{}.index", file_stat.path);
+        } else if (deleted_parents) {
+            auto immediate_parent = std::string(
+              std::filesystem::path(file_stat.path).parent_path());
+            static constexpr std::string_view chunks_suffix{"_chunks"};
+            if (immediate_parent.ends_with(chunks_suffix)) {
+                // We just deleted the last chunk from a _chunks segment
+                // directory.  We may delete the index + tx state for
+                // that segment.
+                auto base_segment_path = immediate_parent.substr(
+                  0, immediate_parent.size() - chunks_suffix.size());
+                tx_file = fmt::format("{}.tx", base_segment_path);
+                index_file = fmt::format("{}.index", base_segment_path);
+            }
+        }
+
+        if (tx_file.has_value()) {
+            try {
+                auto sz = co_await ss::file_size(tx_file.value());
+                co_await ss::remove_file(tx_file.value());
+                result.deleted_size += sz;
+                this_segment_deleted_bytes += sz;
+                result.deleted_count += 1;
+                _current_cache_size -= sz;
+                _current_cache_objects -= 1;
+            } catch (std::filesystem::filesystem_error& e) {
+                if (e.code() != std::errc::no_such_file_or_directory) {
+                    throw;
+                }
+            }
+        }
+
+        if (index_file.has_value()) {
+            try {
+                auto sz = co_await ss::file_size(index_file.value());
+                co_await ss::remove_file(index_file.value());
+                result.deleted_size += sz;
+                this_segment_deleted_bytes += sz;
+                result.deleted_count += 1;
+                _current_cache_size -= sz;
+                _current_cache_objects -= 1;
+            } catch (std::filesystem::filesystem_error& e) {
+                if (e.code() != std::errc::no_such_file_or_directory) {
+                    throw;
+                }
+            }
+        }
+
+        // Remove key if possible to make sure there is no resource
+        // leak
+        _access_time_tracker.remove_timestamp(std::string_view(file_stat.path));
+
+        vlog(
+          cst_log.trace,
+          "trim: reclaimed(fast) {} bytes from {}",
+          this_segment_deleted_bytes,
+          file_stat.path);
+    } catch (const ss::gate_closed_exception&) {
+        // We are shutting down, stop iterating and propagate
+        throw;
+    } catch (const std::exception& e) {
+        vlog(
+          cst_log.error,
+          "trim: couldn't delete {}: {}.",
+          file_stat.path,
+          e.what());
+    }
+    co_return result;
+}
+
 ss::future<cache::trim_result> cache::trim_fast(
   const fragmented_vector<file_list_item>& candidates,
   uint64_t size_to_delete,
@@ -537,19 +634,17 @@ ss::future<cache::trim_result> cache::trim_fast(
 
     trim_result result;
 
-    size_t candidate_i = 0;
-    while (
-      candidate_i < candidates.size()
-      && (result.deleted_size < size_to_delete || result.deleted_count < objects_to_delete)) {
-        auto& file_stat = candidates[candidate_i++];
+    // Reset carryover list
+    _last_trim_carryover = std::nullopt;
 
+    auto need_to_skip = [this](const file_list_item& file_stat) {
         if (is_trim_exempt(file_stat.path)) {
-            continue;
+            return true;
         }
 
         // skip tmp files since someone may be writing to it
         if (std::string_view(file_stat.path).ends_with(tmp_extension)) {
-            continue;
+            return true;
         }
 
         // Doesn't make sense to demote these independent of the segment
@@ -558,97 +653,46 @@ ss::future<cache::trim_result> cache::trim_fast(
         if (
           std::string_view(file_stat.path).ends_with(".tx")
           || std::string_view(file_stat.path).ends_with(".index")) {
+            return true;
+        }
+        return false;
+    };
+
+    size_t candidate_i = 0;
+    while (
+      candidate_i < candidates.size()
+      && (result.deleted_size < size_to_delete || result.deleted_count < objects_to_delete)) {
+        auto& file_stat = candidates[candidate_i++];
+
+        if (need_to_skip(file_stat)) {
             continue;
         }
 
-        try {
-            uint64_t this_segment_deleted_bytes{0};
+        auto op_res = co_await this->remove_segment_full(file_stat);
+        result.deleted_count += op_res.deleted_count;
+        result.deleted_size += op_res.deleted_size;
+    }
 
-            auto deleted_parents = co_await delete_file_and_empty_parents(
-              file_stat.path);
-            result.deleted_size += file_stat.size;
-            this_segment_deleted_bytes += file_stat.size;
-            _current_cache_size -= file_stat.size;
-            _current_cache_objects -= 1;
-            result.deleted_count += 1;
-
-            // Determine whether we should delete indices along with the
-            // object we have just deleted
-            std::optional<std::string> tx_file;
-            std::optional<std::string> index_file;
-
-            if (RE2::FullMatch(file_stat.path.data(), segment_expr)) {
-                // If this was a legacy whole-segment item, delete the index
-                // and tx file along with the segment
-                tx_file = fmt::format("{}.tx", file_stat.path);
-                index_file = fmt::format("{}.index", file_stat.path);
-            } else if (deleted_parents) {
-                auto immediate_parent = std::string(
-                  std::filesystem::path(file_stat.path).parent_path());
-                static constexpr std::string_view chunks_suffix{"_chunks"};
-                if (immediate_parent.ends_with(chunks_suffix)) {
-                    // We just deleted the last chunk from a _chunks segment
-                    // directory.  We may delete the index + tx state for
-                    // that segment.
-                    auto base_segment_path = immediate_parent.substr(
-                      0, immediate_parent.size() - chunks_suffix.size());
-                    tx_file = fmt::format("{}.tx", base_segment_path);
-                    index_file = fmt::format("{}.index", base_segment_path);
-                }
-            }
-
-            if (tx_file.has_value()) {
-                try {
-                    auto sz = co_await ss::file_size(tx_file.value());
-                    co_await ss::remove_file(tx_file.value());
-                    result.deleted_size += sz;
-                    this_segment_deleted_bytes += sz;
-                    result.deleted_count += 1;
-                    _current_cache_size -= sz;
-                    _current_cache_objects -= 1;
-                } catch (std::filesystem::filesystem_error& e) {
-                    if (e.code() != std::errc::no_such_file_or_directory) {
-                        throw;
-                    }
-                }
-            }
-
-            if (index_file.has_value()) {
-                try {
-                    auto sz = co_await ss::file_size(index_file.value());
-                    co_await ss::remove_file(index_file.value());
-                    result.deleted_size += sz;
-                    this_segment_deleted_bytes += sz;
-                    result.deleted_count += 1;
-                    _current_cache_size -= sz;
-                    _current_cache_objects -= 1;
-                } catch (std::filesystem::filesystem_error& e) {
-                    if (e.code() != std::errc::no_such_file_or_directory) {
-                        throw;
-                    }
-                }
-            }
-
-            // Remove key if possible to make sure there is no resource
-            // leak
-            _access_time_tracker.remove_timestamp(
-              std::string_view(file_stat.path));
-
-            vlog(
-              cst_log.trace,
-              "trim: reclaimed(fast) {} bytes from {}",
-              this_segment_deleted_bytes,
-              file_stat.path);
-        } catch (const ss::gate_closed_exception&) {
-            // We are shutting down, stop iterating and propagate
-            throw;
-        } catch (const std::exception& e) {
-            vlog(
-              cst_log.error,
-              "trim: couldn't delete {}: {}.",
-              file_stat.path,
-              e.what());
+    ssize_t max_carryover_bytes
+      = config::shard_local_cfg()
+          .cloud_storage_cache_trim_carryover_bytes.value();
+    fragmented_vector<file_list_item> tmp;
+    auto estimated_size = std::min(
+      static_cast<size_t>(max_carryover_bytes),
+      candidates.size() - candidate_i);
+    tmp.reserve(estimated_size);
+    while (max_carryover_bytes > 0 && candidate_i < candidates.size()) {
+        const auto& fs = candidates[candidate_i++];
+        if (need_to_skip(fs)) {
+            continue;
         }
+        max_carryover_bytes -= static_cast<ssize_t>(
+          sizeof(fs) + fs.path.size());
+        tmp.push_back(fs);
+    }
+
+    if (!tmp.empty()) {
+        _last_trim_carryover = std::move(tmp);
     }
 
     co_return result;
@@ -668,6 +712,8 @@ ss::future<cache::trim_result>
 cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
     probe.exhaustive_trim();
     trim_result result;
+
+    _last_trim_carryover = std::nullopt;
 
     // Enumerate ALL files in the cache (as opposed to trim_fast that strips out
     // indices/tx/tmp files)
@@ -1228,6 +1274,115 @@ bool cache::may_exceed_limits(uint64_t bytes, size_t objects) {
            && !would_fit_in_cache;
 }
 
+ss::future<cache::trim_result>
+cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
+    // During the normal trim we're doing the recursive directory walk to
+    // generate a exhaustive list of files stored in the cache. If we store very
+    // large number of files in the cache this operation could take long time.
+    // We have a limit for number of objects that the cache could support but
+    // it's often set to relatively high value. Also, when we reach the object
+    // count limit the cache blocks all new 'put' operations because it doesn't
+    // allow any overallocation in this case.
+    //
+    // This creates a corner case when every trim is caused by the object count
+    // limit being reached. In this case the trim is blocking readers every
+    // time.
+    //
+    // The solution is to quickly delete objects without doing the full
+    // recursive directory walk and unblock the readers proactively allowing
+    // them object count to overshoot for very brief period of time. In order to
+    // be able to do this we need to have the list of candidates for deletion.
+    // Such list is stored in the _last_trim_carryover field. This is a list of
+    // files with oldest access times from the last directory walk. The
+    // carryover trim compares the access times from the carryover list to their
+    // actual access times from the access time tracker. All objects with
+    // matching access times wasn't accessed since the last trim and can be
+    // deleted. This doesn't change the LRU behavior since the
+    // _last_trim_carryover stores objects in LRU order.
+    trim_result result;
+    vlog(
+      cst_log.trace,
+      "trim carryover: list available {}",
+      _last_trim_carryover.has_value());
+
+    if (!_last_trim_carryover.has_value()) {
+        co_return result;
+    }
+    probe.carryover_trim();
+    auto it = _last_trim_carryover->begin();
+    for (; it < _last_trim_carryover->end(); it++) {
+        vlog(
+          cst_log.trace,
+          "carryover trim: check object {} ({})",
+          it->path,
+          it->size);
+        if (
+          result.deleted_size >= delete_bytes
+          && result.deleted_count >= delete_objects) {
+            vlog(
+              cst_log.trace,
+              "carryover trim: stop, deleted {} / {}, requested to delete {} / "
+              "{}",
+              human::bytes(result.deleted_size),
+              result.deleted_count,
+              human::bytes(delete_bytes),
+              delete_objects);
+            break;
+        }
+        auto& file_stat = *it;
+        // Don't hit access time tracker file/tmp
+        if (
+          is_trim_exempt(file_stat.path)
+          || std::string_view(file_stat.path).ends_with(tmp_extension)) {
+            continue;
+        }
+        // Both tx and index files are handled as part of the segment
+        // deletion.
+        if (
+          std::string_view(file_stat.path).ends_with(".tx")
+          || std::string_view(file_stat.path).ends_with(".index")) {
+            continue;
+        }
+        // Check that access time didn't change
+        auto rel_path = _cache_dir
+                        / std::filesystem::relative(
+                          std::filesystem::path(file_stat.path), _cache_dir);
+        auto estimate = _access_time_tracker.estimate_timestamp(
+          rel_path.native());
+        if (estimate != file_stat.access_time) {
+            vlog(
+              cst_log.trace,
+              "carryover file {} was accessed ({}) since the last trim ({}), "
+              "ignoring",
+              rel_path.native(),
+              estimate->time_since_epoch().count(),
+              file_stat.access_time.time_since_epoch().count());
+            // The file was accessed since we get the stats
+            continue;
+        }
+        auto op_res = co_await this->remove_segment_full(file_stat);
+        result.deleted_count += op_res.deleted_count;
+        result.deleted_size += op_res.deleted_size;
+    }
+    vlog(
+      cst_log.debug,
+      "carryover trim reclaimed {} bytes from {} files",
+      result.deleted_size,
+      result.deleted_count);
+
+    if (it == _last_trim_carryover->end()) {
+        _last_trim_carryover = std::nullopt;
+    } else {
+        fragmented_vector<file_list_item> tmp;
+        size_t estimate = _last_trim_carryover->end() - it;
+        tmp.reserve(estimate);
+        std::copy(it, _last_trim_carryover->end(), std::back_inserter(tmp));
+        _last_trim_carryover = std::move(tmp);
+    }
+
+    co_return result;
+}
+
 ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
     vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
 
@@ -1237,12 +1392,6 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
         _reserved_cache_objects += objects;
         co_return;
     }
-
-    // Slow path: register a pending need for bytes that will be used in
-    // clean_up_cache to make space available, and then proceed to cooperatively
-    // call clean_up_cache along with anyone else who is waiting.
-    _reservations_pending += bytes;
-    _reservations_pending_objects += objects;
 
     vlog(
       cst_log.trace,
@@ -1256,8 +1405,76 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
       _reservations_pending,
       _reservations_pending_objects);
 
+    auto units = co_await ss::get_units(_cleanup_sm, 1);
+
+    // Situation may change after a scheduling point. Another fiber could
+    // trigger carryover trim which released some resources. Exit early in this
+    // case.
+    if (may_reserve_space(bytes, objects)) {
+        _reserved_cache_size += bytes;
+        _reserved_cache_objects += objects;
+        co_return;
+    }
+
+    // Do not increment _reservations_pending* before carryover trim is
+    // completed.
+    if (_last_trim_carryover.has_value()) {
+        // Slow path: try to run carryover trim if we have data
+        // from the previous trim.
+
+        auto short_term_hydrations_estimate
+          = config::shard_local_cfg().cloud_storage_max_connections()
+            * ss::smp::count;
+
+        // Here we're trying to estimate how much space do we need to
+        // free to allow all TS resources to be used again to download
+        // data from S3. This is only a crude estimate.
+        auto trim_bytes = std::min(
+          config::shard_local_cfg().log_segment_size()
+            * short_term_hydrations_estimate / 3,
+          _max_bytes);
+        auto trim_objects = std::min(
+          short_term_hydrations_estimate * 3, _max_objects());
+
+        vlog(
+          cst_log.debug,
+          "Carryover trim list has {} elements, trying to remove {} bytes "
+          "and {} objects",
+          _last_trim_carryover->size(),
+          human::bytes(trim_bytes),
+          trim_objects);
+
+        co_await trim_carryover(trim_bytes, trim_objects);
+    } else {
+        vlog(cst_log.debug, "Carryover trim list is empty");
+    }
+
+    if (may_reserve_space(bytes, objects)) {
+        _reserved_cache_size += bytes;
+        _reserved_cache_objects += objects;
+        // Carryover trim released enough space for this fiber to continue. But
+        // we are starting the trim in the background to release more space and
+        // refresh the carryover list. Without this subsequent 'reserve_space'
+        // calls will be removing elements from the carryover list until it's
+        // empty. After that the blocking trim will be forced and the readers
+        // will be blocked for the duration of the trim. To avoid this we need
+        // to run trim  in the background even if the fiber is unblocked.
+        // We want number of full trims to match number of carryover trims.
+        vlog(cst_log.debug, "Spawning background trim_throttled");
+        ssx::spawn_with_gate(_gate, [this, u = std::move(units)]() mutable {
+            return trim_throttled().finally([u = std::move(u)] {});
+        });
+        co_return;
+    }
+
+    // Slowest path: register a pending need for bytes that will be used in
+    // clean_up_cache to make space available, and then proceed to
+    // cooperatively call clean_up_cache along with anyone else who is
+    // waiting.
     try {
-        auto units = co_await ss::get_units(_cleanup_sm, 1);
+        _reservations_pending += bytes;
+        _reservations_pending_objects += objects;
+
         while (!may_reserve_space(bytes, objects)) {
             bool may_exceed = may_exceed_limits(bytes, objects)
                               && _last_trim_failed;

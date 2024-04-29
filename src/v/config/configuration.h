@@ -434,6 +434,7 @@ struct configuration final : public config_store {
     bounded_property<std::optional<double>, numeric_bounds>
       cloud_storage_cache_size_percent;
     property<uint32_t> cloud_storage_cache_max_objects;
+    property<uint32_t> cloud_storage_cache_trim_carryover_bytes;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
     property<std::optional<uint32_t>>
       cloud_storage_max_segment_readers_per_shard;
