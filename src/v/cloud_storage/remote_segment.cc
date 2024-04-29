@@ -248,9 +248,10 @@ ss::future<> remote_segment::stop() {
         vlog(cst_log.error, "remote_segment {} stop operation stuck", path);
     });
 
-    vlog(_ctxlog.debug, "remote segment stop");
+    vlog(_ctxlog.debug, "remote segment stop: gate closing");
     _bg_cvar.broken();
     co_await _gate.close();
+    vlog(_ctxlog.debug, "remote segment stop: gate closed");
     if (_data_file) {
         co_await _data_file.close().handle_exception(
           [this](std::exception_ptr err) {
@@ -260,7 +261,9 @@ ss::future<> remote_segment::stop() {
     }
 
     if (_chunks_api) {
+        vlog(_ctxlog.debug, "waiting for chunk api to stop");
         co_await _chunks_api->stop();
+        vlog(_ctxlog.debug, "chunk api stopped");
     }
     _stopped = true;
 }
