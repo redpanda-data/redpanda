@@ -8,6 +8,7 @@ PKGS=(
   schema-registry
   wasi
   dynamic
+  llm-prompt-forward
 )
 
 for PKG in "${PKGS[@]}"; do

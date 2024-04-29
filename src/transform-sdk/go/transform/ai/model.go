@@ -86,6 +86,7 @@ func (llm *LargeLanguageModel) GenerateText(prompt string, opts GenerateTextOpti
 	if r < 0 {
 		return "", errors.New("unable to generate text, errorcode: " + strconv.Itoa(int(r)))
 	}
+	buf.AdvanceWriter(int(r))
 	b, err := buf.ReadSlice(int(r))
 	if err != nil {
 		return "", err
