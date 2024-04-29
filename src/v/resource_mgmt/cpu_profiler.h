@@ -89,6 +89,10 @@ public:
       std::chrono::milliseconds timeout, std::optional<ss::shard_id> shard_id);
 
 private:
+    // impl for the above
+    ss::future<>
+    collect_results_for_period_impl(std::chrono::milliseconds timeout);
+
     // Used to poll seastar at set intervals to capture all samples
     ss::timer<ss::lowres_clock> _query_timer;
     ss::gate _gate;
