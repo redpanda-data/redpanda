@@ -114,8 +114,10 @@ type cargoMetadata struct {
 
 func buildRust(ctx context.Context, fs afero.Fs, cfg project.Config, extraArgs []string) error {
 	cargo, err := exec.LookPath("cargo")
-	if err != nil {
-		return errors.New("cargo is not available on $PATH, please download and install it: https://rustup.rs/")
+	if errors.Is(err, exec.ErrNotFound) {
+		return fmt.Errorf("cargo is not available on $PATH, please download and install it: https://rustup.rs/")
+	} else if err != nil {
+		return fmt.Errorf("unable to lookup cargo executable: %v", err)
 	}
 	cmd := exec.CommandContext(ctx, cargo, "metadata", "--format-version=1")
 	var b bytes.Buffer
@@ -188,8 +190,10 @@ func createWatFromJavaScript(code []byte) string {
 
 func buildJavaScript(ctx context.Context, fs afero.Fs, cfg project.Config) error {
 	npm, err := exec.LookPath("npm")
-	if err != nil {
+	if errors.Is(err, exec.ErrNotFound) {
 		return fmt.Errorf("npm is not available on $PATH, please download and install it: https://nodejs.org/")
+	} else if err != nil {
+		return fmt.Errorf("unable to lookup npm executable: %v", err)
 	}
 	cmd := exec.CommandContext(ctx, npm, "run", "build")
 	cmd.Stderr = os.Stderr

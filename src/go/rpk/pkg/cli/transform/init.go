@@ -13,6 +13,7 @@ package transform
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -278,8 +279,10 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		fallthrough
 	case project.WasmLangTinygoWithGoroutines:
 		g, err := exec.LookPath("go")
-		if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
 			return fmt.Errorf("go is not available on $PATH, please download and install it: https://go.dev/doc/install")
+		} else if err != nil {
+			return fmt.Errorf("unable to lookup go executable: %v", err)
 		}
 		runGoCli := func(args ...string) error {
 			return runCli(g, args...)
@@ -296,15 +299,19 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		return nil
 	case project.WasmLangRust:
 		rustup, err := exec.LookPath("rustup")
-		if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
 			return fmt.Errorf("rustup is not available on $PATH, please download and install it: https://rustup.rs/")
+		} else if err != nil {
+			return fmt.Errorf("unable to lookup rustup executable: %v", err)
 		}
 		if err := runCli(rustup, "target", "add", "wasm32-wasi"); err != nil {
 			return fmt.Errorf("unable to install wasm toolchain: %v", err)
 		}
 		cargo, err := exec.LookPath("cargo")
-		if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
 			return fmt.Errorf("cargo is not available on $PATH, please download and install it: https://rustup.rs/")
+		} else if err != nil {
+			return fmt.Errorf("unable to lookup cargo executable: %v", err)
 		}
 		if err := runCli(cargo, "add", "redpanda-transform-sdk"); err != nil {
 			return fmt.Errorf("unable to add redpanda-transform-sdk crate: %v", err)
@@ -314,8 +321,10 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		fallthrough
 	case project.WasmLangTypeScript:
 		npm, err := exec.LookPath("npm")
-		if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
 			return fmt.Errorf("npm is not available on $PATH, please download and install it: https://nodejs.org/")
+		} else if err != nil {
+			return fmt.Errorf("unable to lookup npm executable: %v", err)
 		}
 		if err := runCli(npm, "install"); err != nil {
 			return fmt.Errorf("unable to install node modules: %v", err)
