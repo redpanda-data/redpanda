@@ -139,39 +139,67 @@ class KubectlTool:
     def logger(self) -> Logger:
         return self._redpanda.logger
 
-    def _local_cmd(self, cmd: list[str], capture=False):
+    def _local_captured(self, cmd: list[str]):
+        """Runs kubectl subcommands on a Cloud Agent
+        with streaming stdout and stderr to output
+
+        Args:
+            cmd (list[str]): kubectl commands to run
+
+        Raises:
+            RuntimeError: when return code is present
+
+        Yields:
+            Generator[str]: Generator of output line by line
+        """
+        self._redpanda.logger.info(cmd)
+        process = subprocess.Popen(cmd,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT)
+        return_code = process.returncode
+
+        if return_code:
+            raise RuntimeError(process.stdout, return_code)
+
+        for line in process.stdout:  # type: ignore
+            yield line
+
+        return
+
+    def _local_cmd(self, cmd: list[str]):
         """Run the given command locally and return the stdout as bytes.
            Logs stdout and stderr on failure."""
         self._redpanda.logger.info(cmd)
-        if capture:
-            process = subprocess.Popen(cmd,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.STDOUT)
-            return_code = process.returncode
-
-            if return_code:
-                raise RuntimeError(process.stdout, return_code)
-
-            for line in process.stdout:  # type: ignore
-                yield line
-
-            return
-        else:
-            try:
-                return subprocess.check_output(cmd, stderr=subprocess.PIPE)
-            except subprocess.CalledProcessError as e:
-                self.logger.info(
-                    f'Command failed (rc={e.returncode}).\n' +
-                    f'--------- stdout -----------\n{e.stdout.decode()}' +
-                    f'--------- stderr -----------\n{e.stderr.decode()}')
-                raise
+        try:
+            return subprocess.check_output(cmd, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            self.logger.warning(
+                f"Command failed '{cmd}' (rc={e.returncode}).\n" +
+                f"--------- stdout -----------\n{e.stdout.decode()}" +
+                f"--------- stderr -----------\n{e.stderr.decode()}")
+            raise
 
     def _ssh_cmd(self, cmd: list[str], capture=False):
         """Execute a command on a the remote node using ssh/tsh as appropriate."""
-        return self._local_cmd(self._ssh_prefix() + cmd, capture=capture)
+        local_cmd = self._ssh_prefix() + cmd
+        if capture:
+            return self._local_captured(local_cmd)
+        else:
+            return self._local_cmd(local_cmd)
 
     def cmd(self, kcmd: list[str] | str, capture=False):
         """Execute a kubectl command on the agent node.
+        Capture mode streams data from process stdout via Generator
+        Non-capture more returns whole output as a list
+
+        Args:
+            kcmd (list[str] | str): command to run on agent with kubectl
+            capture (bool, optional): Whether return whole result or
+                                      iterate line by line. Defaults to False.
+
+        Returns:
+            list[str / bytes]: Return is either a whole lines list
+                or a Generator with lines as items
         """
         # prepare
         self._install()

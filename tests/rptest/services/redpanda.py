@@ -2187,8 +2187,9 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             logfile = os.path.join(dest, "agent.log")
             # Query journalctl to copy logs from
             with open(logfile, 'wb') as lfile:
-                for line in self.kubectl._cmd_capture(
-                        f"journalctl -u redpanda-agent -S '{since}'".split()):
+                for line in self.kubectl._ssh_cmd(
+                        f"journalctl -u redpanda-agent -S '{since}'".split(),
+                        capture=True):
                     lfile.writelines([line])
             return
 
@@ -2224,7 +2225,9 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # Collect-agent-logs
         self._context.logger.debug("Copying cloud agent logs...")
         sw = Stopwatch()
+        sw.start()
         copy_from_agent(f_start_time)
+        sw.stop()
         self.logger.info(sw.elapsedf("# Done log copy from agent"))
 
         # Collect pod logs
@@ -2233,9 +2236,11 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         params = []
         for pod in self.pods:
             params.append({"pod": pod, "s_time": f_start_time})
-        sw.reset()
+        sw.start()
         for name in pool.map(copy_from_pod, params):
-            self.logger.info(sw.elapsedf(f"# Done log copy for {name}"))
+            # Calculate time for this node
+            self.logger.info(
+                sw.elapsedf(f"# Done log copy for {name} (interim)"))
         return {}
 
 
