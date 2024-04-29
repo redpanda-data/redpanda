@@ -502,3 +502,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             self.logger.info(
                 f"Read {len(controller_records)} controller records from node {node.name} successfully"
             )
+            if log_viewer.has_controller_snapshot(node):
+                controller_snapshot = log_viewer.read_controller_snapshot(node)
+                self.logger.info(
+                    f"Read controller snapshot: {controller_snapshot} ")
