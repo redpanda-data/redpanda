@@ -99,7 +99,7 @@ class SimpleEndToEndTest(EndToEndTest):
                     FailureSpec(type=FailureSpec.FAILURE_KILL,
                                 length=0,
                                 node=node))
-                time.sleep(5)
+                time.sleep(10)
 
         (acks, wc_conf) = (-1, "true") if write_caching else (1, "false")
         # use small segment size to enable log eviction
