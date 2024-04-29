@@ -1,0 +1,6 @@
+option(WITH_SCCACHE "Distribute build with sccache." OFF)
+if(WITH_SCCACHE)
+    message(STATUS "Building with sccache")
+    set(CMAKE_C_COMPILER_LAUNCHER "sccache")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "sccache")
+endif(WITH_SCCACHE)
