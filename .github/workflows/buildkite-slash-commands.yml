@@ -11,6 +11,7 @@ on:
       - dt-command
       - microbench-command
       - publish-to-install-pack-command
+      - test-rc-pipeline-command
 
 jobs:
   run-build:
