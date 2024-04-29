@@ -32,6 +32,8 @@
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "container/fragmented_vector.h"
+#include "datalake/configuration.h"
+#include "datalake/parquet_uploader.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -1149,6 +1151,29 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
+
+    {
+        std::string_view topic_name = model::topic_view(
+          _parent.log()->config().ntp().tp.topic);
+        auto datalake_config = datalake::topic_config::get_config(topic_name);
+        if (datalake_config.has_value()) {
+            vlog(ctxlog.debug, "Uploading datalake segment {}", candidate);
+            datalake::parquet_uploader uploader(_parent.log());
+            bool success = co_await uploader.upload_parquet(
+              std::filesystem::path(path),
+              candidate,
+              get_bucket_name(),
+              _remote,
+              fib,
+              _rtclog);
+            if (!success) {
+                vlog(
+                  ctxlog.warn,
+                  "Failed to upload datalake segment {}",
+                  candidate);
+            }
+        }
+    }
 
     auto lazy_abort_source = cloud_storage::lazy_abort_source{
       [this]() { return upload_should_abort(); },

@@ -236,6 +236,7 @@ v_cc_library(
     v::cloud_storage
     v::features
     v::version
+    v::datalake
   )
 add_subdirectory(tests)
 add_subdirectory(cloud_metadata/tests)
