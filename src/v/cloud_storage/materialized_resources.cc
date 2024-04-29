@@ -177,7 +177,9 @@ materialized_resources::materialized_resources()
   , _throughput_shard_limit_config(
       config::shard_local_cfg().cloud_storage_max_throughput_per_shard.bind())
   , _relative_throughput(
-      config::shard_local_cfg().cloud_storage_throughput_limit_percent.bind()) {
+      config::shard_local_cfg().cloud_storage_throughput_limit_percent.bind())
+  , _cache_carryover_bytes(config::shard_local_cfg()
+                             .cloud_storage_cache_trim_carryover_bytes.bind()) {
     auto update_max_mem = [this]() {
         // Update memory capacity to accommodate new max number of segment
         // readers
@@ -202,6 +204,52 @@ materialized_resources::materialized_resources()
             return _manifest_cache->set_capacity(_manifest_meta_size());
         });
     });
+
+    if (ss::this_shard_id() == 0) {
+        // Take into account number of bytes used by cache carryover mechanism.
+        // The cache doesn't have access to 'materialized_resources' because
+        // otherwise it'd create a dependency cycle.
+        _carryover_units = _mem_units.try_get_units(_cache_carryover_bytes());
+        vlog(
+          cst_log.info,
+          "{} units reserved for cache trim carryover mechanism",
+          _carryover_units.has_value() ? _carryover_units->count() : 0);
+
+        _cache_carryover_bytes.watch([this] {
+            // We're using best effort approach here. Under memory pressure we
+            // might not be able to change reservation
+            auto current_units = _carryover_units.has_value()
+                                   ? _carryover_units->count()
+                                   : 0;
+            auto upd = _cache_carryover_bytes();
+            if (upd < current_units) {
+                // Free units that represent memory used by carryover cache
+                // trim. It's guaranteed that optional is not null.
+                _carryover_units->return_units(current_units - upd);
+            } else {
+                // Acquire new units
+                auto tmp = _mem_units.try_get_units(upd - current_units);
+                if (tmp.has_value()) {
+                    if (_carryover_units.has_value()) {
+                        _carryover_units->adopt(std::move(tmp.value()));
+                    } else {
+                        _carryover_units = std::move(tmp.value());
+                    }
+                } else {
+                    vlog(
+                      cst_log.info,
+                      "Failed to reserve {} units for the cache carryover "
+                      "mechanism because tiered-storage is likely under memory "
+                      "pressure",
+                      upd - current_units);
+                }
+            }
+            vlog(
+              cst_log.info,
+              "{} units reserved for cache trim carryover mechanism",
+              _carryover_units.has_value() ? _carryover_units->count() : 0);
+        });
+    }
 
     auto reset_tp = [this] {
         ssx::spawn_with_gate(_gate, [this] { return update_throughput(); });

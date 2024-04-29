@@ -119,6 +119,10 @@ public:
             })
           .get();
     }
+
+    void trim_carryover(uint64_t size_limit, uint64_t object_limit) {
+        sharded_cache.local().trim_carryover(size_limit, object_limit).get();
+    }
 };
 
 } // namespace cloud_storage

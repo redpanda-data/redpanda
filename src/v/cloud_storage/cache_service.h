@@ -177,6 +177,10 @@ public:
 
     uint64_t get_usage_bytes() { return _current_cache_size; }
 
+    uint64_t get_max_bytes() { return _max_bytes; }
+
+    uint64_t get_max_objects() { return _max_objects(); }
+
     /// Administrative trim, that specifies its own limits instead of using
     /// the configured limits (skips throttling, and can e.g. trim to zero bytes
     /// if they want to)
@@ -253,6 +257,10 @@ private:
     /// (only runs on shard 0)
     ss::future<> do_reserve_space(uint64_t, size_t);
 
+    /// Trim cache using results from the previous recursive directory walk
+    ss::future<trim_result>
+    trim_carryover(uint64_t delete_bytes, uint64_t delete_objects);
+
     /// Return true if the sum of used space and reserved space is far enough
     /// below max size to accommodate a new reservation of `bytes`
     /// (only runs on shard 0)
@@ -272,6 +280,11 @@ private:
     /// called on all shards by shard 0 when handling a disk space status
     /// update.
     void set_block_puts(bool);
+
+    /// Remove segment or chunk subdirectory with all its auxilary files (tx,
+    /// index)
+    ss::future<cache::trim_result>
+    remove_segment_full(const file_list_item& file_stat);
 
     std::filesystem::path _cache_dir;
     size_t _disk_size;
@@ -337,6 +350,9 @@ private:
     ss::condition_variable _block_puts_cond;
 
     friend class cache_test_fixture;
+
+    // List of probable deletion candidates from the last trim.
+    std::optional<fragmented_vector<file_list_item>> _last_trim_carryover;
 };
 
 } // namespace cloud_storage
