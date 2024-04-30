@@ -616,7 +616,9 @@ partition::timequery(storage::timequery_config cfg) {
 
     const bool may_answer_from_cloud
       = may_read_from_cloud()
-        && _cloud_storage_partition->bounds_timestamp(cfg.time);
+        && _cloud_storage_partition->bounds_timestamp(cfg.time)
+        && cfg.min_offset < kafka::offset_cast(
+             _cloud_storage_partition->next_kafka_offset());
 
     if (_raft->log()->start_timestamp() <= cfg.time) {
         // The query is ahead of the local data's start_timestamp: this
@@ -631,7 +633,8 @@ partition::timequery(storage::timequery_config cfg) {
           _raft->get_offset_translator_state()->from_log_offset(
             _raft->start_offset()),
           local_query_cfg.min_offset);
-        auto result = co_await local_timequery(local_query_cfg);
+        auto result = co_await local_timequery(
+          local_query_cfg, may_answer_from_cloud);
         if (result.has_value()) {
             co_return result;
         } else {
@@ -654,7 +657,7 @@ partition::timequery(storage::timequery_config cfg) {
               _raft->get_offset_translator_state()->from_log_offset(
                 _raft->start_offset()),
               local_query_cfg.min_offset);
-            co_return co_await local_timequery(local_query_cfg);
+            co_return co_await local_timequery(local_query_cfg, false);
         }
     }
 }
@@ -691,8 +694,8 @@ partition::cloud_storage_timequery(storage::timequery_config cfg) {
     co_return result;
 }
 
-ss::future<std::optional<storage::timequery_result>>
-partition::local_timequery(storage::timequery_config cfg) {
+ss::future<std::optional<storage::timequery_result>> partition::local_timequery(
+  storage::timequery_config cfg, bool allow_cloud_fallback) {
     vlog(clusterlog.debug, "timequery (raft) {} cfg(k)={}", _raft->ntp(), cfg);
 
     cfg.min_offset = _raft->get_offset_translator_state()->to_log_offset(
@@ -700,14 +703,12 @@ partition::local_timequery(storage::timequery_config cfg) {
     cfg.max_offset = _raft->get_offset_translator_state()->to_log_offset(
       cfg.max_offset);
 
+    vlog(clusterlog.debug, "timequery (raft) {} cfg(r)={}", _raft->ntp(), cfg);
+
     auto result = co_await _raft->timequery(cfg);
 
-    const bool may_answer_from_cloud
-      = may_read_from_cloud()
-        && _cloud_storage_partition->bounds_timestamp(cfg.time);
-
     if (result.has_value()) {
-        if (may_answer_from_cloud) {
+        if (allow_cloud_fallback) {
             // We need to test for cases in which we will fall back to querying
             // cloud storage.
             if (_raft->log()->start_timestamp() > cfg.time) {
@@ -761,7 +762,7 @@ partition::local_timequery(storage::timequery_config cfg) {
               _raft->log()->start_timestamp(),
               cfg.time);
 
-            if (may_answer_from_cloud) {
+            if (allow_cloud_fallback) {
                 // Even though we hit data with the desired timestamp, we
                 // cannot be certain that this is the _first_ batch with
                 // the desired timestamp: return null so that the caller
