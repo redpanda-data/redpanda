@@ -64,7 +64,9 @@ static ss::sstring to_string(const async_view_search_query_t& t) {
       t,
       [&](model::offset ro) { return ssx::sformat("[offset: {}]", ro); },
       [&](kafka::offset ko) { return ssx::sformat("[kafka offset: {}]", ko); },
-      [&](model::timestamp ts) { return ssx::sformat("[timestamp: {}]", ts); });
+      [&](const async_view_timestamp_query& ts) {
+          return ssx::sformat("{}", ts);
+      });
 }
 
 std::ostream& operator<<(std::ostream& s, const async_view_search_query_t& q) {
@@ -84,9 +86,27 @@ contains(const partition_manifest& m, const async_view_search_query_t& query) {
           return k >= m.get_start_kafka_offset()
                  && k < m.get_next_kafka_offset();
       },
-      [&](model::timestamp t) {
-          return m.size() > 0 && t >= m.begin()->base_timestamp
-                 && t <= m.last_segment()->max_timestamp;
+      [&](const async_view_timestamp_query& ts_query) {
+          if (m.size() == 0) {
+              return false;
+          }
+
+          auto kafka_start_offset = m.get_start_kafka_offset();
+          if (!kafka_start_offset.has_value()) {
+              return false;
+          }
+
+          auto kafka_last_offset = m.get_last_kafka_offset();
+          if (!kafka_last_offset.has_value()) {
+              return false;
+          }
+
+          auto range_overlaps = ts_query.min_offset <= kafka_last_offset.value()
+                                && ts_query.max_offset
+                                     >= kafka_start_offset.value();
+
+          return range_overlaps && ts_query.ts >= m.begin()->base_timestamp
+                 && ts_query.ts <= m.last_segment()->max_timestamp;
       });
 }
 
@@ -566,15 +586,7 @@ async_manifest_view::get_cursor(
   cursor_base_t cursor_base) noexcept {
     try {
         ss::gate::holder h(_gate);
-        if (
-          !in_archive(query) && !in_stm(query)
-          && !std::holds_alternative<model::timestamp>(query)) {
-            // The view should contain manifest below archive start in
-            // order to be able to perform retention and advance metadata.
-            vlog(
-              _ctxlog.debug,
-              "query {} is out of valid range",
-              to_string(query));
+        if (!in_archive(query) && !in_stm(query)) {
             co_return error_outcome::out_of_range;
         }
         model::offset begin;
@@ -853,7 +865,7 @@ bool async_manifest_view::in_archive(async_view_search_query_t o) {
                  && ko < _stm_manifest.get_start_kafka_offset().value_or(
                       kafka::offset::min());
       },
-      [this](model::timestamp ts) {
+      [this](async_view_timestamp_query ts_query) {
           // The condition for timequery is tricky. With offsets there is a
           // clear pivot point. The start_offset of the STM manifest separates
           // the STM region from the archive. With timestamps it's not as
@@ -861,8 +873,18 @@ bool async_manifest_view::in_archive(async_view_search_query_t o) {
           // and the first segment in the STM manifest. We need in_stm and
           // in_archive to be consistent with each other. To do this we can use
           // last timestamp in the archive as a pivot point.
-          return _stm_manifest.get_spillover_map().last_segment()->max_timestamp
-                 >= ts;
+          bool range_overlaps
+            = ts_query.min_offset
+                < _stm_manifest.get_start_kafka_offset().value_or(
+                  kafka::offset::min())
+              && ts_query.max_offset
+                   >= _stm_manifest.get_archive_start_kafka_offset();
+
+          return range_overlaps
+                 && _stm_manifest.get_spillover_map()
+                        .last_segment()
+                        ->max_timestamp
+                      >= ts_query.ts;
       });
 }
 
@@ -879,8 +901,9 @@ bool async_manifest_view::in_stm(async_view_search_query_t o) {
             kafka::offset::max());
           return ko >= sko;
       },
-      [this](model::timestamp ts) {
-          vlog(_ctxlog.debug, "Checking timestamp {} using timequery", ts);
+      [this](async_view_timestamp_query ts_query) {
+          vlog(
+            _ctxlog.debug, "Checking timestamp {} using timequery", ts_query);
           if (_stm_manifest.get_spillover_map().empty()) {
               // The STM manifest is empty, so the timestamp has to be directed
               // to the STM manifest.
@@ -891,8 +914,19 @@ bool async_manifest_view::in_stm(async_view_search_query_t o) {
           }
           // The last timestamp in the archive is used as a pivot point. See
           // description in in_archive.
-          return _stm_manifest.get_spillover_map().last_segment()->max_timestamp
-                 < ts;
+          bool range_overlaps
+            = ts_query.min_offset
+                <= _stm_manifest.get_last_kafka_offset().value_or(
+                  kafka::offset::min())
+              && ts_query.max_offset
+                   >= _stm_manifest.get_start_kafka_offset().value_or(
+                     kafka::offset::max());
+
+          return range_overlaps
+                 && _stm_manifest.get_spillover_map()
+                        .last_segment()
+                        ->max_timestamp
+                      < ts_query.ts;
       });
 }
 
@@ -1312,7 +1346,7 @@ async_manifest_view::get_materialized_manifest(
         }
         // query in not in the stm region
         if (
-          std::holds_alternative<model::timestamp>(q)
+          std::holds_alternative<async_view_timestamp_query>(q)
           && _stm_manifest.get_archive_start_offset() == model::offset{}) {
             vlog(_ctxlog.debug, "Using STM manifest for timequery {}", q);
             co_return std::ref(_stm_manifest);
@@ -1472,7 +1506,7 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
           }
           return -1;
       },
-      [&](model::timestamp t) {
+      [&](const async_view_timestamp_query& ts_query) {
           if (manifests.empty()) {
               return -1;
           }
@@ -1482,35 +1516,56 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
             "{}, last: {}",
             query,
             manifests.size(),
-            manifests.begin()->base_timestamp,
-            manifests.last_segment()->max_timestamp);
+            *manifests.begin(),
+            *manifests.last_segment());
 
-          auto first_manifest = manifests.begin();
-          auto base_t = first_manifest->base_timestamp;
           auto max_t = manifests.last_segment()->max_timestamp;
 
           // Edge cases
-          if (t < base_t || max_t == base_t) {
-              return 0;
-          } else if (t > max_t) {
+          if (ts_query.ts > max_t) {
               return -1;
           }
 
+          const auto& bo_col = manifests.get_base_offset_column();
+          const auto& co_col = manifests.get_committed_offset_column();
+          const auto& do_col = manifests.get_delta_offset_column();
+          const auto& de_col = manifests.get_delta_offset_end_column();
           const auto& bt_col = manifests.get_base_timestamp_column();
           const auto& mt_col = manifests.get_max_timestamp_column();
-          auto mt_it = mt_col.begin();
-          auto bt_it = bt_col.begin();
+
+          auto bo_it = bo_col.begin();
+          auto co_it = co_col.begin();
+          auto do_it = do_col.begin();
+          auto de_it = de_col.begin();
+          auto max_ts_it = mt_col.begin();
+          auto base_ts_it = bt_col.begin();
+
           int target_ix = -1;
-          while (!bt_it.is_end()) {
-              if (*mt_it >= t.value() || *bt_it > t.value()) {
+          while (!base_ts_it.is_end()) {
+              static constexpr int64_t min_delta = model::offset::min()();
+              auto d_begin = *do_it == min_delta ? 0 : *do_it;
+              auto d_end = *de_it == min_delta ? d_begin : *de_it;
+              auto bko = kafka::offset(*bo_it - d_begin);
+              auto cko = kafka::offset(*co_it - d_end);
+
+              auto range_overlaps = ts_query.min_offset <= cko
+                                    && ts_query.max_offset >= bko;
+
+              if (
+                range_overlaps
+                && (*max_ts_it >= ts_query.ts() || *base_ts_it > ts_query.ts())) {
                   // Handle case when we're overshooting the target
                   // (base_timestamp > t) or the case when the target is in the
                   // middle of the manifest (max_timestamp >= t)
-                  target_ix = static_cast<int>(bt_it.index());
+                  target_ix = static_cast<int>(base_ts_it.index());
                   break;
               }
-              ++bt_it;
-              ++mt_it;
+              ++bo_it;
+              ++co_it;
+              ++do_it;
+              ++de_it;
+              ++base_ts_it;
+              ++max_ts_it;
           }
           return target_ix;
       });
