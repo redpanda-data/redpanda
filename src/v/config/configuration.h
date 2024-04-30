@@ -589,6 +589,9 @@ struct configuration final : public config_store {
     property<bool> enable_mpx_extensions;
     bounded_property<uint64_t> virtual_cluster_min_producer_ids;
 
+    // temporary - to be deprecated
+    property<bool> unsafe_enable_consumer_offsets_delete_retention;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
