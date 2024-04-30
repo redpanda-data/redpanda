@@ -1117,7 +1117,8 @@ FIXTURE_TEST(test_async_manifest_view_timequery, async_manifest_view_fixture) {
 
     // Find exact matches for all segments
     for (const auto& meta : expected) {
-        auto target = meta.base_timestamp;
+        auto target = async_view_timestamp_query(
+          kafka::offset(0), meta.base_timestamp, kafka::offset::max());
         auto maybe_cursor = view.get_cursor(target).get();
         BOOST_REQUIRE(!maybe_cursor.has_failure());
         auto cursor = std::move(maybe_cursor.value());
@@ -1130,9 +1131,9 @@ FIXTURE_TEST(test_async_manifest_view_timequery, async_manifest_view_fixture) {
                 m.last_segment()->max_timestamp,
                 stm_manifest.begin()->base_timestamp,
                 stm_manifest.last_segment()->max_timestamp);
-              auto res = m.timequery(target);
+              auto res = m.timequery(target.ts);
               BOOST_REQUIRE(res.has_value());
-              BOOST_REQUIRE(res.value().base_timestamp == target);
+              BOOST_REQUIRE(res.value().base_timestamp == target.ts);
           })
           .get();
     }
@@ -1159,7 +1160,10 @@ FIXTURE_TEST(
     // that there is a gap between any two segments.
 
     for (const auto& meta : expected) {
-        auto target = model::timestamp(meta.base_timestamp.value() - 1);
+        auto target = async_view_timestamp_query(
+          kafka::offset(0),
+          model::timestamp(meta.base_timestamp() - 1),
+          kafka::offset::max());
         auto maybe_cursor = view.get_cursor(target).get();
         BOOST_REQUIRE(!maybe_cursor.has_failure());
         auto cursor = std::move(maybe_cursor.value());
@@ -1173,11 +1177,11 @@ FIXTURE_TEST(
                 m.last_segment()->max_timestamp,
                 stm_manifest.begin()->base_timestamp,
                 stm_manifest.last_segment()->max_timestamp);
-              auto res = m.timequery(target);
+              auto res = m.timequery(target.ts);
               BOOST_REQUIRE(res.has_value());
               BOOST_REQUIRE(
                 model::timestamp(res.value().base_timestamp.value() - 1)
-                == target);
+                == target.ts);
           })
           .get();
     }
