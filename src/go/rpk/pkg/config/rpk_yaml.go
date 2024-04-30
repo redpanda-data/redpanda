@@ -39,7 +39,7 @@ func defaultVirtualRpkYaml() (RpkYaml, error) {
 	path, _ := DefaultRpkYamlPath() // if err is non-nil, we fail in Write
 	y := RpkYaml{
 		fileLocation: path,
-		Version:      4,
+		Version:      5,
 		Profiles:     []RpkProfile{DefaultRpkProfile()},
 		CloudAuths:   []RpkCloudAuth{DefaultRpkCloudAuth()},
 	}
@@ -70,7 +70,7 @@ func DefaultRpkCloudAuth() RpkCloudAuth {
 
 func emptyVirtualRpkYaml() RpkYaml {
 	return RpkYaml{
-		Version: 4,
+		Version: 5,
 	}
 }
 
@@ -149,13 +149,14 @@ type (
 	}
 
 	RpkCloudCluster struct {
-		Namespace   string `json:"namespace" yaml:"namespace"`
-		ClusterID   string `json:"cluster_id" yaml:"cluster_id"`
-		ClusterName string `json:"cluster_name" yaml:"cluster_name"`
-		AuthOrgID   string `json:"auth_org_id" yaml:"auth_org_id"`
-		AuthKind    string `json:"auth_kind" yaml:"auth_kind"`
-		ClusterType string `json:"cluster_type" yaml:"cluster_type"`
-		ClusterURL  string `json:"cluster_url,omitempty" yaml:"cluster_url,omitempty"`
+		Namespace     string `json:"namespace" yaml:"namespace"`
+		ResourceGroup string `json:"resource_group" yaml:"resource_group"`
+		ClusterID     string `json:"cluster_id" yaml:"cluster_id"`
+		ClusterName   string `json:"cluster_name" yaml:"cluster_name"`
+		AuthOrgID     string `json:"auth_org_id" yaml:"auth_org_id"`
+		AuthKind      string `json:"auth_kind" yaml:"auth_kind"`
+		ClusterType   string `json:"cluster_type" yaml:"cluster_type"`
+		ClusterURL    string `json:"cluster_url,omitempty" yaml:"cluster_url,omitempty"`
 	}
 
 	// RpkCloudAuth is unique by name and org ID. We support multiple auths
@@ -413,9 +414,9 @@ func (y *RpkYaml) WriteAt(fs afero.Fs, path string) error {
 	return rpkos.ReplaceFile(fs, path, b, 0o644)
 }
 
-// FullName returns "namespace/cluster_name".
+// FullName returns "resource_group/cluster_name".
 func (c *RpkCloudCluster) FullName() string {
-	return fmt.Sprintf("%s/%s", c.Namespace, c.ClusterName)
+	return fmt.Sprintf("%s/%s", c.ResourceGroup, c.ClusterName)
 }
 
 // HasAuth returns if the cluster has the given auth.

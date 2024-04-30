@@ -85,7 +85,7 @@ const (
 	xkindGlobal           // configuration for rpk.yaml globals
 )
 
-const currentRpkYAMLVersion = 4
+const currentRpkYAMLVersion = 5
 
 type xflag struct {
 	path        string
@@ -943,6 +943,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		return nil, err
 	}
 
+	c.migrateProfileNamespace()                          // migrate old cloud_cluster.namespace to cloud_cluster.resource_group.
 	if err := c.promptDeleteOldRpkYaml(fs); err != nil { // delete auths with no org/orgID, and profiles with no auth
 		return nil, err
 	}
@@ -1663,6 +1664,21 @@ func (c *Config) addConfigToProfiles() {
 	}
 	for i := range c.rpkYamlActual.Profiles {
 		c.rpkYamlActual.Profiles[i].c = c
+	}
+}
+
+func (c *Config) migrateProfileNamespace() {
+	for i := range c.rpkYaml.Profiles {
+		if c.rpkYaml.Profiles[i].CloudCluster.Namespace != "" && c.rpkYaml.Profiles[i].CloudCluster.ResourceGroup == "" {
+			c.rpkYaml.Profiles[i].CloudCluster.ResourceGroup = c.rpkYaml.Profiles[i].CloudCluster.Namespace
+			c.rpkYaml.Profiles[i].CloudCluster.Namespace = ""
+		}
+	}
+	for i := range c.rpkYamlActual.Profiles {
+		if c.rpkYamlActual.Profiles[i].CloudCluster.Namespace != "" && c.rpkYamlActual.Profiles[i].CloudCluster.ResourceGroup == "" {
+			c.rpkYamlActual.Profiles[i].CloudCluster.ResourceGroup = c.rpkYamlActual.Profiles[i].CloudCluster.Namespace
+			c.rpkYamlActual.Profiles[i].CloudCluster.Namespace = ""
+		}
 	}
 }
 
