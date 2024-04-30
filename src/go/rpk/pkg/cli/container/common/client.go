@@ -14,6 +14,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/docker/docker/api/types/image"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -29,13 +31,13 @@ type Client interface {
 	ImagePull(
 		ctx context.Context,
 		ref string,
-		options types.ImagePullOptions,
+		options image.PullOptions,
 	) (io.ReadCloser, error)
 
 	ImageList(
 		ctx context.Context,
-		options types.ImageListOptions,
-	) ([]types.ImageSummary, error)
+		options image.ListOptions,
+	) ([]image.Summary, error)
 	ContainerCreate(
 		ctx context.Context,
 		config *container.Config,
@@ -48,7 +50,7 @@ type Client interface {
 	ContainerStart(
 		ctx context.Context,
 		containerID string,
-		options types.ContainerStartOptions,
+		options container.StartOptions,
 	) error
 
 	ContainerStop(
@@ -59,7 +61,7 @@ type Client interface {
 
 	ContainerList(
 		ctx context.Context,
-		options types.ContainerListOptions,
+		options container.ListOptions,
 	) ([]types.Container, error)
 
 	ContainerInspect(
@@ -70,7 +72,7 @@ type Client interface {
 	ContainerRemove(
 		ctx context.Context,
 		containerID string,
-		options types.ContainerRemoveOptions,
+		options container.RemoveOptions,
 	) error
 
 	NetworkCreate(

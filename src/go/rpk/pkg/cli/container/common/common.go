@@ -90,7 +90,7 @@ func GetExistingNodes(c Client) ([]*NodeState, error) {
 	ctx, _ := DefaultCtx()
 	containers, err := c.ContainerList(
 		ctx,
-		types.ContainerListOptions{
+		container.ListOptions{
 			All:     true,
 			Filters: filters,
 		},
