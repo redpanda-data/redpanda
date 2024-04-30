@@ -489,7 +489,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
 
     try {
         retry_chain_node fib(
-          _conf->manifest_upload_timeout,
+          _conf->manifest_upload_timeout(),
           _conf->cloud_storage_initial_backoff,
           &_rtcnode);
         retry_chain_logger ctxlog(archival_log, fib);
@@ -905,7 +905,7 @@ ss::future<
 ntp_archiver::download_manifest() {
     auto guard = _gate.hold();
     retry_chain_node fib(
-      _conf->manifest_upload_timeout,
+      _conf->manifest_upload_timeout(),
       _conf->cloud_storage_initial_backoff,
       &_rtcnode);
     cloud_storage::partition_manifest tmp(_ntp, _rev);
@@ -1059,7 +1059,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
     auto guard = _gate.hold();
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
-      _conf->manifest_upload_timeout,
+      _conf->manifest_upload_timeout(),
       _conf->cloud_storage_initial_backoff,
       &rtc.get());
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
@@ -1900,7 +1900,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           _ntp.path());
 
         auto deadline = ss::lowres_clock::now()
-                        + _conf->manifest_upload_timeout;
+                        + _conf->manifest_upload_timeout();
 
         std::optional<model::offset> manifest_clean_offset;
         if (
@@ -2089,7 +2089,7 @@ ntp_archiver::maybe_truncate_manifest() {
     const auto& m = manifest();
     for (const auto& meta : m) {
         retry_chain_node fib(
-          _conf->manifest_upload_timeout,
+          _conf->manifest_upload_timeout(),
           _conf->upload_loop_initial_backoff,
           &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
@@ -2118,12 +2118,12 @@ ntp_archiver::maybe_truncate_manifest() {
           "manifest, start offset before cleanup: {}",
           manifest().get_start_offset());
         retry_chain_node rc_node(
-          _conf->manifest_upload_timeout,
+          _conf->manifest_upload_timeout(),
           _conf->upload_loop_initial_backoff,
           &rtc);
         auto error = co_await _parent.archival_meta_stm()->truncate(
           adjusted_start_offset,
-          ss::lowres_clock::now() + _conf->manifest_upload_timeout,
+          ss::lowres_clock::now() + _conf->manifest_upload_timeout(),
           _as);
         if (error != cluster::errc::success) {
             vlog(
@@ -3023,7 +3023,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
           features::feature::cloud_metadata_cluster_recovery)
           ? _parent.highest_producer_id()
           : model::producer_id{};
-    auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout;
+    auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout();
     auto error = co_await _parent.archival_meta_stm()->add_segments(
       {meta},
       std::nullopt,
