@@ -92,8 +92,18 @@ class OMBSampleConfigurations:
         AVG_THROUGHPUT_MBPS: [gte(600)]
     }
 
-    def validate_metrics(metrics, validator):
-        """ Validates some predefined metrics rules against the metrics data and throws if any of the rules fail."""
+    def validate_metrics(metrics, validator, raise_exceptions=True):
+        """Validates some predefined metrics rules against the metrics data.
+    
+        Args:
+            metrics: The metrics to validate.
+            validator: A dictionary containing the validation rules.
+            raise_exceptions: If True, raises an exception when validation fails. If False, returns the validation results.
+        
+        Returns:
+            A tuple (is_valid, results), where is_valid is a boolean indicating if all metrics passed validation,
+            and results is a list of validation failures.
+        """
         assert len(validator) > 0, "At least one metric should be validated"
 
         results = []
@@ -107,7 +117,11 @@ class OMBSampleConfigurations:
                 if not rule[0](val):
                     results.append(kv_str(key, val) + rule[1])
 
-        assert len(results) == 0, str(results)
+        is_valid = len(results) == 0
+
+        if raise_exceptions and not is_valid:
+            assert is_valid, str(results)
+        return is_valid, results
 
     # ------ Driver configurations --------
     SIMPLE_DRIVER = {
