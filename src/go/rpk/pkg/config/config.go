@@ -23,6 +23,7 @@ const (
 	DefaultProxyPort     = 8082
 	DefaultAdminPort     = 9644
 	DefaultRPCPort       = 33145
+	DefaultConsolePort   = 8080
 	DefaultListenAddress = "0.0.0.0"
 	LoopbackIP           = "127.0.0.1"
 
