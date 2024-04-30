@@ -41,6 +41,14 @@ Wasmtime will execute the guest using an explicit stack, and switch back to the 
 functions can return futures. We tell the VM to switch back and then once we've switched back we tell Seastar's scheduler to re-schedule running the VM
 after the host function's future has resolved - the details here are in `invoke_async_host_fn` and `wasmtime_engine::_pending_host_function`.
 
+#### Caveats
+
+Wasmtime uses Unix signals extensively to implement specific behaviors (ie aborts in the VM), which has in the past caused issues with Seastar. 
+Seastar by default blocks (most) signals for all shards except shard0, and has different behaviors in debug mode when ASAN is enabled. To combat this
+we unblock all signals that Wasmtime needs on startup for all cores when Wasm is enabled. If Wasmtime changes the signals they use we will want to
+update our list of signals we force Seastar to unblock. Lastly, there are some complications with seastar::thread and it usage of `swapcontext` that
+can preserve signals and reblock them at times. Thankfully since we don't use seastar::thread much in production this isn't an issue in practice.
+
 ## Foreign Function Interface (FFI)
 
 WebAssembly on it's own is completely isolated/sandboxed and has no ability to interact with the host or outside. We have a small custom framework
