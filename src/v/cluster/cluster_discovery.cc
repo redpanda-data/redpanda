@@ -282,7 +282,7 @@ bool equal(
 }
 
 // Search for the current node's advertised RPC address in the seed_servers.
-// Precondition: emtpy_seed_starts_cluster=false
+// Precondition: empty_seed_starts_cluster=false
 // \return Index of this node in seed_servers list if found, or empty if
 // not.
 // \throw runtime_error if seed_servers is empty
