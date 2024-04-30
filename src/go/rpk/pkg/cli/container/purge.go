@@ -15,7 +15,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/profile"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -91,7 +92,7 @@ func purgeCluster(c common.Client) (purged bool, rerr error) {
 			err := c.ContainerRemove(
 				ctx,
 				name,
-				types.ContainerRemoveOptions{
+				container.RemoveOptions{
 					RemoveVolumes: true,
 					Force:         true,
 				},
