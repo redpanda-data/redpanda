@@ -124,22 +124,3 @@ type NamespacedCluster struct {
 	VCluster   VirtualCluster
 	IsVCluster bool
 }
-
-// FindNamespace finds a namespace by its ID, if it exists.
-func FindNamespace(nsID string, nss Namespaces) Namespace {
-	for _, ns := range nss {
-		if ns.ID == nsID {
-			return ns
-		}
-	}
-	return Namespace{}
-}
-
-// NamespaceForID lists all namespaces to find the namespace for the given ID.
-func (cl *Client) NamespaceForID(ctx context.Context, nsid string) (Namespace, error) {
-	nss, err := cl.Namespaces(ctx)
-	if err != nil {
-		return Namespace{}, fmt.Errorf("unable to request namespaces: %w", err)
-	}
-	return FindNamespace(nsid, nss), nil
-}

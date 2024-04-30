@@ -7,13 +7,14 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package namespace
+package resourcegroup
 
 import (
 	"fmt"
 	"os"
 
-	controlplanev1beta1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta1"
+	controlplanev1beta2 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta2"
+
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
@@ -34,7 +35,7 @@ func createCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:   "create [NAMES...]",
 		Args:  cobra.MinimumNArgs(1),
-		Short: "Create a Namespace in Redpanda Cloud",
+		Short: "Create a resource group in Redpanda Cloud",
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]createResponse{}); ok {
@@ -55,8 +56,8 @@ func createCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				exit1 bool
 			)
 			for _, name := range args {
-				n, err := cl.Namespace.CreateNamespace(cmd.Context(), connect.NewRequest(&controlplanev1beta1.CreateNamespaceRequest{
-					Namespace: &controlplanev1beta1.Namespace{
+				n, err := cl.ResourceGroup.CreateResourceGroup(cmd.Context(), connect.NewRequest(&controlplanev1beta2.CreateResourceGroupRequest{
+					ResourceGroup: &controlplanev1beta2.ResourceGroupCreate{
 						Name: name,
 					},
 				}))
@@ -64,7 +65,11 @@ func createCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					res = append(res, createResponse{Name: name, Error: err.Error()})
 					exit1 = true
 				} else {
-					res = append(res, createResponse{Name: n.Msg.Name, ID: n.Msg.Id})
+					if n.Msg.ResourceGroup == nil {
+						// unlikely, just being safe.
+						res = append(res, createResponse{Name: name, Error: fmt.Sprintf("error creating '%s'; unable to assign ID. Please report this bug to Redpanda Support.", name)})
+					}
+					res = append(res, createResponse{Name: n.Msg.ResourceGroup.Name, ID: n.Msg.ResourceGroup.Id})
 				}
 			}
 			if exit1 {
