@@ -536,6 +536,37 @@ struct convert<pandaproxy::schema_registry::schema_id_validation_mode> {
 };
 
 template<>
+struct convert<model::fetch_read_strategy> {
+    using type = model::fetch_read_strategy;
+
+    static constexpr auto acceptable_values = std::to_array(
+      {model::fetch_read_strategy_to_string(type::polling),
+       model::fetch_read_strategy_to_string(type::non_polling)});
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+
+        if (
+          std::find(acceptable_values.begin(), acceptable_values.end(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<type>(std::string_view{value})
+                .match(
+                  model::fetch_read_strategy_to_string(type::polling),
+                  type::polling)
+                .match(
+                  model::fetch_read_strategy_to_string(type::non_polling),
+                  type::non_polling);
+
+        return true;
+    }
+};
+
+template<>
 struct convert<model::write_caching_mode> {
     using type = model::write_caching_mode;
 

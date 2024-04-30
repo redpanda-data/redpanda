@@ -81,6 +81,9 @@ void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const model::leader_balancer_mode& v);
 
 void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::fetch_read_strategy& v);
+
+void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const model::write_caching_mode& v);
 
 void rjson_serialize(
