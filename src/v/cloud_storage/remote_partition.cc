@@ -553,7 +553,10 @@ private:
 
         async_view_search_query_t query;
         if (config.first_timestamp.has_value()) {
-            query = config.first_timestamp.value();
+            query = async_view_timestamp_query(
+              model::offset_cast(config.start_offset),
+              config.first_timestamp.value(),
+              model::offset_cast(config.max_offset));
         } else {
             // NOTE: config.start_offset actually contains kafka offset
             // stored using model::offset type.
@@ -603,7 +606,7 @@ private:
                             log_start_offset.value()());
                       }
                   },
-                  [&](model::timestamp query_ts) {
+                  [&](const async_view_timestamp_query& query_ts) {
                       // Special case, it can happen when a timequery falls
                       // below the clean offset. Caused when the query races
                       // with retention/gc.
@@ -612,9 +615,10 @@ private:
                                                  .get_spillover_map();
 
                       bool timestamp_inside_spillover
-                        = query_ts() <= spillovers.get_max_timestamp_column()
-                                          .last_value()
-                                          .value_or(model::timestamp::min()());
+                        = query_ts.ts()
+                          <= spillovers.get_max_timestamp_column()
+                               .last_value()
+                               .value_or(model::timestamp::min()());
 
                       if (timestamp_inside_spillover) {
                           vlog(
