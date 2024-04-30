@@ -853,6 +853,12 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             // add
             auto group = cur_group++;
             auto revision = cur_revision++;
+            vlog(
+              clusterlog.info,
+              "[{}] OP: add, group: {}, log revision: {}",
+              ntp,
+              group,
+              revision);
             co_await ntpt.invoke_on_all([&](ntp_table& ntpt) {
                 ntpt.ntp2meta[ntp] = ntp_table::ntp_meta{
                   .group = group,
@@ -876,9 +882,11 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
               {op_t::transfer, op_t::remove, op_t::increase_log_rev});
             switch (op) {
             case op_t::transfer:
+                vlog(clusterlog.info, "[{}] OP: reassign shard", ntp);
                 _shard_assigner->assign_eventually(ntp);
                 break;
             case op_t::remove: {
+                vlog(clusterlog.info, "[{}] OP: remove", ntp);
                 auto revision = cur_revision++;
                 co_await ntpt.invoke_on_all([&](ntp_table& ntpt) {
                     ntpt.ntp2meta.erase(ntp);
@@ -891,6 +899,11 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             }
             case op_t::increase_log_rev:
                 ntp_meta.log_revision = cur_revision++;
+                vlog(
+                  clusterlog.info,
+                  "[{}] OP: increase log revision to: {}",
+                  ntp,
+                  ntp_meta.log_revision);
                 co_await ntpt.invoke_on_all([&](ntp_table& ntpt) {
                     ntpt.ntp2meta[ntp] = ntp_meta;
                     ntpt.revision = ntp_meta.log_revision;
