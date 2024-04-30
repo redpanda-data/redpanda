@@ -14,7 +14,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -65,7 +66,7 @@ func purgeCluster(c common.Client) error {
 			err := c.ContainerRemove(
 				ctx,
 				name,
-				types.ContainerRemoveOptions{
+				container.RemoveOptions{
 					RemoveVolumes: true,
 					Force:         true,
 				},
