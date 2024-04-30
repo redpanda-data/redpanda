@@ -169,6 +169,9 @@ public:
 
     // getters
 
+    /// Must be called on assignment_shard_id.
+    std::optional<shard_placement_target> get_target(const model::ntp&) const;
+
     std::optional<placement_state> state_on_this_shard(const model::ntp&) const;
 
     const ntp2state_t& shard_local_states() const { return _states; }

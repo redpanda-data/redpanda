@@ -818,6 +818,19 @@ shard_placement_table::state_on_this_shard(const model::ntp& ntp) const {
     return std::nullopt;
 }
 
+std::optional<shard_placement_target>
+shard_placement_table::get_target(const model::ntp& ntp) const {
+    vassert(
+      ss::this_shard_id() == assignment_shard_id,
+      "method can only be invoked on shard {}",
+      assignment_shard_id);
+    auto it = _ntp2entry.find(ntp);
+    if (it != _ntp2entry.end()) {
+        return it->second->target;
+    }
+    return std::nullopt;
+}
+
 ss::future<std::error_code> shard_placement_table::prepare_create(
   const model::ntp& ntp, model::revision_id expected_log_rev) {
     // ensure that there is no concurrent enable_persistence() call
