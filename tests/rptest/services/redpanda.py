@@ -1977,7 +1977,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         :param remote_cmd: The command to run on the agent node.
         """
-        return self.kubectl._cmd(remote_cmd)
+        return self.kubectl._ssh_cmd(remote_cmd)
 
     def scale_cluster(self, nodes_count):
         """Scale out/in cluster to specified number of nodes.
