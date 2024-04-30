@@ -2758,10 +2758,12 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
                     r.dtos.push_back(cluster::diskcheck_opts::from_json(obj));
                 } else if (test_type == "network") {
                     r.ntos.push_back(cluster::netcheck_opts::from_json(obj));
+                } else if (test_type == "cloud") {
+                    r.ctos.push_back(cluster::cloudcheck_opts::from_json(obj));
                 } else {
                     throw ss::httpd::bad_param_exception(
-                      "Unknown self_test 'type', valid options are 'disk' or "
-                      "'network'");
+                      "Unknown self_test 'type', valid options are 'disk', "
+                      "'network', or 'cloud'.");
                 }
             }
         } else {
@@ -2769,6 +2771,7 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
             /// default arguments
             r.dtos.push_back(cluster::diskcheck_opts{});
             r.ntos.push_back(cluster::netcheck_opts{});
+            r.ctos.push_back(cluster::cloudcheck_opts{});
         }
     }
     try {
@@ -2849,6 +2852,7 @@ admin_server::self_test_get_results_handler(
         dbg_ns::self_test_node_report nr;
         nr.node_id = id;
         nr.status = cluster::self_test_status_as_string(participant.status());
+        nr.stage = cluster::self_test_stage_as_string(participant.stage());
         if (participant.response) {
             for (const auto& r : participant.response->results) {
                 nr.results.push(self_test_result_to_json(r));

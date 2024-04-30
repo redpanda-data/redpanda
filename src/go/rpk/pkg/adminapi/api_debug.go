@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	debugEndpoint          = "/v1/debug"
-	selfTestEndpoint       = debugEndpoint + "/self_test"
-	cpuProfilerEndpoint    = debugEndpoint + "/cpu_profile"
-	DiskcheckTagIdentifier = "disk"
-	NetcheckTagIdentifier  = "network"
+	debugEndpoint           = "/v1/debug"
+	selfTestEndpoint        = debugEndpoint + "/self_test"
+	cpuProfilerEndpoint     = debugEndpoint + "/cpu_profile"
+	DiskcheckTagIdentifier  = "disk"
+	NetcheckTagIdentifier   = "network"
+	CloudcheckTagIdentifier = "cloud"
 )
 
 // A SelfTestNodeResult describes the results of a particular self-test run.
@@ -52,10 +53,11 @@ type SelfTestNodeResult struct {
 type SelfTestNodeReport struct {
 	NodeID int `json:"node_id"`
 	// One of { "idle", "running", "unreachable" }
-	//
 	// If a status of idle is returned, the following `Results` variable will not
 	// be nil. In all other cases it will be nil.
 	Status string `json:"status"`
+	// One of { "idle", "net", "disk", "cloud" }
+	Stage string `json:"stage"`
 	// If value of `Status` is "idle", then this field will contain one result for
 	// each peer involved in the test. It represents the results of the last
 	// successful test run.
@@ -94,6 +96,18 @@ type NetcheckParameters struct {
 	DurationMs uint `json:"duration_ms"`
 	// Number of fibers per shard used to make network requests
 	Parallelism uint `json:"parallelism"`
+	// Filled in automatically by the \ref StartSelfTest method
+	Type string `json:"type"`
+}
+
+// CloudcheckParameters describes what parameters redpanda will use when starting the netcheck benchmark.
+type CloudcheckParameters struct {
+	/// Descriptive name given to test run
+	Name string `json:"name"`
+	// Timeout duration of a network request
+	TimeoutMs uint `json:"timeout_ms"`
+	// Backoff duration of a network request
+	BackoffMs uint `json:"backoff_ms"`
 	// Filled in automatically by the \ref StartSelfTest method
 	Type string `json:"type"`
 }

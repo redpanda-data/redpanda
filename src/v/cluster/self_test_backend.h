@@ -10,8 +10,10 @@
  */
 #pragma once
 
+#include "cloud_storage/remote.h"
 #include "cluster/node/local_monitor.h"
 #include "rpc/connection_cache.h"
+#include "self_test/cloudcheck.h"
 #include "self_test/diskcheck.h"
 #include "self_test/netcheck.h"
 #include "self_test_rpc_types.h"
@@ -38,6 +40,7 @@ public:
       model::node_id self,
       ss::sharded<node::local_monitor>& nlm,
       ss::sharded<rpc::connection_cache>& connections,
+      ss::sharded<cloud_storage::remote>& cloud_storage_api,
       ss::scheduling_group sg);
 
     ss::future<> start();
@@ -74,7 +77,9 @@ public:
 
 private:
     ss::future<std::vector<self_test_result>> do_start_test(
-      std::vector<diskcheck_opts> dtos, std::vector<netcheck_opts> ntos);
+      std::vector<diskcheck_opts> dtos,
+      std::vector<netcheck_opts> ntos,
+      std::vector<cloudcheck_opts> ctos);
 
     struct previous_netcheck_entity {
         static const inline model::node_id unassigned{-1};
@@ -85,15 +90,18 @@ private:
 private:
     // cached values
     uuid_t _id{};
-    get_status_response _prev_run{.status = self_test_status::idle};
+    get_status_response _prev_run{
+      .status = self_test_status::idle, .stage = self_test_stage::idle};
     previous_netcheck_entity _prev_nc;
 
     model::node_id _self;
     ss::gate _gate;
     ss::scheduling_group _st_sg;
     bool _cancelling{false};
+    self_test_stage _stage{self_test_stage::idle};
     mutex _lock{"self_test"};
     self_test::diskcheck _disk_test;
     self_test::netcheck _network_test;
+    self_test::cloudcheck _cloud_test;
 };
 } // namespace cluster

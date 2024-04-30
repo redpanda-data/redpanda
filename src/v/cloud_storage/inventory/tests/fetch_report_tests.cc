@@ -53,6 +53,7 @@ void setup_and_validate_list_call(
         t::Ref(parent),
         t::Eq(list_prefix),
         t::Optional('/'),
+        t::Eq(std::nullopt),
         t::Eq(std::nullopt)))
       .Times(1)
       .WillOnce(

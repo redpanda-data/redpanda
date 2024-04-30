@@ -36,6 +36,7 @@ public:
     struct node_test_state {
         std::optional<get_status_response> response;
         self_test_status status() const;
+        self_test_stage stage() const;
     };
 
     /// Holds reported self_test results aquired from all brokers in a test

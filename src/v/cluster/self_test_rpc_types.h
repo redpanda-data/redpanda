@@ -28,6 +28,12 @@ ss::sstring self_test_status_as_string(self_test_status sts);
 
 std::ostream& operator<<(std::ostream& o, self_test_status sts);
 
+enum class self_test_stage : int8_t { idle = 0, disk, net, cloud };
+
+ss::sstring self_test_stage_as_string(self_test_stage sts);
+
+std::ostream& operator<<(std::ostream& o, self_test_stage sts);
+
 struct diskcheck_opts
   : serde::
       envelope<diskcheck_opts, serde::version<0>, serde::compat_version<0>> {
@@ -179,6 +185,52 @@ struct netcheck_opts
     }
 };
 
+struct cloudcheck_opts
+  : serde::
+      envelope<cloudcheck_opts, serde::version<0>, serde::compat_version<0>> {
+    // Descriptive name given to test run
+    ss::sstring name{"Cloud credentials check"};
+
+    // Timeout duration for cloud storage requests.
+    ss::lowres_clock::duration timeout{std::chrono::milliseconds(5000)};
+
+    // Backoff duration for cloud storage requests.
+    ss::lowres_clock::duration backoff{std::chrono::milliseconds(10)};
+
+    // Scheduling group that the benchmark will operate under.
+    ss::scheduling_group sg;
+
+    static cloudcheck_opts from_json(const json::Value& obj) {
+        // The application using these parameters will perform any validation
+        cloudcheck_opts opts;
+        if (obj.HasMember("name")) {
+            opts.name = obj["name"].GetString();
+        }
+        if (obj.HasMember("timeout_ms")) {
+            opts.timeout = std::chrono::milliseconds(
+              obj["timeout_ms"].GetInt());
+        }
+        if (obj.HasMember("backoff_ms")) {
+            opts.backoff = std::chrono::milliseconds(
+              obj["backoff_ms"].GetInt());
+        }
+        return opts;
+    }
+
+    auto serde_fields() { return std::tie(name, timeout, backoff); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const cloudcheck_opts& opts) {
+        fmt::print(
+          o,
+          "{{name: {} timeout: {} backoff: {}}}",
+          opts.name,
+          opts.timeout,
+          opts.backoff);
+        return o;
+    }
+};
+
 struct self_test_result
   : serde::
       envelope<self_test_result, serde::version<0>, serde::compat_version<0>> {
@@ -241,15 +293,19 @@ struct start_test_request
     uuid_t id;
     std::vector<diskcheck_opts> dtos;
     std::vector<netcheck_opts> ntos;
+    std::vector<cloudcheck_opts> ctos;
 
     friend std::ostream&
     operator<<(std::ostream& o, const start_test_request& r) {
         std::stringstream ss;
-        for (auto& v : r.dtos) {
+        for (const auto& v : r.dtos) {
             fmt::print(ss, "diskcheck_opts: {}", v);
         }
-        for (auto& v : r.ntos) {
+        for (const auto& v : r.ntos) {
             fmt::print(ss, "netcheck_opts: {}", v);
+        }
+        for (const auto& v : r.ctos) {
+            fmt::print(ss, "cloudcheck_opts: {}", v);
         }
         fmt::print(o, "{{id: {} {}}}", r.id, ss.str());
         return o;
@@ -265,15 +321,17 @@ struct get_status_response
 
     uuid_t id{};
     self_test_status status{};
+    self_test_stage stage{};
     std::vector<self_test_result> results;
 
     friend std::ostream&
     operator<<(std::ostream& o, const get_status_response& r) {
         fmt::print(
           o,
-          "{{id: {} status:{} test_results: {}}}",
+          "{{id: {} status: {} stage: {} test_results: {}}}",
           r.id,
           r.status,
+          r.stage,
           r.results);
         return o;
     }

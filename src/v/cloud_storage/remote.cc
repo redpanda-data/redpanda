@@ -1348,7 +1348,8 @@ ss::future<remote::list_result> remote::list_objects(
   retry_chain_node& parent,
   std::optional<cloud_storage_clients::object_key> prefix,
   std::optional<char> delimiter,
-  std::optional<cloud_storage_clients::client::item_filter> item_filter) {
+  std::optional<cloud_storage_clients::client::item_filter> item_filter,
+  std::optional<size_t> max_keys) {
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -1369,7 +1370,7 @@ ss::future<remote::list_result> remote::list_objects(
           bucket,
           prefix,
           std::nullopt,
-          std::nullopt,
+          max_keys,
           continuation_token,
           fib.get_timeout(),
           delimiter,

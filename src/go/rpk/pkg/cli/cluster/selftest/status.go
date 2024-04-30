@@ -72,7 +72,14 @@ the jobs launched. Possible results are:
 			// If there is outstanding work, indicate which nodes, then exit
 			running := runningNodes(reports)
 			if len(running) > 0 {
-				fmt.Printf("Nodes %v are still running jobs\n", running)
+				keys := make([]int, 0, len(running))
+				for k := range running {
+					keys = append(keys, k)
+				}
+				sort.Ints(keys)
+				for _, k := range keys {
+					fmt.Printf("Node %v is still running %v self test\n", k, running[k])
+				}
 				return
 			}
 
@@ -114,14 +121,13 @@ func rowDataAsInterface(row []string) []interface{} {
 	return iarr
 }
 
-func runningNodes(reports []adminapi.SelfTestNodeReport) []int {
-	running := []int{}
+func runningNodes(reports []adminapi.SelfTestNodeReport) map[int]string {
+	running := map[int]string{}
 	for _, report := range reports {
 		if report.Status == statusRunning {
-			running = append(running, report.NodeID)
+			running[report.NodeID] = report.Stage
 		}
 	}
-	sort.Ints(running)
 	return running
 }
 

@@ -135,7 +135,8 @@ public:
       retry_chain_node&,
       std::optional<cloud_storage_clients::object_key> = std::nullopt,
       std::optional<char> = std::nullopt,
-      std::optional<cloud_storage_clients::client::item_filter> = std::nullopt)
+      std::optional<cloud_storage_clients::client::item_filter> = std::nullopt,
+      std::optional<size_t> = std::nullopt)
       = 0;
     virtual ss::future<download_result> object_exists(
       const cloud_storage_clients::bucket_name&,
@@ -455,7 +456,8 @@ public:
       std::optional<cloud_storage_clients::object_key> prefix = std::nullopt,
       std::optional<char> delimiter = std::nullopt,
       std::optional<cloud_storage_clients::client::item_filter> item_filter
-      = std::nullopt) override;
+      = std::nullopt,
+      std::optional<size_t> max_keys = std::nullopt) override;
 
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment

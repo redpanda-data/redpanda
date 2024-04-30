@@ -43,6 +43,13 @@ self_test_status self_test_frontend::node_test_state::status() const {
     return response->status;
 }
 
+self_test_stage self_test_frontend::node_test_state::stage() const {
+    if (!response) {
+        return self_test_stage::idle;
+    }
+    return response->stage;
+}
+
 self_test_frontend::global_test_state::global_test_state(
   std::vector<underlying_t::value_type>&& rs)
   : _participants(rs.begin(), rs.end()) {}
@@ -133,7 +140,7 @@ ss::future<uuid_t> self_test_frontend::start_test(
     if (ids.empty()) {
         throw self_test_exception("No node ids provided");
     }
-    if (req.dtos.empty() && req.ntos.empty()) {
+    if (req.dtos.empty() && req.ntos.empty() && req.ctos.empty()) {
         throw self_test_exception("No tests specified to run");
     }
     /// Validate input
@@ -185,7 +192,10 @@ ss::future<uuid_t> self_test_frontend::start_test(
               }
           }
           return handle->start_test(start_test_request{
-            .id = test_id, .dtos = req.dtos, .ntos = new_ntos});
+            .id = test_id,
+            .dtos = std::move(req.dtos),
+            .ntos = std::move(new_ntos),
+            .ctos = std::move(req.ctos)});
       });
     co_return test_id;
 }
