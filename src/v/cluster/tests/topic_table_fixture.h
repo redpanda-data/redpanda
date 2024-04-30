@@ -25,7 +25,7 @@
 #include "test_utils/fixture.h"
 
 inline void validate_delta(
-  const fragmented_vector<cluster::topic_table::delta>& d,
+  const std::vector<cluster::topic_table::delta>& d,
   int new_partitions,
   int removed_partitions) {
     size_t additions = std::count_if(

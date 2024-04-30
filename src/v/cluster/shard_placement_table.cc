@@ -292,7 +292,7 @@ ss::future<> shard_placement_table::set_assigned_on_this_shard(
     }
 
     // Notify the caller that something has changed on this shard.
-    shard_callback(ntp, shard_rev);
+    shard_callback(ntp);
     co_return;
 }
 
@@ -319,7 +319,7 @@ ss::future<> shard_placement_table::remove_assigned_on_this_shard(
     }
 
     // Notify the caller that something has changed on this shard.
-    shard_callback(ntp, shard_rev);
+    shard_callback(ntp);
 }
 
 std::optional<shard_placement_table::placement_state>

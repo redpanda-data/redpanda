@@ -21,6 +21,10 @@
 using namespace std::chrono_literals;
 
 FIXTURE_TEST(test_happy_path_create, topic_table_fixture) {
+    std::vector<cluster::topic_table_delta> deltas;
+    table.local().register_delta_notification(
+      [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
+
     create_topics();
     auto& md = table.local().all_topics_metadata();
 
@@ -37,16 +41,16 @@ FIXTURE_TEST(test_happy_path_create, topic_table_fixture) {
     BOOST_REQUIRE_EQUAL(
       md.find(make_tp_ns("test_tp_3"))->second.get_assignments().size(), 8);
 
-    // check delta
-    auto d = table.local().wait_for_changes(as).get0();
-
-    validate_delta(d, 21, 0);
+    validate_delta(deltas, 21, 0);
 }
 
 FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
     create_topics();
-    // discard create delta
-    table.local().wait_for_changes(as).get();
+
+    std::vector<cluster::topic_table_delta> deltas;
+    table.local().register_delta_notification(
+      [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
+
     BOOST_REQUIRE(!table.local()
                      .apply(
                        cluster::delete_topic_cmd(
@@ -66,16 +70,16 @@ FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       md.find(make_tp_ns("test_tp_1"))->second.get_assignments().size(), 1);
-    // check delta
-    auto d = table.local().wait_for_changes(as).get0();
 
-    validate_delta(d, 0, 20);
+    validate_delta(deltas, 0, 20);
 }
 
 FIXTURE_TEST(test_conflicts, topic_table_fixture) {
     create_topics();
-    // discard create delta
-    table.local().wait_for_changes(as).get0();
+
+    std::vector<cluster::topic_table_delta> deltas;
+    table.local().register_delta_notification(
+      [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
 
     auto res_1 = table.local()
                    .apply(
@@ -90,7 +94,7 @@ FIXTURE_TEST(test_conflicts, topic_table_fixture) {
                      make_create_topic_cmd("test_tp_1", 2, 3), model::offset(0))
                    .get0();
     BOOST_REQUIRE_EQUAL(res_2, cluster::errc::topic_already_exists);
-    BOOST_REQUIRE_EQUAL(table.local().has_pending_changes(), false);
+    BOOST_REQUIRE_EQUAL(deltas.size(), 0);
 }
 
 FIXTURE_TEST(get_getting_config, topic_table_fixture) {
@@ -112,21 +116,13 @@ FIXTURE_TEST(get_getting_config, topic_table_fixture) {
       tristate(std::make_optional(std::chrono::milliseconds(3600000))));
 }
 
-FIXTURE_TEST(test_wait_aborted, topic_table_fixture) {
-    ss::abort_source local_as;
-    ss::timer<> timer;
-    timer.set_callback([&local_as] { local_as.request_abort(); });
-    timer.arm(500ms);
-    // discard create delta
-    BOOST_REQUIRE_THROW(
-      table.local().wait_for_changes(local_as).get0(),
-      ss::abort_requested_exception);
-}
-
 FIXTURE_TEST(test_adding_partition, topic_table_fixture) {
-    // discard create delta
     create_topics();
-    table.local().wait_for_changes(as).get0();
+
+    std::vector<cluster::topic_table_delta> deltas;
+    table.local().register_delta_notification(
+      [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
+
     cluster::create_partitions_configuration cfg(make_tp_ns("test_tp_2"), 3);
     ss::chunked_fifo<cluster::partition_assignment> p_as;
     p_as.push_back(cluster::partition_assignment{
@@ -164,10 +160,8 @@ FIXTURE_TEST(test_adding_partition, topic_table_fixture) {
     auto md = table.local().get_topic_metadata(make_tp_ns("test_tp_2"));
 
     BOOST_REQUIRE_EQUAL(md->get_assignments().size(), 15);
-    // check delta
-    auto d = table.local().wait_for_changes(as).get0();
     // require 3 partition additions
-    validate_delta(d, 3, 0);
+    validate_delta(deltas, 3, 0);
 }
 
 void validate_brokers_revisions(

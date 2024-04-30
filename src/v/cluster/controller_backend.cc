@@ -245,28 +245,26 @@ std::error_code check_configuration_update(
 } // namespace
 
 struct controller_backend::ntp_reconciliation_state {
-    std::optional<model::revision_id> changed_at;
+    // A counter to avoid losing notifications that arrived concurrently with
+    // reconciliation.
+    size_t pending_notifies = 0;
+
     std::optional<model::revision_id> properties_changed_at;
-    std::optional<model::shard_revision_id> shard_changed_at;
-    bool removed = false;
+    std::optional<model::revision_id> removed_at;
 
     ssx::event wakeup_event{"c/cb/rfwe"};
     ss::lowres_clock::time_point last_retried_at = ss::lowres_clock::now();
     std::optional<in_progress_operation> cur_operation;
 
-    bool is_reconciled() const {
-        return !changed_at.has_value() && !shard_changed_at.has_value();
-    }
+    bool is_reconciled() const { return pending_notifies == 0; }
 
-    void mark_reconciled(
-      model::revision_id rev, model::shard_revision_id shard_rev) {
-        mark_properties_reconciled(rev);
-        if (changed_at && *changed_at <= rev) {
-            changed_at = std::nullopt;
-        }
-        if (shard_changed_at && *shard_changed_at <= shard_rev) {
-            shard_changed_at = std::nullopt;
-        }
+    void mark_reconciled(size_t notifies) {
+        vassert(
+          pending_notifies >= notifies,
+          "unexpected pending_notifies: {}",
+          pending_notifies);
+        pending_notifies -= notifies;
+
         cur_operation = std::nullopt;
     }
 
@@ -292,12 +290,11 @@ struct controller_backend::ntp_reconciliation_state {
     operator<<(std::ostream& o, const ntp_reconciliation_state& rs) {
         fmt::print(
           o,
-          "{{changed_at: {}, properties_changed_at: {}, shard_changed_at: {}, "
-          "removed: {}, cur_operation: {}}}",
-          rs.changed_at,
+          "{{pending_notifies: {},  properties_changed_at: {}, removed_at: {}, "
+          "cur_operation: {}}}",
+          rs.pending_notifies,
           rs.properties_changed_at,
-          rs.shard_changed_at,
-          rs.removed,
+          rs.removed_at,
           rs.cur_operation);
         return o;
     }
@@ -351,6 +348,9 @@ bool controller_backend::command_based_membership_active() const {
 
 ss::future<> controller_backend::stop() {
     vlog(clusterlog.info, "Stopping Controller Backend...");
+
+    _topics.local().unregister_delta_notification(_topic_table_notify_handle);
+
     for (auto& [_, rs] : _states) {
         rs->wakeup_event.set();
     }
@@ -452,18 +452,23 @@ ss::future<> controller_backend::start() {
         constexpr size_t max_reconciliation_concurrency = 1024;
         _reconciliation_sem.signal(max_reconciliation_concurrency);
 
-        start_fetch_deltas_loop();
         ssx::background = stuck_ntp_watchdog_fiber();
     });
 }
 
 ss::future<> controller_backend::bootstrap_controller_backend() {
-    if (!_topics.local().has_pending_changes()) {
-        vlog(clusterlog.trace, "no pending changes, skipping bootstrap");
-        co_return;
+    for (const auto& [ntp, _] : _shard_placement.shard_local_states()) {
+        notify_reconciliation(ntp);
     }
 
-    co_await fetch_deltas();
+    _topic_table_notify_handle = _topics.local().register_delta_notification(
+      [this](topic_table::delta_range_t deltas_range) {
+          for (const auto& d : deltas_range) {
+              process_delta(d);
+          }
+      });
+
+    co_return;
 }
 
 namespace {
@@ -622,75 +627,57 @@ controller_backend::calculate_learner_initial_offset(
       std::min(cloud_storage_safe_offset, *retention_offset));
 }
 
-ss::future<> controller_backend::fetch_deltas() {
-    return _topics.local()
-      .wait_for_changes(_as.local())
-      .then([this](fragmented_vector<topic_table::delta> deltas) {
-          for (auto& d : deltas) {
-              vlog(clusterlog.trace, "got delta: {}", d);
+void controller_backend::process_delta(const topic_table::delta& d) {
+    vlog(clusterlog.trace, "got delta: {}", d);
 
-              auto [rs_it, inserted] = _states.try_emplace(d.ntp);
-              if (inserted) {
-                  rs_it->second
-                    = ss::make_lw_shared<ntp_reconciliation_state>();
-              }
-              auto& rs = *rs_it->second;
+    // update partition_leaders_table if needed
 
-              if (rs.changed_at) {
-                  vassert(
-                    *rs.changed_at <= d.revision,
-                    "[{}]: delta revision unexpectedly decreased, "
-                    "was: {}, update: {}",
-                    d.ntp,
-                    rs.changed_at,
-                    d.revision);
-              }
-              rs.changed_at = d.revision;
+    if (d.type == topic_table_delta_type::removed) {
+        _partition_leaders_table.local().remove_leader(d.ntp, d.revision);
+    }
 
-              if (d.type == topic_table_delta_type::added) {
-                  rs.removed = false;
-              } else {
-                  vassert(
-                    !rs.removed,
-                    "[{}] unexpected delta: {}, state: {}",
-                    d.ntp,
-                    d,
-                    rs);
-                  if (d.type == topic_table_delta_type::removed) {
-                      rs.removed = true;
-                  }
-              }
+    // notify reconciliation fiber
 
-              if (d.type == topic_table_delta_type::properties_updated) {
-                  rs.properties_changed_at = d.revision;
-              }
+    auto [rs_it, inserted] = _states.try_emplace(d.ntp);
+    if (inserted) {
+        rs_it->second = ss::make_lw_shared<ntp_reconciliation_state>();
+    }
+    auto& rs = *rs_it->second;
+    rs.pending_notifies += 1;
 
-              rs.wakeup_event.set();
-              if (inserted) {
-                  ssx::background = reconcile_ntp_fiber(d.ntp, rs_it->second);
-              }
-          }
-      });
+    if (d.type == topic_table_delta_type::added) {
+        rs.removed_at.reset();
+    } else {
+        vassert(
+          !rs.removed_at, "[{}] unexpected delta: {}, state: {}", d.ntp, d, rs);
+        if (d.type == topic_table_delta_type::removed) {
+            rs.removed_at = d.revision;
+        }
+    }
+
+    if (d.type == topic_table_delta_type::properties_updated) {
+        rs.properties_changed_at = d.revision;
+    }
+
+    rs.wakeup_event.set();
+    if (inserted) {
+        ssx::background = reconcile_ntp_fiber(d.ntp, rs_it->second);
+    }
 }
 
-void controller_backend::notify_reconciliation(
-  const model::ntp& ntp, model::shard_revision_id shard_rev) {
-    vlog(
-      clusterlog.trace,
-      "[{}] notify reconciliation fiber, shard rev: {}",
-      ntp,
-      shard_rev);
-
+void controller_backend::notify_reconciliation(const model::ntp& ntp) {
     auto [rs_it, inserted] = _states.try_emplace(ntp);
     if (inserted) {
         rs_it->second = ss::make_lw_shared<ntp_reconciliation_state>();
     }
     auto& rs = *rs_it->second;
-    if (rs.shard_changed_at) {
-        rs.shard_changed_at = std::max(*rs.shard_changed_at, shard_rev);
-    } else {
-        rs.shard_changed_at = shard_rev;
-    }
+
+    rs.pending_notifies += 1;
+    vlog(
+      clusterlog.trace,
+      "[{}] notify reconciliation fiber, current state: {}",
+      ntp,
+      rs);
     rs.wakeup_event.set();
     if (inserted) {
         ssx::background = reconcile_ntp_fiber(ntp, rs_it->second);
@@ -776,27 +763,6 @@ ss::future<> controller_backend::clear_orphan_topic_files(
       });
 }
 
-void controller_backend::start_fetch_deltas_loop() {
-    ssx::spawn_with_gate(_gate, [this] {
-        return ss::do_until(
-          [this] { return _as.local().abort_requested(); },
-          [this] {
-              return fetch_deltas()
-                .handle_exception_type(
-                  [](const ss::abort_requested_exception&) {
-                      // Shutting down: don't log this exception as an error
-                      vlog(
-                        clusterlog.debug,
-                        "Abort requested while fetching deltas");
-                  })
-                .handle_exception([](const std::exception_ptr& e) {
-                    vlog(
-                      clusterlog.error, "Error while fetching deltas - {}", e);
-                });
-          });
-    });
-}
-
 ss::future<> controller_backend::reconcile_ntp_fiber(
   model::ntp ntp, ss::lw_shared_ptr<ntp_reconciliation_state> rs) {
     if (_gate.is_closed()) {
@@ -838,28 +804,22 @@ ss::future<> controller_backend::try_reconcile_ntp(
 
     if (should_skip(ntp)) {
         vlog(clusterlog.debug, "[{}] skipping reconcilation", ntp);
-        rs.mark_reconciled(
-          rs.changed_at.value_or(model::revision_id{}),
-          rs.shard_changed_at.value_or(model::shard_revision_id{}));
+        rs.mark_reconciled(rs.pending_notifies);
         co_return;
     }
 
     while (!rs.is_reconciled() && !_as.local().abort_requested()) {
-        model::revision_id changed_at = rs.changed_at.value_or(
-          model::revision_id{});
-        model::shard_revision_id shard_changed_at
-          = rs.shard_changed_at.value_or(model::shard_revision_id{});
+        size_t notifies = rs.pending_notifies;
         cluster::errc last_error = errc::success;
         try {
             auto res = co_await reconcile_ntp_step(ntp, rs);
             if (res.has_value() && res.value() == ss::stop_iteration::yes) {
-                rs.mark_reconciled(changed_at, shard_changed_at);
+                rs.mark_reconciled(notifies);
                 vlog(
                   clusterlog.debug,
-                  "[{}] reconciled at revision {}, shard table revision {}",
+                  "[{}] reconciled, notify count: {}",
                   ntp,
-                  changed_at,
-                  shard_changed_at);
+                  notifies);
                 break;
             } else if (res.has_error() && res.error()) {
                 if (res.error().category() == error_category()) {
@@ -999,7 +959,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
     std::optional<topic_table::partition_replicas_view> maybe_replicas_view
       = _topics.local().get_replicas_view(ntp);
     if (!maybe_replicas_view) {
-        if (!(rs.changed_at && rs.removed)) {
+        if (!rs.removed_at) {
             // Even if the partition is not found in the topic table, just to be
             // on the safe side, we don't delete it until we receive the
             // corresponding delta (to protect against topic table
@@ -1007,9 +967,9 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
             co_return ss::stop_iteration::yes;
         }
 
-        rs.set_cur_operation(*rs.changed_at, partition_operation_type::remove);
+        rs.set_cur_operation(*rs.removed_at, partition_operation_type::remove);
         auto ec = co_await delete_partition(
-          ntp, maybe_placement, *rs.changed_at, partition_removal_mode::global);
+          ntp, maybe_placement, *rs.removed_at, partition_removal_mode::global);
         if (ec) {
             co_return ec;
         }
@@ -1784,17 +1744,6 @@ ss::future<std::error_code> controller_backend::delete_partition(
       placement,
       cmd_revision,
       mode == partition_removal_mode::global);
-
-    // The partition leaders table contains partition leaders for all
-    // partitions accross the cluster. For this reason, when deleting a
-    // partition (i.e. removal mode is global), we need to delete from the table
-    // regardless of whether a replica of 'ntp' is present on the node.
-    if (mode == partition_removal_mode::global) {
-        co_await _partition_leaders_table.invoke_on_all(
-          [ntp, cmd_revision](partition_leaders_table& leaders) {
-              leaders.remove_leader(ntp, cmd_revision);
-          });
-    }
 
     if (!placement) {
         // nothing to delete

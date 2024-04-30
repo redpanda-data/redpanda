@@ -100,24 +100,19 @@ public:
     }
 
     ss::future<> start() {
-        for (const auto& [ntp, _] : _ntpt.ntp2meta) {
-            notify_reconciliation(ntp, model::shard_revision_id{0});
+        for (const auto& [ntp, _] : _shard_placement.shard_local_states()) {
+            notify_reconciliation(ntp);
         }
         co_return;
     }
 
-    void
-    notify_reconciliation(const model::ntp& ntp, model::shard_revision_id rev) {
+    void notify_reconciliation(const model::ntp& ntp) {
         auto [rs_it, inserted] = _states.try_emplace(ntp);
         if (inserted) {
             rs_it->second = ss::make_lw_shared<ntp_reconciliation_state>();
         }
         auto& rs = *rs_it->second;
-        if (rs.changed_at) {
-            rs.changed_at = std::max(*rs.changed_at, rev);
-        } else {
-            rs.changed_at = rev;
-        }
+        rs.pending_notifies += 1;
         rs.wakeup_event.set();
         if (inserted) {
             ssx::background = reconcile_ntp_fiber(ntp, rs_it->second);
@@ -135,16 +130,17 @@ public:
 
 private:
     struct ntp_reconciliation_state {
-        std::optional<model::shard_revision_id> changed_at;
-
+        size_t pending_notifies = 0;
         ssx::event wakeup_event{"c/rb/rfwe"};
 
-        bool is_reconciled() const { return !changed_at.has_value(); }
+        bool is_reconciled() const { return pending_notifies == 0; }
 
-        void mark_reconciled(model::shard_revision_id rev) {
-            if (changed_at && *changed_at <= rev) {
-                changed_at = std::nullopt;
-            }
+        void mark_reconciled(size_t notifies) {
+            vassert(
+              pending_notifies >= notifies,
+              "unexpected pending_notifies: {}",
+              pending_notifies);
+            pending_notifies -= notifies;
         }
     };
 
@@ -185,8 +181,7 @@ private:
     ss::future<>
     try_reconcile_ntp(const model::ntp& ntp, ntp_reconciliation_state& rs) {
         while (!rs.is_reconciled() && !_gate.is_closed()) {
-            model::shard_revision_id changed_at = rs.changed_at.value_or(
-              model::shard_revision_id{});
+            size_t notifies = rs.pending_notifies;
             try {
                 auto res = co_await reconcile_ntp_step(ntp, rs);
                 if (res.has_value()) {
@@ -195,10 +190,10 @@ private:
                     } else {
                         vlog(
                           clusterlog.trace,
-                          "[{}] reconciled at {}",
+                          "[{}] reconciled, notify count: {}",
                           ntp,
-                          changed_at);
-                        rs.mark_reconciled(changed_at);
+                          notifies);
+                        rs.mark_reconciled(notifies);
                     }
                 } else {
                     vlog(
@@ -771,8 +766,8 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
                   ntp,
                   target,
                   cur_shard_revision++,
-                  [this](const model::ntp& ntp, model::shard_revision_id rev) {
-                      rb.local().notify_reconciliation(ntp, rev);
+                  [this](const model::ntp& ntp) {
+                      rb.local().notify_reconciliation(ntp);
                   });
             });
         };

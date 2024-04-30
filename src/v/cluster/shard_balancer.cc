@@ -80,10 +80,9 @@ ss::future<> shard_balancer::stop() {
 ss::future<> shard_balancer::process_delta(const topic_table::delta& delta) {
     const auto& ntp = delta.ntp;
 
-    auto shard_callback =
-      [this](const model::ntp& ntp, model::shard_revision_id shard_rev) {
-          _controller_backend.local().notify_reconciliation(ntp, shard_rev);
-      };
+    auto shard_callback = [this](const model::ntp& ntp) {
+        _controller_backend.local().notify_reconciliation(ntp);
+    };
 
     auto maybe_replicas_view = _topics.local().get_replicas_view(ntp);
     if (!maybe_replicas_view) {
