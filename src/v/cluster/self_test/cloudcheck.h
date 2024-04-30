@@ -84,7 +84,7 @@ private:
     ss::future<std::pair<cloud_storage::remote::list_result, self_test_result>>
     verify_list(
       cloud_storage_clients::bucket_name bucket,
-      cloud_storage_clients::object_key prefix,
+      std::optional<cloud_storage_clients::object_key> prefix,
       size_t max_keys = 5);
 
     // Verify that checking if an object exists (Head: read operation) from
