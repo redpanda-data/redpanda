@@ -1171,6 +1171,11 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
                   ctxlog.warn,
                   "Failed to upload datalake segment {}",
                   candidate);
+            } else {
+                vlog(
+                  ctxlog.warn,
+                  "Successfully uploaded datalake segment {}",
+                  candidate);
             }
         }
     }

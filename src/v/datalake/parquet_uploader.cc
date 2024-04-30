@@ -17,8 +17,9 @@ ss::future<bool> datalake::parquet_uploader::write_parquet_locally(
       starting_offset,
       ending_offset,
       0,
-      10ll * 1024ll * 1024ll
-        * 1024ll, // FIXME(jcipar): 10 GiB is probably too much.
+      // The constructor that doesn't take max_bytes parameter uses the numeric
+      // limit:
+      std::numeric_limits<size_t>::max(),
       ss::default_priority_class(),
       model::record_batch_type::raft_data,
       std::nullopt,
@@ -31,24 +32,10 @@ ss::future<bool> datalake::parquet_uploader::write_parquet_locally(
 
     std::filesystem::path path = std::filesystem::path("/tmp/parquet_files")
                                  / topic_name / inner_path;
-    arrow_writing_consumer consumer;
-    std::shared_ptr<arrow::Table> table = co_await reader.consume(
+    arrow_writing_consumer consumer(path);
+    auto status = co_await reader.consume(
       std::move(consumer), model::no_timeout);
-    if (table == nullptr) {
-        co_return false;
-    }
-
-    // FIXME: Creating and destroying sharded_thread_workers is supposed
-    // to be rare. The docs for the class suggest doing creating it once
-    // during application startup.
-    ssx::sharded_thread_worker thread_worker;
-    co_await thread_worker.start({.name = "parquet"});
-    auto result = co_await thread_worker.submit(
-      [table, path, this]() -> arrow::Status {
-          return write_table_to_parquet(table, path);
-      });
-    co_await thread_worker.stop();
-    co_return result.ok();
+    co_return status.ok();
 }
 
 arrow::Status datalake::parquet_uploader::write_table_to_parquet(
