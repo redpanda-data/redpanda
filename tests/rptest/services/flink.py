@@ -296,14 +296,19 @@ class FlinkService(Service):
         # Extract the workload script filename
         script = os.path.split(workload_path)[-1]
 
+        # Determine active python location
+        python3_path = n.account.ssh_output("which python3") \
+            .decode() \
+            .strip()
+
         # Start job
         run_path = os.path.join(self.FLINK_WORKLOADS_FOLDER, script)
         cmd = f"sudo {self.FLINK_BIN}flink run"
         if script.endswith(".jar"):
             cmd += f" {run_path}"
         elif script.endswith(".py"):
-            cmd += " -pyclientexec /usr/bin/python3"
-            cmd += " -pyexec /usr/bin/python3"
+            cmd += f" -pyclientexec {python3_path}"
+            cmd += f" -pyexec {python3_path}"
             cmd += f" -py {run_path}"
 
         if detached:
