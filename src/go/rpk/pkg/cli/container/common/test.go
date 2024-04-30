@@ -13,6 +13,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/docker/docker/api/types/image"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -32,7 +34,7 @@ type MockClient struct {
 	MockImageList func(
 		ctx context.Context,
 		options types.ImageListOptions,
-	) ([]types.ImageSummary, error)
+	) ([]image.Summary, error)
 
 	MockContainerCreate func(
 		ctx context.Context,
@@ -46,7 +48,7 @@ type MockClient struct {
 	MockContainerStart func(
 		ctx context.Context,
 		containerID string,
-		options types.ContainerStartOptions,
+		options container.StartOptions,
 	) error
 
 	MockContainerStop func(
@@ -57,7 +59,7 @@ type MockClient struct {
 
 	MockContainerList func(
 		ctx context.Context,
-		options types.ContainerListOptions,
+		options container.ListOptions,
 	) ([]types.Container, error)
 
 	MockContainerInspect func(
@@ -68,7 +70,7 @@ type MockClient struct {
 	MockContainerRemove func(
 		ctx context.Context,
 		containerID string,
-		options types.ContainerRemoveOptions,
+		options container.RemoveOptions,
 	) error
 
 	MockNetworkCreate func(
@@ -137,15 +139,15 @@ func (c *MockClient) ImagePull(
 
 func (c *MockClient) ImageList(
 	ctx context.Context, options types.ImageListOptions,
-) ([]types.ImageSummary, error) {
+) ([]image.Summary, error) {
 	if c.MockImageList != nil {
 		return c.MockImageList(ctx, options)
 	}
-	return []types.ImageSummary{}, nil
+	return []image.Summary{}, nil
 }
 
 func (c *MockClient) ContainerStart(
-	ctx context.Context, containerID string, options types.ContainerStartOptions,
+	ctx context.Context, containerID string, options container.StartOptions,
 ) error {
 	if c.MockContainerStart != nil {
 		return c.MockContainerStart(
@@ -165,7 +167,7 @@ func (c *MockClient) ContainerStop(
 }
 
 func (c *MockClient) ContainerList(
-	ctx context.Context, options types.ContainerListOptions,
+	ctx context.Context, options container.ListOptions,
 ) ([]types.Container, error) {
 	if c.MockContainerList != nil {
 		return c.MockContainerList(ctx, options)
@@ -183,7 +185,7 @@ func (c *MockClient) ContainerInspect(
 }
 
 func (c *MockClient) ContainerRemove(
-	ctx context.Context, containerID string, options types.ContainerRemoveOptions,
+	ctx context.Context, containerID string, options container.RemoveOptions,
 ) error {
 	if c.MockContainerRemove != nil {
 		return c.MockContainerRemove(ctx, containerID, options)
