@@ -7,12 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package namespace
+package resourcegroup
 
 import (
 	"fmt"
 
-	controlplanev1beta1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta1"
+	controlplanev1beta2 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta2"
+
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
@@ -33,7 +34,7 @@ func deleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete [NAME]",
 		Args:  cobra.ExactArgs(1),
-		Short: "Delete Namespaces in Redpanda Cloud",
+		Short: "Delete resource groups in Redpanda Cloud",
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
 			if h, ok := f.Help(deleteResponse{}); ok {
@@ -52,30 +53,30 @@ func deleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to create the public api client: %v", err)
 
 			name := args[0]
-			listed, err := cl.Namespace.ListNamespaces(cmd.Context(), connect.NewRequest(&controlplanev1beta1.ListNamespacesRequest{
-				Filter: &controlplanev1beta1.ListNamespacesRequest_Filter{Name: name},
+			listed, err := cl.ResourceGroup.ListResourceGroups(cmd.Context(), connect.NewRequest(&controlplanev1beta2.ListResourceGroupsRequest{
+				Filter: &controlplanev1beta2.ListResourceGroupsRequest_Filter{Name: name},
 			}))
-			out.MaybeDie(err, "unable to find namespace %q: %v", name, err)
-			if len(listed.Msg.Namespaces) == 0 {
-				out.Die("unable to find namespace %q", name)
+			out.MaybeDie(err, "unable to find resource group %q: %v", name, err)
+			if len(listed.Msg.ResourceGroups) == 0 {
+				out.Die("unable to find resource group %q", name)
 			}
-			if len(listed.Msg.Namespaces) > 1 {
+			if len(listed.Msg.ResourceGroups) > 1 {
 				// This is currently not possible, the filter is an exact
 				// filter. This is just being cautious.
-				out.Die("multiple namespaces were found for %q, please provide an exact match", name)
+				out.Die("multiple resources group were found for %q, please provide an exact match", name)
 			}
-			namespace := listed.Msg.Namespaces[0]
+			resourceGroup := listed.Msg.ResourceGroups[0]
 			if !noConfirm {
-				confirmed, err := out.Confirm("Confirm deletion of namespace %q with ID %q?", namespace.Name, namespace.Id)
+				confirmed, err := out.Confirm("Confirm deletion of resource group %q with ID %q?", resourceGroup.Name, resourceGroup.Id)
 				out.MaybeDie(err, "unable to confirm deletion: %v", err)
 				if !confirmed {
 					out.Exit("Deletion canceled.")
 				}
 			}
 
-			_, err = cl.Namespace.DeleteNamespace(cmd.Context(), connect.NewRequest(&controlplanev1beta1.DeleteNamespaceRequest{Id: namespace.Id}))
-			out.MaybeDie(err, "unable to delete namespace %q: %v", name, err)
-			res := deleteResponse{namespace.Name, namespace.Id}
+			_, err = cl.ResourceGroup.DeleteResourceGroup(cmd.Context(), connect.NewRequest(&controlplanev1beta2.DeleteResourceGroupRequest{Id: resourceGroup.Id}))
+			out.MaybeDie(err, "unable to delete resource group %q: %v", name, err)
+			res := deleteResponse{resourceGroup.Name, resourceGroup.Id}
 			if isText, _, s, err := f.Format(res); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 				fmt.Println(s)
