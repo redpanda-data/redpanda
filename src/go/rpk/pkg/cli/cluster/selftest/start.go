@@ -53,7 +53,11 @@ of the cluster. Available tests to run:
 
 * Cloud tests:
   * Latency test: 1024-bit object.
-    * Depending on read/write permissions, a series of cloud storage operations are performed.
+    * Depending on cluster read/write permissions (cloud_storage_enable_remote_read, cloud_storage_enable_remote_write), a series of cloud storage operations are performed:
+      * 1. Upload an object to an S3 bucket.
+      * 2. List objects in the bucket.
+      * 3. Download an object from the bucket.
+      * 4. Delete the original object from the bucket, if it was uploaded.
 
 
 This command immediately returns on success, and the tests run asynchronously. The
