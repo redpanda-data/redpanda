@@ -11,9 +11,9 @@
 
 #include "cluster/logger.h"
 #include "cluster/shard_placement_table.h"
+#include "container/chunked_hash_map.h"
 #include "features/feature_table.h"
 #include "ssx/event.h"
-#include "ssx/work_queue.h"
 #include "storage/kvstore.h"
 #include "storage/storage_resources.h"
 #include "test_utils/randoms.h"
@@ -595,47 +595,77 @@ public:
       : _ntpt(ntpt.local())
       , _shard_placement(spt.local())
       , _ntp2shards(ntp2shards.local())
-      , _rb(rb)
-      , _work_queue([](auto ex) {
-          vassert(
-            ssx::is_shutdown_exception(ex),
-            "unexpected shard_assigner exception: {}",
-            ex);
-      }) {}
+      , _rb(rb) {}
 
     ss::future<> start() {
         // TODO: bootstrap _shard_placement. We don't need it for now because we
         // don't restart in this test yet.
+
+        ssx::background = assign_fiber();
         co_return;
     }
 
-    ss::future<> stop() { return _work_queue.shutdown(); }
-
-    void assign_eventually(const model::ntp& ntp) {
-        _in_progress += 1;
-        _work_queue.submit([this, ntp] {
-            std::optional<shard_placement_target> target;
-            if (auto it = _ntpt.ntp2meta.find(ntp);
-                it != _ntpt.ntp2meta.end()) {
-                target = shard_placement_target(
-                  it->second.log_revision,
-                  random_generators::get_int(get_max_shard_id()));
-            }
-
-            _ntp2shards[ntp].target = target;
-
-            return _shard_placement
-              .set_target(
-                ntp,
-                target,
-                [this](const model::ntp& ntp) {
-                    _rb.local().notify_reconciliation(ntp);
-                })
-              .finally([this] { _in_progress -= 1; });
-        });
+    ss::future<> stop() {
+        _wakeup_event.set();
+        return _gate.close();
     }
 
-    bool is_reconciled() const { return _in_progress == 0; }
+    void assign_eventually(const model::ntp& ntp) {
+        _to_assign.insert(ntp);
+        _wakeup_event.set();
+    }
+
+    bool is_reconciled() const { return !_in_progress && _to_assign.empty(); }
+
+private:
+    ss::future<> assign_fiber() {
+        if (_gate.is_closed()) {
+            co_return;
+        }
+        auto gate_holder = _gate.hold();
+
+        while (true) {
+            co_await _wakeup_event.wait(1s);
+            if (_gate.is_closed()) {
+                co_return;
+            }
+
+            auto to_assign = std::exchange(_to_assign, {});
+            _in_progress = true;
+            co_await ss::max_concurrent_for_each(
+              to_assign,
+              128,
+              [this](const model::ntp& ntp) { return assign_ntp(ntp); })
+              .finally([this] { _in_progress = false; });
+        }
+    }
+
+    ss::future<> assign_ntp(const model::ntp& ntp) {
+        std::optional<shard_placement_target> target;
+        if (auto it = _ntpt.ntp2meta.find(ntp); it != _ntpt.ntp2meta.end()) {
+            target = shard_placement_target(
+              it->second.log_revision,
+              random_generators::get_int(get_max_shard_id()));
+        }
+
+        try {
+            co_await _shard_placement.set_target(
+              ntp, target, [this](const model::ntp& ntp) {
+                  _rb.local().notify_reconciliation(ntp);
+              });
+            _ntp2shards[ntp].target = target;
+        } catch (...) {
+            auto ex = std::current_exception();
+            if (!ssx::is_shutdown_exception(ex)) {
+                vlog(
+                  clusterlog.warn,
+                  "[{}] shard_assigner exception: {}",
+                  ntp,
+                  ex);
+                _to_assign.insert(ntp);
+            }
+        }
+    }
 
 private:
     ntp_table& _ntpt;
@@ -643,8 +673,10 @@ private:
     ntp2shards_t& _ntp2shards;
     ss::sharded<reconciliation_backend>& _rb;
 
-    ssx::work_queue _work_queue;
-    int _in_progress = 0;
+    chunked_hash_set<model::ntp> _to_assign;
+    bool _in_progress = false;
+    ssx::event _wakeup_event{"shard_assigner"};
+    ss::gate _gate;
 };
 
 } // namespace
