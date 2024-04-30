@@ -25,11 +25,11 @@ func TestRpkYamlVersion(t *testing.T) {
 	shastr := hex.EncodeToString(sha[:])
 
 	const (
-		v4sha = "d40eea0724c6f7c876e5551c9b0a90d71d409c0426efbf6c06f3c25fef4b262e" // 24-04-15
+		v5sha = "74f0b320006aac52cb75af3d5c658f81decf3e40fe1e92f3eb1d59f5c47ab5f9" // 24-04-29
 	)
 
-	if shastr != v4sha {
-		t.Errorf("rpk.yaml type shape has changed (got sha %s != exp %s, if fields were reordered, update the valid v3 sha, otherwise bump the rpk.yaml version number", shastr, v4sha)
+	if shastr != v5sha {
+		t.Errorf("rpk.yaml type shape has changed (got sha %s != exp %s, if fields were reordered, update the valid v3 sha, otherwise bump the rpk.yaml version number", shastr, v5sha)
 		t.Errorf("current shape:\n%s\n", s)
 	}
 }

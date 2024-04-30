@@ -478,12 +478,12 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1beta2.Resour
 		Name:      c.Name,
 		FromCloud: true,
 		CloudCluster: config.RpkCloudCluster{
-			Namespace:   rg.Name,
-			ClusterID:   c.Id,
-			ClusterName: c.Name,
-			AuthOrgID:   yAuth.OrgID,
-			AuthKind:    yAuth.Kind,
-			ClusterType: c.Type.String(),
+			ResourceGroup: rg.Name,
+			ClusterID:     c.Id,
+			ClusterName:   c.Name,
+			AuthOrgID:     yAuth.OrgID,
+			AuthKind:      yAuth.Kind,
+			ClusterType:   c.Type.String(),
 		},
 	}
 	if c.DataplaneApi != nil {
@@ -523,12 +523,12 @@ func fromVirtualCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1beta2.Reso
 			TLS:       new(config.TLS),
 		},
 		CloudCluster: config.RpkCloudCluster{
-			Namespace:   rg.Name,
-			ClusterID:   vc.ID,
-			ClusterName: vc.Name,
-			AuthOrgID:   yAuth.OrgID,
-			AuthKind:    yAuth.Kind,
-			ClusterType: publicapi.ServerlessClusterType, // Virtual clusters do not include a type in the response yet.
+			ResourceGroup: rg.Name,
+			ClusterID:     vc.ID,
+			ClusterName:   vc.Name,
+			AuthOrgID:     yAuth.OrgID,
+			AuthKind:      yAuth.Kind,
+			ClusterType:   publicapi.ServerlessClusterType, // Virtual clusters do not include a type in the response yet.
 		},
 	}
 
