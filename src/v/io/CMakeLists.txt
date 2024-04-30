@@ -6,7 +6,6 @@ v_cc_library(
     persistence.cc
     page.cc
     page_set.cc
-    clang-tidy-helper.cc
     logger.cc
     io_queue.cc
     scheduler.cc

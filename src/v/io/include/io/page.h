@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include "cache.h"
 #include "container/intrusive_list_helpers.h"
+#include "io/cache.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>

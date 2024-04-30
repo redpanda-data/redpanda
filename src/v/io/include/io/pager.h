@@ -10,9 +10,9 @@
  */
 #pragma once
 
-#include "cache.h"
-#include "page_set.h"
-#include "scheduler.h"
+#include "io/cache.h"
+#include "io/page_set.h"
+#include "io/scheduler.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -87,6 +87,8 @@ public:
      */
     seastar::future<std::vector<seastar::lw_shared_ptr<page>>>
     read(read_config cfg) noexcept;
+
+    size_t size() const { return size_; }
 
 private:
     static seastar::lw_shared_ptr<page> alloc_page(
