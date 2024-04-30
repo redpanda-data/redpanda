@@ -19,6 +19,7 @@
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/property.h"
 #include "container/fragmented_vector.h"
 #include "http/tests/http_imposter.h"
 #include "model/fundamental.h"
@@ -68,13 +69,14 @@ class archiver_cluster_fixture
           cloud_storage_clients::endpoint_url{});
         s3_conf.server_addr = server_addr;
 
-        archival::configuration a_conf;
+        archival::configuration a_conf{
+          .manifest_upload_timeout = config::mock_binding(1000ms),
+        };
         a_conf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
         a_conf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
         a_conf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
         a_conf.cloud_storage_initial_backoff = 100ms;
         a_conf.segment_upload_timeout = 1s;
-        a_conf.manifest_upload_timeout = 1s;
         a_conf.garbage_collect_timeout = 1s;
         a_conf.upload_loop_initial_backoff = 100ms;
         a_conf.upload_loop_max_backoff = 5s;
