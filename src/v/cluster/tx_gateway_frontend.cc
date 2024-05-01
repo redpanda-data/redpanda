@@ -318,7 +318,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _metadata_dissemination_retry_delay_ms(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value())
   , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
+      config::shard_local_cfg().transactional_id_expiration_ms.bind())
   , _transactions_enabled(config::shard_local_cfg().enable_transactions.value())
   , _max_transactions_per_coordinator(max_transactions_per_coordinator) {
     /**
@@ -327,6 +327,8 @@ tx_gateway_frontend::tx_gateway_frontend(
     if (_transactions_enabled) {
         start_expire_timer();
     }
+    _transactional_id_expiration.watch(
+      [this]() { rearm_expire_timer(/*force=*/true); });
 }
 
 void tx_gateway_frontend::start_expire_timer() {
@@ -344,13 +346,19 @@ void tx_gateway_frontend::start_expire_timer() {
     rearm_expire_timer();
 }
 
-void tx_gateway_frontend::rearm_expire_timer() {
-    if (!_expire_timer.armed() && !_gate.is_closed()) {
+void tx_gateway_frontend::rearm_expire_timer(bool force) {
+    if (ss::this_shard_id() != 0 || _gate.is_closed()) {
+        return;
+    }
+    if (force) {
+        _expire_timer.cancel();
+    }
+    if (!_expire_timer.armed()) {
         // we need to expire transactional ids which were inactive more than
         // transactional_id_expiration period. if we check for the expired
         // transactions twice during the period then in the worst case an
         // expired id lives at most 1.5 x transactional_id_expiration
-        auto delay = _transactional_id_expiration / 2;
+        auto delay = _transactional_id_expiration() / 2;
         _expire_timer.arm(model::timeout_clock::now() + delay);
     }
 }
