@@ -344,6 +344,17 @@ void tx_gateway_frontend::start_expire_timer() {
     rearm_expire_timer();
 }
 
+void tx_gateway_frontend::rearm_expire_timer() {
+    if (!_expire_timer.armed() && !_gate.is_closed()) {
+        // we need to expire transactional ids which were inactive more than
+        // transactional_id_expiration period. if we check for the expired
+        // transactions twice during the period then in the worst case an
+        // expired id lives at most 1.5 x transactional_id_expiration
+        auto delay = _transactional_id_expiration / 2;
+        _expire_timer.arm(model::timeout_clock::now() + delay);
+    }
+}
+
 ss::future<> tx_gateway_frontend::stop() {
     vlog(txlog.debug, "Asked to stop tx coordinator");
     _expire_timer.cancel();
