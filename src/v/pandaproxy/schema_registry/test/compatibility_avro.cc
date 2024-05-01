@@ -11,12 +11,20 @@
 
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/test/compatibility_common.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <absl/container/flat_hash_set.h>
+
+#include <array>
+#include <iostream>
+
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
+
+namespace {
 
 bool check_compatible(
   const pps::canonical_schema_definition& r,
@@ -31,6 +39,22 @@ bool check_compatible(
                .get())
       .is_compat;
 }
+
+pps::compatibility_result check_compatible_verbose(
+  const pps::canonical_schema_definition& r,
+  const pps::canonical_schema_definition& w) {
+    pps::sharded_store s;
+    return check_compatible(
+      pps::make_avro_schema_definition(
+        s, {pps::subject("r"), {r.raw(), pps::schema_type::avro}})
+        .get(),
+      pps::make_avro_schema_definition(
+        s, {pps::subject("w"), {w.raw(), pps::schema_type::avro}})
+        .get(),
+      pps::verbose::yes);
+}
+
+} // namespace
 
 SEASTAR_THREAD_TEST_CASE(test_avro_type_promotion) {
     BOOST_REQUIRE(check_compatible(schema_long, schema_int));
@@ -276,4 +300,225 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition_custom_attributes) {
       "schema2 is an avro_schema_definition");
     pps::canonical_schema_definition avro_conversion{valid};
     BOOST_CHECK_EQUAL(expected, avro_conversion);
+}
+namespace {
+
+const auto schema_old = pps::sanitize_avro_schema_definition(
+                          {
+                            R"({
+    "type": "record",
+    "name": "myrecord",
+    "fields": [
+        {
+            "name": "f1",
+            "type": "string"
+        },
+        {
+            "name": "f2",
+            "type": {
+                "name": "nestedRec",
+                "type": "record",
+                "fields": [
+                    {
+                        "name": "nestedF",
+                        "type": "string"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "uF",
+            "type": ["int", "string"]
+        },
+        {
+            "name": "enumF",
+            "type": {
+                "name": "ABorC",
+                "type": "enum",
+                "symbols": ["a", "b", "c"]
+            }           
+        },
+        {
+            "name": "fixedF",
+            "type": {
+                "type": "fixed",
+                "name": "fixedT",
+                "size": 1
+            }
+        },
+	      {
+	          "name": "oldUnion",
+	          "type": ["int", "string"]
+	      },
+	      {
+	          "name": "newUnion",
+	          "type": "int"
+	      },
+        {
+            "name": "someList",
+            "type": {
+                "type": "array",
+                "items": "int"
+            }
+        }
+    ]
+})",
+                            pps::schema_type::avro})
+                          .value();
+
+const auto schema_new = pps::sanitize_avro_schema_definition(
+                          {
+                            R"({
+    "type": "record",
+    "name": "myrecord",
+    "fields": [
+        {
+            "name": "f1",
+            "type": "int"
+        },
+        {
+            "name": "f2",
+            "type": {
+                "name": "nestedRec2",
+                "type": "record",
+                "fields": [
+                    {
+                        "name": "broken",
+                        "type": "string"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "uF",
+            "type": ["string"]
+        },
+        {
+            "name": "enumF",
+            "type": {
+                "name": "ABorC",
+                "type": "enum",
+                "symbols": ["a"]
+            }           
+        },
+        {
+            "name": "fixedF",
+            "type": {
+                "type": "fixed",
+                "name": "fixedT",
+                "size": 2
+            }
+        },
+        {
+            "name": "oldUnion",
+	          "type": "boolean"
+	      },
+	      {
+	          "name": "newUnion",
+	          "type": ["boolean", "string"]
+	      },
+        {
+            "name": "someList",
+            "type": {
+                "type": "array",
+                "items": "long"
+            }
+        }
+    ]
+})",
+                            pps::schema_type::avro})
+                          .value();
+
+using incompatibility = pps::avro_incompatibility;
+
+const absl::flat_hash_set<incompatibility> forward_expected{
+  {"/fields/0/type",
+   incompatibility::Type::type_mismatch,
+   "reader type: STRING not compatible with writer type: INT"},
+  {"/fields/1/type/name",
+   incompatibility::Type::name_mismatch,
+   "expected: nestedRec2"},
+  {"/fields/1/type/fields/0",
+   incompatibility::Type::reader_field_missing_default_value,
+   "nestedF"},
+  {"/fields/4/type/size",
+   incompatibility::Type::fixed_size_mismatch,
+   "expected: 2, found: 1"},
+  {"/fields/5/type",
+   incompatibility::Type::missing_union_branch,
+   "reader union lacking writer type: BOOLEAN"},
+  {"/fields/6/type", /* NOTE: this is more path info than the reference impl */
+   incompatibility::Type::type_mismatch,
+   "reader type: INT not compatible with writer type: BOOLEAN"},
+  {"/fields/6/type", /* NOTE: this is more path info than the reference impl */
+   incompatibility::Type::type_mismatch,
+   "reader type: INT not compatible with writer type: STRING"},
+  {"/fields/7/type/items",
+   incompatibility::Type::type_mismatch,
+   "reader type: INT not compatible with writer type: LONG"},
+};
+const absl::flat_hash_set<incompatibility> backward_expected{
+  {"/fields/0/type",
+   incompatibility::Type::type_mismatch,
+   "reader type: INT not compatible with writer type: STRING"},
+  {"/fields/1/type/name",
+   incompatibility::Type::name_mismatch,
+   "expected: nestedRec"},
+  {"/fields/1/type/fields/0",
+   incompatibility::Type::reader_field_missing_default_value,
+   "broken"},
+  {"/fields/2/type/0",
+   incompatibility::Type::missing_union_branch,
+   "reader union lacking writer type: INT"},
+  {"/fields/3/type/symbols",
+   incompatibility::Type::missing_enum_symbols,
+   "[b, c]"},
+  {"/fields/4/type/size",
+   incompatibility::Type::fixed_size_mismatch,
+   "expected: 1, found: 2"},
+  {"/fields/5/type", /* NOTE: this is more path info than the reference impl */
+   incompatibility::Type::type_mismatch,
+   "reader type: BOOLEAN not compatible with writer type: INT"},
+  {"/fields/5/type", /* NOTE: this is more path info than the reference impl */
+   incompatibility::Type::type_mismatch,
+   "reader type: BOOLEAN not compatible with writer type: STRING"},
+  {"/fields/6/type",
+   incompatibility::Type::missing_union_branch,
+   "reader union lacking writer type: INT"},
+};
+
+const auto compat_data = std::to_array<compat_test_data<incompatibility>>({
+  {
+    schema_old,
+    schema_new,
+    test_schema_type::AVRO,
+    forward_expected,
+  },
+  {
+    schema_new,
+    schema_old,
+    test_schema_type::AVRO,
+    backward_expected,
+  },
+});
+
+} // namespace
+
+namespace std {
+extern std::ostream&
+operator<<(std::ostream& os, const absl::flat_hash_set<ss::sstring>& d);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_avro_compat_messages) {
+    for (const auto& cd : compat_data) {
+        auto compat = check_compatible_verbose(cd.reader, cd.writer);
+        absl::flat_hash_set<ss::sstring> errs{
+          compat.messages.begin(), compat.messages.end()};
+        absl::flat_hash_set<ss::sstring> expected{
+          cd.expected.messages.begin(), cd.expected.messages.end()};
+
+        BOOST_CHECK(!compat.is_compat);
+        BOOST_CHECK_EQUAL(errs.size(), expected.size());
+        BOOST_REQUIRE_EQUAL(errs, expected);
+    }
 }

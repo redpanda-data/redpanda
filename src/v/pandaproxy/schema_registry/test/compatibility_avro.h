@@ -137,6 +137,8 @@ const auto union2 = pps::sanitize_avro_schema_definition(
                        pps::schema_type::avro})
                       .value();
 
+// NOTE(oren): arrays shouldn't have names...is this intentional? sanitizer
+// seems to filter it out?
 const auto int_array = pps::sanitize_avro_schema_definition(
                          {R"({
   "name": "test2",
