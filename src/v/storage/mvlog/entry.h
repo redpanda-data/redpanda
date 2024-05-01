@@ -45,4 +45,19 @@ struct record_batch_entry_body
     model::term_id term;
 };
 
+// Container for the deserialized bytes from an entry. Note that this isn't an
+// serde::envelope since it is expected that it will be constructed by reading
+// bytes from a stream. To wit, when streaming, we won't have the entire
+// entry's worth of bytes to deserialize, as we would with serde. A caller may
+// first deserialize the fixed-size header, and then read in the body based on
+// the size from the header.
+struct entry {
+    // The header of the entry.
+    entry_header hdr;
+
+    // The body of the entry. The exact serialization format depends on the
+    // entry_type.
+    iobuf body;
+};
+
 } // namespace storage::experimental::mvlog
