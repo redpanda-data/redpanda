@@ -14,6 +14,7 @@
 #include "base/vlog.h"
 #include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "ssx/sformat.h"
@@ -466,26 +467,41 @@ encoding get_encoding(pb::FieldDescriptor::Type type) {
     __builtin_unreachable();
 }
 
-struct compatibility_checker {
-    bool check_compatible() { return check_compatible(_writer.fd); }
+using proto_compatibility_result = raw_compatibility_result;
 
-    bool check_compatible(const pb::FileDescriptor* writer) {
-        // There must be a compatible reader message for every writer message
+struct compatibility_checker {
+    proto_compatibility_result check_compatible(std::filesystem::path p) {
+        return check_compatible(_writer.fd, std::move(p));
+    }
+
+    proto_compatibility_result check_compatible(
+      const pb::FileDescriptor* writer, std::filesystem::path p) {
+        // There must be a compatible reader message for every writer
+        // message
+        proto_compatibility_result compat_result;
         for (int i = 0; i < writer->message_type_count(); ++i) {
             auto w = writer->message_type(i);
             auto r = _reader._dp.FindMessageTypeByName(w->full_name());
-            if (!r || !check_compatible(r, w)) {
-                return false;
+
+            if (!r) {
+                compat_result.emplace<proto_incompatibility>(
+                  p / w->name(), proto_incompatibility::Type::message_removed);
+            } else {
+                compat_result.merge(check_compatible(r, w, p / w->name()));
             }
         }
-        return true;
+        return compat_result;
     }
 
-    bool check_compatible(
-      const pb::Descriptor* reader, const pb::Descriptor* writer) {
+    proto_compatibility_result check_compatible(
+      const pb::Descriptor* reader,
+      const pb::Descriptor* writer,
+      std::filesystem::path p) {
+        proto_compatibility_result compat_result;
         if (!_seen_descriptors.insert(reader).second) {
-            return true;
+            return compat_result;
         }
+
         for (int i = 0; i < writer->field_count(); ++i) {
             if (reader->IsReservedNumber(i) || writer->IsReservedNumber(i)) {
                 continue;
@@ -493,15 +509,21 @@ struct compatibility_checker {
             int number = writer->field(i)->number();
             auto r = reader->FindFieldByNumber(number);
             // A reader may ignore a writer field
-            if (r && !check_compatible(r, writer->field(i))) {
-                return false;
+            if (!r) {
+                continue;
             }
+
+            compat_result.merge(
+              check_compatible(r, writer->field(i), p / std::to_string(i + 1)));
         }
-        return true;
+        return compat_result;
     }
 
-    bool check_compatible(
-      const pb::FieldDescriptor* reader, const pb::FieldDescriptor* writer) {
+    proto_compatibility_result check_compatible(
+      const pb::FieldDescriptor* reader,
+      const pb::FieldDescriptor* writer,
+      std::filesystem::path p) {
+        proto_compatibility_result compat_result;
         switch (writer->type()) {
         case pb::FieldDescriptor::Type::TYPE_MESSAGE:
         case pb::FieldDescriptor::Type::TYPE_GROUP: {
@@ -509,9 +531,16 @@ struct compatibility_checker {
                                     == pb::FieldDescriptor::Type::TYPE_MESSAGE
                                   || reader->type()
                                        == pb::FieldDescriptor::Type::TYPE_GROUP;
-            return type_is_compat
-                   && check_compatible(
-                     reader->message_type(), writer->message_type());
+            if (type_is_compat) {
+                compat_result.merge(check_compatible(
+                  reader->message_type(),
+                  writer->message_type(),
+                  std::move(p)));
+            } else {
+                compat_result.emplace_error(
+                  p, proto_incompatibility::Type::field_kind_changed);
+            }
+            break;
         }
         case pb::FieldDescriptor::Type::TYPE_FLOAT:
         case pb::FieldDescriptor::Type::TYPE_DOUBLE:
@@ -529,14 +558,27 @@ struct compatibility_checker {
         case pb::FieldDescriptor::Type::TYPE_SFIXED32:
         case pb::FieldDescriptor::Type::TYPE_FIXED64:
         case pb::FieldDescriptor::Type::TYPE_SFIXED64:
-            return check_compatible(
-              get_encoding(reader->type()), get_encoding(writer->type()));
+            compat_result.merge(check_compatible(
+              get_encoding(reader->type()),
+              get_encoding(writer->type()),
+              std::move(p)));
         }
-        __builtin_unreachable();
+        return compat_result;
     }
 
-    bool check_compatible(encoding reader, encoding writer) {
-        return reader == writer && reader != encoding::struct_;
+    proto_compatibility_result check_compatible(
+      encoding reader, encoding writer, std::filesystem::path p) {
+        proto_compatibility_result compat_result;
+        // we know writer has scalar encoding because of the switch stmt above
+        if (reader == encoding::struct_) {
+            compat_result.emplace<proto_incompatibility>(
+              std::move(p), proto_incompatibility::Type::field_kind_changed);
+        } else if (reader != writer) {
+            compat_result.emplace<proto_incompatibility>(
+              std::move(p),
+              proto_incompatibility::Type::field_scalar_kind_changed);
+        }
+        return compat_result;
     }
 
     const protobuf_schema_definition::impl& _reader;
@@ -550,7 +592,7 @@ bool check_compatible(
   const protobuf_schema_definition& reader,
   const protobuf_schema_definition& writer) {
     compatibility_checker checker{reader(), writer()};
-    return checker.check_compatible();
+    return checker.check_compatible("#/")(verbose::no).is_compat;
 }
 
 } // namespace pandaproxy::schema_registry
