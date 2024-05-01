@@ -1316,6 +1316,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
     tx = r.value();
     init_tm_tx_reply reply;
+    model::producer_identity rolled_pid = tx.pid;
     model::producer_identity last_pid = model::unknown_pid;
 
     if (expected_pid == model::unknown_pid) {
@@ -1353,7 +1354,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
       reply.pid,
       last_pid);
     auto op_status = co_await stm->re_register_producer(
-      term, tx.id, transaction_timeout_ms, reply.pid, last_pid);
+      term, tx.id, transaction_timeout_ms, reply.pid, last_pid, rolled_pid);
     if (op_status == tm_stm::op_status::success) {
         reply.ec = tx_errc::none;
     } else if (op_status == tm_stm::op_status::conflict) {
