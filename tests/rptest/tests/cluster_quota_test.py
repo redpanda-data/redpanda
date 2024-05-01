@@ -116,10 +116,14 @@ class ClusterRateQuotaTest(RedpandaTest):
     topics = (TopicSpec(replication_factor=1, max_message_bytes=1 * GB), )
 
     def __init__(self, *args, **kwargs):
+        # Note: the quotas apply based on the full size of the request (for
+        # produce) and response (for fetch) including the header size.
+        # Therefore these configurations need to adjust for that overhead.
         self.max_throttle_time = 10
         self.target_default_quota_byte_rate = 1048576
         self.target_group_quota_byte_rate = 10240
         self.message_size = 1024
+        self.under_group_quota_message_amount = 8
         self.break_default_quota_message_amount = int(
             self.target_default_quota_byte_rate / self.message_size) * 11
         self.break_group_quota_message_amount = int(
@@ -226,7 +230,7 @@ class ClusterRateQuotaTest(RedpandaTest):
                                  client_id="producer_group_alone_producer")
 
         # Produce under the limit
-        self.produce(producer, 10)
+        self.produce(producer, self.under_group_quota_message_amount)
         self.check_producer_not_throttled(producer)
 
         # Produce more than limit
@@ -245,7 +249,7 @@ class ClusterRateQuotaTest(RedpandaTest):
                                    client_id="producer_group_multiple_2")
 
         # Produce under the limit
-        self.produce(producer_1, 10)
+        self.produce(producer_1, self.under_group_quota_message_amount)
         self.check_producer_not_throttled(producer_1)
 
         # Produce more than the limit
@@ -253,7 +257,7 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.check_producer_throttled(producer_1)
 
         # Produce under the limit for client, but more than limit for group
-        self.produce(producer_2, 10)
+        self.produce(producer_2, self.under_group_quota_message_amount)
         self.check_producer_throttled(producer_2)
 
         self.redpanda.set_cluster_config({
@@ -504,7 +508,7 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.check_consumer_throttled(consumer)
 
         # Produce must not be throttled
-        self.produce(producer, 10)
+        self.produce(producer, self.under_group_quota_message_amount)
         self.check_producer_not_throttled(producer)
 
     def _throttling_enforced_broker_side(self):
