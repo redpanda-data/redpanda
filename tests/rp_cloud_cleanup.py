@@ -499,6 +499,10 @@ class CloudCleanup():
             - Check if such cluster is deleted
             - Delete bucket
         """
+        def _delete_bucket(name):
+            # Delete bucket
+            self.provider.delete_bucket(name)
+
         if self.config.provider == "GCP":
             self.log.warning("Bucket cleaning not yet supported for GCP")
             return False
@@ -512,14 +516,32 @@ class CloudCleanup():
             buckets = self.provider.list_buckets(mask=mask)
             self.log.info(f"# Found buckets: {len(buckets)}")
             for bucket in buckets:
-                self.log.info(f"-> Processing '{bucket['Name']}'")
+                msg = f"-> '{bucket['Name']}'"
                 # Check creation time
-                created = bucket['CreationDate']
+                last_modified = self.provider.query_bucket_lastmodified_date(
+                    bucket['Name'])
+                # last modified date comes from first key/object in the bucket
+                # If it is empty - then make sure it is 1h old. I.e. not
+                # part of some running test.
+                # Assumption here is that RP will write something to
+                # the bucket right when it knows it exists
+                if last_modified is None:
+                    # Bucket is empty
+                    # If creation date is >1h, just delete it
+                    one_hour = datetime.now() - timedelta(hours=1)
+                    creation_date = bucket['CreationDate']
+                    if creation_date.timestamp() > one_hour.timestamp():
+                        _delete_bucket(bucket['Name'])
+                    else:
+                        msg += " | empty | 1h not passed"
+                        self.log.info(msg)
+                        continue
                 ts = self.back_8h if eight_hours else self.back_36h
-                if created.timestamp() > ts.timestamp():
-                    _d = created.strftime(ns_name_date_fmt)
-                    self.log.info(f"...8h not passed; created at {_d}'; "
-                                  "skipped")
+                if last_modified.timestamp() > ts.timestamp():  # type: ignore
+                    _d = last_modified.strftime(
+                        ns_name_date_fmt)  # type: ignore
+                    msg += f" | created at {_d} | not empty | 8h not passed"
+                    self.log.info(msg)
                     continue
                 # Do not need to check the cluster status in CloudV2 API
                 # As we are deleting logs and temp data storages
@@ -529,8 +551,7 @@ class CloudCleanup():
                     bucket['Name'], max_objects=3000)
                 _count = len(bucket_objects)
                 if _count >= 3000:
-                    self.log.info("...more than 3000 objects found. "
-                                  "Applying 1 day expiration policy")
+                    msg += " | >3000 objects | 1 day expiration policy applied"
                     # Apply LC policy
                     # Once we update the policy, creation date of
                     # the bucket will change as it will be replicated
@@ -538,10 +559,11 @@ class CloudCleanup():
                     # instead of old one
                     self.provider.set_bucket_lifecycle_configuration(
                         bucket['Name'])
+                    self.log.info(msg)
                 else:
                     # Delete objects
                     if _count > 0:
-                        self.log.info(f"...deleting {_count} objects")
+                        msg += f" | {_count} objects"
                         self.provider.cleanup_bucket(bucket['Name'])
                     iters = 10
                     while iters > 0:
@@ -550,15 +572,15 @@ class CloudCleanup():
                         count = len(count)
                         if count == 0:
                             break
-                        self.log.info("...bucket is not empty, waiting 10 sec")
                         time.sleep(10)
                         iters -= 1
                     if iters == 0:
-                        self.log.info("...bucket deletion postponed")
+                        msg += " | deletion postponed"
+                        self.log.info(msg)
                         continue
-                    # Delete bucket
-                    self.log.info(f"...deleting bucket '{bucket['Name']}'")
-                    self.provider.delete_bucket(bucket['Name'])
+                    _delete_bucket(bucket['Name'])
+                    msg += " | deleted"
+                    self.log.info(msg)
 
         self.log.info(f"# Done cleaning up buckets with mask '{mask}'\n\n")
         return True
