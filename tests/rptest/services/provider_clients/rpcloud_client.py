@@ -1,4 +1,5 @@
 import requests
+from typing import Union
 
 
 class RpCloudApiClient(object):
@@ -52,7 +53,7 @@ class RpCloudApiClient(object):
                   override_headers=None,
                   text_response=False,
                   quite=False,
-                  **kwargs):
+                  **kwargs) -> Union[None, dict, str]:
         headers = override_headers
         if headers is None:
             token = self._get_token()
@@ -163,7 +164,7 @@ class RpCloudApiClient(object):
         _network = self._http_get(self.network_endpoint(id=network_id))
         return _network
 
-    def get_resource(self, resource_handle):
+    def get_resource(self, resource_handle) -> Union[None, dict, str]:
         _r = None
         try:
             _r = self._http_get(endpoint=resource_handle)
