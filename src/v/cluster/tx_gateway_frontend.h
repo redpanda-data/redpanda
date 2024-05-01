@@ -98,7 +98,7 @@ private:
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
-    std::chrono::milliseconds _transactional_id_expiration;
+    config::binding<std::chrono::milliseconds> _transactional_id_expiration;
     bool _transactions_enabled;
     config::binding<uint64_t> _max_transactions_per_coordinator;
 
@@ -117,7 +117,7 @@ private:
 
     void start_expire_timer();
 
-    void rearm_expire_timer();
+    void rearm_expire_timer(bool force = false);
 
     ss::future<std::optional<model::node_id>>
     wait_for_leader(const model::ntp&);

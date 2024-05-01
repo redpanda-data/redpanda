@@ -367,7 +367,7 @@ private:
     ss::future<raft::stm_snapshot> take_local_snapshot() override;
 
     std::chrono::milliseconds _sync_timeout;
-    std::chrono::milliseconds _transactional_id_expiration;
+    config::binding<std::chrono::milliseconds> _transactional_id_expiration;
     absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
       _pid_tx_id;
     absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
