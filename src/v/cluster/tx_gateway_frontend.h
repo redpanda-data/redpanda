@@ -117,16 +117,7 @@ private:
 
     void start_expire_timer();
 
-    void rearm_expire_timer() {
-        if (!_expire_timer.armed() && !_gate.is_closed()) {
-            // we need to expire transactional ids which were inactive more than
-            // transactional_id_expiration period. if we check for the expired
-            // transactions twice during the period then in the worst case an
-            // expired id lives at most 1.5 x transactional_id_expiration
-            auto delay = _transactional_id_expiration / 2;
-            _expire_timer.arm(model::timeout_clock::now() + delay);
-        }
-    }
+    void rearm_expire_timer();
 
     ss::future<std::optional<model::node_id>>
     wait_for_leader(const model::ntp&);
