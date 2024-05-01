@@ -120,9 +120,6 @@ ss::future<> shard_placement_table::initialize(
                   return;
               }
 
-              auto shard_rev = model::shard_revision_id{
-                replicas_view.last_cmd_revision()};
-
               if (ss::this_shard_id() == assignment_shard_id) {
                   _ntp2target.emplace(ntp, target.value());
               }
@@ -152,7 +149,7 @@ ss::future<> shard_placement_table::initialize(
               auto placement = placement_state();
               auto assigned = shard_local_assignment{
                 .log_revision = target->log_revision,
-                .shard_revision = shard_rev};
+                .shard_revision = _cur_shard_revision};
 
               if (orig_shard && target->shard != orig_shard) {
                   // cross-shard transfer, orig_shard gets the hosted marker
@@ -171,12 +168,15 @@ ss::future<> shard_placement_table::initialize(
               }
           });
     }
+
+    if (!_ntp2target.empty()) {
+        _cur_shard_revision += 1;
+    }
 }
 
 ss::future<> shard_placement_table::set_target(
   const model::ntp& ntp,
   std::optional<shard_placement_target> target,
-  model::shard_revision_id shard_rev,
   shard_callback_t shard_callback) {
     vassert(
       ss::this_shard_id() == assignment_shard_id,
@@ -189,6 +189,7 @@ ss::future<> shard_placement_table::set_target(
 
     std::optional<ss::shard_id> prev;
     bool is_initial = false;
+    model::shard_revision_id shard_rev = _cur_shard_revision;
     if (target) {
         auto [it, inserted] = _ntp2target.try_emplace(ntp, *target);
         if (inserted) {
@@ -198,6 +199,7 @@ ss::future<> shard_placement_table::set_target(
               ntp,
               target,
               shard_rev);
+            _cur_shard_revision += 1;
             is_initial = true;
         } else {
             if (it->second == *target) {
@@ -210,6 +212,7 @@ ss::future<> shard_placement_table::set_target(
                 co_return;
             }
 
+            _cur_shard_revision += 1;
             vlog(
               clusterlog.trace,
               "[{}] modify target: {} -> {}, shard_rev: {}",
@@ -234,6 +237,7 @@ ss::future<> shard_placement_table::set_target(
             co_return;
         }
 
+        _cur_shard_revision += 1;
         vlog(
           clusterlog.trace,
           "[{}] remove target: {}, shard_rev: {}",
@@ -262,10 +266,8 @@ ss::future<> shard_placement_table::set_target(
 
     if (prev) {
         co_await container().invoke_on(
-          *prev,
-          [&ntp, shard_rev, shard_callback](shard_placement_table& other) {
-              return other.remove_assigned_on_this_shard(
-                ntp, shard_rev, shard_callback);
+          *prev, [&ntp, shard_callback](shard_placement_table& other) {
+              return other.remove_assigned_on_this_shard(ntp, shard_callback);
           });
     }
 }
@@ -300,14 +302,8 @@ ss::future<> shard_placement_table::set_assigned_on_this_shard(
 }
 
 ss::future<> shard_placement_table::remove_assigned_on_this_shard(
-  const model::ntp& ntp,
-  model::shard_revision_id shard_rev,
-  shard_callback_t shard_callback) {
-    vlog(
-      clusterlog.trace,
-      "[{}] removing assigned on this shard, shard_revision: {}",
-      ntp,
-      shard_rev);
+  const model::ntp& ntp, shard_callback_t shard_callback) {
+    vlog(clusterlog.trace, "[{}] removing assigned on this shard", ntp);
 
     auto it = _states.find(ntp);
     if (it == _states.end()) {

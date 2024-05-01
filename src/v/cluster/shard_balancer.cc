@@ -88,10 +88,7 @@ ss::future<> shard_balancer::process_delta(const topic_table::delta& delta) {
     if (!maybe_replicas_view) {
         if (delta.type == topic_table_delta_type::removed) {
             co_await _shard_placement.local().set_target(
-              ntp,
-              std::nullopt,
-              model::shard_revision_id{delta.revision()},
-              shard_callback);
+              ntp, std::nullopt, shard_callback);
         }
         co_return;
     }
@@ -100,18 +97,13 @@ ss::future<> shard_balancer::process_delta(const topic_table::delta& delta) {
     // Has value if the partition is expected to exist on this node.
     auto target = placement_target_on_node(replicas_view, _self);
 
-    auto shard_rev = model::shard_revision_id{
-      replicas_view.last_cmd_revision()};
-
     vlog(
       clusterlog.trace,
-      "[{}] setting placement target on on this node: {}, shard_rev: {}",
+      "[{}] setting placement target on on this node: {}",
       ntp,
-      target,
-      shard_rev);
+      target);
 
-    co_await _shard_placement.local().set_target(
-      ntp, target, shard_rev, shard_callback);
+    co_await _shard_placement.local().set_target(ntp, target, shard_callback);
 }
 
 } // namespace cluster

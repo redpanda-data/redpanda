@@ -146,7 +146,6 @@ public:
     ss::future<> set_target(
       const model::ntp&,
       std::optional<shard_placement_target>,
-      model::shard_revision_id,
       shard_callback_t);
 
     // getters
@@ -191,8 +190,8 @@ private:
       bool is_initial,
       shard_callback_t);
 
-    ss::future<> remove_assigned_on_this_shard(
-      const model::ntp&, model::shard_revision_id, shard_callback_t);
+    ss::future<>
+    remove_assigned_on_this_shard(const model::ntp&, shard_callback_t);
 
     ss::future<> do_delete(const model::ntp&, placement_state&);
 
@@ -207,6 +206,7 @@ private:
     // only on shard 0, _ntp2target will hold targets for all ntps on this node.
     mutex _mtx{"shard_placement_table"};
     absl::node_hash_map<model::ntp, shard_placement_target> _ntp2target;
+    model::shard_revision_id _cur_shard_revision{0};
 };
 
 std::ostream& operator<<(std::ostream&, shard_placement_table::hosted_status);

@@ -628,7 +628,6 @@ public:
               .set_target(
                 ntp,
                 target,
-                _cur_shard_revision++,
                 [this](const model::ntp& ntp) {
                     _rb.local().notify_reconciliation(ntp);
                 })
@@ -646,7 +645,6 @@ private:
 
     ssx::work_queue _work_queue;
     int _in_progress = 0;
-    model::shard_revision_id _cur_shard_revision{1};
 };
 
 } // namespace
