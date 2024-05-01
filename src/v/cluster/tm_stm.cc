@@ -518,14 +518,16 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::producer_identity pid,
-  model::producer_identity last_pid) {
+  model::producer_identity last_pid,
+  model::producer_identity rolled_pid) {
     vlog(
       _ctx_log.trace,
       "[tx_id={}] Registering existing transaction with new pid: {}, previous "
-      "pid: {}",
+      "pid: {}, rolled_pid: {}",
       tx_id,
       pid,
-      last_pid);
+      last_pid,
+      rolled_pid);
 
     auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
@@ -549,6 +551,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
     if (!r.has_value()) {
         co_return tm_stm::op_status::unknown;
     }
+    _pid_tx_id.erase(rolled_pid);
     co_return tm_stm::op_status::success;
 }
 
@@ -914,6 +917,7 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
     }
 
     _cache->set_log(tx);
+    _pid_tx_id.erase(tx.last_pid);
     _pid_tx_id[tx.pid] = tx.id;
 
     return ss::now();

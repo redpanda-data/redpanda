@@ -306,12 +306,17 @@ public:
       mark_tx_prepared(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       mark_tx_killed(model::term_id, kafka::transactional_id);
+    // todo: cleanup last_pid and rolled_pid. It seems like they are doing
+    // the same thing but in practice they are not. last_pid is not updated
+    // in all cases whereas rolled_pid is need to cleanup all the state
+    // from previous epochs.
     ss::future<tm_stm::op_status> re_register_producer(
       model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
-      model::producer_identity,
-      model::producer_identity);
+      model::producer_identity pid_to_register,
+      model::producer_identity last_pid,
+      model::producer_identity rolled_pid);
     ss::future<tm_stm::op_status> register_new_producer(
       model::term_id,
       kafka::transactional_id,
