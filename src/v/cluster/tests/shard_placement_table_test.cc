@@ -727,10 +727,13 @@ public:
               << "ntp: " << ntp;
             const auto& shard2state = states_it->second;
 
-            auto target_it = spt.local()._ntp2target.find(ntp);
-            ASSERT_TRUE_CORO(target_it != spt.local()._ntp2target.end())
+            auto entry_it = spt.local()._ntp2entry.find(ntp);
+            ASSERT_TRUE_CORO(entry_it != spt.local()._ntp2entry.end())
               << "ntp: " << ntp;
-            const auto& target = target_it->second;
+            ASSERT_TRUE_CORO(entry_it->second->target) << "ntp: " << ntp;
+            ASSERT_TRUE_CORO(entry_it->second->mtx.ready()) << "ntp: " << ntp;
+
+            const auto& target = entry_it->second->target.value();
             ASSERT_EQ_CORO(target.log_revision, meta.log_revision)
               << "ntp: " << ntp;
 

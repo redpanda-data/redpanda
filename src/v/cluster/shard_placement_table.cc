@@ -16,6 +16,8 @@
 #include "cluster/topic_table.h"
 #include "ssx/async_algorithm.h"
 
+#include <seastar/util/defer.hh>
+
 namespace cluster {
 
 std::ostream& operator<<(
@@ -121,7 +123,9 @@ ss::future<> shard_placement_table::initialize(
               }
 
               if (ss::this_shard_id() == assignment_shard_id) {
-                  _ntp2target.emplace(ntp, target.value());
+                  auto it = _ntp2entry.emplace(ntp, std::make_unique<entry_t>())
+                              .first;
+                  it->second->target = target.value();
               }
 
               // We add an initial hosted marker for the partition on the shard
@@ -169,7 +173,7 @@ ss::future<> shard_placement_table::initialize(
           });
     }
 
-    if (!_ntp2target.empty()) {
+    if (!_ntp2entry.empty()) {
         _cur_shard_revision += 1;
     }
 }
@@ -183,74 +187,54 @@ ss::future<> shard_placement_table::set_target(
       "method can only be invoked on shard {}",
       assignment_shard_id);
 
-    auto units = co_await _mtx.get_units();
+    if (!target && !_ntp2entry.contains(ntp)) {
+        co_return;
+    }
+
+    auto entry_it = _ntp2entry.try_emplace(ntp).first;
+    if (!entry_it->second) {
+        entry_it->second = std::make_unique<entry_t>();
+    }
+    entry_t& entry = *entry_it->second;
+
+    auto release_units = ss::defer(
+      [&, units = co_await entry.mtx.get_units()]() mutable {
+          bool had_waiters = entry.mtx.waiters() > 0;
+          units.return_all();
+          if (!had_waiters && !entry.target) {
+              _ntp2entry.erase(ntp);
+          }
+      });
+
+    const auto prev_target = entry.target;
+    if (prev_target == target) {
+        vlog(
+          clusterlog.trace,
+          "[{}] modify target no-op, current: {}",
+          ntp,
+          prev_target);
+        co_return;
+    }
 
     // 1. update node-wide map
 
-    std::optional<ss::shard_id> prev;
-    bool is_initial = false;
-    model::shard_revision_id shard_rev = _cur_shard_revision;
-    if (target) {
-        auto [it, inserted] = _ntp2target.try_emplace(ntp, *target);
-        if (inserted) {
-            vlog(
-              clusterlog.trace,
-              "[{}] insert target: {}, shard_rev: {}",
-              ntp,
-              target,
-              shard_rev);
-            _cur_shard_revision += 1;
-            is_initial = true;
-        } else {
-            if (it->second == *target) {
-                vlog(
-                  clusterlog.trace,
-                  "[{}] modify target no-op, cur: {}, shard_rev: {}",
-                  ntp,
-                  it->second,
-                  shard_rev);
-                co_return;
-            }
+    const model::shard_revision_id shard_rev = _cur_shard_revision;
+    _cur_shard_revision += 1;
 
-            _cur_shard_revision += 1;
-            vlog(
-              clusterlog.trace,
-              "[{}] modify target: {} -> {}, shard_rev: {}",
-              ntp,
-              it->second,
-              target,
-              shard_rev);
-            is_initial = it->second.log_revision != target->log_revision;
-            if (it->second.shard != target->shard) {
-                prev = it->second.shard;
-            }
-            it->second = *target;
-        }
-    } else {
-        auto prev_it = _ntp2target.find(ntp);
-        if (prev_it == _ntp2target.end()) {
-            vlog(
-              clusterlog.trace,
-              "[{}] remove target no-op, shard_rev: {}",
-              ntp,
-              shard_rev);
-            co_return;
-        }
-
-        _cur_shard_revision += 1;
-        vlog(
-          clusterlog.trace,
-          "[{}] remove target: {}, shard_rev: {}",
-          ntp,
-          prev_it->second,
-          shard_rev);
-        prev = prev_it->second.shard;
-        _ntp2target.erase(prev_it);
-    }
+    vlog(
+      clusterlog.trace,
+      "[{}] modify target: {} -> {}, shard_rev: {}",
+      ntp,
+      prev_target,
+      target,
+      shard_rev);
+    entry.target = target;
 
     // 2. update shard-local state
 
     if (target) {
+        const bool is_initial
+          = (!prev_target || prev_target->log_revision != target->log_revision);
         co_await container().invoke_on(
           target->shard,
           [&ntp, target, shard_rev, is_initial, shard_callback](
@@ -264,9 +248,10 @@ ss::future<> shard_placement_table::set_target(
           });
     }
 
-    if (prev) {
+    if (prev_target && (!target || target->shard != prev_target->shard)) {
         co_await container().invoke_on(
-          *prev, [&ntp, shard_callback](shard_placement_table& other) {
+          prev_target->shard,
+          [&ntp, shard_callback](shard_placement_table& other) {
               return other.remove_assigned_on_this_shard(ntp, shard_callback);
           });
     }
@@ -411,14 +396,15 @@ ss::future<result<ss::shard_id>> shard_placement_table::prepare_transfer(
         auto maybe_dest = co_await container().invoke_on(
           assignment_shard_id,
           [&ntp, expected_log_rev](shard_placement_table& spt) {
-              auto it = spt._ntp2target.find(ntp);
-              if (it == spt._ntp2target.end()) {
+              auto it = spt._ntp2entry.find(ntp);
+              if (it == spt._ntp2entry.end()) {
                   return std::optional<ss::shard_id>{};
               }
-              if (it->second.log_revision != expected_log_rev) {
-                  return std::optional<ss::shard_id>{};
+              const auto& target = it->second->target;
+              if (target && target->log_revision == expected_log_rev) {
+                  return std::optional{target->shard};
               }
-              return std::optional{it->second.shard};
+              return std::optional<ss::shard_id>{};
           });
         if (!maybe_dest || maybe_dest == ss::this_shard_id()) {
             // Inconsistent state, likely because we are in the middle of

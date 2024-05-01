@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "cluster/types.h"
+#include "container/chunked_hash_map.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>
@@ -203,9 +204,16 @@ private:
     // node_hash_map for pointer stability
     absl::node_hash_map<model::ntp, placement_state> _states;
 
-    // only on shard 0, _ntp2target will hold targets for all ntps on this node.
-    mutex _mtx{"shard_placement_table"};
-    absl::node_hash_map<model::ntp, shard_placement_target> _ntp2target;
+    // only on shard 0, _ntp2entry will hold targets for all ntps on this node.
+    struct entry_t {
+        std::optional<shard_placement_target> target;
+        mutex mtx;
+
+        entry_t()
+          : mtx("shard_placement_table") {}
+    };
+
+    chunked_hash_map<model::ntp, std::unique_ptr<entry_t>> _ntp2entry;
     model::shard_revision_id _cur_shard_revision{0};
 };
 
