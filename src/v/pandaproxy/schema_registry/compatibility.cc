@@ -46,7 +46,7 @@ std::string_view description_for_type(avro_incompatibility_type t) {
     case avro_incompatibility_type::reader_field_missing_default_value:
         return "The field '{additional}' at path '{path}' in the {{reader}} "
                "schema has "
-               "no default value and is missing in the {{writer}}";
+               "no default value and is missing in the {{writer}} schema";
     case avro_incompatibility_type::type_mismatch:
         return "The type (path '{path}') of a field in the {{reader}} schema "
                "does not match with the {{writer}} schema";
