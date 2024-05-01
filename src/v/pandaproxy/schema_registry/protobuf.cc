@@ -513,6 +513,11 @@ struct compatibility_checker {
             }
         }
 
+        for (int i = 0; i < reader->real_oneof_decl_count(); ++i) {
+            auto r = reader->oneof_decl(i);
+            compat_result.merge(check_compatible(r, writer, p / r->name()));
+        }
+
         // check writer fields
         for (int i = 0; i < writer->field_count(); ++i) {
             // TODO(oren): Need special handling here?
@@ -551,6 +556,31 @@ struct compatibility_checker {
                   p / std::to_string(reader->field(i)->number()),
                   proto_incompatibility::Type::required_field_added);
             }
+        }
+
+        return compat_result;
+    }
+    proto_compatibility_result check_compatible(
+      const pb::OneofDescriptor* reader,
+      const pb::Descriptor* writer,
+      std::filesystem::path p) {
+        // NOTE(oren): if a oneof disappears altogether, that doesn't cause
+        // incompatibility, even if the fields themselves are not present
+
+        proto_compatibility_result compat_result;
+
+        size_t count = 0;
+        for (int i = 0; i < reader->field_count(); ++i) {
+            auto r = reader->field(i);
+            auto w = writer->FindFieldByNumber(r->number());
+            if (w && !w->real_containing_oneof()) {
+                ++count;
+            }
+        }
+        if (count > 1) {
+            compat_result.emplace<proto_incompatibility>(
+              std::move(p),
+              proto_incompatibility::Type::multiple_fields_moved_to_oneof);
         }
         return compat_result;
     }
