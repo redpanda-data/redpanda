@@ -645,6 +645,134 @@ FIXTURE_TEST(test_list_bucket, remote_fixture) {
     }
 }
 
+FIXTURE_TEST(test_list_bucket_with_max_keys, remote_fixture) {
+    set_expectations_and_listen({});
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(never_abort, 10s, 20ms);
+
+    const auto s3_imposter_max_keys = s3_imposter_fixture::default_max_keys;
+    const auto size = s3_imposter_max_keys + 50;
+    for (int i = 0; i < size; i++) {
+        cloud_storage_clients::object_key path{fmt::format("{}", i)};
+        auto result = remote.local()
+                        .upload_object(
+                          {.transfer_details
+                           = {.bucket = bucket, .key = path, .parent_rtc = fib},
+                           .payload = iobuf{}})
+                        .get();
+        BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+    }
+
+    {
+        // Passing max_keys indicates we, as a user, will handle truncation
+        // results. Here, we know that that size > s3_imposter_max_keys, and the
+        // result will end up truncated.
+        auto max_keys = s3_imposter_max_keys;
+        auto result
+          = remote.local()
+              .list_objects(
+                bucket, fib, std::nullopt, std::nullopt, std::nullopt, max_keys)
+              .get();
+        BOOST_REQUIRE(result.has_value());
+        BOOST_REQUIRE(result.value().is_truncated);
+        // This continuation token is /54 because objects are sorted
+        // lexicographically.
+        BOOST_REQUIRE_EQUAL(result.value().next_continuation_token, "/54");
+        BOOST_REQUIRE_EQUAL(
+          result.value().contents.size(), s3_imposter_max_keys);
+        BOOST_REQUIRE(result.value().common_prefixes.empty());
+
+        // Now, we can use the next_continuation_token from the previous,
+        // truncated result in order to query for the rest of the objects. We
+        // should expect to get the rest of the objects in "storage", and that
+        // this request is not truncated.
+        auto next_result = remote.local()
+                             .list_objects(
+                               bucket,
+                               fib,
+                               std::nullopt,
+                               std::nullopt,
+                               std::nullopt,
+                               max_keys,
+                               result.value().next_continuation_token)
+                             .get();
+        BOOST_REQUIRE(next_result.has_value());
+        BOOST_REQUIRE(!next_result.value().is_truncated);
+        BOOST_REQUIRE_EQUAL(
+          next_result.value().contents.size(), size - s3_imposter_max_keys);
+        BOOST_REQUIRE(next_result.value().common_prefixes.empty());
+    }
+    {
+        // On the other hand, passing max_keys as std::nullopt means
+        // truncation will be handled by the remote API, (all object keys will
+        // be read in a loop, we should expect no truncation in the return
+        // value), and the result contents should be full.
+        auto max_keys = std::nullopt;
+        auto result
+          = remote.local()
+              .list_objects(
+                bucket, fib, std::nullopt, std::nullopt, std::nullopt, max_keys)
+              .get();
+        BOOST_REQUIRE(result.has_value());
+        BOOST_REQUIRE(!result.value().is_truncated);
+        BOOST_REQUIRE_EQUAL(result.value().contents.size(), size);
+        BOOST_REQUIRE(result.value().common_prefixes.empty());
+    }
+    {
+        auto max_keys = 2;
+        auto result
+          = remote.local()
+              .list_objects(
+                bucket, fib, std::nullopt, std::nullopt, std::nullopt, max_keys)
+              .get();
+        BOOST_REQUIRE(result.has_value());
+        BOOST_REQUIRE(result.value().is_truncated);
+        // This continuation token is /10 because objects are sorted
+        // lexicographically.
+        BOOST_REQUIRE_EQUAL(result.value().next_continuation_token, "/10");
+        const auto& contents = result.value().contents;
+        BOOST_REQUIRE_EQUAL(contents.size(), max_keys);
+        BOOST_REQUIRE_EQUAL(contents[0].key, "0");
+        BOOST_REQUIRE_EQUAL(contents[1].key, "1");
+        BOOST_REQUIRE(result.value().common_prefixes.empty());
+    }
+    {
+        // This will also be truncated, since size > s3_imposter_max_keys.
+        auto max_keys = size;
+        auto result
+          = remote.local()
+              .list_objects(
+                bucket, fib, std::nullopt, std::nullopt, std::nullopt, max_keys)
+              .get();
+        BOOST_REQUIRE(result.has_value());
+        BOOST_REQUIRE(result.value().is_truncated);
+        BOOST_REQUIRE_EQUAL(
+          result.value().contents.size(), s3_imposter_max_keys);
+        // This continuation token is /54 because objects are sorted
+        // lexicographically.
+        BOOST_REQUIRE_EQUAL(result.value().next_continuation_token, "/54");
+        BOOST_REQUIRE(result.value().common_prefixes.empty());
+
+        // Reissue another request with continuation-token. This should capture
+        // the rest of the object keys, we expect a non-truncated result.
+        auto next_result = remote.local()
+                             .list_objects(
+                               bucket,
+                               fib,
+                               std::nullopt,
+                               std::nullopt,
+                               std::nullopt,
+                               max_keys,
+                               result.value().next_continuation_token)
+                             .get();
+        BOOST_REQUIRE(next_result.has_value());
+        BOOST_REQUIRE(!next_result.value().is_truncated);
+        BOOST_REQUIRE_EQUAL(
+          next_result.value().contents.size(), size - s3_imposter_max_keys);
+        BOOST_REQUIRE(next_result.value().common_prefixes.empty());
+    }
+}
+
 FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
     set_expectations_and_listen({});
     cloud_storage_clients::bucket_name bucket{"test"};
