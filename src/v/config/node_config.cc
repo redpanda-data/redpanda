@@ -199,8 +199,8 @@ node_config::node_config() noexcept
       "file does not exist or does not return '1', Redpanda immediately "
       "exits.  After the check is complete, Redpanda loads the "
       "OpenSSL FIPS provider into the OpenSSL library.  After this is "
-      "complete, Redpanda is operating in FIPS mode.  This means that the "
-      "available TLS cipher suites available to users are limited to TLSv1.2 "
+      "complete, Redpanda is operating in FIPS mode, which means that the "
+      "TLS cipher suites available to users are limited to TLSv1.2 "
       "and TLSv1.3, and of those, only the ones that use NIST-approved "
       "cryptographic methods.  For more information about FIPS, refer to "
       "Redpanda documentation.",
