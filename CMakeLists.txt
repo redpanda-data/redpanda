@@ -40,7 +40,7 @@ endif()
 # creating a constexpr enum value that is bitwise combination
 # of flags can trigger this warning as the resulting "enum",
 # isn't a valid value.
-add_compile_options(-Wno-enum-constexpr-conversion -Wno-vla-cxx-extension)
+add_compile_options(-Wno-enum-constexpr-conversion -Wno-vla-extension)
 
 include(dependencies)
 include(v_library)

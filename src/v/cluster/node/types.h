@@ -104,12 +104,23 @@ struct local_state
           log_data_state,
           serde::version<0>,
           serde::compat_version<0>> {
+        log_data_state() {}
+        log_data_state(uint64_t a, uint64_t b, uint64_t c)
+          : data_target_size(a)
+          , data_current_size(b)
+          , data_reclaimable_size(c) {}
+
         uint64_t data_target_size{0};
         uint64_t data_current_size{0};
         uint64_t data_reclaimable_size{0};
         friend bool operator==(const log_data_state&, const log_data_state&)
           = default;
         friend std::ostream& operator<<(std::ostream&, const log_data_state&);
+
+        auto serde_fields() {
+            return std::tie(
+              data_target_size, data_current_size, data_reclaimable_size);
+        }
     };
     std::optional<log_data_state> log_data_size{std::nullopt};
 

@@ -22,6 +22,7 @@
 #include <ggml.h>
 #include <llama.h>
 #include <memory>
+#include <span>
 
 namespace ai::llama {
 
