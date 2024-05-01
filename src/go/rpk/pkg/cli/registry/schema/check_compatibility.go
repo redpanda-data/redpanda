@@ -66,7 +66,8 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 				Type:       t,
 				References: references,
 			}
-			compatible, err := cl.CheckCompatibility(cmd.Context(), subject, version, schema)
+			ctx := sr.WithParams(cmd.Context(), sr.Verbose)
+			compatible, err := cl.CheckCompatibility(ctx, subject, version, schema)
 			out.MaybeDie(err, "unable to check compatibility: %v", err)
 			if isText, _, s, err := f.Format(compatCheckResponse{compatible.Is}); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
@@ -76,6 +77,8 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 				fmt.Println("Schema is compatible.")
 			} else {
 				fmt.Println("Schema is not compatible.")
+				messages := strings.Join(compatible.Messages, "\n")
+				fmt.Println(messages)
 			}
 		},
 	}
