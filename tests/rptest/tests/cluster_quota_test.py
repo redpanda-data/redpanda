@@ -414,11 +414,14 @@ class ClusterRateQuotaTest(RedpandaTest):
             bootstrap_servers=self.leader_node,
             client_id="consumer",
             consumer_timeout_ms=1000,
-            max_partition_fetch_bytes=self.target_default_quota_byte_rate * 10,
+            # Set the max fetch size such that the first fetch is above the quota limit AND completes in a single request
+            max_partition_fetch_bytes=self.break_default_quota_message_amount *
+            self.message_size,
             auto_offset_reset='earliest',
             enable_auto_commit=False)
 
-        self.produce(producer, self.break_default_quota_message_amount)
+        # Ensure we have plenty of data to consume
+        self.produce(producer, self.break_default_quota_message_amount * 2)
 
         # Consume more than the quota limit, next request must be throttled
         consumer.poll(timeout_ms=1000,
