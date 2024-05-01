@@ -138,7 +138,7 @@ std::string_view description_for_type(proto_incompatibility_type t) {
 
 std::ostream& operator<<(std::ostream& os, const proto_incompatibility& v) {
     fmt::print(
-      os, "{{errorType:'{}', description:'{}'}}", v._type, v.describe());
+      os, R"({{errorType:"{}", description:"{}"}})", v._type, v.describe());
     return os;
 }
 
