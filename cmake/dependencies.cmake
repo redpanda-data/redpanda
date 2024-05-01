@@ -37,10 +37,7 @@ fetch_dep(fmt
 # the add_subdirectory method of using Seastar.
 set(Seastar_TESTING ON CACHE BOOL "" FORCE)
 set(Seastar_API_LEVEL 6 CACHE STRING "" FORCE)
-set(Seastar_CXX_FLAGS 
-  -Wno-error
-  -Wno-deprecated-declarations
-)
+set(Seastar_CXX_FLAGS -Wno-error)
 fetch_dep(seastar
   REPO https://github.com/redpanda-data/seastar.git
   TAG v24.2.x

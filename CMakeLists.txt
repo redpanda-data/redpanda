@@ -40,7 +40,9 @@ endif()
 # creating a constexpr enum value that is bitwise combination
 # of flags can trigger this warning as the resulting "enum",
 # isn't a valid value.
-add_compile_options(-Wno-enum-constexpr-conversion)
+# Currently boost causes some warnings in -Wdeprecated-declarations due to std::aligned_storage,
+# these crop up all over, so disable them globally.
+add_compile_options(-Wno-enum-constexpr-conversion -Wno-deprecated-declarations)
 
 include(dependencies)
 include(v_library)
