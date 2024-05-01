@@ -24,12 +24,7 @@ shard_balancer::shard_balancer(
   : _topics(topics)
   , _shard_placement(spt)
   , _controller_backend(cb)
-  , _self(*config::node().node_id())
-  , _work_queue([](auto ex) {
-      if (!ssx::is_shutdown_exception(ex)) {
-          vlog(clusterlog.error, "shard balancer exception: {}", ex);
-      }
-  }) {}
+  , _self(*config::node().node_id()) {}
 
 ss::future<> shard_balancer::start() {
     vassert(
@@ -52,19 +47,22 @@ ss::future<> shard_balancer::start() {
 
     _topic_table_notify_handle = _topics.local().register_delta_notification(
       [this](topic_table::delta_range_t deltas_range) {
-          fragmented_vector<topic_table::delta> deltas(
-            deltas_range.begin(), deltas_range.end());
-          // Process deltas asynchronously in the work queue to preserve the
-          // order in which they appeared.
-          _work_queue.submit([this, deltas = std::move(deltas)]() mutable {
-              return ss::do_with(std::move(deltas), [this](auto& deltas) {
-                  return ss::do_for_each(
-                    deltas, [this](const topic_table::delta& d) {
-                        return process_delta(d);
-                    });
-              });
-          });
+          for (const auto& delta : deltas_range) {
+              // Filter out only deltas that might change the set of partition
+              // replicas on this node.
+              switch (delta.type) {
+              case topic_table_delta_type::disabled_flag_updated:
+              case topic_table_delta_type::properties_updated:
+                  continue;
+              default:
+                  _to_assign.insert(delta.ntp);
+                  _wakeup_event.set();
+                  break;
+              }
+          }
       });
+
+    ssx::background = assign_fiber();
 }
 
 ss::future<> shard_balancer::stop() {
@@ -74,36 +72,66 @@ ss::future<> shard_balancer::stop() {
       shard_id);
 
     _topics.local().unregister_delta_notification(_topic_table_notify_handle);
-    co_await _work_queue.shutdown();
+    _wakeup_event.set();
+    return _gate.close();
 }
 
-ss::future<> shard_balancer::process_delta(const topic_table::delta& delta) {
-    const auto& ntp = delta.ntp;
+ss::future<> shard_balancer::assign_fiber() {
+    if (_gate.is_closed()) {
+        co_return;
+    }
+    auto gate_holder = _gate.hold();
 
+    while (true) {
+        co_await _wakeup_event.wait(1s);
+        if (_gate.is_closed()) {
+            co_return;
+        }
+
+        co_await do_assign_ntps();
+    }
+}
+
+ss::future<> shard_balancer::do_assign_ntps() {
+    auto to_assign = std::exchange(_to_assign, {});
+    co_await ss::max_concurrent_for_each(
+      to_assign, 128, [this](const model::ntp& ntp) {
+          return assign_ntp(ntp);
+      });
+}
+
+ss::future<> shard_balancer::assign_ntp(const model::ntp& ntp) {
     auto shard_callback = [this](const model::ntp& ntp) {
         _controller_backend.local().notify_reconciliation(ntp);
     };
 
-    auto maybe_replicas_view = _topics.local().get_replicas_view(ntp);
-    if (!maybe_replicas_view) {
-        if (delta.type == topic_table_delta_type::removed) {
-            co_await _shard_placement.local().set_target(
-              ntp, std::nullopt, shard_callback);
-        }
-        co_return;
+    std::optional<shard_placement_target> target;
+    auto replicas_view = _topics.local().get_replicas_view(ntp);
+    if (replicas_view) {
+        // Has value if the partition is expected to exist on this node.
+        target = placement_target_on_node(replicas_view.value(), _self);
     }
-    auto replicas_view = maybe_replicas_view.value();
-
-    // Has value if the partition is expected to exist on this node.
-    auto target = placement_target_on_node(replicas_view, _self);
-
     vlog(
       clusterlog.trace,
-      "[{}] setting placement target on on this node: {}",
+      "[{}] setting placement target on this node: {}",
       ntp,
       target);
 
-    co_await _shard_placement.local().set_target(ntp, target, shard_callback);
+    try {
+        co_await _shard_placement.local().set_target(
+          ntp, target, shard_callback);
+    } catch (...) {
+        auto ex = std::current_exception();
+        if (!ssx::is_shutdown_exception(ex)) {
+            vlog(
+              clusterlog.warn,
+              "[{}] exception while setting target: {}",
+              ntp,
+              ex);
+            // Retry on the next tick.
+            _to_assign.insert(ntp);
+        }
+    }
 }
 
 } // namespace cluster
