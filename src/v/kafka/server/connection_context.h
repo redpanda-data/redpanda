@@ -368,6 +368,8 @@ private:
          */
         ss::future<>
           maybe_process_responses(ss::lw_shared_ptr<connection_context>);
+        ss::future<ss::stop_iteration>
+          do_process_responses(ss::lw_shared_ptr<connection_context>);
 
         ss::future<> handle_response(
           ss::lw_shared_ptr<connection_context>,

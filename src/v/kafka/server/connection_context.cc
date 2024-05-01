@@ -887,82 +887,87 @@ ss::future<> connection_context::client_protocol_state::handle_response(
 }
 
 /**
- * This method processes as many responses as possible, in request order. Since
- * we proces the second stage asynchronously within a given connection, reponses
- * may become ready out of order, but Kafka clients expect responses exactly in
- * request order.
+ * This method is called repeatedly to process the next request from the
+ * connection until there are no more requests to process. The requests are
+ * processed in request order. Since we proces the second stage asynchronously
+ * within a given connection, reponses may become ready out of order, but Kafka
+ * clients expect responses exactly in request order.
  *
  * The _responses queue handles that: responses are enqueued there in completion
  * order, but only sent to the client in response order. So this method, called
  * after every response is ready, may end up sending zero, one or more requests,
  * depending on the completion order.
- *
- * @return ss::future<>
+ */
+ss::future<ss::stop_iteration>
+connection_context::client_protocol_state::do_process_responses(
+  ss::lw_shared_ptr<connection_context> connection_ctx) {
+    auto it = _responses.find(_next_response);
+    if (it == _responses.end()) {
+        co_return ss::stop_iteration::yes;
+    }
+    // found one; increment counter
+    _next_response = _next_response + sequence_id(1);
+
+    auto resp_and_res = std::move(it->second);
+
+    _responses.erase(it);
+
+    if (resp_and_res.response->is_noop()) {
+        co_return ss::stop_iteration::no;
+    }
+
+    auto msg = response_as_scattered(std::move(resp_and_res.response));
+    if (resp_and_res.resources->request_data.request_key == fetch_api::key) {
+        connection_ctx->_server.quota_mgr().record_fetch_tp(
+          resp_and_res.resources->request_data.client_id, msg.size());
+    }
+    // Respose sizes only take effect on throttling at the next
+    // request processing. The better way was to measure throttle
+    // delay right here and apply it to the immediate response, but
+    // that would require drastic changes to kafka message
+    // processing framework - because throttle_ms has been
+    // serialized long ago already. With the current approach,
+    // egress token bucket level will always be an extra burst into
+    // the negative while under pressure.
+    auto response_size = msg.size();
+    auto request_key = resp_and_res.resources->request_data.request_key;
+    if (connection_ctx->_kafka_throughput_controlled_api_keys().at(
+          request_key)) {
+        // see the comment in dispatch_method_once()
+        if (likely(connection_ctx->_snc_quota_context)) {
+            connection_ctx->_server.snc_quota_mgr().record_response(
+              *connection_ctx->_snc_quota_context, response_size);
+        }
+    }
+    connection_ctx->_server.handler_probe(request_key)
+      .add_bytes_sent(response_size);
+    try {
+        co_return co_await connection_ctx->conn->write(std::move(msg))
+          .then([] {
+              return ss::make_ready_future<ss::stop_iteration>(
+                ss::stop_iteration::no);
+          })
+          // release the resources only once it has been written to
+          // the connection.
+          .finally([resources = resp_and_res.resources] {});
+    } catch (...) {
+        resp_and_res.resources->tracker->mark_errored();
+        vlog(
+          klog.debug,
+          "Failed to process request: {}",
+          std::current_exception());
+    }
+    co_return ss::stop_iteration::no;
+}
+
+/**
+ * This method processes as many responses as possible from the connection by
+ * calling do_process_responses repeatedly until it returns stop_iteration::yes.
  */
 ss::future<> connection_context::client_protocol_state::maybe_process_responses(
   ss::lw_shared_ptr<connection_context> connection_ctx) {
-    return ss::repeat([this,
-                       connection_ctx = std::move(connection_ctx)]() mutable {
-        auto it = _responses.find(_next_response);
-        if (it == _responses.end()) {
-            return ss::make_ready_future<ss::stop_iteration>(
-              ss::stop_iteration::yes);
-        }
-        // found one; increment counter
-        _next_response = _next_response + sequence_id(1);
-
-        auto resp_and_res = std::move(it->second);
-
-        _responses.erase(it);
-
-        if (resp_and_res.response->is_noop()) {
-            return ss::make_ready_future<ss::stop_iteration>(
-              ss::stop_iteration::no);
-        }
-
-        auto msg = response_as_scattered(std::move(resp_and_res.response));
-        if (
-          resp_and_res.resources->request_data.request_key == fetch_api::key) {
-            connection_ctx->_server.quota_mgr().record_fetch_tp(
-              resp_and_res.resources->request_data.client_id, msg.size());
-        }
-        // Respose sizes only take effect on throttling at the next request
-        // processing. The better way was to measure throttle delay right here
-        // and apply it to the immediate response, but that would require
-        // drastic changes to kafka message processing framework - because
-        // throttle_ms has been serialized long ago already. With the current
-        // approach, egress token bucket level will always be an extra burst
-        // into the negative while under pressure.
-        auto response_size = msg.size();
-        auto request_key = resp_and_res.resources->request_data.request_key;
-        if (connection_ctx->_kafka_throughput_controlled_api_keys().at(
-              request_key)) {
-            // see the comment in dispatch_method_once()
-            if (likely(connection_ctx->_snc_quota_context)) {
-                connection_ctx->_server.snc_quota_mgr().record_response(
-                  *connection_ctx->_snc_quota_context, response_size);
-            }
-        }
-        connection_ctx->_server.handler_probe(request_key)
-          .add_bytes_sent(response_size);
-        try {
-            return connection_ctx->conn->write(std::move(msg))
-              .then([] {
-                  return ss::make_ready_future<ss::stop_iteration>(
-                    ss::stop_iteration::no);
-              })
-              // release the resources only once it has been written to the
-              // connection.
-              .finally([resources = resp_and_res.resources] {});
-        } catch (...) {
-            resp_and_res.resources->tracker->mark_errored();
-            vlog(
-              klog.debug,
-              "Failed to process request: {}",
-              std::current_exception());
-        }
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
+    return ss::repeat([this, connection_ctx]() {
+        return do_process_responses(connection_ctx);
     });
 }
 
