@@ -188,7 +188,8 @@ FIXTURE_TEST(test_tm_stm_re_tx, tm_stm_test_fixture) {
                   tx_id,
                   std::chrono::milliseconds(0),
                   pid2,
-                  expected_pid)
+                  expected_pid,
+                  pid1)
                 .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx7 = expect_tx(stm.get_tx(tx_id).get0());
