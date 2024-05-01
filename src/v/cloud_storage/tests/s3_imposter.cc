@@ -47,12 +47,18 @@ namespace {
 ss::sstring list_objects_resp(
   const std::map<ss::sstring, s3_imposter_fixture::expectation>& objects,
   ss::sstring prefix,
-  ss::sstring delimiter) {
+  ss::sstring delimiter,
+  std::optional<size_t> max_keys) {
     std::map<ss::sstring, size_t> content_key_to_size;
     std::set<ss::sstring> common_prefixes;
     // Filter by prefix and group by the substring between the prefix and first
     // delimiter.
     for (const auto& [_, expectation] : objects) {
+        if (
+          max_keys.has_value()
+          && content_key_to_size.size() == max_keys.value()) {
+            break;
+        }
         auto key = expectation.url;
         if (!key.empty() && key[0] == '/') {
             // Remove / character that S3 client adds
@@ -212,15 +218,21 @@ struct s3_imposter_fixture::content_handler {
             if (
               fixture._search_on_get_list
               && request.get_query_param("list-type") == "2") {
-                auto prefix = request.get_header("prefix");
-                auto delimiter = request.get_header("delimiter");
+                auto prefix = request.get_query_param("prefix");
+                auto delimiter = request.get_query_param("delimiter");
+                auto max_keys_str = request.get_query_param("max-keys");
+                std::optional<size_t> max_keys = (max_keys_str.empty())
+                                                   ? std::optional<size_t>{}
+                                                   : std::stoi(max_keys_str);
                 vlog(
                   fixt_log.trace,
-                  "S3 imposter list request {} - {} - {}",
+                  "S3 imposter list request {} - {} - {} - {}",
                   prefix,
                   delimiter,
+                  max_keys,
                   request._method);
-                return list_objects_resp(expectations, prefix, delimiter);
+                return list_objects_resp(
+                  expectations, prefix, delimiter, max_keys);
             }
             if (
               expect_iter == expectations.end()
