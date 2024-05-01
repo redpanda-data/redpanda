@@ -899,10 +899,9 @@ void application::check_environment() {
         fd.read(buf, 1);
         if (buf[0] != '1') {
             throw std::runtime_error(fmt::format(
-              "File '{}' not reporting '1': '{}'.  Redpanda cannot start in "
-              "FIPS mode",
-              fips_enabled_file,
-              std::string(&buf[0], 1)));
+              "File '{}' not reporting '1'.  Redpanda cannot start in FIPS "
+              "mode",
+              fips_enabled_file));
         }
         syschecks::systemd_message("Starting Redpanda in FIPS mode").get();
     }
