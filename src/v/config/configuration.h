@@ -561,6 +561,9 @@ struct configuration final : public config_store {
     // HTTP Authentication
     property<std::vector<ss::sstring>> http_authentication;
 
+    // temporary - to be deprecated
+    property<bool> unsafe_enable_consumer_offsets_delete_retention;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

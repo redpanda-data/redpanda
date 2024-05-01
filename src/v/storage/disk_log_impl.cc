@@ -85,6 +85,12 @@ namespace storage {
  * from normal cluster operation (leadershp movement) and this cost is not
  * driven / constrained by historical reads. Similarly for transactions and
  * idempotence. Controller topic should space can be managed by snapshots.
+ *
+ * Note on unsafe_enable_consumer_offsets_delete_retention: This a special
+ * configuration some select users can use to enable retention on CO topic
+ * because the compaction logic is ineffective and they would like to use
+ * retention as a stop gap until that is fixed. This configuration will be
+ * deprecated once we fix the compaction gaps.
  */
 bool deletion_exempt(const model::ntp& ntp) {
     bool is_internal_namespace = ntp.ns() == model::redpanda_ns
@@ -96,7 +102,7 @@ bool deletion_exempt(const model::ntp& ntp) {
                                    && ntp.tp.topic
                                         == model::kafka_consumer_offsets_nt.tp;
     return (!is_tx_manager_ntp && is_internal_namespace)
-           || is_consumer_offsets_ntp;
+           || (is_consumer_offsets_ntp && !config::shard_local_cfg().unsafe_enable_consumer_offsets_delete_retention());
 }
 
 disk_log_impl::disk_log_impl(
