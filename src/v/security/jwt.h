@@ -19,6 +19,7 @@
 #include "security/oidc_error.h"
 #include "strings/string_switch.h"
 #include "strings/utf8.h"
+#include "utils/base64.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/variant_utils.hh>
@@ -26,7 +27,6 @@
 #include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string/split.hpp>
-#include <cryptopp/base64.h>
 
 #include <iosfwd>
 #include <optional>
@@ -95,33 +95,10 @@ time_point(json::Value const& doc, std::string_view field) {
       typename Clock::time_point(std::chrono::seconds(it->value.GetInt64()));
 }
 
-template<string_viewable StringT = bytes>
-auto base64_url_decode(bytes_view sv) {
-    // TODO: Replace this with non-CryptoPP implementation
-    // TODO: https://github.com/redpanda-data/core-internal/issues/1132
-    CryptoPP::Base64URLDecoder decoder;
+bytes base64_url_decode(std::string_view sv);
 
-    decoder.Put(sv.data(), sv.size());
-    decoder.MessageEnd();
-
-    StringT decoded;
-    if (auto size = decoder.MaxRetrievable(); size != 0) {
-        decoded.resize(size);
-        decoder.Get(
-          reinterpret_cast<CryptoPP::byte*>(decoded.data()), decoded.size());
-    }
-    return decoded;
-};
-
-template<string_viewable StringT = bytes>
-std::optional<StringT>
-base64_url_decode(json::Value const& v, std::string_view field) {
-    auto b64 = string_view<bytes::value_type>(v, field);
-    if (!b64.has_value()) {
-        return std::nullopt;
-    }
-    return base64_url_decode(b64.value());
-}
+std::optional<bytes>
+base64_url_decode(json::Value const& v, std::string_view field);
 
 } // namespace detail
 
@@ -445,7 +422,7 @@ inline result<verifier> make_rs256_verifier(json::Value const& jwk) {
         }
         auto key = crypto::key::load_rsa_public_key(n.value(), e.value());
         return verifier{rs256_verifier{std::move(key)}};
-    } catch (CryptoPP::Exception const& ex) {
+    } catch (base64_url_decoder_exception const&) {
         return errc::jwk_invalid;
     } catch (crypto::exception const&) {
         return errc::jwk_invalid;
@@ -506,25 +483,26 @@ public:
     // Verify the JWS signature and return the JWT
     result<jwt> verify(jws const& jws) const {
         std::string_view sv(jws._encoded);
-        std::vector<bytes_view> jose_enc;
+        std::vector<std::string_view> jose_enc;
         jose_enc.reserve(3);
         boost::algorithm::split(
           jose_enc,
-          detail::char_view_cast<bytes_view::value_type>(sv),
+          detail::char_view_cast<std::string_view::value_type>(sv),
           [](char c) { return c == '.'; });
 
         if (jose_enc.size() != 3) {
             return errc::jws_invalid_parts;
         }
 
-        constexpr auto make_dom = [](bytes_view bv) -> result<json::Document> {
+        constexpr auto make_dom =
+          [](std::string_view bv) -> result<json::Document> {
             try {
                 auto bytes = detail::base64_url_decode(bv);
                 auto str = detail::char_view_cast<char>(bytes);
                 json::Document dom;
                 dom.Parse(str.data(), str.length());
                 return dom;
-            } catch (CryptoPP::Exception const& ex) {
+            } catch (base64_url_decoder_exception const&) {
                 return errc::jws_invalid_b64;
             }
         };
