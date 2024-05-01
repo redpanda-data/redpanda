@@ -3794,8 +3794,8 @@ class RedpandaService(RedpandaServiceBase):
                     self._extra_rp_conf))
             conf.update(self._extra_rp_conf)
 
-        if cur_ver != RedpandaInstaller.HEAD and cur_ver < (24, 1, 1):
-            # this configuration property was introduced in 24.1, ensure
+        if cur_ver != RedpandaInstaller.HEAD and cur_ver < (24, 2, 1):
+            # this configuration property was introduced in 24.2, ensure
             # it doesn't appear in older configurations
             conf.pop("cloud_storage_url_style", None)
 
