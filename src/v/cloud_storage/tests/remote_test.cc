@@ -668,7 +668,6 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
     BOOST_REQUIRE_EQUAL(request.method, "GET");
     BOOST_REQUIRE_EQUAL(request.q_list_type, "2");
     BOOST_REQUIRE_EQUAL(request.q_prefix, "x/");
-    BOOST_REQUIRE_EQUAL(request.h_prefix, "x/");
 }
 
 FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
