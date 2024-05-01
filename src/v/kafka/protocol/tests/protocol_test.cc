@@ -244,7 +244,15 @@ long create_default_and_non_default_data(
   decltype(api_versions_response::data)& non_default_data,
   decltype(api_versions_response::data)& default_data) {
     non_default_data.finalized_features_epoch = 0;
-    default_data = non_default_data;
+    default_data = {
+      .error_code = non_default_data.error_code,
+      .api_keys = non_default_data.api_keys.copy(),
+      .throttle_time_ms = non_default_data.throttle_time_ms,
+      .supported_features = non_default_data.supported_features.copy(),
+      .finalized_features_epoch = non_default_data.finalized_features_epoch,
+      .finalized_features = non_default_data.finalized_features.copy(),
+      .unknown_tags = non_default_data.unknown_tags,
+    };
     default_data.finalized_features_epoch = -1;
 
     // int64 (8 bytes) + tag (2 bytes)

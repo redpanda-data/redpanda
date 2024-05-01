@@ -8,6 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "container/fragmented_vector.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/schemata/produce_request.h"
@@ -81,17 +82,17 @@ ss::future<> produce_partition_fixture::run_test(size_t data_size) {
 
     auto batch = std::move(builder).build();
 
-    std::vector<kafka::produce_request::partition> partitions;
+    chunked_vector<kafka::produce_request::partition> partitions;
     partitions.push_back(kafka::produce_request::partition{
       .partition_index{model::partition_id(0)},
       .records = kafka::produce_request_record_data(std::move(batch))});
 
-    std::vector<kafka::produce_request::topic> topics;
+    chunked_vector<kafka::produce_request::topic> topics;
     topics.push_back(kafka::produce_request::topic{
       .name{std::move(tp.topic)}, .partitions{std::move(partitions)}});
 
     std::optional<ss::sstring> t_id;
-    auto acks = -1;
+    int16_t acks = -1;
     kafka::produce_request produce_req = kafka::produce_request(
       t_id, acks, std::move(topics));
 

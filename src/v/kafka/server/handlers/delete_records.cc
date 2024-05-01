@@ -14,6 +14,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
+#include "container/fragmented_vector.h"
 #include "kafka/server/partition_proxy.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -32,9 +33,9 @@ constexpr auto invalid_low_watermark = model::offset(-1);
 /// indicate to truncate at  the current partition high watermark
 constexpr auto at_current_high_watermark = model::offset(-1);
 
-std::vector<delete_records_partition_result>
+chunked_vector<delete_records_partition_result>
 make_partition_errors(const delete_records_topic& t, error_code ec) {
-    std::vector<delete_records_partition_result> r;
+    chunked_vector<delete_records_partition_result> r;
     for (const auto& p : t.partitions) {
         r.push_back(delete_records_partition_result{
           .partition_index = p.partition_index,
@@ -46,7 +47,7 @@ make_partition_errors(const delete_records_topic& t, error_code ec) {
 
 /// Performs validation of topics, any failures will result in a list of
 /// partitions that all contain the identical error codes
-std::vector<delete_records_partition_result>
+chunked_vector<delete_records_partition_result>
 validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
     if (ctx.recovery_mode_enabled()) {
         return make_partition_errors(t, error_code::policy_violation);
@@ -72,7 +73,7 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
         return std::find_if(
                  nodelete_topics.begin(),
                  nodelete_topics.end(),
-                 [t](const ss::sstring& name) { return name == t.name; })
+                 [&t](const ss::sstring& name) { return name == t.name; })
                != nodelete_topics.end();
     };
 
@@ -275,7 +276,7 @@ delete_records_handler::handle(request_context ctx, ss::smp_service_group) {
     auto results = co_await ss::when_all_succeed(fs.begin(), fs.end());
 
     /// Group results by topic
-    using partition_results = std::vector<delete_records_partition_result>;
+    using partition_results = chunked_vector<delete_records_partition_result>;
     absl::flat_hash_map<model::topic, partition_results> group_by_topic;
     for (auto& [name, partitions] : results) {
         group_by_topic[name].push_back(std::move(partitions));

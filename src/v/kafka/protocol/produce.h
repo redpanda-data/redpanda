@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/schemata/produce_request.h"
@@ -40,7 +41,7 @@ struct produce_request final {
     produce_request(
       std::optional<ss::sstring> t_id,
       int16_t acks,
-      std::vector<produce_request::topic> topics) {
+      chunked_vector<produce_request::topic> topics) {
         if (t_id) {
             data.transactional_id = transactional_id(std::move(*t_id));
         }

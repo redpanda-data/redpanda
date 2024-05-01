@@ -12,6 +12,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
@@ -222,14 +223,15 @@ list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
               std::vector<list_offset_partition_response> parts) mutable {
           return list_offset_topic_response{
             .name = std::move(name),
-            .partitions = std::move(parts),
-          };
+            .partitions = chunked_vector<list_offset_partition_response>{
+              std::make_move_iterator(parts.begin()),
+              std::make_move_iterator(parts.end())}};
       });
 }
 
-static std::vector<ss::future<list_offset_topic_response>>
+static chunked_vector<ss::future<list_offset_topic_response>>
 list_offsets_topics(list_offsets_ctx& octx) {
-    std::vector<ss::future<list_offset_topic_response>> topics;
+    chunked_vector<ss::future<list_offset_topic_response>> topics;
     topics.reserve(octx.request.data.topics.size());
 
     for (auto& topic : octx.request.data.topics) {
@@ -247,7 +249,7 @@ static void handle_unauthorized(list_offsets_ctx& octx) {
     octx.response.data.topics.reserve(
       octx.response.data.topics.size() + octx.unauthorized_topics.size());
     for (auto& topic : octx.unauthorized_topics) {
-        std::vector<list_offset_partition_response> partitions;
+        chunked_vector<list_offset_partition_response> partitions;
         partitions.reserve(topic.partitions.size());
         for (auto& partition : topic.partitions) {
             partitions.push_back(list_offset_partition_response(
@@ -274,7 +276,7 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         list_offsets_response response;
         response.data.topics.reserve(request.data.topics.size());
         for (const auto& t : request.data.topics) {
-            std::vector<list_offset_partition_response> partitions;
+            chunked_vector<list_offset_partition_response> partitions;
             partitions.reserve(t.partitions.size());
             for (const auto& p : t.partitions) {
                 partitions.push_back(list_offsets_response::make_partition(
@@ -300,7 +302,7 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           request.data.topics.end(),
           std::back_inserter(resp.data.topics),
           [](const list_offset_topic& t) {
-              std::vector<list_offset_partition_response> resp;
+              chunked_vector<list_offset_partition_response> resp;
               resp.reserve(t.partitions.size());
               for (const auto& p : t.partitions) {
                   resp.emplace_back(list_offset_partition_response{
@@ -318,16 +320,18 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.topics.end()));
 
-    request.data.topics.erase(unauthorized_it, request.data.topics.end());
+    request.data.topics.erase_to_end(unauthorized_it);
 
     list_offsets_ctx octx(
       std::move(ctx), std::move(request), ssg, std::move(unauthorized_topics));
 
     return ss::do_with(std::move(octx), [](list_offsets_ctx& octx) {
         auto topics = list_offsets_topics(octx);
-        return when_all_succeed(topics.begin(), topics.end())
+        return ss::when_all_succeed(topics.begin(), topics.end())
           .then([&octx](std::vector<list_offset_topic_response> topics) {
-              octx.response.data.topics = std::move(topics);
+              octx.response.data.topics = {
+                std::make_move_iterator(topics.begin()),
+                std::make_move_iterator(topics.end())};
               handle_unauthorized(octx);
               return octx.rctx.respond(std::move(octx.response));
           });

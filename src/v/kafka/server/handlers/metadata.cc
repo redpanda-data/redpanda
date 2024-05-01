@@ -15,6 +15,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/fwd.h"

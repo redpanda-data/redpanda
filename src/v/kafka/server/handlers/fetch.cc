@@ -14,6 +14,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "kafka/latency_probe.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/errors.h"
@@ -500,7 +501,7 @@ static void fill_fetch_responses(
              * set aborted transactions if present
              */
             if (!res.aborted_transactions.empty()) {
-                std::vector<fetch_response::aborted_transaction> aborted;
+                chunked_vector<fetch_response::aborted_transaction> aborted;
                 aborted.reserve(res.aborted_transactions.size());
                 std::transform(
                   res.aborted_transactions.begin(),

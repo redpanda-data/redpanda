@@ -10,8 +10,10 @@
 from ast import main
 import threading
 import json
+import requests
 import time
 import random
+import subprocess
 import sys
 import concurrent.futures
 import numpy
@@ -23,8 +25,9 @@ from confluent_kafka import KafkaError, KafkaException
 
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig, MetricsEndpoint
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig, MetricsEndpoint, PandaproxyConfig, SchemaRegistryConfig
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.node_operations import NodeOpsExecutor
@@ -33,6 +36,13 @@ from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.consumer_swarm import ConsumerSwarm
 from rptest.scale_tests.topic_scale_profiles import TopicScaleProfileManager
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+
+HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
+
+HTTP_POST_HEADERS = {
+    "Accept": "application/vnd.schemaregistry.v1+json",
+    "Content-Type": "application/vnd.schemaregistry.v1+json"
+}
 
 
 class ManyTopicsTest(RedpandaTest):
@@ -81,6 +91,8 @@ class ManyTopicsTest(RedpandaTest):
                                          'raft': 'warn',
                                          'offset_translator': 'warn'
                                      }),
+            pandaproxy_config=PandaproxyConfig(),
+            schema_registry_config=SchemaRegistryConfig(),
             **kwargs)
 
         self.admin = Admin(self.redpanda)
@@ -1294,3 +1306,190 @@ class ManyTopicsTest(RedpandaTest):
             f"swarm_nodes='''{', '.join([str(num) for num in hwms])}'''"
 
         return
+
+    @cluster(num_nodes=11)
+    def test_many_topics_config(self):
+        """Test how Redpanda behaves when attempting to describe the configs
+        of all the topics in a 40k topic cluster and how it behaves when altering
+        the configs of said topics
+        """
+        tsm = TopicScaleProfileManager()
+        profile = tsm.get_profile("topic_profile_t40k_p1")
+
+        # Start kafka
+        self.redpanda.start()
+
+        topic_details = self._stage_create_topics(profile)
+        self.logger.debug(f'topic_detals: {topic_details}')
+
+        client = KafkaCliTools(self.redpanda)
+        try:
+            client.describe_topics()
+        except subprocess.CalledProcessError:
+            # This is expected - the kafka CLI tools will run out of
+            # heap space on such a large request.
+            pass
+
+    def _request(self,
+                 verb,
+                 path,
+                 hostname=None,
+                 tls_enabled: bool = False,
+                 **kwargs):
+        """
+
+        :param verb: String, as for first arg to requests.request
+        :param path: URI path without leading slash
+        :param timeout: Optional requests timeout in seconds
+        :return:
+        """
+
+        if hostname is None:
+            # Pick hostname once: we will retry the same place we got an error,
+            # to avoid silently skipping hosts that are persistently broken
+            nodes = [n for n in self.redpanda.nodes]
+            random.shuffle(nodes)
+            node = nodes[0]
+            hostname = node.account.hostname
+
+        scheme = "https" if tls_enabled else "http"
+        uri = f"{scheme}://{hostname}:8081/{path}"
+
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 60
+
+        # Error codes that may appear during normal API operation, do not
+        # indicate an issue with the service
+        acceptable_errors = {409, 422, 404}
+
+        def accept_response(resp):
+            return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+
+        self.logger.debug(f"{verb} hostname={hostname} {path} {kwargs}")
+
+        # This is not a retry loop: you get *one* retry to handle issues
+        # during startup, after that a failure is a failure.
+        r = requests.request(verb, uri, **kwargs)
+        if not accept_response(r):
+            self.logger.info(
+                f"Retrying for error {r.status_code} on {verb} {path} ({r.text})"
+            )
+            time.sleep(10)
+            r = requests.request(verb, uri, **kwargs)
+            if accept_response(r):
+                self.logger.info(
+                    f"OK after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+            else:
+                self.logger.info(
+                    f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+
+        self.logger.info(
+            f"{r.status_code} {verb} hostname={hostname} {path} {kwargs}")
+
+        return r
+
+    def _post_subjects_subject_versions(self,
+                                        subject,
+                                        data,
+                                        headers=HTTP_POST_HEADERS,
+                                        **kwargs):
+        return self._request("POST",
+                             f"subjects/{subject}/versions",
+                             headers=headers,
+                             data=data,
+                             **kwargs)
+
+    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
+        return self._request("GET",
+                             f"subjects{'?deleted=true' if deleted else ''}",
+                             headers=headers,
+                             **kwargs)
+
+    def _get_schemas_ids_id_versions(self,
+                                     id,
+                                     headers=HTTP_GET_HEADERS,
+                                     **kwargs):
+        return self._request("GET",
+                             f"schemas/ids/{id}/versions",
+                             headers=headers,
+                             **kwargs)
+
+    def _get_schemas_ids_id_subjects(self,
+                                     id,
+                                     deleted=False,
+                                     headers=HTTP_GET_HEADERS,
+                                     **kwargs):
+        return self._request(
+            "GET",
+            f"schemas/ids/{id}/subjects{'?deleted=true' if deleted else ''}",
+            headers=headers,
+            **kwargs)
+
+    @cluster(num_nodes=10)
+    def test_many_subjects(self):
+        num_subjects = 40000
+        self.redpanda.start()
+
+        schema1_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
+        schema1_data = json.dumps({"schema": schema1_def})
+
+        id = None
+
+        for i in range(num_subjects):
+            subject_name = f'subject{i}'
+            result_raw = self._post_subjects_subject_versions(
+                subject=subject_name, data=schema1_data)
+            assert result_raw.status_code == requests.codes.ok, f'Failed to post {subject_name}: {result_raw.status_code}'
+            if id is None:
+                id = result_raw.json()["id"]
+            else:
+                assert id == result_raw.json(
+                )["id"], f'Id mismatch: {id} != {result_raw.json()["id"]}'
+
+        result_raw = self._get_subjects()
+        assert result_raw.status_code == requests.codes.ok, f'Failed to get subjects: {result_raw.status_code}'
+        assert len(
+            result_raw.json()
+        ) == num_subjects, f'Length of json ({len(result_raw.json())}) != expected {num_subjects}'
+
+        result_raw = self._get_schemas_ids_id_subjects(id=id)
+        assert result_raw.status_code == requests.codes.ok, f'Failed to get subjects by id: {result_raw.status_code}'
+        assert len(
+            result_raw.json()
+        ) == num_subjects, f'Length of json ({len(result_raw.json())}) != expected {num_subjects}'
+
+        result_raw = self._get_schemas_ids_id_versions(id=id)
+        assert result_raw.status_code == requests.codes.ok, f'Failed to get subject versions by id: {result_raw.status_code}'
+        assert len(
+            result_raw.json()
+        ) == num_subjects, f'Length of json ({len(result_raw.json())}) != expected {num_subjects}'
+
+    @cluster(num_nodes=10)
+    def test_many_schemas(self):
+        num_schemas = 40000
+        self.redpanda.start()
+
+        schema_fmt = '{{"type":"record","name":"{subject}","fields":[{{"name":"{subject}","type":"string"}}]}}'
+
+        prev_id = None
+        for i in range(num_schemas):
+            subject = f'subject{i}'
+            schema_data = json.dumps(
+                {"schema": schema_fmt.format(subject=subject)})
+            result_raw = self._post_subjects_subject_versions(subject=subject,
+                                                              data=schema_data)
+            assert result_raw.status_code == requests.codes.ok, f'Failed to post {subject}: {result_raw.status_code}'
+            if prev_id is None:
+                prev_id = result_raw.json()["id"]
+            else:
+                assert prev_id != result_raw.json(
+                )["id"], f'Expected different schema ID: {prev_id}'
+                prev_id = result_raw.json()["id"]
+
+        result_raw = self._get_subjects()
+        assert result_raw.status_code == requests.codes.ok, f'Failed to get subjects: {result_raw.status_code}'
+        assert len(
+            result_raw.json()
+        ) == num_schemas, f'Length of json ({len(result_raw.json())}) != expected {num_schemas}'

@@ -1526,9 +1526,10 @@ group_manager::offset_delete(offset_delete_request&& r) {
         deleted_offsets_set.insert(std::move(tp));
     }
 
-    absl::
-      flat_hash_map<model::topic, std::vector<offset_delete_response_partition>>
-        response_data;
+    absl::flat_hash_map<
+      model::topic,
+      chunked_vector<offset_delete_response_partition>>
+      response_data;
     for (const auto& tp : requested_deletions) {
         auto error = kafka::error_code::none;
         if (!deleted_offsets_set.contains(tp)) {

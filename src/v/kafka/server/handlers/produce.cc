@@ -761,7 +761,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           return r;
       });
 
-    request.data.topics.erase(unauthorized_it, request.data.topics.end());
+    request.data.topics.erase_to_end(unauthorized_it);
 
     ss::promise<> dispatched_promise;
     auto dispatched_f = dispatched_promise.get_future();
