@@ -12,6 +12,7 @@
 #include "cluster/self_test/cloudcheck.h"
 
 #include "base/vlog.h"
+#include "cloud_storage/types.h"
 #include "cluster/logger.h"
 #include "config/configuration.h"
 #include "random/generators.h"
@@ -234,12 +235,11 @@ ss::future<self_test_result> cloudcheck::verify_upload(
         co_return result;
     }
 
-    auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
-    cloud_storage::upload_request upload_request = make_upload_request(
-      bucket, key, payload.value().copy(), rtc);
-
     const auto start = ss::lowres_clock::now();
     try {
+        auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
+        cloud_storage::upload_request upload_request = make_upload_request(
+          bucket, key, payload.value().copy(), rtc);
         const cloud_storage::upload_result upload_result
           = co_await _cloud_storage_api.local().upload_object(
             std::move(upload_request));
@@ -285,10 +285,9 @@ cloudcheck::verify_list(
           cloud_storage_clients::error_outcome::fail, result);
     }
 
-    auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
-
     const auto start = ss::lowres_clock::now();
     try {
+        auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
         const cloud_storage::remote::list_result object_list
           = co_await _cloud_storage_api.local().list_objects(
             bucket, rtc, std::nullopt, std::nullopt, std::nullopt, max_keys);
@@ -386,18 +385,20 @@ cloudcheck::verify_download(
         co_return std::make_pair(std::nullopt, result);
     }
 
-    iobuf download_payload;
-    auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
-    cloud_storage::download_request download_request = make_download_request(
-      bucket, key.value(), std::ref(download_payload), rtc);
+    std::optional<iobuf> result_payload = std::nullopt;
 
     const auto start = ss::lowres_clock::now();
     try {
+        iobuf download_payload;
+        auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
+        cloud_storage::download_request download_request
+          = make_download_request(
+            bucket, key.value(), std::ref(download_payload), rtc);
+
         const cloud_storage::download_result download_result
           = co_await _cloud_storage_api.local().download_object(
             std::move(download_request));
 
-        std::optional<iobuf> result_payload;
         switch (download_result) {
         case cloud_storage::download_result::success:
             result_payload = std::move(download_payload);
@@ -410,8 +411,6 @@ cloudcheck::verify_download(
             result.error = "Failed to download from cloud storage.";
             break;
         }
-
-        co_return std::make_pair(std::move(result_payload), std::move(result));
     } catch (const std::exception& e) {
         result.error = e.what();
     }
@@ -438,10 +437,9 @@ ss::future<self_test_result> cloudcheck::verify_delete(
         co_return result;
     }
 
-    auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
-
     const auto start = ss::lowres_clock::now();
     try {
+        auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
         const cloud_storage::upload_result delete_result
           = co_await _cloud_storage_api.local().delete_object(bucket, key, rtc);
 
