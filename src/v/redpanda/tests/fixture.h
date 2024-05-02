@@ -377,6 +377,8 @@ public:
                   .set_value(std::make_optional((*s3_config->access_key)()));
                 config.get("cloud_storage_secret_key")
                   .set_value(std::make_optional((*s3_config->secret_key)()));
+                config.get("cloud_storage_url_style")
+                  .set_value(std::make_optional((s3_config->url_style)));
                 config.get("cloud_storage_api_endpoint")
                   .set_value(std::make_optional(s3_config->server_addr.host()));
                 config.get("cloud_storage_api_endpoint_port")

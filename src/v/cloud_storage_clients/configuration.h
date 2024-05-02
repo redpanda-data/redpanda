@@ -26,7 +26,6 @@ struct default_overrides {
     std::optional<uint16_t> port = std::nullopt;
     std::optional<ca_trust_file> trust_file = std::nullopt;
     std::optional<ss::lowres_clock::duration> max_idle_time = std::nullopt;
-    s3_url_style url_style = s3_url_style::virtual_host;
     bool disable_tls = false;
 };
 
@@ -50,7 +49,7 @@ struct s3_configuration : common_configuration {
     /// AWS secret key, optional if configuration uses temporary credentials
     std::optional<cloud_roles::private_key_str> secret_key;
     /// AWS URL style, either virtual-hosted-style or path-style.
-    s3_url_style url_style;
+    s3_url_style url_style = s3_url_style::virtual_host;
 
     /// \brief opinionated configuraiton initialization
     /// Generates uri field from region, initializes credentials for the
@@ -111,7 +110,9 @@ struct abs_self_configuration_result {
     bool is_hns_enabled;
 };
 
-struct s3_self_configuration_result {};
+struct s3_self_configuration_result {
+    s3_url_style url_style;
+};
 
 using client_self_configuration_output
   = std::variant<abs_self_configuration_result, s3_self_configuration_result>;
