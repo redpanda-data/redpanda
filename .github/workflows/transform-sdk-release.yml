@@ -83,7 +83,8 @@ jobs:
       - name: Publish
         run: |
           VERSION=$(python -c "print('${{github.ref_name}}'.removeprefix('transform-sdk/v'), end='')")
-          yq -iP ".version=${VERSION}" package.json -o json
+          sed -i "s/0.1.0/${VERSION}/g" package.json
+          sed -i "s/0.1.0/${VERSION}/g" package-lock.json
           npm ci
           npm publish
         working-directory: src/transform-sdk/js/module
