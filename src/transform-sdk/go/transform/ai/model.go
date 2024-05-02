@@ -87,11 +87,7 @@ func (llm *LargeLanguageModel) GenerateText(prompt string, opts GenerateTextOpti
 		return "", errors.New("unable to generate text, errorcode: " + strconv.Itoa(int(r)))
 	}
 	buf.AdvanceWriter(int(r))
-	b, err := buf.ReadSlice(int(r))
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return string(buf.ReadAll()), nil
 }
 
 type EmbeddingsModel struct {
@@ -111,10 +107,8 @@ func (llm *EmbeddingsModel) ComputeEmbeddings(text string) ([]float32, error) {
 	if r < 0 {
 		return nil, errors.New("unable to generate text, errorcode: " + strconv.Itoa(int(r)))
 	}
-	b, err := buf.ReadSlice(int(r))
-	if err != nil {
-		return nil, err
-	}
+	buf.AdvanceWriter(int(r) * 4)
+	b := buf.ReadAll()
 	out := make([]float32, int(r)/4)
 	for i := 0; i < len(out); i += 1 {
 		bits := binary.LittleEndian.Uint32(b[i*4:])
