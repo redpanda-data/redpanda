@@ -796,7 +796,7 @@ configuration::configuration()
       "transactional_id_expiration_ms",
       "Producer ids are expired once this time has elapsed after the last "
       "write with the given producer id.",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       10080min)
   , max_concurrent_producer_ids(
       *this,

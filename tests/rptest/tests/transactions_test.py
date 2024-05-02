@@ -21,6 +21,7 @@ import uuid
 import random
 
 from ducktape.utils.util import wait_until
+from ducktape.errors import TimeoutError
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
@@ -356,6 +357,49 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             assert kafka_error.code() == ck.cimpl.KafkaError.FENCED_INSTANCE_ID
 
         producer.abort_transaction()
+
+    @cluster(num_nodes=3)
+    def transaction_id_expiration_test(self):
+        admin = Admin(self.redpanda)
+        rpk = RpkTool(self.redpanda)
+        # Create an open transaction.
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+            'transaction.timeout.ms': 3600000,  # to avoid timing out
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+        producer.produce(self.output_t.name, "x", "y")
+        producer.flush()
+
+        # Default transactional id expiration is 7d, so the transaction
+        # should be hung.
+        def no_running_transactions():
+            return len(admin.get_all_transactions()) == 0
+
+        wait_timeout_s = 20
+        try:
+            wait_until(no_running_transactions,
+                       timeout_sec=wait_timeout_s,
+                       backoff_sec=2,
+                       err_msg="Transactions still running")
+            assert False, "No running transactions found."
+        except TimeoutError as e:
+            assert "Transactions still running" in str(e)
+
+        # transaction should be aborted.
+        rpk.cluster_config_set("transactional_id_expiration_ms", 5000)
+        wait_until(no_running_transactions,
+                   timeout_sec=wait_timeout_s,
+                   backoff_sec=2,
+                   err_msg="Transactions still running")
+
+        try:
+            producer.commit_transaction()
+            assert False, "transaction should have been aborted by now."
+        except ck.KafkaException:
+            pass
 
     @cluster(num_nodes=3)
     def expired_tx_test(self):

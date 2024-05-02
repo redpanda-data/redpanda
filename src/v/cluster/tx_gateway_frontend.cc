@@ -318,7 +318,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _metadata_dissemination_retry_delay_ms(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value())
   , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
+      config::shard_local_cfg().transactional_id_expiration_ms.bind())
   , _transactions_enabled(config::shard_local_cfg().enable_transactions.value())
   , _max_transactions_per_coordinator(max_transactions_per_coordinator) {
     /**
@@ -327,6 +327,8 @@ tx_gateway_frontend::tx_gateway_frontend(
     if (_transactions_enabled) {
         start_expire_timer();
     }
+    _transactional_id_expiration.watch(
+      [this]() { rearm_expire_timer(/*force=*/true); });
 }
 
 void tx_gateway_frontend::start_expire_timer() {
@@ -342,6 +344,23 @@ void tx_gateway_frontend::start_expire_timer() {
     }
     _expire_timer.set_callback([this] { expire_old_txs(); });
     rearm_expire_timer();
+}
+
+void tx_gateway_frontend::rearm_expire_timer(bool force) {
+    if (ss::this_shard_id() != 0 || _gate.is_closed()) {
+        return;
+    }
+    if (force) {
+        _expire_timer.cancel();
+    }
+    if (!_expire_timer.armed()) {
+        // we need to expire transactional ids which were inactive more than
+        // transactional_id_expiration period. if we check for the expired
+        // transactions twice during the period then in the worst case an
+        // expired id lives at most 1.5 x transactional_id_expiration
+        auto delay = _transactional_id_expiration() / 2;
+        _expire_timer.arm(model::timeout_clock::now() + delay);
+    }
 }
 
 ss::future<> tx_gateway_frontend::stop() {
@@ -1297,6 +1316,13 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
     tx = r.value();
     init_tm_tx_reply reply;
+    // note: while rolled_pid and last_pid look very similar in intent which is
+    // to track previous incarnation of this transaction_id, it doesn't seem to
+    // work like that in practice. last_pid is not set in all cases (refer to
+    // kip-360 for details) whereas we want to cleanup older epochs state in all
+    // cases, hence a separate rolled_pid was added. This is definitely not
+    // ideal, probably needs a closer look.
+    model::producer_identity rolled_pid = tx.pid;
     model::producer_identity last_pid = model::unknown_pid;
 
     if (expected_pid == model::unknown_pid) {
@@ -1334,7 +1360,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
       reply.pid,
       last_pid);
     auto op_status = co_await stm->re_register_producer(
-      term, tx.id, transaction_timeout_ms, reply.pid, last_pid);
+      term, tx.id, transaction_timeout_ms, reply.pid, last_pid, rolled_pid);
     if (op_status == tm_stm::op_status::success) {
         reply.ec = tx_errc::none;
     } else if (op_status == tm_stm::op_status::conflict) {

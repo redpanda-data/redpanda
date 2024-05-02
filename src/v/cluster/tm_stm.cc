@@ -114,7 +114,7 @@ tm_stm::tm_stm(
   : raft::persisted_stm<>(tm_stm_snapshot, logger, c)
   , _sync_timeout(config::shard_local_cfg().tm_sync_timeout_ms.value())
   , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
+      config::shard_local_cfg().transactional_id_expiration_ms.bind())
   , _feature_table(feature_table)
   , _cache(tm_stm_cache)
   , _ctx_log(logger, ssx::sformat("[{}]", _raft->ntp())) {}
@@ -527,14 +527,16 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::producer_identity pid,
-  model::producer_identity last_pid) {
+  model::producer_identity last_pid,
+  model::producer_identity rolled_pid) {
     vlog(
       _ctx_log.trace,
       "[tx_id={}] Registering existing transaction with new pid: {}, previous "
-      "pid: {}",
+      "pid: {}, rolled_pid: {}",
       tx_id,
       pid,
-      last_pid);
+      last_pid,
+      rolled_pid);
 
     auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
@@ -558,6 +560,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
     if (!r.has_value()) {
         co_return tm_stm::op_status::unknown;
     }
+    _pid_tx_id.erase(rolled_pid);
     co_return tm_stm::op_status::success;
 }
 
@@ -923,6 +926,7 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
     }
 
     _cache->set_log(tx);
+    _pid_tx_id.erase(tx.last_pid);
     _pid_tx_id[tx.pid] = tx.id;
 
     return ss::now();
@@ -940,7 +944,7 @@ ss::future<> tm_stm::apply(const model::record_batch& b) {
 
 bool tm_stm::is_expired(const tm_transaction& tx) {
     auto now_ts = clock_type::now();
-    return _transactional_id_expiration < now_ts - tx.last_update_ts;
+    return _transactional_id_expiration() < now_ts - tx.last_update_ts;
 }
 
 ss::lw_shared_ptr<mutex> tm_stm::get_tx_lock(kafka::transactional_id tid) {
@@ -977,7 +981,7 @@ tm_stm::try_lock_tx(kafka::transactional_id tx_id, std::string_view lock_name) {
 absl::btree_set<kafka::transactional_id> tm_stm::get_expired_txs() {
     auto now_ts = clock_type::now();
     auto ids = _cache->filter_all_txid_by_tx([this, now_ts](auto tx) {
-        return _transactional_id_expiration < now_ts - tx.last_update_ts;
+        return _transactional_id_expiration() < now_ts - tx.last_update_ts;
     });
     return ids;
 }
