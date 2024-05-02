@@ -74,6 +74,7 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
   const std::optional<cloud_roles::public_key_str>& pkey,
   const std::optional<cloud_roles::private_key_str>& skey,
   const cloud_roles::aws_region_name& region,
+  const std::optional<cloud_storage_clients::s3_url_style>& url_style,
   const default_overrides& overrides,
   net::metrics_disabled disable_metrics,
   net::public_metrics_disabled disable_public_metrics) {
@@ -92,6 +93,10 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     client_cfg.region = region;
     client_cfg.uri = access_point_uri(endpoint_uri);
     client_cfg.url_style = overrides.url_style;
+
+    if (url_style.has_value()) {
+        client_cfg.url_style = url_style.value();
+    }
 
     if (overrides.disable_tls == false) {
         client_cfg.credentials = co_await build_tls_credentials(

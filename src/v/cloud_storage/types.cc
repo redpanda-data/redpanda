@@ -28,7 +28,6 @@ cloud_storage_clients::default_overrides get_default_overrides() {
         optep.has_value()) {
         overrides.endpoint = cloud_storage_clients::endpoint_url(*optep);
     }
-    overrides.url_style = config::shard_local_cfg().cloud_storage_url_style();
     overrides.disable_tls = config::shard_local_cfg().cloud_storage_disable_tls;
     if (auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
         cert.has_value()) {
@@ -412,6 +411,8 @@ ss::future<configuration> configuration::get_s3_config() {
 
     auto region = cloud_roles::aws_region_name(get_value_or_throw(
       config::shard_local_cfg().cloud_storage_region, "cloud_storage_region"));
+    auto url_style = config::shard_local_cfg().cloud_storage_url_style.value();
+
     auto disable_metrics = net::metrics_disabled(
       config::shard_local_cfg().disable_metrics());
     auto disable_public_metrics = net::public_metrics_disabled(
@@ -422,6 +423,7 @@ ss::future<configuration> configuration::get_s3_config() {
         access_key,
         secret_key,
         region,
+        url_style,
         get_default_overrides(),
         disable_metrics,
         disable_public_metrics);

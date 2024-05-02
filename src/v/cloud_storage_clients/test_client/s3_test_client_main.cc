@@ -79,7 +79,7 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
 
     opt(
       "url_style",
-      po::value<std::string>()->default_value("virtual_host"),
+      po::value<std::string>()->default_value(""),
       "aws addressing style");
 
     opt(
@@ -150,11 +150,24 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
     auto secret_key = cloud_roles::private_key_str(
       m["secretkey"].as<std::string>());
     auto region = cloud_roles::aws_region_name(m["region"].as<std::string>());
+    auto url_style =
+      [&]() -> std::optional<cloud_storage_clients::s3_url_style> {
+        const auto url_style_str = m["url_style"].as<std::string>();
+        if (url_style_str == "virtual_host") {
+            return cloud_storage_clients::s3_url_style::virtual_host;
+        } else if (url_style_str == "path") {
+            return cloud_storage_clients::s3_url_style::path;
+        } else {
+            return std::nullopt;
+        }
+    }();
+
     cloud_storage_clients::s3_configuration client_cfg
       = cloud_storage_clients::s3_configuration::make_configuration(
           access_key,
           secret_key,
           region,
+          url_style,
           cloud_storage_clients::default_overrides{
             .endpoint =
               [&]() -> std::optional<cloud_storage_clients::endpoint_url> {
@@ -169,13 +182,6 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
                     return m["port"].as<uint16_t>();
                 }
                 return std::nullopt;
-            }(),
-            .url_style = [&]() -> cloud_storage_clients::s3_url_style {
-                if (m["url_style"].as<std::string>() == "virtual_host") {
-                    return cloud_storage_clients::s3_url_style::virtual_host;
-                } else {
-                    return cloud_storage_clients::s3_url_style::path;
-                }
             }(),
             .disable_tls = m.contains("disable-tls") > 0,
           })
