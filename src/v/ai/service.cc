@@ -99,18 +99,18 @@ class embeddings_model final
     };
 
 public:
-    explicit embeddings_model(size_t max_parallel_requests)
+    explicit embeddings_model(ss::sstring label, size_t max_parallel_requests)
       : _max_parallel_requests(max_parallel_requests) {
         namespace sm = ss::metrics;
+        auto l = sm::label("model");
         _internal_metrics.add_group(
           "ai_service",
-          {
-            sm::make_counter(
-              "embeddings_prompt_tokens_processed_count",
-              [this] { return prompt_tokens_processed(); },
-              sm::description("number of prompt tokens processed"))
-              .aggregate({sm::shard_label}),
-          });
+          {sm::make_counter(
+             "embeddings_prompt_tokens_processed_count",
+             sm::description("number of prompt tokens processed"),
+             {l(label)},
+             [this] { return prompt_tokens_processed(); })
+             .aggregate({sm::shard_label})});
     }
     embeddings_model(const embeddings_model&) = delete;
     embeddings_model(embeddings_model&&) = delete;
@@ -285,21 +285,25 @@ class text_generation_model final
     };
 
 public:
-    explicit text_generation_model(size_t max_parallel_requests)
+    explicit text_generation_model(
+      ss::sstring label, size_t max_parallel_requests)
       : _max_parallel_requests(max_parallel_requests) {
         namespace sm = ss::metrics;
+        auto l = sm::label("model");
         _internal_metrics.add_group(
           "ai_service",
           {
             sm::make_counter(
               "prompt_tokens_processed_count",
-              [this] { return prompt_tokens_processed(); },
-              sm::description("number of prompt tokens processed"))
+              sm::description("number of prompt tokens processed"),
+              {l(label)},
+              [this] { return prompt_tokens_processed(); })
               .aggregate({sm::shard_label}),
             sm::make_counter(
               "response_tokens_processed_count",
-              [this] { return response_tokens_processed(); },
-              sm::description("number of response tokens processed"))
+              sm::description("number of response tokens processed"),
+              {l(label)},
+              [this] { return response_tokens_processed(); })
               .aggregate({sm::shard_label}),
           });
     }
@@ -524,6 +528,7 @@ ss::future<> service::start() {
     if (ss::this_shard_id() != model_shard) {
         co_return;
     }
+    auto u = co_await _mu.hold_write_lock();
     // TODO: Create and init the backend on an alien thread to prevent stalls
     _backend = std::make_unique<llama::backend>();
     _backend->initialize();
@@ -566,6 +571,7 @@ ss::future<> service::stop() {
     if (ss::this_shard_id() != model_shard) {
         co_return;
     }
+    auto u = co_await _mu.hold_write_lock();
     for (auto& [_, model] : _models) {
         co_await ss::visit(model->kind, [](auto& m) { return m->stop(); });
     }
@@ -682,8 +688,19 @@ struct downloader {
 
 } // namespace
 
+ss::future<model_id> service::deploy_embeddings_model(huggingface_file f) {
+    return container().invoke_on(
+      model_shard, &service::do_deploy_embeddings_model, std::move(f));
+}
+
+ss::future<model_id> service::deploy_text_generation_model(huggingface_file f) {
+    return container().invoke_on(
+      model_shard, &service::do_deploy_text_generation_model, std::move(f));
+}
+
 ss::future<model_id>
-service::deploy_embeddings_model(huggingface_file hg_file) {
+service::do_deploy_embeddings_model(huggingface_file hg_file) {
+    auto u = co_await _mu.hold_write_lock();
     auto uuid = uuid_t::create();
     auto tmp_out = _config.embeddings_path / fmt::format("{}.tmp", uuid);
     downloader d;
@@ -702,7 +719,8 @@ service::deploy_embeddings_model(huggingface_file hg_file) {
 }
 
 ss::future<model_id>
-service::deploy_text_generation_model(huggingface_file hg_file) {
+service::do_deploy_text_generation_model(huggingface_file hg_file) {
+    auto u = co_await _mu.hold_write_lock();
     auto uuid = uuid_t::create();
     auto tmp_out = _config.llm_path / fmt::format("{}.tmp", uuid);
     downloader d;
@@ -725,6 +743,7 @@ ss::future<std::vector<model_info>> service::list_models() {
 }
 
 ss::future<std::vector<model_info>> service::do_list_models() {
+    auto u = co_await _mu.hold_read_lock();
     std::vector<model_info> models;
     for (const auto& [id, model] : _models) {
         auto desc = ss::visit(
@@ -746,6 +765,7 @@ service::compute_embeddings(model_id id, ss::sstring text) {
 
 ss::future<std::vector<float>>
 service::do_compute_embeddings(model_id id, ss::sstring text) {
+    auto u = co_await _mu.hold_read_lock();
     auto it = _models.find(id);
     if (it == _models.end()) {
         throw std::runtime_error("model does not exist");
@@ -775,6 +795,7 @@ ss::future<ss::sstring> service::generate_text(
 
 ss::future<ss::sstring> service::do_generate_text(
   model_id id, ss::sstring prompt, generate_text_options opts) {
+    auto u = co_await _mu.hold_read_lock();
     auto it = _models.find(id);
     if (it == _models.end()) {
         throw std::runtime_error("model does not exist");
@@ -820,6 +841,7 @@ ss::future<> service::load_embeddings_model(const ss::sstring& filename) {
     const auto& cluster_cfg = ::config::shard_local_cfg();
     // TODO(ai): All of these params should be per model, not cluster configs
     auto embdm = std::make_unique<embeddings_model>(
+      fmt::format("{}/{}", repo, file),
       /*max_parallel_requests=*/cluster_cfg.parallel_requests);
     co_await embdm->start({
         .name = "ai-" + ss::sstring(id()).substr(0, 8),  // NOLINT
@@ -848,6 +870,7 @@ ss::future<> service::load_llm(const ss::sstring& filename) {
     const auto& cluster_cfg = ::config::shard_local_cfg();
     // TODO(ai): All of these params should be per model, not cluster configs
     auto tgm = std::make_unique<text_generation_model>(
+      fmt::format("{}/{}", repo, file),
       /*max_parallel_requests=*/cluster_cfg.parallel_requests);
     co_await tgm->start({
         .name = "ai-" + ss::sstring(id()).substr(0, 8),  // NOLINT

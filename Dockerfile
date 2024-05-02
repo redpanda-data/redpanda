@@ -69,3 +69,6 @@ RUN cmake --preset release-static \
 	-DCMAKE_CXX_COMPILER=clang++-17
 # Build
 RUN cmake --build --preset release-static -- redpanda
+
+ENTRYPOINT ["/redpanda/build/release-static/src/v/redpanda/redpanda", "--redpanda-cfg", "/redpanda/conf/redpanda.yaml"]
+

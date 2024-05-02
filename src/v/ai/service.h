@@ -15,6 +15,7 @@
 #include "utils/uuid.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/rwlock.hh>
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -85,6 +86,8 @@ public:
     generate_text(model_id, ss::sstring prompt, generate_text_options);
 
 private:
+    ss::future<model_id> do_deploy_embeddings_model(huggingface_file);
+    ss::future<model_id> do_deploy_text_generation_model(huggingface_file);
     ss::future<std::vector<model_info>> do_list_models();
     ss::future<std::vector<float>>
     do_compute_embeddings(model_id, ss::sstring prompt);
@@ -94,6 +97,7 @@ private:
     ss::future<> load_llm(const ss::sstring& filename);
     ss::future<> load_embeddings_model(const ss::sstring& filename);
 
+    ss::rwlock _mu;
     config _config;
     std::unique_ptr<llama::backend> _backend;
     absl::flat_hash_map<model_id, std::unique_ptr<model>> _models;
