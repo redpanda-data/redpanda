@@ -65,14 +65,13 @@ target_link_libraries(
   qjs Redpanda::transform_sdk Redpanda::js_vm
 )
 
-# TODO: Rename LTO builds when #18077 is merged
-# if(CMAKE_BUILD_TYPE MATCHES Release)
-#   include(CheckIPOSupported)
-#   check_ipo_supported(RESULT ltosupported OUTPUT error)
-#   if(ltosupported)
-#     set_property(TARGET redpanda_js_transform PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
-#   endif()
-# endif()
+if(CMAKE_BUILD_TYPE MATCHES Release)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT ltosupported OUTPUT error)
+  if(ltosupported)
+    set_property(TARGET redpanda_js_transform PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
+  endif()
+endif()
 
 # Tests
 enable_testing()
