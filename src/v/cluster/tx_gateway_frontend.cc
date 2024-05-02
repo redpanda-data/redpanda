@@ -1316,6 +1316,12 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
     tx = r.value();
     init_tm_tx_reply reply;
+    // note: while rolled_pid and last_pid look very similar in intent which is
+    // to track previous incarnation of this transaction_id, it doesn't seem to
+    // work like that in practice. last_pid is not set in all cases (refer to
+    // kip-360 for details) whereas we want to cleanup older epochs state in all
+    // cases, hence a separate rolled_pid was added. This is definitely not
+    // ideal, probably needs a closer look.
     model::producer_identity rolled_pid = tx.pid;
     model::producer_identity last_pid = model::unknown_pid;
 
