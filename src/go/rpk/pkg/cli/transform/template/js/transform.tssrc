@@ -1,0 +1,5 @@
+import { onRecordWritten, OnRecordWrittenEvent, RecordWriter } from "@redpanda-data/transform-sdk"
+
+onRecordWritten((event: OnRecordWrittenEvent, writer: RecordWriter) => {
+  writer.write(event.record);
+});

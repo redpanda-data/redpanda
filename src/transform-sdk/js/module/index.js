@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // This is a stub that does nothing.
-// When deployed in broker this function is 
+// When deployed in broker this function is
 // provided by the JavaScript runtime.
 export function onRecordWritten(cb) {}

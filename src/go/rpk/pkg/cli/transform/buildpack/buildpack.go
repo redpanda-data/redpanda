@@ -50,6 +50,22 @@ var Tinygo = Buildpack{
 	},
 }
 
+var JavaScript = Buildpack{
+	Name: "javascript",
+	// TODO: Find a better place to host these binaries than the tinygo repo
+	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/js-sdk-placeholder",
+	shaSums: map[string]map[string]string{
+		"darwin": {
+			"amd64": "a2a7af658e8b7bb5b213fbcd33c395ef95019c0ba018fabdc80cc4435b70b792",
+			"arm64": "3010f528ea16a212eb942fb82afd34e6af48122c494f4bb72c5333adde955c70",
+		},
+		"linux": {
+			"amd64": "cb657b042a32b04469acf92f33453757a137072b09c23a3fbb7e6cbe387a1d80",
+			"arm64": "80ff2e5c76da00a1ba2a5c310fa7bb31ea989fdeea8eadd8c7cda7e0534fa9b4",
+		},
+	},
+}
+
 // Buildpack is a "plugin" system for Wasm toolchains so we can manage them on behalf of users.
 type Buildpack struct {
 	// Name of the plugin, this will also be the command name.
@@ -90,13 +106,22 @@ func (bp *Buildpack) URL() string {
 
 // BinPath returns the path to the main binary for the buildpack that needs to be linked as a plugin.
 func (bp *Buildpack) BinPath() (string, error) {
-	p, err := BuildpackDir()
+	p, err := bp.RootPath()
 	if err != nil {
 		return "", err
 	}
 	// right now assume a single structure, this may need to be dynamic if other buildpacks
 	// use different structures.
-	return filepath.Join(p, bp.Name, "bin", bp.Name), nil
+	return filepath.Join(p, "bin", bp.Name), nil
+}
+
+// RootPath returns the path to the root of the unarchived buildpack.
+func (bp *Buildpack) RootPath() (string, error) {
+	p, err := BuildpackDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(p, bp.Name), nil
 }
 
 // BuildpackDir is the directory to which buildpacks are downloaded to.
