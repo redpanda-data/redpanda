@@ -87,6 +87,12 @@ private:
       cloud_storage_clients::object_key prefix,
       size_t max_keys = 5);
 
+    // Verify that checking if an object exists (Head: read operation) from
+    // cloud storage works.
+    ss::future<self_test_result> verify_head(
+      cloud_storage_clients::bucket_name bucket,
+      std::optional<cloud_storage_clients::object_key> key);
+
     // Verify that downloading (read operation) from cloud storage works.
     ss::future<std::pair<std::optional<iobuf>, self_test_result>>
     verify_download(
@@ -97,6 +103,11 @@ private:
     ss::future<self_test_result> verify_delete(
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key key);
+
+    // Verify that deleting multiple (Plural Delete: write operation) from cloud
+    // storage works.
+    ss::future<self_test_result> verify_deletes(
+      cloud_storage_clients::bucket_name bucket, size_t num_objects = 5);
 
 private:
     bool _remote_read_enabled{false};

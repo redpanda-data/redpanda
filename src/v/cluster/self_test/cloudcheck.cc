@@ -167,9 +167,17 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
 
     results.push_back(std::move(download_test_result));
 
+    // Test Head
+    auto head_test_result = co_await verify_head(bucket, download_key);
+    results.push_back(std::move(head_test_result));
+
     // Test Delete
     auto delete_test_result = co_await verify_delete(bucket, self_test_key);
     results.push_back(std::move(delete_test_result));
+
+    // Test Deletes
+    auto deletes_test_result = co_await verify_deletes(bucket);
+    results.push_back(std::move(deletes_test_result));
 
     co_return results;
 }
@@ -301,6 +309,60 @@ cloudcheck::verify_list(
       cloud_storage_clients::error_outcome::fail, std::move(result));
 }
 
+ss::future<self_test_result> cloudcheck::verify_head(
+  cloud_storage_clients::bucket_name bucket,
+  std::optional<cloud_storage_clients::object_key> key) {
+    auto result = self_test_result{
+      .name = _opts.name, .info = "Head", .test_type = "cloud_storage"};
+
+    if (_cancelled) {
+        result.warning = "Run was manually cancelled.";
+        co_return result;
+    }
+
+    if (!_remote_read_enabled) {
+        result.error = "Remote read is not enabled for this cluster.";
+        co_return result;
+    }
+
+    if (!key) {
+        result.warning = "Could not download from cloud storage (no file was "
+                         "found in the bucket).";
+        co_return result;
+    }
+
+    const auto start = ss::lowres_clock::now();
+    try {
+        auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
+        const cloud_storage::download_result head_result
+          = co_await _cloud_storage_api.local().object_exists(
+            bucket,
+            key.value(),
+            rtc,
+            cloud_storage::existence_check_type::object);
+
+        switch (head_result) {
+        case cloud_storage::download_result::success:
+            break;
+        case cloud_storage::download_result::timedout:
+            [[fallthrough]];
+        case cloud_storage::download_result::failed:
+            [[fallthrough]];
+        case cloud_storage::download_result::notfound:
+            result.error = "Failed to download from cloud storage.";
+            break;
+        }
+
+    } catch (const std::exception& e) {
+        result.error = e.what();
+    }
+
+    const auto end = ss::lowres_clock::now();
+    result.duration = end - start;
+
+    co_return result;
+}
+
 ss::future<std::pair<std::optional<iobuf>, self_test_result>>
 cloudcheck::verify_download(
   cloud_storage_clients::bucket_name bucket,
@@ -382,6 +444,60 @@ ss::future<self_test_result> cloudcheck::verify_delete(
     try {
         const cloud_storage::upload_result delete_result
           = co_await _cloud_storage_api.local().delete_object(bucket, key, rtc);
+
+        switch (delete_result) {
+        case cloud_storage::upload_result::success:
+            break;
+        case cloud_storage::upload_result::timedout:
+            [[fallthrough]];
+        case cloud_storage::upload_result::failed:
+            [[fallthrough]];
+        case cloud_storage::upload_result::cancelled:
+            result.error = "Failed to delete from cloud storage.";
+            break;
+        }
+    } catch (const std::exception& e) {
+        result.error = e.what();
+    }
+
+    const auto end = ss::lowres_clock::now();
+    result.duration = end - start;
+
+    co_return result;
+}
+
+ss::future<self_test_result> cloudcheck::verify_deletes(
+  cloud_storage_clients::bucket_name bucket, size_t num_objects) {
+    auto result = self_test_result{
+      .name = _opts.name,
+      .info = "Plural Delete",
+      .test_type = "cloud_storage"};
+
+    if (_cancelled) {
+        result.warning = "Run was manually cancelled.";
+        co_return result;
+    }
+
+    if (!_remote_write_enabled) {
+        result.error = "Remote write is not enabled for this cluster.";
+        co_return result;
+    }
+
+    std::vector<cloud_storage_clients::object_key> keys(num_objects);
+    std::generate(keys.begin(), keys.end(), []() {
+        return cloud_storage_clients::object_key{ss::sstring{uuid_t::create()}};
+    });
+
+    for (const auto& key : keys) {
+        co_await verify_upload(bucket, key, make_random_payload());
+    }
+
+    const auto start = ss::lowres_clock::now();
+    try {
+        auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
+        const cloud_storage::upload_result delete_result
+          = co_await _cloud_storage_api.local().delete_objects(
+            bucket, keys, rtc);
 
         switch (delete_result) {
         case cloud_storage::upload_result::success:
