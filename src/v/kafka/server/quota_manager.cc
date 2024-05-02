@@ -75,7 +75,6 @@ quota_manager::maybe_add_and_retrieve_quota(
       ss::sstring(qid),
       client_quota{
         now,
-        clock::duration(0),
         {static_cast<size_t>(_default_num_windows()), _default_window_width()},
         {static_cast<size_t>(_default_num_windows()), _default_window_width()},
         /// pm_rate is only non-nullopt on the qm home shard
@@ -245,12 +244,7 @@ throttle_delay quota_manager::record_produce_tp_and_throttle(
     auto target_tp_rate = get_client_target_produce_tp_rate(quota_id);
     auto delay_ms = throttle(
       quota_id, target_tp_rate, now, it->second.tp_produce_rate);
-    auto prev = it->second.delay;
-    it->second.delay = delay_ms;
-    throttle_delay res{};
-    res.enforce = prev.count() > 0;
-    res.duration = it->second.delay;
-    return res;
+    return {.duration = delay_ms};
 }
 
 void quota_manager::record_fetch_tp(
@@ -276,10 +270,7 @@ throttle_delay quota_manager::throttle_fetch_tp(
     it->second.tp_fetch_rate.maybe_advance_current(now);
     auto delay_ms = throttle(
       quota_id, *target_tp_rate, now, it->second.tp_fetch_rate);
-    throttle_delay res{};
-    res.enforce = true;
-    res.duration = delay_ms;
-    return res;
+    return {.duration = delay_ms};
 }
 
 // erase inactive tracked quotas. windows are considered inactive if
