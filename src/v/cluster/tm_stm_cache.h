@@ -161,6 +161,8 @@ struct tm_transaction {
                  })
                > 0;
     }
+
+    friend std::ostream& operator<<(std::ostream&, tx_status);
 };
 
 class tm_stm_cache_entry {
@@ -179,8 +181,6 @@ public:
         return _state_lock.hold_write_lock();
     }
 
-    void clear_mem();
-
     void clear_log();
 
     std::optional<tm_transaction> find(model::term_id, kafka::transactional_id);
@@ -197,10 +197,6 @@ public:
 
     fragmented_vector<tm_transaction> get_log_transactions();
 
-    void set_mem(model::term_id, kafka::transactional_id, tm_transaction);
-
-    void erase_mem(kafka::transactional_id);
-
     template<typename Func>
     absl::btree_set<kafka::transactional_id>
     filter_all_txid_by_tx(Func&& func) {
@@ -210,18 +206,7 @@ public:
                 ids.insert(id);
             }
         }
-        if (!_mem_term) {
-            return ids;
-        }
-        auto entry_it = _state.find(_mem_term.value());
-        if (entry_it == _state.end()) {
-            return ids;
-        }
-        for (auto& [id, tx] : entry_it->second.txes) {
-            if (func(tx)) {
-                ids.insert(id);
-            }
-        }
+
         return ids;
     }
 
@@ -250,20 +235,8 @@ private:
     intrusive_list<tx_wrapper, &tx_wrapper::_hook> lru_txes;
 
     ss::basic_rwlock<> _state_lock;
-    // the cache stores all last known txes written by this nodes
-    // when it was a leader. a node could be a leader multiple times
-    // so the cache groups the txes by the leader's term to preserve
-    // last tx per each term
-    absl::node_hash_map<model::term_id, tm_stm_cache_entry> _state;
+
     absl::node_hash_map<kafka::transactional_id, tx_wrapper> _log_txes;
-    // when a node is a leader _mem_term contains its term to let find_mem
-    // fetch txes without specifying it
-    std::optional<model::term_id> _mem_term;
-    // we can't clear the state when a node loses leadership because
-    // a new leader may use fetch_tx rpc to fetch old state; so instead of
-    // clearing the state we set _sealed_term to make sure we won't acci-
-    // dentally update records in the past after the re-election
-    std::optional<model::term_id> _sealed_term;
 };
 
 // Updates in v1.

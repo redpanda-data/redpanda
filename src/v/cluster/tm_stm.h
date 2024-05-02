@@ -237,11 +237,7 @@ public:
       ss::lw_shared_ptr<cluster::tm_stm_cache>);
 
     void try_rm_lock(const kafka::transactional_id& tid) {
-        auto tx_opt = _cache->find_mem(tid);
-        if (tx_opt) {
-            return;
-        }
-        tx_opt = _cache->find_log(tid);
+        auto tx_opt = _cache->find_log(tid);
         if (tx_opt) {
             return;
         }
