@@ -12,6 +12,7 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "kafka/server/atomic_token_bucket.h"
 #include "kafka/server/logger.h"
 
@@ -61,7 +62,7 @@ quota_manager::~quota_manager() { _gc_timer.cancel(); }
 
 ss::future<> quota_manager::stop() {
     _gc_timer.cancel();
-    return ss::make_ready_future<>();
+    co_await _gate.close();
 }
 
 ss::future<> quota_manager::start() {
@@ -102,7 +103,7 @@ ss::future<clock::duration> quota_manager::maybe_add_and_retrieve_quota(
         }
     } else {
         // bump to prevent gc
-        it->second->last_seen = now;
+        it->second->last_seen_ms.local() = now;
     }
 
     co_return cb(*it->second);
@@ -123,7 +124,10 @@ quota_manager::add_quota_id(std::string_view qid, clock::time_point now) {
           _replenish_threshold().value_or(1));
 
         auto new_value = ss::make_lw_shared<client_quota>(
-          now, std::nullopt, std::nullopt, std::nullopt);
+          ssx::sharded_value<clock::time_point>(now),
+          std::nullopt,
+          std::nullopt,
+          std::nullopt);
 
         new_value->tp_produce_rate.emplace(
           produce_rate, produce_rate, replenish_threshold, true);
@@ -308,17 +312,72 @@ void quota_manager::gc() {
     vassert(
       ss::this_shard_id() == _client_quotas.shard_id(),
       "gc should only be performed on the owner shard");
-    // TODO: reimplement gc() in a later commit of this PR when last_seen is
-    // reworked
-    // auto full_window = _default_num_windows() * _default_window_width();
-    // auto now = clock::now();
-    // auto expire_age = full_window * 10;
-    // // c++20: replace with std::erase_if
-    // absl::erase_if(
-    //   _client_quotas,
-    //   [now, expire_age](const std::pair<ss::sstring, client_quota>& q) {
-    //       return (now - q.second.last_seen) > expire_age;
-    // });
+    auto full_window = _default_num_windows() * _default_window_width();
+    auto expire_threshold = clock::now() - 10 * full_window;
+    ssx::background
+      = ssx::spawn_with_gate_then(_gate, [this, expire_threshold]() {
+            return do_gc(expire_threshold);
+        }).handle_exception([](const std::exception_ptr& e) {
+            vlog(klog.warn, "Error garbage collecting quotas - {}", e);
+        });
+}
+
+ss::future<> quota_manager::do_gc(clock::time_point expire_threshold) {
+    vassert(
+      ss::this_shard_id() == _client_quotas.shard_id(),
+      "do_gc() should only be called on the owner shard");
+
+    using key_set = chunked_vector<ss::sstring>;
+
+    auto mapper = [expire_threshold](const quota_manager& qm) -> key_set {
+        auto res = key_set{};
+        auto map_shared_ptr = qm._client_quotas.local().get();
+        for (const auto& kv : *map_shared_ptr) {
+            auto last_seen_tp = kv.second->last_seen_ms.local();
+            if (last_seen_tp < expire_threshold) {
+                res.push_back(kv.first);
+            }
+        }
+        // Note: need to pre-sort the vector for the std::set_intersection
+        // in the reduce step
+        std::sort(res.begin(), res.end());
+        return res;
+    };
+
+    auto reducer = [](const key_set& acc, const key_set& next) -> key_set {
+        key_set result;
+        // Note: std::set_intersection assumes the inputs are sorted and
+        // guarantees that the output is sorted
+        std::set_intersection(
+          acc.begin(),
+          acc.end(),
+          next.begin(),
+          next.end(),
+          std::back_inserter(result));
+        return result;
+    };
+
+    auto expired_keys = co_await container().map_reduce0(
+      mapper, key_set{}, reducer);
+
+    if (expired_keys.empty()) {
+        // Nothing to gc, so we're done
+        co_return;
+    }
+
+    // Note: it is possible that we remove client ids here that we have not
+    // seen for a long time before the map_reduce step, but that we see
+    // again between the map_reduce step and this map update. This race
+    // between the two steps can cause recently seen client ids to be
+    // deleted. That's acceptable because this should be rare and the client
+    // will be tracked correctly again from when we next see it.
+    co_await _client_quotas.update(
+      [expired_keys{std::move(expired_keys)}](client_quotas_map_t new_map) {
+          for (auto& k : expired_keys) {
+              new_map.erase(k);
+          }
+          return new_map;
+      });
 }
 
 } // namespace kafka
