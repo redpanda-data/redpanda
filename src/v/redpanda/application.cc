@@ -1233,6 +1233,14 @@ void application::wire_up_runtime_services(
           std::ref(audit_mgr));
     }
 
+    partition_manager
+      .invoke_on_all(
+        [this](cluster::partition_manager& local_partition_manager) {
+            local_partition_manager.set_panadaproxy_schema_registry(
+              _schema_registry.get());
+        })
+      .get();
+
     if (wasm_data_transforms_enabled()) {
         syschecks::systemd_message("Starting wasm runtime").get();
         auto base_runtime = wasm::runtime::create_default(
@@ -1383,10 +1391,10 @@ void application::wire_up_redpanda_services(
         std::ref(feature_table))
       .get();
 
-    // custom handling for recovery_throttle and raft group manager shutdown.
-    // the former needs to happen first in order to ensure that any raft groups
-    // that are being throttled are released so that they can make be quickly
-    // shutdown by the group manager.
+    // custom handling for recovery_throttle and raft group manager
+    // shutdown. the former needs to happen first in order to ensure that
+    // any raft groups that are being throttled are released so that they
+    // can make be quickly shutdown by the group manager.
     _deferred.emplace_back([this] {
         recovery_throttle
           .invoke_on_all(&raft::coordinated_recovery_throttle::shutdown)
@@ -1965,7 +1973,8 @@ void application::wire_up_redpanda_services(
                     = config::shard_local_cfg().kafka_rpc_server_tcp_recv_buf;
               } else {
                   // Backward compat: prior to Redpanda 22.2, rpc_server_*
-                  // settings applied to both Kafka and Internal RPC listeners.
+                  // settings applied to both Kafka and Internal RPC
+                  // listeners.
                   c.tcp_recv_buf
                     = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               };
@@ -1974,7 +1983,8 @@ void application::wire_up_redpanda_services(
                     = config::shard_local_cfg().kafka_rpc_server_tcp_send_buf;
               } else {
                   // Backward compat: prior to Redpanda 22.2, rpc_server_*
-                  // settings applied to both Kafka and Internal RPC listeners.
+                  // settings applied to both Kafka and Internal RPC
+                  // listeners.
                   c.tcp_send_buf
                     = config::shard_local_cfg().rpc_server_tcp_send_buf;
               }
@@ -2179,7 +2189,8 @@ void application::wire_up_bootstrap_services() {
       std::ref(feature_table))
       .get();
 
-    // Hook up local_monitor to update storage_resources when disk state changes
+    // Hook up local_monitor to update storage_resources when disk state
+    // changes
     auto storage_disk_notification
       = storage_node.local().register_disk_notification(
         storage::node::disk_type::data,
@@ -2255,8 +2266,8 @@ void application::start_bootstrap_services() {
     storage.invoke_on_all(&storage::api::start).get();
 
     // As soon as storage is up, load our feature_table snapshot, if any,
-    // so that all other services may rely on having features activated as soon
-    // as they start.
+    // so that all other services may rely on having features activated as
+    // soon as they start.
     load_feature_table_snapshot();
 
     // Before we start up our bootstrapping RPC service, load any relevant
@@ -2279,10 +2290,10 @@ void application::start_bootstrap_services() {
     // this way features like rpc_v2_by_default will be present before the
     // first network I/O we do.
     //
-    // Absence of a cluster_uuid is not evidence of not having joined a cluster,
-    // because we might have joined via an earlier version of redpanda, and
-    // just upgraded to a version that stores cluster and node UUIDs.  We must
-    // also check for an controller log state on disk.
+    // Absence of a cluster_uuid is not evidence of not having joined a
+    // cluster, because we might have joined via an earlier version of
+    // redpanda, and just upgraded to a version that stores cluster and node
+    // UUIDs.  We must also check for an controller log state on disk.
     //
     // Ordering: bootstrap_backend writes a feature table snapshot _before_
     // persisting the cluster UUID to kvstore, so if restart in the middle,
@@ -2311,9 +2322,9 @@ void application::start_bootstrap_services() {
               // We do _not_ write a snapshot here: the persistent record of
               // feature table state is only set for the first time in
               // bootstrap_backend (or feature_backend).  This is important,
-              // so that someone who starts a too-new Redpanda that can't join
-              // their cluster can easily stop it and run an older version,
-              // before we've committed any version info to disk.
+              // so that someone who starts a too-new Redpanda that can't
+              // join their cluster can easily stop it and run an older
+              // version, before we've committed any version info to disk.
           })
           .get0();
     }
@@ -2399,9 +2410,9 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     wire_up_bootstrap_services();
     start_bootstrap_services();
 
-    // Begin the cluster discovery manager so we can confirm our initial node
-    // ID. A valid node ID is required before we can initialize the rest of our
-    // subsystems.
+    // Begin the cluster discovery manager so we can confirm our initial
+    // node ID. A valid node ID is required before we can initialize the
+    // rest of our subsystems.
     const auto& node_uuid = storage.local().node_uuid();
     cluster::cluster_discovery cd(
       node_uuid, storage.local(), app_signal.abort_source());
@@ -2435,11 +2446,11 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
                   = serde::from_iobuf<cluster::controller_join_snapshot>(
                     std::move(registration_result.controller_snapshot.value()));
 
-                // The controller is not started yet, so write state directly
-                // into the feature table and configuration object.  We do not
-                // currently use the rest of the snapshot, but reserve the right
-                // to do so in future (e.g. to prime all the controller stms
-                // from the snapshot)
+                // The controller is not started yet, so write state
+                // directly into the feature table and configuration object.
+                // We do not currently use the rest of the snapshot, but
+                // reserve the right to do so in future (e.g. to prime all
+                // the controller stms from the snapshot)
                 auto ftsnap = std::move(snap.features.snap);
                 ss::smp::invoke_on_all([ftsnap, &ft = feature_table] {
                     ftsnap.apply(ft.local());
@@ -2448,21 +2459,21 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
                   storage.local(), ftsnap)
                   .get();
 
-                // The preload object is usually generated from loading a local
-                // cache or from the bootstrap file.  The configuration received
-                // from the cluster during join takes precedence over either of
-                // these, and we replace it.
+                // The preload object is usually generated from loading a
+                // local cache or from the bootstrap file.  The
+                // configuration received from the cluster during join takes
+                // precedence over either of these, and we replace it.
                 _config_preload
                   = cluster::config_manager::preload_join(snap).get();
                 cluster::config_manager::write_local_cache(
                   _config_preload.version, _config_preload.raw_values)
                   .get();
 
-                // During controller::start, we wait to reach an applied offset.
-                // By priming this from the join snapshot, we may ensure that
-                // we wait until this node has replicated all the controller
-                // metadata since it joined, before we proceed with e.g.
-                // listening for Kafka API requests.
+                // During controller::start, we wait to reach an applied
+                // offset. By priming this from the join snapshot, we may
+                // ensure that we wait until this node has replicated all
+                // the controller metadata since it joined, before we
+                // proceed with e.g. listening for Kafka API requests.
                 _await_controller_last_applied = snap.last_applied;
             }
         }
@@ -2536,7 +2547,8 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           security::audit::is_started::yes)) {
         vlog(
           _log.error,
-          "Failed to enqueue startup audit event!  Possible issue with audit "
+          "Failed to enqueue startup audit event!  Possible issue with "
+          "audit "
           "system");
         throw std::runtime_error("Failed to enqueue startup audit event!");
     }
@@ -2859,18 +2871,19 @@ void application::start_kafka(
       .await_membership(node_id, app_signal.abort_source())
       .get();
 
-    // Before starting the Kafka API, wait for the cluster ID to be initialized,
-    // because Kafka clients interpret a changing cluster ID as a client
-    // connecting to multiple clusters and print warnings.
+    // Before starting the Kafka API, wait for the cluster ID to be
+    // initialized, because Kafka clients interpret a changing cluster ID as
+    // a client connecting to multiple clusters and print warnings.
     if (
       !config::shard_local_cfg().cluster_id().has_value()
       && feature_table.local().get_original_version()
            >= cluster::cluster_version{10}) {
-        // This check only applies for clusters created with Redpanda >=23.2,
-        // because this is the version that has fast initialization of
-        // cluster_id, whereas older versions may wait several minutes to
-        // initialize it, causing issues during fast upgrades where the previous
-        // version may have run too briefly to have initialized cluster_id
+        // This check only applies for clusters created with Redpanda
+        // >=23.2, because this is the version that has fast initialization
+        // of cluster_id, whereas older versions may wait several minutes to
+        // initialize it, causing issues during fast upgrades where the
+        // previous version may have run too briefly to have initialized
+        // cluster_id
         vlog(_log.info, "Waiting for Cluster ID to initialize...");
         ss::condition_variable cvar;
         auto binding = config::shard_local_cfg().cluster_id.bind();
@@ -2923,16 +2936,18 @@ void application::load_feature_table_snapshot() {
     if (my_version < snap.version) {
         vlog(
           _log.error,
-          "Incompatible downgrade detected!  My version {}, feature table {} "
-          "indicates that all nodes in cluster were previously >= that version",
+          "Incompatible downgrade detected!  My version {}, feature table "
+          "{} "
+          "indicates that all nodes in cluster were previously >= that "
+          "version",
           my_version,
           snap.version);
-        // From this point, it is undefined to whether this process will be able
-        // to decode anything it sees on the network or on disk.
+        // From this point, it is undefined to whether this process will be
+        // able to decode anything it sees on the network or on disk.
         //
-        // This case will have stricter enforcement in future, to protect the
-        // user from acccidentally getting a cluster into a broken state by
-        // downgrading too far:
+        // This case will have stricter enforcement in future, to protect
+        // the user from acccidentally getting a cluster into a broken state
+        // by downgrading too far:
         // https://github.com/redpanda-data/redpanda/issues/7018
 #ifndef NDEBUG
         vassert(my_version >= snap.version, "Incompatible downgrade detected");
@@ -2940,7 +2955,8 @@ void application::load_feature_table_snapshot() {
     } else {
         vlog(
           _log.debug,
-          "Loaded feature table snapshot at cluster version {} (vs my binary "
+          "Loaded feature table snapshot at cluster version {} (vs my "
+          "binary "
           "{})",
           snap.version,
           my_version);

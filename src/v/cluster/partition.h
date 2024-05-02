@@ -17,6 +17,7 @@
 #include "cluster/fwd.h"
 #include "cluster/partition_probe.h"
 #include "cluster/types.h"
+#include "datalake/schema_registry_interface.h"
 #include "features/fwd.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
@@ -41,7 +42,9 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<archival::upload_housekeeping_service>&,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
-      = std::nullopt);
+      = std::nullopt,
+      ss::shared_ptr<datalake::schema_registry_interface> schema_registry
+      = nullptr);
 
     ~partition() = default;
 
@@ -332,6 +335,8 @@ public:
     ss::shared_ptr<cloud_storage::async_manifest_view>
     get_cloud_storage_manifest_view();
 
+    ss::shared_ptr<datalake::schema_registry_interface> get_schema_registry();
+
 private:
     ss::future<>
     replicate_unsafe_reset(cloud_storage::partition_manifest manifest);
@@ -376,6 +381,8 @@ private:
     std::unique_ptr<cluster::topic_configuration> _topic_cfg;
 
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
+
+    ss::shared_ptr<datalake::schema_registry_interface> _schema_registry;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

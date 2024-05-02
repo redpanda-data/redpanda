@@ -20,6 +20,8 @@
 #include "cluster/types.h"
 #include "config/property.h"
 #include "container/intrusive_list_helpers.h"
+#include "datalake/schema_registry_interface.h"
+#include "datalake/schema_registry_reader.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -208,6 +210,11 @@ public:
         _stm_registry.register_factory<T>(std::forward<Args>(args)...);
     }
 
+    void set_panadaproxy_schema_registry(
+      pandaproxy::schema_registry::api* pp_schema_registry) {
+        _schema_registry->set_schema_registry(pp_schema_registry);
+    }
+
 private:
     enum class partition_shutdown_stage {
         shutdown_requested,
@@ -289,6 +296,8 @@ private:
     std::optional<cluster::notification_id_type> _leader_notify_handle;
 
     state_machine_registry _stm_registry;
+
+    ss::shared_ptr<datalake::schema_registry_reader> _schema_registry;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
     friend std::ostream& operator<<(

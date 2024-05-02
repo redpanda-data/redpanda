@@ -23,6 +23,7 @@
 #include "cluster/partition_recovery_manager.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "datalake/schema_registry_interface.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -68,6 +69,7 @@ partition_manager::partition_manager(
   , _feature_table(feature_table)
   , _upload_hks(upload_hks)
   , _partition_shutdown_timeout(std::move(partition_shutdown_timeout)) {
+    _schema_registry = ss::make_shared<datalake::schema_registry_reader>();
     _leader_notify_handle
       = _raft_manager.local().register_leadership_notification(
         [this](
@@ -240,7 +242,8 @@ ss::future<consensus_ptr> partition_manager::manage(
       _archival_conf,
       _feature_table,
       _upload_hks,
-      read_replica_bucket);
+      read_replica_bucket,
+      _schema_registry);
 
     _ntp_table.emplace(log->config().ntp(), p);
     _raft_table.emplace(group, p);

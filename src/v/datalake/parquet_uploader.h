@@ -3,7 +3,10 @@
 #include "archival/archival_policy.h"
 #include "datalake/arrow_writing_consumer.h"
 #include "datalake/configuration.h"
+#include "datalake/schema_registry_interface.h"
 #include "storage/segment.h"
+
+#include <seastar/core/shared_ptr.hh>
 
 namespace datalake {
 
@@ -38,8 +41,11 @@ namespace datalake {
 
 class parquet_uploader {
 public:
-    explicit parquet_uploader(ss::shared_ptr<storage::log> log)
-      : _log(log) {}
+    explicit parquet_uploader(
+      ss::shared_ptr<storage::log> log,
+      ss::shared_ptr<schema_registry_interface> schema_registry)
+      : _log(log)
+      , _schema_registry(schema_registry) {}
     /** High-level interface to write a log segment out as Parquet and upload
      * it.
      */
@@ -70,6 +76,7 @@ public:
 
 private:
     ss::shared_ptr<storage::log> _log;
+    ss::shared_ptr<schema_registry_interface> _schema_registry;
 };
 
 } // namespace datalake

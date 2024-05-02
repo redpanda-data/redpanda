@@ -117,6 +117,8 @@ ss::future<bool> datalake::parquet_uploader::upload_parquet(
     }
     std::string_view topic_name = model::topic_view(
       _log->config().ntp().tp.topic);
+    auto schema = co_await _schema_registry->get_raw_topic_schema(
+      std::string(topic_name));
 
     cloud_storage::upload_result ret = co_await put_parquet_file(
       bucket_name,

@@ -34,6 +34,7 @@
 #include "container/fragmented_vector.h"
 #include "datalake/configuration.h"
 #include "datalake/parquet_uploader.h"
+#include "datalake/schema_registry_interface.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -1158,7 +1159,8 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
         auto datalake_config = datalake::topic_config::get_config(topic_name);
         if (datalake_config.has_value()) {
             vlog(ctxlog.debug, "Uploading datalake segment {}", candidate);
-            datalake::parquet_uploader uploader(_parent.log());
+            datalake::parquet_uploader uploader(
+              _parent.log(), _parent.get_schema_registry());
             bool success = co_await uploader.upload_parquet(
               std::filesystem::path(path),
               candidate,
