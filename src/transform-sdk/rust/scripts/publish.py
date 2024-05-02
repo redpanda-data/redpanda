@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+This script runs within GitHub actions and deploys each crate to crates.io
+
+The reason for this script is to turn local dependencies (via paths) into
+versions for crates.io
+"""
 
 import argparse
 from pathlib import Path
