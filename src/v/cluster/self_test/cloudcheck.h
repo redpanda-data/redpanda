@@ -84,7 +84,8 @@ private:
     ss::future<std::pair<cloud_storage::remote::list_result, self_test_result>>
     verify_list(
       cloud_storage_clients::bucket_name bucket,
-      cloud_storage_clients::object_key prefix);
+      cloud_storage_clients::object_key prefix,
+      size_t max_keys = 5);
 
     // Verify that downloading (read operation) from cloud storage works.
     ss::future<std::pair<std::optional<iobuf>, self_test_result>>
@@ -105,6 +106,9 @@ private:
     ss::gate _gate;
     retry_chain_node _rtc;
     cloudcheck_opts _opts;
+
+    const cloud_storage_clients::object_key self_test_prefix
+      = cloud_storage_clients::object_key{"self-test/"};
 
 private:
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;

@@ -260,7 +260,8 @@ ss::future<self_test_result> cloudcheck::verify_upload(
 ss::future<std::pair<cloud_storage::remote::list_result, self_test_result>>
 cloudcheck::verify_list(
   cloud_storage_clients::bucket_name bucket,
-  cloud_storage_clients::object_key prefix) {
+  cloud_storage_clients::object_key prefix,
+  size_t max_keys) {
     auto result = self_test_result{
       .name = _opts.name, .info = "list", .test_type = "cloud_storage"};
 
@@ -280,7 +281,6 @@ cloudcheck::verify_list(
 
     const auto start = ss::lowres_clock::now();
     try {
-        static constexpr size_t max_keys = 10;
         const cloud_storage::remote::list_result object_list
           = co_await _cloud_storage_api.local().list_objects(
             bucket, rtc, std::nullopt, std::nullopt, std::nullopt, max_keys);
