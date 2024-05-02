@@ -20,6 +20,7 @@
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "net/connection.h"
 #include "ssx/future-util.h"
 #include "ssx/watchdog.h"
 #include "storage/log_reader.h"
@@ -242,12 +243,25 @@ public:
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
             _partition_reader_as = config.abort_source;
-            auto sub = config.abort_source->get().subscribe([this]() noexcept {
-                vlog(_ctxlog.debug, "abort requested via config.abort_source");
-                if (_seg_reader) {
-                    _partition->evict_segment_reader(std::move(_seg_reader));
-                }
-            });
+            auto sub = config.abort_source->get().subscribe(
+              [this](const std::optional<std::exception_ptr>& eptr) noexcept {
+                  auto reason = eptr.has_value()
+                                  ? net::is_disconnect_exception(*eptr)
+                                  : "shutdown";
+                  if (reason) {
+                      vlog(
+                        _ctxlog.debug,
+                        "abort requested via config.abort_source: {}",
+                        reason);
+                  } else {
+                      vlog(
+                        _ctxlog.debug,
+                        "abort requested via config.abort_source");
+                  }
+                  if (_seg_reader) {
+                      _partition->evict_segment_reader(std::move(_seg_reader));
+                  }
+              });
             if (sub) {
                 _as_sub = std::move(*sub);
             } else {
@@ -316,8 +330,36 @@ public:
     void throw_on_external_abort() {
         _partition->_as.check();
 
-        if (_partition_reader_as) {
-            _partition_reader_as.value().get().check();
+        if (
+          _partition_reader_as
+          && _partition_reader_as.value().get().abort_requested()) {
+            // Avoid logging boring exceptions
+            try {
+                _partition_reader_as.value().get().check();
+            } catch (...) {
+                auto eptr = std::current_exception();
+                if (ssx::is_shutdown_exception(eptr)) {
+                    // Shutdown exception is not expected here. We're only
+                    // using this abort source to propagate exceptions.
+                    // The exception will be handled correctly but we need
+                    // to have an audit trail.
+                    vlog(_ctxlog.error, "Unexpected shutdown error: {}", eptr);
+                } else {
+                    auto reason = net::is_disconnect_exception(eptr);
+                    if (reason.has_value()) {
+                        // This indicates that the exception is
+                        // uninteresting and can be ignored for good.
+                        // Convert it to abort_requested_exception.
+                        vlog(
+                          _ctxlog.debug,
+                          "Kafka client disconnected: {}",
+                          reason.value());
+                        eptr = std::make_exception_ptr(
+                          ss::abort_requested_exception());
+                    }
+                }
+                std::rethrow_exception(eptr);
+            }
         }
     }
 
