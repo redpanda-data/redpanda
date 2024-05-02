@@ -10,38 +10,53 @@
 #include "ai_module.h"
 
 #include "ai/service.h"
+#include "base/vlog.h"
+#include "logger.h"
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <exception>
 #include <utility>
 
 namespace wasm {
 ss::future<model_handle>
 ai_module::load_hf_embeddings(ss::sstring model_repo, ss::sstring model_file) {
-    ai::huggingface_file hff{
-      .repo = std::move(model_repo), .filename = std::move(model_file)};
-    auto models = co_await _service->list_models();
-    for (const auto& m : models) {
-        if (m.file == hff) {
-            co_return allocate_handle(m.id);
+    try {
+        ai::huggingface_file hff{
+          .repo = std::move(model_repo), .filename = std::move(model_file)};
+        auto models = co_await _service->list_models();
+        for (const auto& m : models) {
+            if (m.file == hff) {
+                co_return allocate_handle(m.id);
+            }
         }
+        auto id = co_await _service->deploy_embeddings_model(hff);
+        co_return allocate_handle(id);
+    } catch (...) {
+        vlog(
+          wasm_log.info, "error calling deploy: {}", std::current_exception());
+        co_return -2;
     }
-    auto id = co_await _service->deploy_embeddings_model(hff);
-    co_return allocate_handle(id);
 }
 
 ss::future<model_handle>
 ai_module::load_hf_llm(ss::sstring model_repo, ss::sstring model_file) {
-    ai::huggingface_file hff{
-      .repo = std::move(model_repo), .filename = std::move(model_file)};
-    auto models = co_await _service->list_models();
-    for (const auto& m : models) {
-        if (m.file == hff) {
-            co_return allocate_handle(m.id);
+    try {
+        ai::huggingface_file hff{
+          .repo = std::move(model_repo), .filename = std::move(model_file)};
+        auto models = co_await _service->list_models();
+        for (const auto& m : models) {
+            if (m.file == hff) {
+                co_return allocate_handle(m.id);
+            }
         }
+        auto id = co_await _service->deploy_text_generation_model(hff);
+        co_return allocate_handle(id);
+    } catch (...) {
+        vlog(
+          wasm_log.info, "error calling deploy: {}", std::current_exception());
+        co_return -2;
     }
-    auto id = co_await _service->deploy_text_generation_model(hff);
-    co_return allocate_handle(id);
 }
 
 ss::future<int32_t> ai_module::generate_text(
@@ -53,14 +68,22 @@ ss::future<int32_t> ai_module::generate_text(
     if (!id) {
         co_return -1;
     }
-    auto result = co_await _service->generate_text(
-      *id, std::move(prompt), {.max_tokens = max_tokens});
+    try {
+        auto result = co_await _service->generate_text(
+          *id, std::move(prompt), {.max_tokens = max_tokens});
 
-    size_t copy_n = std::min(generated_output.size(), result.size());
-    for (size_t i = 0; i < copy_n; ++i) {
-        generated_output[i] = uint8_t(result[i]);
+        size_t copy_n = std::min(generated_output.size(), result.size());
+        for (size_t i = 0; i < copy_n; ++i) {
+            generated_output[i] = uint8_t(result[i]);
+        }
+        co_return int32_t(result.size());
+    } catch (...) {
+        vlog(
+          wasm_log.info,
+          "error calling generate_text: {}",
+          std::current_exception());
+        co_return -2;
     }
-    co_return int32_t(result.size());
 }
 
 ss::future<int32_t> ai_module::compute_embeddings(
@@ -69,13 +92,22 @@ ss::future<int32_t> ai_module::compute_embeddings(
     if (!id) {
         co_return -1;
     }
-    auto result = co_await _service->compute_embeddings(*id, std::move(text));
+    try {
+        auto result = co_await _service->compute_embeddings(
+          *id, std::move(text));
 
-    size_t copy_n = std::min(generated_output.size(), result.size());
-    for (size_t i = 0; i < copy_n; ++i) {
-        generated_output[i] = result[i];
+        size_t copy_n = std::min(generated_output.size(), result.size());
+        for (size_t i = 0; i < copy_n; ++i) {
+            generated_output[i] = result[i];
+        }
+        co_return int32_t(result.size());
+    } catch (...) {
+        vlog(
+          wasm_log.info,
+          "error calling compute_embeddings: {}",
+          std::current_exception());
+        co_return -2;
     }
-    co_return int32_t(result.size());
 }
 
 ai_module::ai_module(ai::service* service)
