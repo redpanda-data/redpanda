@@ -92,12 +92,6 @@ private:
 
     /// Whether the connection belongs to an exempt tput control group
     bool _exempt{false};
-
-    // Operating
-
-    /// What time the client on this conection should throttle (be throttled)
-    /// until
-    ss::lowres_clock::time_point _throttled_until;
 };
 
 /// Isolates \ref quota_manager functionality related to
@@ -125,10 +119,8 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    /// @p enforce delay to enforce in this call
     /// @p request delay to request from the client via throttle_ms
     struct delays_t {
-        clock::duration enforce{0};
         clock::duration request{0};
     };
 
@@ -144,7 +136,7 @@ public:
       std::optional<std::string_view> client_id);
 
     /// Determine throttling required by shard level TP quotas.
-    delays_t get_shard_delays(snc_quota_context&, clock::time_point now) const;
+    delays_t get_shard_delays(const snc_quota_context&) const;
 
     /// Record the request size when it has arrived from the transport.
     /// This should be done before calling \ref get_shard_delays because the
