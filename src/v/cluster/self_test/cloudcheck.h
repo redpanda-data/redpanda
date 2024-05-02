@@ -74,13 +74,13 @@ private:
       iobuf& payload,
       retry_chain_node& rtc);
 
-    // Verify that uploading (write operation) to cloud storage works.
+    // Verify that uploading (Put: write operation) to cloud storage works.
     ss::future<self_test_result> verify_upload(
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key key,
       const std::optional<iobuf>& payload);
 
-    // Verify that listing (read operation) from cloud storage works.
+    // Verify that listing (List: read operation) from cloud storage works.
     ss::future<std::pair<cloud_storage::remote::list_result, self_test_result>>
     verify_list(
       cloud_storage_clients::bucket_name bucket,
@@ -93,13 +93,13 @@ private:
       cloud_storage_clients::bucket_name bucket,
       std::optional<cloud_storage_clients::object_key> key);
 
-    // Verify that downloading (read operation) from cloud storage works.
+    // Verify that downloading (Get: read operation) from cloud storage works.
     ss::future<std::pair<std::optional<iobuf>, self_test_result>>
     verify_download(
       cloud_storage_clients::bucket_name bucket,
       std::optional<cloud_storage_clients::object_key> key);
 
-    // Verify that deleting (write operation) from cloud storage works.
+    // Verify that deleting (Delete: write operation) from cloud storage works.
     ss::future<self_test_result> verify_delete(
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key key);

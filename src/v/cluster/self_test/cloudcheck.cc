@@ -99,7 +99,7 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
                                            ? make_random_payload()
                                            : std::optional<iobuf>{};
 
-    // Test Upload
+    // Test Put
     auto upload_test_result = co_await verify_upload(
       bucket, self_test_key, payload);
     const bool is_uploaded
@@ -128,9 +128,9 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
 
     results.push_back(std::move(list_test_result));
 
-    // Test Download
-    // If we have uploaded our payload, we will attempt to get the written
-    // object. If we didn't, we will attempt to get the smallest object from the
+    // Test Get
+    // If the payloaded was uploaded, this attempts to get the written
+    // object. If it wasn't, it will attempt to get the smallest object from the
     // object list, if at least one exists.
     auto get_min_object_key =
       [&object_list]() -> std::optional<cloud_storage_clients::object_key> {
@@ -223,7 +223,7 @@ ss::future<self_test_result> cloudcheck::verify_upload(
   cloud_storage_clients::object_key key,
   const std::optional<iobuf>& payload) {
     auto result = self_test_result{
-      .name = _opts.name, .info = "upload", .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "Put", .test_type = "cloud_storage"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
@@ -271,7 +271,7 @@ cloudcheck::verify_list(
   cloud_storage_clients::object_key prefix,
   size_t max_keys) {
     auto result = self_test_result{
-      .name = _opts.name, .info = "list", .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "List", .test_type = "cloud_storage"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
@@ -367,7 +367,7 @@ cloudcheck::verify_download(
   cloud_storage_clients::bucket_name bucket,
   std::optional<cloud_storage_clients::object_key> key) {
     auto result = self_test_result{
-      .name = _opts.name, .info = "download", .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "Get", .test_type = "cloud_storage"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
@@ -418,14 +418,14 @@ cloudcheck::verify_download(
     const auto end = ss::lowres_clock::now();
     result.duration = end - start;
 
-    co_return std::make_pair(std::nullopt, std::move(result));
+    co_return std::make_pair(std::move(result_payload), std::move(result));
 }
 
 ss::future<self_test_result> cloudcheck::verify_delete(
   cloud_storage_clients::bucket_name bucket,
   cloud_storage_clients::object_key key) {
     auto result = self_test_result{
-      .name = _opts.name, .info = "delete", .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "Delete", .test_type = "cloud_storage"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
