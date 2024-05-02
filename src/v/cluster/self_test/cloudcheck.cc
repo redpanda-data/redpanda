@@ -260,7 +260,7 @@ ss::future<self_test_result> cloudcheck::verify_upload(
 ss::future<std::pair<cloud_storage::remote::list_result, self_test_result>>
 cloudcheck::verify_list(
   cloud_storage_clients::bucket_name bucket,
-  cloud_storage_clients::object_key prefix) {
+  cloud_storage_clients::object_key) {
     auto result = self_test_result{
       .name = _opts.name, .info = "list", .test_type = "cloud_storage"};
 

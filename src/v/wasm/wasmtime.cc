@@ -14,6 +14,7 @@
 #include "ai_module.h"
 #include "allocator.h"
 #include "base/vassert.h"
+#include "base/vlog.h"
 #include "engine_probe.h"
 #include "ffi.h"
 #include "logger.h"
@@ -952,7 +953,9 @@ public:
                 function_name.size(),
                 functype.get(),
                 &invoke_async_host_fn,
-                /*data=*/nullptr,
+                /*data=*/
+                const_cast<void*>(
+                  static_cast<const void*>(function_name.data())),
                 /*finalizer=*/nullptr));
             check_error(error.get());
         } else {
@@ -986,6 +989,14 @@ private:
       size_t nargs,
       wasmtime_val_t* results,
       size_t nresults) {
+        vlog(wasm_log.info, "calling host function on: {}", Module::name);
+        auto _ = ss::defer([] {
+            vlog(
+              wasm_log.info,
+              "finished host function on: {}, uncaught exceptions: {}",
+              Module::name,
+              std::uncaught_exceptions());
+        });
         auto* context = wasmtime_caller_context(caller);
         auto* engine = static_cast<wasmtime_engine*>(
           wasmtime_context_get_data(context));
@@ -1008,7 +1019,7 @@ private:
      * Invoke an async function.
      */
     static void invoke_async_host_fn(
-      void*,
+      void* fn_name,
       wasmtime_caller_t* caller,
       const wasmtime_val_t* args,
       size_t nargs,
@@ -1016,60 +1027,78 @@ private:
       size_t nresults,
       wasm_trap_t** trap_ret,
       wasmtime_async_continuation_t* continuation) {
-        auto* context = wasmtime_caller_context(caller);
-        auto* engine = static_cast<wasmtime_engine*>(
-          wasmtime_context_get_data(context));
-        auto* host_module = engine->get_module<Module>();
-        // Keep this alive during the course of the host call incase it's
-        // used as a parameter to a host function, they'll expect it's alive
-        // the entire call. We'll move the ownership of this function into
-        // the host future continuation.
-        auto mem = std::make_unique<memory>(context);
-        wasm_trap_t* trap = extract_memory(caller, mem.get());
-        if (trap != nullptr) {
-            *trap_ret = trap;
-            // Return a callback that just says we're already done.
-            continuation->callback = [](void*) { return true; };
-            return;
-        }
-
-        ss::future<> host_future_result = do_invoke_async_host_fn(
-          host_module, mem.get(), {args, nargs}, {results, nresults});
-
-        // It's possible for the async function to be inlined in this fiber
-        // and have completed synchronously, in that case we don't need to
-        // register this future and can return that it's completed.
-        if (host_future_result.available()) {
-            if (host_future_result.failed()) {
-                *trap_ret = make_trap(host_future_result.get_exception());
+        vlog(
+          wasm_log.info,
+          "calling host function on: {}, {}",
+          Module::name,
+          reinterpret_cast<const char*>(fn_name));
+        auto _ = ss::defer([] {
+            vlog(
+              wasm_log.info,
+              "finished host function on: {}, uncaught exceptions: {}",
+              Module::name,
+              std::uncaught_exceptions());
+        });
+        try {
+            auto* context = wasmtime_caller_context(caller);
+            auto* engine = static_cast<wasmtime_engine*>(
+              wasmtime_context_get_data(context));
+            auto* host_module = engine->get_module<Module>();
+            // Keep this alive during the course of the host call incase it's
+            // used as a parameter to a host function, they'll expect it's alive
+            // the entire call. We'll move the ownership of this function into
+            // the host future continuation.
+            auto mem = std::make_unique<memory>(context);
+            wasm_trap_t* trap = extract_memory(caller, mem.get());
+            if (trap != nullptr) {
+                *trap_ret = trap;
+                // Return a callback that just says we're already done.
+                continuation->callback = [](void*) { return true; };
+                return;
             }
-            continuation->callback = [](void*) { return true; };
-            return;
-        }
 
-        using async_call_done = ss::bool_class<struct async_call_done_tag>;
-        // NOLINTNEXTLINE(*owning-memory)
-        auto* status = new async_call_done(false);
+            ss::future<> host_future_result = do_invoke_async_host_fn(
+              host_module, mem.get(), {args, nargs}, {results, nresults});
 
-        engine->register_pending_host_function(
-          std::move(host_future_result)
-            .then_wrapped(
-              [status, trap_ret, mem = std::move(mem)](ss::future<> fut) {
-                  if (fut.failed()) {
-                      *trap_ret = make_trap(fut.get_exception());
-                  }
-                  *status = async_call_done::yes;
-              }));
+            // It's possible for the async function to be inlined in this fiber
+            // and have completed synchronously, in that case we don't need to
+            // register this future and can return that it's completed.
+            if (host_future_result.available()) {
+                if (host_future_result.failed()) {
+                    *trap_ret = make_trap(host_future_result.get_exception());
+                }
+                continuation->callback = [](void*) { return true; };
+                return;
+            }
 
-        continuation->env = status;
-        continuation->finalizer = [](void* env) {
+            using async_call_done = ss::bool_class<struct async_call_done_tag>;
             // NOLINTNEXTLINE(*owning-memory)
-            delete static_cast<async_call_done*>(env);
-        };
-        continuation->callback = [](void* env) {
-            async_call_done status = *static_cast<async_call_done*>(env);
-            return status == async_call_done::yes;
-        };
+            auto* status = new async_call_done(false);
+
+            engine->register_pending_host_function(
+              std::move(host_future_result)
+                .then_wrapped(
+                  [status, trap_ret, mem = std::move(mem)](ss::future<> fut) {
+                      if (fut.failed()) {
+                          *trap_ret = make_trap(fut.get_exception());
+                      }
+                      *status = async_call_done::yes;
+                  }));
+
+            continuation->env = status;
+            continuation->finalizer = [](void* env) {
+                // NOLINTNEXTLINE(*owning-memory)
+                delete static_cast<async_call_done*>(env);
+            };
+            continuation->callback = [](void* env) {
+                async_call_done status = *static_cast<async_call_done*>(env);
+                return status == async_call_done::yes;
+            };
+        } catch (...) {
+            vlog(wasm_log.error, "what?? {}", std::current_exception());
+            *trap_ret = make_trap(std::current_exception());
+            continuation->callback = [](void*) { return true; };
+        }
     }
 
     /**

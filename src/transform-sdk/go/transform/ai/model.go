@@ -106,7 +106,7 @@ func (llm *EmbeddingsModel) ComputeEmbeddings(text string) ([]float32, error) {
 		unsafe.Pointer(unsafe.StringData(text)),
 		int32(len(text)),
 		unsafe.Pointer(buf.WriterBufPtr()),
-		int32(buf.WriterLen()),
+		int32(buf.WriterLen()/4),
 	)
 	if r < 0 {
 		return nil, errors.New("unable to generate text, errorcode: " + strconv.Itoa(int(r)))
