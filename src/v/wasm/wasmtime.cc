@@ -1090,23 +1090,31 @@ private:
       memory* mem,
       std::span<const wasmtime_val_t> args,
       std::span<wasmtime_val_t> results) {
-        auto raw = to_raw_values(args);
-        auto host_params = ffi::extract_parameters<ArgTypes...>(mem, raw, 0);
-        using FutureType = typename ReturnType::value_type;
-        if constexpr (std::is_void_v<FutureType>) {
-            return ss::futurize_apply(
-              module_func,
-              std::tuple_cat(
-                std::make_tuple(host_module), std::move(host_params)));
-        } else {
-            return ss::futurize_apply(
-                     module_func,
-                     std::tuple_cat(
-                       std::make_tuple(host_module), std::move(host_params)))
-              .then([results](FutureType host_future_result) {
-                  results[0] = convert_to_wasmtime<FutureType>(
-                    host_future_result);
-              });
+        try {
+            auto raw = to_raw_values(args);
+            auto host_params = ffi::extract_parameters<ArgTypes...>(
+              mem, raw, 0);
+            using FutureType = typename ReturnType::value_type;
+            if constexpr (std::is_void_v<FutureType>) {
+                return std::apply(
+                  module_func,
+                  std::tuple_cat(
+                    std::make_tuple(host_module), std::move(host_params)));
+            } else {
+                return std::apply(
+                         module_func,
+                         std::tuple_cat(
+                           std::make_tuple(host_module),
+                           std::move(host_params)))
+                  .then([results](FutureType host_future_result) {
+                      // This is safe to write too because wasmtime ensures the
+                      // result is kept alive until the future completes.
+                      results[0] = convert_to_wasmtime<FutureType>(
+                        host_future_result);
+                  });
+            }
+        } catch (...) {
+            return ss::current_exception_as_future();
         }
     }
 
