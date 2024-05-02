@@ -104,7 +104,8 @@ class OMBValidationTest(RedpandaCloudTest):
         self.logger.info("Checking test results for possible latency spikes.")
         latency_metrics = self.extract_latency_metrics(benchmark)
         spikes_detected = benchmark.detect_spikes_by_percentile(
-            latency_metrics, self.expected_max_latencies())
+            latency_metrics,
+            expected_max_latencies=self.expected_max_latencies())
 
         if spikes_detected and try_count < max_retries:
             self.logger.info(
