@@ -320,6 +320,38 @@ private:
         uint16_t _client_port;
     };
 
+    class throttling_state {
+    public:
+        ss::lowres_clock::duration update_fetch_delay(
+          ss::lowres_clock::duration new_delay,
+          ss::lowres_clock::time_point now) {
+            auto result_enforced = fetch_throttled_until - now;
+            fetch_throttled_until = now + new_delay;
+            return result_enforced;
+        }
+
+        ss::lowres_clock::duration update_produce_delay(
+          ss::lowres_clock::duration new_delay,
+          ss::lowres_clock::time_point now) {
+            auto result_enforced = produce_throttled_until - now;
+            produce_throttled_until = now + new_delay;
+            return result_enforced;
+        }
+
+        ss::lowres_clock::duration update_snc_delay(
+          ss::lowres_clock::duration new_delay,
+          ss::lowres_clock::time_point now) {
+            auto result_enforced = snc_throttled_until - now;
+            snc_throttled_until = now + new_delay;
+            return result_enforced;
+        }
+
+    private:
+        ss::lowres_clock::time_point snc_throttled_until;
+        ss::lowres_clock::time_point produce_throttled_until;
+        ss::lowres_clock::time_point fetch_throttled_until;
+    };
+
     std::optional<
       std::reference_wrapper<boost::intrusive::list<connection_context>>>
       _hook;
@@ -339,6 +371,11 @@ private:
       _kafka_throughput_controlled_api_keys;
     std::unique_ptr<snc_quota_context> _snc_quota_context;
     ss::promise<> _wait_input_shutdown;
+
+    /// What time the client on this conection should be throttled until
+    /// Used to enforce client quotas and ingress/egress quotas broker-side
+    /// if the client does not obey the ThrottleTimeMs in the response
+    throttling_state _throttling_state;
 };
 
 } // namespace kafka
