@@ -1465,6 +1465,9 @@ rm_stm::get_expired_producers() const {
     for (auto& [pid, _] : _mem_state.estimated) {
         maybe_add_to_expired(pid);
     }
+    for (auto& [id, epoch] : _log_state.fence_pid_epoch) {
+        maybe_add_to_expired(model::producer_identity{id, epoch});
+    }
     for (auto& [pid, _] : _log_state.ongoing_map) {
         maybe_add_to_expired(pid);
     }
