@@ -331,6 +331,13 @@ public:
         auto id = _registry->delete_transform(meta.name);
         _manager->on_plugin_change(id);
     }
+    void
+    pause_transform(std::string_view name, model::is_transform_paused pause) {
+        auto meta = parse_transform(name);
+        meta.paused = pause;
+        auto id = _registry->put_transform(meta);
+        _manager->on_plugin_change(id);
+    }
     void report_error(std::string_view str) {
         auto [ntp, meta] = transform_and_partition(str);
         auto entry = _registry->lookup_by_name(meta.name);
@@ -465,6 +472,19 @@ TEST_F(TransformManagerTest, FullLifecycle) {
     lose_leadership("foo/1");
     drain_queue();
     EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::destroyed));
+}
+
+TEST_F(TransformManagerTest, PauseUnpause) {
+    become_leader("foo/1");
+    deploy_transform("foo->bar");
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
+    pause_transform("foo->bar", model::is_transform_paused::yes);
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::destroyed));
+    pause_transform("foo->bar", model::is_transform_paused::no);
+    drain_queue();
+    EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::active));
 }
 
 TEST_F(TransformManagerTest, DeleteTransform) {

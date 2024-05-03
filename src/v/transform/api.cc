@@ -911,4 +911,29 @@ ss::future<std::error_code> service::garbage_collect_committed_offsets() {
       std::move(ids));
 }
 
+ss::future<std::error_code> service::patch_transform_metadata(
+  model::transform_name name, model::transform_metadata_patch patch) {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
+    }
+    auto _ = _gate.hold();
+    auto transform = _plugin_frontend->local().lookup_transform(name);
+    if (!transform.has_value()) {
+        co_return cluster::make_error_code(
+          cluster::errc::transform_does_not_exist);
+    }
+
+    transform->paused = patch.paused.value_or(transform->paused);
+    if (patch.env.has_value()) {
+        std::exchange(transform->environment, std::move(patch.env).value());
+    }
+    cluster::errc ec = co_await _plugin_frontend->local().upsert_transform(
+      transform.value(), model::timeout_clock::now() + metadata_timeout);
+
+    vlog(tlog.info, "patching transform metadata {}", transform.value());
+
+    co_return cluster::make_error_code(ec);
+}
+
 } // namespace transform
