@@ -472,7 +472,11 @@ class CloudCluster():
         return None
 
     def _create_cluster_payload(self):
-        _cidr = "10.1.0.0/16" if self.isPublicNetwork else self.config.network
+        # Previously cloud creation could be done by passing word
+        # 'private' as a _cidr. Now it is failing with HTTP;:400
+        # old code:
+        # _cidr = "10.1.0.0/16" if self.isPublicNetwork else self.config.network
+        _cidr = "10.1.0.0/16"
         return {
             "cluster": {
                 "name": self.current.name,
@@ -907,14 +911,25 @@ class CloudCluster():
             # Just create new cluster
             self._create_new_cluster()
 
+        # If network type is private, trigger VPC Peering
+        if not self.isPublicNetwork:
+            # Checks for if such VPC exists is not needed
+
+            # In case of AWS, it will not create
+            # duplicate Peering connection, just return existing one.
+
+            # In case of GCP, there is no need for Peering for BYOC
+            # and FMC type will create proper peering if it is not in place
+
+            # Routes detection logic is in place, so no duplicated
+            # routes/tables will be created
+            self.create_vpc_peering()
+
         # Update Cluster console Url
         self.current.consoleUrl = self._get_cluster_console_url()
         # update cluster ACLs
         self.update_cluster_acls(superuser)
 
-        # If network type is private, trigget VPC Peering
-        if not self.isPublicNetwork:
-            self.create_vpc_peering()
         self.current._isAlive = True
         return self.current.cluster_id
 
