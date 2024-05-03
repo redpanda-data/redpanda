@@ -8,6 +8,7 @@ rp_test(
     batch_collector_test.cc
     entry_stream_utils_test.cc
     segment_appender_test.cc
+    segment_io_test.cc
     segment_reader_test.cc
     skipping_data_source_test.cc
   LIBRARIES
