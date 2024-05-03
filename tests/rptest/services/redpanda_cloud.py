@@ -6,6 +6,7 @@ import os
 import requests
 import uuid
 import yaml
+import ipaddress
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -240,6 +241,9 @@ class CloudCluster():
                                                  self.provider_key,
                                                  self.provider_secret)
         if self.config.network != 'public':
+            # Check that private network is a correct CIDR
+            self.config.network = self.validate_cidr(self.config.network)
+            # Get all metadata from ducktape runner node
             self._ducktape_meta = self.get_ducktape_meta()
             if self.config.provider == PROVIDER_AWS:
                 # We should have only 1 interface on ducktape client
@@ -280,6 +284,14 @@ class CloudCluster():
 
         # save context
         self._ctx = context
+
+    def validate_cidr(self, network_cidr):
+        try:
+            ip_address = ipaddress.ip_network(network_cidr)
+        except ValueError as e:
+            raise RuntimeError(
+                f"Invalid CIDR for private network: '{network_cidr}'") from e
+        return str(ip_address)
 
     @property
     def cluster_id(self):
@@ -472,6 +484,8 @@ class CloudCluster():
         return None
 
     def _create_cluster_payload(self):
+        # In case of private network, the value of config.network
+        # should be CIDR. We are validatin it in init
         _cidr = "10.1.0.0/16" if self.isPublicNetwork else self.config.network
         return {
             "cluster": {
@@ -907,14 +921,25 @@ class CloudCluster():
             # Just create new cluster
             self._create_new_cluster()
 
+        # If network type is private, trigger VPC Peering
+        if not self.isPublicNetwork:
+            # Checks for if such VPC exists is not needed
+
+            # In case of AWS, it will not create
+            # duplicate Peering connection, just return existing one.
+
+            # In case of GCP, there is no need for Peering for BYOC
+            # and FMC type will create proper peering if it is not in place
+
+            # Routes detection logic is in place, so no duplicated
+            # routes/tables will be created
+            self.create_vpc_peering()
+
         # Update Cluster console Url
         self.current.consoleUrl = self._get_cluster_console_url()
         # update cluster ACLs
         self.update_cluster_acls(superuser)
 
-        # If network type is private, trigget VPC Peering
-        if not self.isPublicNetwork:
-            self.create_vpc_peering()
         self.current._isAlive = True
         return self.current.cluster_id
 
