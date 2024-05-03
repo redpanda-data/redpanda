@@ -141,7 +141,7 @@ admin_server::get_all_transactions_handler(
 ss::future<ss::json::json_return_type>
 admin_server::find_tx_coordinator_handler(
   std::unique_ptr<ss::http::request> req) {
-    auto transaction_id = req->param["transactional_id"];
+    auto transaction_id = req->get_path_param("transactional_id");
     kafka::transactional_id tid(transaction_id);
     auto r = co_await _tx_gateway_frontend.local().find_coordinator(tid);
 
@@ -166,7 +166,7 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     if (!_tx_gateway_frontend.local_is_initialized()) {
         throw ss::httpd::bad_request_exception("Transaction are disabled");
     }
-    auto transaction_id = req->param["transactional_id"];
+    auto transaction_id = req->get_path_param("transactional_id");
     kafka::transactional_id tid(transaction_id);
 
     auto r = co_await _tx_gateway_frontend.local().find_coordinator(tid);

@@ -222,14 +222,16 @@ bool escape_hatch_request(ss::httpd::const_req req) {
 
 model::ntp admin_server::parse_ntp_from_request(
   ss::httpd::parameters& param, model::ns ns) {
-    auto topic = model::topic(param["topic"]);
+    auto topic = model::topic(param.get_decoded_param("topic"));
 
     model::partition_id partition;
     try {
-        partition = model::partition_id(std::stoi(param["partition"]));
+        partition = model::partition_id(
+          std::stoi(param.get_decoded_param("partition")));
     } catch (...) {
         throw ss::httpd::bad_param_exception(fmt::format(
-          "Partition id must be an integer: {}", param["partition"]));
+          "Partition id must be an integer: {}",
+          param.get_decoded_param("partition")));
     }
 
     if (partition() < 0) {
@@ -241,7 +243,8 @@ model::ntp admin_server::parse_ntp_from_request(
 }
 
 model::ntp admin_server::parse_ntp_from_request(ss::httpd::parameters& param) {
-    return parse_ntp_from_request(param, model::ns(param["namespace"]));
+    return parse_ntp_from_request(
+      param, model::ns(param.get_decoded_param("namespace")));
 }
 
 model::ntp admin_server::parse_ntp_from_query_param(
@@ -832,10 +835,10 @@ bool admin_server::need_redirect_to_leader(
 model::node_id admin_server::parse_broker_id(const ss::http::request& req) {
     try {
         return model::node_id(
-          boost::lexical_cast<model::node_id::type>(req.param["id"]));
+          boost::lexical_cast<model::node_id::type>(req.get_path_param("id")));
     } catch (...) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Broker id: {}, must be an integer", req.param["id"]));
+        throw ss::httpd::bad_param_exception(fmt::format(
+          "Broker id: {}, must be an integer", req.get_path_param("id")));
     }
 }
 
@@ -1274,10 +1277,11 @@ void admin_server::register_config_routes() {
       ss::httpd::config_json::get_log_level,
       [this](std::unique_ptr<ss::http::request> req) {
           ss::httpd::config_json::get_log_level_response rsp{};
-          ss::sstring name;
-          if (!admin::path_decode(req->param["name"], name)) {
+          ss::sstring name = req->get_path_param("name");
+          if (name == "") {
               throw ss::httpd::bad_param_exception(fmt::format(
-                "Invalid parameter 'name' got {{{}}}", req->param["name"]));
+                "Invalid parameter 'name' got {{{}}}",
+                req->get_path_param("name")));
           }
           validate_no_control(name, string_conversion_exception{name});
 
@@ -1313,10 +1317,11 @@ void admin_server::register_config_routes() {
       [this](std::unique_ptr<ss::http::request> req) {
           using namespace std::chrono_literals;
           ss::httpd::config_json::set_log_level_response rsp{};
-          ss::sstring name;
-          if (!admin::path_decode(req->param["name"], name)) {
+          ss::sstring name = req->get_path_param("name");
+          if (name == "") {
               throw ss::httpd::bad_param_exception(fmt::format(
-                "Invalid parameter 'name' got {{{}}}", req->param["name"]));
+                "Invalid parameter 'name' got {{{}}}",
+                req->get_path_param("name")));
           }
           validate_no_control(name, string_conversion_exception{name});
 
@@ -1913,10 +1918,11 @@ admin_server::raft_transfer_leadership_handler(
   std::unique_ptr<ss::http::request> req) {
     raft::group_id group_id;
     try {
-        group_id = raft::group_id(std::stoll(req->param["group_id"]));
+        group_id = raft::group_id(std::stoll(req->get_path_param("group_id")));
     } catch (...) {
         throw ss::httpd::bad_param_exception(fmt::format(
-          "Raft group id must be an integer: {}", req->param["group_id"]));
+          "Raft group id must be an integer: {}",
+          req->get_path_param("group_id")));
     }
 
     if (group_id() < 0) {
@@ -2078,7 +2084,7 @@ admin_server::put_feature_handler(std::unique_ptr<ss::http::request> req) {
     auto doc = co_await parse_json_body(req.get());
     apply_validator(feature_put_validator, doc);
 
-    auto feature_name = req->param["feature_name"];
+    auto feature_name = req->get_path_param("feature_name");
 
     auto feature_id = _controller->get_feature_table().local().resolve_name(
       feature_name);
@@ -2647,9 +2653,9 @@ void admin_server::register_hbadger_routes() {
     register_route<superuser>(
       ss::httpd::hbadger_json::set_failure_probe,
       [](std::unique_ptr<ss::http::request> req) {
-          auto m = req->param["module"];
-          auto p = req->param["point"];
-          auto type = req->param["type"];
+          auto m = req->get_path_param("module");
+          auto p = req->get_path_param("point");
+          auto type = req->get_path_param("type");
           vlog(
             adminlog.info,
             "Request to set failure probe of type '{}' in  '{}' at point "
@@ -2688,8 +2694,8 @@ void admin_server::register_hbadger_routes() {
     register_route<superuser>(
       ss::httpd::hbadger_json::delete_failure_probe,
       [](std::unique_ptr<ss::http::request> req) {
-          auto m = req->param["module"];
-          auto p = req->param["point"];
+          auto m = req->get_path_param("module");
+          auto p = req->get_path_param("point");
           vlog(
             adminlog.info,
             "Request to unset failure probe '{}' at point '{}'",
@@ -2902,7 +2908,7 @@ storage::node::disk_type resolve_disk_type(std::string_view name) {
 
 ss::future<ss::json::json_return_type>
 admin_server::get_disk_stat_handler(std::unique_ptr<ss::http::request> req) {
-    auto type = resolve_disk_type(req->param["type"]);
+    auto type = resolve_disk_type(req->get_path_param("type"));
 
     // get effective disk stat
     auto stat = co_await _storage_node.invoke_on(
@@ -2945,7 +2951,7 @@ admin_server::put_disk_stat_handler(std::unique_ptr<ss::http::request> req) {
 
     auto doc = co_await parse_json_body(req.get());
     apply_validator(disk_stat_validator, doc);
-    auto type = resolve_disk_type(req->param["type"]);
+    auto type = resolve_disk_type(req->get_path_param("type"));
 
     storage::node::statvfs_overrides overrides;
     if (doc.HasMember("total_bytes")) {
@@ -3114,7 +3120,8 @@ admin_server::post_cluster_partitions_topic_handler(
     }
 
     auto ns_tp = model::topic_namespace{
-      model::ns{req->param["namespace"]}, model::topic{req->param["topic"]}};
+      model::ns{req->get_path_param("namespace")},
+      model::topic{req->get_path_param("topic")}};
 
     static thread_local auto body_validator(
       make_post_cluster_partitions_validator());
@@ -3323,7 +3330,8 @@ ss::future<ss::json::json_return_type>
 admin_server::get_cluster_partitions_topic_handler(
   std::unique_ptr<ss::http::request> req) {
     auto ns_tp = model::topic_namespace{
-      model::ns{req->param["namespace"]}, model::topic{req->param["topic"]}};
+      model::ns{req->get_path_param("namespace")},
+      model::topic{req->get_path_param("topic")}};
 
     std::optional<bool> disabled_filter;
     if (req->query_parameters.contains("disabled")) {
@@ -4058,15 +4066,16 @@ admin_server::get_cloud_storage_lifecycle(std::unique_ptr<ss::http::request>) {
 ss::future<ss::json::json_return_type>
 admin_server::delete_cloud_storage_lifecycle(
   std::unique_ptr<ss::http::request> req) {
-    auto topic = model::topic(req->param["topic"]);
+    auto topic = model::topic(req->get_path_param("topic"));
 
     model::initial_revision_id revision;
     try {
         revision = model::initial_revision_id(
-          std::stoi(req->param["revision"]));
+          std::stoi(req->get_path_param("revision")));
     } catch (...) {
         throw ss::httpd::bad_param_exception(fmt::format(
-          "Revision id must be an integer: {}", req->param["revision"]));
+          "Revision id must be an integer: {}",
+          req->get_path_param("revision")));
     }
 
     auto& tp_frontend = _controller->get_topics_frontend();
