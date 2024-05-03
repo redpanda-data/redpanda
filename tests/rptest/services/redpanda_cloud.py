@@ -6,6 +6,7 @@ import os
 import requests
 import uuid
 import yaml
+import ipaddress
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -240,6 +241,9 @@ class CloudCluster():
                                                  self.provider_key,
                                                  self.provider_secret)
         if self.config.network != 'public':
+            # Check that private network is a correct CIDR
+            self.config.network = self.validate_cidr(self.config.network)
+            # Get all metadata from ducktape runner node
             self._ducktape_meta = self.get_ducktape_meta()
             if self.config.provider == PROVIDER_AWS:
                 # We should have only 1 interface on ducktape client
@@ -280,6 +284,14 @@ class CloudCluster():
 
         # save context
         self._ctx = context
+
+    def validate_cidr(self, network_cidr):
+        try:
+            ip_address = ipaddress.ip_network(network_cidr)
+        except ValueError as e:
+            raise RuntimeError(
+                f"Invalid CIDR for private network: '{network_cidr}'") from e
+        return str(ip_address)
 
     @property
     def cluster_id(self):
@@ -472,11 +484,9 @@ class CloudCluster():
         return None
 
     def _create_cluster_payload(self):
-        # Previously cloud creation could be done by passing word
-        # 'private' as a _cidr. Now it is failing with HTTP;:400
-        # old code:
-        # _cidr = "10.1.0.0/16" if self.isPublicNetwork else self.config.network
-        _cidr = "10.1.0.0/16"
+        # In case of private network, the value of config.network
+        # should be CIDR. We are validatin it in init
+        _cidr = "10.1.0.0/16" if self.isPublicNetwork else self.config.network
         return {
             "cluster": {
                 "name": self.current.name,
