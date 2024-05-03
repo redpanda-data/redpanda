@@ -21,6 +21,8 @@
 #include "redpanda/admin/util.h"
 #include "transform/api.h"
 
+#include <seastar/http/exception.hh>
+
 #include <system_error>
 
 namespace {
@@ -50,6 +52,9 @@ void admin_server::register_wasm_transform_routes() {
       [this](auto req) {
           return garbage_collect_committed_offsets(std::move(req));
       });
+    register_route<superuser>(
+      ss::httpd::transform_json::patch_transform_metadata,
+      [this](auto req) { return patch_transform_metadata(std::move(req)); });
 }
 
 ss::future<ss::json::json_return_type>
@@ -266,6 +271,104 @@ admin_server::garbage_collect_committed_offsets(
     }
     auto ec = co_await _transform_service->local()
                 .garbage_collect_committed_offsets();
+    co_await throw_on_error(*req, ec, model::controller_ntp);
+    co_return ss::json::json_void();
+}
+
+void validate_transform_patch_document(const json::Document& doc) {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "env": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                  "key": {
+                      "type": "string"
+                  },
+                  "value": {
+                      "type": "string"
+                  }
+              },
+              "required": [
+                  "key",
+                  "value"
+              ],
+              "additionalProperties": false
+            }
+        },
+        "is_paused": {
+            "type": "boolean"
+        }
+    },
+    "required": [],
+    "additionalProperties": false
+}
+)";
+
+    auto validator = json::validator(schema);
+    try {
+        json::validate(validator, doc);
+    } catch (json::json_validation_error& err) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("invalid JSON request body: {}", err.what()));
+    }
+}
+
+model::transform_metadata_patch
+parse_json_metadata_patch(const json::Document& doc) {
+    validate_transform_patch_document(doc);
+
+    model::transform_metadata_patch result;
+
+    if (doc.HasMember("env")) {
+        result.env.emplace();
+        absl::c_transform(
+          doc["env"].GetArray(),
+          std::inserter(result.env.value(), result.env.value().end()),
+          [](const auto& p) {
+              return std::make_pair(
+                p["key"].GetString(), p["value"].GetString());
+          });
+    }
+
+    if (doc.HasMember("is_paused")) {
+        result.paused.emplace(doc["is_paused"].GetBool());
+    }
+
+    return result;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::patch_transform_metadata(std::unique_ptr<ss::http::request> req) {
+    if (!_transform_service->local_is_initialized()) {
+        throw transforms_not_enabled();
+    }
+
+    ss::sstring raw_name = req->get_path_param("name");
+    if (raw_name.empty()) {
+        throw seastar::httpd::bad_request_exception("invalid transform name");
+    }
+    model::transform_name name{std::move(raw_name)};
+
+    auto doc = co_await parse_json_body(req.get());
+    if (!doc.IsObject()) {
+        vlog(adminlog.debug, "Request body is not a JSON object");
+        throw seastar::httpd::bad_request_exception(
+          "Request body is not a JSON object");
+    }
+
+    auto patch = parse_json_metadata_patch(doc);
+    if (!patch.env.has_value() && !patch.paused.has_value()) {
+        vlog(adminlog.debug, "Empty metadata patch ...ignoring");
+        co_return ss::json::json_void();
+    }
+
+    std::error_code ec
+      = co_await _transform_service->local().patch_transform_metadata(
+        std::move(name), std::move(patch));
     co_await throw_on_error(*req, ec, model::controller_ntp);
     co_return ss::json::json_void();
 }
