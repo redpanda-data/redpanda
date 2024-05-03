@@ -1571,25 +1571,26 @@ void rm_stm::abort_old_txes() {
 
 absl::btree_set<model::producer_identity>
 rm_stm::get_expired_producers() const {
-    fragmented_vector<model::producer_identity> pids;
-    for (auto& [k, _] : _mem_state.estimated) {
-        pids.push_back(k);
-    }
-    for (auto& [k, _] : _mem_state.tx_start) {
-        pids.push_back(k);
-    }
-    for (auto& [k, _] : _log_state.ongoing_map) {
-        pids.push_back(k);
-    }
     absl::btree_set<model::producer_identity> expired;
-    for (auto pid : pids) {
-        auto expiration_it = _log_state.expiration.find(pid);
-        if (expiration_it != _log_state.expiration.end()) {
-            if (!expiration_it->second.is_expired(clock_type::now())) {
-                continue;
-            }
+    auto maybe_add_to_expired = [&](const auto& pid) {
+        if (expired.contains(pid)) {
+            return;
         }
-        expired.insert(pid);
+        auto it = _log_state.expiration.find(pid);
+        if (
+          it != _log_state.expiration.end()
+          && it->second.is_expired(clock_type::now())) {
+            expired.insert(pid);
+        }
+    };
+    for (auto& [pid, _] : _mem_state.estimated) {
+        maybe_add_to_expired(pid);
+    }
+    for (auto& [pid, _] : _mem_state.tx_start) {
+        maybe_add_to_expired(pid);
+    }
+    for (auto& [pid, _] : _log_state.ongoing_map) {
+        maybe_add_to_expired(pid);
     }
     return expired;
 }
