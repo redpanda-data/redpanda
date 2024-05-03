@@ -361,6 +361,8 @@ private:
 
     ss::future<std::error_code> do_mark_expired(model::producer_identity pid);
 
+    absl::btree_set<model::producer_identity> get_expired_producers() const;
+
     bool is_known_session(model::producer_identity pid) const {
         auto is_known = false;
         is_known |= _mem_state.estimated.contains(pid);
