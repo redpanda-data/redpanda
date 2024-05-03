@@ -895,37 +895,6 @@ public:
         handle<wasm_functype_t, wasm_functype_delete> functype{
           wasm_functype_new(&inputs, &outputs)};
 
-        if (ssc.enabled()) {
-            if constexpr (ss::is_future<ReturnType>::value) {
-                handle<wasmtime_error_t, wasmtime_error_delete> error(
-                  wasmtime_linker_define_async_func(
-                    linker,
-                    Module::name.data(),
-                    Module::name.size(),
-                    function_name.data(),
-                    function_name.size(),
-                    functype.get(),
-                    &invoke_async_host_fn_with_strict_stack_checking,
-                    /*data=*/ssc.allocator,
-                    /*finalizer=*/nullptr));
-                check_error(error.get());
-            } else {
-                handle<wasmtime_error_t, wasmtime_error_delete> error(
-                  wasmtime_linker_define_func(
-                    linker,
-                    Module::name.data(),
-                    Module::name.size(),
-                    function_name.data(),
-                    function_name.size(),
-                    functype.get(),
-                    &invoke_sync_host_fn_with_strict_stack_checking,
-                    /*data=*/ssc.allocator,
-                    /*finalizer=*/nullptr));
-                check_error(error.get());
-            }
-            return;
-        }
-
         if constexpr (ss::is_future<ReturnType>::value) {
             handle<wasmtime_error_t, wasmtime_error_delete> error(
               wasmtime_linker_define_async_func(
@@ -935,8 +904,9 @@ public:
                 function_name.data(),
                 function_name.size(),
                 functype.get(),
-                &invoke_async_host_fn,
-                /*data=*/nullptr,
+                ssc.enabled() ? &invoke_async_host_fn_with_strict_stack_checking
+                              : &invoke_async_host_fn,
+                /*data=*/ssc.allocator,
                 /*finalizer=*/nullptr));
             check_error(error.get());
         } else {
@@ -948,8 +918,9 @@ public:
                 function_name.data(),
                 function_name.size(),
                 functype.get(),
-                &invoke_sync_host_fn,
-                /*data=*/nullptr,
+                ssc.enabled() ? &invoke_sync_host_fn_with_strict_stack_checking
+                              : &invoke_sync_host_fn,
+                /*data=*/ssc.allocator,
                 /*finalizer=*/nullptr));
             check_error(error.get());
         }
@@ -1090,23 +1061,31 @@ private:
       memory* mem,
       std::span<const wasmtime_val_t> args,
       std::span<wasmtime_val_t> results) {
-        auto raw = to_raw_values(args);
-        auto host_params = ffi::extract_parameters<ArgTypes...>(mem, raw, 0);
-        using FutureType = typename ReturnType::value_type;
-        if constexpr (std::is_void_v<FutureType>) {
-            return ss::futurize_apply(
-              module_func,
-              std::tuple_cat(
-                std::make_tuple(host_module), std::move(host_params)));
-        } else {
-            return ss::futurize_apply(
-                     module_func,
-                     std::tuple_cat(
-                       std::make_tuple(host_module), std::move(host_params)))
-              .then([results](FutureType host_future_result) {
-                  results[0] = convert_to_wasmtime<FutureType>(
-                    host_future_result);
-              });
+        try {
+            auto raw = to_raw_values(args);
+            auto host_params = ffi::extract_parameters<ArgTypes...>(
+              mem, raw, 0);
+            using FutureType = typename ReturnType::value_type;
+            if constexpr (std::is_void_v<FutureType>) {
+                return std::apply(
+                  module_func,
+                  std::tuple_cat(
+                    std::make_tuple(host_module), std::move(host_params)));
+            } else {
+                return std::apply(
+                         module_func,
+                         std::tuple_cat(
+                           std::make_tuple(host_module),
+                           std::move(host_params)))
+                  .then([results](FutureType host_future_result) {
+                      // This is safe to write too because wasmtime ensures the
+                      // result is kept alive until the future completes.
+                      results[0] = convert_to_wasmtime<FutureType>(
+                        host_future_result);
+                  });
+            }
+        } catch (...) {
+            return ss::current_exception_as_future();
         }
     }
 
