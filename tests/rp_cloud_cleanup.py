@@ -34,14 +34,13 @@ def setupLogger(level):
 
 def shell(cmd):
     # Run single command
-    _cmd = cmd.split(" ")
-    p = subprocess.Popen(_cmd, stdout=subprocess.PIPE, text=True)
+    cmd = cmd.split(" ")
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
     p.wait()
     # Format outout as String object
-    _out = "\n".join(list(p.stdout)).strip()
-    # _rcode = p.returncode
+    out = "\n".join(list(p.stdout)).strip()  # type: ignore
     p.kill()
-    return _out
+    return out
 
 
 class FakeContext():
@@ -49,8 +48,8 @@ class FakeContext():
         # Check if rpk present
         if not os.path.exists(globals['rp_install_path_root']):
             # Get correct path
-            _path = shell("which rpk")
-            globals['rp_install_path_root'] = _path.replace('/bin/rpk', "")
+            rpk_path = shell("which rpk")
+            globals['rp_install_path_root'] = rpk_path.replace('/bin/rpk', "")
         self.globals = globals
 
 
@@ -68,7 +67,7 @@ class CloudCleanup():
         ducktape_globals = self.load_globals(gconfig_path)
 
         # Prepare fake context
-        _fake_context = FakeContext(ducktape_globals)
+        fake_context = FakeContext(ducktape_globals)
 
         # Serialize it to class
         if "cloud_cluster" not in ducktape_globals:
@@ -85,23 +84,22 @@ class CloudCleanup():
         oauth_url_origin = f'{o.scheme}://{o.hostname}'
         self.config.provider = self.config.provider.upper()
         if self.config.provider == "AWS":
-            _keyId = ducktape_globals['s3_access_key']
-            _secret = ducktape_globals['s3_secret_key']
+            keyId = ducktape_globals['s3_access_key']
+            secret = ducktape_globals['s3_secret_key']
         elif self.config.provider == "GCP":
-            _keyId = self.config.gcp_keyfile
-            _secret = None
+            keyId = self.config.gcp_keyfile
+            secret = None
         else:
             self.log.error(f"# ERROR: Provider {self.config.provider} "
                            "not supported")
             sys.exit(1)
         # Initialize clients
         self.provider = make_provider_client(self.config.provider, self.log,
-                                             self.config.region, _keyId,
-                                             _secret)
+                                             self.config.region, keyId, secret)
         #self.log.info(f"# Provider {self.config.provider} initialized. Running"
         #              f" as '{self.provider.get_caller_identity()['Arn']}'")
-        self.utils = CloudClusterUtils(_fake_context, self.log, _keyId,
-                                       _secret, self.config.provider,
+        self.utils = CloudClusterUtils(fake_context, self.log, keyId, secret,
+                                       self.config.provider,
                                        self.config.api_url, oauth_url_origin,
                                        self.config.oauth_audience)
 
@@ -129,48 +127,51 @@ class CloudCleanup():
             else:
                 return True
 
-        def _log_skip(_msg):
-            _msg += f"| skipped '{_cluster['name']}', 36h delay not passed"
-            self.log.info(_msg)
+        def _log_skip(msg):
+            msg += f"| skipped '{cluster['name']}', 36h delay not passed"
+            self.log.info(msg)
 
-        def _log_deleted(_msg):
-            _msg += "| deleted"
-            self.log.info(_msg)
+        def _log_deleted(msg):
+            msg += "| deleted"
+            self.log.info(msg)
 
         # Function detects cluster type and deletes it
-        _cluster = self.cloudv2.get_resource(handle)
-        _id = _cluster['id']
-        _type = _cluster['spec']['clusterType']
-        _state = _cluster['state']
-        _createdDate = datetime.strptime(_cluster['createdAt'],
-                                         "%Y-%m-%dT%H:%M:%S.%fZ")
-        _message = f"-> cluster '{_cluster['name']}', " \
-                   f"{_cluster['createdAt']}, {_type} "
-        if _type in ['FMC']:
-            _message += f"| status: '{_cluster['state']}' "
-            if _state in ['ready']:
-                if not _ensure_date(_createdDate):
-                    _log_skip(_message)
+        cluster = self.cloudv2.get_resource(handle)
+        if cluster is None:
+            self.log.warning(f"# Cluster '{handle}' was already deleted")
+            return
+        id = cluster["id"]
+        cluster_type = cluster['spec']['clusterType']
+        state = cluster['state']
+        createdDate = datetime.strptime(cluster['createdAt'],
+                                        "%Y-%m-%dT%H:%M:%S.%fZ")
+        message = f"-> cluster '{cluster['name']}', " \
+                  f"{cluster['createdAt']}, {cluster_type} "
+        if cluster_type in ['FMC']:
+            message += f"| status: '{cluster['state']}' "
+            if state in ['ready']:
+                if not _ensure_date(createdDate):
+                    _log_skip(message)
                     return False
                 else:
                     # Just request deletion right away
                     out = self.cloudv2.delete_resource(handle)
-                    _log_deleted(_message)
+                    _log_deleted(message)
                     return out
             else:
-                _message += "| skipping non-ready FMC clouds"
-                self.log.info(_message)
-        elif _type in ['BYOC']:
+                message += "| skipping non-ready FMC clouds"
+                self.log.info(message)
+        elif cluster_type in ['BYOC']:
             # Check if provider is the same
             # This is relevant only for BYOC as
             # rpk will not be able to delete it anyway
-            if _cluster['spec']['provider'].lower(
+            if cluster['spec']['provider'].lower(
             ) != self.config.provider.lower():
                 # Wrong provider, can't delete right now
-                _message += "| SKIP: Can't delete " \
-                            f"'{_cluster['spec']['provider']}' " \
+                message += "| SKIP: Can't delete " \
+                            f"'{cluster['spec']['provider']}' " \
                             f"cluster using '{self.config.provider}' creds"
-                self.log.info(_message)
+                self.log.info(message)
                 return False
 
             # Check status and act in steps
@@ -181,78 +182,78 @@ class CloudCleanup():
 
             # If the cluster in deleleting_agent, we should clean it
             # regardless of time or anything else to clean up quota
-            _message += f"| status: '{_cluster['state']}' "
-            if _cluster['state'] in ['deleting_agent']:
+            message += f"| status: '{cluster['state']}' "
+            if cluster['state'] in ['deleting_agent']:
                 # Login
                 try:
-                    _message += "| cloud login "
+                    message += "| cloud login "
                     out = self.utils.rpk_cloud_login(
                         self.config.oauth_client_id,
                         self.config.oauth_client_secret)
                 except Exception as e:
-                    _message += "| ERROR: failed to login as " \
+                    message += "| ERROR: failed to login as " \
                                 f"'{self.config.oauth_client_id}': {e}"
-                    self.log.error(_message)
+                    self.log.error(message)
                     return False
 
                 # Delete agent
                 try:
-                    _message += "| delete agent "
-                    out = self.utils.rpk_cloud_agent_delete(_id)
+                    message += "| delete agent "
+                    out = self.utils.rpk_cloud_agent_delete(id)
                 except Exception as e:
-                    _message += "| ERROR: failed to delete agent for " \
-                                f"cluster '{_id}': {e}"
-                    self.log.info(_message)
+                    message += "| ERROR: failed to delete agent for " \
+                                f"cluster '{id}': {e}"
+                    self.log.info(message)
                     return False
                 # All good
-                _log_deleted(_message)
+                _log_deleted(message)
                 return True
-            if _state in ['creating_agent']:
+            if state in ['creating_agent']:
                 # Check date, and delete only old ones
-                if not _ensure_date(_createdDate):
-                    _log_skip(_message)
+                if not _ensure_date(createdDate):
+                    _log_skip(message)
                     return False
                 # Just delete the cluster resource
                 out = self.cloudv2.delete_resource(handle)
-                _log_deleted(_message)
+                _log_deleted(message)
                 self.log.debug(f"Returned:\n{out}")
                 return True
             # All other states need to wait for 36h
-            if not _ensure_date(_createdDate):
-                _log_skip(_message)
+            if not _ensure_date(createdDate):
+                _log_skip(message)
                 return False
             # TODO: Implement deletion on rare non-agent statuses
             else:
-                _message += "| WARNING: Cluster deletion with status " \
-                            f"'{_state}' not yet implemented"
-                self.log.warning(_message)
+                message += "| WARNING: Cluster deletion with status " \
+                            f"'{state}' not yet implemented"
+                self.log.warning(message)
                 return False
         else:
-            _message += f"| WARNING: Cloud type not supported: '{_type}'"
-            self.log.warning(_message)
+            message += f"| WARNING: Cloud type not supported: '{cluster_type}'"
+            self.log.warning(message)
             return False
 
     def _pooled_delete(self, pool, resource_name, func, queue):
-        _c = len(queue)
-        if _c < 1:
+        queue_len = len(queue)
+        if queue_len < 1:
             self.log.info(f"# {resource_name}: nothing to delete")
             return
         else:
-            self.log.info(f"# {resource_name}: amount to cleanup {_c}")
-            _ok = 0
-            _failed = 0
-            _unsure = 0
+            self.log.info(f"# {resource_name}: amount to cleanup {queue_len}")
+            ok = 0
+            failed = 0
+            unsure = 0
             for r in pool.map(func, queue):
                 if isinstance(r, bool):
                     if not r:
-                        _failed += 1
+                        failed += 1
                     else:
-                        _ok += 1
+                        ok += 1
                 else:
-                    _unsure += 1
+                    unsure += 1
                     self.log.debug("  output:\n{r}")
-            self.log.info(f"# Clusters: {_ok} deleted, "
-                          f"{_failed} failed, {_unsure} other")
+            self.log.info(f"# Clusters: {ok} deleted, "
+                          f"{failed} failed, {unsure} other")
             return
 
     def clean_namespaces(self, pattern, uuid_len):
@@ -389,16 +390,16 @@ class CloudCleanup():
 
         # Delete Nat
         # self.log.info(f"-> deleting NAT: {nat['NatGatewayId']}")
-        _start = time.time()
+        start = time.time()
         r = self.provider.delete_nat(nat['NatGatewayId'])
-        _now = time.time()
+        now = time.time()
         # 180 sec timeout
-        while (_now - _start) < 180:
+        while (now - start) < 180:
             r = self.provider.get_nat_gateway(nat['NatGatewayId'])
             if r['State'] == 'deleted':
                 break
             time.sleep(10)
-        _elapsed = time.time() - _start
+        _elapsed = time.time() - start
         self.log.info(f"-> NAT {nat['NatGatewayId']} deleted, {_elapsed:.2f}s")
 
         # Release EIP
@@ -418,13 +419,41 @@ class CloudCleanup():
 
         return r
 
-    def clean_aws_nat(self):
+    def _delete_vpc(self, vpc):
+        # Delete VPC
+        # self.log.info(f"-> deleting VPC: {vpc['VpcId']}")
+        start = time.time()
+
+        # - terminate all instances running in the VPC
+        # - delete all security groups associated with the VPC (except the default one)
+        # - delete all route tables associated with the VPC (except the default one)
+
+        r = self.provider.delete_vpc(vpc['VpcId'], clean_dependencies=True)
+        if not r:
+            self.log.info(f"-> VPC {vpc['VpcId']} NOT deleted")
+            return r
+        now = time.time()
+        # 180 sec timeout
+        while (now - start) < 180:
+            try:
+                r = self.provider.get_vpc_by_id(vpc['VpcId'])
+                if r['State'] == 'deleted':
+                    break
+            except:
+                break
+            time.sleep(10)
+        elapsed = time.time() - start
+        self.log.info(f"-> VPC {vpc['VpcId']} deleted, {elapsed:.2f}s")
+
+        return r
+
+    def clean_aws_networks(self):
         """
             Function matched networks in CloudV2 
             for clusters that has been deleted and cleans them up
 
             Steps:
-            - List NATs
+            - List NATs and VPCs
             - filter them according to current CloudV2 API (uuid used)
             - Extract network id and check if it is exists in CloudV2
             - If not query NAT for cleaning
@@ -437,46 +466,98 @@ class CloudCleanup():
                         'network-'):
                     return tag['Value'].split('-')[1]
 
+        def get_date_from_resource(aws_res):
+            if 'CreateTime' in aws_res:
+                return datetime.strftime(aws_res['CreateTime'],
+                                         "%Y-%m-%d %H:%M:%S")
+            else:
+                return "Unknown"
+
+        def check_cloud_network(aws_res):
+            # This resource is created by CloudV2 API
+            net_id = get_net_id_from_nat(aws_res)
+            # Check if network exists in CloudV2
+            try:
+                # 'quite' is passed all the way to depth of requests module
+                r = self.cloudv2.get_network(net_id,
+                                             quite=True)  # type: ignore
+                return r
+            except Exception:
+                # If there is no network, it will generate HTTPError
+                # That means that it should be deleted
+                return None
+
+        def filter_nats(nats):
+            fnats = []
+            for nat in nats:
+                if nat['State'] == 'deleted':
+                    ips = ", ".join([
+                        a['PublicIp'] + " / " + a['AllocationId']
+                        for a in nat['NatGatewayAddresses']
+                    ])
+                    self.log.info(f"# Nat {nat['NatGatewayId']} deleted, "
+                                  f"IPs: {ips}'")
+                    continue
+                resource_date = get_date_from_resource(nat)
+                for _tag in nat['Tags']:
+                    if _tag['Key'] == 'redpanda-org' and _tag['Value'] == uuid:
+                        # Check if network exists in CloudV2
+                        cloud_net = check_cloud_network(nat)
+                        if cloud_net is None:
+                            fnats.append(nat)
+                        else:
+                            self.log.warning(
+                                f"# {nat['NatGatewayId']} (create date: {resource_date}) "
+                                f"skipped: network '{cloud_net['id']}' exists")
+            return fnats
+
+        def filter_vpcs(vpcs):
+            fvpcs = []
+            for vpc in vpcs:
+                if vpc['State'] == 'deleted':
+                    self.log.info(f"# VPC {vpc['VpcId']} deleted")
+                    continue
+                resource_date = get_date_from_resource(vpc)
+                for tag in vpc['Tags']:
+                    if tag['Key'] == 'redpanda-org' and tag['Value'] == uuid:
+                        # Check if network exists in CloudV2
+                        cloud_net = check_cloud_network(vpc)
+                        if cloud_net is None:
+                            fvpcs.append(vpc)
+                        else:
+                            self.log.warning(
+                                f"# {vpc['VpcId']} ({resource_date}) "
+                                f"skipped: network '{cloud_net['id']}' exists")
+            return fvpcs
+
+        if self.config.provider == "GCP":
+            self.log.warning(
+                "Network resources cleaning not yet supported for GCP")
+            return False
+
         # list AWS networks with specific tag
-        _uuids = {
+        uuids = {
             "https://cloud-api.ppd.cloud.redpanda.com":
             "0a9923e1-8b0f-4110-9fc0-6d3c714cc270",
             "https://cloud-api.ign.cloud.redpanda.com":
             "a845616f-0484-4506-9638-45fe28f34865"
         }
         # List NAT gateways
-        _nats = self.provider.list_nat_gateways(tag_key="redpanda-org")
-        self.log.info(f"# Found {len(_nats)} NAT Gateways")
+        nats = self.provider.list_nat_gateways(tag_key="redpanda-org")
+        self.log.info(f"# Found {len(nats)} NAT Gateways")
+
+        # List VPCs
+        vpcs = self.provider.list_vpcs(tag_key="redpanda-org")
+        self.log.info(f"# Found {len(vpcs)} VPCs")
 
         # Filter by CloudV2 API origin
-        _uuid = _uuids[self.config.api_url]
-        _nat_filtered = []
-        for _nat in _nats:
-            if _nat['State'] == 'deleted':
-                _ips = ", ".join([
-                    a['PublicIp'] + " / " + a['AllocationId']
-                    for a in _nat['NatGatewayAddresses']
-                ])
-                self.log.info(f"# Nat {_nat['NatGatewayId']} deleted, "
-                              f"IPs: {_ips}'")
-                continue
-            _date = datetime.strftime(_nat['CreateTime'], "%Y-%m-%d %H:%M:%S")
-            for _tag in _nat['Tags']:
-                if _tag['Key'] == 'redpanda-org' and _tag['Value'] == _uuid:
-                    # This is NAT created by this CloudV2 API
-                    _net_id = get_net_id_from_nat(_nat)
-                    # Check if network exists in CloudV2
-                    try:
-                        r = self.cloudv2.get_network(_net_id, quite=True)
-                        self.log.warning(f"# {_nat['NatGatewayId']} ({_date}) "
-                                         f"skipped: network '{r['id']}' "
-                                         "exists")
-                    except Exception:
-                        # If there is no network, it will generate HTTPError
-                        # That means that it should be deleted
-                        _nat_filtered.append(_nat)
+        uuid = uuids[self.config.api_url]
+        nat_filtered = filter_nats(nats)
+        vpc_filtered = filter_vpcs(vpcs)
 
-        self.log.info(f"# {len(_nat_filtered)} orphaned NATs "
+        self.log.info(f"# {len(nat_filtered)} orphaned NATs "
+                      f"for {self.config.api_url}")
+        self.log.info(f"# {len(vpc_filtered)} orphaned VPCs "
                       f"for {self.config.api_url}")
 
         # Fancy threading
@@ -484,7 +565,9 @@ class CloudCleanup():
         pool = ThreadPoolExecutor(max_workers=5)
         self.log.info("\n\n# Cleaning up")
         self._pooled_delete(pool, "NAT Gateways", self._delete_nat,
-                            _nat_filtered)
+                            nat_filtered)
+        # VPC deletion will only work if public IPs are not mapped
+        self._pooled_delete(pool, "VPCs", self._delete_vpc, vpc_filtered)
 
         return
 
@@ -538,9 +621,9 @@ class CloudCleanup():
                         continue
                 ts = self.back_8h if eight_hours else self.back_36h
                 if last_modified.timestamp() > ts.timestamp():  # type: ignore
-                    _d = last_modified.strftime(
+                    created_date = last_modified.strftime(
                         ns_name_date_fmt)  # type: ignore
-                    msg += f" | created at {_d} | not empty | 8h not passed"
+                    msg += f" | created at {created_date} | not empty | 8h not passed"
                     self.log.info(msg)
                     continue
                 # Do not need to check the cluster status in CloudV2 API
@@ -549,8 +632,8 @@ class CloudCleanup():
                 # Get first 3000 objects
                 bucket_objects = self.provider.list_bucket_objects(
                     bucket['Name'], max_objects=3000)
-                _count = len(bucket_objects)
-                if _count >= 3000:
+                bucket_count = len(bucket_objects)
+                if bucket_count >= 3000:
                     msg += " | >3000 objects | 1 day expiration policy applied"
                     # Apply LC policy
                     # Once we update the policy, creation date of
@@ -562,8 +645,8 @@ class CloudCleanup():
                     self.log.info(msg)
                 else:
                     # Delete objects
-                    if _count > 0:
-                        msg += f" | {_count} objects"
+                    if bucket_count > 0:
+                        msg += f" | {bucket_count} objects"
                         self.provider.cleanup_bucket(bucket['Name'])
                     iters = 10
                     while iters > 0:
@@ -612,8 +695,18 @@ def cleanup_entrypoint():
             else:
                 cleaner.log.error(
                     f"ERROR: Wrong argument: '{option}'. Accepting "
-                    "only 's3'/'nat' to clean buckets or aws NATs")
+                    "only 'ns', 's3' or 'nat' to clean cloud clusters, "
+                    "buckets or aws network resources")
                 sys.exit(1)
+
+    # Cloud cluster resource cleaning order
+    # - Cloud cluster via namespaces/API using rpk
+    # - [not covered here] autoscaling groups (will delete instances)
+    # - [not covered here] EKS clusters (no access from here)
+    # - [not covered here] ELBs (no access from here)
+    # - NAT Gateways cleaning
+    # - VPC Cleaning (including dependencies)
+    # - S3 buckets
 
     # Namespaces
     if clean_namespaces:
@@ -621,7 +714,7 @@ def cleanup_entrypoint():
 
     # NAT Gateways cleaning routine
     if clean_nats:
-        cleaner.clean_aws_nat()
+        cleaner.clean_aws_networks()
 
     # Clean buckets for deleted clusters and networks
     if clean_buckets:
