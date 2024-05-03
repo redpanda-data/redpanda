@@ -183,4 +183,11 @@ inline error_info mode_not_readwrite(const subject& sub) {
       fmt::format("Subject {} is not in read-write mode", sub())};
 }
 
+inline error_info mode_is_readonly(const std::optional<subject>& sub) {
+    return error_info{
+      error_code::subject_version_operaton_not_permitted,
+      fmt::format(
+        "Subject {} is in read-only mode", sub.value_or(subject{"null"})())};
+}
+
 } // namespace pandaproxy::schema_registry
