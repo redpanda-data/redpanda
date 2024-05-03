@@ -93,7 +93,7 @@ T header(const ss::http::request& req, const ss::sstring& name) {
 
 template<typename T>
 T request_param(const ss::http::request& req, const ss::sstring& name) {
-    const auto& param{req.param[name]};
+    const auto& param{req.get_path_param(name)};
     ss::sstring value;
     if (!ss::http::internal::url_decode(param, value)) {
         throw error(
