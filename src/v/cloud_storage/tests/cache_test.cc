@@ -9,13 +9,17 @@
  */
 
 #include "base/units.h"
+#include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cache_test_fixture.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_service.h"
+#include "random/generators.h"
+#include "ssx/sformat.h"
 #include "test_utils/fixture.h"
 #include "utils/file_io.h"
+#include "utils/human.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
@@ -30,6 +34,8 @@
 #include <stdexcept>
 
 using namespace cloud_storage;
+
+static ss::logger test_log("cache_test_logger");
 
 FIXTURE_TEST(put_creates_file, cache_test_fixture) {
     auto data_string = create_data_string('a', 1_MiB + 1_KiB);
@@ -537,4 +543,81 @@ FIXTURE_TEST(test_log_segment_cleanup, cache_test_fixture) {
       std::all_of(objects.cbegin(), objects.cend(), [](const auto& path) {
           return !std::filesystem::exists(path);
       }));
+}
+
+FIXTURE_TEST(test_cache_carryover_trim, cache_test_fixture) {
+    std::string write_buf(1_MiB, ' ');
+    random_generators::fill_buffer_randomchars(
+      write_buf.data(), write_buf.size());
+    size_t bytes_used = 0;
+    size_t num_objects = 0;
+    std::vector<std::filesystem::path> object_keys;
+    for (int i = 0; i < 10; i++) {
+        object_keys.emplace_back(fmt::format("test_{}.log.1", i));
+        std::ofstream segment{CACHE_DIR / object_keys.back()};
+        segment.write(
+          write_buf.data(), static_cast<std::streamsize>(write_buf.size()));
+        segment.flush();
+        bytes_used += write_buf.size();
+        num_objects++;
+        object_keys.emplace_back(fmt::format("test_{}.log.1.index", i));
+        std::ofstream index{CACHE_DIR / object_keys.back()};
+        index.write(
+          write_buf.data(), static_cast<std::streamsize>(write_buf.size()));
+        index.flush();
+        bytes_used += write_buf.size();
+        num_objects++;
+        object_keys.emplace_back(fmt::format("test_{}.log.1.tx", i));
+        std::ofstream tx{CACHE_DIR / object_keys.back()};
+        tx.write(
+          write_buf.data(), static_cast<std::streamsize>(write_buf.size()));
+        tx.flush();
+        bytes_used += write_buf.size();
+        num_objects++;
+    }
+    // Account all files in the cache (30 MiB).
+    clean_up_at_start().get();
+    for (const auto& key : object_keys) {
+        // Touch every object so they have access times assigned to them
+        auto item = sharded_cache.local().get(key).get();
+        item->body.close().get();
+    }
+
+    // Force trim to create a carryover list.
+    // Nothing is deleted by the trim.
+    vlog(test_log.info, "Initial trim");
+    auto cache_size_target_bytes = bytes_used;
+    auto cache_size_target_objects = num_objects;
+    trim_cache(cache_size_target_bytes, cache_size_target_objects);
+
+    // Start trim using only carryover data
+    auto before_bytes = sharded_cache.local().get_usage_bytes();
+    auto before_objects = sharded_cache.local().get_usage_objects();
+    vlog(
+      test_log.info,
+      "Trim {}, {} bytes used, {} objects",
+      human::bytes(bytes_used),
+      human::bytes(before_bytes),
+      before_objects);
+    BOOST_REQUIRE(before_bytes > 0);
+    BOOST_REQUIRE(before_objects > 0);
+
+    // Note that 'trim_carryover' accepts number of bytes/objects
+    // that has to be deleted. This is the opposite of how 'trim'
+    // method behaves which accepts target size for the cache.
+    // This behavior is similar to 'trim_fast'.
+    auto bytes_to_delete = before_bytes;
+    auto objects_to_delete = before_objects;
+    trim_carryover(bytes_to_delete, objects_to_delete);
+
+    // At this point we should be able to delete all objects
+    auto after_bytes = sharded_cache.local().get_usage_bytes();
+    auto after_objects = sharded_cache.local().get_usage_objects();
+    vlog(
+      test_log.info,
+      "After trim {} bytes used, {} objects",
+      human::bytes(after_bytes),
+      after_objects);
+    BOOST_REQUIRE_EQUAL(after_bytes, 0);
+    BOOST_REQUIRE_EQUAL(after_objects, 0);
 }
