@@ -813,8 +813,13 @@ private:
     /// Transition reader to the completed state. Stop tracking state in
     /// the 'remote_partition'
     ss::future<> set_end_of_stream() {
-        co_await _seg_reader->stop();
-        _seg_reader = {};
+        if (!_seg_reader) {
+            co_return;
+        }
+        // It's critical that we swap out the reader before calling stop().
+        // Otherwise, another fiber may swap it out while we're stopping!
+        auto reader = std::move(_seg_reader);
+        co_await reader->stop();
     }
 
     retry_chain_node _rtc;
