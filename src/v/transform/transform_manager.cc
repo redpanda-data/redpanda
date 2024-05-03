@@ -340,11 +340,16 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     co_await _processors->erase_by_id(id);
 
     auto transform = _registry->lookup_by_id(id);
-    // If there is no transform we're good to go, everything is shutdown if
-    // needed.
-    if (!transform) {
+    // If there is no transform OR the transform is paused, we're good to go,
+    // everything is shutdown if needed.
+    //
+    // Note that this has implications for how we model processor state in the
+    // cluster-wide transform report.
+    // see `transform::service::compute_default_report` for detail.
+    if (!transform || transform->paused) {
         co_return;
     }
+
     // Otherwise, start a processor for every partition we're a leader of.
     auto partitions = _registry->get_leader_partitions(transform->input_topic);
     for (model::partition_id partition : partitions) {
