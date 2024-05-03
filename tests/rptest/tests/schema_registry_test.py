@@ -1975,6 +1975,151 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         assert result_raw.json(
         )["message"] == "Invalid mode. Valid values are READWRITE, READONLY"
 
+    @cluster(num_nodes=3)
+    def test_mode_readonly(self):
+        """
+        Test endpoints when in READONLY
+        """
+        ro_subject = f"ro-{create_topic_names(1)[0]}-key"
+        rw_subject = f"rw-{create_topic_names(1)[0]}-key"
+
+        schema1 = json.dumps({"schema": schema1_def})
+        schema2 = json.dumps({"schema": schema2_def})
+
+        self.logger.info("Posting schema 1 as ro_subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=ro_subject, data=json.dumps({"schema": schema1_def}))
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Set global mode to readonly")
+        result_raw = self._set_mode(data=json.dumps({"mode": "READONLY"}))
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READONLY"
+
+        self.logger.debug("Override mode for rw_subject")
+        result_raw = self._set_mode_subject(subject=rw_subject,
+                                            data=json.dumps(
+                                                {"mode": "READWRITE"}))
+        assert result_raw.status_code == 200
+        assert result_raw.json()["mode"] == "READWRITE"
+
+        self.logger.info("Posting schema 1 as rw_subject key")
+        result_raw = self._post_subjects_subject_versions(subject=rw_subject,
+                                                          data=schema1)
+        assert result_raw.status_code == requests.codes.ok
+
+        # mode
+        result_raw = self._get_mode()
+        assert result_raw.status_code == 200
+
+        for sub in [ro_subject, rw_subject]:
+            result_raw = self._get_mode_subject(subject=sub, fallback=True)
+            assert result_raw.status_code == 200
+
+        # config
+        result_raw = self._get_config()
+        assert result_raw.status_code == 200
+
+        for sub in [ro_subject, rw_subject]:
+            result_raw = self._get_config_subject(subject=sub, fallback=True)
+            assert result_raw.status_code == 200
+
+        # This is the default, check that setting it to the default/existing is failure, not quiet success
+        compat_back = json.dumps({"compatibility": "BACKWARD"})
+        result_raw = self._set_config(data=compat_back)
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42205
+        assert result_raw.json(
+        )["message"] == "Subject null is in read-only mode"
+
+        result_raw = self._set_config_subject(subject=ro_subject,
+                                              data=compat_back)
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42205
+        assert result_raw.json(
+        )["message"] == f"Subject {ro_subject} is in read-only mode"
+
+        result_raw = self._set_config_subject(subject=rw_subject,
+                                              data=compat_back)
+        assert result_raw.status_code == 200
+
+        # The config doesn't exist, but the mode is checked first
+        result_raw = self._delete_config_subject(subject=ro_subject)
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42205
+        assert result_raw.json(
+        )["message"] == f"Subject {ro_subject} is in read-only mode"
+
+        result_raw = self._delete_config_subject(subject=rw_subject)
+        assert result_raw.status_code == 200
+
+        # subjects
+        result_raw = self._get_subjects()
+        assert result_raw.status_code == 200
+
+        for sub in [ro_subject, rw_subject]:
+            result_raw = self._get_subjects_subject_versions(subject=sub)
+            assert result_raw.status_code == 200
+
+            result_raw = self._get_subjects_subject_versions_version(
+                subject=sub, version=1)
+            assert result_raw.status_code == 200
+
+            result_raw = self._get_subjects_subject_versions_version_referenced_by(
+                subject=sub, version=1)
+            assert result_raw.status_code == 200
+
+            self.logger.info("Checking for schema 1 as subject key")
+            result_raw = self._post_subjects_subject(subject=sub, data=schema1)
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json()["id"] == 1
+            assert result_raw.json()["version"] == 1
+
+            self.logger.info("Checking for schema 1 as subject key")
+            result_raw = self._post_subjects_subject_versions(subject=sub,
+                                                              data=schema1)
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json()["id"] == 1
+
+            self.logger.info("Checking schema 2 as subject key")
+            result_raw = self._post_subjects_subject(subject=sub, data=schema2)
+            assert result_raw.status_code == 404
+            assert result_raw.json()["error_code"] == 40403
+            assert result_raw.json()["message"] == f"Schema not found"
+
+        self.logger.info("Posting schema 2 as ro_subject key")
+        result_raw = self._post_subjects_subject_versions(subject=ro_subject,
+                                                          data=schema2)
+        assert result_raw.status_code == 422
+        assert result_raw.json()["error_code"] == 42205
+        assert result_raw.json(
+        )["message"] == f"Subject {ro_subject} is in read-only mode"
+
+        self.logger.info("Posting schema 2 as rw_subject key")
+        result_raw = self._post_subjects_subject_versions(subject=rw_subject,
+                                                          data=schema2)
+        assert result_raw.status_code == 200
+
+        # compatibility
+        for sub in [ro_subject, rw_subject]:
+            result_raw = self._post_compatibility_subject_version(subject=sub,
+                                                                  version=1,
+                                                                  data=schema2)
+            assert result_raw.status_code == 200
+
+        # schemas
+        result_raw = self._get_schemas_types()
+        assert result_raw.status_code == 200
+
+        result_raw = self._get_schemas_ids_id(id=1)
+        assert result_raw.status_code == 200
+
+        result_raw = self._get_schemas_ids_id_subjects(id=1)
+        assert result_raw.status_code == 200
+
+        result_raw = self._get_schemas_ids_id_versions(id=1)
+        assert result_raw.status_code == 200
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
