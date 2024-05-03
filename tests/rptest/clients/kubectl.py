@@ -116,54 +116,45 @@ class KubectlTool:
             f'--identity={self.TELEPORT_IDENT_FILE}', src, dest
         ]
 
-    def _aws_config_cmd(self):
-        return [
-            'awscli2', 'eks', 'update-kubeconfig', '--name',
-            f'redpanda-{self._cluster_id}', '--region', self._region
-        ]
-
-    def _gcp_config_cmd(self):
-        return [
-            'gcloud', 'container', 'clusters', 'get-credentials',
-            f'redpanda-{self._cluster_id}', '--region', self._region
-        ]
-
     def _install(self):
-        '''Installs kubectl on a remote target host
-        '''
+        '''Installs kubectl on a remote target host'''
         if not self._kubectl_installed and self._remote_uri is not None:
-            ssh_prefix = self._ssh_prefix()
-            bg_cmd = ssh_prefix + ['./breakglass-tools.sh']
+            self._ssh_cmd(['./breakglass-tools.sh'])
 
-            if self._provider == 'aws':
-                config_cmd = ssh_prefix + self._aws_config_cmd()
-            elif self._provider == 'gcp':
-                config_cmd = ssh_prefix + self._gcp_config_cmd()
+            config_cmd = {
+                'aws': [
+                    'awscli2', 'eks', 'update-kubeconfig', '--name',
+                    f'redpanda-{self._cluster_id}', '--region', self._region
+                ],
+                'gcp': [
+                    'gcloud', 'container', 'clusters', 'get-credentials',
+                    f'redpanda-{self._cluster_id}', '--region', self._region
+                ]
+            }[self._provider]
 
-            self._redpanda.logger.info(bg_cmd)
-            res = subprocess.check_output(bg_cmd)
-            self._redpanda.logger.info(config_cmd)
-            res = subprocess.check_output(config_cmd)
+            self._ssh_cmd(config_cmd)
             self._kubectl_installed = True
-        return
 
     @property
     def logger(self) -> Logger:
         return self._redpanda.logger
 
-    def _cmd(self, cmd):
-        # Log and run
-        ssh_prefix = self._ssh_prefix()
-        remote_cmd = ssh_prefix + cmd
-        self._redpanda.logger.info(remote_cmd)
+    def _local_cmd(self, cmd: list[str]):
+        """Run the given command locally and return the stdout as bytes.
+           Logs stdout and stderr on failure."""
+        self._redpanda.logger.info(cmd)
         try:
-            return subprocess.check_output(remote_cmd, stderr=subprocess.PIPE)
+            return subprocess.check_output(cmd, stderr=subprocess.PIPE)
         except subprocess.CalledProcessError as e:
             self.logger.info(
                 f'Command failed (rc={e.returncode}).\n' +
                 f'--------- stdout -----------\n{e.stdout.decode()}' +
                 f'--------- stderr -----------\n{e.stderr.decode()}')
             raise
+
+    def _ssh_cmd(self, cmd: list[str]):
+        """Execute a command on a the remote node using ssh/tsh as appropriate."""
+        return self._local_cmd(self._ssh_prefix() + cmd)
 
     def cmd(self, kcmd: list[str] | str):
         """Execute a kubectl command on the agent node.
@@ -176,7 +167,7 @@ class KubectlTool:
         _kcmd = kcmd if isinstance(kcmd, list) else kcmd.split()
         # Format command
         cmd = _kubectl + _kcmd
-        return self._cmd(cmd)
+        return self._ssh_cmd(cmd)
 
     def exec(self, remote_cmd, pod_name=None):
         """Execute a command inside of a redpanda pod container.
@@ -192,19 +183,17 @@ class KubectlTool:
             'kubectl', 'exec', pod_name, f'-n={self._namespace}',
             '-c=redpanda', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
-        return self._cmd(cmd)
+        return self._ssh_cmd(cmd)
 
     def exists(self, remote_path):
         self._install()
-        ssh_prefix = self._ssh_prefix()
-        cmd = ssh_prefix + [
-            'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
-            f'rp-{self._cluster_id}-0', '--', 'stat'
-        ] + [remote_path]
         try:
-            subprocess.check_output(cmd)
+            self._ssh_cmd([
+                'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
+                f'rp-{self._cluster_id}-0', '--', 'stat', remote_path
+            ])
             return True
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
             return False
 
     def _get_privileged_pod(self, pod_name=None):
@@ -283,7 +272,7 @@ class KubectlTool:
             f'--token={self._tp_token}', '--certificate-ttl=6h',
             '--renewal-interval=6h', '--oneshot'
         ]
-        return subprocess.check_output(cmd)
+        self._local_cmd(cmd)
 
     def _setup_privileged_pod(self):
         if not self._privileged_pod_installed and self._remote_uri is not None:
@@ -292,13 +281,11 @@ class KubectlTool:
                                          'everything-allowed-exec-pod.yml')
             self._redpanda.logger.info(filename_path)
             setup_cmd = self._scp_cmd(filename_path, f'{self._remote_uri}:')
-            ssh_prefix = self._ssh_prefix()
-            apply_cmd = ssh_prefix + ['kubectl', 'apply', '-f', filename]
             if len(setup_cmd) > 0:
                 self._redpanda.logger.info(setup_cmd)
-                res = subprocess.check_output(setup_cmd)
-            self._redpanda.logger.info(apply_cmd)
-            res = subprocess.check_output(apply_cmd)
+                subprocess.check_output(setup_cmd)
+            apply_cmd = ['kubectl', 'apply', '-f', filename]
+            self._ssh_cmd(apply_cmd)
             self._privileged_pod_installed = True
 
     def exec_privileged(self, remote_cmd, pod_name=None):
