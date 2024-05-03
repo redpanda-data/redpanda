@@ -38,6 +38,7 @@
 /// be retrieved using the GET request or deleted using the DELETE request.
 class s3_imposter_fixture {
 public:
+    static constexpr size_t default_max_keys = 100;
     uint16_t httpd_port_number();
     static constexpr const char* httpd_host_name = "127.0.0.1";
 
