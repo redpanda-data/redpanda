@@ -39,6 +39,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <ranges>
 #include <utility>
 
 namespace cluster {
@@ -1464,26 +1465,27 @@ void rm_stm::abort_old_txes() {
     });
 }
 
+chunked_vector<model::producer_identity> rm_stm::get_expired_producers() const {
+    chunked_vector<model::producer_identity> result;
+    auto pids = std::views::keys(_log_state.ongoing_map);
+    std::copy_if(
+      pids.begin(),
+      pids.end(),
+      std::back_inserter(result),
+      [this](const auto& pid) {
+          auto it = _log_state.expiration.find(pid);
+          return it != _log_state.expiration.end()
+                 && it->second.is_expired(clock_type::now());
+      });
+    return result;
+}
+
 ss::future<> rm_stm::do_abort_old_txes() {
     if (!co_await sync(_sync_timeout)) {
         co_return;
     }
 
-    fragmented_vector<model::producer_identity> pids;
-    for (auto& [k, _] : _log_state.ongoing_map) {
-        pids.push_back(k);
-    }
-    absl::btree_set<model::producer_identity> expired;
-    for (auto pid : pids) {
-        auto expiration_it = _log_state.expiration.find(pid);
-        if (expiration_it != _log_state.expiration.end()) {
-            if (!expiration_it->second.is_expired(clock_type::now())) {
-                continue;
-            }
-        }
-        expired.insert(pid);
-    }
-
+    const auto expired = get_expired_producers();
     for (auto pid : expired) {
         co_await try_abort_old_tx(pid);
     }

@@ -490,6 +490,8 @@ private:
     get_expiration_info(model::producer_identity pid) const;
     std::optional<int32_t> get_seq_number(model::producer_identity pid) const;
 
+    chunked_vector<model::producer_identity> get_expired_producers() const;
+
     uint8_t active_snapshot_version();
 
     template<class T>
