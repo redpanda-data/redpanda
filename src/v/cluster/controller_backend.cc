@@ -860,7 +860,6 @@ ss::future<> controller_backend::try_reconcile_ntp(
                   ntp,
                   changed_at,
                   shard_changed_at);
-                break;
             } else if (res.has_error() && res.error()) {
                 if (res.error().category() == error_category()) {
                     last_error = static_cast<errc>(res.error().value());

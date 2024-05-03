@@ -13,6 +13,7 @@
 #include "cluster/shard_placement_table.h"
 #include "features/feature_table.h"
 #include "ssx/event.h"
+#include "ssx/work_queue.h"
 #include "storage/kvstore.h"
 #include "storage/storage_resources.h"
 #include "test_utils/randoms.h"
@@ -184,22 +185,36 @@ private:
 
     ss::future<>
     try_reconcile_ntp(const model::ntp& ntp, ntp_reconciliation_state& rs) {
+        size_t step = 0;
         while (!rs.is_reconciled() && !_gate.is_closed()) {
             model::shard_revision_id changed_at = rs.changed_at.value_or(
               model::shard_revision_id{});
             try {
+                // Check that we are not busy-looping with successful steps. In
+                // this mock reconciliation process we need max 3 steps:
+                // 1. delete previous log revision
+                // 2. create/transfer current log revision
+                // 3. control step to check that everything is reconciled
+                vassert(
+                  step <= 3,
+                  "[{}] too many reconciliation steps: {}",
+                  ntp,
+                  step);
+
                 auto res = co_await reconcile_ntp_step(ntp, rs);
                 if (res.has_value()) {
-                    if (res.value() == ss::stop_iteration::no) {
-                        continue;
-                    } else {
+                    if (res.value() == ss::stop_iteration::yes) {
                         vlog(
                           clusterlog.trace,
                           "[{}] reconciled at {}",
                           ntp,
                           changed_at);
                         rs.mark_reconciled(changed_at);
+                        step = 0;
+                    } else {
+                        step += 1;
                     }
+                    continue;
                 } else {
                     vlog(
                       clusterlog.trace,
@@ -568,6 +583,72 @@ ss::shard_id get_max_shard_id() {
     return std::min(ss::smp::count - 1, ss::shard_id(3));
 }
 
+/// Simplified version of shard_balancer that just assigns ntps to random
+/// shards. Runs on shard 0.
+class shard_assigner {
+public:
+    explicit shard_assigner(
+      ss::sharded<ntp_table>& ntpt,
+      ss::sharded<shard_placement_table>& spt,
+      ss::sharded<ntp2shards_t>& ntp2shards,
+      ss::sharded<reconciliation_backend>& rb)
+      : _ntpt(ntpt.local())
+      , _shard_placement(spt.local())
+      , _ntp2shards(ntp2shards.local())
+      , _rb(rb)
+      , _work_queue([](auto ex) {
+          vassert(
+            ssx::is_shutdown_exception(ex),
+            "unexpected shard_assigner exception: {}",
+            ex);
+      }) {}
+
+    ss::future<> start() {
+        // TODO: bootstrap _shard_placement. We don't need it for now because we
+        // don't restart in this test yet.
+        co_return;
+    }
+
+    ss::future<> stop() { return _work_queue.shutdown(); }
+
+    void assign_eventually(const model::ntp& ntp) {
+        _in_progress += 1;
+        _work_queue.submit([this, ntp] {
+            std::optional<shard_placement_target> target;
+            if (auto it = _ntpt.ntp2meta.find(ntp);
+                it != _ntpt.ntp2meta.end()) {
+                target = shard_placement_target(
+                  it->second.log_revision,
+                  random_generators::get_int(get_max_shard_id()));
+            }
+
+            _ntp2shards[ntp].target = target;
+
+            return _shard_placement
+              .set_target(
+                ntp,
+                target,
+                _cur_shard_revision++,
+                [this](const model::ntp& ntp, model::shard_revision_id rev) {
+                    _rb.local().notify_reconciliation(ntp, rev);
+                })
+              .finally([this] { _in_progress -= 1; });
+        });
+    }
+
+    bool is_reconciled() const { return _in_progress == 0; }
+
+private:
+    ntp_table& _ntpt;
+    shard_placement_table& _shard_placement;
+    ntp2shards_t& _ntp2shards;
+    ss::sharded<reconciliation_backend>& _rb;
+
+    ssx::work_queue _work_queue;
+    int _in_progress = 0;
+    model::shard_revision_id _cur_shard_revision{1};
+};
+
 } // namespace
 
 class shard_placement_test_fixture : public seastar_test {
@@ -701,11 +782,19 @@ public:
         co_await spt.start();
 
         co_await rb.start(std::ref(ntpt), std::ref(spt), std::ref(_ntp2shards));
+
+        _shard_assigner = std::make_unique<shard_assigner>(
+          ntpt, spt, _ntp2shards, rb);
+        co_await _shard_assigner->start();
+
         co_await rb.invoke_on_all(
           [](reconciliation_backend& rb) { return rb.start(); });
     }
 
     ss::future<> stop() {
+        if (_shard_assigner) {
+            co_await _shard_assigner->stop();
+        }
         co_await rb.stop();
         co_await spt.stop();
         co_await kvs.stop();
@@ -729,11 +818,11 @@ public:
     ss::sharded<storage::kvstore> kvs;
     ss::sharded<shard_placement_table> spt;
     ss::sharded<reconciliation_backend> rb;
+    std::unique_ptr<shard_assigner> _shard_assigner;
 };
 
 TEST_F_CORO(shard_placement_test_fixture, StressTest) {
     model::revision_id cur_revision{1};
-    model::shard_revision_id cur_shard_revision{1};
     raft::group_id cur_group{1};
 
     co_await start();
@@ -743,7 +832,8 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             vlog(clusterlog.info, "waiting for reconciliation");
             for (size_t i = 0;; ++i) {
                 ASSERT_TRUE_CORO(i < 50) << "taking too long to reconcile";
-                if (!co_await rb.local().is_reconciled()) {
+                if (!(_shard_assigner->is_reconciled()
+                      && co_await rb.local().is_reconciled())) {
                     co_await ss::sleep(100ms);
                 } else {
                     break;
@@ -758,25 +848,6 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
         model::ntp ntp(
           model::kafka_namespace, "test_topic", random_generators::get_int(10));
 
-        auto set_target = [&](std::optional<shard_placement_target> target) {
-            if (
-              ss::this_shard_id()
-              != shard_placement_table::assignment_shard_id) {
-                return ss::now();
-            }
-
-            return ss::yield().then([&, target] {
-                _ntp2shards.local()[ntp].target = target;
-                return spt.local().set_target(
-                  ntp,
-                  target,
-                  cur_shard_revision++,
-                  [this](const model::ntp& ntp, model::shard_revision_id rev) {
-                      rb.local().notify_reconciliation(ntp, rev);
-                  });
-            });
-        };
-
         auto pt_it = ntpt.local().ntp2meta.find(ntp);
         if (pt_it == ntpt.local().ntp2meta.end()) {
             // add
@@ -788,9 +859,9 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
                   .log_revision = revision,
                 };
                 ntpt.revision = revision;
-
-                return set_target(shard_placement_target(
-                  revision, random_generators::get_int(get_max_shard_id())));
+                if (ss::this_shard_id() == 0) {
+                    _shard_assigner->assign_eventually(ntp);
+                }
             });
         } else {
             auto ntp_meta = pt_it->second;
@@ -805,16 +876,16 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
               {op_t::transfer, op_t::remove, op_t::increase_log_rev});
             switch (op) {
             case op_t::transfer:
-                co_await set_target(shard_placement_target(
-                  ntp_meta.log_revision,
-                  random_generators::get_int(get_max_shard_id())));
+                _shard_assigner->assign_eventually(ntp);
                 break;
             case op_t::remove: {
                 auto revision = cur_revision++;
                 co_await ntpt.invoke_on_all([&](ntp_table& ntpt) {
                     ntpt.ntp2meta.erase(ntp);
                     ntpt.revision = revision;
-                    return set_target(std::nullopt);
+                    if (ss::this_shard_id() == 0) {
+                        _shard_assigner->assign_eventually(ntp);
+                    }
                 });
                 break;
             }
@@ -823,10 +894,9 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
                 co_await ntpt.invoke_on_all([&](ntp_table& ntpt) {
                     ntpt.ntp2meta[ntp] = ntp_meta;
                     ntpt.revision = ntp_meta.log_revision;
-
-                    return set_target(shard_placement_target(
-                      ntp_meta.log_revision,
-                      random_generators::get_int(get_max_shard_id())));
+                    if (ss::this_shard_id() == 0) {
+                        _shard_assigner->assign_eventually(ntp);
+                    }
                 });
                 break;
             }
