@@ -927,3 +927,28 @@ FIXTURE_TEST(test_snapshot_v3_v4_v5_equivalence, rm_stm_test_fixture) {
           highest_pid_from_snapshot, _stm->highest_producer_id());
     }
 }
+
+FIXTURE_TEST(test_tx_expiration_without_data_batches, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
+    stm.start().get0();
+    stm.testing_only_disable_auto_abort();
+
+    wait_for_confirmed_leader();
+    wait_for_meta_initialized();
+    // Add a fence batch
+    auto pid = model::producer_identity{0, 0};
+    auto term_op = stm
+                     .begin_tx(
+                       pid,
+                       model::tx_seq{0},
+                       std::chrono::milliseconds(10),
+                       model::partition_id(0))
+                     .get0();
+    BOOST_REQUIRE(term_op.has_value());
+    BOOST_REQUIRE_EQUAL(term_op.value(), _raft->confirmed_term());
+    tests::cooperative_spin_wait_with_timeout(5s, [this, pid]() {
+        auto expired = get_expired_producers();
+        return std::find(expired.begin(), expired.end(), pid) != expired.end();
+    }).get0();
+}
