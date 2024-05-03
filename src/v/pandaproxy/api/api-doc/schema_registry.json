@@ -616,7 +616,7 @@
     },
     "/subjects/{subject}": {
       "post": {
-        "summary": "Check if a schema is already registred for the subject.",
+        "summary": "Check if a schema is already registered for the subject.",
         "operationId": "post_subject",
         "consumes": [
           "application/vnd.schemaregistry.v1+json",
