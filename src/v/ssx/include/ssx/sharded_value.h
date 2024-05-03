@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "ssx/aligned.h"
 
 #include <seastar/core/smp.hh>
 
@@ -28,7 +29,7 @@ template<typename T>
 class sharded_value {
 public:
     explicit sharded_value(T value)
-      : _state(ss::smp::count, value) {}
+      : _state(ss::smp::count, ssx::aligned<T>{value}) {}
     ~sharded_value() noexcept = default;
 
     sharded_value(sharded_value&& other) noexcept = default;
@@ -44,7 +45,7 @@ public:
     T& local() { return _state[ss::this_shard_id()]; }
 
 private:
-    std::vector<T> _state;
+    std::vector<ssx::aligned<T>> _state;
 };
 
 } // namespace ssx
