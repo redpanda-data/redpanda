@@ -1448,11 +1448,8 @@ void rm_stm::abort_old_txes() {
     });
 }
 
-ss::future<> rm_stm::do_abort_old_txes() {
-    if (!co_await sync(_sync_timeout)) {
-        co_return;
-    }
-
+absl::btree_set<model::producer_identity>
+rm_stm::get_expired_producers() const {
     fragmented_vector<model::producer_identity> pids;
     for (auto& [k, _] : _mem_state.estimated) {
         pids.push_back(k);
@@ -1470,7 +1467,15 @@ ss::future<> rm_stm::do_abort_old_txes() {
         }
         expired.insert(pid);
     }
+    return expired;
+}
 
+ss::future<> rm_stm::do_abort_old_txes() {
+    if (!co_await sync(_sync_timeout)) {
+        co_return;
+    }
+
+    auto expired = get_expired_producers();
     for (auto pid : expired) {
         co_await try_abort_old_tx(pid);
     }
