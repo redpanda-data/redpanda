@@ -46,6 +46,37 @@
       ]
     },
     {
+      "path": "/v1/transform/{name}/meta",
+      "operations": [
+        {
+          "method": "PUT",
+          "summary": "Patch transform metadata.",
+          "type": "void",
+          "nickname": "patch_transform_metadata",
+          "consumes": [
+            "application/json"
+          ],
+          "produces": [
+            "application/json"
+          ],
+          "parameters": [
+            {
+              "name": "name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "metadata",
+              "in": "body",
+              "required": true,
+              "type": "transform_metadata_patch"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "path": "/v1/transform",
       "operations": [
         {
@@ -203,6 +234,25 @@
         "offset": {
           "type": "int",
           "description": "The offset within the input topic that has been committed"
+        }
+      }
+    },
+    "transform_metadata_patch": {
+      "id": "transform_metadata_patch",
+      "description": "A partial update to transform metadata. See individual field descriptions for semantics.",
+      "properties": {
+        "env": {
+          "required": false,
+          "description": "If present, overrides the transform's existing environment map, wholesale. If not present, the existing map is unchanged.",
+          "type": "array",
+          "items": {
+            "type": "environment_variable"
+          }
+        },
+        "is_paused": {
+          "required": false,
+          "description": "If present, sets the transform's 'paused' state. If not present, paused state is unchanged.",
+          "type": "boolean"
         }
       }
     }
