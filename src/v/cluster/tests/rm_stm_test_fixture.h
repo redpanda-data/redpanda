@@ -48,6 +48,8 @@ struct rm_stm_test_fixture : simple_raft_fixture {
         return _stm->wait(raft_offset, model::timeout_clock::now() + 10ms);
     }
 
+    auto get_expired_producers() const { return _stm->get_expired_producers(); }
+
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
     ss::shared_ptr<cluster::rm_stm> _stm;
 };
