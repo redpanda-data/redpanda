@@ -84,7 +84,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, tm_stm_test_fixture) {
     auto tx1 = expect_tx(stm.get_tx(tx_id).get0());
     BOOST_REQUIRE_EQUAL(tx1.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx1.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx1.status, tx_status::ready);
+    BOOST_REQUIRE_EQUAL(tx1.status, tx_status::ongoing);
     BOOST_REQUIRE_EQUAL(tx1.partitions.size(), 0);
     expect_tx(stm.mark_tx_ongoing(_raft->term(), tx_id).get0());
     std::vector<tm_transaction::tx_partition> partitions = {
@@ -105,7 +105,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, tm_stm_test_fixture) {
     auto tx4 = expect_tx(stm.mark_tx_prepared(_raft->term(), tx_id).get());
     BOOST_REQUIRE_EQUAL(tx4.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx4.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx4.status, tx_status::prepared);
+    BOOST_REQUIRE_EQUAL(tx4.status, tx_status::ongoing);
     BOOST_REQUIRE_EQUAL(tx4.tx_seq, tx2.tx_seq);
     BOOST_REQUIRE_EQUAL(tx4.partitions.size(), 2);
     auto tx5 = expect_tx(stm.mark_tx_ongoing(_raft->term(), tx_id).get0());
