@@ -1743,6 +1743,12 @@ class RpkTool:
 
         return [transform_from_json(o) for o in loaded]
 
+    def pause_wasm(self, name):
+        self._run_wasm(["pause", name])
+
+    def resume_wasm(self, name):
+        self._run_wasm(["resume", name])
+
     def describe_txn_producers(self, topics, partitions, all=False):
         cmd = [
             "describe-producers", "--topics", ",".join(topics), "--partitions",
