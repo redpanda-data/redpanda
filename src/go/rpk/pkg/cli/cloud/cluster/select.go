@@ -60,10 +60,10 @@ an existing self-hosted profile, please rename that profile or use the
 Either:
     rpk profile select %[1]q
     rpk profile rename-to $something_else
-    rpk cloud cluster select %[2]q
+    rpk cloud cluster select [NAME]
 Or:
-    rpk cloud cluster select %[2]q --profile $another_something
-`, ee.Name, args[0])
+    rpk cloud cluster select [NAME] --profile $another_something
+`, ee.Name)
 				os.Exit(1)
 			}
 			out.MaybeDieErr(err)
