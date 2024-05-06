@@ -53,36 +53,13 @@ struct tx_data_snapshot {
 };
 
 // note: support for tx_snapshot::version[0-3] was dropped
-// in v23.3.x
+// in v24.1.x
 
 struct expiration_snapshot {
     model::producer_identity pid;
     duration_type timeout;
 
     bool operator==(const expiration_snapshot&) const = default;
-};
-
-struct tx_snapshot_v3 {
-    static constexpr uint8_t version = 3;
-
-    fragmented_vector<model::producer_identity> fenced;
-    fragmented_vector<rm_stm::tx_range> ongoing;
-    fragmented_vector<rm_stm::prepare_marker> prepared;
-    fragmented_vector<rm_stm::tx_range> aborted;
-    fragmented_vector<rm_stm::abort_index> abort_indexes;
-    model::offset offset;
-    fragmented_vector<deprecated_seq_entry> seqs;
-
-    struct tx_seqs_snapshot {
-        model::producer_identity pid;
-        model::tx_seq tx_seq;
-        bool operator==(const tx_seqs_snapshot&) const = default;
-    };
-
-    fragmented_vector<tx_seqs_snapshot> tx_seqs;
-    fragmented_vector<expiration_snapshot> expiration;
-
-    bool operator==(const tx_snapshot_v3&) const = default;
 };
 
 struct tx_snapshot_v4 {
@@ -133,14 +110,6 @@ struct tx_snapshot {
 }; // namespace cluster
 
 namespace reflection {
-
-// note: tx_snapshot[v0-v2] cleaned up in 23.3.x
-using tx_snapshot_v3 = cluster::tx_snapshot_v3;
-template<>
-struct async_adl<tx_snapshot_v3> {
-    ss::future<> to(iobuf&, tx_snapshot_v3);
-    ss::future<tx_snapshot_v3> from(iobuf_parser&);
-};
 
 using tx_snapshot_v4 = cluster::tx_snapshot_v4;
 template<>

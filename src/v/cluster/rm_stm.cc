@@ -1858,15 +1858,6 @@ model::offset rm_stm::to_log_offset(kafka::offset k_offset) const {
 
     return model::offset(k_offset);
 }
-template<class T>
-static void move_snapshot_wo_seqs(tx_snapshot_v4& target, T& source) {
-    target.fenced = std::move(source.fenced);
-    target.ongoing = std::move(source.ongoing);
-    target.prepared = std::move(source.prepared);
-    target.aborted = std::move(source.aborted);
-    target.abort_indexes = std::move(source.abort_indexes);
-    target.offset = std::move(source.offset);
-}
 
 ss::future<>
 rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
@@ -1879,21 +1870,6 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     if (hdr.version == tx_snapshot_v4::version) {
         tx_snapshot_v4 data_v4
           = co_await reflection::async_adl<tx_snapshot_v4>{}.from(data_parser);
-        data = tx_snapshot(std::move(data_v4), _raft->group());
-    } else if (hdr.version == tx_snapshot_v3::version) {
-        tx_snapshot_v4 data_v4;
-        auto data_v3 = reflection::adl<tx_snapshot_v3>{}.from(data_parser);
-        // convert to v4
-        move_snapshot_wo_seqs(data_v4, data_v3);
-        data_v4.seqs = std::move(data_v3.seqs);
-        data_v4.expiration = std::move(data_v3.expiration);
-        for (auto& entry : data_v3.tx_seqs) {
-            data.tx_data.push_back(tx_data_snapshot{
-              .pid = entry.pid,
-              .tx_seq = entry.tx_seq,
-              .tm = model::legacy_tm_ntp.tp.partition});
-        }
-        // convert to v5
         data = tx_snapshot(std::move(data_v4), _raft->group());
     } else if (hdr.version == tx_snapshot::version) {
         data = co_await reflection::async_adl<tx_snapshot>{}.from(data_parser);

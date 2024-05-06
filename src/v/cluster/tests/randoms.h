@@ -191,12 +191,6 @@ inline cluster::deprecated_seq_entry random_seq_entry() {
     return entry;
 }
 
-inline tx_snapshot_v3::tx_seqs_snapshot random_tx_seqs_snapshot() {
-    return {
-      model::random_producer_identity(),
-      tests::random_named_int<model::tx_seq>()};
-}
-
 } // namespace cluster
 
 namespace tests {

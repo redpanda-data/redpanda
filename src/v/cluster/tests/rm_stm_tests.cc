@@ -749,20 +749,6 @@ void async_ser_verify(T type) {
     BOOST_REQUIRE(sync_deser_type == async_deser_type);
 }
 
-cluster::tx_snapshot_v3 make_tx_snapshot_v3() {
-    return reflection::tx_snapshot_v3{
-      .fenced = tests::random_frag_vector(model::random_producer_identity),
-      .ongoing = tests::random_frag_vector(model::random_tx_range),
-      .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
-      .aborted = tests::random_frag_vector(model::random_tx_range),
-      .abort_indexes = tests::random_frag_vector(cluster::random_abort_index),
-      .offset = model::random_offset(),
-      .seqs = tests::random_frag_vector(cluster::random_seq_entry),
-      .tx_seqs = tests::random_frag_vector(cluster::random_tx_seqs_snapshot),
-      .expiration = tests::random_frag_vector(
-        cluster::random_expiration_snapshot)};
-};
-
 cluster::tx_snapshot_v4 make_tx_snapshot_v4() {
     return cluster::tx_snapshot_v4{
       .fenced = tests::random_frag_vector(model::random_producer_identity),
@@ -803,15 +789,11 @@ SEASTAR_THREAD_TEST_CASE(async_adl_snapshot_validation) {
     // Checks equivalence of async and sync adl serialized snapshots.
     // Serialization of snapshots is switched to async with this commit,
     // makes sure the snapshots are compatible pre/post upgrade.
-
     sync_ser_verify(make_tx_snapshot_v4());
     async_ser_verify(make_tx_snapshot_v4());
-
-    sync_ser_verify(make_tx_snapshot_v3());
-    sync_ser_verify(make_tx_snapshot_v3());
 }
 
-FIXTURE_TEST(test_snapshot_v3_v4_v5_equivalence, rm_stm_test_fixture) {
+FIXTURE_TEST(test_snapshot_v4_v5_equivalence, rm_stm_test_fixture) {
     create_stm_and_start_raft();
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
@@ -866,25 +848,7 @@ FIXTURE_TEST(test_snapshot_v3_v4_v5_equivalence, rm_stm_test_fixture) {
           });
         BOOST_REQUIRE(match != snap_v5.producers.end());
     }
-    // Check the stm can apply v3/v4/v5 snapshots
-    {
-        auto snap_v3 = make_tx_snapshot_v3();
-        snap_v3.offset = stm.last_applied_offset();
-        auto num_producers_from_snapshot = snap_v3.seqs.size();
-
-        iobuf buf;
-        reflection::adl<reflection::tx_snapshot_v3>{}.to(
-          buf, std::move(snap_v3));
-        raft::stm_snapshot_header hdr{
-          .version = reflection::tx_snapshot_v3::version,
-          .snapshot_size = static_cast<int32_t>(buf.size_bytes()),
-          .offset = stm.last_stable_offset(),
-        };
-        apply_snapshot(hdr, std::move(buf)).get0();
-
-        // validate producer stat after snapshot
-        BOOST_REQUIRE_EQUAL(num_producers_from_snapshot, producers().size());
-    }
+    // Check the stm can apply v4/v5 snapshots
     {
         auto snap_v4 = make_tx_snapshot_v4();
         snap_v4.offset = stm.last_applied_offset();
