@@ -27,6 +27,10 @@ package datalake.proto;
 message simple_message {
   optional string label = 1;
   optional int32 number = 3;
+  optional int64 big_number = 4;
+  optional float float_number = 5;
+  optional double double_number = 6;
+  optional bool true_or_false = 7;
 }
     )schema");
 
@@ -55,6 +59,10 @@ message empty_message {}
 message simple_message {
   optional string label = 1;
   optional int32 number = 3;
+  optional int64 big_number = 4;
+  optional float float_number = 5;
+  optional double double_number = 6;
+  optional bool true_or_false = 7;
 }
 
 message inner_message_t {
@@ -154,6 +162,14 @@ generate_simple_message(const std::string& label, int32_t number) {
                   reflection->SetString(message, field_desc, label);
               } else if (field_desc->name() == "number") {
                   reflection->SetInt32(message, field_desc, number);
+              } else if (field_desc->name() == "big_number") {
+                  reflection->SetInt64(message, field_desc, 10 * number);
+              } else if (field_desc->name() == "float_number") {
+                  reflection->SetFloat(message, field_desc, number / 10.0);
+              } else if (field_desc->name() == "double_number") {
+                  reflection->SetDouble(message, field_desc, number / 100.0);
+              } else if (field_desc->name() == "true_or_false") {
+                  reflection->SetBool(message, field_desc, number % 2 == 0);
               }
           }
       });

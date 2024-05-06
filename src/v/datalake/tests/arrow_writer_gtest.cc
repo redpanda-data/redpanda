@@ -31,7 +31,7 @@ TEST(ArrowWriter, SimpleMessageTest) {
 
     test_data test_data;
     proto_to_arrow_converter converter(test_data.simple_schema);
-    EXPECT_EQ(converter._arrays.size(), 2);
+    EXPECT_EQ(converter._arrays.size(), 6);
     auto parsed_message = converter.parse_message(serialized_message);
     EXPECT_NE(parsed_message, nullptr);
     EXPECT_EQ(parsed_message->GetTypeName(), "datalake.proto.simple_message");
@@ -50,7 +50,14 @@ TEST(ArrowWriter, SimpleMessageTest) {
     auto table = converter.build_table();
 
     EXPECT_EQ(
-      schema->field_names(), std::vector<std::string>({"label", "number"}));
+      schema->field_names(),
+      std::vector<std::string>(
+        {"label",
+         "number",
+         "big_number",
+         "float_number",
+         "double_number",
+         "true_or_false"}));
     std::vector<std::string> table_field_names;
     for (const auto& field : table->fields()) {
         table_field_names.push_back(field->name());

@@ -1,5 +1,7 @@
 #include "datalake/protobuf_to_arrow_converter.h"
 
+#include <arrow/type.h>
+
 #include <stdexcept>
 
 datalake::proto_to_arrow_converter::proto_to_arrow_converter(
@@ -123,12 +125,15 @@ bool datalake::proto_to_arrow_converter::initialize_arrow_arrays() {
         } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT64) {
             _arrays[field_idx]
               = std::make_unique<proto_to_arrow_scalar<arrow::Int64Type>>();
-        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_UINT32) {
+        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_BOOL) {
             _arrays[field_idx]
-              = std::make_unique<proto_to_arrow_scalar<arrow::UInt32Type>>();
-        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_UINT64) {
+              = std::make_unique<proto_to_arrow_scalar<arrow::BooleanType>>();
+        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_FLOAT) {
             _arrays[field_idx]
-              = std::make_unique<proto_to_arrow_scalar<arrow::UInt64Type>>();
+              = std::make_unique<proto_to_arrow_scalar<arrow::FloatType>>();
+        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_DOUBLE) {
+            _arrays[field_idx]
+              = std::make_unique<proto_to_arrow_scalar<arrow::DoubleType>>();
         } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_STRING) {
             _arrays[field_idx]
               = std::make_unique<proto_to_arrow_scalar<arrow::StringType>>();

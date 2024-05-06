@@ -4,6 +4,7 @@
 #include "datalake/proto_to_arrow_scalar.h"
 
 #include <arrow/api.h>
+#include <arrow/type.h>
 #include <google/protobuf/message.h>
 
 #include <memory>
@@ -21,36 +22,41 @@ public:
         // Set up child arrays
         for (int field_idx = 0; field_idx < message_descriptor->field_count();
              field_idx++) {
-            auto field_desc = message_descriptor->field(field_idx);
-            if (field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT32) {
+            auto desc = message_descriptor->field(field_idx);
+            if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT32) {
                 _child_arrays.push_back(
                   std::make_unique<proto_to_arrow_scalar<arrow::Int32Type>>());
-            } else if (
-              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT64) {
+            } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT64) {
                 _child_arrays.push_back(
                   std::make_unique<proto_to_arrow_scalar<arrow::Int64Type>>());
-            } else if (
-              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_UINT32) {
+            } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_BOOL) {
                 _child_arrays.push_back(
-                  std::make_unique<proto_to_arrow_scalar<arrow::UInt32Type>>());
-            } else if (
-              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_UINT64) {
+                  std::make_unique<
+                    proto_to_arrow_scalar<arrow::BooleanType>>());
+            } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_FLOAT) {
                 _child_arrays.push_back(
-                  std::make_unique<proto_to_arrow_scalar<arrow::UInt64Type>>());
+                  std::make_unique<proto_to_arrow_scalar<arrow::FloatType>>());
             } else if (
-              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_STRING) {
+              desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_DOUBLE) {
+                _child_arrays.push_back(
+                  std::make_unique<proto_to_arrow_scalar<arrow::DoubleType>>());
+            } else if (
+              desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_STRING) {
                 _child_arrays.push_back(
                   std::make_unique<proto_to_arrow_scalar<arrow::StringType>>());
-
             } else if (
-              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_MESSAGE) {
-                auto field_message_descriptor = field_desc->message_type();
-                assert(field_message_descriptor != nullptr);
+              desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_MESSAGE) {
+                auto field_message_descriptor = desc->message_type();
+                if (field_message_descriptor == nullptr) {
+                    throw std::runtime_error(
+                      std::string("Can't find schema for nested type : ")
+                      + desc->cpp_type_name());
+                }
                 _child_arrays.push_back(std::make_unique<proto_to_arrow_struct>(
                   field_message_descriptor));
             } else {
                 throw std::runtime_error(
-                  std::string("Unknown type: ") + field_desc->cpp_type_name());
+                  std::string("Unknown type: ") + desc->cpp_type_name());
             }
         }
         // Make Arrow data types

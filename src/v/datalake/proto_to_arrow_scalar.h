@@ -3,6 +3,8 @@
 #include "datalake/proto_to_arrow_interface.h"
 
 #include <arrow/api.h>
+#include <arrow/array/array_primitive.h>
+#include <arrow/type.h>
 #include <google/protobuf/message.h>
 
 #include <memory>
@@ -73,6 +75,32 @@ private:
         auto desc = msg->GetDescriptor()->field(field_idx);
         _arrow_status = _builder->Append(
           msg->GetReflection()->GetInt64(*msg, desc));
+    }
+
+    // Bool
+    template<>
+    void do_add<arrow::BooleanType>(
+      const google::protobuf::Message* msg, int field_idx) {
+        auto desc = msg->GetDescriptor()->field(field_idx);
+        _arrow_status = _builder->Append(
+          msg->GetReflection()->GetBool(*msg, desc));
+    }
+
+    // Floating Point Types
+    template<>
+    void do_add<arrow::FloatType>(
+      const google::protobuf::Message* msg, int field_idx) {
+        auto desc = msg->GetDescriptor()->field(field_idx);
+        _arrow_status = _builder->Append(
+          msg->GetReflection()->GetFloat(*msg, desc));
+    }
+
+    template<>
+    void do_add<arrow::DoubleType>(
+      const google::protobuf::Message* msg, int field_idx) {
+        auto desc = msg->GetDescriptor()->field(field_idx);
+        _arrow_status = _builder->Append(
+          msg->GetReflection()->GetDouble(*msg, desc));
     }
 
     // Unsigned Integer Types
