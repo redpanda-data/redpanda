@@ -111,33 +111,6 @@ bool segment_chunks::downloads_in_progress() const {
     });
 }
 
-ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
-  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
-    auto g = _gate.hold();
-    vassert(_started, "chunk API is not started");
-
-    auto it = _chunks.find(chunk_start);
-    std::optional<chunk_start_offset_t> chunk_end = std::nullopt;
-    if (auto next = std::next(it); next != _chunks.end()) {
-        chunk_end = next->first - 1;
-    }
-
-    const auto prefetch = prefetch_override.value_or(
-      config::shard_local_cfg().cloud_storage_chunk_prefetch);
-
-    vlog(
-      _ctxlog.debug,
-      "hydrating chunk start: {}, prefetch: {}",
-      chunk_start,
-      prefetch);
-
-    co_await _segment.hydrate_chunk(
-      segment_chunk_range{_chunks, prefetch, chunk_start});
-
-    vlog(_ctxlog.debug, "materializing chunk start: {}", chunk_start, prefetch);
-    co_return co_await _segment.materialize_chunk(chunk_start);
-}
-
 ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
   chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
     auto g = _gate.hold();
@@ -189,31 +162,11 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
                 start);
           });
 
-        // Keep retrying if materialization fails.
-        bool done = false;
-        while (!done) {
-            vlog(
-              _ctxlog.debug,
-              "attempting do_hydrate_and_materialize for {}",
-              chunk_start);
-            auto handle = co_await do_hydrate_and_materialize(
-              chunk_start, prefetch_override);
-            if (handle) {
-                vlog(
-                  _ctxlog.debug,
-                  "do_hydrate_and_materialize for {} complete",
-                  chunk_start);
-                done = true;
-                chunk.handle = ss::make_lw_shared(std::move(handle));
-            } else {
-                vlog(
-                  _ctxlog.trace,
-                  "do_hydrate_and_materialize failed for chunk start offset {}",
-                  chunk_start);
-                co_await ss::sleep_abortable(
-                  _cache_backoff_jitter.next_jitter_duration(), _as);
-            }
-        }
+        auto handle = co_await _segment.download_chunk(
+          chunk_start,
+          prefetch_override.value_or(
+            config::shard_local_cfg().cloud_storage_chunk_prefetch));
+        chunk.handle = ss::make_lw_shared(std::move(handle));
     } catch (const std::exception& ex) {
         vlog(
           _ctxlog.debug,
