@@ -16,6 +16,7 @@
 #include "container/chunked_hash_map.h"
 #include "storage/fwd.h"
 #include "utils/mutex.h"
+#include "utils/rwlock.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -141,6 +142,10 @@ public:
 
     explicit shard_placement_table(storage::kvstore&);
 
+    /// Must be called on assignment_shard_id.
+    bool is_persistence_enabled() const;
+    ss::future<> enable_persistence();
+
     // must be called on each shard
     ss::future<> initialize(const topic_table&, model::node_id self);
 
@@ -188,7 +193,12 @@ public:
     finish_delete(const model::ntp&, model::revision_id expected_log_rev);
 
 private:
-    ss::future<> do_delete(const model::ntp&, placement_state&);
+    ss::future<> do_delete(
+      const model::ntp&,
+      placement_state&,
+      ss::rwlock::holder& persistence_lock_holder);
+
+    ss::future<> persist_shard_local_state();
 
 private:
     friend class shard_placement_test_fixture;
@@ -197,6 +207,10 @@ private:
     //
     // node_hash_map for pointer stability
     absl::node_hash_map<model::ntp, placement_state> _states;
+    // lock is needed to sync enabling persistence with shard-local
+    // modifications.
+    ssx::rwlock _persistence_lock;
+    bool _persistence_enabled = false;
     storage::kvstore& _kvstore;
 
     // only on shard 0, _ntp2entry will hold targets for all ntps on this node.
