@@ -70,8 +70,8 @@ class SelfTestTest(EndToEndTest):
             assert 'error' in report
             assert report['error'] == error_msg
 
-        read_tests = ['list', 'download']
-        write_tests = ['upload', 'delete']
+        read_tests = ['List', 'Head', 'Get']
+        write_tests = ['Put', 'Delete', 'Plural Delete']
 
         for node in node_reports:
             assert node['status'] == 'idle'

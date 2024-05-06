@@ -74,28 +74,40 @@ private:
       iobuf& payload,
       retry_chain_node& rtc);
 
-    // Verify that uploading (write operation) to cloud storage works.
+    // Verify that uploading (Put: write operation) to cloud storage works.
     ss::future<self_test_result> verify_upload(
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key key,
       const std::optional<iobuf>& payload);
 
-    // Verify that listing (read operation) from cloud storage works.
+    // Verify that listing (List: read operation) from cloud storage works.
     ss::future<std::pair<cloud_storage::remote::list_result, self_test_result>>
     verify_list(
       cloud_storage_clients::bucket_name bucket,
-      cloud_storage_clients::object_key prefix);
+      std::optional<cloud_storage_clients::object_key> prefix,
+      size_t max_keys = 5);
 
-    // Verify that downloading (read operation) from cloud storage works.
+    // Verify that checking if an object exists (Head: read operation) from
+    // cloud storage works.
+    ss::future<self_test_result> verify_head(
+      cloud_storage_clients::bucket_name bucket,
+      std::optional<cloud_storage_clients::object_key> key);
+
+    // Verify that downloading (Get: read operation) from cloud storage works.
     ss::future<std::pair<std::optional<iobuf>, self_test_result>>
     verify_download(
       cloud_storage_clients::bucket_name bucket,
       std::optional<cloud_storage_clients::object_key> key);
 
-    // Verify that deleting (write operation) from cloud storage works.
+    // Verify that deleting (Delete: write operation) from cloud storage works.
     ss::future<self_test_result> verify_delete(
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key key);
+
+    // Verify that deleting multiple (Plural Delete: write operation) from cloud
+    // storage works.
+    ss::future<self_test_result> verify_deletes(
+      cloud_storage_clients::bucket_name bucket, size_t num_objects = 5);
 
 private:
     bool _remote_read_enabled{false};
@@ -105,6 +117,9 @@ private:
     ss::gate _gate;
     retry_chain_node _rtc;
     cloudcheck_opts _opts;
+
+    const cloud_storage_clients::object_key self_test_prefix
+      = cloud_storage_clients::object_key{"self-test/"};
 
 private:
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
