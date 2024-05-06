@@ -1692,8 +1692,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def get_redpanda_pods(self):
         """Get the current list of redpanda pods as k8s API objects."""
-        pods = json.loads(
-            self.kubectl.cmd('get pods -n redpanda -o json').decode())
+        pods = json.loads(self.kubectl.cmd('get pods -n redpanda -o json'))
 
         return [
             p for p in pods['items'] if is_redpanda_pod(p, self.cluster_id)
@@ -1739,7 +1738,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             return self.kubectl.cmd([
                 'get', 'pod', pod_name, '-n=redpanda',
                 "-o=jsonpath='{.status.containerStatuses[0].ready}'"
-            ]).decode()
+            ])
 
         delete_cmd = ['delete', 'pod', pod_name, '-n=redpanda']
         self.logger.info(
@@ -1780,7 +1779,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 self.kubectl.cmd([
                     'get', 'cluster', cluster_name, '-n=redpanda',
                     "-o=jsonpath='{.status.replicas}'"
-                ]).decode())
+                ]))
 
             # Check cluster readiness after pod restart
             self.check_cluster_readiness(cluster_name, expected_replicas,
@@ -1814,7 +1813,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             self.kubectl.cmd([
                 'get', 'cluster', cluster_name, '-n=redpanda',
                 "-o=jsonpath='{.status.replicas}'"
-            ]).decode())
+            ]))
 
         # Check cluster readiness after restart of all pods
         self.check_cluster_readiness(cluster_name, expected_replicas,
@@ -1845,7 +1844,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         ret = self.kubectl.cmd([
             'get', 'cluster', cluster_name, '-n=redpanda',
             "-o=jsonpath='{.status.readyReplicas}'"
-        ]).decode()
+        ])
         return int(0 if not ret else ret)
 
     def verify_basic_produce_consume(self, producer, consumer):

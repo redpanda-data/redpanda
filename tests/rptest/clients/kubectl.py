@@ -156,28 +156,72 @@ class KubectlTool:
         process = subprocess.Popen(cmd,
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT)
-        return_code = process.returncode
-
-        if return_code:
-            raise RuntimeError(process.stdout, return_code)
+        if process.returncode:
+            if process.stdout is not None:
+                s_out = process.stdout.read()
+            else:
+                s_out = "stdout empty"
+            raise subprocess.CalledProcessError(process.returncode, cmd,
+                                                s_out, "stderr piped")
 
         for line in process.stdout:  # type: ignore
             yield line
 
         return
 
-    def _local_cmd(self, cmd: list[str]):
+    def _local_cmd(self, cmd: list[str], timeout=900):
         """Run the given command locally and return the stdout as bytes.
-           Logs stdout and stderr on failure."""
+           Logs stdout and stderr on failure.
+
+           cmd: list[str]: command to run
+
+           throws CalledProcessError on non-zero exit code
+           thwows TimeoutExpired on timeout
+
+           returns: stdout as string if not empty, else stderr
+        """
+        def _prepare_output(sout: str, serr: str) -> str:
+            return f"\n--------- stdout -----------\n{sout}" \
+                   f"\n--------- stderr -----------\n{serr}\n"
+
         self._redpanda.logger.info(cmd)
+
+        # Using text mode to get strings, not binary
+        # Following code will capture all output to log and work
+        # significantly faster than 'check_output'
+        process = subprocess.Popen(cmd,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   text=True)
         try:
-            return subprocess.check_output(cmd, stderr=subprocess.PIPE)
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(
-                f"Command failed '{cmd}' (rc={e.returncode}).\n" +
-                f"--------- stdout -----------\n{e.stdout.decode()}" +
-                f"--------- stderr -----------\n{e.stderr.decode()}")
-            raise
+            s_out, s_err = process.communicate(timeout=timeout)
+            # safety check for process termination
+            if process.poll() is None:
+                # Should never happen (c)
+                process.kill()
+        except subprocess.TimeoutExpired:
+            process.kill()
+            s_out, s_err = process.communicate()
+            raise subprocess.TimeoutExpired(cmd, timeout, s_out, s_err)
+
+        # TODO: Handle s_err output
+        # It will be hard to detect errors as a lot of apps and utils
+        # just uses stderr as normal output. For example, tsh (teleport tunnel)
+
+        if process.returncode != 0:
+            self.logger.info(f"Command failed (rc={process.returncode}): "
+                             f"'{' '.join(cmd)}'\n"
+                             f"{_prepare_output(s_out, s_err)}")
+            raise subprocess.CalledProcessError(process.returncode, cmd, s_out,
+                                                s_err)
+        else:
+            # Log all collected strings, including JSONs collected
+            self.logger.debug(_prepare_output(s_out, s_err))
+
+        # Most of the time stdout will hold valuable data
+        # In rare occasions when return code is 0, and and stderr is not empty
+        # return that instead.
+        return s_out if len(s_out) > 0 else s_err
 
     def _ssh_cmd(self, cmd: list[str], capture: bool = False):
         """Execute a command on a the remote node using ssh/tsh as appropriate."""
@@ -352,7 +396,7 @@ class KubeNodeShell():
         # It is bad, but it works
         self.logger = self.kubectl._redpanda.logger
         self.current_context = self.kubectl.cmd(
-            f"config current-context").decode().strip()
+            f"config current-context").strip()
         # Make sure that name is not longer that 63 chars
         # The Pod "gke-redpanda-co9uuq78jo-redpanda-6a66-fcfacc41-65mz-priviledged-shell" is invalid: metadata.labels:
         # Invalid value: "gke-redpanda-co9uuq78jo-redpanda-6a66-fcfacc41-65mz-priviledged-shell": must be no more than 63 characters
@@ -431,7 +475,7 @@ class KubeNodeShell():
                 # "--pod-running-timeout=1m",
                 f"{self.pod_name}"
             ])
-            self.logger.debug(f"Response: {_out.decode()}")
+            self.logger.debug(f"Response: {_out}")
         return self
 
     def destroy_nodeshell(self):
@@ -463,4 +507,4 @@ class KubeNodeShell():
         if capture:
             return _out
         else:
-            return _out.decode().splitlines()
+            return _out.splitlines()
