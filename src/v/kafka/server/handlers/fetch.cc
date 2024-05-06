@@ -109,7 +109,7 @@ static ss::future<read_result> read_from_partition(
     auto rdr = co_await part.make_reader(reader_config);
     std::exception_ptr e;
     std::unique_ptr<iobuf> data;
-    std::vector<cluster::rm_stm::tx_range> aborted_transactions;
+    std::vector<cluster::tx::tx_range> aborted_transactions;
     try {
         auto result = co_await rdr.reader.consume(
           kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
@@ -507,7 +507,7 @@ static void fill_fetch_responses(
                   res.aborted_transactions.begin(),
                   res.aborted_transactions.end(),
                   std::back_inserter(aborted),
-                  [](cluster::rm_stm::tx_range range) {
+                  [](cluster::tx::tx_range range) {
                       return fetch_response::aborted_transaction{
                         .producer_id = kafka::producer_id(range.pid.id),
                         .first_offset = range.first};

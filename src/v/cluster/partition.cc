@@ -130,7 +130,7 @@ ss::future<std::error_code> partition::prefix_truncate(
     co_return errc::success;
 }
 
-ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
+ss::future<std::vector<tx::tx_range>> partition::aborted_transactions_cloud(
   const cloud_storage::offset_range& offsets) {
     return _cloud_storage_partition->aborted_transactions(offsets);
 }
@@ -1276,11 +1276,11 @@ ss::shared_ptr<cluster::tm_stm> partition::tm_stm() {
     return _raft->stm_manager()->get<cluster::tm_stm>();
 }
 
-ss::future<fragmented_vector<rm_stm::tx_range>>
+ss::future<fragmented_vector<tx::tx_range>>
 partition::aborted_transactions(model::offset from, model::offset to) {
     if (!_rm_stm) {
-        return ss::make_ready_future<fragmented_vector<rm_stm::tx_range>>(
-          fragmented_vector<rm_stm::tx_range>());
+        return ss::make_ready_future<fragmented_vector<tx::tx_range>>(
+          fragmented_vector<tx::tx_range>());
     }
     return _rm_stm->aborted_transactions(from, to);
 }

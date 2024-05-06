@@ -38,7 +38,9 @@ concept AcceptsUnits = requires(Func f, ssx::semaphore_units units) {
 };
 
 class producer_state;
+namespace tx {
 struct producer_state_snapshot;
+}
 class request;
 
 using producer_ptr = ss::lw_shared_ptr<producer_state>;
@@ -151,7 +153,7 @@ public:
       , _post_eviction_hook(std::move(post_eviction_hook)) {}
     producer_state(
       ss::noncopyable_function<void()> post_eviction_hook,
-      producer_state_snapshot) noexcept;
+      tx::producer_state_snapshot) noexcept;
 
     producer_state(const producer_state&) = delete;
     producer_state& operator=(producer_state&) = delete;
@@ -191,7 +193,7 @@ public:
 
     std::optional<seq_t> last_sequence_number() const;
 
-    producer_state_snapshot snapshot(kafka::offset log_start_offset) const;
+    tx::producer_state_snapshot snapshot(kafka::offset log_start_offset) const;
 
     ss::lowres_system_clock::time_point get_last_update_timestamp() const {
         return _last_updated_ts;
@@ -232,19 +234,6 @@ private:
     std::optional<kafka::offset> _current_txn_start_offset;
     friend class producer_state_manager;
     friend struct ::test_fixture;
-};
-
-struct producer_state_snapshot {
-    struct finished_request {
-        seq_t _first_sequence;
-        seq_t _last_sequence;
-        kafka::offset _last_offset;
-    };
-
-    model::producer_identity _id;
-    raft::group_id _group;
-    std::vector<finished_request> _finished_requests;
-    std::chrono::milliseconds _ms_since_last_update;
 };
 
 } // namespace cluster

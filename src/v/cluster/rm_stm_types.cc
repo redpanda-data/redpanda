@@ -9,7 +9,7 @@
 
 #include "cluster/rm_stm_types.h"
 
-namespace cluster {
+namespace cluster::tx {
 
 bool deprecated_seq_entry::operator==(const deprecated_seq_entry& other) const {
     if (this == &other) {
@@ -51,7 +51,7 @@ tx_snapshot::tx_snapshot(tx_snapshot_v4 snap_v4, raft::group_id group)
   , tx_data(std::move(snap_v4.tx_data))
   , expiration(std::move(snap_v4.expiration)) {
     for (auto& entry : snap_v4.seqs) {
-        cluster::producer_state_snapshot snapshot;
+        producer_state_snapshot snapshot;
         snapshot._id = entry.pid;
         snapshot._group = group;
         auto duration = model::timestamp_clock::duration{
@@ -68,7 +68,7 @@ tx_snapshot::tx_snapshot(tx_snapshot_v4 snap_v4, raft::group_id group)
         // upgrades.
         auto prev_last = -1;
         for (auto& req : entry.seq_cache) {
-            cluster::producer_state_snapshot::finished_request request;
+            producer_state_snapshot::finished_request request;
             request._first_sequence = prev_last + 1;
             request._last_sequence = req.seq;
             request._last_offset = req.offset;
@@ -78,9 +78,55 @@ tx_snapshot::tx_snapshot(tx_snapshot_v4 snap_v4, raft::group_id group)
         producers.push_back(std::move(snapshot));
     }
 }
-} // namespace cluster
+
+std::string_view transaction_info::get_status() const {
+    switch (status) {
+    case status_t::ongoing:
+        return "ongoing";
+    case status_t::prepared:
+        return "prepared";
+    case status_t::preparing:
+        return "preparing";
+    case status_t::initiating:
+        return "initiating";
+    }
+}
+
+bool transaction_info::is_expired() const {
+    return !info.has_value() || info.value().deadline() <= clock_type::now();
+}
+
+std::optional<duration_type> transaction_info::get_staleness() const {
+    if (is_expired()) {
+        return std::nullopt;
+    }
+
+    auto now = ss::lowres_clock::now();
+    return now - info->last_update;
+}
+
+std::optional<duration_type> transaction_info::get_timeout() const {
+    if (is_expired()) {
+        return std::nullopt;
+    }
+
+    return info->timeout;
+}
+
+std::ostream& operator<<(std::ostream& o, const abort_snapshot& as) {
+    fmt::print(
+      o,
+      "{{first: {}, last: {}, aborted tx count: {}}}",
+      as.first,
+      as.last,
+      as.aborted.size());
+    return o;
+}
+}; // namespace cluster::tx
 
 namespace reflection {
+
+using namespace cluster::tx;
 
 template<class T>
 using fvec = fragmented_vector<T>;
@@ -98,11 +144,11 @@ ss::future<> async_adl<tx_snapshot_v4>::to(iobuf& out, tx_snapshot_v4 snap) {
     co_await detail::async_adl_list<fvec<abort_index>>{}.to(
       out, std::move(snap.abort_indexes));
     reflection::serialize(out, snap.offset);
-    co_await detail::async_adl_list<fvec<cluster::deprecated_seq_entry>>{}.to(
+    co_await detail::async_adl_list<fvec<deprecated_seq_entry>>{}.to(
       out, std::move(snap.seqs));
-    co_await detail::async_adl_list<fvec<cluster::tx_data_snapshot>>{}.to(
+    co_await detail::async_adl_list<fvec<tx_data_snapshot>>{}.to(
       out, std::move(snap.tx_data));
-    co_await detail::async_adl_list<fvec<cluster::expiration_snapshot>>{}.to(
+    co_await detail::async_adl_list<fvec<expiration_snapshot>>{}.to(
       out, std::move(snap.expiration));
 }
 
@@ -118,14 +164,11 @@ ss::future<tx_snapshot_v4> async_adl<tx_snapshot_v4>::from(iobuf_parser& in) {
       = co_await detail::async_adl_list<fvec<abort_index>>{}.from(in);
     auto offset = reflection::adl<model::offset>{}.from(in);
     auto seqs
-      = co_await detail::async_adl_list<fvec<cluster::deprecated_seq_entry>>{}
-          .from(in);
+      = co_await detail::async_adl_list<fvec<deprecated_seq_entry>>{}.from(in);
     auto tx_data
-      = co_await detail::async_adl_list<fvec<cluster::tx_data_snapshot>>{}.from(
-        in);
+      = co_await detail::async_adl_list<fvec<tx_data_snapshot>>{}.from(in);
     auto expiration
-      = co_await detail::async_adl_list<fvec<cluster::expiration_snapshot>>{}
-          .from(in);
+      = co_await detail::async_adl_list<fvec<expiration_snapshot>>{}.from(in);
 
     co_return tx_snapshot_v4{
       .fenced = std::move(fenced),
@@ -141,8 +184,8 @@ ss::future<tx_snapshot_v4> async_adl<tx_snapshot_v4>::from(iobuf_parser& in) {
 
 ss::future<> async_adl<tx_snapshot>::to(iobuf& out, tx_snapshot snap) {
     reflection::serialize(out, snap.offset);
-    co_await detail::async_adl_list<fvec<cluster::producer_state_snapshot>>{}
-      .to(out, std::move(snap.producers));
+    co_await detail::async_adl_list<fvec<producer_state_snapshot>>{}.to(
+      out, std::move(snap.producers));
     co_await detail::async_adl_list<
       fragmented_vector<model::producer_identity>>{}
       .to(out, std::move(snap.fenced));
@@ -154,9 +197,9 @@ ss::future<> async_adl<tx_snapshot>::to(iobuf& out, tx_snapshot snap) {
       out, std::move(snap.aborted));
     co_await detail::async_adl_list<fvec<abort_index>>{}.to(
       out, std::move(snap.abort_indexes));
-    co_await detail::async_adl_list<fvec<cluster::tx_data_snapshot>>{}.to(
+    co_await detail::async_adl_list<fvec<tx_data_snapshot>>{}.to(
       out, std::move(snap.tx_data));
-    co_await detail::async_adl_list<fvec<cluster::expiration_snapshot>>{}.to(
+    co_await detail::async_adl_list<fvec<expiration_snapshot>>{}.to(
       out, std::move(snap.expiration));
     reflection::serialize(out, snap.highest_producer_id);
 }
@@ -164,9 +207,9 @@ ss::future<> async_adl<tx_snapshot>::to(iobuf& out, tx_snapshot snap) {
 ss::future<tx_snapshot> async_adl<tx_snapshot>::from(iobuf_parser& in) {
     tx_snapshot result;
     result.offset = reflection::adl<model::offset>{}.from(in);
-    result.producers = co_await detail::async_adl_list<
-                         fvec<cluster::producer_state_snapshot>>{}
-                         .from(in);
+    result.producers
+      = co_await detail::async_adl_list<fvec<producer_state_snapshot>>{}.from(
+        in);
     result.fenced
       = co_await detail::async_adl_list<fvec<model::producer_identity>>{}.from(
         in);
@@ -177,11 +220,9 @@ ss::future<tx_snapshot> async_adl<tx_snapshot>::from(iobuf_parser& in) {
     result.abort_indexes
       = co_await detail::async_adl_list<fvec<abort_index>>{}.from(in);
     result.tx_data
-      = co_await detail::async_adl_list<fvec<cluster::tx_data_snapshot>>{}.from(
-        in);
+      = co_await detail::async_adl_list<fvec<tx_data_snapshot>>{}.from(in);
     result.expiration
-      = co_await detail::async_adl_list<fvec<cluster::expiration_snapshot>>{}
-          .from(in);
+      = co_await detail::async_adl_list<fvec<expiration_snapshot>>{}.from(in);
     result.highest_producer_id = reflection::adl<model::producer_id>{}.from(in);
     co_return result;
 }

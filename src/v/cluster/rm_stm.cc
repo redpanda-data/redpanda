@@ -43,6 +43,7 @@
 #include <utility>
 
 namespace cluster {
+using namespace tx;
 using namespace std::chrono_literals;
 
 namespace {
@@ -117,20 +118,20 @@ fence_batch_data read_fence_batch(model::record_batch&& b) {
     iobuf_parser val_reader(std::move(val_buf));
     auto version = reflection::adl<int8_t>{}.from(val_reader);
     vassert(
-      version <= rm_stm::fence_control_record_version,
+      version <= fence_control_record_version,
       "unknown fence record version: {} expected: {}",
       version,
-      rm_stm::fence_control_record_version);
+      fence_control_record_version);
 
     std::optional<model::tx_seq> tx_seq{};
     std::optional<std::chrono::milliseconds> transaction_timeout_ms;
-    if (version >= rm_stm::fence_control_record_v1_version) {
+    if (version >= fence_control_record_v1_version) {
         tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
         transaction_timeout_ms
           = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
     }
     model::partition_id tm{model::legacy_tm_ntp.tp.partition};
-    if (version >= rm_stm::fence_control_record_version) {
+    if (version >= fence_control_record_version) {
         tm = reflection::adl<model::partition_id>{}.from(val_reader);
     }
 
@@ -164,10 +165,7 @@ model::record_batch make_fence_batch_v1(
 
     iobuf value;
     reflection::serialize(
-      value,
-      rm_stm::fence_control_record_v1_version,
-      tx_seq,
-      transaction_timeout_ms);
+      value, fence_control_record_v1_version, tx_seq, transaction_timeout_ms);
 
     storage::record_batch_builder builder(
       model::record_batch_type::tx_fence, model::offset(0));
@@ -191,11 +189,7 @@ model::record_batch make_fence_batch_v2(
     // the key byte representation must not change because it's used in
     // compaction
     reflection::serialize(
-      value,
-      rm_stm::fence_control_record_version,
-      tx_seq,
-      transaction_timeout_ms,
-      tm);
+      value, fence_control_record_version, tx_seq, transaction_timeout_ms, tm);
 
     storage::record_batch_builder builder(
       model::record_batch_type::tx_fence, model::offset(0));
@@ -904,7 +898,7 @@ ss::future<> rm_stm::stop() {
 
 ss::future<> rm_stm::start() { return persisted_stm::start(); }
 
-std::optional<rm_stm::expiration_info>
+std::optional<expiration_info>
 rm_stm::get_expiration_info(model::producer_identity pid) const {
     auto it = _log_state.expiration.find(pid);
     if (it == _log_state.expiration.end()) {
@@ -923,7 +917,7 @@ rm_stm::get_seq_number(model::producer_identity pid) const {
     return it->second->last_sequence_number();
 }
 
-ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
+ss::future<result<transaction_set>> rm_stm::get_transactions() {
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
     }
@@ -1355,8 +1349,8 @@ model::offset rm_stm::last_stable_offset() {
 }
 
 static void filter_intersecting(
-  fragmented_vector<rm_stm::tx_range>& target,
-  const fragmented_vector<rm_stm::tx_range>& source,
+  fragmented_vector<tx_range>& target,
+  const fragmented_vector<tx_range>& source,
   model::offset from,
   model::offset to) {
     for (auto& range : source) {
@@ -1370,7 +1364,7 @@ static void filter_intersecting(
     }
 }
 
-ss::future<fragmented_vector<rm_stm::tx_range>>
+ss::future<fragmented_vector<tx_range>>
 rm_stm::aborted_transactions(model::offset from, model::offset to) {
     return _state_lock.hold_read_lock().then(
       [from, to, this](ss::basic_rwlock<>::holder unit) mutable {
@@ -1383,9 +1377,9 @@ model::producer_id rm_stm::highest_producer_id() const {
     return _highest_producer_id;
 }
 
-ss::future<fragmented_vector<rm_stm::tx_range>>
+ss::future<fragmented_vector<tx_range>>
 rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
-    fragmented_vector<rm_stm::tx_range> result;
+    fragmented_vector<tx_range> result;
     if (!_is_tx_enabled) {
         co_return result;
     }
@@ -2200,7 +2194,7 @@ ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
       std::make_pair(first_offset, last_offset), snapshot_disk_size);
 }
 
-ss::future<std::optional<rm_stm::abort_snapshot>>
+ss::future<std::optional<abort_snapshot>>
 rm_stm::load_abort_snapshot(abort_index index) {
     auto filename = abort_idx_name(index.first, index.last);
 
@@ -2267,16 +2261,6 @@ ss::future<> rm_stm::apply_raft_snapshot(const iobuf&) {
     co_await reset_producers();
     set_next(_raft->start_offset());
     co_return;
-}
-
-std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
-    fmt::print(
-      o,
-      "{{first: {}, last: {}, aborted tx count: {}}}",
-      as.first,
-      as.last,
-      as.aborted.size());
-    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const rm_stm::log_state& state) {

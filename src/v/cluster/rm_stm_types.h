@@ -9,16 +9,126 @@
 
 #pragma once
 
-#include "cluster/rm_stm.h"
-#include "producer_state.h"
+#include "cluster/types.h"
 #include "reflection/async_adl.h"
 
-using tx_range = cluster::rm_stm::tx_range;
-using prepare_marker = cluster::rm_stm::prepare_marker;
-using abort_index = cluster::rm_stm::abort_index;
-using duration_type = cluster::rm_stm::duration_type;
+namespace cluster::tx {
 
-namespace cluster {
+static constexpr const int8_t abort_snapshot_version = 0;
+static constexpr int8_t prepare_control_record_version{0};
+static constexpr int8_t fence_control_record_v0_version{0};
+static constexpr int8_t fence_control_record_v1_version{1};
+static constexpr int8_t fence_control_record_version{2};
+
+using tx_range = model::tx_range;
+using clock_type = ss::lowres_clock;
+using time_point_type = clock_type::time_point;
+using duration_type = clock_type::duration;
+
+struct fence_batch_data {
+    model::batch_identity bid;
+    std::optional<model::tx_seq> tx_seq;
+    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
+    model::partition_id tm;
+};
+
+struct expiration_info {
+    duration_type timeout;
+    time_point_type last_update;
+    bool is_expiration_requested;
+
+    time_point_type deadline() const { return last_update + timeout; }
+
+    bool is_expired(time_point_type now) const {
+        return is_expiration_requested || deadline() <= now;
+    }
+};
+
+struct transaction_info {
+    enum class status_t { ongoing, preparing, prepared, initiating };
+
+    status_t status;
+    model::offset lso_bound;
+    std::optional<expiration_info> info;
+    std::optional<int32_t> seq;
+
+    std::string_view get_status() const;
+    bool is_expired() const;
+    std::optional<duration_type> get_staleness() const;
+    std::optional<duration_type> get_timeout() const;
+};
+
+using transaction_set
+  = absl::btree_map<model::producer_identity, transaction_info>;
+
+struct tx_data {
+    model::tx_seq tx_seq;
+    model::partition_id tm_partition;
+};
+
+// snapshot related types
+
+struct abort_index {
+    model::offset first;
+    model::offset last;
+
+    bool operator==(const abort_index&) const = default;
+};
+
+struct prepare_marker {
+    // partition of the transaction manager
+    // reposible for curent transaction
+    model::partition_id tm_partition;
+    // tx_seq identifies a transaction within a session
+    model::tx_seq tx_seq;
+    model::producer_identity pid;
+
+    bool operator==(const prepare_marker&) const = default;
+};
+
+struct abort_snapshot {
+    model::offset first;
+    model::offset last;
+    fragmented_vector<tx_range> aborted;
+
+    bool match(abort_index idx) {
+        return idx.first == first && idx.last == last;
+    }
+    friend std::ostream& operator<<(std::ostream&, const abort_snapshot&);
+
+    bool operator==(const abort_snapshot&) const = default;
+};
+
+struct producer_state_snapshot {
+    struct finished_request {
+        int32_t _first_sequence;
+        int32_t _last_sequence;
+        kafka::offset _last_offset;
+    };
+
+    model::producer_identity _id;
+    raft::group_id _group;
+    std::vector<finished_request> _finished_requests;
+    std::chrono::milliseconds _ms_since_last_update;
+};
+
+struct tx_data_snapshot {
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::partition_id tm;
+
+    bool operator==(const tx_data_snapshot&) const = default;
+};
+
+// note: support for tx_snapshot::version[0-3] was dropped
+// in v24.1.x
+
+struct expiration_snapshot {
+    model::producer_identity pid;
+    duration_type timeout;
+
+    bool operator==(const expiration_snapshot&) const = default;
+};
 
 // only retained for snapshot backward compatibility purposes
 // during rollback of an upgrade.
@@ -44,24 +154,6 @@ struct deprecated_seq_entry {
     from_producer_state_snapshot(producer_state_snapshot&);
 };
 
-struct tx_data_snapshot {
-    model::producer_identity pid;
-    model::tx_seq tx_seq;
-    model::partition_id tm;
-
-    bool operator==(const tx_data_snapshot&) const = default;
-};
-
-// note: support for tx_snapshot::version[0-3] was dropped
-// in v24.1.x
-
-struct expiration_snapshot {
-    model::producer_identity pid;
-    duration_type timeout;
-
-    bool operator==(const expiration_snapshot&) const = default;
-};
-
 struct tx_snapshot_v4 {
     static constexpr uint8_t version = 4;
 
@@ -71,7 +163,7 @@ struct tx_snapshot_v4 {
     fragmented_vector<tx_range> aborted;
     fragmented_vector<abort_index> abort_indexes;
     model::offset offset;
-    fragmented_vector<cluster::deprecated_seq_entry> seqs;
+    fragmented_vector<cluster::tx::deprecated_seq_entry> seqs;
     fragmented_vector<tx_data_snapshot> tx_data;
     fragmented_vector<expiration_snapshot> expiration;
 
@@ -91,7 +183,7 @@ struct tx_snapshot {
     // members for transactional state. Once transactional state
     // is ported into producer_state, these data members can
     // be removed.
-    fragmented_vector<cluster::producer_state_snapshot> producers;
+    fragmented_vector<producer_state_snapshot> producers;
 
     // transactional state
     fragmented_vector<model::producer_identity> fenced;
@@ -107,18 +199,18 @@ struct tx_snapshot {
     bool operator==(const tx_snapshot&) const = default;
 };
 
-}; // namespace cluster
+}; // namespace cluster::tx
 
 namespace reflection {
 
-using tx_snapshot_v4 = cluster::tx_snapshot_v4;
+using tx_snapshot_v4 = cluster::tx::tx_snapshot_v4;
 template<>
 struct async_adl<tx_snapshot_v4> {
     ss::future<> to(iobuf&, tx_snapshot_v4);
     ss::future<tx_snapshot_v4> from(iobuf_parser&);
 };
 
-using tx_snapshot = cluster::tx_snapshot;
+using tx_snapshot = cluster::tx::tx_snapshot;
 template<>
 struct async_adl<tx_snapshot> {
     ss::future<> to(iobuf&, tx_snapshot);

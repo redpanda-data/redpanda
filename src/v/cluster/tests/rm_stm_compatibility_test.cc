@@ -21,7 +21,7 @@ namespace cluster {
 static ss::logger logger{"rm_stm_compatibility-test"};
 
 bool compare_batch(
-  fence_batch_data batch_data,
+  tx::fence_batch_data batch_data,
   model::producer_identity pid,
   std::optional<model::tx_seq> tx_seq = std::nullopt,
   std::optional<std::chrono::milliseconds> transaction_timeout_ms

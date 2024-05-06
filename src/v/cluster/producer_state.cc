@@ -13,8 +13,11 @@
 
 #include "base/vassert.h"
 #include "cluster/logger.h"
+#include "cluster/rm_stm_types.h"
 
 namespace cluster {
+
+using namespace tx;
 
 result_promise_t::future_type request::result() const {
     return _result.get_shared_future();
