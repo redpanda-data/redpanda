@@ -178,6 +178,9 @@ public:
     // granularity, otherwise the size is chunk granularity.
     std::pair<size_t, bool> min_cache_cost() const;
 
+    ss::future<ss::file>
+    download_chunk(chunk_start_offset_t chunk_start, uint16_t prefetch);
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
@@ -243,11 +246,28 @@ private:
     /// download chunks of the segment instead of the entire segment file.
     bool is_legacy_mode_engaged() const;
 
+    /// Switches to legacy mode while also aborting all pending chunk downloads.
+    /// The switch to legacy mode is performed when we cannot download the
+    /// segment index. Since segment index is required to download chunks,
+    /// aborting any pending downloads is necessary when switching to legacy
+    /// mode.
+    void switch_to_legacy_mode();
+
     /// Is the remote segment state materialized, IE do we need to hydrate or
     /// not. For segment format v0, v1 and v2, the data file handle should be
     /// opened. For newer formats, v3 or later, the index should be
     /// materialized.
     bool is_state_materialized() const;
+
+    /// Download all pending chunk requests, waiting until all chunks are
+    /// materialized. Any chunks which are downloaded successfully but fail to
+    /// materialize are added back to the waiter list.
+    ss::future<> service_chunk_requests();
+
+    using start_and_prefetch_t = std::pair<chunk_start_offset_t, uint16_t>;
+
+    ss::future<ss::file>
+    hydrate_and_materialize_chunk(start_and_prefetch_t start_and_prefetch);
 
     ss::gate _gate;
     remote& _api;
@@ -306,6 +326,22 @@ private:
     ts_read_path_probe& _ts_probe;
 
     friend class split_segment_into_chunk_range_consumer;
+
+    /// Pending chunk download request. The start offset and prefetch are
+    /// supplied by the caller. The promise is created before adding a request
+    /// to the queue and the associated future is returned to the caller.
+    struct chunk_request {
+        chunk_start_offset_t start;
+        uint16_t prefetch;
+        ss::promise<ss::file> promise;
+    };
+
+    /// Waiters pending chunk downloads. Only the first hydration request for a
+    /// given chunk ends up here. All following requests for that chunk are
+    /// stored by the chunk API in its own wait list. This way only a single
+    /// file handle is created for a given chunk, and the chunk API distributes
+    /// shared ptrs to that handle to consumers.
+    fragmented_vector<chunk_request> _chunk_waiters;
 };
 
 class remote_segment_batch_consumer;
