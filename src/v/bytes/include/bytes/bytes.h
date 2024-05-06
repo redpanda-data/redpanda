@@ -104,6 +104,13 @@ inline iobuf bytes_to_iobuf(const bytes& in) {
     return out;
 }
 
+inline iobuf bytes_to_iobuf(bytes_view in) {
+    iobuf out;
+    // NOLINTNEXTLINE
+    out.append(reinterpret_cast<const char*>(in.data()), in.size());
+    return out;
+}
+
 // NOLINTNEXTLINE(cert-dcl58-cpp): hash<> specialization
 namespace std {
 template<>
