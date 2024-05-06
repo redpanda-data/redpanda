@@ -1,4 +1,5 @@
 #include "cluster/partition.h"
+#include "datalake/protobuf_to_arrow_converter.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "storage/log.h"
@@ -24,7 +25,10 @@ class arrow_writing_consumer {
      * is written.
      */
 public:
-    explicit arrow_writing_consumer(std::filesystem::path local_file_path);
+    explicit arrow_writing_consumer(
+      std::filesystem::path local_file_path,
+      std::string protobuf_schema,
+      std::string protobuf_message);
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
     ss::future<arrow::Status> end_of_stream();
     std::shared_ptr<arrow::Table> get_table();
@@ -52,6 +56,8 @@ private:
 
     // File writing
     std::unique_ptr<parquet::arrow::FileWriter> _file_writer;
+
+    std::unique_ptr<proto_to_arrow_converter> _table_builder;
 };
 
 } // namespace datalake

@@ -32,7 +32,9 @@ ss::future<bool> datalake::parquet_uploader::write_parquet_locally(
 
     std::filesystem::path path = std::filesystem::path("/tmp/parquet_files")
                                  / topic_name / inner_path;
-    arrow_writing_consumer consumer(path);
+    auto schema = co_await _schema_registry->get_raw_topic_schema(
+      std::string(topic_name));
+    arrow_writing_consumer consumer(path, schema.schema, schema.message_name);
     auto status = co_await reader.consume(
       std::move(consumer), model::no_timeout);
     co_return status.ok();
@@ -105,6 +107,9 @@ ss::future<bool> datalake::parquet_uploader::upload_parquet(
   cloud_storage::remote& remote,
   retry_chain_node& rtc,
   retry_chain_logger& logger) {
+    std::string_view topic_name = model::topic_view(
+      _log->config().ntp().tp.topic);
+
     bool write_success = co_await write_parquet_locally(
       path, candidate.starting_offset, candidate.final_offset);
 
@@ -115,10 +120,6 @@ ss::future<bool> datalake::parquet_uploader::upload_parquet(
           model::topic_view(_log->config().ntp().tp.topic));
         co_return false;
     }
-    std::string_view topic_name = model::topic_view(
-      _log->config().ntp().tp.topic);
-    auto schema = co_await _schema_registry->get_raw_topic_schema(
-      std::string(topic_name));
 
     cloud_storage::upload_result ret = co_await put_parquet_file(
       bucket_name,

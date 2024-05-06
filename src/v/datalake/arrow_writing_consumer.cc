@@ -1,21 +1,46 @@
 #include "datalake/arrow_writing_consumer.h"
 
+#include "datalake/protobuf_to_arrow_converter.h"
+
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 
 #include <arrow/array/builder_binary.h>
 #include <arrow/io/file.h>
+#include <arrow/table.h>
 #include <arrow/type_fwd.h>
 #include <parquet/arrow/writer.h>
 
+#include <exception>
+#include <memory>
+
 datalake::arrow_writing_consumer::arrow_writing_consumer(
-  std::filesystem::path local_file_path)
+  std::filesystem::path local_file_path,
+  std::string protobuf_schema,
+  std::string /* protobuf_message */)
   : _local_file_path(std::move(local_file_path)) {
+    try {
+        _table_builder = std::make_unique<proto_to_arrow_converter>(
+          protobuf_schema);
+        std::cerr << "jcipar made table builder for file " << _local_file_path
+                  << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "jcipar Could not build proto_to_arrow_converter for "
+                  << _local_file_path << std::endl;
+        std::cerr << e.what() << std::endl;
+        std::cerr << protobuf_schema << std::endl << std::endl;
+    }
+
     _field_key = arrow::field("Key", arrow::binary());
     _field_value = arrow::field("Value", arrow::binary());
     _field_timestamp = arrow::field(
       "Timestamp", arrow::uint64()); // FIXME: timestamp type?
-    _schema = arrow::schema({_field_key, _field_value, _field_timestamp});
+
+    if (_table_builder) {
+        _schema = _table_builder->build_schema();
+    } else {
+        _schema = arrow::schema({_field_key, _field_value, _field_timestamp});
+    }
 
     // Initialize output file
     std::filesystem::create_directories(_local_file_path.parent_path());
@@ -94,6 +119,10 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
             batch.header().first_timestamp.value() + record.timestamp_delta());
           if (!_ok.ok()) {
               return ss::stop_iteration::yes;
+          }
+
+          if (_table_builder != nullptr) {
+              _table_builder->add_message(value);
           }
 
           _rows++;
@@ -215,10 +244,20 @@ bool datalake::arrow_writing_consumer::write_row_group() {
         return true;
     }
 
-    auto table = get_table();
+    std::shared_ptr<arrow::Table> table;
+    if (_table_builder == nullptr) {
+        std::cerr << "jcipar using schemaless table builder\n";
+        table = get_table();
+    } else {
+        std::cerr << "jcipar using schemaful table builder\n";
+        _table_builder->finish_batch();
+        table = _table_builder->build_table();
+    }
     if (table == nullptr) {
+        std::cerr << "jcipar table is null\n";
         return false;
     }
+    std::cerr << "jcipar table is not null\n";
 
     auto write_result = _file_writer->WriteTable(*table.get());
     if (!write_result.ok()) {

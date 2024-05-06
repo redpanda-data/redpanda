@@ -1,5 +1,7 @@
 find_package(Arrow REQUIRED)
 find_package(Parquet REQUIRED)
+find_package(Protobuf REQUIRED)
+
 
 v_cc_library(
   NAME datalake
@@ -7,6 +9,7 @@ v_cc_library(
     arrow_writing_consumer.cc
     configuration.cc
     parquet_uploader.cc
+    protobuf_to_arrow_converter.cc
   DEPS
     v::storage
     v::model
@@ -15,6 +18,7 @@ v_cc_library(
     Seastar::seastar
     Arrow::arrow_shared
     Parquet::parquet_shared
+    protobuf::libprotobuf
 )
 
 add_subdirectory(tests)

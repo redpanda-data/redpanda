@@ -17,18 +17,18 @@ rp_test(
 )
 
 
-# rp_test(
-#     UNIT_TEST
-#     GTEST
-#     BINARY_NAME gtest_parquet_writer
-#     SOURCES
-#       arrow_writer_gtest.cc
-#     LIBRARIES
-#       Arrow::arrow_shared
-#       Parquet::parquet_shared
-#       # v::cluster
-#       v::datalake
-#       v::gtest_main
-#     LABELS datalake
-#     ARGS "-- -c 1"
-#   )
+rp_test(
+    UNIT_TEST
+    GTEST
+    BINARY_NAME gtest_parquet_writer
+    SOURCES
+      arrow_writer_gtest.cc
+    LIBRARIES
+      Arrow::arrow_shared
+      Parquet::parquet_shared
+      # v::cluster
+      v::datalake
+      v::gtest_main
+    LABELS datalake
+    ARGS "-- -c 1"
+  )
