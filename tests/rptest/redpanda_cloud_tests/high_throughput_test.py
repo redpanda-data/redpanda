@@ -948,7 +948,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 self.redpanda.kubectl.cmd([
                     'get', 'cluster', cluster_name, '-n=redpanda',
                     "-o=jsonpath='{.status.readyReplicas}'"
-                ]).decode())
+                ]))
 
         def deployment_ready_replicas():
             # kubectl get deployment redpanda-controller-manager -n=redpanda-system -o=jsonpath='{.status.readyReplicas}'
@@ -957,7 +957,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                     'get', 'deployment', 'redpanda-controller-manager',
                     '-n=redpanda-system',
                     "-o=jsonpath='{.status.readyReplicas}'"
-                ]).decode())
+                ]))
 
         agent_services = [
             'redpanda-agent.service', 'redpanda-agent-boot.service'
@@ -1105,7 +1105,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             'get', 'deployment', 'redpanda-controller-manager',
             '-n=redpanda-system',
             "-o=jsonpath='{.spec.template.spec.containers[0].args}'"
-        ]).decode()
+        ])
 
         self.logger.debug('patching deployment args with search and replace')
         deployment_args = deployment_args.replace(old, new, 1)
@@ -1135,7 +1135,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             self.redpanda.kubectl.cmd([
                 'get', 'cluster', cluster_name, '-n=redpanda',
                 "-o=jsonpath='{.status.replicas}'"
-            ]).decode())
+            ]))
 
     def _get_cluster_ready_replicas(self, cluster_name):
         # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
@@ -1143,7 +1143,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             self.redpanda.kubectl.cmd([
                 'get', 'cluster', cluster_name, '-n=redpanda',
                 "-o=jsonpath='{.status.readyReplicas}'"
-            ]).decode())
+            ]))
 
     def _wait_cluster_ready_replicas(self, cluster_name, ready_replicas):
         # kubectl wait cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda --for=jsonpath='{.status.readyReplicas}'=4 --timeout=600s
@@ -1151,7 +1151,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             'wait', 'cluster', cluster_name, '-n=redpanda',
             "--for=jsonpath='{.status.readyReplicas}'=" + str(ready_replicas),
             '--timeout=1200s'
-        ]).decode()
+        ])
 
     def _patch_cluster_replicas(self, cluster_name, replicas):
         def cluster_ready_replicas(cluster_name):
@@ -1160,7 +1160,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 self.redpanda.kubectl.cmd([
                     'get', 'cluster', cluster_name, '-n=redpanda',
                     "-o=jsonpath='{.status.readyReplicas}'"
-                ]).decode())
+                ]))
 
         patch = [{
             'op': 'replace',
@@ -1172,7 +1172,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.redpanda.kubectl.cmd([
             'patch', 'cluster', cluster_name, '-n=redpanda', '--type=json',
             f"-p='{patch_str}'"
-        ]).decode()
+        ])
 
         self.logger.debug(
             f'waiting for cluster {cluster_name} to arrive at replicas {replicas}'

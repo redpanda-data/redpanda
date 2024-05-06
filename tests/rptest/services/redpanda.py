@@ -1906,8 +1906,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             text = self._cloud_cluster.get_public_metrics()
         else:
             text = self.kubectl.exec(
-                'curl -f -s -S http://localhost:9644/metrics',
-                pod.name).decode()
+                'curl -f -s -S http://localhost:9644/metrics', pod.name)
         return text_string_to_metric_families(text)
 
     def metrics_sample(
@@ -2129,7 +2128,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # Leaderless partitions (0):        []
         # Under-replicated partitions (0):  []
 
-        lines = ret.decode().splitlines()
+        lines = ret.splitlines()
         self.logger.debug(f'rpk cluster health lines: {lines}')
         unhealthy_reasons = 'no line found'
         for line in lines:

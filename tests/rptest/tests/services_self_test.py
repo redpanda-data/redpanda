@@ -329,7 +329,7 @@ class KubectlSelfTest(Test):
         rp = self.redpanda
 
         if isinstance(rp, RedpandaServiceCloud):
-            version_out = rp.kubectl.cmd(['version', '--client']).decode()
+            version_out = rp.kubectl.cmd(['version', '--client'])
             assert 'Client Version' in version_out, f'Did not find expceted output, output was: {version_out}'
 
             try:
