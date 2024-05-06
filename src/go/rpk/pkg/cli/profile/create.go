@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	controlplanev1beta1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta1"
-	"connectrpc.com/connect"
+	controlplanev1beta2 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta2"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	container "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
@@ -379,9 +379,7 @@ nameLookup:
 
 	vc, err := cl.VirtualCluster(ctx, clusterID)
 	if err != nil { // if we fail for a vcluster, we try again for a normal cluster
-		c, err := cpCl.Cluster.GetCluster(ctx, connect.NewRequest(&controlplanev1beta1.GetClusterRequest{
-			Id: clusterID,
-		}))
+		cluster, err := cpCl.ClusterForID(ctx, clusterID)
 		if err != nil {
 			// If the input cluster looks like an xid, we try
 			// parsing it as a cluster ID. If the xid lookup fails,
@@ -394,20 +392,20 @@ nameLookup:
 			}
 			return CloudClusterOutputs{}, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
 		}
-		ns, err := cl.NamespaceForID(ctx, c.Msg.NamespaceId)
+		if cluster.State != controlplanev1beta2.Cluster_STATE_READY {
+			return CloudClusterOutputs{}, fmt.Errorf("selected cluster %q is not ready for profile creation yet; you may run this command again once the cluster is running", clusterID)
+		}
+		rg, err := cpCl.ResourceGroupForID(ctx, cluster.GetResourceGroupId())
 		if err != nil {
 			return CloudClusterOutputs{}, err
 		}
-		if c.Msg.State != controlplanev1beta1.Cluster_STATE_READY {
-			return CloudClusterOutputs{}, fmt.Errorf("selected cluster %q is not ready for profile creation yet; you may run this command again once the cluster is running", clusterID)
-		}
-		return fromCloudCluster(yAuthVir, ns, c.Msg), nil
+		return fromCloudCluster(yAuthVir, rg, cluster), nil
 	}
-	ns, err := cl.NamespaceForID(ctx, vc.NamespaceUUID)
+	rg, err := cpCl.ResourceGroupForID(ctx, vc.NamespaceUUID)
 	if err != nil {
 		return CloudClusterOutputs{}, err
 	}
-	return fromVirtualCluster(yAuthVir, ns, vc), nil
+	return fromVirtualCluster(yAuthVir, rg, vc), nil
 }
 
 func clusterNameToID(ctx context.Context, cl *cloudapi.Client, name string) (string, error) {
@@ -475,17 +473,17 @@ func findNamedCluster(name string, nss []cloudapi.Namespace, vcs []cloudapi.Virt
 
 // fromCloudCluster returns an rpk profile from a cloud cluster, as well
 // as if the cluster requires mtls or sasl.
-func fromCloudCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, c *controlplanev1beta1.Cluster) CloudClusterOutputs {
+func fromCloudCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1beta2.ResourceGroup, c *controlplanev1beta2.Cluster) CloudClusterOutputs {
 	p := config.RpkProfile{
 		Name:      c.Name,
 		FromCloud: true,
 		CloudCluster: config.RpkCloudCluster{
-			Namespace:   ns.Name,
-			ClusterID:   c.Id,
-			ClusterName: c.Name,
-			AuthOrgID:   yAuth.OrgID,
-			AuthKind:    yAuth.Kind,
-			ClusterType: c.Type.String(),
+			ResourceGroup: rg.Name,
+			ClusterID:     c.Id,
+			ClusterName:   c.Name,
+			AuthOrgID:     yAuth.OrgID,
+			AuthKind:      yAuth.Kind,
+			ClusterType:   c.Type.String(),
 		},
 	}
 	if c.DataplaneApi != nil {
@@ -500,16 +498,16 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, c *cont
 		}
 	}
 	return CloudClusterOutputs{
-		Profile:       p,
-		NamespaceName: ns.Name,
-		ClusterName:   c.Name,
-		ClusterID:     c.Id,
-		MessageMTLS:   isMTLS,
-		MessageSASL:   true,
+		Profile:           p,
+		ResourceGroupName: rg.Name,
+		ClusterName:       c.Name,
+		ClusterID:         c.Id,
+		MessageMTLS:       isMTLS,
+		MessageSASL:       true,
 	}
 }
 
-func fromVirtualCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, vc cloudapi.VirtualCluster) CloudClusterOutputs {
+func fromVirtualCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1beta2.ResourceGroup, vc cloudapi.VirtualCluster) CloudClusterOutputs {
 	p := config.RpkProfile{
 		Name:      vc.Name,
 		FromCloud: true,
@@ -525,22 +523,22 @@ func fromVirtualCluster(yAuth *config.RpkCloudAuth, ns cloudapi.Namespace, vc cl
 			TLS:       new(config.TLS),
 		},
 		CloudCluster: config.RpkCloudCluster{
-			Namespace:   ns.Name,
-			ClusterID:   vc.ID,
-			ClusterName: vc.Name,
-			AuthOrgID:   yAuth.OrgID,
-			AuthKind:    yAuth.Kind,
-			ClusterType: publicapi.ServerlessClusterType, // Virtual clusters do not include a type in the response yet.
+			ResourceGroup: rg.Name,
+			ClusterID:     vc.ID,
+			ClusterName:   vc.Name,
+			AuthOrgID:     yAuth.OrgID,
+			AuthKind:      yAuth.Kind,
+			ClusterType:   publicapi.ServerlessClusterType, // Virtual clusters do not include a type in the response yet.
 		},
 	}
 
 	return CloudClusterOutputs{
-		Profile:       p,
-		NamespaceName: ns.Name,
-		ClusterName:   vc.Name,
-		ClusterID:     vc.ID,
-		MessageMTLS:   false, // we do not need to print any required message; we generate the config in full
-		MessageSASL:   false, // same
+		Profile:           p,
+		ResourceGroupName: rg.Name,
+		ClusterName:       vc.Name,
+		ClusterID:         vc.ID,
+		MessageMTLS:       false, // we do not need to print any required message; we generate the config in full
+		MessageSASL:       false, // same
 	}
 }
 
@@ -591,17 +589,17 @@ Consume messages from the %[1]s topic as a guide for your next steps:
 
 // CloudClusterOutputs contains outputs from a cloud based profile.
 type CloudClusterOutputs struct {
-	Profile       config.RpkProfile
-	NamespaceName string
-	ClusterID     string
-	ClusterName   string
-	MessageMTLS   bool
-	MessageSASL   bool
+	Profile           config.RpkProfile
+	ResourceGroupName string
+	ClusterID         string
+	ClusterName       string
+	MessageMTLS       bool
+	MessageSASL       bool
 }
 
-// Duplicates RpkCloudProfile.FullName (easier for now).
+// FullName Duplicates RpkCloudProfile.FullName (easier for now).
 func (o CloudClusterOutputs) FullName() string {
-	return fmt.Sprintf("%s/%s", o.NamespaceName, o.ClusterName)
+	return fmt.Sprintf("%s/%s", o.ResourceGroupName, o.ClusterName)
 }
 
 // PromptCloudClusterProfile returns a profile for the cluster selected by the
@@ -623,7 +621,7 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 	if len(names) == 0 {
 		return CloudClusterOutputs{}, ErrNoCloudClusters
 	}
-	idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to talk to?")
+	idx, err := out.PickIndex(names, "Which cloud resource-group/cluster would you like to talk to?")
 	if err != nil {
 		return CloudClusterOutputs{}, err
 	}
@@ -634,27 +632,25 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 	// all information we need. We need to now directly request this
 	// cluster's information.
 	if selected.c != nil {
-		c, err := cpCl.Cluster.GetCluster(ctx, connect.NewRequest(&controlplanev1beta1.GetClusterRequest{
-			Id: selected.c.ID,
-		}))
-		if err != nil {
-			return CloudClusterOutputs{}, fmt.Errorf("unable to get cluster %q information: %w", selected.c.ID, err)
-		}
-		ns, err := cl.NamespaceForID(ctx, c.Msg.NamespaceId)
+		cluster, err := cpCl.ClusterForID(ctx, selected.c.ID)
 		if err != nil {
 			return CloudClusterOutputs{}, err
 		}
-		o = fromCloudCluster(yAuth, ns, c.Msg)
+		rg, err := cpCl.ResourceGroupForID(ctx, cluster.GetResourceGroupId())
+		if err != nil {
+			return CloudClusterOutputs{}, err
+		}
+		o = fromCloudCluster(yAuth, rg, cluster)
 	} else {
-		c, err := cl.VirtualCluster(ctx, selected.vc.ID)
+		vc, err := cl.VirtualCluster(ctx, selected.vc.ID)
 		if err != nil {
-			return CloudClusterOutputs{}, fmt.Errorf("unable to get cluster %q information: %w", c.ID, err)
+			return CloudClusterOutputs{}, fmt.Errorf("unable to get cluster %q information: %w", vc.ID, err)
 		}
-		ns, err := cl.NamespaceForID(ctx, c.NamespaceUUID)
+		rg, err := cpCl.ResourceGroupForID(ctx, vc.NamespaceUUID)
 		if err != nil {
 			return CloudClusterOutputs{}, err
 		}
-		o = fromVirtualCluster(yAuth, ns, c)
+		o = fromVirtualCluster(yAuth, rg, vc)
 	}
 	o.Profile.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
 	return o, nil

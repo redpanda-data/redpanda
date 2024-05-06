@@ -6,24 +6,24 @@ go 1.22.2
 replace github.com/hamba/avro/v2 => github.com/redpanda-data/go-avro/v2 v2.0.0-20240405204525-77b1144dc525
 
 require (
-	buf.build/gen/go/redpandadata/cloud/connectrpc/go v1.16.1-20240426085822-1ffd4bf17593.1
-	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.33.0-20240426085822-1ffd4bf17593.1
-	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.33.0-20240321121335-26480f50072a.1
+	buf.build/gen/go/redpandadata/cloud/connectrpc/go v1.16.1-20240429184619-354e1dfbafca.1
+	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.34.0-20240429184619-354e1dfbafca.1
+	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.34.0-20240321121335-26480f50072a.1
 	buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.16.1-20240425184920-eafa37a581c1.1
-	buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.33.0-20240425184920-eafa37a581c1.1
+	buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.34.0-20240425184920-eafa37a581c1.1
 	cloud.google.com/go/compute/metadata v0.3.0
 	connectrpc.com/connect v1.16.1
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/aws/aws-sdk-go v1.51.30
+	github.com/aws/aws-sdk-go v1.52.0
 	github.com/beevik/ntp v1.3.1
 	github.com/bufbuild/protocompile v0.13.0
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/docker/docker v26.1.0+incompatible
+	github.com/docker/docker v26.1.1+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/docker/go-units v0.5.0
 	github.com/fatih/color v1.16.0
-	github.com/hamba/avro/v2 v2.21.0
+	github.com/hamba/avro/v2 v2.21.1
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/lestrrat-go/jwx v1.2.29
@@ -49,7 +49,7 @@ require (
 	github.com/twmb/franz-go v1.16.1
 	github.com/twmb/franz-go/pkg/kadm v1.11.0
 	github.com/twmb/franz-go/pkg/kmsg v1.7.0
-	github.com/twmb/franz-go/pkg/sr v0.0.0-20240412162337-6a58760afaa7
+	github.com/twmb/franz-go/pkg/sr v0.0.0-20240430054423-8b5395896363
 	github.com/twmb/franz-go/plugin/kzap v1.1.2
 	github.com/twmb/tlscfg v1.2.1
 	github.com/twmb/types v1.1.6
@@ -58,7 +58,7 @@ require (
 	golang.org/x/sync v0.7.0
 	golang.org/x/sys v0.19.0
 	golang.org/x/term v0.19.0
-	google.golang.org/protobuf v1.33.1-0.20240408130810-98873a205002
+	google.golang.org/protobuf v1.34.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.30.0
 	k8s.io/apimachinery v0.30.0
@@ -66,8 +66,8 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.33.0-20240401165935-b983156c5e99.1 // indirect
-	buf.build/gen/go/grpc-ecosystem/grpc-gateway/protocolbuffers/go v1.33.0-20240416201300-ca2899286658.1 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.34.0-20240401165935-b983156c5e99.1 // indirect
+	buf.build/gen/go/grpc-ecosystem/grpc-gateway/protocolbuffers/go v1.34.0-20240501201008-b661eb9bddab.1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -133,14 +133,14 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.20.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240415180920-8c6c420018be // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240415180920-8c6c420018be // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240429193739-8cf5692501f6 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240429193739-8cf5692501f6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gotest.tools/v3 v3.0.3 // indirect
 	honnef.co/go/tools v0.4.7 // indirect
 	k8s.io/klog/v2 v2.120.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20240423202451-8948a665c108 // indirect
+	k8s.io/kube-openapi v0.0.0-20240430033511-f0e62f92d13f // indirect
 	k8s.io/utils v0.0.0-20240423183400-0849a56e8f22 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
