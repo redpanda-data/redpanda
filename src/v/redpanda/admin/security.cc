@@ -16,7 +16,6 @@
 #include "kafka/server/server.h"
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/server.h"
-#include "redpanda/admin/util.h"
 #include "security/credential_store.h"
 #include "security/oidc_authenticator.h"
 #include "security/oidc_service.h"
@@ -265,11 +264,11 @@ parse_json_members_list(const json::Document& doc, std::string_view key) {
 }
 
 security::role_name parse_role_name(const ss::http::request& req) {
-    ss::sstring role_v;
-    if (!admin::path_decode(req.param["role"], role_v)) {
+    ss::sstring role_v = req.get_path_param("role");
+    if (role_v == "") {
         vlog(adminlog.debug, "Invalid parameter 'role' got {}", role_v);
         throw ss::httpd::bad_param_exception{fmt::format(
-          "Invalid parameter 'role' got {{{}}}", req.param["role"])};
+          "Invalid parameter 'role' got {{{}}}", req.get_path_param("role"))};
     }
     return security::role_name(role_v);
 }
@@ -504,10 +503,10 @@ admin_server::delete_user_handler(std::unique_ptr<ss::http::request> req) {
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
 
-    ss::sstring user_v;
-    if (!admin::path_decode(req->param["user"], user_v)) {
+    ss::sstring user_v = req->get_path_param("user");
+    if (user_v == "") {
         throw ss::httpd::bad_param_exception{fmt::format(
-          "Invalid parameter 'user' got {{{}}}", req->param["user"])};
+          "Invalid parameter 'user' got {{{}}}", req->get_path_param("user"))};
     }
     auto user = security::credential_user(user_v);
 
@@ -536,10 +535,10 @@ admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
 
-    ss::sstring user_v;
-    if (!admin::path_decode(req->param["user"], user_v)) {
+    ss::sstring user_v = req->get_path_param("user");
+    if (user_v == "") {
         throw ss::httpd::bad_param_exception{fmt::format(
-          "Invalid parameter 'user' got {{{}}}", req->param["user"])};
+          "Invalid parameter 'user' got {{{}}}", req->get_path_param("user"))};
     }
     auto user = security::credential_user(user_v);
 
@@ -684,12 +683,12 @@ admin_server::update_role_members_handler(
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
 
-    ss::sstring role_v;
-    if (!admin::path_decode(req->param["role"], role_v)) {
+    ss::sstring role_v = req->get_path_param("role");
+    if (role_v == "") {
         vlog(
           adminlog.debug,
           "Invalid parameter 'role' got {{{}}}",
-          req->param["role"]);
+          req->get_path_param("role"));
         throw_role_exception(role_errc::invalid_name);
     }
 

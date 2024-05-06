@@ -42,10 +42,6 @@ struct producer_state_snapshot;
 class request;
 
 using producer_ptr = ss::lw_shared_ptr<producer_state>;
-// Note: A shared_promise doesn't guarantee available() to be true
-// right after set_value(), this is an implementation quirk, be
-// mindful of that behavior when using it. We have a test for
-// it in expiring_promise_test
 using result_promise_t = ss::shared_promise<result<kafka_result>>;
 using request_ptr = ss::lw_shared_ptr<request>;
 using seq_t = int32_t;

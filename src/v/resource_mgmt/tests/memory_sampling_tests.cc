@@ -43,7 +43,7 @@ SEASTAR_THREAD_TEST_CASE(test_no_allocs_in_oom_callback) {
     while (sampled_sites == 0) {
         dummy_bufs.emplace_back(1000);
         sampled_sites = seastar::memory::sampled_memory_profile(
-          allocation_sites);
+          allocation_sites.data(), allocation_sites.size());
     }
 
     auto oom_callback = memory_sampling::get_oom_diagnostics_callback();

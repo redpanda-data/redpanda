@@ -54,9 +54,9 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
             fd = co_await ss::tls::wrap_client(
               _creds,
               std::move(fd),
-              _tls_sni_hostname ? *_tls_sni_hostname : ss::sstring{},
               ss::tls::tls_options{
-                .wait_for_eof_on_shutdown = _wait_for_tls_server_eof});
+                .wait_for_eof_on_shutdown = _wait_for_tls_server_eof,
+                .server_name = _tls_sni_hostname.value_or("")});
         }
         _fd = std::make_unique<ss::connected_socket>(std::move(fd));
         if (auto* p = _probe.value_or(nullptr); p != nullptr) {

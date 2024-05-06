@@ -840,7 +840,8 @@ ss::future<ss::json::json_return_type>
 admin_server::get_topic_partitions_handler(
   std::unique_ptr<ss::http::request> req) {
     model::topic_namespace tp_ns(
-      model::ns(req->param["namespace"]), model::topic(req->param["topic"]));
+      model::ns(req->get_path_param("namespace")),
+      model::topic(req->get_path_param("topic")));
     const bool is_controller_topic = tp_ns.ns == model::controller_ntp.ns
                                      && tp_ns.tp
                                           == model::controller_ntp.tp.topic;

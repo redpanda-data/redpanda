@@ -628,7 +628,7 @@ struct fmt::formatter<model::isolation_level> final
             str = "read_committed";
             break;
         }
-        return formatter<string_view>::format(str, ctx);
+        return fmt::format_to(ctx.out(), "{}", str);
     }
 };
 
