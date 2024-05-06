@@ -14,7 +14,7 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_balancer_types.h"
-#include "cluster/tx_snapshot_utils.h"
+#include "cluster/rm_stm_types.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "storage/tests/randoms.h"
