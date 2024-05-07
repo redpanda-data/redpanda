@@ -18,6 +18,7 @@ v_cc_library(
     credential.cc
     gssapi_authenticator.cc
     gssapi_principal_mapper.cc
+    jwt.cc
     krb5.cc
     krb5_configurator.cc
     license.cc
@@ -41,7 +42,6 @@ v_cc_library(
     v::rpc
     absl::flat_hash_map
     absl::flat_hash_set
-    cryptopp
     re2
     gssapi_krb5
     krb5
