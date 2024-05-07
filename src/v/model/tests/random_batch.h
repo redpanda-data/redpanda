@@ -34,6 +34,7 @@ struct record_batch_spec {
     bool is_transactional{false};
     std::optional<std::vector<size_t>> record_sizes;
     std::optional<model::timestamp> timestamp;
+    bool all_records_have_same_timestamp{false};
 };
 
 model::record make_random_record(int, iobuf);

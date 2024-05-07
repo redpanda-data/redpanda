@@ -345,7 +345,7 @@ private:
     bool may_read_from_cloud() const;
 
     ss::future<std::optional<storage::timequery_result>>
-      local_timequery(storage::timequery_config);
+    local_timequery(storage::timequery_config, bool allow_cloud_fallback);
 
     consensus_ptr _raft;
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;

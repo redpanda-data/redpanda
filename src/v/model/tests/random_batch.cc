@@ -119,7 +119,10 @@ make_random_batch(model::offset o, int num_records, bool allow_compression) {
 
 model::record_batch make_random_batch(record_batch_spec spec) {
     auto ts = spec.timestamp.value_or(model::timestamp::now());
-    auto max_ts = model::timestamp(ts() + spec.count - 1);
+    auto max_ts = ts;
+    if (!spec.all_records_have_same_timestamp) {
+        max_ts = model::timestamp(ts() + spec.count - 1);
+    }
     auto header = model::record_batch_header{
       .size_bytes = 0, // computed later
       .base_offset = spec.offset,
@@ -235,7 +238,9 @@ make_random_batches(record_batch_spec spec) {
         auto num_records = spec.records ? *spec.records : get_int(2, 30);
         auto batch_spec = spec;
         batch_spec.timestamp = ts;
-        ts = model::timestamp(ts() + num_records);
+        if (!batch_spec.all_records_have_same_timestamp) {
+            ts = model::timestamp(ts() + num_records);
+        }
         batch_spec.offset = o;
         batch_spec.count = num_records;
         if (spec.enable_idempotence) {

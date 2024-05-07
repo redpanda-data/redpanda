@@ -2341,7 +2341,8 @@ disk_log_impl::make_reader(timequery_config config) {
     vassert(!_closed, "make_reader on closed log - {}", *this);
     return _lock_mngr.range_lock(config).then(
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
-          auto start_offset = _start_offset;
+          auto start_offset = cfg.min_offset;
+
           if (!lease->range.empty()) {
               const ss::lw_shared_ptr<segment>& segment = *lease->range.begin();
               std::optional<segment_index::entry> index_entry = std::nullopt;
@@ -2456,7 +2457,8 @@ disk_log_impl::timequery(timequery_config cfg) {
               if (
                 !batches.empty()
                 && batches.front().header().max_timestamp >= cfg.time) {
-                  return ret_t(batch_timequery(batches.front(), cfg.time));
+                  return ret_t(batch_timequery(
+                    batches.front(), cfg.min_offset, cfg.time, cfg.max_offset));
               }
               return ret_t();
           });
