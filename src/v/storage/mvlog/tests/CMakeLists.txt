@@ -7,6 +7,7 @@ rp_test(
     batch_collecting_stream_utils_test.cc
     batch_collector_test.cc
     entry_stream_utils_test.cc
+    file_test.cc
     segment_appender_test.cc
     segment_io_test.cc
     segment_reader_test.cc
