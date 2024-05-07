@@ -188,6 +188,7 @@ You can retry profile creation by running:
 	command.Flags().StringVar(&consoleImage, "console-image", common.DefaultConsoleImage(), "An arbitrary container Redpanda Console image to use")
 	command.Flags().BoolVar(&pull, "pull", false, "Force pull the container image used")
 	command.Flags().BoolVar(&noProfile, "no-profile", false, "If true, rpk will not create an rpk profile after creating a cluster")
+	command.Flags().String("set", "", "Redpanda configuration property to set upon start. Follows 'rpk redpanda config set' format")
 	command.Flags().StringSliceVar(&kPorts, flagKafkaPorts, nil, "Kafka protocol ports to listen on; check help text for more information")
 	command.Flags().StringSliceVar(&aPorts, flagAdminPorts, nil, "Redpanda Admin API ports to listen on; check help text for more information")
 	command.Flags().StringSliceVar(&srPorts, flagSRPorts, nil, "Schema registry ports to listen on; check help text for more information")
