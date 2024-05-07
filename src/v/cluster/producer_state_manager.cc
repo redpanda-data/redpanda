@@ -21,7 +21,7 @@
 #include <seastar/core/metrics.hh>
 #include <seastar/util/defer.hh>
 
-namespace cluster {
+namespace cluster::tx {
 
 producer_state_manager::producer_state_manager(
   config::binding<uint64_t> max_producer_ids,
@@ -115,4 +115,4 @@ void producer_state_manager::post_eviction_hook::operator()(
     _state_manger._eviction_counter++;
     return state._post_eviction_hook();
 }
-}; // namespace cluster
+}; // namespace cluster::tx

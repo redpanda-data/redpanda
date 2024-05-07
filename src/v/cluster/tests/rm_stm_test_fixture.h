@@ -27,8 +27,9 @@ struct rm_stm_test_fixture : simple_raft_fixture {
             config::mock_binding(std::numeric_limits<uint64_t>::max()))
           .get();
         producer_state_manager
-          .invoke_on_all(
-            [](cluster::producer_state_manager& mgr) { return mgr.start(); })
+          .invoke_on_all([](cluster::tx::producer_state_manager& mgr) {
+              return mgr.start();
+          })
           .get();
         create_raft(overrides);
         raft::state_machine_manager_builder stm_m_builder;
@@ -72,6 +73,6 @@ struct rm_stm_test_fixture : simple_raft_fixture {
     auto get_expired_producers() const { return _stm->get_expired_producers(); }
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::producer_state_manager> producer_state_manager;
+    ss::sharded<cluster::tx::producer_state_manager> producer_state_manager;
     ss::shared_ptr<cluster::rm_stm> _stm;
 };

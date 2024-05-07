@@ -195,8 +195,8 @@ inline cluster::tx::deprecated_seq_entry random_seq_entry() {
 
 namespace tests {
 
-inline cluster::producer_ptr random_producer_state() {
-    return ss::make_lw_shared<cluster::producer_state>(
+inline cluster::tx::producer_ptr random_producer_state() {
+    return ss::make_lw_shared<cluster::tx::producer_state>(
       model::producer_identity{
         random_generators::get_int<int64_t>(),
         random_generators::get_int<int16_t>()},

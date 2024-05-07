@@ -127,7 +127,7 @@ public:
     ss::sharded<cluster::node_status_backend> node_status_backend;
     ss::sharded<cluster::node_status_table> node_status_table;
     ss::sharded<cluster::partition_manager> partition_manager;
-    ss::sharded<cluster::producer_state_manager> producer_manager;
+    ss::sharded<cluster::tx::producer_state_manager> producer_manager;
     ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
     ss::sharded<cluster::self_test_backend> self_test_backend;
     ss::sharded<cluster::self_test_frontend> self_test_frontend;

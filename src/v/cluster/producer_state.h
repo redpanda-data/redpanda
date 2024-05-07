@@ -30,18 +30,12 @@ using namespace std::chrono_literals;
 // Befriended to expose internal state in tests.
 struct test_fixture;
 
-namespace cluster {
+namespace cluster::tx {
 
 template<class Func>
 concept AcceptsUnits = requires(Func f, ssx::semaphore_units units) {
     f(std::move(units));
 };
-
-class producer_state;
-namespace tx {
-struct producer_state_snapshot;
-}
-class request;
 
 using producer_ptr = ss::lw_shared_ptr<producer_state>;
 using result_promise_t = ss::shared_promise<result<kafka_result>>;
@@ -153,7 +147,7 @@ public:
       , _post_eviction_hook(std::move(post_eviction_hook)) {}
     producer_state(
       ss::noncopyable_function<void()> post_eviction_hook,
-      tx::producer_state_snapshot) noexcept;
+      producer_state_snapshot) noexcept;
 
     producer_state(const producer_state&) = delete;
     producer_state& operator=(producer_state&) = delete;
@@ -193,7 +187,7 @@ public:
 
     std::optional<seq_t> last_sequence_number() const;
 
-    tx::producer_state_snapshot snapshot(kafka::offset log_start_offset) const;
+    producer_state_snapshot snapshot(kafka::offset log_start_offset) const;
 
     ss::lowres_system_clock::time_point get_last_update_timestamp() const {
         return _last_updated_ts;
@@ -236,4 +230,4 @@ private:
     friend struct ::test_fixture;
 };
 
-} // namespace cluster
+} // namespace cluster::tx

@@ -1474,7 +1474,7 @@ void application::wire_up_redpanda_services(
       }))
       .get();
 
-    producer_manager.invoke_on_all(&cluster::producer_state_manager::start)
+    producer_manager.invoke_on_all(&cluster::tx::producer_state_manager::start)
       .get();
 
     syschecks::systemd_message("Adding partition manager").get();

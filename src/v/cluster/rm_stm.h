@@ -64,15 +64,15 @@ class rm_stm final : public raft::persisted_stm<> {
 public:
     static constexpr std::string_view name = "rm_stm";
 
-    using producers_t = mt::
-      map_t<absl::btree_map, model::producer_identity, cluster::producer_ptr>;
+    using producers_t
+      = mt::map_t<absl::btree_map, model::producer_identity, tx::producer_ptr>;
 
     explicit rm_stm(
       ss::logger&,
       raft::consensus*,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<features::feature_table>&,
-      ss::sharded<producer_state_manager>&,
+      ss::sharded<tx::producer_state_manager>&,
       std::optional<model::vcluster_id>);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
@@ -167,7 +167,7 @@ private:
     ss::future<> do_remove_persistent_state();
     ss::future<fragmented_vector<tx::tx_range>>
       do_aborted_transactions(model::offset, model::offset);
-    producer_ptr maybe_create_producer(model::producer_identity);
+    tx::producer_ptr maybe_create_producer(model::producer_identity);
     void cleanup_producer_state(model::producer_identity);
     ss::future<> reset_producers();
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
@@ -188,7 +188,7 @@ private:
     ss::future<std::optional<tx::abort_snapshot>>
       load_abort_snapshot(tx::abort_index);
     ss::future<> save_abort_snapshot(tx::abort_snapshot);
-    void update_tx_offsets(producer_ptr, const model::record_batch_header&);
+    void update_tx_offsets(tx::producer_ptr, const model::record_batch_header&);
 
     ss::future<result<kafka_result>> do_replicate(
       model::batch_identity,
@@ -200,14 +200,14 @@ private:
       model::batch_identity, model::record_batch_reader);
 
     ss::future<result<kafka_result>> do_sync_and_transactional_replicate(
-      producer_ptr,
+      tx::producer_ptr,
       model::batch_identity,
       model::record_batch_reader,
       ssx::semaphore_units);
 
     ss::future<result<kafka_result>> do_transactional_replicate(
       model::term_id,
-      producer_ptr,
+      tx::producer_ptr,
       model::batch_identity,
       model::record_batch_reader);
 
@@ -219,7 +219,7 @@ private:
 
     ss::future<result<kafka_result>> do_idempotent_replicate(
       model::term_id,
-      producer_ptr,
+      tx::producer_ptr,
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options,
@@ -227,7 +227,7 @@ private:
       ssx::semaphore_units&);
 
     ss::future<result<kafka_result>> do_sync_and_idempotent_replicate(
-      producer_ptr,
+      tx::producer_ptr,
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options,
@@ -421,7 +421,7 @@ private:
     config::binding<std::chrono::seconds> _log_stats_interval_s;
     ss::timer<tx::clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
-    ss::sharded<producer_state_manager>& _producer_state_manager;
+    ss::sharded<tx::producer_state_manager>& _producer_state_manager;
     std::optional<model::vcluster_id> _vcluster_id;
 
     producers_t _producers;
@@ -442,7 +442,7 @@ public:
       bool enable_transactions,
       bool enable_idempotence,
       ss::sharded<tx_gateway_frontend>&,
-      ss::sharded<cluster::producer_state_manager>&,
+      ss::sharded<cluster::tx::producer_state_manager>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::topic_table>&);
     bool is_applicable_for(const storage::ntp_config&) const final;
@@ -452,7 +452,7 @@ private:
     bool _enable_transactions;
     bool _enable_idempotence;
     ss::sharded<tx_gateway_frontend>& _tx_gateway_frontend;
-    ss::sharded<cluster::producer_state_manager>& _producer_state_manager;
+    ss::sharded<cluster::tx::producer_state_manager>& _producer_state_manager;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<topic_table>& _topics;
 };

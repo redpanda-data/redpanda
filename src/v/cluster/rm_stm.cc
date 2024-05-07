@@ -90,7 +90,7 @@ rm_stm::rm_stm(
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<producer_state_manager>& producer_state_manager,
+  ss::sharded<tx::producer_state_manager>& producer_state_manager,
   std::optional<model::vcluster_id> vcluster_id)
   : raft::persisted_stm<>(rm_stm_snapshot, logger, c)
   , _tx_locks(
