@@ -1364,6 +1364,12 @@ ss::future<remote::list_result> remote::list_objects(
     // Gathers the items from a series of successful ListObjectsV2 calls
     cloud_storage_clients::client::list_bucket_result list_bucket_result;
 
+    const auto caller_handle_truncation = max_keys.has_value();
+
+    if (caller_handle_truncation) {
+        vassert(max_keys.value() > 0, "Max keys must be greater than 0.");
+    }
+
     // Keep iterating while the ListObjectsV2 calls has more items to return
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto res = co_await lease.client->list_objects(
@@ -1403,6 +1409,14 @@ ss::future<remote::list_result> remote::list_objects(
 
             // Continue to list the remaining items
             if (items_remaining) {
+                // But, return early if max_keys was specified (caller will
+                // handle truncation)
+                if (caller_handle_truncation) {
+                    list_bucket_result.is_truncated = true;
+                    list_bucket_result.next_continuation_token
+                      = continuation_token.value();
+                    co_return list_bucket_result;
+                }
                 continue;
             }
 

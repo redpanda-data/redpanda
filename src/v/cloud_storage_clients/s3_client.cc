@@ -206,6 +206,9 @@ request_creator::make_list_objects_v2_request(
     if (delimiter.has_value()) {
         key = fmt::format("{}&delimiter={}", key, *delimiter);
     }
+    if (max_keys.has_value()) {
+        key = fmt::format("{}&max-keys={}", key, *max_keys);
+    }
     auto target = make_target(name, object_key{key});
     header.method(boost::beast::http::verb::get);
     header.target(target);
@@ -219,9 +222,6 @@ request_creator::make_list_objects_v2_request(
     }
     if (start_after) {
         header.insert(aws_header_names::start_after, (*start_after)().string());
-    }
-    if (max_keys) {
-        header.insert(aws_header_names::max_keys, std::to_string(*max_keys));
     }
     if (continuation_token) {
         header.insert(
@@ -829,7 +829,7 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
       name,
       std::move(prefix),
       std::move(start_after),
-      max_keys,
+      std::move(max_keys),
       std::move(continuation_token),
       delimiter);
     if (!header) {
