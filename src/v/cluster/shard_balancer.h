@@ -32,6 +32,7 @@ public:
 
     shard_balancer(
       ss::sharded<shard_placement_table>&,
+      ss::sharded<features::feature_table>&,
       ss::sharded<topic_table>&,
       ss::sharded<controller_backend>&);
 
@@ -47,6 +48,7 @@ private:
 
 private:
     shard_placement_table& _shard_placement;
+    features::feature_table& _features;
     ss::sharded<topic_table>& _topics;
     ss::sharded<controller_backend>& _controller_backend;
     model::node_id _self;

@@ -20,9 +20,11 @@ namespace cluster {
 
 shard_balancer::shard_balancer(
   ss::sharded<shard_placement_table>& spt,
+  ss::sharded<features::feature_table>& features,
   ss::sharded<topic_table>& topics,
   ss::sharded<controller_backend>& cb)
   : _shard_placement(spt.local())
+  , _features(features.local())
   , _topics(topics)
   , _controller_backend(cb)
   , _self(*config::node().node_id()) {}
@@ -94,6 +96,11 @@ ss::future<> shard_balancer::start() {
         co_await do_assign_ntps();
     } else {
         co_await _shard_placement.initialize_from_topic_table(_topics, _self);
+
+        if (_features.is_active(
+              features::feature::shard_placement_persistence)) {
+            co_await _shard_placement.enable_persistence();
+        }
     }
 
     vassert(
@@ -144,6 +151,12 @@ ss::future<> shard_balancer::assign_fiber() {
         co_await _wakeup_event.wait(1s);
         if (_gate.is_closed()) {
             co_return;
+        }
+
+        if (
+          _features.is_active(features::feature::shard_placement_persistence)
+          && !_shard_placement.is_persistence_enabled()) {
+            co_await _shard_placement.enable_persistence();
         }
 
         co_await do_assign_ntps();
