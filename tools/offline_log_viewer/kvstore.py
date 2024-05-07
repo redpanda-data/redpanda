@@ -91,6 +91,8 @@ class KvStoreRecordDecoder:
             return "usage"
         elif ks == 6:
             return "stms"
+        elif ks == 7:
+            return "shard_placement"
         return "unknown"
 
     def decode(self):
@@ -259,6 +261,23 @@ def decode_storage_key(k):
     return ret
 
 
+def decode_shard_placement_key(k):
+    rdr = Reader(BytesIO(k))
+    ret = {}
+    ret['type'] = rdr.read_int32()
+    if ret['type'] == 0:
+        ret['name'] = "persistence_enabled"
+    elif ret['type'] == 1:
+        ret['name'] = "assignment"
+        ret['group'] = rdr.read_int64()
+    elif ret['type'] == 2:
+        ret['name'] = "current_state"
+        ret['group'] = rdr.read_int64()
+    else:
+        ret['name'] = "unknown"
+    return ret
+
+
 def decode_key(ks, key):
     data = key
     if ks == "consensus":
@@ -269,6 +288,8 @@ def decode_key(ks, key):
         data = decode_offset_translator_key(key)
     elif ks == "stms":
         data = decode_stm_snapshot_key(key)
+    elif ks == "shard_placement":
+        data = decode_shard_placement_key(key)
     else:
         data = key.hex()
     return {'keyspace': ks, 'data': data}
