@@ -36,6 +36,7 @@
 #include <ostream>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace net {
 void server_probe::setup_metrics(
@@ -292,7 +293,7 @@ void tls_certificate_probe::loaded(
         return;
     }
 
-    auto to_tls_serial = [](const auto& b) {
+    auto to_tls_serial = [](const std::vector<std::byte>& b) {
         using T = tls_serial_number::type;
         T result = 0;
         const auto end = std::min(b.size(), sizeof(T));
