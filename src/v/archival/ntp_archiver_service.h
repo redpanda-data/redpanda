@@ -178,15 +178,25 @@ public:
         auto operator<=>(const batch_result&) const = default;
     };
 
+    /// Compute the maximum offset that is safe to be uploaded to the cloud.
+    ///
+    /// It must be guaranteed that this offset is monotonically increasing/
+    /// can never go backwards. Otherwise, the local and cloud logs will
+    /// diverge leading to undefined behavior.
+    model::offset max_uploadable_offset_exclusive() const;
+
     /// \brief Upload next set of segments to S3 (if any)
     /// The semaphore is used to track number of parallel uploads. The method
     /// will pick not more than '_concurrency' candidates and start
     /// uploading them.
     ///
-    /// \param lso_override last stable offset override
+    /// \param max_offset_override_exclusive Overrides the maximum offset
+    ///        that can be uploaded. If nullopt, the maximum offset is
+    ///        calculated automatically.
     /// \return future that returns number of uploaded/failed segments
     virtual ss::future<batch_result> upload_next_candidates(
-      std::optional<model::offset> last_stable_offset_override = std::nullopt);
+      std::optional<model::offset> max_offset_override_exclusive
+      = std::nullopt);
 
     ss::future<cloud_storage::download_result> sync_manifest();
 
@@ -427,7 +437,7 @@ private:
 
     /// Start all uploads
     ss::future<std::vector<scheduled_upload>>
-    schedule_uploads(model::offset last_stable_offset);
+    schedule_uploads(model::offset max_offset_exclusive);
 
     ss::future<std::vector<scheduled_upload>>
     schedule_uploads(std::vector<upload_context> loop_contexts);
