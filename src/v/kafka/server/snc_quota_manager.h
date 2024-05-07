@@ -150,18 +150,18 @@ public:
     /// This should be done before calling \ref get_shard_delays because the
     /// recorded request size is used to calculate throttling parameters.
     void record_request_receive(
-      snc_quota_context&,
+      const snc_quota_context&,
       size_t request_size,
       clock::time_point now = clock::now()) noexcept;
 
     /// Record the request size when the request data is about to be consumed.
     /// This data is used to represent throttled throughput.
-    void
-    record_request_intake(snc_quota_context&, size_t request_size) noexcept;
+    void record_request_intake(
+      const snc_quota_context&, size_t request_size) noexcept;
 
     /// Record the response size for all purposes
     void record_response(
-      snc_quota_context&,
+      const snc_quota_context&,
       size_t request_size,
       clock::time_point now = clock::now()) noexcept;
 
