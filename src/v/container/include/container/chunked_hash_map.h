@@ -70,3 +70,22 @@ using chunked_hash_map = ankerl::unordered_dense::segmented_map<
   chunked_vector<std::pair<Key, Value>>,
   ankerl::unordered_dense::bucket_type::standard,
   chunked_vector<ankerl::unordered_dense::bucket_type::standard>>;
+
+/**
+ * @brief A set counterpart of chunked_hash_map (uses a chunked vector as the
+ * underlying storage).
+ */
+template<
+  typename Key,
+  typename Hash = std::conditional_t<
+    detail::has_absl_hash<Key>,
+    detail::avalanching_absl_hash<Key>,
+    ankerl::unordered_dense::hash<Key>>,
+  typename EqualTo = std::equal_to<Key>>
+using chunked_hash_set = ankerl::unordered_dense::segmented_set<
+  Key,
+  Hash,
+  EqualTo,
+  chunked_vector<Key>,
+  ankerl::unordered_dense::bucket_type::standard,
+  chunked_vector<ankerl::unordered_dense::bucket_type::standard>>;

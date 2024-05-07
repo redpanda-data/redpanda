@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "cluster/types.h"
+#include "container/chunked_hash_map.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>
@@ -146,7 +147,6 @@ public:
     ss::future<> set_target(
       const model::ntp&,
       std::optional<shard_placement_target>,
-      model::shard_revision_id,
       shard_callback_t);
 
     // getters
@@ -191,8 +191,8 @@ private:
       bool is_initial,
       shard_callback_t);
 
-    ss::future<> remove_assigned_on_this_shard(
-      const model::ntp&, model::shard_revision_id, shard_callback_t);
+    ss::future<>
+    remove_assigned_on_this_shard(const model::ntp&, shard_callback_t);
 
     ss::future<> do_delete(const model::ntp&, placement_state&);
 
@@ -204,9 +204,17 @@ private:
     // node_hash_map for pointer stability
     absl::node_hash_map<model::ntp, placement_state> _states;
 
-    // only on shard 0, _ntp2target will hold targets for all ntps on this node.
-    mutex _mtx{"shard_placement_table"};
-    absl::node_hash_map<model::ntp, shard_placement_target> _ntp2target;
+    // only on shard 0, _ntp2entry will hold targets for all ntps on this node.
+    struct entry_t {
+        std::optional<shard_placement_target> target;
+        mutex mtx;
+
+        entry_t()
+          : mtx("shard_placement_table") {}
+    };
+
+    chunked_hash_map<model::ntp, std::unique_ptr<entry_t>> _ntp2entry;
+    model::shard_revision_id _cur_shard_revision{0};
 };
 
 std::ostream& operator<<(std::ostream&, shard_placement_table::hosted_status);

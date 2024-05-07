@@ -13,7 +13,8 @@
 
 #include "cluster/controller_backend.h"
 #include "cluster/shard_placement_table.h"
-#include "ssx/work_queue.h"
+#include "container/chunked_hash_map.h"
+#include "ssx/event.h"
 
 namespace cluster {
 
@@ -38,7 +39,11 @@ public:
     ss::future<> stop();
 
 private:
-    ss::future<> process_delta(const topic_table::delta&);
+    void process_delta(const topic_table::delta&);
+
+    ss::future<> assign_fiber();
+    ss::future<> do_assign_ntps();
+    ss::future<> assign_ntp(const model::ntp&);
 
 private:
     ss::sharded<topic_table>& _topics;
@@ -47,7 +52,10 @@ private:
     model::node_id _self;
 
     cluster::notification_id_type _topic_table_notify_handle;
-    ssx::work_queue _work_queue;
+
+    chunked_hash_set<model::ntp> _to_assign;
+    ssx::event _wakeup_event{"shard_balancer"};
+    ss::gate _gate;
 };
 
 } // namespace cluster
