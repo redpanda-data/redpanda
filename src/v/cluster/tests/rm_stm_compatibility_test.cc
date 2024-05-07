@@ -62,6 +62,30 @@ bool compare_batch(
     return true;
 }
 
+model::record_batch make_fence_batch_v1(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms) {
+    iobuf key;
+    auto pid_id = pid.id;
+    reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
+
+    iobuf value;
+    reflection::serialize(
+      value,
+      tx::fence_control_record_v1_version,
+      tx_seq,
+      transaction_timeout_ms);
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::tx_fence, model::offset(0));
+    builder.set_producer_identity(pid.id, pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kv(std::move(key), std::move(value));
+
+    return std::move(builder).build();
+}
+
 SEASTAR_THREAD_TEST_CASE(fence_batch_compatibility) {
     vlog(logger.info, "Test fence_batch_v1");
     model::producer_identity pid1{3, 4};
@@ -69,7 +93,7 @@ SEASTAR_THREAD_TEST_CASE(fence_batch_compatibility) {
     std::chrono::milliseconds transaction_timeout_ms_1{200};
     auto batch_v1 = make_fence_batch_v1(
       pid1, tx_seq_1, transaction_timeout_ms_1);
-    auto batch_data_v1 = read_fence_batch(std::move(batch_v1));
+    auto batch_data_v1 = tx::read_fence_batch(std::move(batch_v1));
     BOOST_REQUIRE(
       compare_batch(batch_data_v1, pid1, tx_seq_1, transaction_timeout_ms_1));
 
@@ -78,9 +102,9 @@ SEASTAR_THREAD_TEST_CASE(fence_batch_compatibility) {
     model::tx_seq tx_seq_2{300};
     std::chrono::milliseconds transaction_timeout_ms_2{400};
     model::partition_id tm_2{5};
-    auto batch_v2 = make_fence_batch_v2(
+    auto batch_v2 = tx::make_fence_batch(
       pid2, tx_seq_2, transaction_timeout_ms_2, tm_2);
-    auto batch_data_v2 = read_fence_batch(std::move(batch_v2));
+    auto batch_data_v2 = tx::read_fence_batch(std::move(batch_v2));
     BOOST_REQUIRE(compare_batch(
       batch_data_v2, pid2, tx_seq_2, transaction_timeout_ms_2, tm_2));
 }

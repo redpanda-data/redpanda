@@ -170,11 +170,6 @@ private:
     producer_ptr maybe_create_producer(model::producer_identity);
     void cleanup_producer_state(model::producer_identity);
     ss::future<> reset_producers();
-    model::record_batch make_fence_batch(
-      model::producer_identity,
-      model::tx_seq,
-      std::chrono::milliseconds,
-      model::partition_id);
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
       model::producer_identity,
       model::tx_seq,
@@ -461,18 +456,5 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<topic_table>& _topics;
 };
-
-model::record_batch make_fence_batch_v1(
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms);
-
-model::record_batch make_fence_batch_v2(
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms,
-  model::partition_id tm);
-
-tx::fence_batch_data read_fence_batch(model::record_batch&& b);
 
 } // namespace cluster
