@@ -394,6 +394,9 @@ public:
     /// requests. It is also important to note that the value for max_keys will
     /// be capped by the cloud provider default (which may vary between
     /// providers, e.g AWS has a limit of 1000 keys per ListObjects request).
+    /// \param continuation_token The token hopefully passed back to the user
+    /// from a prior list_objects() request, in the case that they are handling
+    /// a truncated result manually.
     /// \param item_filter Optional filter to apply to items before collecting
     ss::future<list_result> list_objects(
       const cloud_storage_clients::bucket_name& name,
@@ -401,7 +404,9 @@ public:
       std::optional<cloud_storage_clients::object_key> prefix = std::nullopt,
       std::optional<char> delimiter = std::nullopt,
       std::optional<cloud_storage_clients::client::item_filter> item_filter
-      = std::nullopt);
+      = std::nullopt,
+      std::optional<size_t> max_keys = std::nullopt,
+      std::optional<ss::sstring> continuation_token = std::nullopt);
 
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment
