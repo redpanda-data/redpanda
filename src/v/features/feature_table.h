@@ -75,6 +75,7 @@ enum class feature : std::uint64_t {
     partition_shard_in_health_report = 1ULL << 43U,
     role_based_access_control = 1ULL << 44U,
     cluster_topic_manifest_format_v2 = 1ULL << 45U,
+    shard_placement_persistence = 1ULL << 46U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -378,6 +379,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{12},
     "cluster_topic_manifest_format_v2",
     feature::cluster_topic_manifest_format_v2,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{13},
+    "shard_placement_persistence",
+    feature::shard_placement_persistence,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };
