@@ -31,8 +31,8 @@ public:
     static constexpr ss::shard_id shard_id = 0;
 
     shard_balancer(
-      ss::sharded<topic_table>&,
       ss::sharded<shard_placement_table>&,
+      ss::sharded<topic_table>&,
       ss::sharded<controller_backend>&);
 
     ss::future<> start();
@@ -46,8 +46,8 @@ private:
     ss::future<> assign_ntp(const model::ntp&);
 
 private:
+    shard_placement_table& _shard_placement;
     ss::sharded<topic_table>& _topics;
-    ss::sharded<shard_placement_table>& _shard_placement;
     ss::sharded<controller_backend>& _controller_backend;
     model::node_id _self;
 

@@ -441,8 +441,8 @@ ss::future<> controller::start(
       })
       .then([this] {
           return _shard_balancer.start_single(
-            std::ref(_tp_state),
             std::ref(_shard_placement),
+            std::ref(_tp_state),
             std::ref(_backend));
       })
       .then(

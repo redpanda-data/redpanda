@@ -18,11 +18,11 @@
 namespace cluster {
 
 shard_balancer::shard_balancer(
-  ss::sharded<topic_table>& topics,
   ss::sharded<shard_placement_table>& spt,
+  ss::sharded<topic_table>& topics,
   ss::sharded<controller_backend>& cb)
-  : _topics(topics)
-  , _shard_placement(spt)
+  : _shard_placement(spt.local())
+  , _topics(topics)
   , _controller_backend(cb)
   , _self(*config::node().node_id()) {}
 
@@ -34,8 +34,7 @@ ss::future<> shard_balancer::start() {
 
     auto tt_version = _topics.local().topics_map_revision();
 
-    co_await _shard_placement.local().initialize_from_topic_table(
-      _topics, _self);
+    co_await _shard_placement.initialize_from_topic_table(_topics, _self);
 
     // we shouldn't be receiving any controller updates at this point, so no
     // risk of missing a notification between initializing shard_placement_table
@@ -117,8 +116,7 @@ ss::future<> shard_balancer::assign_ntp(const model::ntp& ntp) {
       target);
 
     try {
-        co_await _shard_placement.local().set_target(
-          ntp, target, shard_callback);
+        co_await _shard_placement.set_target(ntp, target, shard_callback);
     } catch (...) {
         auto ex = std::current_exception();
         if (!ssx::is_shutdown_exception(ex)) {
