@@ -34,10 +34,7 @@ class id_allocator_stm final : public raft::persisted_stm<> {
 public:
     static constexpr std::string_view name = "id_allocator_stm";
 
-    struct stm_allocation_result {
-        int64_t id;
-        raft::errc raft_status{raft::errc::success};
-    };
+    using stm_allocation_result = result<int64_t>;
 
     explicit id_allocator_stm(ss::logger&, raft::consensus*);
 

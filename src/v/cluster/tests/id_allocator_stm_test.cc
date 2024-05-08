@@ -60,10 +60,10 @@ struct id_allocator_stm_fixture : simple_raft_fixture {
         for (int i = 0; i < n; i++) {
             auto result = _stm->allocate_id(1s).get0();
 
-            BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
-            BOOST_REQUIRE_LT(cur_last_id, result.id);
+            BOOST_REQUIRE_EQUAL(result.has_value(), true);
+            BOOST_REQUIRE_LT(cur_last_id, result.assume_value());
 
-            cur_last_id = result.id;
+            cur_last_id = result.assume_value();
         }
         return cur_last_id;
     }
