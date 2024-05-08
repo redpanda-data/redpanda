@@ -14,6 +14,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "raft/tests/simple_raft_fixture.h"
+#include "raft/tests/stm_test_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
@@ -22,6 +23,7 @@
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/scoped_config.h"
+#include "test_utils/test.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -29,105 +31,149 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
-#include <boost/range/irange.hpp>
-#include <boost/test/tools/old/interface.hpp>
-
 #include <thread>
 
 using namespace std::chrono_literals;
 
+namespace cluster {
+namespace {
+
 ss::logger idstmlog{"idstm-test"};
 
-struct id_allocator_stm_fixture : simple_raft_fixture {
-    void create_stm_and_start_raft() {
+struct id_allocator_stm_fixture : state_machine_fixture {
+    ss::future<> initialize_state_machines() {
         // set configuration parameters
         test_local_cfg.get("id_allocator_batch_size").set_value(int16_t(1));
         test_local_cfg.get("id_allocator_log_capacity").set_value(int16_t(2));
-        create_raft();
-        raft::state_machine_manager_builder stm_m_builder;
 
-        _stm = stm_m_builder.create_stm<cluster::id_allocator_stm>(
-          idstmlog, _raft.get(), config::shard_local_cfg());
+        create_nodes();
+        co_await start_nodes();
+    }
 
-        _raft->start(std::move(stm_m_builder)).get();
-        _started = true;
+    ss::future<> start_node(raft_node_instance& node) {
+        co_await node.initialise(all_vnodes());
+        raft::state_machine_manager_builder builder;
+        auto stm = builder.create_stm<cluster::id_allocator_stm>(
+          idstmlog, node.raft().get(), config::shard_local_cfg());
+        co_await node.start(std::move(builder));
+        node_stms.emplace(node.get_vnode(), std::move(stm));
+    }
+
+    ss::future<> start_nodes() {
+        co_await parallel_for_each_node(
+          [this](raft_node_instance& node) { return start_node(node); });
+    }
+
+    ss::future<> stop_and_recreate_nodes() {
+        absl::flat_hash_map<model::node_id, ss::sstring> data_directories;
+        for (auto& [id, node] : nodes()) {
+            data_directories[id]
+              = node->raft()->log()->config().base_directory();
+            node_stms.erase(node->get_vnode());
+        }
+
+        co_await ss::parallel_for_each(
+          std::views::keys(data_directories),
+          [this](model::node_id id) { return stop_node(id); });
+
+        for (auto& [id, data_dir] : data_directories) {
+            add_node(id, model::revision_id(0), std::move(data_dir));
+        }
+    }
+
+    ss::future<> reset(int64_t id) {
+        auto result = co_await retry_with_leader(
+          model::timeout_clock::now() + 30s,
+          [this, id](raft_node_instance& leader_node) {
+              auto stm = node_stms[leader_node.get_vnode()];
+              return stm->reset_next_id(id, 1s);
+          });
+        ASSERT_RESULT_EQ_CORO(result, id);
+    }
+
+    ss::future<> allocate1(int64_t& cur_last_id) {
+        auto result = co_await retry_with_leader(
+          model::timeout_clock::now() + 30s,
+          [this](raft_node_instance& leader_node) {
+              auto stm = node_stms[leader_node.get_vnode()];
+              return stm->allocate_id(1s);
+          });
+        ASSERT_RESULT_GT_CORO(result, cur_last_id);
+        cur_last_id = result.assume_value();
     }
 
     // Allocates n IDs, ensuring that each one new ID is greater than the
     // previous one, starting with 'cur_last_id'.
     // Returns the last allocated ID.
-    int64_t allocate_n(int64_t cur_last_id, int n) {
+    // One by one to be able to inject raft quirks in future.
+    ss::future<int64_t> allocate_n(int64_t cur_last_id, int n) {
         for (int i = 0; i < n; i++) {
-            auto result = _stm->allocate_id(1s).get0();
-
-            BOOST_REQUIRE_EQUAL(result.has_value(), true);
-            BOOST_REQUIRE_LT(cur_last_id, result.assume_value());
-
-            cur_last_id = result.assume_value();
+            co_await allocate1(cur_last_id);
         }
-        return cur_last_id;
+        co_return cur_last_id;
     }
 
-    ss::shared_ptr<cluster::id_allocator_stm> _stm;
+    absl::flat_hash_map<raft::vnode, ss::shared_ptr<cluster::id_allocator_stm>>
+      node_stms;
     scoped_config test_local_cfg;
 };
 
-FIXTURE_TEST(stm_monotonicity_test, id_allocator_stm_fixture) {
-    create_stm_and_start_raft();
-    wait_for_confirmed_leader();
+} // namespace
+
+TEST_F_CORO(id_allocator_stm_fixture, stm_monotonicity_test) {
+    co_await initialize_state_machines();
 
     int64_t last_id = -1;
-    allocate_n(last_id, 5);
+    co_await allocate_n(last_id, 5);
 }
 
-FIXTURE_TEST(stm_restart_test, id_allocator_stm_fixture) {
-    create_stm_and_start_raft();
-    wait_for_confirmed_leader();
+TEST_F_CORO(id_allocator_stm_fixture, stm_restart_test) {
+    co_await initialize_state_machines();
 
     int64_t last_id = -1;
 
-    last_id = allocate_n(last_id, 5);
-    stop_all();
-    create_stm_and_start_raft();
-    wait_for_confirmed_leader();
-
-    allocate_n(last_id, 5);
+    last_id = co_await allocate_n(last_id, 5);
+    co_await stop_and_recreate_nodes();
+    co_await start_nodes();
+    co_await allocate_n(last_id, 5);
 }
 
-FIXTURE_TEST(stm_reset_id_test, id_allocator_stm_fixture) {
-    create_stm_and_start_raft();
-    wait_for_confirmed_leader();
+TEST_F_CORO(id_allocator_stm_fixture, stm_reset_id_test) {
+    co_await initialize_state_machines();
+
     int64_t last_id = -1;
-    allocate_n(last_id, 5);
+    co_await allocate_n(last_id, 5);
 
     // Reset to 100.
     last_id = 100;
-    _stm->reset_next_id(last_id + 1, 1s).get();
-    last_id = allocate_n(last_id, 5);
-    BOOST_REQUIRE_EQUAL(last_id, 105);
+    co_await reset(last_id + 1);
+    last_id = co_await allocate_n(last_id, 5);
+    ASSERT_EQ_CORO(last_id, 105);
 
     // Even after restarting, the starting point should be where we left off.
-    stop_all();
-    create_stm_and_start_raft();
-    wait_for_confirmed_leader();
+    co_await stop_and_recreate_nodes();
+    co_await start_nodes();
 
-    last_id = allocate_n(last_id, 5);
-    BOOST_REQUIRE_EQUAL(last_id, 110);
+    last_id = co_await allocate_n(last_id, 5);
+    ASSERT_EQ_CORO(last_id, 110);
 }
 
-FIXTURE_TEST(stm_reset_batch_test, id_allocator_stm_fixture) {
-    create_stm_and_start_raft();
-    wait_for_confirmed_leader();
+TEST_F_CORO(id_allocator_stm_fixture, stm_reset_batch_test) {
+    co_await initialize_state_machines();
     int64_t last_id = -1;
-    allocate_n(last_id, 5);
+    co_await allocate_n(last_id, 5);
 
     last_id = 100;
-    _stm->reset_next_id(last_id + 1, 1s).get();
+    co_await reset(last_id + 1);
 
     // After a leadership change, the reset should still take effect. However,
     // it should be offset by one batch.
-    _raft->step_down("test").get();
-    wait_for_confirmed_leader();
-    last_id = allocate_n(last_id, 1);
-    BOOST_REQUIRE_EQUAL(last_id, 102);
+    co_await with_leader(1s, [](raft_node_instance& leader_node) {
+        return leader_node.raft()->step_down("test");
+    });
+
+    last_id = co_await allocate_n(last_id, 1);
+    ASSERT_EQ_CORO(last_id, 102);
 }
+
+} // namespace cluster
