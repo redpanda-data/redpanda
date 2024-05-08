@@ -172,6 +172,13 @@ ss::future<reconnect_result_t> client::get_connected(
 }
 
 ss::future<> client::stop() {
+    if (_stopped) {
+        // Prevent double call to stop() as constructs such as with_client()
+        // will unconditionally call stop(), while exception handlers in this
+        // file may also call stop()
+        co_return;
+    }
+    _stopped = true;
     co_await _connect_gate.close();
     // Can safely stop base_transport
     co_return co_await base_transport::stop();
