@@ -415,7 +415,7 @@ private:
         /// The next scheduled upload will start from this offset
         model::offset start_offset;
         /// Uploads will stop at this offset
-        model::offset last_offset;
+        model::offset end_offset_exclusive;
         /// Controls checks for reuploads, compacted segments have this
         /// check disabled
         allow_reuploads_t allow_reuploads;

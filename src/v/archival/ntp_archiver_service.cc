@@ -1544,7 +1544,7 @@ ntp_archiver::do_schedule_single_upload(
 ss::future<ntp_archiver::scheduled_upload>
 ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     auto start_upload_offset = upload_ctx.start_offset;
-    auto last_stable_offset = upload_ctx.last_offset;
+    auto last_stable_offset = upload_ctx.end_offset_exclusive;
 
     auto log = _parent.log();
 
@@ -1642,7 +1642,7 @@ ntp_archiver::schedule_uploads(model::offset max_offset_exclusive) {
     params.push_back({
       .upload_kind = segment_upload_kind::non_compacted,
       .start_offset = start_upload_offset,
-      .last_offset = max_offset_exclusive,
+      .end_offset_exclusive = max_offset_exclusive,
       .allow_reuploads = allow_reuploads_t::no,
       .archiver_term = _start_term,
     });
@@ -1653,7 +1653,7 @@ ntp_archiver::schedule_uploads(model::offset max_offset_exclusive) {
         params.push_back({
           .upload_kind = segment_upload_kind::compacted,
           .start_offset = compacted_segments_upload_start,
-          .last_offset = model::offset::max(),
+          .end_offset_exclusive = model::offset::max(),
           .allow_reuploads = allow_reuploads_t::yes,
           .archiver_term = _start_term,
         });
@@ -1674,7 +1674,7 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
               "offset: {}, last offset: {}, uploads remaining: {}",
               ctx.upload_kind,
               ctx.start_offset,
-              ctx.last_offset,
+              ctx.end_offset_exclusive,
               uploads_remaining);
             break;
         }
@@ -1684,13 +1684,13 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
           "scheduling uploads, start offset: {}, last offset: {}, upload kind: "
           "{}, uploads remaining: {}",
           ctx.start_offset,
-          ctx.last_offset,
+          ctx.end_offset_exclusive,
           ctx.upload_kind,
           uploads_remaining);
 
         // this metric is only relevant for non compacted uploads.
         if (ctx.upload_kind == segment_upload_kind::non_compacted) {
-            _probe->upload_lag(ctx.last_offset - ctx.start_offset);
+            _probe->upload_lag(ctx.end_offset_exclusive - ctx.start_offset);
         }
 
         std::exception_ptr ep;
