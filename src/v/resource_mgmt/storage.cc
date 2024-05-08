@@ -557,10 +557,10 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
      * generally we may want to consider a smoother function as well as
      * dynamically adjusting the control loop frequency.
      */
-    const auto target_excess = static_cast<uint64_t>(
+    const auto adjusted_target_excess = static_cast<uint64_t>(
       real_target_excess
       * config::shard_local_cfg().retention_local_trim_overage_coeff());
-    _probe.set_target_excess(target_excess);
+    _probe.set_target_excess(adjusted_target_excess);
 
     /*
      * when log storage has exceeded the target usage, then there are some knobs
@@ -580,7 +580,7 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
      * targets for cloud-enabled topics, removing data that has been backed up
      * into the cloud.
      */
-    if (target_excess > usage.reclaim.retention) {
+    if (adjusted_target_excess > usage.reclaim.retention) {
         vlog(
           rlog.info,
           "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
@@ -589,34 +589,34 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
           human::bytes(real_target_excess),
-          human::bytes(target_excess),
+          human::bytes(adjusted_target_excess),
           human::bytes(usage.reclaim.retention),
-          human::bytes(target_excess - usage.reclaim.retention),
+          human::bytes(adjusted_target_excess - usage.reclaim.retention),
           human::bytes(usage.reclaim.available));
 
         auto schedule = co_await _policy.create_new_schedule();
         if (schedule.sched_size > 0) {
             auto estimate = _policy.evict_until_local_retention(
-              schedule, target_excess);
+              schedule, adjusted_target_excess);
             _probe.set_reclaim_local(estimate);
 
-            if (estimate < target_excess) {
+            if (estimate < adjusted_target_excess) {
                 const auto amount = _policy.evict_until_low_space_non_hinted(
-                  schedule, target_excess - estimate);
+                  schedule, adjusted_target_excess - estimate);
                 _probe.set_reclaim_low_non_hinted(amount);
                 estimate += amount;
             }
 
-            if (estimate < target_excess) {
+            if (estimate < adjusted_target_excess) {
                 const auto amount = _policy.evict_until_low_space_hinted(
-                  schedule, target_excess - estimate);
+                  schedule, adjusted_target_excess - estimate);
                 _probe.set_reclaim_low_hinted(amount);
                 estimate += amount;
             }
 
-            if (estimate < target_excess) {
+            if (estimate < adjusted_target_excess) {
                 const auto amount = _policy.evict_until_active_segment(
-                  schedule, target_excess - estimate);
+                  schedule, adjusted_target_excess - estimate);
                 _probe.set_reclaim_active_segment(amount);
                 estimate += amount;
             }
@@ -645,7 +645,7 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
           human::bytes(real_target_excess),
-          human::bytes(target_excess),
+          human::bytes(adjusted_target_excess),
           human::bytes(usage.reclaim.retention));
     }
 
