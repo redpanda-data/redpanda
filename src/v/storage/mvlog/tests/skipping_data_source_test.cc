@@ -8,12 +8,14 @@
 // by the Apache License, Version 2.0
 
 #include "base/units.h"
+#include "bytes/iostream.h"
 #include "bytes/random.h"
 #include "random/generators.h"
 #include "storage/mvlog/file.h"
 #include "storage/mvlog/skipping_data_source.h"
 
 #include <seastar/core/seastar.hh>
+#include <seastar/util/short_streams.hh>
 
 #include <gtest/gtest.h>
 
@@ -48,6 +50,8 @@ public:
 
     void check_equivalent(ss::input_stream<char> stream, iobuf expected_buf) {
         auto data = stream.read_exactly(expected_buf.size_bytes()).get();
+        auto no_more = stream.read_exactly(1).get();
+        EXPECT_TRUE(no_more.empty()) << "Stream isn't empty after reading";
 
         iobuf actual_stream_buf;
         actual_stream_buf.append(std::move(data));
@@ -92,12 +96,14 @@ TEST_F(SkippingStreamTest, TestOutOfBounds) {
     write_buf(buf.copy()).get();
 
     // Bogus list.
-    skipping_data_source::read_list_t reads;
-    reads.emplace_back(
-      skipping_data_source::read_interval{buf.size_bytes() + 1, 10});
-    auto stream = make_skipping_stream(std::move(reads));
-    auto data = stream.read().get();
-    ASSERT_TRUE(data.empty());
+    for (int i = 0; i < 5; i++) {
+        skipping_data_source::read_list_t reads;
+        reads.emplace_back(
+          skipping_data_source::read_interval{buf.size_bytes() + i, 10});
+        auto stream = make_skipping_stream(std::move(reads));
+        auto data = stream.read().get();
+        ASSERT_TRUE(data.empty());
+    }
 }
 
 TEST_F(SkippingStreamTest, TestFullInterval) {
@@ -114,17 +120,28 @@ TEST_F(SkippingStreamTest, TestFullInterval) {
 }
 
 TEST_F(SkippingStreamTest, TestOversizedInterval) {
-    auto buf = random_generators::make_iobuf();
+    const auto buf = random_generators::make_iobuf();
     write_buf(buf.copy()).get();
 
-    // Read just over the right sized buffer.
-    skipping_data_source::read_list_t reads;
-    reads.emplace_back(
-      skipping_data_source::read_interval{0, buf.size_bytes() + 10});
-    auto stream = make_skipping_stream(std::move(reads));
+    for (size_t i = 0; i < buf.size_bytes(); i++) {
+        // Make an expected buffer starting from offset i, reading to past the
+        // end of the buffer.
+        auto input_stream = make_iobuf_input_stream(buf.copy());
+        auto str = ss::util::read_entire_stream_contiguous(input_stream).get();
+        auto substr = str.substr(i);
+        iobuf subbuf;
+        subbuf.append(substr.data(), substr.size());
 
-    ASSERT_NO_FATAL_FAILURE(
-      check_equivalent(std::move(stream), std::move(buf)));
+        // Now create a skipping stream on the original buffer that definitely
+        // goes past the end.
+        skipping_data_source::read_list_t reads;
+        reads.emplace_back(
+          skipping_data_source::read_interval{i, buf.size_bytes() + 10});
+        auto stream = make_skipping_stream(std::move(reads));
+
+        ASSERT_NO_FATAL_FAILURE(
+          check_equivalent(std::move(stream), std::move(subbuf)));
+    }
 }
 
 TEST_F(SkippingStreamTest, TestSkipFront) {
