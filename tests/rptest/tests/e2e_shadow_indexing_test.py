@@ -1312,7 +1312,7 @@ class EndToEndThrottlingTest(RedpandaTest):
             log_segment_size=1024 * 1024,
             fast_uploads=True,
             # Set small throughput limit to trigger throttling
-            cloud_storage_max_throughput_per_shard=8 * 1024 * 1024)
+            cloud_storage_max_throughput_per_shard=4 * 1024 * 1024)
 
         super(EndToEndThrottlingTest, self).__init__(test_context=test_context,
                                                      si_settings=si_settings)
