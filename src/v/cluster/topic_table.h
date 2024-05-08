@@ -627,8 +627,13 @@ private:
 
     updates_t _updates_in_progress;
     model::revision_id _last_applied_revision_id;
-    // Monotonic counter that is bumped for every addition/deletion to topics
-    // map. Unlike other revisions this does not correspond to the command
+
+    // Monotonic counter that is bumped each time _topics, _disabled_partitions,
+    // or _updates_in_progress are modified in a way that makes iteration over
+    // them unsafe (i.e. invalidates iterators or references, including
+    // for nested collections like partition sets and replica sets).
+    //
+    // Unlike other revisions this does not correspond to the command
     // revision that updated the map.
     model::revision_id _topics_map_revision{0};
 
