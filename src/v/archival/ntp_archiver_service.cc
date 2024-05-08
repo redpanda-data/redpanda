@@ -2036,9 +2036,9 @@ model::offset ntp_archiver::max_uploadable_offset_exclusive() const {
 }
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
-  std::optional<model::offset> max_offset_override_exclusive) {
-    auto max_offset_exclusive = max_offset_override_exclusive
-                                  ? *max_offset_override_exclusive
+  std::optional<model::offset> unsafe_max_offset_override_exclusive) {
+    auto max_offset_exclusive = unsafe_max_offset_override_exclusive
+                                  ? *unsafe_max_offset_override_exclusive
                                   : max_uploadable_offset_exclusive();
     vlog(
       _rtclog.debug,
