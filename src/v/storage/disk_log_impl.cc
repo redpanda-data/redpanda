@@ -1051,13 +1051,17 @@ disk_log_impl::maybe_apply_local_storage_overrides(gc_config cfg) const {
     /*
      * don't override with local retention settings--let partition data expand
      * up to standard retention settings.
+     * NOTE: both retention_local_strict and retention_local_strict_override
+     * need to be set to true to honor strict local retention. Otherwise, local
+     * retention is advisory.
      */
-    if (
-      !config::shard_local_cfg().retention_local_strict()
-      || !config::shard_local_cfg().retention_local_strict_override()) {
+    bool strict_local_retention
+      = config::shard_local_cfg().retention_local_strict()
+        && config::shard_local_cfg().retention_local_strict_override();
+    if (!strict_local_retention) {
         vlog(
           gclog.trace,
-          "[{}] Skipped retention override for topic with remote write "
+          "[{}] Skipped local retention override for topic with remote write "
           "enabled: {}",
           config().ntp(),
           cfg);
