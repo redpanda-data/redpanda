@@ -190,12 +190,14 @@ public:
     /// will pick not more than '_concurrency' candidates and start
     /// uploading them.
     ///
-    /// \param max_offset_override_exclusive Overrides the maximum offset
-    ///        that can be uploaded. If nullopt, the maximum offset is
-    ///        calculated automatically.
+    /// \param unsafe_max_offset_override_exclusive Overrides the maximum offset
+    ///        that can be uploaded. ONLY FOR TESTING. It is not clamped to a
+    ///        safe value/committed offset as some tests work directly with
+    ///        segments bypassing the raft thus not advancing the committed
+    ///        offset.
     /// \return future that returns number of uploaded/failed segments
     virtual ss::future<batch_result> upload_next_candidates(
-      std::optional<model::offset> max_offset_override_exclusive
+      std::optional<model::offset> unsafe_max_offset_override_exclusive
       = std::nullopt);
 
     ss::future<cloud_storage::download_result> sync_manifest();
