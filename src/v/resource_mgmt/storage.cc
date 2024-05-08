@@ -584,8 +584,9 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
         vlog(
           rlog.info,
           "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
-          "collection expected to recover {}. Overriding tiered storage "
-          "retention to recover {}. Total estimated available to recover {}",
+          "collection expected to remove {}. Space management of tiered "
+          "storage topics to remove {}. Total estimated available to remove "
+          "{}",
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
           human::bytes(real_target_excess),
@@ -641,7 +642,8 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
         vlog(
           rlog.info,
           "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
-          "collection expected to recover {}.",
+          "collection expected to remove {}. No additional space management "
+          "required",
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
           human::bytes(real_target_excess),
