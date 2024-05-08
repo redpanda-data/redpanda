@@ -255,6 +255,7 @@ private:
     /// Throw exception if _as is aborted
     void check() const;
 
+    bool _stopped{false};
     std::string _host_with_port;
     ss::gate _connect_gate;
     const ss::abort_source* _as;
