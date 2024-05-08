@@ -128,12 +128,21 @@ case "$ID" in
   ubuntu | debian | pop)
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y "${deb_deps[@]}"
+    if [[ $CLEAN_PKG_CACHE == true ]]; then
+      rm -rf /var/lib/apt/lists/*
+    fi
     ;;
   fedora)
     dnf install -y "${fedora_deps[@]}"
+    if [[ $CLEAN_PKG_CACHE == true ]]; then
+      dnf clean all
+    fi
     ;;
   arch | manjaro)
     pacman -Sy --needed --noconfirm "${arch_deps[@]}"
+    if [[ $CLEAN_PKG_CACHE == true ]]; then
+      pacman -Sc
+    fi
     ;;
   *)
     echo "Please help us make the script better by sending patches with your OS $ID"
