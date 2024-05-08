@@ -179,7 +179,7 @@ class KubectlTool:
                 f"--------- stderr -----------\n{e.stderr.decode()}")
             raise
 
-    def _ssh_cmd(self, cmd: list[str], capture=False):
+    def _ssh_cmd(self, cmd: list[str], capture: bool = False):
         """Execute a command on a the remote node using ssh/tsh as appropriate."""
         local_cmd = self._ssh_prefix() + cmd
         if capture:

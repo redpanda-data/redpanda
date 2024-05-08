@@ -2227,7 +2227,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         sw = Stopwatch()
         sw.start()
         copy_from_agent(f_start_time)
-        sw.stop()
+        sw.split()
         self.logger.info(sw.elapsedf("# Done log copy from agent"))
 
         # Collect pod logs

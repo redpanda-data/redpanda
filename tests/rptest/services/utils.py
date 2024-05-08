@@ -9,15 +9,15 @@ from rptest.clients.kubectl import KubectlTool, KubeNodeShell
 
 
 class Stopwatch():
-    def __init__(self) -> None:
+    def __init__(self):
         self._start = 0
         self._end = 0
 
-    def start(self):
+    def start(self) -> None:
         self._start = time.time()
         self._end = self._start
 
-    def stop(self):
+    def split(self) -> None:
         self._end = time.time()
         if self._start == 0:
             self._start = self._end
@@ -35,7 +35,7 @@ class Stopwatch():
         else:
             return time.time() - self._start
 
-    def elapseds(self):
+    def elapseds(self) -> str:
         return f"{self.elapsed:.2f}s"
 
     def elapsedf(self, note) -> str:

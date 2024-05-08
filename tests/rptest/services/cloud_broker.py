@@ -3,14 +3,21 @@ import os
 import subprocess
 from rptest.services.utils import KubeNodeShell
 
+from dataclasses import dataclass
+
+
+@dataclass
+class DummyAccount():
+    node_name: str
+    pod_name: str
+
+    @property
+    def hostname(self) -> str:
+        return f"{self.node_name}/{self.pod_name}"
+
 
 class CloudBroker():
     # Mimic ducktape cluster node structure
-    class account():
-        def __init__(self, pod) -> None:
-            self.hostname = f"{pod['spec']['nodeName']}/" \
-                f"{pod['metadata']['name']}"
-
     def __init__(self, pod, kubectl, logger) -> None:
         self.logger = logger
         # Validate
@@ -27,7 +34,8 @@ class CloudBroker():
 
         # Backward compatibility
         # Various classes will use this to hash and compare nodes
-        self.account(pod)
+        self.account = DummyAccount(node_name=pod['spec']['nodeName'],
+                                    pod_name=pod['metadata']['name'])
 
         # It appears that the node-id label will only be added if the cluster
         # is still being managed by the operator - if managed=false then this
