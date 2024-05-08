@@ -77,6 +77,8 @@ public:
         std::optional<std::chrono::milliseconds> flush_ms;
         std::optional<size_t> flush_bytes;
 
+        std::optional<bool> experimental_datalake_topic;
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };

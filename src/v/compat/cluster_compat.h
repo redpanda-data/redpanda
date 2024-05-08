@@ -357,6 +357,7 @@ struct compat_check<cluster::topic_properties> {
           wr, "write_caching", obj.write_caching);
         json_write(flush_ms);
         json_write(flush_bytes);
+        json_write(experimental_datalake_topic);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -392,6 +393,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(write_caching);
         json_read(flush_ms);
         json_read(flush_bytes);
+        json_read(experimental_datalake_topic);
         return obj;
     }
 
@@ -422,6 +424,7 @@ struct compat_check<cluster::topic_properties> {
         obj.write_caching = std::nullopt;
         obj.flush_bytes = std::nullopt;
         obj.flush_ms = std::nullopt;
+        obj.experimental_datalake_topic = std::nullopt;
 
         if (reply != obj) {
             throw compat_error(fmt::format(

@@ -1469,7 +1469,7 @@ struct remote_topic_properties
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<8>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<9>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -1506,7 +1506,8 @@ struct topic_properties
       std::optional<model::vcluster_id> mpx_virtual_cluster_id,
       std::optional<model::write_caching_mode> write_caching,
       std::optional<std::chrono::milliseconds> flush_ms,
-      std::optional<size_t> flush_bytes)
+      std::optional<size_t> flush_bytes,
+      std::optional<bool> experimental_datalake_topic)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1542,7 +1543,8 @@ struct topic_properties
       , mpx_virtual_cluster_id(mpx_virtual_cluster_id)
       , write_caching(write_caching)
       , flush_ms(flush_ms)
-      , flush_bytes(flush_bytes) {}
+      , flush_bytes(flush_bytes)
+      , experimental_datalake_topic(experimental_datalake_topic) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1588,6 +1590,7 @@ struct topic_properties
     std::optional<model::write_caching_mode> write_caching;
     std::optional<std::chrono::milliseconds> flush_ms;
     std::optional<size_t> flush_bytes;
+    std::optional<bool> experimental_datalake_topic;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1628,7 +1631,8 @@ struct topic_properties
           mpx_virtual_cluster_id,
           write_caching,
           flush_ms,
-          flush_bytes);
+          flush_bytes,
+          experimental_datalake_topic);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1726,6 +1730,8 @@ struct incremental_topic_updates
     static constexpr int8_t version_with_schema_id_validation = -6;
     static constexpr int8_t version_with_initial_retention = -7;
     static constexpr int8_t version_with_write_caching = -8;
+    static constexpr int8_t version_with_datalake = -9;
+
     // negative version indicating different format:
     // -1 - topic_updates with data_policy
     // -2 - topic_updates without data_policy
@@ -1734,7 +1740,7 @@ struct incremental_topic_updates
     // -6 - topic updates with schema id validation
     // -7 - topic updates with initial retention
     // -8 - write caching properties
-    static constexpr int8_t version = version_with_write_caching;
+    static constexpr int8_t version = version_with_datalake;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -1775,6 +1781,7 @@ struct incremental_topic_updates
     property_update<std::optional<model::write_caching_mode>> write_caching;
     property_update<std::optional<std::chrono::milliseconds>> flush_ms;
     property_update<std::optional<size_t>> flush_bytes;
+    property_update<std::optional<bool>> experimental_datalake_topic;
 
     auto serde_fields() {
         return std::tie(
@@ -1803,7 +1810,8 @@ struct incremental_topic_updates
           initial_retention_local_target_ms,
           write_caching,
           flush_ms,
-          flush_bytes);
+          flush_bytes,
+          experimental_datalake_topic);
     }
 
     friend std::ostream&

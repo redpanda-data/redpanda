@@ -291,6 +291,14 @@ create_topic_properties_update(
                   flush_bytes_validator{});
                 continue;
             }
+            if (cfg.name == topic_property_datalake_topic) {
+                parse_and_set_optional(
+                  update.properties.experimental_datalake_topic,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+
+                continue;
+            }
 
         } catch (const validation_error& e) {
             return make_error_alter_config_resource_response<

@@ -3194,6 +3194,12 @@ configuration::configuration()
       "internal-only configuration and should be enabled only after consulting "
       "with Redpanda Support or engineers.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      false)
+  , experimental_enable_datalake(
+      *this,
+      "experimental_enable_datalake",
+      "EXPERIMENTAL DO NOT ENABLE.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {

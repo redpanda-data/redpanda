@@ -9,6 +9,8 @@ datalake::proto_to_arrow_converter::proto_to_arrow_converter(
     initialize_protobuf_schema(schema);
     if (!initialize_arrow_arrays()) {
         // FIXME: exception type
+        std::cerr << "Could not initialize converter for schema:\n";
+        std::cerr << schema;
         throw std::runtime_error("Could not initialize arrow arrays");
     }
 }
@@ -108,10 +110,7 @@ bool datalake::proto_to_arrow_converter::initialize_arrow_arrays() {
 
     const pb::Descriptor* message_desc = message_descriptor();
     if (message_desc == nullptr) {
-        return false;
-    }
-
-    if (message_desc == nullptr) {
+        std::cerr << "Message descriptor is null\n";
         return false;
     }
 
@@ -177,6 +176,7 @@ const google::protobuf::Descriptor*
 datalake::proto_to_arrow_converter::message_descriptor() {
     int message_type_count = _file_desc->message_type_count();
     if (message_type_count == 0) {
+        std::cerr << "No messages in schema\n";
         return nullptr;
     }
     return _file_desc->message_type(message_type_count - 1);
