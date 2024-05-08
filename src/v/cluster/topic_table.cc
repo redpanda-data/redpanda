@@ -332,6 +332,8 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
 
     _updates_in_progress.erase(it);
 
+    _topics_map_revision++;
+
     partition_assignment delta_assignment{
       current_assignment_it->group,
       current_assignment_it->id,
@@ -406,6 +408,8 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
     current_assignment_it->replicas
       = in_progress_it->second.get_previous_replicas();
 
+    _topics_map_revision++;
+
     /**
      * Cancel/force abort delta contains two assignments new_assignment is set
      * to the one the partition is currently being moved from. Previous
@@ -471,6 +475,11 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
         co_return errc::no_update_in_progress;
     }
 
+    auto p_meta_it = tp->second.partitions.find(ntp.tp.partition);
+    if (p_meta_it == tp->second.partitions.end()) {
+        co_return errc::partition_not_exists;
+    }
+
     // revert replica set update
     current_assignment_it->replicas
       = in_progress_it->second.get_target_replicas();
@@ -481,11 +490,7 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
       current_assignment_it->replicas,
     };
 
-    // update partition_meta object
-    auto p_meta_it = tp->second.partitions.find(ntp.tp.partition);
-    if (p_meta_it == tp->second.partitions.end()) {
-        co_return errc::partition_not_exists;
-    }
+    // update partition_meta object:
     // the cancellation was reverted and update went through, we must
     // update replicas_revisions.
     p_meta_it->second.replicas_revisions = update_replicas_revisions(
@@ -496,6 +501,8 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
 
     /// Since the update is already finished we drop in_progress state
     _updates_in_progress.erase(in_progress_it);
+
+    _topics_map_revision++;
 
     // notify backend about finished update
     _pending_deltas.emplace_back(
@@ -832,12 +839,14 @@ class topic_table::snapshot_applier {
     updates_t& _updates_in_progress;
     fragmented_vector<delta>& _pending_deltas;
     topic_table_probe& _probe;
+    model::revision_id& _topics_map_revision;
 
 public:
     explicit snapshot_applier(topic_table& parent)
       : _updates_in_progress(parent._updates_in_progress)
       , _pending_deltas(parent._pending_deltas)
-      , _probe(parent._probe) {}
+      , _probe(parent._probe)
+      , _topics_map_revision(parent._topics_map_revision) {}
 
     void delete_ntp(
       const model::topic_namespace& ns_tp,
@@ -846,7 +855,9 @@ public:
         auto ntp = model::ntp(ns_tp.ns, ns_tp.tp, p_as.id);
         vlog(
           clusterlog.trace, "deleting ntp {} not in controller snapshot", ntp);
-        _updates_in_progress.erase(ntp);
+        if (_updates_in_progress.erase(ntp)) {
+            _topics_map_revision++;
+        };
 
         _pending_deltas.emplace_back(
           std::move(ntp),
@@ -882,6 +893,9 @@ public:
       bool must_update_properties) {
         vlog(clusterlog.trace, "adding ntp {} from controller snapshot", ntp);
         size_t pending_deltas_start_idx = _pending_deltas.size();
+
+        // we are going to modify md_item so increment the revision right away.
+        _topics_map_revision++;
 
         const model::partition_id p_id = ntp.tp.partition;
 
@@ -1121,6 +1135,7 @@ ss::future<> topic_table::apply_snapshot(
                 co_await applier.delete_topic(
                   ns_tp, md_item, topic_snapshot.metadata.revision);
                 md_item = co_await applier.create_topic(ns_tp, topic_snapshot);
+                _topics_map_revision++;
             } else {
                 // The topic was present in the previous set, now we need to
                 // reconcile individual partitions.
@@ -1156,6 +1171,7 @@ ss::future<> topic_table::apply_snapshot(
                     if (!topic_snapshot.partitions.contains(as_it_copy->id)) {
                         applier.delete_ntp(ns_tp, *as_it_copy, snap_revision);
                         md_item.get_assignments().erase(as_it_copy);
+                        _topics_map_revision++;
                     }
                     co_await ss::coroutine::maybe_yield();
                 }
@@ -1513,6 +1529,7 @@ void topic_table::change_partition_replicas(
     auto previous_assignment = current_assignment.replicas;
     // replace partition replica set
     current_assignment.replicas = new_assignment;
+    _topics_map_revision++;
 
     // calculate deleta for backend
 
