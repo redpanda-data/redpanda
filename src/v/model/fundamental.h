@@ -239,6 +239,8 @@ inline constexpr model::offset_delta offset_delta_cast(model::offset r) {
 inline constexpr model::offset next_offset(model::offset o) {
     if (o < model::offset{0}) {
         return model::offset{0};
+    } else if (o == model::offset::max()) {
+        return model::offset::max();
     }
     return o + model::offset{1};
 }
