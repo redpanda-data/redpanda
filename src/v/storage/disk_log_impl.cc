@@ -1313,10 +1313,18 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
     co_return std::nullopt;
 }
 
-ss::future<> disk_log_impl::retention_adjust_timestamps(
-  std::chrono::seconds ignore_in_future) {
+ss::future<> disk_log_impl::maybe_adjust_retention_timestamps() {
+    // Correct any timestamps too far in the future, meant to be called before
+    // calculating the retention offset for garbage collection.
+    // It's expected that this will be used only for segments pre v23.3,
+    // without a proper broker_timestamps
+    auto ignore_in_future
+      = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
+    if (!ignore_in_future.has_value()) {
+        co_return;
+    }
     auto ignore_threshold = model::timestamp(
-      model::timestamp::now().value() + ignore_in_future / 1ms);
+      model::timestamp::now().value() + ignore_in_future.value() / 1ms);
 
     auto retention_cfg = time_based_retention_cfg::make(
       _feature_table.local()); // this will retrieve cluster cfgs
@@ -1383,17 +1391,7 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
 
 ss::future<std::optional<model::offset>>
 disk_log_impl::maybe_adjusted_retention_offset(gc_config cfg) {
-    auto ignore_timestamps_in_future
-      = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
-    if (ignore_timestamps_in_future.has_value()) {
-        // Correct any timestamps too far in future, before calculating the
-        // retention offset.
-        // It's expected that this will be used only for segments pre v23.3,
-        // without a proper broker_timestamps
-        co_await retention_adjust_timestamps(
-          ignore_timestamps_in_future.value());
-    }
-
+    co_await maybe_adjust_retention_timestamps();
     co_return retention_offset(cfg);
 }
 
@@ -3284,12 +3282,7 @@ disk_log_impl::disk_usage_target_time_retention(gc_config cfg) {
      * take the opportunity to maybe fixup janky weird timestamps. also done in
      * normal garbage collection path and should be idempotent.
      */
-    if (auto ignore_timestamps_in_future
-        = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
-        ignore_timestamps_in_future.has_value()) {
-        co_await retention_adjust_timestamps(
-          ignore_timestamps_in_future.value());
-    }
+    co_await maybe_adjust_retention_timestamps();
 
     /*
      * we are going to use whole segments for the data we'll use to extrapolate

@@ -277,8 +277,7 @@ private:
 
     /// Conditionally adjust retention timestamp on any segment that appears
     /// to have invalid timestamps, to ensure retention can proceed.
-    ss::future<>
-    retention_adjust_timestamps(std::chrono::seconds ignore_in_future);
+    ss::future<> maybe_adjust_retention_timestamps();
 
     gc_config apply_overrides(gc_config) const;
     gc_config apply_kafka_retention_overrides(gc_config) const;
