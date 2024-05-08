@@ -310,19 +310,19 @@ ss::future<> log_manager::housekeeping() {
     }
 }
 
+model::timestamp log_manager::lowest_ts_to_retain() const {
+    if (!_config.log_retention().has_value()) {
+        return model::timestamp(0);
+    }
+    const auto now = model::timestamp::now().value();
+    const auto retention = _config.log_retention().value().count();
+    return model::timestamp(now - retention);
+}
+
 ss::future<> log_manager::housekeeping_loop() {
     /*
      * data older than this threshold may be garbage collected
      */
-    const auto collection_threshold = [this] {
-        if (!_config.log_retention().has_value()) {
-            return model::timestamp(0);
-        }
-        const auto now = model::timestamp::now().value();
-        const auto retention = _config.log_retention().value().count();
-        return model::timestamp(now - retention);
-    };
-
     while (true) {
         try {
             const auto prev_jitter_base = _jitter.base_duration();
@@ -383,7 +383,7 @@ ss::future<> log_manager::housekeeping_loop() {
 
                 auto ntp = log_meta.handle->config().ntp();
                 auto usage = co_await log_meta.handle->disk_usage(
-                  gc_config(collection_threshold(), _config.retention_bytes()));
+                  gc_config(lowest_ts_to_retain(), _config.retention_bytes()));
 
                 /*
                  * NOTE: this estimate is for local retention policy only. for a
@@ -405,7 +405,7 @@ ss::future<> log_manager::housekeeping_loop() {
                     continue;
                 }
                 co_await log->gc(
-                  gc_config(collection_threshold(), _config.retention_bytes()));
+                  gc_config(lowest_ts_to_retain(), _config.retention_bytes()));
             }
         }
 
@@ -432,7 +432,7 @@ ss::future<> log_manager::housekeeping_loop() {
         auto prev_sg = co_await ss::coroutine::switch_to(_config.compaction_sg);
 
         try {
-            co_await housekeeping_scan(collection_threshold());
+            co_await housekeeping_scan(lowest_ts_to_retain());
         } catch (const std::exception& e) {
             vlog(stlog.info, "Error processing housekeeping(): {}", e);
         }

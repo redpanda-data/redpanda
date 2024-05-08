@@ -278,19 +278,10 @@ eviction_policy::collect_reclaimable_offsets() {
     /*
      * retention settings mirror settings found in housekeeping()
      */
-    const auto collection_threshold = [this] {
-        const auto& lm = _storage->local().log_mgr();
-        if (!lm.config().log_retention().has_value()) {
-            return model::timestamp(0);
-        }
-        const auto now = model::timestamp::now().value();
-        const auto retention = lm.config().log_retention().value().count();
-        return model::timestamp(now - retention);
-    };
-
+    const auto collection_ts
+      = _storage->local().log_mgr().lowest_ts_to_retain();
     gc_config cfg(
-      collection_threshold(),
-      _storage->local().log_mgr().config().retention_bytes());
+      collection_ts, _storage->local().log_mgr().config().retention_bytes());
 
     /*
      * in smallish batches partitions are queried for their reclaimable
