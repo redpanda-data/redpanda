@@ -1064,7 +1064,7 @@ disk_log_impl::maybe_apply_local_storage_overrides(gc_config cfg) const {
         return cfg;
     }
 
-    cfg = override_retention_config(cfg);
+    cfg = apply_local_storage_overrides(cfg);
 
     vlog(
       gclog.trace,
@@ -1075,7 +1075,7 @@ disk_log_impl::maybe_apply_local_storage_overrides(gc_config cfg) const {
     return cfg;
 }
 
-gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
+gc_config disk_log_impl::apply_local_storage_overrides(gc_config cfg) const {
     tristate<std::size_t> local_retention_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> local_retention_ms{std::nullopt};
 
@@ -3046,7 +3046,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
      * retention above and takes into account local retention advisory flag.
      */
     auto local_retention_cfg = apply_base_overrides(input_cfg);
-    local_retention_cfg = override_retention_config(local_retention_cfg);
+    local_retention_cfg = apply_local_storage_overrides(local_retention_cfg);
     const auto local_retention_offset
       = co_await maybe_adjusted_retention_offset(local_retention_cfg);
 
@@ -3508,7 +3508,7 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
      * only when local retention is non-advisory.
      */
     cfg = apply_base_overrides(cfg);
-    cfg = override_retention_config(cfg);
+    cfg = apply_local_storage_overrides(cfg);
     const auto local_retention_offset
       = co_await maybe_adjusted_retention_offset(cfg);
 
