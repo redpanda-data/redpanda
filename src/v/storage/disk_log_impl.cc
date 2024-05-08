@@ -1128,7 +1128,8 @@ bool disk_log_impl::is_cloud_retention_active() const {
 /*
  * applies overrides for non-cloud storage settings
  */
-gc_config disk_log_impl::apply_base_overrides(gc_config defaults) const {
+gc_config
+disk_log_impl::apply_kafka_retention_overrides(gc_config defaults) const {
     if (!config().has_overrides()) {
         return defaults;
     }
@@ -1162,7 +1163,7 @@ gc_config disk_log_impl::apply_base_overrides(gc_config defaults) const {
 }
 
 gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
-    auto ret = apply_base_overrides(defaults);
+    auto ret = apply_kafka_retention_overrides(defaults);
     return maybe_apply_local_storage_overrides(ret);
 }
 
@@ -3045,7 +3046,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
      * offset calculation for local retention reclaimable is different than the
      * retention above and takes into account local retention advisory flag.
      */
-    auto local_retention_cfg = apply_base_overrides(input_cfg);
+    auto local_retention_cfg = apply_kafka_retention_overrides(input_cfg);
     local_retention_cfg = apply_local_storage_overrides(local_retention_cfg);
     const auto local_retention_offset
       = co_await maybe_adjusted_retention_offset(local_retention_cfg);
@@ -3198,7 +3199,7 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
       = config::shard_local_cfg().storage_reserve_min_segments()
         * max_segment_size();
 
-    cfg = apply_base_overrides(cfg);
+    cfg = apply_kafka_retention_overrides(cfg);
 
     /*
      * compacted topics are always stored whole on local storage such that local
@@ -3507,7 +3508,7 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
      * override in contrast to housekeeping GC where the overrides are applied
      * only when local retention is non-advisory.
      */
-    cfg = apply_base_overrides(cfg);
+    cfg = apply_kafka_retention_overrides(cfg);
     cfg = apply_local_storage_overrides(cfg);
     const auto local_retention_offset
       = co_await maybe_adjusted_retention_offset(cfg);

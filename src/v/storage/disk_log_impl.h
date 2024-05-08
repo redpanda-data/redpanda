@@ -281,7 +281,7 @@ private:
     retention_adjust_timestamps(std::chrono::seconds ignore_in_future);
 
     gc_config apply_overrides(gc_config) const;
-    gc_config apply_base_overrides(gc_config) const;
+    gc_config apply_kafka_retention_overrides(gc_config) const;
 
     void wrote_stm_bytes(size_t);
 
