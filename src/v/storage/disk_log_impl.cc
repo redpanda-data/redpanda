@@ -1031,7 +1031,8 @@ bool disk_log_impl::has_local_retention_override() const {
     return false;
 }
 
-gc_config disk_log_impl::maybe_override_retention_config(gc_config cfg) const {
+gc_config
+disk_log_impl::maybe_apply_local_storage_overrides(gc_config cfg) const {
     // Read replica topics have a different default retention
     if (config().is_read_replica_mode_enabled()) {
         cfg.eviction_time = std::max(
@@ -1162,7 +1163,7 @@ gc_config disk_log_impl::apply_base_overrides(gc_config defaults) const {
 
 gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
     auto ret = apply_base_overrides(defaults);
-    return maybe_override_retention_config(ret);
+    return maybe_apply_local_storage_overrides(ret);
 }
 
 ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
@@ -3226,7 +3227,7 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
          */
     } else {
         // applies local retention overrides for cloud storage
-        cfg = maybe_override_retention_config(cfg);
+        cfg = maybe_apply_local_storage_overrides(cfg);
     }
 
     /*

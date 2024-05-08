@@ -289,7 +289,7 @@ private:
     // overrides, such as custom topic configs.
     bool has_local_retention_override() const;
 
-    gc_config maybe_override_retention_config(gc_config) const;
+    gc_config maybe_apply_local_storage_overrides(gc_config) const;
     gc_config override_retention_config(gc_config) const;
 
     bool is_cloud_retention_active() const;
