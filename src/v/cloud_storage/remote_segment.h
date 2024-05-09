@@ -319,8 +319,6 @@ private:
     partition_probe& _probe;
     ts_read_path_probe& _ts_probe;
 
-    friend class split_segment_into_chunk_range_consumer;
-
     /// Pending chunk download request. The start offset and prefetch are
     /// supplied by the caller. The promise is created before adding a request
     /// to the queue and the associated future is returned to the caller.
