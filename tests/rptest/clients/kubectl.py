@@ -161,8 +161,8 @@ class KubectlTool:
                 s_out = process.stdout.read()
             else:
                 s_out = "stdout empty"
-            raise subprocess.CalledProcessError(process.returncode, cmd,
-                                                s_out, "stderr piped")
+            raise subprocess.CalledProcessError(process.returncode, cmd, s_out,
+                                                "stderr piped")
 
         for line in process.stdout:  # type: ignore
             yield line
