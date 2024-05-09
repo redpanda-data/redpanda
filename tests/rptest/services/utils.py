@@ -6,19 +6,45 @@ from abc import ABC, abstractmethod
 from typing import Generator, Optional
 
 from rptest.clients.kubectl import KubectlTool, KubeNodeShell
-from rptest.services.cloud_broker import CloudBroker
+
+
+class Stopwatch():
+    def __init__(self):
+        self._start = 0
+        self._end = 0
+
+    def start(self) -> None:
+        self._start = time.time()
+        self._end = self._start
+
+    def split(self) -> None:
+        self._end = time.time()
+        if self._start == 0:
+            self._start = self._end
+
+    @property
+    def elapsed(self) -> float:
+        """Calculates time elapsed from _start to _end.
+        If stop method is not called, returns current elapsed time
+
+        Returns:
+            float: elapsed time
+        """
+        if self._end != self._start:
+            return self._end - self._start
+        else:
+            return time.time() - self._start
+
+    def elapseds(self) -> str:
+        return f"{self.elapsed:.2f}s"
+
+    def elapsedf(self, note) -> str:
+        return f"{note}: {self.elapseds()}"
 
 
 class BadLogLines(Exception):
     def __init__(self, node_to_lines):
         self.node_to_lines = node_to_lines
-
-    @staticmethod
-    def _get_hostname(node):
-        if isinstance(node, CloudBroker):
-            return node.hostname
-        else:
-            return node.account.hostname
 
     def __str__(self):
         # Pick the first line from the first node as an example, and include it
@@ -28,7 +54,7 @@ class BadLogLines(Exception):
         example = next(iter(example_lines))
 
         summary = ','.join([
-            f'{self._get_hostname(i[0])}({len(i[1])})'
+            f'{i[0].account.hostname}({len(i[1])})'
             for i in self.node_to_lines.items()
         ])
         return f"<BadLogLines nodes={summary} example=\"{example}\">"
@@ -135,7 +161,9 @@ class LogSearch(ABC):
     def _search(self, nodes):
         bad_lines = collections.defaultdict(list)
         test_name = self._context.function_name
+        sw = Stopwatch()
         for node in nodes:
+            sw.start()
             hostname = self._get_hostname(node)
             self.logger.info(f"Scanning node {hostname} log for errors...")
             # Prepare/Build capture func shortcut
@@ -155,6 +183,9 @@ class LogSearch(ABC):
                     bad_lines[node].append(line)
                     self.logger.warn(f"[{test_name}] Unexpected log line on "
                                      f"{hostname}: {line}")
+            self.logger.info(
+                sw.elapsedf(
+                    f"##### Time spent to scan bad logs on '{hostname}'"))
         return bad_lines
 
     def search_logs(self, nodes):
@@ -204,28 +235,28 @@ class LogSearchCloud(LogSearch):
 
         # Load log, output is in binary form
         loglines = []
-        node_name = pod._spec['nodeName']
         tz = "+00:00"
-        with KubeNodeShell(self.kubectl, node_name) as ksh:
-            try:
-                # get time zone in +00:00 format
-                tz = ksh("date +'%:z'")
-                # Assume UTC if output is empty
-                # But this should never happen
-                tz = tz[0] if len(tz) > 0 else "+00:00"
-                # Find all log files for target pod
-                logfiles = ksh(f"find /var/log/pods -type f")
-                for logfile in logfiles:
-                    if pod.name in logfile and \
-                        'redpanda-configurator' not in logfile:
-                        self.logger.info(f"Inspecting '{logfile}'")
-                        lines = ksh(f"cat {logfile} | grep {expr}")
-                        loglines += lines
-            except Exception as e:
-                self.logger.warning(f"Error getting logs for {pod.name}: {e}")
-            else:
-                _size = len(loglines)
-                self.logger.debug(f"Received {_size}B of data from {pod.name}")
+        try:
+            # get time zone in +00:00 format
+            tz = pod.nodeshell("date +'%:z'")
+            # Assume UTC if output is empty
+            # But this should never happen
+            tz = tz[0] if len(tz) > 0 else "+00:00"
+            # Find all log files for target pod
+            # Return type without capture is always str, so ignore type
+            logfiles = pod.nodeshell(
+                f"find /var/log/pods -type f")  # type: ignore
+            for logfile in logfiles:
+                if pod.name in logfile and \
+                        'redpanda-configurator' not in logfile:  # type: ignore
+                    self.logger.info(f"Inspecting '{logfile}'")
+                    lines = pod.nodeshell(f"cat {logfile} | grep {expr}")
+                    loglines += lines
+        except Exception as e:
+            self.logger.warning(f"Error getting logs for {pod.name}: {e}")
+        else:
+            _size = len(loglines)
+            self.logger.debug(f"Received {_size}B of data from {pod.name}")
 
         # check log lines for proper timing.
         # Log lines will have two timing objects:

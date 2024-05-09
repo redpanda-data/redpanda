@@ -139,6 +139,33 @@ class KubectlTool:
     def logger(self) -> Logger:
         return self._redpanda.logger
 
+    def _local_captured(self, cmd: list[str]):
+        """Runs kubectl subcommands on a Cloud Agent
+        with streaming stdout and stderr to output
+
+        Args:
+            cmd (list[str]): kubectl commands to run
+
+        Raises:
+            RuntimeError: when return code is present
+
+        Yields:
+            Generator[str]: Generator of output line by line
+        """
+        self._redpanda.logger.info(cmd)
+        process = subprocess.Popen(cmd,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT)
+        return_code = process.returncode
+
+        if return_code:
+            raise RuntimeError(process.stdout, return_code)
+
+        for line in process.stdout:  # type: ignore
+            yield line
+
+        return
+
     def _local_cmd(self, cmd: list[str]):
         """Run the given command locally and return the stdout as bytes.
            Logs stdout and stderr on failure."""
@@ -146,18 +173,33 @@ class KubectlTool:
         try:
             return subprocess.check_output(cmd, stderr=subprocess.PIPE)
         except subprocess.CalledProcessError as e:
-            self.logger.info(
-                f'Command failed (rc={e.returncode}).\n' +
-                f'--------- stdout -----------\n{e.stdout.decode()}' +
-                f'--------- stderr -----------\n{e.stderr.decode()}')
+            self.logger.warning(
+                f"Command failed '{cmd}' (rc={e.returncode}).\n" +
+                f"--------- stdout -----------\n{e.stdout.decode()}" +
+                f"--------- stderr -----------\n{e.stderr.decode()}")
             raise
 
-    def _ssh_cmd(self, cmd: list[str]):
+    def _ssh_cmd(self, cmd: list[str], capture: bool = False):
         """Execute a command on a the remote node using ssh/tsh as appropriate."""
-        return self._local_cmd(self._ssh_prefix() + cmd)
+        local_cmd = self._ssh_prefix() + cmd
+        if capture:
+            return self._local_captured(local_cmd)
+        else:
+            return self._local_cmd(local_cmd)
 
-    def cmd(self, kcmd: list[str] | str):
+    def cmd(self, kcmd: list[str] | str, capture=False):
         """Execute a kubectl command on the agent node.
+        Capture mode streams data from process stdout via Generator
+        Non-capture more returns whole output as a list
+
+        Args:
+            kcmd (list[str] | str): command to run on agent with kubectl
+            capture (bool, optional): Whether return whole result or
+                                      iterate line by line. Defaults to False.
+
+        Returns:
+            list[str / bytes]: Return is either a whole lines list
+                or a Generator with lines as items
         """
         # prepare
         self._install()
@@ -167,7 +209,7 @@ class KubectlTool:
         _kcmd = kcmd if isinstance(kcmd, list) else kcmd.split()
         # Format command
         cmd = _kubectl + _kcmd
-        return self._ssh_cmd(cmd)
+        return self._ssh_cmd(cmd, capture=capture)
 
     def exec(self, remote_cmd, pod_name=None):
         """Execute a command inside of a redpanda pod container.
@@ -301,7 +343,10 @@ class KubectlTool:
 
 
 class KubeNodeShell():
-    def __init__(self, kubectl: KubectlTool, node_name: str) -> None:
+    def __init__(self,
+                 kubectl: KubectlTool,
+                 node_name: str,
+                 clean=False) -> None:
         self.kubectl = kubectl
         self.node_name = node_name
         # It is bad, but it works
@@ -317,8 +362,8 @@ class KubeNodeShell():
             # Cut them to fit
             self.pod_name = self.pod_name[:63]
 
-        # In case of concurrent tests, just reuse existing pod
-        self.pod_reused = True if self._is_shell_running() else False
+        # Set cleaning flag on exit
+        self.clean = clean
 
     def _is_shell_running(self):
         # Check if such pod exists
@@ -370,10 +415,13 @@ class KubeNodeShell():
             }
         }
 
-    def __enter__(self):
-        if not self.pod_reused:
+    def initialize_nodeshell(self):
+        if not self._is_shell_running():
             # Init node shell
             overrides = self._build_overrides()
+            # We do not require timeout option to fail
+            # if pod is not running at this point
+            # Feel free to uncomment
             _out = self.kubectl.cmd([
                 f"--context={self.current_context}",
                 "run",
@@ -386,7 +434,24 @@ class KubeNodeShell():
             self.logger.debug(f"Response: {_out.decode()}")
         return self
 
-    def __call__(self, cmd: list[str] | str) -> list:
+    def destroy_nodeshell(self):
+        if self._is_shell_running():
+            try:
+                self.kubectl.cmd(f"delete pod {self.pod_name}")
+            except Exception as e:
+                self.logger.warning("Failed to delete node shell pod "
+                                    f"'{self.pod_name}': {e}")
+        return
+
+    def __enter__(self):
+        return self.initialize_nodeshell()
+
+    def __exit__(self, *args, **kwargs):
+        if self.clean:
+            self.destroy_nodeshell()
+        return
+
+    def __call__(self, cmd: list[str] | str, capture=False):
         self.logger.info(f"Running command inside node '{self.node_name}'")
         # Prefix for running inside proper pod
         _kcmd = ["exec", self.pod_name, "--"]
@@ -394,15 +459,8 @@ class KubeNodeShell():
         _cmd = cmd if isinstance(cmd, list) else cmd.split()
         _kcmd += _cmd
         # exception handler is inside subclass
-        _out = self.kubectl.cmd(_kcmd)
-        return _out.decode().splitlines()
-
-    def __exit__(self, *args, **kwargs):
-        # If this instance created this pod, delete it
-        if not self.pod_reused:
-            try:
-                self.kubectl.cmd(f"delete pod {self.pod_name}")
-            except Exception as e:
-                self.logger.warning("Failed to delete node shell pod "
-                                    f"'{self.pod_name}': {e}")
-        return
+        _out = self.kubectl.cmd(_kcmd, capture=capture)
+        if capture:
+            return _out
+        else:
+            return _out.decode().splitlines()

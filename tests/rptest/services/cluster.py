@@ -134,6 +134,12 @@ def cluster(log_allow_list=None,
                     # Also skip if we are running against the cloud
                     return r
 
+                if isinstance(self.redpanda, RedpandaServiceCloud):
+                    # Call copy logs function for RedpandaServiceCloud
+                    # It can't be called from usual ducktape routing due
+                    # to different inheritance structure
+                    self.redpanda.copy_cloud_logs(t_initial)
+
                 log_local_load(self.test_context.test_name,
                                self.redpanda.logger, t_initial,
                                disk_stats_initial)

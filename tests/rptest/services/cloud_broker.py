@@ -1,7 +1,23 @@
 import json
+import os
+import subprocess
+from rptest.services.utils import KubeNodeShell
+
+from dataclasses import dataclass
+
+
+@dataclass
+class DummyAccount():
+    node_name: str
+    pod_name: str
+
+    @property
+    def hostname(self) -> str:
+        return f"{self.node_name}/{self.pod_name}"
 
 
 class CloudBroker():
+    # Mimic ducktape cluster node structure
     def __init__(self, pod, kubectl, logger) -> None:
         self.logger = logger
         # Validate
@@ -15,6 +31,11 @@ class CloudBroker():
         self.operating_system = 'k8s'
         self._meta = pod['metadata']
         self.name = self._meta['name']
+
+        # Backward compatibility
+        # Various classes will use this to hash and compare nodes
+        self.account = DummyAccount(node_name=pod['spec']['nodeName'],
+                                    pod_name=pod['metadata']['name'])
 
         # It appears that the node-id label will only be added if the cluster
         # is still being managed by the operator - if managed=false then this
@@ -30,11 +51,44 @@ class CloudBroker():
         self._spec = pod['spec']
         self._status = pod['status']
 
-        # Backward compatibility
-        # Various classes will use this var to hash and compare nodes
-        self.account = self._meta
         # Mimic Ducktape cluster node hostname field
         self.hostname = f"{self._spec['nodeName']}/{self.name}"
+        self.nodename = self._spec['nodeName']
+        # Create node shell pod
+        self.nodeshell = KubeNodeShell(self._kubeclient,
+                                       self.nodename,
+                                       clean=False)
+        # Init node shell pod beforehand
+        self.nodeshell.initialize_nodeshell()
+        # Prepare log extraction script
+        self.inject_script("pod_log_extract.sh")
+
+    def inject_script(self, script_name):
+        # Modified version of inject_script func
+        self.logger.info(f"Injecting '{script_name}' to {self.nodename}")
+        rptest_dir = os.path.dirname(os.path.realpath(__file__))
+        scripts_dir = os.path.join(rptest_dir, os.path.pardir,
+                                   "remote_scripts", "cloud")
+        scripts_dir = os.path.abspath(scripts_dir)
+        assert os.path.exists(scripts_dir)
+        script_path = os.path.join(scripts_dir, script_name)
+        assert os.path.exists(script_path)
+
+        # not using paramiko due to complexity of routing to actual node
+        # Copy ducktape -> agent
+        _scp_cmd = self._kubeclient._scp_cmd(
+            script_path, f"{self._kubeclient._remote_uri}:")
+        self.logger.debug(_scp_cmd)
+        res = subprocess.check_output(_scp_cmd)
+        # Copy agent -> broker node
+        remote_path = os.path.join("/tmp", script_name)
+        _cp_cmd = self._kubeclient._ssh_prefix() + [
+            'kubectl', 'cp', script_name,
+            f"{self.nodeshell.pod_name}:{remote_path}"
+        ]
+        self.logger.debug(_cp_cmd)
+        res = subprocess.check_output(_cp_cmd)
+        return
 
     def _query_broker(self, path, port=None):
         """
