@@ -24,7 +24,6 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
-#include "pandaproxy/auth_utils.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
@@ -55,6 +54,15 @@ const security::acl_principal principal{
 
 class wrap {
 public:
+    enum class auth_level {
+        // Unauthenticated endpoint (not a typo, 'public' is a keyword)
+        publik = 0,
+        // Requires authentication (if enabled) but not superuser status
+        user = 1,
+        // Requires authentication (if enabled) and superuser status
+        superuser = 2
+    };
+
     wrap(ss::gate& g, one_shot& os, auth_level lvl, server::function_handler h)
       : _g{g}
       , _os{os}
@@ -100,6 +108,39 @@ public:
     }
 
 private:
+    inline credential_t maybe_authorize_request(
+      config::rest_authn_method authn_method,
+      auth_level lvl,
+      request_authenticator& authenticator,
+      const ss::http::request& req) const {
+        credential_t user;
+
+        if (authn_method != config::rest_authn_method::none) {
+            // Will throw 400 & 401 if auth fails
+            auto auth_result = authenticator.authenticate(req);
+            // Will throw 403 if user enabled HTTP Basic Auth but
+            // did not give the authorization header.
+            switch (lvl) {
+            case auth_level::superuser:
+                auth_result.require_superuser();
+                break;
+            case auth_level::user:
+                auth_result.require_authenticated();
+                break;
+            case auth_level::publik:
+                auth_result.pass();
+                break;
+            }
+
+            user = credential_t{
+              auth_result.get_username(),
+              auth_result.get_password(),
+              auth_result.get_sasl_mechanism()};
+        }
+
+        return user;
+    }
+
     inline net::unresolved_address
     from_ss_sa(const ss::socket_address& sa) const {
         return {fmt::format("{}", sa.addr()), sa.port(), sa.addr().in_family()};
@@ -199,6 +240,7 @@ private:
 };
 
 server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
+    using auth_level = wrap::auth_level;
     server::routes_t routes;
     routes.api = ss::httpd::schema_registry_json::name;
 
