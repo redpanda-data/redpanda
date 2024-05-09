@@ -391,10 +391,12 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
       delete_subject_key{.seq{write_at}, .node{_node_id}, .sub{sub}},
       delete_subject_value{.sub{sub}});
 
-    auto conf = co_await ss::coroutine::as_future(
-      _store.get_subject_config_written_at(sub));
-    if (!conf.failed()) {
-        rb(conf.get());
+    try {
+        rb(co_await _store.get_subject_config_written_at(sub));
+    } catch (exception const& e) {
+        if (e.code() != error_code::subject_not_found) {
+            throw;
+        }
     }
 
     if (co_await produce_and_apply(write_at, std::move(rb).build())) {
