@@ -548,3 +548,87 @@ FIXTURE_TEST(test_abort_hydration_triggered_externally, cloud_storage_fixture) {
     };
     test_wrapper(*this, test);
 }
+
+FIXTURE_TEST(test_chunk_mixed_dl_results, cloud_storage_fixture) {
+    // This test simulates a situation where multiple chunk downloads are queued
+    // up, some fail and other succeed. The loop in chunk API should correctly
+    // handle a mixed set of results.
+
+    // The first chunk download is marked to fail
+    const auto is_request_for_first_chunk = [](const auto& r) {
+        return is_segment_dl_req(r)
+               && parse_byte_header(r.header("Range").value()).first == 0;
+    };
+
+    fail_request_if(
+      is_request_for_first_chunk,
+      {.status = ss::http::reply::status_type::bad_request});
+
+    auto test_f = [&](remote_segment& r, segment_chunks& c, const iobuf&) {
+        r.hydrate().get();
+
+        std::vector<chunk_start_offset_t> starts{
+          0,
+          c.get_next_chunk_start(0),
+          c.get_next_chunk_start(c.get_next_chunk_start(0))};
+
+        std::vector<ss::future<segment_chunk::handle_t>> gets;
+        gets.reserve(starts.size());
+
+        for (auto start : starts) {
+            gets.emplace_back(c.hydrate_chunk(start));
+        }
+
+        auto results = ss::when_all(gets.begin(), gets.end()).get();
+
+        RPTEST_REQUIRE_EVENTUALLY(
+          10s, [&c] { return !c.downloads_in_progress(); })
+
+        const auto& requests_made = get_requests(is_segment_dl_req);
+
+        for (size_t i = 0; i < starts.size(); ++i) {
+            auto start = starts[i];
+            auto result = std::move(results[i]);
+
+            const auto does_match_byte_range = [&](const auto& req) {
+                const auto header = req.header("Range");
+                BOOST_REQUIRE(header.has_value());
+                return c.get_byte_range_for_chunk(
+                         start, r.get_segment_size() - 1)
+                       == parse_byte_header(header.value());
+            };
+
+            BOOST_REQUIRE(
+              std::ranges::any_of(requests_made, does_match_byte_range));
+
+            const auto is_path_to_chunk = [&](const auto& entry) {
+                return entry.path().native().ends_with(
+                  fmt::format("_chunks/{}", start));
+            };
+
+            const auto& chunk = c.get(start);
+            auto dit = std::filesystem::recursive_directory_iterator{
+              tmp_directory.get_path()};
+
+            if (start != 0) {
+                BOOST_REQUIRE(chunk.current_state == chunk_state::hydrated);
+                BOOST_REQUIRE(chunk.handle.has_value());
+                BOOST_REQUIRE(std::ranges::any_of(dit, is_path_to_chunk));
+                auto res = result.get();
+                BOOST_REQUIRE(*res);
+                auto p = ss::make_lw_shared(ss::file{});
+                BOOST_REQUIRE(p);
+            } else {
+                // chunk 0 is marked to fail download
+                BOOST_REQUIRE(
+                  chunk.current_state == chunk_state::not_available);
+                BOOST_REQUIRE(!chunk.handle.has_value());
+                BOOST_REQUIRE(std::ranges::none_of(dit, is_path_to_chunk));
+                auto err = result.get_exception();
+                BOOST_REQUIRE(err);
+            }
+        }
+    };
+
+    test_wrapper(*this, test_f);
+}
