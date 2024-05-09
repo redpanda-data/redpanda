@@ -20,7 +20,6 @@
 #include <seastar/util/defer.hh>
 
 inline ss::logger test_log("test"); // NOLINT
-
 namespace cloud_storage {
 class remote_segment_test_helper {
 public:
@@ -36,6 +35,9 @@ private:
 
 using namespace cloud_storage;
 using upload_index_t = ss::bool_class<struct upload_index_tag>;
+
+namespace ranges = std::ranges;
+namespace views = std::views;
 
 namespace {
 ss::abort_source never_abort;
@@ -168,6 +170,10 @@ bool is_segment_dl_req(const http_test_utils::request_info& req) {
            && std::regex_match(req.url.begin(), req.url.end(), log_file_expr);
 }
 
+bool is_chunk_file(const std::filesystem::directory_entry& e) {
+    return std::regex_match(e.path().native(), chunk_file_expr);
+}
+
 } // namespace
 
 FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
@@ -262,7 +268,7 @@ FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
               return req.header("Range") == "";
           };
 
-          BOOST_REQUIRE(std::ranges::all_of(
+          BOOST_REQUIRE(ranges::all_of(
             get_requests(is_segment_dl_req), does_not_have_range_header));
 
           const auto is_chunk_path = [](std::string_view v) {
@@ -275,7 +281,7 @@ FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
               return std::regex_match(path.begin(), path.end(), log_file_expr);
           };
 
-          BOOST_REQUIRE(std::ranges::any_of(
+          BOOST_REQUIRE(ranges::any_of(
             std::filesystem::recursive_directory_iterator{
               tmp_directory.get_path()},
             is_log_path));
@@ -436,7 +442,7 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
     }
 
     auto all_readers_done = [&readers] {
-        return std::ranges::all_of(
+        return ranges::all_of(
           readers, [](const auto& reader) { return reader->is_eof(); });
     };
 
@@ -445,13 +451,13 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
           ss::future<result<ss::circular_buffer<model::record_batch>>>>
           reads;
         reads.reserve(readers.size());
-        std::ranges::transform(
+        ranges::transform(
           readers, std::back_inserter(reads), [&](auto& reader) {
               return reader->read_some(model::no_timeout, ot_state);
           });
 
         auto results = ss::when_all_succeed(reads.begin(), reads.end()).get();
-        BOOST_REQUIRE(std::ranges::all_of(
+        BOOST_REQUIRE(ranges::all_of(
           results, [](const auto& result) { return !result.has_error(); }));
     }
 
@@ -462,11 +468,8 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
 
 FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
     const uint16_t prefetch = 3;
-    config::shard_local_cfg().cloud_storage_chunk_prefetch.set_value(
-      static_cast<uint16_t>(prefetch));
-
-    auto reset_cfg = ss::defer(
-      [] { config::shard_local_cfg().cloud_storage_cache_chunk_size.reset(); });
+    scoped_config reset;
+    reset.get("cloud_storage_chunk_prefetch").set_value(uint16_t{prefetch});
 
     auto test_f = [&](remote_segment& r, segment_chunks& c, const iobuf&) {
         r.hydrate().get();
@@ -487,7 +490,7 @@ FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
                   fmt::format("_chunks/{}", start));
             };
 
-            BOOST_REQUIRE(std::ranges::any_of(
+            BOOST_REQUIRE(ranges::any_of(
               std::filesystem::recursive_directory_iterator{
                 tmp_directory.get_path()},
               is_path_to_chunk));
@@ -500,8 +503,7 @@ FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
                        == parse_byte_header(header.value());
             };
 
-            BOOST_REQUIRE(
-              std::ranges::any_of(requests_made, does_match_byte_range));
+            BOOST_REQUIRE(ranges::any_of(requests_made, does_match_byte_range));
             if (++i > prefetch) {
                 break;
             }
@@ -598,8 +600,7 @@ FIXTURE_TEST(test_chunk_mixed_dl_results, cloud_storage_fixture) {
                        == parse_byte_header(header.value());
             };
 
-            BOOST_REQUIRE(
-              std::ranges::any_of(requests_made, does_match_byte_range));
+            BOOST_REQUIRE(ranges::any_of(requests_made, does_match_byte_range));
 
             const auto is_path_to_chunk = [&](const auto& entry) {
                 return entry.path().native().ends_with(
@@ -613,7 +614,7 @@ FIXTURE_TEST(test_chunk_mixed_dl_results, cloud_storage_fixture) {
             if (start != 0) {
                 BOOST_REQUIRE(chunk.current_state == chunk_state::hydrated);
                 BOOST_REQUIRE(chunk.handle.has_value());
-                BOOST_REQUIRE(std::ranges::any_of(dit, is_path_to_chunk));
+                BOOST_REQUIRE(ranges::any_of(dit, is_path_to_chunk));
                 auto res = result.get();
                 BOOST_REQUIRE(*res);
                 auto p = ss::make_lw_shared(ss::file{});
@@ -623,11 +624,230 @@ FIXTURE_TEST(test_chunk_mixed_dl_results, cloud_storage_fixture) {
                 BOOST_REQUIRE(
                   chunk.current_state == chunk_state::not_available);
                 BOOST_REQUIRE(!chunk.handle.has_value());
-                BOOST_REQUIRE(std::ranges::none_of(dit, is_path_to_chunk));
+                BOOST_REQUIRE(ranges::none_of(dit, is_path_to_chunk));
                 auto err = result.get_exception();
                 BOOST_REQUIRE(err);
             }
         }
+    };
+
+    test_wrapper(*this, test_f);
+}
+
+namespace {
+
+std::vector<chunk_start_offset_t>
+pick_random_chunk_offsets(segment_chunks& c, size_t count = 1000) {
+    std::vector<chunk_start_offset_t> result;
+    result.reserve(count);
+
+    int to_fill = count;
+    std::vector<chunk_start_offset_t> offsets;
+    for (auto start : std::views::keys(c)) {
+        offsets.push_back(start);
+    }
+    while (to_fill > 0) {
+        auto pos = random_generators::randomized_range(
+          size_t{0}, offsets.size());
+        ranges::transform(
+          pos, std::back_inserter(result), [&](auto p) { return offsets[p]; });
+        to_fill -= offsets.size();
+    }
+
+    result.resize(count);
+    return result;
+}
+
+ss::future<> delete_random_chunks(
+  cloud_storage_fixture& f, ss::abort_source& as, ss::gate& gate) {
+    using dit = std::filesystem::recursive_directory_iterator;
+    auto g = gate.hold();
+    while (!as.abort_requested()) {
+        for (auto it = dit{f.tmp_directory.get_path()}; it != dit{}; ++it) {
+            if (is_chunk_file(*it)) {
+                if (random_generators::get_int(100) > 20) {
+                    vlog(test_log.info, "removing {}", it->path().native());
+                    co_await ss::remove_file(it->path().native());
+                }
+            }
+        }
+        co_await ss::sleep(1ms);
+    }
+}
+
+} // namespace
+
+FIXTURE_TEST(test_chunk_stop_while_downloading, cloud_storage_fixture) {
+    scoped_config reset;
+    reset.get("cloud_storage_chunk_prefetch").set_value(uint16_t{3});
+
+    // Simulates an abrupt stop while downloading, to make sure no part of the
+    // system hangs or fails if downloads are in progress and the segment is
+    // stopped
+
+    auto test_f = [&](remote_segment& r, segment_chunks& c, const iobuf&) {
+        r.hydrate().get();
+
+        size_t n_test_size = 10000;
+        std::vector<ss::future<segment_chunk::handle_t>> gets;
+        gets.reserve(n_test_size);
+        for (auto ro : pick_random_chunk_offsets(c, n_test_size)) {
+            gets.emplace_back(c.hydrate_chunk(ro));
+        }
+
+        r.stop().get();
+        BOOST_REQUIRE(!c.downloads_in_progress());
+
+        auto failed_futures = ss::when_all(gets.begin(), gets.end()).get()
+                              | views::filter(
+                                [](auto& f) { return f.failed(); });
+        ranges::for_each(failed_futures, [](auto& r) { r.get_exception(); });
+    };
+
+    test_wrapper(*this, test_f);
+}
+
+FIXTURE_TEST(test_chunk_dl_while_removing_files, cloud_storage_fixture) {
+    // This test exercises both waiter semantics, because each chunk is
+    // requested multiple times, and materialization failure handling on file
+    // delete. The background task deletes random chunk files, so remote_segment
+    // has to re-hydrate deleted chunks.
+    auto test_f = [&](remote_segment& r, segment_chunks& c, const iobuf&) {
+        r.hydrate().get();
+
+        size_t n_test_size = 10000;
+        std::vector<ss::future<segment_chunk::handle_t>> gets;
+        gets.reserve(n_test_size);
+        for (auto ro : pick_random_chunk_offsets(c, n_test_size)) {
+            gets.emplace_back(c.hydrate_chunk(ro));
+        }
+
+        // Timebox the test so that we don't end up waiting on the gets
+        // forever
+        RPTEST_REQUIRE_EVENTUALLY(
+          60s, [&c] { return !c.downloads_in_progress(); })
+
+        auto results = ss::when_all(gets.begin(), gets.end()).get();
+        for (auto& r : results) {
+            BOOST_REQUIRE(!r.failed());
+            auto handle = r.get();
+            BOOST_REQUIRE(*handle);
+        }
+    };
+
+    ss::abort_source as;
+    ss::gate g;
+    ssx::background = delete_random_chunks(*this, as, g);
+    test_wrapper(*this, test_f);
+    as.request_abort();
+    g.close().get();
+}
+
+FIXTURE_TEST(test_chunk_dl_with_random_http_errors, cloud_storage_fixture) {
+    // Inject random http errors, a large number of retryable ones and a small
+    // number of non retryable ones. The majority of requests should succeed
+    // eventually, although the limited time available means some retryable
+    // requests will also fail.
+    auto test_f = [&](remote_segment& r, segment_chunks& c, const iobuf&) {
+        r.hydrate().get();
+
+        size_t n_test_size = 10000;
+        std::vector<ss::future<segment_chunk::handle_t>> gets;
+        gets.reserve(n_test_size);
+        for (auto ro : pick_random_chunk_offsets(c, n_test_size)) {
+            gets.emplace_back(c.hydrate_chunk(ro));
+        }
+
+        // Deferred so that if the test fails due to timeout the logs are not
+        // polluted with ignored exception errors
+        auto resolve_futures = ss::defer([&]() {
+            auto results = ss::when_all(gets.begin(), gets.end()).get();
+            int failed = 0;
+            for (auto& r : results) {
+                if (r.failed()) {
+                    auto ex = r.get_exception();
+                    BOOST_REQUIRE(ex);
+                    failed += 1;
+                } else {
+                    auto f = r.get();
+                    BOOST_REQUIRE(*f);
+                }
+            }
+
+            vlog(
+              test_log.info,
+              "total failed requests: {}/{}",
+              failed,
+              n_test_size);
+        });
+
+        RPTEST_REQUIRE_EVENTUALLY(
+          120s, [&c] { return !c.downloads_in_progress(); })
+    };
+
+    int injected = 0;
+    // Non retryable errors
+    fail_request_if(
+      [&injected](const auto& r) {
+          if (!is_segment_dl_req(r)) {
+              return false;
+          }
+          auto fail = random_generators::get_int(100) > 80;
+          if (fail) {
+              injected += 1;
+          }
+          return fail;
+      },
+      {.status = ss::http::reply::status_type::not_found});
+
+    // Retryable errors
+    fail_request_if(
+      [&injected](const auto& r) {
+          if (!is_segment_dl_req(r)) {
+              return false;
+          }
+          auto fail = random_generators::get_int(100) > 20;
+          if (fail) {
+              injected += 1;
+          }
+          return fail;
+      },
+      {.status = ss::http::reply::status_type::internal_server_error});
+
+    test_wrapper(*this, test_f);
+    vlog(
+      test_log.info,
+      "total failures injected {}, total requests made {}",
+      injected,
+      get_requests(is_segment_dl_req).size());
+}
+
+FIXTURE_TEST(
+  test_chunk_prefetch_with_overlapping_waiters, cloud_storage_fixture) {
+    // A chunk prefetch schedules download for that chunk. There may be a
+    // request for the same chunk later on via a consumer. This test checks that
+    // such requests do not result in chunk FDs being leaked.
+    scoped_config reset;
+    reset.get("cloud_storage_chunk_prefetch").set_value(uint16_t{3});
+
+    auto test_f = [&](remote_segment& r, segment_chunks& c, const iobuf&) {
+        r.hydrate().get();
+
+        size_t n_test_size = 10000;
+        std::vector<ss::future<segment_chunk::handle_t>> gets;
+        gets.reserve(n_test_size);
+        for (auto ro : pick_random_chunk_offsets(c, n_test_size)) {
+            gets.emplace_back(c.hydrate_chunk(ro));
+        }
+
+        RPTEST_REQUIRE_EVENTUALLY(
+          120s, [&c] { return !c.downloads_in_progress(); })
+
+        auto results = ss::when_all(gets.begin(), gets.end()).get();
+        BOOST_REQUIRE(ranges::all_of(results, [](auto& res) {
+            auto h = res.get();
+            return bool{*h};
+        }));
     };
 
     test_wrapper(*this, test_f);
