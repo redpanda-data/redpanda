@@ -75,42 +75,6 @@ private:
 
 namespace cloud_storage {
 
-class split_segment_into_chunk_range_consumer {
-public:
-    split_segment_into_chunk_range_consumer(
-      cloud_storage::remote_segment& remote_segment,
-      cloud_storage::segment_chunk_range range)
-      : _segment{remote_segment}
-      , _range{std::move(range)} {}
-
-    ss::future<uint64_t>
-    operator()(uint64_t size, ss::input_stream<char> stream) {
-        for (const auto [start, end] : _range) {
-            const auto bytes_to_read = end.value_or(_segment._size - 1) - start
-                                       + 1;
-            auto reservation = co_await _segment._cache.reserve_space(
-              bytes_to_read, 1);
-            vlog(
-              cst_log.trace,
-              "making stream from byte offset {} for {} bytes",
-              start,
-              bytes_to_read);
-            auto dsi = std::make_unique<bounded_stream>(stream, bytes_to_read);
-            auto stream_upto = ss::input_stream<char>{
-              ss::data_source{std::move(dsi)}};
-            _segment._probe.chunk_size(bytes_to_read);
-            co_await _segment.put_chunk_in_cache(
-              reservation, std::move(stream_upto), start);
-        }
-        co_await stream.close();
-        co_return size;
-    }
-
-private:
-    cloud_storage::remote_segment& _segment;
-    cloud_storage::segment_chunk_range _range;
-};
-
 std::filesystem::path
 generate_index_path(const cloud_storage::remote_segment_path& p) {
     return fmt::format("{}.index", p().native());
