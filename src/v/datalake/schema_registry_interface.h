@@ -16,11 +16,24 @@
 
 namespace datalake {
 
-// Todo: protobuf schemas can refer to other schemas via includes. We currently
-// don't support this.
+/*
+This interface solves two problems:
+1. Dependency cycle between schema_registry, cluster, and datalake
+2. Initialization order: partition manager is initialized before schema registry
+
+partition_manager creates a schema_registry_reader shared pointer and passes
+that to the individual partitions, where it is available to
+ntp_archiver_service.
+
+However, when partition_manager is initialized, the schema_registry isn't yet
+intialized. Once the schema_registry is set up, it is passed in to the
+schema_registry_reader via the set_schema_registry function on that class.
+*/
+
+// TODO: protobuf schemas can refer to other schemas via includes. We currently
+// don't support recursively loading schemas.
 struct schema_info {
     std::string schema;
-    std::string message_name;
 };
 
 class schema_registry_interface {
@@ -35,7 +48,6 @@ public:
     get_raw_topic_schema(std::string /* topic */) override {
         co_return schema_info{
           .schema = "",
-          .message_name = "",
         };
     }
 };

@@ -3,6 +3,7 @@
 
 namespace datalake {
 
+// See design comment in schema_registry_interface
 class schema_registry_reader : public schema_registry_interface {
 public:
     explicit schema_registry_reader() {}
@@ -19,7 +20,6 @@ public:
     get_raw_topic_schema(std::string topic_name) override {
         schema_info default_return_value = {
           .schema = "",
-          .message_name = "",
         };
 
         if (!_initialized) {
@@ -42,7 +42,6 @@ public:
 
             co_return schema_info{
               .schema = value_schema_string,
-              .message_name = "",
             };
         } catch (const pandaproxy::schema_registry::exception& e) {
             if (

@@ -15,26 +15,21 @@
 #include <memory>
 
 datalake::arrow_writing_consumer::arrow_writing_consumer(
-  std::filesystem::path local_file_path,
-  std::string protobuf_schema,
-  std::string /* protobuf_message */)
+  std::filesystem::path local_file_path, std::string protobuf_schema)
   : _local_file_path(std::move(local_file_path)) {
     try {
         _table_builder = std::make_unique<proto_to_arrow_converter>(
           protobuf_schema);
-        std::cerr << "jcipar made table builder for file " << _local_file_path
-                  << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "jcipar Could not build proto_to_arrow_converter for "
-                  << _local_file_path << std::endl;
-        std::cerr << e.what() << std::endl;
-        std::cerr << protobuf_schema << std::endl << std::endl;
+        // Couldn't build a table builder, fall back to schemaless
+        // TODO: Log this
     }
 
     _field_key = arrow::field("Key", arrow::binary());
     _field_value = arrow::field("Value", arrow::binary());
-    _field_timestamp = arrow::field(
-      "Timestamp", arrow::uint64()); // FIXME: timestamp type?
+
+    // TODO: use the timestamp type? Iceberg does not support unsigned integers.
+    _field_timestamp = arrow::field("Timestamp", arrow::uint64());
 
     if (_table_builder) {
         _schema = _table_builder->build_schema();
@@ -45,7 +40,7 @@ datalake::arrow_writing_consumer::arrow_writing_consumer(
     // Initialize output file
     std::filesystem::create_directories(_local_file_path.parent_path());
 
-    // FIXME: use compression. Originally I set it to SNAPPY because that's what
+    // TODO: use compression. Originally I set it to SNAPPY because that's what
     // the example code in the docs uses, but that was throwing a NotImplemented
     // error at runtime. Pick a compresseion algorithm and ensure our Arrow
     // library is compiled with it.
@@ -101,6 +96,8 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
           std::string value;
           key = iobuf_to_string(record.key());
 
+          // TODO: Factor out the schemaless code into a schemaless
+          // table builder.
           if (record.has_value()) {
               value = iobuf_to_string(record.value());
           }
@@ -125,8 +122,8 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
               _table_builder->add_message(value);
           }
 
-          _rows++;
-          _current_rows++;
+          _total_row_count++;
+          _unwritten_row_count++;
           return ss::stop_iteration::no;
       });
     if (!_ok.ok()) {
@@ -172,7 +169,7 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
     _value_vector.push_back(value_array);
     _timestamp_vector.push_back(timestamp_array);
 
-    if (_current_rows > 1000) {
+    if (_unwritten_row_count > _row_group_size) {
         if (!write_row_group()) {
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::yes);
@@ -182,7 +179,54 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
     return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
 }
 
-std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
+ss::future<arrow::Status> datalake::arrow_writing_consumer::end_of_stream() {
+    if (!_ok.ok()) {
+        co_return _ok;
+    }
+    write_row_group();
+
+    auto close_result = _file_writer->Close();
+    if (!close_result.ok()) {
+        _ok = close_result;
+    }
+
+    co_return _ok;
+}
+
+bool datalake::arrow_writing_consumer::write_row_group() {
+    if (_unwritten_row_count == 0) {
+        return true;
+    }
+
+    std::shared_ptr<arrow::Table> table;
+    if (_table_builder == nullptr) {
+        // TODO: debug log: using schemaless table builder
+        table = get_schemaless_table();
+    } else {
+        // TODO: debug log: using schemaful table builder
+        _table_builder->finish_batch();
+        table = _table_builder->build_table();
+    }
+    if (table == nullptr) {
+        return false;
+    }
+
+    auto write_result = _file_writer->WriteTable(*table.get());
+    if (!write_result.ok()) {
+        _ok = write_result;
+        return false;
+    }
+
+    _key_vector.clear();
+    _value_vector.clear();
+    _timestamp_vector.clear();
+    _unwritten_row_count = 0;
+
+    return true;
+}
+
+std::shared_ptr<arrow::Table>
+datalake::arrow_writing_consumer::get_schemaless_table() {
     if (!_ok.ok()) {
         return nullptr;
     }
@@ -199,20 +243,6 @@ std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
       _schema,
       {key_chunks, value_chunks, timestamp_chunks},
       key_chunks->length());
-}
-
-ss::future<arrow::Status> datalake::arrow_writing_consumer::end_of_stream() {
-    if (!_ok.ok()) {
-        co_return _ok;
-    }
-    write_row_group();
-
-    auto close_result = _file_writer->Close();
-    if (!close_result.ok()) {
-        _ok = close_result;
-    }
-
-    co_return _ok;
 }
 
 uint32_t datalake::arrow_writing_consumer::iobuf_to_uint32(const iobuf& buf) {
@@ -237,38 +267,4 @@ datalake::arrow_writing_consumer::iobuf_to_string(const iobuf& buf) {
         ++vbegin;
     }
     return value;
-}
-
-bool datalake::arrow_writing_consumer::write_row_group() {
-    if (_current_rows == 0) {
-        return true;
-    }
-
-    std::shared_ptr<arrow::Table> table;
-    if (_table_builder == nullptr) {
-        std::cerr << "jcipar using schemaless table builder\n";
-        table = get_table();
-    } else {
-        std::cerr << "jcipar using schemaful table builder\n";
-        _table_builder->finish_batch();
-        table = _table_builder->build_table();
-    }
-    if (table == nullptr) {
-        std::cerr << "jcipar table is null\n";
-        return false;
-    }
-    std::cerr << "jcipar table is not null\n";
-
-    auto write_result = _file_writer->WriteTable(*table.get());
-    if (!write_result.ok()) {
-        _ok = write_result;
-        return false;
-    }
-
-    _key_vector.clear();
-    _value_vector.clear();
-    _timestamp_vector.clear();
-    _current_rows = 0;
-
-    return true;
 }

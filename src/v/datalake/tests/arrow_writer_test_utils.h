@@ -230,7 +230,6 @@ inline datalake::schema_info get_test_schema() {
     test_data data;
     return {
       .schema = data.nested_schema,
-      .message_name = data.test_message_name,
     };
 }
 

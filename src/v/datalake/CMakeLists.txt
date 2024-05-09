@@ -7,7 +7,6 @@ v_cc_library(
   NAME datalake
   SRCS
     arrow_writing_consumer.cc
-    configuration.cc
     parquet_uploader.cc
     protobuf_to_arrow_converter.cc
   DEPS

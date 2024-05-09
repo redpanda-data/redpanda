@@ -34,7 +34,6 @@
 #include "container/fragmented_vector.h"
 #include "datalake/configuration.h"
 #include "datalake/parquet_uploader.h"
-#include "datalake/schema_registry_interface.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -1167,6 +1166,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
           fib,
           _rtclog);
         if (!success) {
+            // TODO: retry on error
             vlog(
               ctxlog.warn, "Failed to upload datalake segment {}", candidate);
         } else {

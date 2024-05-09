@@ -211,6 +211,7 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
   topic_properties_update_vector updates,
   model::timeout_clock::time_point timeout) {
     auto cluster_leader = _leaders.local().get_leader(model::controller_ntp);
+
     // no leader available
     if (!cluster_leader) {
         co_return make_error_topic_results(updates, errc::no_leader_controller);
@@ -273,7 +274,6 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
           if (r.has_error()) {
               return make_error_topic_results(updates, map_errc(r.error()));
           }
-
           return std::move(r.value().results);
       });
 }

@@ -94,7 +94,7 @@ public:
             _arrow_status = _child_arrays[child_idx]->add_value(
               child_message, int(child_idx));
             if (!_arrow_status.ok()) {
-                break;
+                return _arrow_status;
             }
         }
         _arrow_status = _builder->Append();

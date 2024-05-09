@@ -9,8 +9,6 @@ datalake::proto_to_arrow_converter::proto_to_arrow_converter(
     initialize_protobuf_schema(schema);
     if (!initialize_arrow_arrays()) {
         // FIXME: exception type
-        std::cerr << "Could not initialize converter for schema:\n";
-        std::cerr << schema;
         throw std::runtime_error("Could not initialize arrow arrays");
     }
 }
@@ -19,7 +17,8 @@ void datalake::proto_to_arrow_converter::add_message(
     std::unique_ptr<google::protobuf::Message> message = parse_message(
       serialized_message);
     if (message == nullptr) {
-        // FIXME: Silently ignoring unparseable messages seems bad.
+        // TODO: Return error so higher-level code can handle failed
+        // messages
         return;
     }
     add_message_parsed(std::move(message));
@@ -29,7 +28,7 @@ void datalake::proto_to_arrow_converter::finish_batch() {
         assert(
           field_idx >= 0); // Dummy assert to avoid unused variable warning.
         if (!array->finish_batch().ok()) {
-            // FIXME
+            // FIXME: exception type
             throw std::runtime_error("Could not finish batch");
         }
     }
@@ -52,7 +51,9 @@ datalake::proto_to_arrow_converter::build_table() {
 std::vector<std::shared_ptr<arrow::Field>>
 datalake::proto_to_arrow_converter::build_field_vec() {
     const google::protobuf::Descriptor* message_desc = message_descriptor();
-    assert(message_desc != nullptr);
+    if (message_desc == nullptr) {
+        throw std::runtime_error("Message descriptor is null");
+    }
 
     std::vector<std::shared_ptr<arrow::Field>> field_vec;
     for (auto& [field_idx, array] : _arrays) {
@@ -67,7 +68,7 @@ datalake::proto_to_arrow_converter::build_schema() {
 }
 void datalake::proto_to_arrow_converter::add_message_parsed(
   std::unique_ptr<google::protobuf::Message> message) {
-    // TODO(jcipar): Allocating and deallocating the field descriptor array
+    // TODO: Allocating and deallocating the field descriptor array
     // for every message is probably a bad idea.
     auto reflection = message->GetReflection();
     std::vector<const google::protobuf::FieldDescriptor*> field_descriptors;
@@ -77,7 +78,7 @@ void datalake::proto_to_arrow_converter::add_message_parsed(
           field_idx >= 0); // Dummy assert to avoid unused variable warning.
         // TODO: handle this error
         if (!array->add_value(message.get(), field_idx).ok()) {
-            // FIXME
+            // FIXME: exception type
             throw new std::runtime_error("Could not add value");
         }
     }
@@ -96,7 +97,7 @@ void datalake::proto_to_arrow_converter::initialize_protobuf_schema(
     }
 
     if (!_file_descriptor_proto.has_name()) {
-        _file_descriptor_proto.set_name("test_message");
+        _file_descriptor_proto.set_name("dummy_message_name");
     }
 
     _file_desc = _protobuf_descriptor_pool.BuildFile(_file_descriptor_proto);
@@ -113,7 +114,11 @@ bool datalake::proto_to_arrow_converter::initialize_arrow_arrays() {
         std::cerr << "Message descriptor is null\n";
         return false;
     }
-
+    // TODO: This code is almost identical to the code in proto_to_arrow_struct.
+    // It seems like we could combine these. One possibility is to tread every
+    // message as a struct, and parse everything with proto_to_arrow_struct, so
+    // this class is only responsible for parsing the schema and setting that
+    // up.
     for (int field_idx = 0; field_idx < message_desc->field_count();
          field_idx++) {
         auto desc = message_desc->field(field_idx);
@@ -152,19 +157,22 @@ bool datalake::proto_to_arrow_converter::initialize_arrow_arrays() {
 }
 std::unique_ptr<google::protobuf::Message>
 datalake::proto_to_arrow_converter::parse_message(const std::string& message) {
-    // TODO: How much of this can be moved to initialization code to avoid
-    // reallocating objects?
-
     // Get the message descriptor
     const google::protobuf::Descriptor* message_desc = message_descriptor();
-    assert(message_desc != nullptr);
+    if (message_desc == nullptr) {
+        throw std::runtime_error("Message descriptor is null");
+    }
 
     const google::protobuf::Message* prototype_msg = _factory.GetPrototype(
       message_desc);
-    assert(prototype_msg != nullptr);
+    if (prototype_msg == nullptr) {
+        throw std::runtime_error("Prototype message is null");
+    }
 
     google::protobuf::Message* mutable_msg = prototype_msg->New();
-    assert(mutable_msg != nullptr);
+    if (mutable_msg == nullptr) {
+        throw std::runtime_error("Mutable message is null");
+    }
 
     if (!mutable_msg->ParseFromString(message)) {
         return nullptr;
@@ -176,7 +184,6 @@ const google::protobuf::Descriptor*
 datalake::proto_to_arrow_converter::message_descriptor() {
     int message_type_count = _file_desc->message_type_count();
     if (message_type_count == 0) {
-        std::cerr << "No messages in schema\n";
         return nullptr;
     }
     return _file_desc->message_type(message_type_count - 1);
