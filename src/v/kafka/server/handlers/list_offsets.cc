@@ -130,8 +130,9 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           kafka_partition->leader_epoch());
     }
     auto res = co_await kafka_partition->timequery(storage::timequery_config{
+      kafka_partition->start_offset(),
       timestamp,
-      offset,
+      model::prev_offset(offset),
       kafka_read_priority(),
       {model::record_batch_type::raft_data},
       octx.rctx.abort_source().local()});
