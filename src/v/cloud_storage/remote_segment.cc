@@ -894,7 +894,10 @@ ss::future<> remote_segment::run_hydrate_bg() {
                   _ctxlog.debug,
                   "Processing {} chunk download request(s)",
                   _chunk_waiters.size());
-                co_await service_chunk_requests();
+                auto failed_requests = co_await service_chunk_requests();
+                for (auto& r : failed_requests) {
+                    _chunk_waiters.emplace_back(std::move(r));
+                }
             }
         } catch (...) {
             const auto err = std::current_exception();
@@ -909,10 +912,24 @@ ss::future<> remote_segment::run_hydrate_bg() {
         }
     }
 
+    // If any new download requests got queued up while we were downloading
+    // chunks before the gate closed, cancel them so that the gate close does
+    // not get stuck during segment stop.
+    if (!_chunk_waiters.empty() && _gate.is_closed()) {
+        vlog(
+          _ctxlog.debug,
+          "Cancelling {} pending chunk downloads during segment stop",
+          _chunk_waiters.size());
+        for (auto& w : _chunk_waiters) {
+            w.promise.set_exception(ss::gate_closed_exception{});
+        }
+    }
+
     _hydration_loop_running = false;
 }
 
-ss::future<> remote_segment::service_chunk_requests() {
+ss::future<fragmented_vector<remote_segment::chunk_request>>
+remote_segment::service_chunk_requests() {
     fragmented_vector<ss::future<ss::file>> chunk_op_results;
     chunk_op_results.reserve(_chunk_waiters.size());
 
@@ -935,6 +952,7 @@ ss::future<> remote_segment::service_chunk_requests() {
     auto results = co_await ss::when_all(
       chunk_op_results.begin(), chunk_op_results.end());
 
+    fragmented_vector<chunk_request> failed;
     for (size_t i = 0; i < results.size(); ++i) {
         auto request = std::move(requests[i]);
         auto current_result = std::move(results[i]);
@@ -957,7 +975,7 @@ ss::future<> remote_segment::service_chunk_requests() {
               _ctxlog.debug,
               "Failed to materialize chunk start {}, retrying",
               request.start);
-            _chunk_waiters.emplace_back(std::move(request));
+            failed.emplace_back(std::move(request));
             continue;
         }
 
@@ -967,6 +985,7 @@ ss::future<> remote_segment::service_chunk_requests() {
             request.promise.set_value(materialized_handle);
         }
     }
+    co_return failed;
 }
 
 ss::future<ss::file> remote_segment::hydrate_and_materialize_chunk(
