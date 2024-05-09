@@ -71,10 +71,24 @@ class TSReadOpenmessagingTest(RedpandaTest):
             "warmup_duration_minutes": 5,
         }
 
-        benchmark = OpenMessagingBenchmark(self._ctx,
-                                           self.redpanda,
-                                           driver=driver_idx,
-                                           workload=[workload, validator])
+        wide_read_workload = {
+            "name": "WideRead625kLoad",
+            "topics": 1,
+            "partitions_per_topic": 600,
+            "subscriptions_per_topic": 2,
+            "consumer_per_subscription": 5,
+            "producers_per_topic": 16,
+            "producer_rate": 625000,
+            "consumer_backlog_size_GB": 10,
+            "test_duration_minutes": 10,
+            "warmup_duration_minutes": 5,
+        }
+
+        benchmark = OpenMessagingBenchmark(
+            self._ctx,
+            self.redpanda,
+            driver=driver_idx,
+            workload=[wide_read_workload, validator])
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time(
         ) + TSReadOpenmessagingTest.BENCHMARK_WAIT_TIME_MIN
