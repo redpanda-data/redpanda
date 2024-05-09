@@ -125,7 +125,7 @@ public:
     /// Hydrate a part of a segment, identified by the given range. The range
     /// can contain data for multiple contiguous chunks, in which case multiple
     /// files are written to cache.
-    ss::future<> hydrate_chunk(segment_chunk_range range);
+    ss::future<> hydrate_chunk(chunk_start_offset_t start_offset);
 
     /// Loads the segment chunk file from cache into an open file handle. If the
     /// file is not present in cache, the returned file handle is unopened.
@@ -178,8 +178,7 @@ public:
     // granularity, otherwise the size is chunk granularity.
     std::pair<size_t, bool> min_cache_cost() const;
 
-    ss::future<ss::file>
-    download_chunk(chunk_start_offset_t chunk_start, uint16_t prefetch);
+    ss::future<ss::file> download_chunk(chunk_start_offset_t chunk_start);
 
     size_t concurrency() { return _api.concurrency(); }
 
@@ -261,10 +260,8 @@ private:
     /// materialized.
     bool is_state_materialized() const;
 
-    using start_and_prefetch_t = std::pair<chunk_start_offset_t, uint16_t>;
-
     ss::future<ss::file>
-    hydrate_and_materialize_chunk(start_and_prefetch_t start_and_prefetch);
+    hydrate_and_materialize_chunk(chunk_start_offset_t start_offset);
 
     ss::gate _gate;
     remote& _api;
@@ -329,7 +326,6 @@ private:
     /// to the queue and the associated future is returned to the caller.
     struct chunk_request {
         chunk_start_offset_t start;
-        uint16_t prefetch;
         ss::promise<ss::file> promise;
     };
 
