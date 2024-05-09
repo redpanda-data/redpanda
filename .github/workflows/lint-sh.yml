@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - '**.sh'
+      -  tests/docker/ducktape-deps/tinygo-wasi-transforms
 
 jobs:
   sh:
