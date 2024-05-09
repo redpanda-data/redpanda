@@ -181,6 +181,8 @@ public:
     ss::future<ss::file>
     download_chunk(chunk_start_offset_t chunk_start, uint16_t prefetch);
 
+    size_t concurrency() { return _api.concurrency(); }
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
@@ -344,6 +346,8 @@ private:
     /// file handle is created for a given chunk, and the chunk API distributes
     /// shared ptrs to that handle to consumers.
     fragmented_vector<chunk_request> _chunk_waiters;
+
+    friend class remote_segment_test_helper;
 };
 
 class remote_segment_batch_consumer;

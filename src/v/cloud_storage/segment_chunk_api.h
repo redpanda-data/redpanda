@@ -79,6 +79,13 @@ public:
     /// segment.
     const chunk_map_t& chunk_map() const { return _chunks; }
 
+    /// Returns byte range (inclusive) for given chunk start offset. If the
+    /// chunk is the last in segment, the second parameter is used for the end
+    /// of the range. This is required because the chunk API only contains start
+    /// offsets of chunks.
+    std::pair<size_t, size_t> get_byte_range_for_chunk(
+      chunk_start_offset_t start_offset, size_t last_byte_in_segment) const;
+
 private:
     // Periodically closes chunk file handles for the space to be reclaimable by
     // cache eviction. The chunks are evicted when they are no longer opened for
@@ -88,6 +95,13 @@ private:
     // `segment_chunk::required_after_n_chunks` values.
     ss::future<> trim_chunk_files();
 
+    /// Runs a continuous loop which checks and serves download requests.
+    /// Modelled after remote segment bg loop.
+    ss::future<> run_hydrate_bg();
+
+    /// Hydrate a single chunk during an iteration of the bg loop. Uses remote
+    /// segment to download the chunk and once finished notifies all waiters.
+    ss::future<> do_hydrate_chunk(chunk_start_offset_t start_offset);
     chunk_map_t _chunks;
     remote_segment& _segment;
 
@@ -105,6 +119,7 @@ private:
     retry_chain_logger _ctxlog;
 
     uint64_t _max_hydrated_chunks;
+    ss::condition_variable _bg_cvar;
 };
 
 class chunk_eviction_strategy {
