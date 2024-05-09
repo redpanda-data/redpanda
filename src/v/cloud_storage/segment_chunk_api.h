@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/segment_chunk.h"
+#include "container/fragmented_vector.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
 #include "utils/retry_chain_node.h"
@@ -73,12 +74,6 @@ public:
     iterator_t begin();
     iterator_t end();
 
-    /// Returns a map of chunk start offset to metadata. The map is initialized
-    /// once per remote segment, when the segment chunk API is started. The
-    /// contents of the map are fixed and contain one entry per chunk in the
-    /// segment.
-    const chunk_map_t& chunk_map() const { return _chunks; }
-
     /// Returns byte range (inclusive) for given chunk start offset. If the
     /// chunk is the last in segment, the second parameter is used for the end
     /// of the range. This is required because the chunk API only contains start
@@ -102,6 +97,21 @@ private:
     /// Hydrate a single chunk during an iteration of the bg loop. Uses remote
     /// segment to download the chunk and once finished notifies all waiters.
     ss::future<> do_hydrate_chunk(chunk_start_offset_t start_offset);
+
+    /// Schedules prefetches when a chunk is downloaded, by calculating the next
+    /// `prefetch` chunks and scheduling downloads by adding to the wait queue.
+    /// If prefetch chunks are already hydrated or download is in progress, then
+    /// we skip the download.
+    void schedule_prefetches(
+      chunk_start_offset_t start_offset, size_t n_chunks_to_prefetch);
+
+    /// Periodically resolves prefetch futures. Since there is no explicit
+    /// waiter for prefetch downloads, potential errors during these downloads
+    /// must be consumed to avoid ignored-future warnings. This method inspects
+    /// currently scheduled prefetches, and for those which are available,
+    /// extracts exceptions if any.
+    void resolve_prefetch_futures();
+
     chunk_map_t _chunks;
     remote_segment& _segment;
 
@@ -120,6 +130,7 @@ private:
 
     uint64_t _max_hydrated_chunks;
     ss::condition_variable _bg_cvar;
+    fragmented_vector<ss::future<segment_chunk::handle_t>> _prefetches;
 };
 
 class chunk_eviction_strategy {

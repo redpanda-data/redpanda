@@ -103,6 +103,7 @@ ss::future<> segment_chunks::stop() {
     }
 
     co_await _gate.close();
+    resolve_prefetch_futures();
     vlog(_ctxlog.debug, "stopped segment_chunks");
 }
 
@@ -112,8 +113,7 @@ bool segment_chunks::downloads_in_progress() const {
 }
 
 ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
-  chunk_start_offset_t chunk_start,
-  [[maybe_unused]] std::optional<uint16_t> prefetch_override) {
+  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
     auto g = _gate.hold();
     vassert(_started, "chunk API is not started");
 
@@ -151,8 +151,66 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
       chunk_start,
       chunk.waiters.size());
 
+    auto n_chunks_to_prefetch = prefetch_override.value_or(
+      config::shard_local_cfg().cloud_storage_chunk_prefetch);
+    schedule_prefetches(chunk_start, n_chunks_to_prefetch);
+
     _bg_cvar.signal();
     co_return co_await std::move(f);
+}
+
+void segment_chunks::schedule_prefetches(
+  chunk_start_offset_t start_offset, size_t n_chunks_to_prefetch) {
+    vassert(
+      _chunks.contains(start_offset),
+      "No chunk starting at offset {}, cannot schedule prefetches",
+      start_offset);
+    for (auto it = std::next(_chunks.find(start_offset));
+         it != _chunks.end() && n_chunks_to_prefetch > 0;
+         ++it, --n_chunks_to_prefetch) {
+        auto& [start, chunk] = *it;
+        if (
+          chunk.current_state == chunk_state::download_in_progress
+          || chunk.current_state == chunk_state::hydrated) {
+            continue;
+        }
+
+        chunk.current_state = chunk_state::download_in_progress;
+        ss::promise<cloud_storage::segment_chunk::handle_t> p;
+        _prefetches.emplace_back(p.get_future());
+        chunk.waiters.push_back(
+          std::move(p), ss::lowres_clock::time_point::max());
+        vlog(
+          _ctxlog.trace,
+          "prefetch hydrate request added for chunk id {}, current "
+          "waiter size: {}",
+          start,
+          chunk.waiters.size());
+    }
+}
+
+void segment_chunks::resolve_prefetch_futures() {
+    auto available_it = std::ranges::partition(
+      _prefetches, [](const auto& f) { return !f.available(); });
+
+    fragmented_vector<ss::future<segment_chunk::handle_t>> resolved;
+    resolved.reserve(available_it.size());
+
+    std::ranges::move(available_it, std::back_inserter(resolved));
+
+    if (!resolved.empty()) {
+        vlog(_ctxlog.trace, "{} completed prefetches", resolved.size());
+        for (auto& f : resolved) {
+            vassert(
+              f.available(), "future not available when resolving prefetches");
+            if (f.failed()) {
+                vlog(
+                  _ctxlog.trace,
+                  "failed prefetch download: {}",
+                  f.get_exception());
+            }
+        }
+    }
 }
 
 ss::future<> segment_chunks::trim_chunk_files() {
@@ -178,6 +236,7 @@ ss::future<> segment_chunks::trim_chunk_files() {
       hydrated_chunks);
 
     co_await eviction_strategy->evict(std::move(to_release), _ctxlog);
+    resolve_prefetch_futures();
     _eviction_timer.rearm(_eviction_jitter());
 }
 
@@ -231,7 +290,12 @@ segment_chunks::do_hydrate_chunk(chunk_start_offset_t start_offset) {
     }
 
     try {
-        auto handle = co_await _segment.download_chunk(start_offset, 0);
+        auto handle = co_await _segment.download_chunk(start_offset);
+        vassert(
+          chunk.handle == std::nullopt,
+          "attempt to set file handle to chunk {} which already has a file "
+          "assigned, this will result in a file descriptor leak",
+          start_offset);
         chunk.handle = ss::make_lw_shared(std::move(handle));
         chunk.current_state = chunk_state::hydrated;
 
