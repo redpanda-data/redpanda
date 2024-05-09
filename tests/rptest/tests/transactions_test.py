@@ -982,6 +982,11 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
                 producer.abort_transaction()
             consumed += len(records)
 
+        log_viewer = OfflineLogViewer(self.redpanda)
+        for node in self.redpanda.started_nodes():
+            co_records = log_viewer.read_consumer_offsets(node=node)
+            self.logger.info(f"Read {len(co_records)} from node {node.name}")
+
         admin = Admin(self.redpanda)
         co_topic = "__consumer_offsets"
 

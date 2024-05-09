@@ -96,19 +96,13 @@ def print_groups(store):
 
 
 def print_consumer_offsets(store):
-    records = []
+    logs = dict()
     for ntp in store.ntps:
         if ntp.nspace == "kafka" and ntp.topic == "__consumer_offsets":
-            l = OffsetsLog(ntp)
-            l.decode()
-            records.append({
-                "partition_id": ntp.partition,
-                "records": l.records
-            })
-
-    # Send JSON output to stdout in case caller wants to parse it, other
-    # CLI output goes to stderr via logger
-    print(json.dumps(records, indent=2))
+            logs[str(ntp)] = SerializableGenerator(OffsetsLog(ntp))
+    json_records = json.JSONEncoder(indent=2).iterencode(logs)
+    for record in json_records:
+        print(record, end='')
 
 
 def print_tx_coordinator(store):

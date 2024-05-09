@@ -179,8 +179,11 @@ class ConsumerGroupTest(RedpandaTest):
                 node=node)
             offsets = {}
             groups = set()
-            for partition in consumer_offsets_partitions:
-                for r in partition['records']:
+            for partition, records in consumer_offsets_partitions.items():
+                self.logger.debug(
+                    f"processing partition: {partition}, records: {len(records)}"
+                )
+                for r in records:
                     self.logger.info(f"{r}")
                     if r['key']['type'] == 'group_metadata':
                         groups.add(r['key']['group_id'])
@@ -188,7 +191,7 @@ class ConsumerGroupTest(RedpandaTest):
                         tp = f"{r['key']['topic']}/{r['key']['partition']}"
                         if tp not in offsets:
                             offsets[tp] = -1
-                        offsets[tp] = max(r['value']['committed_offset'],
+                        offsets[tp] = max(r['val']['committed_offset'],
                                           offsets[tp])
 
             assert len(groups) == 1 and group in groups
