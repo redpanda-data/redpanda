@@ -129,6 +129,33 @@ class LogLevelTest(RedpandaTest):
                            backoff_sec=1,
                            err_msg=f"Never saw Expiring for {second_logger}")
 
+    @cluster(num_nodes=1)
+    def test_log_level_persist_a_never_expire_request(self):
+        """
+        check that this sequence of actions
+        set log-level admin_api_server trace 10
+        set log-level admin_api_server error 0
+
+        never resets the logger to the info level
+        """
+        admin = Admin(self.redpanda)
+        node = self.redpanda.nodes[0]
+
+        with self.redpanda.monitor_log(node) as mon:
+            admin.set_log_level("admin_api_server", "trace", expires=10)
+            time.sleep(1)
+            admin.set_log_level("admin_api_server", "error", expires=0)
+
+            try:
+                mon.wait_until("Expiring log level for {admin_api_server}",
+                               timeout_sec=15,
+                               backoff_sec=1)
+                assert False, "Should not have seen message"
+            except ducktape.errors.TimeoutError:
+                pass
+
+        level = admin.get_log_level("admin_api_server")[0]["level"]
+        assert level == "error", f"expected level=error, got {level=}"
 
     @cluster(num_nodes=3)
     def test_max_expiry(self):
