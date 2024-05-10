@@ -658,11 +658,17 @@ void admin_server::log_exception(
 void admin_server::rearm_log_level_timer() {
     _log_level_timer.cancel();
 
-    auto next = std::min_element(
-      _log_level_resets.begin(), _log_level_resets.end());
+    if (_log_level_resets.empty()) {
+        return;
+    }
 
-    if (next != _log_level_resets.end() && next->second.expires.has_value()) {
-        _log_level_timer.arm(next->second.expires.value());
+    auto reset_values = _log_level_resets | std::views::values;
+    auto& lvl_rst = *std::ranges::min_element(
+      reset_values, std::less<>{}, [](level_reset const& l) {
+          return l.expires.value_or(ss::timer<>::clock::time_point::max());
+      });
+    if (lvl_rst.expires.has_value()) {
+        _log_level_timer.arm(lvl_rst.expires.value());
     }
 }
 
