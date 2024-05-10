@@ -160,7 +160,8 @@ struct partition_balancer_planner_fixture {
     cluster::partition_balancer_planner make_planner(
       model::partition_autobalancing_mode mode
       = model::partition_autobalancing_mode::continuous,
-      size_t max_concurrent_actions = 2) {
+      size_t max_concurrent_actions = 2,
+      bool request_ondemand_rebalance = false) {
         return cluster::partition_balancer_planner(
           cluster::planner_config{
             .mode = mode,
@@ -168,6 +169,7 @@ struct partition_balancer_planner_fixture {
             .hard_max_disk_usage_ratio = 0.95,
             .max_concurrent_actions = max_concurrent_actions,
             .node_availability_timeout_sec = std::chrono::minutes(1),
+            .ondemand_rebalance_requested = request_ondemand_rebalance,
             .segment_fallocation_step = 16,
             .node_responsiveness_timeout = std::chrono::seconds(10),
             .topic_aware = true,
