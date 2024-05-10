@@ -303,7 +303,7 @@ eviction_policy::collect_reclaimable_offsets() {
             .handle_exception_type([](const ss::gate_closed_exception&) {})
             .handle_exception([ntp = p->ntp()](std::exception_ptr e) {
                 vlog(
-                  rlog.debug,
+                  rlog.warn,
                   "Error collecting reclaimable offsets from {}: {}",
                   ntp,
                   e);
@@ -636,7 +636,9 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
               rlog.info, "Scheduling {} for reclaim", human::bytes(estimate));
             co_await _policy.install_schedule(std::move(schedule));
         } else {
-            vlog(rlog.info, "No partitions eligible for reclaim were found");
+            vlog(
+              rlog.info,
+              "No tiered storage partitions were found, unable to reclaim");
         }
     } else {
         vlog(
