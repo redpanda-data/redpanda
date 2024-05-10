@@ -32,7 +32,8 @@ struct context {
 };
 
 context make_context(model::offset base_offset, size_t batch_count) {
-    auto input = model::test::make_random_batches(base_offset, batch_count);
+    auto input
+      = model::test::make_random_batches(base_offset, batch_count).get();
     BOOST_REQUIRE(!input.empty());
     const auto last_offset = input.back().last_offset();
 

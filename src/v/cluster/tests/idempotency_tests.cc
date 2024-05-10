@@ -329,13 +329,14 @@ FIXTURE_TEST(test_rm_stm_prevents_odd_session_start_off, rm_stm_test_fixture) {
 
     auto count = 5;
     auto rdr = random_batches_reader(model::test::record_batch_spec{
-      .offset = model::offset(0),
-      .allow_compression = true,
-      .count = count,
-      .enable_idempotence = true,
-      .producer_id = 0,
-      .producer_epoch = 0,
-      .base_sequence = 1});
+                                       .offset = model::offset(0),
+                                       .allow_compression = true,
+                                       .count = count,
+                                       .enable_idempotence = true,
+                                       .producer_id = 0,
+                                       .producer_epoch = 0,
+                                       .base_sequence = 1})
+                 .get();
 
     auto bid = model::batch_identity{
       .pid = model::producer_identity{0, 0},

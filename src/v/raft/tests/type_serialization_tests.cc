@@ -64,7 +64,8 @@ struct checking_consumer {
 };
 
 SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
-    auto batches = model::test::make_random_batches(model::offset(1), 3, false);
+    auto batches
+      = model::test::make_random_batches(model::offset(1), 3, false).get();
 
     for (auto& b : batches) {
         b.set_term(model::term_id(123));
@@ -557,7 +558,8 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
 }
 
 SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
-    auto batches = model::test::make_random_batches(model::offset(1), 3, false);
+    auto batches
+      = model::test::make_random_batches(model::offset(1), 3, false).get();
 
     for (auto& b : batches) {
         b.set_term(model::term_id(123));

@@ -61,7 +61,7 @@ protected:
 
 TEST_F(SegmentAppenderTest, TestAppendRecordBatches) {
     segment_appender appender(pager_.get());
-    auto batches = model::test::make_random_batches();
+    auto batches = model::test::make_random_batches().get();
 
     size_t prev_end_pos = 0;
     for (const auto& batch : batches) {

@@ -323,7 +323,7 @@ struct instance_generator<raft::append_entries_request> {
           instance_generator<raft::vnode>::random(),
           instance_generator<raft::protocol_metadata>::random(),
           model::make_memory_record_batch_reader(
-            model::test::make_random_batches(model::offset(0), 3, false)),
+            model::test::make_random_batches(model::offset(0), 3, false).get()),
           raft::flush_after_append(tests::random_bool()),
         };
     }

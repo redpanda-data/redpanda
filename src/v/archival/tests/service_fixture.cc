@@ -121,16 +121,19 @@ segment_layout write_random_batches(
     int full_batches_count = records / records_per_batch;
     // If the segment already includes records, start at the next offset.
     auto full_batches = model::test::make_random_batches(
-      model::test::record_batch_spec{
-        .offset
-        = seg->offsets().get_committed_offset() == model::offset{}
-            ? seg->offsets().get_base_offset()
-            : (seg->offsets().get_committed_offset() + model::offset_delta{1}),
-        .allow_compression = true,
-        .count = full_batches_count,
-        .records = records_per_batch,
-        .max_key_cardinality = 1,
-        .timestamp = timestamp});
+                          model::test::record_batch_spec{
+                            .offset = seg->offsets().get_committed_offset()
+                                          == model::offset{}
+                                        ? seg->offsets().get_base_offset()
+                                        : (
+                                          seg->offsets().get_committed_offset()
+                                          + model::offset_delta{1}),
+                            .allow_compression = true,
+                            .count = full_batches_count,
+                            .records = records_per_batch,
+                            .max_key_cardinality = 1,
+                            .timestamp = timestamp})
+                          .get();
 
     vlog(
       fixt_log.debug,
@@ -146,14 +149,17 @@ segment_layout write_random_batches(
     write_batches(seg, std::move(full_batches));
 
     if (leftover_records != 0) {
-        auto leftover_batches = model::test::make_random_batches(
-          model::test::record_batch_spec{
-            .offset = seg->offsets().get_committed_offset() + model::offset(1),
-            .allow_compression = true,
-            .count = 1,
-            .records = leftover_records,
-            .max_key_cardinality = 1,
-            .timestamp = timestamp});
+        auto leftover_batches
+          = model::test::make_random_batches(
+              model::test::record_batch_spec{
+                .offset = seg->offsets().get_committed_offset()
+                          + model::offset(1),
+                .allow_compression = true,
+                .count = 1,
+                .records = leftover_records,
+                .max_key_cardinality = 1,
+                .timestamp = timestamp})
+              .get();
 
         for (const auto& batch : leftover_batches) {
             vlog(fixt_log.debug, "Generated random batch {}", batch);

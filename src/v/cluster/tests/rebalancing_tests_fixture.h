@@ -131,30 +131,33 @@ public:
         auto retries = 10;
         foreign_batches_t ret;
         auto single_retry = [count, ntp](cluster::partition_manager& pm) {
-            auto batches = model::test::make_random_batches(
-              model::offset(0), count);
-            auto rdr = model::make_memory_record_batch_reader(
-              std::move(batches));
-            // replicate
-            auto f = pm.get(ntp)->raft()->replicate(
-              std::move(rdr),
-              raft::replicate_options(raft::consistency_level::quorum_ack));
+            return model::test::make_random_batches(model::offset(0), count)
+              .then([&pm, ntp](auto batches) {
+                  auto rdr = model::make_memory_record_batch_reader(
+                    std::move(batches));
+                  // replicate
+                  auto f = pm.get(ntp)->raft()->replicate(
+                    std::move(rdr),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack));
 
-            return ss::with_timeout(
-                     model::timeout_clock::now() + 2s, std::move(f))
-              .then([&pm, ntp](result<raft::replicate_result> res) {
-                  auto p = pm.get(ntp);
-                  return p->make_reader(storage::log_reader_config(
-                    model::offset(0),
-                    p->committed_offset(),
-                    ss::default_priority_class()));
-              })
-              .then([](model::record_batch_reader r) {
-                  return model::consume_reader_to_memory(
-                           std::move(r), model::no_timeout)
-                    .then([](batches_t batches) {
-                        return ss::make_foreign<batches_ptr_t>(
-                          ss::make_lw_shared<batches_t>(std::move(batches)));
+                  return ss::with_timeout(
+                           model::timeout_clock::now() + 2s, std::move(f))
+                    .then([&pm, ntp](result<raft::replicate_result> res) {
+                        auto p = pm.get(ntp);
+                        return p->make_reader(storage::log_reader_config(
+                          model::offset(0),
+                          p->committed_offset(),
+                          ss::default_priority_class()));
+                    })
+                    .then([](model::record_batch_reader r) {
+                        return model::consume_reader_to_memory(
+                                 std::move(r), model::no_timeout)
+                          .then([](batches_t batches) {
+                              return ss::make_foreign<batches_ptr_t>(
+                                ss::make_lw_shared<batches_t>(
+                                  std::move(batches)));
+                          });
                     });
               });
         };

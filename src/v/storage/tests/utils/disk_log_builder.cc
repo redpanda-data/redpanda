@@ -73,15 +73,16 @@ ss::future<> disk_log_builder::add_random_batches(
   log_append_config config,
   should_flush_after flush,
   std::optional<model::timestamp> base_ts) {
-    auto batches = model::test::make_random_batches(
+    auto batches = co_await model::test::make_random_batches(
       offset, count, bool(comp), base_ts);
     advance_time(batches.back());
-    return write(std::move(batches), config, flush);
+    co_return co_await write(std::move(batches), config, flush);
 }
 
 ss::future<> disk_log_builder::add_random_batches(
   model::offset offset, log_append_config config, should_flush_after flush) {
-    return write(model::test::make_random_batches(offset), config, flush);
+    co_return co_await write(
+      co_await model::test::make_random_batches(offset), config, flush);
 }
 
 ss::future<> disk_log_builder::add_batch(

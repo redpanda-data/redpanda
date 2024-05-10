@@ -18,7 +18,7 @@
 #include <boost/test/tools/old/interface.hpp>
 
 SEASTAR_THREAD_TEST_CASE(test_assigning_batch_term) {
-    auto batches = model::test::make_random_batches(model::offset(0), 10);
+    auto batches = model::test::make_random_batches(model::offset(0), 10).get();
     auto term = model::term_id(11);
     auto src_reader = model::make_memory_record_batch_reader(
       std::move(batches));
@@ -36,7 +36,7 @@ SEASTAR_THREAD_TEST_CASE(test_assigning_batch_term) {
 };
 
 SEASTAR_THREAD_TEST_CASE(test_assigning_batch_term_release) {
-    auto batches = model::test::make_random_batches(model::offset(0), 10);
+    auto batches = model::test::make_random_batches(model::offset(0), 10).get();
     auto term = model::term_id(11);
     auto src_reader = model::make_memory_record_batch_reader(
       std::move(batches));

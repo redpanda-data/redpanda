@@ -114,7 +114,8 @@ struct append_op final : opfuzz::op {
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
-        auto batches = model::test::make_random_batches(model::offset(0), 10);
+        auto batches = co_await model::test::make_random_batches(
+          model::offset(0), 10);
         vlog(
           fuzzlogger.info,
           "[{}] - Appending: {} batches. {}-{}",
@@ -129,7 +130,7 @@ struct append_op final : opfuzz::op {
           ctx.log, record_count(batches), false);
         auto reader = model::make_memory_record_batch_reader(
           std::move(batches));
-        return std::move(reader)
+        co_return co_await std::move(reader)
           .for_each_ref(ctx.log->make_appender(append_cfg), model::no_timeout)
           .then(validator);
     }
@@ -143,23 +144,25 @@ struct append_op_foreign final : opfuzz::op {
         return ss::smp::submit_to(
                  source_core,
                  [ctx] {
-                     auto batches = model::test::make_random_batches(
-                       model::offset(0), 10);
-                     vlog(
-                       fuzzlogger.info,
-                       "[{}] - Foreign appending: {} batches. {}-{}",
-                       ctx.log->config().ntp(),
-                       batches.size(),
-                       batches.front().base_offset(),
-                       batches.back().last_offset());
-                     for (auto& b : batches) {
-                         b.set_term(*ctx.term);
-                     }
-                     auto cnt = record_count(batches);
-                     return std::pair<model::record_batch_reader, size_t>(
-                       model::make_foreign_memory_record_batch_reader(
-                         std::move(batches)),
-                       cnt);
+                     return model::test::make_random_batches(
+                              model::offset(0), 10)
+                       .then([ctx](auto batches) {
+                           vlog(
+                             fuzzlogger.info,
+                             "[{}] - Foreign appending: {} batches. {}-{}",
+                             ctx.log->config().ntp(),
+                             batches.size(),
+                             batches.front().base_offset(),
+                             batches.back().last_offset());
+                           for (auto& b : batches) {
+                               b.set_term(*ctx.term);
+                           }
+                           auto cnt = record_count(batches);
+                           return std::pair<model::record_batch_reader, size_t>(
+                             model::make_foreign_memory_record_batch_reader(
+                               std::move(batches)),
+                             cnt);
+                       });
                  })
           .then([ctx](std::pair<model::record_batch_reader, size_t> p) {
               return ss::smp::submit_to(
@@ -187,7 +190,8 @@ struct append_multi_term_op final : opfuzz::op {
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
-        auto batches = model::test::make_random_batches(model::offset(0), 10);
+        auto batches = co_await model::test::make_random_batches(
+          model::offset(0), 10);
         const size_t mid = batches.size() / 2;
         vlog(
           fuzzlogger.info,
@@ -208,7 +212,7 @@ struct append_multi_term_op final : opfuzz::op {
           ctx.log, record_count(batches), false);
         auto reader = model::make_memory_record_batch_reader(
           std::move(batches));
-        return std::move(reader)
+        co_return co_await std::move(reader)
           .for_each_ref(ctx.log->make_appender(append_cfg), model::no_timeout)
           .then(validator);
     }

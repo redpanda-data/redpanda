@@ -532,8 +532,8 @@ public:
           acks);
 
         // Make test data
-        auto batches = model::test::make_random_batches(
-          model::offset(0), count);
+        auto batches
+          = model::test::make_random_batches(model::offset(0), count).get();
 
         auto partition = node->partition_manager.local().get(ntp);
 

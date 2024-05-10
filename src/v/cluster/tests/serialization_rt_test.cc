@@ -1944,8 +1944,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        const auto gold = model::test::make_random_batches(
-          model::offset(0), 20);
+        const auto gold
+          = model::test::make_random_batches(model::offset(0), 20).get();
 
         // make a copy of the source batches for later comparison because the
         // copy moved into the request will get eaten.
