@@ -11,20 +11,20 @@
 #pragma once
 
 #include "seastarx.h"
+#include "utils/exceptions.h"
 
 #include <seastar/util/noncopyable_function.hh>
 
 #include <boost/iterator/iterator_adaptor.hpp>
 #include <fmt/format.h>
 
-#include <stdexcept>
-#include <string_view>
 #include <version>
 
-class iterator_stability_violation : public std::runtime_error {
+class iterator_stability_violation final
+  : public concurrent_modification_error {
 public:
-    explicit iterator_stability_violation(const std::string& why)
-      : std::runtime_error(why){};
+    explicit iterator_stability_violation(ss::sstring why)
+      : concurrent_modification_error(std::move(why)){};
 };
 
 /*
