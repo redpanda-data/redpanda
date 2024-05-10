@@ -737,7 +737,7 @@ FIXTURE_TEST(test_mixed_consisteny_levels, raft_test_fixture) {
     validate_offset_translation(gr);
 };
 
-FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
+FIXTURE_TEST(test_linearizable_barrier, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
@@ -772,7 +772,7 @@ FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
     BOOST_REQUIRE_EQUAL(r.value(), leader_offsets.dirty_offset);
 };
 
-FIXTURE_TEST(test_linarizable_barrier_single_node, raft_test_fixture) {
+FIXTURE_TEST(test_linearizable_barrier_single_node, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
