@@ -31,7 +31,6 @@ set(srcs
     tm_stm_tests.cc
     tm_coordinator_mapper_tests.cc
     tx_hash_ranges_tests.cc
-    distributed_kv_stm_tests.cc
     rm_stm_tests.cc
     rm_stm_compatibility_test.cc
     local_monitor_test.cc
@@ -51,6 +50,7 @@ rp_test(
 endforeach()
 
 set(srcs
+    distributed_kv_stm_tests.cc
     id_allocator_stm_test.cc
     )
 
