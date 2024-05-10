@@ -769,16 +769,28 @@ ss::future<bool> retry_with_leader(
                    "Leader action - retry attempt: {}", meta->current_retry);
                  return do_with_leader(gr, tout, f)
                    .then([meta](bool success) mutable {
+                       tstlog.info(
+                         "Leader action - retry attempt: {}, success",
+                         meta->current_retry);
                        meta->current_retry++;
                        meta->success = success;
                    })
                    .handle_exception([meta](const std::exception_ptr&) {
+                       tstlog.info(
+                         "Leader action - retry attempt: {}, failure",
+                         meta->current_retry);
                        meta->success = false;
                        meta->current_retry++;
                    })
                    .then([meta] {
                        if (!meta->success) {
-                           return ss::sleep(200ms * meta->current_retry);
+                           auto sleep_ms = 200ms * meta->current_retry;
+                           tstlog.info(
+                             "Leader action, sleeping for {} before retry "
+                             "attempt: {}",
+                             sleep_ms,
+                             meta->current_retry);
+                           return ss::sleep(sleep_ms);
                        }
                        return ss::now();
                    });
