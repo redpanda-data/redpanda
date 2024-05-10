@@ -915,9 +915,6 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
 
 ss::future<election_success>
 consensus::dispatch_prevote(bool leadership_transfer) {
-    if (leadership_transfer) {
-        co_return true;
-    }
     auto pv_stm = std::make_unique<vote_stm>(this, is_prevote::yes);
 
     election_success success = election_success::no;
