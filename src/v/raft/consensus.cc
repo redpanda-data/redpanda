@@ -994,7 +994,9 @@ void consensus::dispatch_vote(bool leadership_transfer) {
             return dispatch_prevote(leadership_transfer)
               .then([this, leadership_transfer](
                       election_success prevote_success) mutable {
-                  if (!prevote_success) {
+                  // if a current node is not longer candidate we should skip
+                  // proceeding to actual vote phase
+                  if (!prevote_success || _vstate != vote_state::candidate) {
                       return ss::make_ready_future<>();
                   }
                   auto vstm = std::make_unique<vote_stm>(this);
