@@ -104,8 +104,8 @@ TEST(EntryStream, TestShortHeader) {
         auto short_stream = make_iobuf_input_stream(std::move(copy_buf));
         entry_stream entries(std::move(short_stream));
         auto entry = entries.next().get();
-        ASSERT_FALSE(entry.has_error()) << entry.error();
-        ASSERT_FALSE(entry.value().has_value()) << "Expected no entry";
+        ASSERT_TRUE(entry.has_error());
+        ASSERT_EQ(entry.error(), errc::short_read);
     }
 }
 
@@ -137,8 +137,8 @@ TEST(EntryStream, TestShortBody) {
         auto short_stream = make_iobuf_input_stream(std::move(copy_buf));
         entry_stream entries(std::move(short_stream));
         auto entry = entries.next().get();
-        ASSERT_FALSE(entry.has_error()) << entry.error();
-        ASSERT_FALSE(entry.value().has_value()) << "Expected no entry";
+        ASSERT_TRUE(entry.has_error());
+        ASSERT_EQ(entry.error(), errc::short_read);
     }
 }
 
