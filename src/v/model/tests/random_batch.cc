@@ -22,6 +22,7 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <random>
 #include <vector>
@@ -218,6 +219,9 @@ ss::future<ss::circular_buffer<model::record_batch>> make_random_batches(
         o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));
+        if (i % 5 == 0) {
+            co_await ss::coroutine::maybe_yield();
+        }
     }
     co_return ret;
 }
@@ -252,6 +256,9 @@ make_random_batches(record_batch_spec spec) {
         o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));
+        if (i % 5 == 0) {
+            co_await ss::coroutine::maybe_yield();
+        }
     }
     co_return ret;
 }
