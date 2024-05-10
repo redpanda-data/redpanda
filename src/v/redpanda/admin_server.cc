@@ -134,6 +134,7 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <ranges>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
@@ -622,16 +623,14 @@ void admin_server::log_exception(
 void admin_server::rearm_log_level_timer() {
     _log_level_timer.cancel();
 
-    auto next = std::min_element(
-      _log_level_resets.begin(),
-      _log_level_resets.end(),
-      [](const auto& a, const auto& b) {
-          return a.second.expires < b.second.expires;
-      });
-
-    if (next != _log_level_resets.end()) {
-        _log_level_timer.arm(next->second.expires);
+    if (_log_level_resets.empty()) {
+        return;
     }
+
+    auto reset_values = _log_level_resets | std::views::values;
+    auto& lvl_rst = *std::ranges::min_element(
+      reset_values, std::less<>{}, &level_reset::expires);
+    _log_level_timer.arm(lvl_rst.expires);
 }
 
 void admin_server::log_level_timer_handler() {
