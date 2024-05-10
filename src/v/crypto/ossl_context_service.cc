@@ -65,19 +65,19 @@ initialize_result<initialize_return> initialize_openssl(
         return "Configuration file and module path required in FIPS mode";
     }
 
-    if (!conf_file.empty()) {
-        lg.debug("Attempting to load OpenSSL config file {}", conf_file);
-        if (!OSSL_LIB_CTX_load_config(ctx, conf_file.data())) {
-            return make_ssl_error_response(
-              fmt::format("Failed to load config file {}", conf_file));
-        }
-    }
-
     if (!module_path.empty()) {
         lg.debug("Attempting to set OpenSSL module path to {}", module_path);
         if (!OSSL_PROVIDER_set_default_search_path(ctx, module_path.data())) {
             return make_ssl_error_response(
               fmt::format("Failed to set module path to {}", module_path));
+        }
+    }
+
+    if (!conf_file.empty()) {
+        lg.debug("Attempting to load OpenSSL config file {}", conf_file);
+        if (!OSSL_LIB_CTX_load_config(ctx, conf_file.data())) {
+            return make_ssl_error_response(
+              fmt::format("Failed to load config file {}", conf_file));
         }
     }
 
@@ -243,6 +243,7 @@ public:
         _default_provider = std::move(
           init_resp.assume_value().default_provider);
         _base_provider = std::move(init_resp.assume_value().base_provider);
+        lg.info("OpenSSL Context loaded and ready");
     }
 
     ss::future<> stop() {
