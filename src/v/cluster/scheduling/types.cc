@@ -13,6 +13,7 @@
 
 #include "cluster/logger.h"
 #include "cluster/scheduling/allocation_state.h"
+#include "utils/exceptions.h"
 #include "utils/to_string.h"
 
 #include <fmt/ostream.h>
@@ -47,6 +48,9 @@ allocation_units::allocation_units(
 
 allocation_units::~allocation_units() {
     oncore_debug_verify(_oncore);
+    if (unlikely(!_state)) {
+        return;
+    }
     for (const auto& replica : _added_replicas) {
         _state->remove_allocation(replica, _domain);
         _state->remove_final_count(replica, _domain);
@@ -80,6 +84,11 @@ allocated_partition::prepare_move(model::node_id prev_node) const {
 
 model::broker_shard allocated_partition::add_replica(
   model::node_id node, const std::optional<previous_replica>& prev) {
+    if (unlikely(!_state)) {
+        throw concurrent_modification_error(
+          "allocation_state was concurrently replaced");
+    }
+
     if (!_original_node2shard) {
         _original_node2shard.emplace();
         for (const auto& bs : _replicas) {
@@ -155,7 +164,12 @@ bool allocated_partition::is_original(model::node_id node) const {
 }
 
 errc allocated_partition::try_revert(const reallocation_step& step) {
-    if (!_original_node2shard || !_state) {
+    if (unlikely(!_state)) {
+        throw concurrent_modification_error(
+          "allocation_state was concurrently replaced");
+    }
+
+    if (!_original_node2shard) {
         return errc::no_update_in_progress;
     }
 
