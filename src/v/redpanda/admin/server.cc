@@ -1437,17 +1437,20 @@ void admin_server::register_config_routes() {
 
           ss::global_logger_registry().set_logger_level(name, new_level);
 
-          // expires=0 is same as not specifying it at all
-          if (expires_v / 1s > 0) {
-              auto when = ss::timer<>::clock::now() + expires_v;
-              auto res = _log_level_resets.try_emplace(name, cur_level, when);
-              if (!res.second) {
-                  res.first->second.expires = when;
+          auto when = [&]() -> std::optional<level_reset::time_point> {
+              // expires=0 is same as not specifying it at all
+              if (expires_v / 1s > 0) {
+                  return ss::timer<>::clock::now() + expires_v;
+              } else {
+                  // new log level never expires, but we still want an entry in
+                  // the resets map as a record of the default
+                  return std::nullopt;
               }
-          } else {
-              // new log level never expires, but we still want an entry in the
-              // resets map as a record of the default
-              _log_level_resets.try_emplace(name, cur_level, std::nullopt);
+          }();
+
+          auto res = _log_level_resets.try_emplace(name, cur_level, when);
+          if (!res.second) {
+              res.first->second.expires = when;
           }
 
           rsp.expiration = expires_v / 1s;
