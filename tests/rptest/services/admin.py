@@ -297,6 +297,7 @@ class Admin:
                         read=0,
                         backoff_factor=1,
                         status_forcelist=retry_codes,
+                        respect_retry_after_header=True,
                         method_whitelist=None,
                         remove_headers_on_redirect=[])
 
@@ -521,15 +522,24 @@ class Admin:
         if kwargs.get('timeout', None) is None:
             kwargs['timeout'] = DEFAULT_TIMEOUT
 
+        #We will have to handle redirects ourselves (always set kwargs['allow_redirects'] = False),
+        #see comment after _session.request() below.
+        #If kwargs was passed with "allow_redirects:False", it is assumed that the user intends
+        #to handle the redirect case at the call site. Otherwise, it will be retried in the
+        #request loop below.
+        handle_retry_backoff = kwargs.get('allow_redirects', True)
+        kwargs['allow_redirects'] = False
+        num_redirects = 0
+
         fallback_nodes = self.redpanda.nodes
         fallback_nodes = list(filter(lambda n: n != node, fallback_nodes))
 
         params_e = f"?{urllib.parse.urlencode(params)}" if params is not None else ""
+        url = self._url(node, path + params_e)
 
         # On connection errors, retry until we run out of alternative nodes to try
         # (fall through on first successful request)
         while True:
-            url = self._url(node, path + params_e)
             self.redpanda.logger.debug(f"Dispatching {verb} {url}")
             try:
                 r = self._session.request(verb, url, **kwargs)
@@ -541,10 +551,26 @@ class Admin:
                     self.redpanda.logger.info(
                         f"Connection error, retrying on node {node.account.hostname} (remaining {[n.account.hostname for n in fallback_nodes]})"
                     )
+                    url = self._url(node, path + params_e)
                 else:
                     raise
             else:
-                break
+                # Requests library does NOT respect Retry-After with a redirect
+                # error code (see https://github.com/psf/requests/pull/4562).
+                # There is logic that respects Retry-After within urllib3,
+                # but since the Requests library handles 30# error codes
+                # internally, a Retry-After attached to a redirect response
+                # will not be respected. We will have to handle this ourselves.
+                if handle_retry_backoff and r.is_redirect and num_redirects < self._session.max_redirects:
+                    url = r.headers.get('Location')
+                    retry_after = r.headers.get('Retry-After')
+                    if retry_after is not None:
+                        self.redpanda.logger.info(
+                            f"Retry-After: {retry_after} on redirect {url}")
+                        time.sleep(int(retry_after))
+                    num_redirects += 1
+                else:
+                    break
 
         # Log the response
         if r.status_code != 200:
