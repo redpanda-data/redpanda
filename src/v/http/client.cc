@@ -154,36 +154,31 @@ ss::future<reconnect_result_t> client::get_connected(
       "about to start connecting, {}, is-closed {}",
       is_valid(),
       _dispatch_gate.is_closed());
-    auto current = ss::lowres_clock::now();
-    const auto deadline = current + timeout;
-    const auto interval = 1s; // 500ms;
-    while (!_connect_gate.is_closed() && current < deadline) {
-        if (_as != nullptr) {
-            _as->check();
-        }
-        // Reconnect attempts have to stop if:
-        // - shutdown method was called
-        // - abort was requested
-        // - unrecoverable error occured
-        // - timeout reached
-        try {
-            // base_transport::connect calls _dispatcher_gate.close
-            // on every reconnect. Because of that concurrent call
-            // to base_transport::stop could lead to failure because
-            // _dispatcher_gate is already closed. We need to synchronize
-            // this loop with the `stop` call.
-            ss::gate::holder gg(_connect_gate);
-            co_await connect(current + interval);
-            break;
-        } catch (const std::system_error& err) {
-            vlog(ctxlog.trace, "connection refused {}", err);
-        } catch (const ss::timed_out_error&) {
-            vlog(ctxlog.trace, "connection timeout");
-        }
-        current = ss::lowres_clock::now();
-        // Any TLS error have to be propagated because it's not
-        // transient. It won't help to try once again.
+    if (_as != nullptr) {
+        _as->check();
     }
+    // Reconnect attempts have to stop if:
+    // - shutdown method was called
+    // - abort was requested
+    // - unrecoverable error occured
+    // - timeout reached
+    try {
+        // base_transport::connect calls _dispatcher_gate.close
+        // on every reconnect. Because of that concurrent call
+        // to base_transport::stop could lead to failure because
+        // _dispatcher_gate is already closed. We need to synchronize
+        // this loop with the `stop` call.
+        ss::gate::holder gg(_connect_gate);
+        co_await connect(
+          ss::lowres_clock::now()
+          + std::max(timeout, ss::lowres_clock::duration(10s)));
+    } catch (const std::system_error& err) {
+        vlog(ctxlog.trace, "connection refused {}", err);
+    } catch (const ss::timed_out_error&) {
+        vlog(ctxlog.trace, "connection timeout");
+    }
+    // Any TLS error have to be propagated because it's not
+    // transient. It won't help to try once again.
     vlog(ctxlog.debug, "connected, {}", is_valid());
     co_return is_valid() ? reconnect_result_t::connected
                          : reconnect_result_t::timed_out;
