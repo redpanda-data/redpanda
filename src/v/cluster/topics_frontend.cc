@@ -1014,7 +1014,7 @@ topics_frontend::partitions_with_lost_majority(
             co_return errc::concurrent_modification_error;
         }
         co_return result;
-    } catch (const topic_table::concurrent_modification_error& e) {
+    } catch (const concurrent_modification_error& e) {
         // state changed while generating the plan, force caller to retry;
         vlog(
           clusterlog.info,
