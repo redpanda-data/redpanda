@@ -1031,7 +1031,8 @@ bool disk_log_impl::has_local_retention_override() const {
     return false;
 }
 
-gc_config disk_log_impl::maybe_override_retention_config(gc_config cfg) const {
+gc_config
+disk_log_impl::maybe_apply_local_storage_overrides(gc_config cfg) const {
     // Read replica topics have a different default retention
     if (config().is_read_replica_mode_enabled()) {
         cfg.eviction_time = std::max(
@@ -1050,20 +1051,24 @@ gc_config disk_log_impl::maybe_override_retention_config(gc_config cfg) const {
     /*
      * don't override with local retention settings--let partition data expand
      * up to standard retention settings.
+     * NOTE: both retention_local_strict and retention_local_strict_override
+     * need to be set to true to honor strict local retention. Otherwise, local
+     * retention is advisory.
      */
-    if (
-      !config::shard_local_cfg().retention_local_strict()
-      || !config::shard_local_cfg().retention_local_strict_override()) {
+    bool strict_local_retention
+      = config::shard_local_cfg().retention_local_strict()
+        && config::shard_local_cfg().retention_local_strict_override();
+    if (!strict_local_retention) {
         vlog(
           gclog.trace,
-          "[{}] Skipped retention override for topic with remote write "
+          "[{}] Skipped local retention override for topic with remote write "
           "enabled: {}",
           config().ntp(),
           cfg);
         return cfg;
     }
 
-    cfg = override_retention_config(cfg);
+    cfg = apply_local_storage_overrides(cfg);
 
     vlog(
       gclog.trace,
@@ -1074,7 +1079,7 @@ gc_config disk_log_impl::maybe_override_retention_config(gc_config cfg) const {
     return cfg;
 }
 
-gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
+gc_config disk_log_impl::apply_local_storage_overrides(gc_config cfg) const {
     tristate<std::size_t> local_retention_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> local_retention_ms{std::nullopt};
 
@@ -1127,7 +1132,8 @@ bool disk_log_impl::is_cloud_retention_active() const {
 /*
  * applies overrides for non-cloud storage settings
  */
-gc_config disk_log_impl::apply_base_overrides(gc_config defaults) const {
+gc_config
+disk_log_impl::apply_kafka_retention_overrides(gc_config defaults) const {
     if (!config().has_overrides()) {
         return defaults;
     }
@@ -1161,8 +1167,8 @@ gc_config disk_log_impl::apply_base_overrides(gc_config defaults) const {
 }
 
 gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
-    auto ret = apply_base_overrides(defaults);
-    return maybe_override_retention_config(ret);
+    auto ret = apply_kafka_retention_overrides(defaults);
+    return maybe_apply_local_storage_overrides(ret);
 }
 
 ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
@@ -1311,10 +1317,18 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
     co_return std::nullopt;
 }
 
-ss::future<> disk_log_impl::retention_adjust_timestamps(
-  std::chrono::seconds ignore_in_future) {
+ss::future<> disk_log_impl::maybe_adjust_retention_timestamps() {
+    // Correct any timestamps too far in the future, meant to be called before
+    // calculating the retention offset for garbage collection.
+    // It's expected that this will be used only for segments pre v23.3,
+    // without a proper broker_timestamps
+    auto ignore_in_future
+      = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
+    if (!ignore_in_future.has_value()) {
+        co_return;
+    }
     auto ignore_threshold = model::timestamp(
-      model::timestamp::now().value() + ignore_in_future / 1ms);
+      model::timestamp::now().value() + ignore_in_future.value() / 1ms);
 
     auto retention_cfg = time_based_retention_cfg::make(
       _feature_table.local()); // this will retrieve cluster cfgs
@@ -1381,17 +1395,7 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
 
 ss::future<std::optional<model::offset>>
 disk_log_impl::maybe_adjusted_retention_offset(gc_config cfg) {
-    auto ignore_timestamps_in_future
-      = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
-    if (ignore_timestamps_in_future.has_value()) {
-        // Correct any timestamps too far in future, before calculating the
-        // retention offset.
-        // It's expected that this will be used only for segments pre v23.3,
-        // without a proper broker_timestamps
-        co_await retention_adjust_timestamps(
-          ignore_timestamps_in_future.value());
-    }
-
+    co_await maybe_adjust_retention_timestamps();
     co_return retention_offset(cfg);
 }
 
@@ -3044,8 +3048,8 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
      * offset calculation for local retention reclaimable is different than the
      * retention above and takes into account local retention advisory flag.
      */
-    auto local_retention_cfg = apply_base_overrides(input_cfg);
-    local_retention_cfg = override_retention_config(local_retention_cfg);
+    auto local_retention_cfg = apply_kafka_retention_overrides(input_cfg);
+    local_retention_cfg = apply_local_storage_overrides(local_retention_cfg);
     const auto local_retention_offset
       = co_await maybe_adjusted_retention_offset(local_retention_cfg);
 
@@ -3197,7 +3201,7 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
       = config::shard_local_cfg().storage_reserve_min_segments()
         * max_segment_size();
 
-    cfg = apply_base_overrides(cfg);
+    cfg = apply_kafka_retention_overrides(cfg);
 
     /*
      * compacted topics are always stored whole on local storage such that local
@@ -3226,7 +3230,7 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
          */
     } else {
         // applies local retention overrides for cloud storage
-        cfg = maybe_override_retention_config(cfg);
+        cfg = maybe_apply_local_storage_overrides(cfg);
     }
 
     /*
@@ -3282,12 +3286,7 @@ disk_log_impl::disk_usage_target_time_retention(gc_config cfg) {
      * take the opportunity to maybe fixup janky weird timestamps. also done in
      * normal garbage collection path and should be idempotent.
      */
-    if (auto ignore_timestamps_in_future
-        = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
-        ignore_timestamps_in_future.has_value()) {
-        co_await retention_adjust_timestamps(
-          ignore_timestamps_in_future.value());
-    }
+    co_await maybe_adjust_retention_timestamps();
 
     /*
      * we are going to use whole segments for the data we'll use to extrapolate
@@ -3506,8 +3505,8 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
      * override in contrast to housekeeping GC where the overrides are applied
      * only when local retention is non-advisory.
      */
-    cfg = apply_base_overrides(cfg);
-    cfg = override_retention_config(cfg);
+    cfg = apply_kafka_retention_overrides(cfg);
+    cfg = apply_local_storage_overrides(cfg);
     const auto local_retention_offset
       = co_await maybe_adjusted_retention_offset(cfg);
 

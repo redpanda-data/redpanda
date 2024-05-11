@@ -277,11 +277,10 @@ private:
 
     /// Conditionally adjust retention timestamp on any segment that appears
     /// to have invalid timestamps, to ensure retention can proceed.
-    ss::future<>
-    retention_adjust_timestamps(std::chrono::seconds ignore_in_future);
+    ss::future<> maybe_adjust_retention_timestamps();
 
     gc_config apply_overrides(gc_config) const;
-    gc_config apply_base_overrides(gc_config) const;
+    gc_config apply_kafka_retention_overrides(gc_config) const;
 
     void wrote_stm_bytes(size_t);
 
@@ -289,8 +288,8 @@ private:
     // overrides, such as custom topic configs.
     bool has_local_retention_override() const;
 
-    gc_config maybe_override_retention_config(gc_config) const;
-    gc_config override_retention_config(gc_config) const;
+    gc_config maybe_apply_local_storage_overrides(gc_config) const;
+    gc_config apply_local_storage_overrides(gc_config) const;
 
     bool is_cloud_retention_active() const;
 

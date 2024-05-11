@@ -278,19 +278,10 @@ eviction_policy::collect_reclaimable_offsets() {
     /*
      * retention settings mirror settings found in housekeeping()
      */
-    const auto collection_threshold = [this] {
-        const auto& lm = _storage->local().log_mgr();
-        if (!lm.config().log_retention().has_value()) {
-            return model::timestamp(0);
-        }
-        const auto now = model::timestamp::now().value();
-        const auto retention = lm.config().log_retention().value().count();
-        return model::timestamp(now - retention);
-    };
-
+    const auto collection_ts
+      = _storage->local().log_mgr().lowest_ts_to_retain();
     gc_config cfg(
-      collection_threshold(),
-      _storage->local().log_mgr().config().retention_bytes());
+      collection_ts, _storage->local().log_mgr().config().retention_bytes());
 
     /*
      * in smallish batches partitions are queried for their reclaimable
@@ -312,7 +303,7 @@ eviction_policy::collect_reclaimable_offsets() {
             .handle_exception_type([](const ss::gate_closed_exception&) {})
             .handle_exception([ntp = p->ntp()](std::exception_ptr e) {
                 vlog(
-                  rlog.debug,
+                  rlog.warn,
                   "Error collecting reclaimable offsets from {}: {}",
                   ntp,
                   e);
@@ -566,10 +557,10 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
      * generally we may want to consider a smoother function as well as
      * dynamically adjusting the control loop frequency.
      */
-    const auto target_excess = static_cast<uint64_t>(
+    const auto adjusted_target_excess = static_cast<uint64_t>(
       real_target_excess
       * config::shard_local_cfg().retention_local_trim_overage_coeff());
-    _probe.set_target_excess(target_excess);
+    _probe.set_target_excess(adjusted_target_excess);
 
     /*
      * when log storage has exceeded the target usage, then there are some knobs
@@ -589,43 +580,44 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
      * targets for cloud-enabled topics, removing data that has been backed up
      * into the cloud.
      */
-    if (target_excess > usage.reclaim.retention) {
+    if (adjusted_target_excess > usage.reclaim.retention) {
         vlog(
           rlog.info,
           "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
-          "collection expected to recover {}. Overriding tiered storage "
-          "retention to recover {}. Total estimated available to recover {}",
+          "collection expected to remove {}. Space management of tiered "
+          "storage topics to remove {}. Total estimated available to remove "
+          "{}",
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
           human::bytes(real_target_excess),
-          human::bytes(target_excess),
+          human::bytes(adjusted_target_excess),
           human::bytes(usage.reclaim.retention),
-          human::bytes(target_excess - usage.reclaim.retention),
+          human::bytes(adjusted_target_excess - usage.reclaim.retention),
           human::bytes(usage.reclaim.available));
 
         auto schedule = co_await _policy.create_new_schedule();
         if (schedule.sched_size > 0) {
             auto estimate = _policy.evict_until_local_retention(
-              schedule, target_excess);
+              schedule, adjusted_target_excess);
             _probe.set_reclaim_local(estimate);
 
-            if (estimate < target_excess) {
+            if (estimate < adjusted_target_excess) {
                 const auto amount = _policy.evict_until_low_space_non_hinted(
-                  schedule, target_excess - estimate);
+                  schedule, adjusted_target_excess - estimate);
                 _probe.set_reclaim_low_non_hinted(amount);
                 estimate += amount;
             }
 
-            if (estimate < target_excess) {
+            if (estimate < adjusted_target_excess) {
                 const auto amount = _policy.evict_until_low_space_hinted(
-                  schedule, target_excess - estimate);
+                  schedule, adjusted_target_excess - estimate);
                 _probe.set_reclaim_low_hinted(amount);
                 estimate += amount;
             }
 
-            if (estimate < target_excess) {
+            if (estimate < adjusted_target_excess) {
                 const auto amount = _policy.evict_until_active_segment(
-                  schedule, target_excess - estimate);
+                  schedule, adjusted_target_excess - estimate);
                 _probe.set_reclaim_active_segment(amount);
                 estimate += amount;
             }
@@ -644,17 +636,20 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
               rlog.info, "Scheduling {} for reclaim", human::bytes(estimate));
             co_await _policy.install_schedule(std::move(schedule));
         } else {
-            vlog(rlog.info, "No partitions eligible for reclaim were found");
+            vlog(
+              rlog.info,
+              "No tiered storage partitions were found, unable to reclaim");
         }
     } else {
         vlog(
           rlog.info,
           "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
-          "collection expected to recover {}.",
+          "collection expected to remove {}. No additional space management "
+          "required",
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
           human::bytes(real_target_excess),
-          human::bytes(target_excess),
+          human::bytes(adjusted_target_excess),
           human::bytes(usage.reclaim.retention));
     }
 

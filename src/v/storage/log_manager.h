@@ -227,6 +227,10 @@ public:
     /// Returns all ntp's managed by this instance
     absl::flat_hash_set<model::ntp> get_all_ntps() const;
 
+    // Returns the timestamp that should be retained via log.retention.ms, or 0
+    // if not configured.
+    model::timestamp lowest_ts_to_retain() const;
+
     int64_t compaction_backlog() const;
 
     storage_resources& resources() { return _resources; }
