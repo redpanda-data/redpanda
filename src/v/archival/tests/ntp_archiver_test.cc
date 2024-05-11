@@ -1701,21 +1701,32 @@ static void test_manifest_spillover_impl(
     }).get();
 
     // Generate new manifest based on data layout on disk
-    std::vector<cloud_storage::segment_meta> all_segments;
-    for (const auto& s : manifest) {
-        all_segments.push_back(s);
-    }
-
     vlog(test_log.debug, "stm add segments");
-    part->archival_meta_stm()
-      ->add_segments(
-        all_segments,
-        std::nullopt,
-        model::producer_id{},
-        ss::lowres_clock::now() + 1s,
-        never_abort,
-        cluster::segment_validated::yes)
-      .get();
+    auto add_segments =
+      [&part](std::vector<cloud_storage::segment_meta> segments) {
+          part->archival_meta_stm()
+            ->add_segments(
+              std::move(segments),
+              std::nullopt,
+              model::producer_id{},
+              ss::lowres_clock::now() + 1s,
+              never_abort,
+              cluster::segment_validated::yes)
+            .get();
+      };
+
+    // 10 at a time to avoid reactor stalls.
+    const int max_batch_size = 10;
+    std::vector<cloud_storage::segment_meta> batch;
+    for (const auto& s : manifest) {
+        if (batch.size() >= max_batch_size) {
+            add_segments(batch);
+            batch.clear();
+        }
+        batch.push_back(s);
+    }
+    add_segments(batch);
+
     vlog(test_log.debug, "stm add segments completed");
 
     vlog(
