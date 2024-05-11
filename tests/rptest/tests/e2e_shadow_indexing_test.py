@@ -14,7 +14,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
@@ -1362,6 +1362,7 @@ class EndToEndThrottlingTest(RedpandaTest):
         consumer.free()
 
     @cluster(num_nodes=4)
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/18413
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_throttling(self, cloud_storage_type):
 
