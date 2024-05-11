@@ -81,17 +81,27 @@ tx_snapshot::tx_snapshot(tx_snapshot_v4 snap_v4, raft::group_id group)
     }
 }
 
-std::string_view transaction_info::get_status() const {
+std::ostream&
+operator<<(std::ostream& o, const partition_transaction_status& status) {
     switch (status) {
-    case status_t::ongoing:
-        return "ongoing";
-    case status_t::prepared:
-        return "prepared";
-    case status_t::preparing:
-        return "preparing";
-    case status_t::initiating:
-        return "initiating";
+    case partition_transaction_status::ongoing:
+        o << "ongoing";
+        break;
+    case partition_transaction_status::preparing:
+        o << "preparing";
+        break;
+    case partition_transaction_status::prepared:
+        o << "prepared";
+        break;
+    case partition_transaction_status::initiating:
+        o << "initiating";
+        break;
     }
+    return o;
+}
+
+ss::sstring transaction_info::get_status() const {
+    return fmt::format("{}", status);
 }
 
 bool transaction_info::is_expired() const {

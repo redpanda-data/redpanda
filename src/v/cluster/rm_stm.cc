@@ -779,8 +779,8 @@ ss::future<result<transaction_set>> rm_stm::get_transactions() {
         transaction_info tx_info;
         tx_info.lso_bound = offset.first;
         tx_info.status = offset.last > offset.first
-                           ? transaction_info::status_t::ongoing
-                           : transaction_info::status_t::initiating;
+                           ? partition_transaction_status::ongoing
+                           : partition_transaction_status::initiating;
         tx_info.info = get_expiration_info(id);
         tx_info.seq = get_seq_number(id);
         ans.emplace(id, tx_info);

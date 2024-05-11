@@ -45,15 +45,25 @@ struct expiration_info {
     }
 };
 
-struct transaction_info {
-    enum class status_t { ongoing, preparing, prepared, initiating };
+// Status of a single transaction within a data partition.
+// Not to be confused with user visible transaction status
+// that can potentially span multiple data partitions.
+enum class partition_transaction_status : int8_t {
+    ongoing,
+    preparing,
+    prepared,
+    initiating
+};
 
-    status_t status;
+std::ostream& operator<<(std::ostream&, const partition_transaction_status&);
+
+struct transaction_info {
+    partition_transaction_status status;
     model::offset lso_bound;
     std::optional<expiration_info> info;
     std::optional<int32_t> seq;
 
-    std::string_view get_status() const;
+    ss::sstring get_status() const;
     bool is_expired() const;
     std::optional<duration_type> get_staleness() const;
     std::optional<duration_type> get_timeout() const;
