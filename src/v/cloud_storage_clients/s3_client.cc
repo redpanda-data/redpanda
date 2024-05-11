@@ -203,6 +203,15 @@ request_creator::make_list_objects_v2_request(
     if (prefix.has_value()) {
         key = fmt::format("{}&prefix={}", key, (*prefix)().string());
     }
+    if (start_after.has_value()) {
+        key = fmt::format("{}&start-after={}", key, *start_after);
+    }
+    if (max_keys.has_value()) {
+        key = fmt::format("{}&max-keys={}", key, *max_keys);
+    }
+    if (continuation_token.has_value()) {
+        key = fmt::format("{}&continuation-token={}", key, *continuation_token);
+    }
     if (delimiter.has_value()) {
         key = fmt::format("{}&delimiter={}", key, *delimiter);
     }
@@ -213,26 +222,6 @@ request_creator::make_list_objects_v2_request(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
-
-    if (prefix) {
-        header.insert(aws_header_names::prefix, (*prefix)().string());
-    }
-    if (start_after) {
-        header.insert(aws_header_names::start_after, (*start_after)().string());
-    }
-    if (max_keys) {
-        header.insert(aws_header_names::max_keys, std::to_string(*max_keys));
-    }
-    if (continuation_token) {
-        header.insert(
-          aws_header_names::continuation_token,
-          {continuation_token->data(), continuation_token->size()});
-    }
-
-    if (delimiter) {
-        header.insert(
-          aws_header_names::delimiter, std::string(1, delimiter.value()));
-    }
 
     auto ec = _apply_credentials->add_auth(header);
     vlog(s3_log.trace, "ListObjectsV2:\n {}", header);
@@ -829,7 +818,7 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
       name,
       std::move(prefix),
       std::move(start_after),
-      max_keys,
+      std::move(max_keys),
       std::move(continuation_token),
       delimiter);
     if (!header) {
