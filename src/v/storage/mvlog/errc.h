@@ -17,6 +17,13 @@ enum class errc {
 
     // Indicates that there is something unexpected about the logical data.
     broken_data_invariant,
+
+    // Checksum error, likely corruption.
+    checksum_mismatch,
+
+    // Not enough data in a stream, potentially corruption.
+    short_read,
+
 };
 
 struct errc_category final : public std::error_category {
@@ -30,6 +37,10 @@ struct errc_category final : public std::error_category {
             return "none";
         case errc::broken_data_invariant:
             return "broken_data_invariant";
+        case errc::checksum_mismatch:
+            return "checksum_mismatch";
+        case errc::short_read:
+            return "short_read";
         }
     }
 };
