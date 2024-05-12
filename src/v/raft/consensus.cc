@@ -899,6 +899,13 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
 }
 
 ss::future<bool> consensus::dispatch_prevote(bool leadership_transfer) {
+    vlog(
+      _ctxlog.info,
+      "starting pre-vote leader election, current term: {}, leadership "
+      "transfer: {}",
+      _term,
+      leadership_transfer);
+
     if (leadership_transfer) {
         return _op_lock.with([this]() {
             _vstate = vote_state::candidate;
@@ -990,6 +997,13 @@ void consensus::dispatch_vote(bool leadership_transfer) {
       = ssx::spawn_with_gate_then(_bg, [this, leadership_transfer] {
             return dispatch_prevote(leadership_transfer)
               .then([this, leadership_transfer](bool ready) mutable {
+                  vlog(
+                    _ctxlog.debug,
+                    "pre-vote phase success: {}, current term: {}, "
+                    "leadership transfer: {}",
+                    ready,
+                    _term,
+                    leadership_transfer);
                   // if a current node is not longer candidate we should skip
                   // proceeding to actual vote phase
                   if (!ready || _vstate != vote_state::candidate) {
