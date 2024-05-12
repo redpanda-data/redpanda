@@ -33,6 +33,7 @@ using namespace std::chrono_literals;
 using namespace cluster::tx;
 
 ss::logger logger{"producer_state_test"};
+prefix_logger ctx_logger{logger, ""};
 
 struct test_fixture {
     using psm_ptr = std::unique_ptr<producer_state_manager>;
@@ -72,6 +73,7 @@ struct test_fixture {
       ss::noncopyable_function<void()> f = [] {},
       std::optional<model::vcluster_id> vcluster = std::nullopt) {
         auto p = ss::make_lw_shared<producer_state>(
+          ctx_logger,
           model::random_producer_identity(),
           raft::group_id{_counter++},
           std::move(f));

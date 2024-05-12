@@ -153,14 +153,7 @@ result<request_ptr> requests::try_emplace(
         if (match_it != _inflight_requests.end()) {
             return *match_it;
         }
-
         if (!is_valid_sequence(first)) {
-            vlog(
-              clusterlog.trace,
-              "out of order sequence for request range [{}, {}], term: {}",
-              first,
-              last,
-              current);
             return errc::sequence_out_of_order;
         }
     }
@@ -212,9 +205,11 @@ void requests::shutdown() {
 }
 
 producer_state::producer_state(
+  prefix_logger& logger,
   ss::noncopyable_function<void()> post_eviction_hook,
   producer_state_snapshot snapshot) noexcept
-  : _id(snapshot._id)
+  : _logger(logger)
+  , _id(snapshot._id)
   , _group(snapshot._group)
   , _post_eviction_hook(std::move(post_eviction_hook)) {
     // Hydrate from snapshot.
@@ -266,7 +261,7 @@ bool producer_state::can_evict() {
         return false;
     }
 
-    vlog(clusterlog.debug, "evicting producer: {}", *this);
+    vlog(_logger.debug, "[{}] evicting producer", *this);
     _evicted = true;
     shutdown_input();
     return true;
@@ -279,16 +274,28 @@ result<request_ptr> producer_state::try_emplace_request(
         return errc::invalid_request;
     }
     vlog(
-      clusterlog.trace,
-      "new request from producer: {}, batch meta: {}, term: {}, "
+      _logger.trace,
+      "[{}] new request, batch meta: {}, term: {}, "
       "reset: {}, request_state: {}",
       *this,
       bid,
       current_term,
       reset,
       _requests);
-    return _requests.try_emplace(
+    auto result = _requests.try_emplace(
       bid.first_seq, bid.last_seq, current_term, reset);
+
+    if (unlikely(result.has_error())) {
+        vlog(
+          _logger.debug,
+          "[{}] error {} processing request {}, term: {}, reset: {}",
+          *this,
+          result.error(),
+          bid,
+          current_term,
+          reset);
+    }
+    return result;
 }
 
 bool producer_state::update(
@@ -298,8 +305,8 @@ bool producer_state::update(
     }
     bool relink_producer = _requests.stm_apply(bid, offset);
     vlog(
-      clusterlog.trace,
-      "applied stm update for pid: {}, batch meta: {}, relink_producer: {}",
+      _logger.trace,
+      "[{}] applied stm update, batch meta: {}, relink_producer: {}",
       *this,
       bid,
       relink_producer);

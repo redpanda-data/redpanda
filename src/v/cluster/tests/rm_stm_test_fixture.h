@@ -16,6 +16,7 @@
 #include <seastar/core/sharded.hh>
 
 static ss::logger logger{"rm_stm-test"};
+static prefix_logger ctx_logger{logger, ""};
 
 struct rm_stm_test_fixture : simple_raft_fixture {
     void create_stm_and_start_raft(

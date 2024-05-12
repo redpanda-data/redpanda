@@ -173,7 +173,9 @@ producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
         return it->second;
     }
     auto producer = ss::make_lw_shared<producer_state>(
-      pid, _raft->group(), [pid, this] { cleanup_producer_state(pid); });
+      _ctx_log, pid, _raft->group(), [pid, this] {
+          cleanup_producer_state(pid);
+      });
     _producer_state_manager.local().register_producer(*producer, _vcluster_id);
     _producers.emplace(pid, producer);
 
@@ -1759,7 +1761,9 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         }
         auto pid = entry._id;
         auto producer = ss::make_lw_shared<producer_state>(
-          [pid, this] { cleanup_producer_state(pid); }, std::move(entry));
+          _ctx_log,
+          [pid, this] { cleanup_producer_state(pid); },
+          std::move(entry));
         try {
             _producer_state_manager.local().register_producer(
               *producer, _vcluster_id);

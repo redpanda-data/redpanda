@@ -16,6 +16,7 @@
 #include "container/intrusive_list_helpers.h"
 #include "model/record.h"
 #include "utils/mutex.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_future.hh>
@@ -138,14 +139,17 @@ public:
     using clock_type = ss::lowres_system_clock;
 
     producer_state(
+      prefix_logger& logger,
       model::producer_identity id,
       raft::group_id group,
       ss::noncopyable_function<void()> post_eviction_hook)
-      : _id(id)
+      : _logger(logger)
+      , _id(id)
       , _group(group)
       , _last_updated_ts(ss::lowres_system_clock::now())
       , _post_eviction_hook(std::move(post_eviction_hook)) {}
     producer_state(
+      prefix_logger&,
       ss::noncopyable_function<void()> post_eviction_hook,
       producer_state_snapshot) noexcept;
 
@@ -214,6 +218,7 @@ private:
           ss::lowres_system_clock::now() - _last_updated_ts);
     }
 
+    prefix_logger& _logger;
     model::producer_identity _id;
     raft::group_id _group;
     // serializes all the operations on this producer

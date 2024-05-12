@@ -765,7 +765,7 @@ cluster::tx::tx_snapshot_v4 make_tx_snapshot_v4() {
 
 cluster::tx::tx_snapshot make_tx_snapshot_v5() {
     auto producers = tests::random_frag_vector(
-      tests::random_producer_state, 50);
+      tests::random_producer_state, 50, ctx_logger);
     fragmented_vector<cluster::tx::producer_state_snapshot> snapshots;
     for (auto producer : producers) {
         snapshots.push_back(producer->snapshot(kafka::offset{0}));
