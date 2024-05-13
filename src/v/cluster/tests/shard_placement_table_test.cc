@@ -720,6 +720,31 @@ private:
     ss::gate _gate;
 };
 
+template<typename Left, typename Right>
+void assert_key_sets_equal(
+  const Left& left,
+  std::string_view left_str,
+  const Right& right,
+  std::string_view right_str) {
+    std::vector<typename Left::key_type> keys1;
+    for (const auto& kv : left) {
+        if (!right.contains(kv.first)) {
+            keys1.push_back(kv.first);
+        }
+    }
+    ASSERT_TRUE(keys1.empty()) << "keys in " << left_str << ", but not in "
+                               << right_str << ": " << keys1;
+
+    std::vector<typename Right::key_type> keys2;
+    for (const auto& kv : right) {
+        if (!left.contains(kv.first)) {
+            keys2.push_back(kv.first);
+        }
+    }
+    ASSERT_TRUE(keys2.empty()) << "keys in " << right_str << ", but not in "
+                               << left_str << ": " << keys2;
+}
+
 } // namespace
 
 class shard_placement_test_fixture : public seastar_test {
@@ -741,7 +766,11 @@ public:
             }
         }
 
-        ASSERT_EQ_CORO(ntp2shard2state.size(), ntpt.local().ntp2meta.size());
+        assert_key_sets_equal(
+          ntp2shard2state,
+          "spt placement state map",
+          ntpt.local().ntp2meta,
+          "ntp2meta map");
 
         auto& ntp2shards = _ntp2shards.local();
         for (auto it = ntp2shards.begin(); it != ntp2shards.end();) {
@@ -760,7 +789,11 @@ public:
             }
         }
 
-        ASSERT_EQ_CORO(ntp2shards.size(), ntpt.local().ntp2meta.size());
+        assert_key_sets_equal(
+          ntp2shards,
+          "reference ntp state map",
+          ntpt.local().ntp2meta,
+          "ntp2meta map");
 
         for (const auto& [ntp, meta] : ntpt.local().ntp2meta) {
             auto states_it = ntp2shard2state.find(ntp);
