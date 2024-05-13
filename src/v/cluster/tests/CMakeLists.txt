@@ -34,7 +34,6 @@ set(srcs
     distributed_kv_stm_tests.cc
     rm_stm_tests.cc
     rm_stm_compatibility_test.cc
-    id_allocator_stm_test.cc
     local_monitor_test.cc
     tx_compaction_tests.cc
     producer_state_tests.cc
@@ -47,6 +46,28 @@ rp_test(
   BINARY_NAME ${test_name}
   SOURCES ${cluster_test_src}
   LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::cluster v::http_test_utils
+  LABELS cluster
+)
+endforeach()
+
+set(srcs
+    id_allocator_stm_test.cc
+    )
+
+foreach(cluster_test_src ${srcs})
+get_filename_component(test_name ${cluster_test_src} NAME_WE)
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME ${test_name}
+  SOURCES ${cluster_test_src}
+  LIBRARIES
+    v::gtest_main
+    v::storage_test_utils
+    v::cluster
+    v::http_test_utils
+    v::raft
+    v::raft_fixture
   LABELS cluster
 )
 endforeach()

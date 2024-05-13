@@ -76,27 +76,28 @@ id_allocator_stm::reset_next_id(
     return _lock
       .with(
         timeout, [this, id, timeout]() { return advance_state(id, timeout); })
-      .handle_exception_type([](const ss::semaphore_timed_out&) {
-          return stm_allocation_result{-1, raft::errc::timeout};
-      });
+      .handle_exception_type(
+        [](const ss::semaphore_timed_out&) -> stm_allocation_result {
+            return raft::make_error_code(raft::errc::timeout);
+        });
 }
 
 ss::future<id_allocator_stm::stm_allocation_result>
 id_allocator_stm::advance_state(
   int64_t value, model::timeout_clock::duration timeout) {
     if (!co_await sync(timeout)) {
-        co_return stm_allocation_result{-1, raft::errc::timeout};
+        co_return raft::make_error_code(raft::errc::timeout);
     }
     if (value < _curr_id) {
-        co_return stm_allocation_result{_curr_id, raft::errc::success};
+        co_return _curr_id;
     }
     _curr_id = value;
     auto success = co_await set_state(_curr_id + _batch_size, timeout);
     if (!success) {
-        co_return stm_allocation_result{-1, raft::errc::timeout};
+        co_return raft::make_error_code(raft::errc::timeout);
     }
     _curr_batch = _batch_size;
-    co_return stm_allocation_result{_curr_id, raft::errc::success};
+    co_return stm_allocation_result(_curr_id);
 }
 
 ss::future<bool> id_allocator_stm::set_state(
@@ -123,31 +124,32 @@ ss::future<id_allocator_stm::stm_allocation_result>
 id_allocator_stm::allocate_id(model::timeout_clock::duration timeout) {
     return _lock
       .with(timeout, [this, timeout]() { return do_allocate_id(timeout); })
-      .handle_exception_type([](const ss::semaphore_timed_out&) {
-          return stm_allocation_result{-1, raft::errc::timeout};
-      });
+      .handle_exception_type(
+        [](const ss::semaphore_timed_out&) -> stm_allocation_result {
+            return raft::make_error_code(raft::errc::timeout);
+        });
 }
 
 ss::future<id_allocator_stm::stm_allocation_result>
 id_allocator_stm::do_allocate_id(model::timeout_clock::duration timeout) {
     if (!co_await sync(timeout)) {
-        co_return stm_allocation_result{-1, raft::errc::timeout};
+        co_return raft::make_error_code(raft::errc::timeout);
     }
 
     if (_curr_batch == 0) {
         _curr_id = _state;
         if (!co_await set_state(_curr_id + _batch_size, timeout)) {
-            co_return stm_allocation_result{-1, raft::errc::timeout};
+            co_return raft::make_error_code(raft::errc::timeout);
         }
         _curr_batch = _batch_size;
     }
 
-    auto id = _curr_id;
+    int64_t id = _curr_id;
 
     _curr_id += 1;
     _curr_batch -= 1;
 
-    co_return stm_allocation_result{id, raft::errc::success};
+    co_return stm_allocation_result{id};
 }
 
 ss::future<> id_allocator_stm::apply(const model::record_batch& b) {
