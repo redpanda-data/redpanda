@@ -20,6 +20,11 @@
 
 namespace pandaproxy::schema_registry {
 
+/// \brief error_info stores an error_code and custom message.
+///
+/// This class is useful for transporting via an outcome::result
+/// and automatic conversion to an `exception`.
+/// See `outcome_throw_as_system_error_with_payload`.
 class error_info {
 public:
     error_info() = default;
