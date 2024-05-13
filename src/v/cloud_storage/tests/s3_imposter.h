@@ -14,6 +14,7 @@
 #include "cloud_storage_clients/client.h"
 #include "config/configuration.h"
 #include "http/tests/registered_urls.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -27,8 +28,10 @@
 #include <map>
 #include <vector>
 
-static const cloud_storage_clients::bucket_name test_bucket_name
-  = cloud_storage_clients::bucket_name{"test-bucket"};
+inline cloud_storage_clients::bucket_name random_test_bucket_name() {
+    return cloud_storage_clients::bucket_name{
+      "test-bucket-" + ss::sstring{uuid_t::create()}};
+}
 
 static constexpr cloud_storage_clients::s3_url_style default_url_style
   = cloud_storage_clients::s3_url_style::virtual_host;
@@ -104,7 +107,9 @@ public:
     void set_search_on_get_list(bool should) { _search_on_get_list = should; }
 
     ss::sstring url_base() const;
-    const cloud_storage_clients::bucket_name bucket_name = test_bucket_name;
+
+    const cloud_storage_clients::bucket_name bucket_name
+      = random_test_bucket_name();
 
 protected:
     cloud_storage_clients::s3_url_style url_style;

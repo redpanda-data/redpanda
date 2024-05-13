@@ -512,7 +512,7 @@ enable_cloud_storage_fixture::enable_cloud_storage_fixture() {
         cfg.cloud_storage_region.set_value(
           std::optional<ss::sstring>{"us-east1"});
         cfg.cloud_storage_bucket.set_value(
-          std::optional<ss::sstring>{test_bucket_name()});
+          std::optional<ss::sstring>{random_test_bucket_name()()});
     }).get();
 }
 
