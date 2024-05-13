@@ -292,7 +292,7 @@ void tls_certificate_probe::loaded(
         return;
     }
 
-    auto to_tls_serial = [](bytes_view b) {
+    auto to_tls_serial = [](const auto& b) {
         using T = tls_serial_number::type;
         T result = 0;
         const auto end = std::min(b.size(), sizeof(T));
