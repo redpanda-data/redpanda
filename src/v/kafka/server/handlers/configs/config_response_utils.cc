@@ -519,8 +519,7 @@ config_response_container_t make_topic_configs(
       maybe_make_documentation(
         include_documentation,
         config::shard_local_cfg().log_cleanup_policy.desc()),
-      &describe_as_string<model::cleanup_policy_bitflags>,
-      true);
+      &describe_as_string<model::cleanup_policy_bitflags>);
 
     const std::string_view docstring{
       topic_properties.is_compacted()
