@@ -258,6 +258,7 @@ private:
 
     friend class offset_index_utils_fixture;
     friend class log_replayer_fixture;
+    friend class segment_index_observer;
 
     friend std::ostream& operator<<(std::ostream&, const segment_index&);
 };

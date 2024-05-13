@@ -4555,6 +4555,26 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
       == std::nullopt);
 };
 
+namespace storage {
+class segment_index_observer {
+public:
+    explicit segment_index_observer(segment_index& index)
+      : _index{index} {}
+
+    size_t max_step_size() const {
+        fragmented_vector<size_t> diffs;
+        auto& pos = _index._state.position_index;
+        diffs.reserve(pos.size());
+        std::adjacent_difference(
+          pos.begin(), pos.end(), std::back_inserter(diffs));
+        return std::ranges::max(diffs);
+    }
+
+private:
+    segment_index& _index;
+};
+} // namespace storage
+
 FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
 #ifdef NDEBUG
     size_t num_segments = 300;
@@ -4575,15 +4595,14 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
         size_t max_size;
     };
     std::vector<size_target> size_classes = {
-      // can overshoot quite a lot because of the index step (32KiB)
-      {100, 0, 50_KiB},
-      {2000, 1_KiB, 50_KiB},
-      {10_KiB, 1_KiB, 50_KiB},
-      {50_KiB, 1_KiB, 100_KiB},
-      {500_KiB, 1_KiB, 550_KiB},
-      {1_MiB, 1_KiB, 1_MiB + 50_KiB},
-      {10_MiB, 1_KiB, 10_MiB + 50_KiB},
-      {100_MiB, 1_KiB, 100_MiB + 50_KiB},
+      {100, 0, 100},
+      {2000, 1_KiB, 2000},
+      {10_KiB, 1_KiB, 10_KiB},
+      {50_KiB, 1_KiB, 50_KiB},
+      {500_KiB, 1_KiB, 500_KiB},
+      {1_MiB, 1_KiB, 1_MiB},
+      {10_MiB, 1_KiB, 10_MiB},
+      {100_MiB, 1_KiB, 100_MiB},
     };
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
@@ -4608,6 +4627,7 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
         }
         log->force_roll(ss::default_priority_class()).get();
     }
+    size_t max_step_size = 0;
     for (auto& s : log->segments()) {
         if (s->size_bytes() == 0) {
             continue;
@@ -4618,6 +4638,19 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
           s->index().path(),
           s->index().size());
         BOOST_REQUIRE(s->index().size() > 0);
+        max_step_size = std::max(
+          max_step_size,
+          storage::segment_index_observer{s->index()}.max_step_size());
+    }
+
+    BOOST_REQUIRE(max_step_size > 0);
+    vlog(
+      e2e_test_log.info,
+      "Max index step size among all segments: {}",
+      max_step_size);
+
+    for (auto& sc : size_classes) {
+        sc.max_size += max_step_size + sc.target;
     }
 
     std::vector<batch_summary> summaries;
