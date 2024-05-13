@@ -140,14 +140,23 @@ public:
         std::optional<ss::shard_id> _next;
     };
 
+    using ntp2state_t = absl::node_hash_map<model::ntp, placement_state>;
+
     explicit shard_placement_table(storage::kvstore&);
 
     /// Must be called on assignment_shard_id.
     bool is_persistence_enabled() const;
     ss::future<> enable_persistence();
 
-    // must be called on each shard
-    ss::future<> initialize(const topic_table&, model::node_id self);
+    /// Must be called on assignment_shard_id.
+    /// precondition: is_persistence_enabled() == true
+    ss::future<> initialize_from_kvstore(
+      const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp);
+
+    /// Must be called on assignment_shard_id.
+    /// precondition: is_persistence_enabled() == false
+    ss::future<>
+    initialize_from_topic_table(ss::sharded<topic_table>&, model::node_id self);
 
     using shard_callback_t = std::function<void(const model::ntp&)>;
 
@@ -162,10 +171,7 @@ public:
 
     std::optional<placement_state> state_on_this_shard(const model::ntp&) const;
 
-    const absl::node_hash_map<model::ntp, placement_state>&
-    shard_local_states() const {
-        return _states;
-    }
+    const ntp2state_t& shard_local_states() const { return _states; }
 
     // partition lifecycle methods
 
@@ -200,13 +206,24 @@ private:
 
     ss::future<> persist_shard_local_state();
 
+    ss::future<ss::foreign_ptr<std::unique_ptr<ntp2state_t>>>
+    gather_init_states(const chunked_hash_map<raft::group_id, model::ntp>&);
+
+    struct ntp_init_data;
+
+    ss::future<>
+    scatter_init_data(const chunked_hash_map<model::ntp, ntp_init_data>&);
+
+    ss::future<>
+    do_initialize_from_topic_table(const topic_table&, model::node_id self);
+
 private:
     friend class shard_placement_test_fixture;
 
     // per-shard state
     //
     // node_hash_map for pointer stability
-    absl::node_hash_map<model::ntp, placement_state> _states;
+    ntp2state_t _states;
     // lock is needed to sync enabling persistence with shard-local
     // modifications.
     ssx::rwlock _persistence_lock;

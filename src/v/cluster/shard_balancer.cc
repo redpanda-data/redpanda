@@ -34,9 +34,8 @@ ss::future<> shard_balancer::start() {
 
     auto tt_version = _topics.local().topics_map_revision();
 
-    co_await _shard_placement.invoke_on_all([this](shard_placement_table& spt) {
-        return spt.initialize(_topics.local(), _self);
-    });
+    co_await _shard_placement.local().initialize_from_topic_table(
+      _topics, _self);
 
     // we shouldn't be receiving any controller updates at this point, so no
     // risk of missing a notification between initializing shard_placement_table

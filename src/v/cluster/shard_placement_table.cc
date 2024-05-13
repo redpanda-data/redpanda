@@ -256,7 +256,302 @@ ss::future<> shard_placement_table::persist_shard_local_state() {
       });
 }
 
-ss::future<> shard_placement_table::initialize(
+/// A struct used during initialization to merge kvstore markers recovered from
+/// different shards and restore the most up-to-date shard_placement_table
+/// state.
+struct shard_placement_table::ntp_init_data {
+    struct versioned_shard {
+        std::optional<ss::shard_id> shard;
+        model::shard_revision_id revision;
+
+        void update(
+          std::optional<ss::shard_id> s, model::shard_revision_id new_rev) {
+            if (new_rev > revision) {
+                shard = s;
+                revision = new_rev;
+            }
+        }
+    };
+
+    raft::group_id group;
+    model::revision_id log_revision;
+    versioned_shard hosted;
+    versioned_shard receiving;
+    versioned_shard assigned;
+
+    void update_log_revision(raft::group_id gr, model::revision_id new_rev) {
+        if (new_rev > log_revision) {
+            *this = ntp_init_data{};
+            group = gr;
+            log_revision = new_rev;
+        }
+    }
+
+    void update(ss::shard_id s, const shard_local_assignment& new_assigned) {
+        update_log_revision(new_assigned.group, new_assigned.log_revision);
+        if (new_assigned.log_revision == log_revision) {
+            assigned.update(s, new_assigned.shard_revision);
+        }
+    }
+
+    void update(ss::shard_id s, const shard_local_state& new_current) {
+        update_log_revision(new_current.group, new_current.log_revision);
+        if (new_current.log_revision == log_revision) {
+            switch (new_current.status) {
+            case hosted_status::hosted:
+                hosted.update(s, new_current.shard_revision);
+                receiving.update(std::nullopt, new_current.shard_revision);
+                break;
+            case hosted_status::receiving:
+                receiving.update(s, new_current.shard_revision);
+                break;
+            default:
+                break;
+            }
+        }
+    }
+};
+
+ss::future<> shard_placement_table::initialize_from_kvstore(
+  const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp) {
+    vassert(
+      ss::this_shard_id() == assignment_shard_id,
+      "method can only be invoked on shard {}",
+      assignment_shard_id);
+
+    vassert(
+      is_persistence_enabled(),
+      "can't initialize from kvstore, persistence hasn't been enabled yet");
+    co_await container().invoke_on_all(
+      [](shard_placement_table& spt) { spt._persistence_enabled = true; });
+
+    // 1. gather kvstore markers from all shards
+
+    auto shard2init_states = co_await container().map(
+      [&local_group2ntp](shard_placement_table& spt) {
+          return spt.gather_init_states(local_group2ntp);
+      });
+
+    // 2. merge into up-to-date shard_placement_table state
+
+    chunked_hash_map<model::ntp, ntp_init_data> ntp2init_data;
+    model::shard_revision_id max_shard_revision;
+    ssx::async_counter counter;
+    for (ss::shard_id s = 0; s < shard2init_states.size(); ++s) {
+        co_await ssx::async_for_each_counter(
+          counter,
+          shard2init_states[s]->begin(),
+          shard2init_states[s]->end(),
+          [&](const ntp2state_t::value_type& kv) {
+              const auto& [ntp, state] = kv;
+              auto& init_data = ntp2init_data.try_emplace(ntp).first->second;
+
+              if (state.assigned) {
+                  init_data.update(s, state.assigned.value());
+                  max_shard_revision = std::max(
+                    max_shard_revision, state.assigned->shard_revision);
+              }
+
+              if (state.current) {
+                  init_data.update(s, state.current.value());
+                  max_shard_revision = std::max(
+                    max_shard_revision, state.current->shard_revision);
+              }
+          });
+    }
+
+    // 3. based on merged data, update in-memory state everywhere
+
+    if (max_shard_revision != model::shard_revision_id{}) {
+        _cur_shard_revision = max_shard_revision + model::shard_revision_id{1};
+    }
+
+    co_await container().invoke_on_all(
+      [&ntp2init_data](shard_placement_table& spt) {
+          return spt.scatter_init_data(ntp2init_data);
+      });
+
+    co_await ssx::async_for_each(
+      ntp2init_data.begin(),
+      ntp2init_data.end(),
+      [this](const decltype(ntp2init_data)::value_type& kv) {
+          const auto& [ntp, init_data] = kv;
+          vlog(
+            clusterlog.trace,
+            "[{}] init data: group: {}, log_revision: {}, "
+            "assigned: {}, hosted: {}, receiving: {}",
+            ntp,
+            init_data.group,
+            init_data.log_revision,
+            init_data.assigned.shard,
+            init_data.hosted.shard,
+            init_data.receiving.shard);
+
+          if (init_data.assigned.shard) {
+              auto entry = std::make_unique<entry_t>();
+              entry->target = shard_placement_target(
+                init_data.group,
+                init_data.log_revision,
+                init_data.assigned.shard.value());
+              _ntp2entry.emplace(ntp, std::move(entry));
+          }
+      });
+}
+
+ss::future<ss::foreign_ptr<std::unique_ptr<shard_placement_table::ntp2state_t>>>
+shard_placement_table::gather_init_states(
+  const chunked_hash_map<raft::group_id, model::ntp>& partitions) {
+    chunked_vector<raft::group_id> orphan_assignments;
+
+    co_await _kvstore.for_each(
+      kvstore_key_space, [&](bytes_view key_str, const iobuf& val) {
+          iobuf_parser key_parser(bytes_to_iobuf(key_str));
+
+          auto key_type = serde::read_nested<kvstore_key_type>(key_parser, 0);
+          switch (key_type) {
+          default:
+              return;
+          case kvstore_key_type::assignment: {
+              auto group = serde::read_nested<raft::group_id>(key_parser, 0);
+              auto ntp_it = partitions.find(group);
+              if (ntp_it == partitions.end()) {
+                  vlog(
+                    clusterlog.trace,
+                    "recovered orphan assigned marker, group: {}",
+                    group);
+                  orphan_assignments.push_back(group);
+              } else {
+                  auto marker = serde::from_iobuf<assignment_marker>(
+                    val.copy());
+                  vlog(
+                    clusterlog.trace,
+                    "[{}] recovered assigned marker, lr: {} sr: {}",
+                    ntp_it->second,
+                    marker.log_revision,
+                    marker.shard_revision);
+
+                  _states[ntp_it->second].assigned = shard_local_assignment{
+                    .group = group,
+                    .log_revision = marker.log_revision,
+                    .shard_revision = marker.shard_revision};
+              }
+              break;
+          }
+          case kvstore_key_type::current_state: {
+              auto group = serde::read_nested<raft::group_id>(key_parser, 0);
+              auto marker = serde::from_iobuf<current_state_marker>(val.copy());
+              vlog(
+                clusterlog.trace,
+                "[{}] recovered cur state marker, lr: {} sr: {} complete: {}",
+                marker.ntp,
+                marker.log_revision,
+                marker.shard_revision,
+                marker.is_complete);
+
+              auto& state = _states[marker.ntp];
+              if (state.current) {
+                  throw std::runtime_error(fmt_with_ctx(
+                    ssx::sformat,
+                    "duplicate ntp {} in kvstore map on shard {}",
+                    marker.ntp,
+                    ss::this_shard_id()));
+              }
+              state.current = shard_local_state(
+                group,
+                marker.log_revision,
+                marker.is_complete ? hosted_status::hosted
+                                   : hosted_status::receiving,
+                marker.shard_revision);
+              break;
+          }
+          }
+      });
+
+    co_await ss::max_concurrent_for_each(
+      orphan_assignments.begin(),
+      orphan_assignments.end(),
+      512,
+      [this](raft::group_id group) {
+          return _kvstore.remove(
+            kvstore_key_space, assignment_kvstore_key(group));
+      });
+
+    co_return ss::make_foreign(std::make_unique<ntp2state_t>(_states));
+}
+
+ss::future<> shard_placement_table::scatter_init_data(
+  const chunked_hash_map<model::ntp, shard_placement_table::ntp_init_data>&
+    ntp2init_data) {
+    return ss::max_concurrent_for_each(
+      ntp2init_data.begin(),
+      ntp2init_data.end(),
+      512,
+      [this](const std::pair<model::ntp, ntp_init_data>& kv) {
+          const auto& [ntp, init_data] = kv;
+          auto it = _states.find(ntp);
+          if (it == _states.end()) {
+              return ss::now();
+          }
+          auto& state = it->second;
+
+          if (state.current) {
+              if (ss::this_shard_id() == init_data.hosted.shard) {
+                  if (init_data.receiving.shard) {
+                      state._next = init_data.receiving.shard;
+                  }
+              } else if (ss::this_shard_id() != init_data.receiving.shard) {
+                  state.current->status = hosted_status::obsolete;
+              }
+          }
+
+          ss::future<> fut = ss::now();
+          if (state.assigned) {
+              if (ss::this_shard_id() != init_data.assigned.shard) {
+                  fut = _kvstore.remove(
+                    kvstore_key_space,
+                    assignment_kvstore_key(state.assigned->group));
+                  state.assigned = std::nullopt;
+              } else if (!init_data.hosted.shard) {
+                  state._is_initial_for = init_data.log_revision;
+              }
+          }
+
+          if (state.is_empty()) {
+              _states.erase(it);
+          } else {
+              vlog(
+                clusterlog.info,
+                "[{}] recovered placement state: {}",
+                ntp,
+                state);
+          }
+
+          return fut;
+      });
+}
+
+ss::future<> shard_placement_table::initialize_from_topic_table(
+  ss::sharded<topic_table>& topics, model::node_id self) {
+    vassert(
+      ss::this_shard_id() == assignment_shard_id,
+      "method can only be invoked on shard {}",
+      assignment_shard_id);
+    vassert(
+      !is_persistence_enabled(),
+      "can't initialize from topic_table, persistence has already been "
+      "enabled");
+
+    co_await container().invoke_on_all(
+      [&topics, self](shard_placement_table& spt) {
+          return spt.do_initialize_from_topic_table(topics.local(), self);
+      });
+
+    if (!_ntp2entry.empty()) {
+        _cur_shard_revision += 1;
+    }
+}
+
+ss::future<> shard_placement_table::do_initialize_from_topic_table(
   const topic_table& topics, model::node_id self) {
     // We expect topic_table to remain unchanged throughout the loop because the
     // method is supposed to be called after local controller replay is finished
@@ -336,10 +631,6 @@ ss::future<> shard_placement_table::initialize(
                   _states.emplace(ntp, placement);
               }
           });
-    }
-
-    if (!_ntp2entry.empty()) {
-        _cur_shard_revision += 1;
     }
 }
 
