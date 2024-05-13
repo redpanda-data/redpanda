@@ -35,23 +35,18 @@ public:
 /// will trigger 'task_local_invalidated' exception.
 template<class T>
 class task_local {
-    static const seastar::task* get_current_task() {
-        auto task = seastar::engine().current_task();
-        if (task == nullptr) {
-            task = seastar::thread_impl::get()->waiting_task();
-        }
-        vassert(task != nullptr, "No current task");
-        return task;
+    static uint64_t get_current_task_cnt() {
+        return seastar::engine().get_sched_stats().tasks_processed;
     }
 
 public:
     explicit task_local(const T& val)
       : _val(val)
-      , _task(get_current_task()) {}
+      , _task_cnt(get_current_task_cnt()) {}
 
     explicit task_local(T&& val)
       : _val(val)
-      , _task(get_current_task()) {}
+      , _task_cnt(get_current_task_cnt()) {}
 
     task_local() = delete;
     ~task_local() = default;
@@ -91,7 +86,7 @@ private:
     /// Check if the time slice is the same. Invalidate
     /// the pointer if its not.
     void check_time_slice() const {
-        if (get_current_task() != _task) {
+        if (get_current_task_cnt() != _task_cnt) {
             // Opt-out from all checks if we don't have a valid pointer to
             // the current task.
             _val = std::nullopt;
@@ -105,8 +100,7 @@ private:
     }
 
     mutable std::optional<T> _val;
-    // Non-owning ptr
-    const seastar::task* _task;
+    uint64_t _task_cnt;
 };
 
 template<class T, class... Args>
