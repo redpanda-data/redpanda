@@ -18,6 +18,7 @@
 #include "storage/storage_resources.h"
 #include "test_utils/randoms.h"
 #include "test_utils/test.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/util/file.hh>
@@ -91,7 +92,8 @@ public:
       ss::sharded<ntp2shards_t>& ntp2shards)
       : _ntpt(ntpt.local())
       , _shard_placement(spt.local())
-      , _ntp2shards(ntp2shards) {}
+      , _ntp2shards(ntp2shards)
+      , _logger(clusterlog, "RB") {}
 
     ss::future<> stop() {
         for (auto& [_, rs] : _states) {
@@ -115,7 +117,7 @@ public:
         auto& rs = *rs_it->second;
         rs.pending_notifies += 1;
         vlog(
-          clusterlog.trace,
+          _logger.trace,
           "[{}] notify reconciliation, pending_notifies: {}",
           ntp,
           rs.pending_notifies);
@@ -175,7 +177,7 @@ private:
                 auto ex = std::current_exception();
                 if (!ssx::is_shutdown_exception(ex)) {
                     vlog(
-                      clusterlog.error,
+                      _logger.error,
                       "[{}] unexpected exception during reconciliation: {}",
                       ntp,
                       ex);
@@ -205,7 +207,7 @@ private:
                 if (res.has_value()) {
                     if (res.value() == ss::stop_iteration::yes) {
                         vlog(
-                          clusterlog.trace,
+                          _logger.trace,
                           "[{}] reconciled, notify count: {}",
                           ntp,
                           notifies);
@@ -217,7 +219,7 @@ private:
                     continue;
                 } else {
                     vlog(
-                      clusterlog.trace,
+                      _logger.trace,
                       "[{}] reconciliation attempt error: {}",
                       ntp,
                       res.error());
@@ -226,7 +228,7 @@ private:
             } catch (ss::abort_requested_exception const&) {
             } catch (...) {
                 vlog(
-                  clusterlog.warn,
+                  _logger.warn,
                   "[{}] exception occured during reconciliation: {}",
                   ntp,
                   std::current_exception());
@@ -250,7 +252,7 @@ private:
         }
 
         vlog(
-          clusterlog.trace,
+          _logger.trace,
           "[{}] placement state on this shard: {}, expected_log_revision: {}",
           ntp,
           placement,
@@ -298,12 +300,17 @@ private:
       model::revision_id log_revision,
       bool state_expected) {
         auto ec = co_await _shard_placement.prepare_create(ntp, log_revision);
-        vlog(clusterlog.trace, "[{}] creating partition: {}", ntp, ec);
+        vlog(_logger.trace, "[{}] creating partition: {}", ntp, ec);
         if (ec) {
             co_return ec;
         }
 
         _launched.insert(ntp);
+        vlog(
+          _logger.trace,
+          "[{}] started partition log_revision: {}",
+          ntp,
+          log_revision);
         co_await ss::sleep(1ms * random_generators::get_int(30));
 
         co_await _ntp2shards.invoke_on(
@@ -358,7 +365,7 @@ private:
       model::revision_id cmd_revision) {
         auto ec = co_await _shard_placement.prepare_delete(ntp, cmd_revision);
         vlog(
-          clusterlog.trace,
+          _logger.trace,
           "[{}] deleting partition at cmd_revision: {}, ec: {}",
           ntp,
           cmd_revision,
@@ -373,6 +380,13 @@ private:
         }
 
         bool launched_expected = _launched.erase(ntp);
+        if (launched_expected) {
+            vlog(
+              _logger.trace,
+              "[{}] stopped partition log_revision: {}",
+              ntp,
+              placement.current->log_revision);
+        }
         co_await ss::sleep(1ms * random_generators::get_int(30));
 
         co_await _ntp2shards.invoke_on(
@@ -442,7 +456,7 @@ private:
           ntp, log_revision);
         if (maybe_dest.has_error()) {
             vlog(
-              clusterlog.trace,
+              _logger.trace,
               "[{}] preparing transfer error: {}",
               ntp,
               maybe_dest.error());
@@ -450,13 +464,20 @@ private:
         }
 
         vlog(
-          clusterlog.trace,
+          _logger.trace,
           "[{}] preparing transfer dest: {}",
           ntp,
           maybe_dest.value());
         ss::shard_id destination = maybe_dest.value();
 
         bool launched_expected = _launched.erase(ntp);
+        if (launched_expected) {
+            vlog(
+              _logger.trace,
+              "[{}] stopped partition for transfer, log_revision: {}",
+              ntp,
+              log_revision);
+        }
 
         co_await _ntp2shards.invoke_on(
           0,
@@ -562,7 +583,7 @@ private:
           });
 
         co_await _shard_placement.finish_transfer_on_source(ntp, log_revision);
-        vlog(clusterlog.trace, "[{}] transferred", ntp);
+        vlog(_logger.trace, "[{}] transferred", ntp);
         co_return errc::success;
     }
 
@@ -575,6 +596,7 @@ private:
       _states;
     absl::flat_hash_set<model::ntp> _launched;
     ss::gate _gate;
+    prefix_logger _logger;
 };
 
 // Limit concurrency to 4 so that there are more interesting repeats in randomly
@@ -859,12 +881,13 @@ public:
 TEST_F_CORO(shard_placement_test_fixture, StressTest) {
     model::revision_id cur_revision{1};
     raft::group_id cur_group{1};
+    prefix_logger logger(clusterlog, "TEST");
 
     co_await start();
 
     for (size_t i = 0; i < 10'000; ++i) {
         if (random_generators::get_int(15) == 0) {
-            vlog(clusterlog.info, "waiting for reconciliation");
+            vlog(logger.info, "waiting for reconciliation");
             for (size_t i = 0;; ++i) {
                 ASSERT_TRUE_CORO(i < 50) << "taking too long to reconcile";
                 if (!(_shard_assigner->is_reconciled()
@@ -875,7 +898,7 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
                 }
             }
 
-            vlog(clusterlog.info, "reconciled");
+            vlog(logger.info, "reconciled");
             co_await quiescent_state_checks();
         }
 
@@ -889,7 +912,7 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             auto group = cur_group++;
             auto revision = cur_revision++;
             vlog(
-              clusterlog.info,
+              logger.info,
               "[{}] OP: add, group: {}, log revision: {}",
               ntp,
               group,
@@ -917,11 +940,11 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
               {op_t::transfer, op_t::remove, op_t::increase_log_rev});
             switch (op) {
             case op_t::transfer:
-                vlog(clusterlog.info, "[{}] OP: reassign shard", ntp);
+                vlog(logger.info, "[{}] OP: reassign shard", ntp);
                 _shard_assigner->assign_eventually(ntp);
                 break;
             case op_t::remove: {
-                vlog(clusterlog.info, "[{}] OP: remove", ntp);
+                vlog(logger.info, "[{}] OP: remove", ntp);
                 auto revision = cur_revision++;
                 co_await ntpt.invoke_on_all([&](ntp_table& ntpt) {
                     ntpt.ntp2meta.erase(ntp);
@@ -935,7 +958,7 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             case op_t::increase_log_rev:
                 ntp_meta.log_revision = cur_revision++;
                 vlog(
-                  clusterlog.info,
+                  logger.info,
                   "[{}] OP: increase log revision to: {}",
                   ntp,
                   ntp_meta.log_revision);
@@ -951,7 +974,7 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
         }
     }
 
-    vlog(clusterlog.info, "finished");
+    vlog(logger.info, "finished");
 }
 
 } // namespace cluster
