@@ -1692,8 +1692,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def get_redpanda_pods(self):
         """Get the current list of redpanda pods as k8s API objects."""
-        pods = json.loads(
-            self.kubectl.cmd('get pods -n redpanda -o json').decode())
+        pods = json.loads(self.kubectl.cmd('get pods -n redpanda -o json'))
 
         return [
             p for p in pods['items'] if is_redpanda_pod(p, self.cluster_id)
@@ -1739,7 +1738,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             return self.kubectl.cmd([
                 'get', 'pod', pod_name, '-n=redpanda',
                 "-o=jsonpath='{.status.containerStatuses[0].ready}'"
-            ]).decode()
+            ])
 
         delete_cmd = ['delete', 'pod', pod_name, '-n=redpanda']
         self.logger.info(
@@ -1780,7 +1779,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 self.kubectl.cmd([
                     'get', 'cluster', cluster_name, '-n=redpanda',
                     "-o=jsonpath='{.status.replicas}'"
-                ]).decode())
+                ]))
 
             # Check cluster readiness after pod restart
             self.check_cluster_readiness(cluster_name, expected_replicas,
@@ -1814,7 +1813,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             self.kubectl.cmd([
                 'get', 'cluster', cluster_name, '-n=redpanda',
                 "-o=jsonpath='{.status.replicas}'"
-            ]).decode())
+            ]))
 
         # Check cluster readiness after restart of all pods
         self.check_cluster_readiness(cluster_name, expected_replicas,
@@ -1845,7 +1844,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         ret = self.kubectl.cmd([
             'get', 'cluster', cluster_name, '-n=redpanda',
             "-o=jsonpath='{.status.readyReplicas}'"
-        ]).decode()
+        ])
         return int(0 if not ret else ret)
 
     def verify_basic_produce_consume(self, producer, consumer):
@@ -1907,8 +1906,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             text = self._cloud_cluster.get_public_metrics()
         else:
             text = self.kubectl.exec(
-                'curl -f -s -S http://localhost:9644/metrics',
-                pod.name).decode()
+                'curl -f -s -S http://localhost:9644/metrics', pod.name)
         return text_string_to_metric_families(text)
 
     def metrics_sample(
@@ -2130,7 +2128,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # Leaderless partitions (0):        []
         # Under-replicated partitions (0):  []
 
-        lines = ret.decode().splitlines()
+        lines = ret.splitlines()
         self.logger.debug(f'rpk cluster health lines: {lines}')
         unhealthy_reasons = 'no line found'
         for line in lines:
