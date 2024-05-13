@@ -285,11 +285,11 @@ abs_request_creator::make_list_blobs_request(
   const bucket_name& name,
   bool files_only,
   std::optional<object_key> prefix,
-  [[maybe_unused]] std::optional<object_key> start_after,
-  std::optional<size_t> max_keys,
+  std::optional<size_t> max_results,
+  std::optional<ss::sstring> marker,
   std::optional<char> delimiter) {
     // GET /{container-id}?restype=container&comp=list&prefix={prefix}...
-    // ...&max_results{max_keys}
+    // ...&maxresults{max_keys}
     // HTTP/1.1 Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
     // x-ms-version:"2023-01-23"           # added by 'add_auth'
@@ -299,12 +299,16 @@ abs_request_creator::make_list_blobs_request(
         target += fmt::format("&prefix={}", prefix.value()().string());
     }
 
-    if (max_keys) {
-        target += fmt::format("&max_results={}", max_keys.value());
+    if (max_results) {
+        target += fmt::format("&maxresults={}", max_results.value());
     }
 
     if (delimiter) {
         target += fmt::format("&delimiter={}", delimiter.value());
+    }
+
+    if (marker.has_value()) {
+        target += fmt::format("&marker={}", marker.value());
     }
 
     if (files_only) {
@@ -746,7 +750,7 @@ ss::future<result<abs_client::list_bucket_result, error_outcome>>
 abs_client::list_objects(
   const bucket_name& name,
   std::optional<object_key> prefix,
-  std::optional<object_key> start_after,
+  [[maybe_unused]] std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
   ss::lowres_clock::duration timeout,
@@ -756,7 +760,6 @@ abs_client::list_objects(
       do_list_objects(
         name,
         std::move(prefix),
-        std::move(start_after),
         max_keys,
         std::move(continuation_token),
         timeout,
@@ -768,9 +771,8 @@ abs_client::list_objects(
 ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
   const bucket_name& name,
   std::optional<object_key> prefix,
-  std::optional<object_key> start_after,
-  std::optional<size_t> max_keys,
-  [[maybe_unused]] std::optional<ss::sstring> continuation_token,
+  std::optional<size_t> max_results,
+  std::optional<ss::sstring> marker,
   ss::lowres_clock::duration timeout,
   std::optional<char> delimiter,
   std::optional<item_filter> gather_item_if) {
@@ -778,8 +780,8 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
       name,
       _adls_client.has_value(),
       std::move(prefix),
-      std::move(start_after),
-      max_keys,
+      max_results,
+      std::move(marker),
       delimiter);
     if (!header) {
         vlog(

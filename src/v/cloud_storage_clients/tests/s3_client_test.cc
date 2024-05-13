@@ -164,7 +164,7 @@ void set_routes(ss::httpd::routes& r) {
       [](const_req req, reply& reply) {
           BOOST_REQUIRE(!req.get_header("x-amz-content-sha256").empty());
           BOOST_REQUIRE_EQUAL(req.get_query_param("list-type"), "2");
-          auto prefix = req.get_header("prefix");
+          auto prefix = req.get_query_param("prefix");
           if (prefix == "test") {
               // normal response
               return list_objects_payload;
@@ -173,7 +173,8 @@ void set_routes(ss::httpd::routes& r) {
               reply.set_status(reply::status_type::internal_server_error);
               return error_payload;
           } else if (prefix == "test-cont") {
-              BOOST_REQUIRE_EQUAL(req.get_header("continuation-token"), "ctok");
+              BOOST_REQUIRE_EQUAL(
+                req.get_query_param("continuation-token"), "ctok");
               return list_objects_payload;
           }
           return "";

@@ -45,7 +45,6 @@ struct request_info {
      */
     ss::sstring q_list_type;
     ss::sstring q_prefix;
-    ss::sstring h_prefix;
     bool has_q_delete;
 
     explicit request_info(const ss::http::request& req)
@@ -55,7 +54,6 @@ struct request_info {
       , content_length(req.content_length) {
         q_list_type = req.get_query_param("list-type");
         q_prefix = req.get_query_param("prefix");
-        h_prefix = req.get_header("prefix");
         has_q_delete = req.query_parameters.contains("delete");
     }
 

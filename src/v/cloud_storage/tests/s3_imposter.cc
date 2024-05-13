@@ -42,17 +42,39 @@ uint16_t unit_test_httpd_port_number() { return 4442; }
 
 namespace {
 
+using expectation_map_t
+  = std::map<ss::sstring, s3_imposter_fixture::expectation>;
+
 // Takes the input map of keys to expectations and returns a stringified XML
 // corresponding to the appropriate S3 response.
 ss::sstring list_objects_resp(
-  const std::map<ss::sstring, s3_imposter_fixture::expectation>& objects,
+  const expectation_map_t& objects,
   ss::sstring prefix,
-  ss::sstring delimiter) {
+  ss::sstring delimiter,
+  std::optional<size_t> max_keys_opt,
+  std::optional<ss::sstring> continuation_token_opt) {
     std::map<ss::sstring, size_t> content_key_to_size;
     std::set<ss::sstring> common_prefixes;
     // Filter by prefix and group by the substring between the prefix and first
     // delimiter.
-    for (const auto& [_, expectation] : objects) {
+    auto max_keys = max_keys_opt.has_value()
+                      ? std::min(
+                        max_keys_opt.value(),
+                        s3_imposter_fixture::default_max_keys)
+                      : s3_imposter_fixture::default_max_keys;
+    auto it = (continuation_token_opt.has_value())
+                ? objects.find(continuation_token_opt.value())
+                : objects.begin();
+    auto end_it = objects.end();
+    ss::sstring next_continuation_token = "";
+    for (; it != end_it; ++it) {
+        const auto& expectation = it->second;
+
+        if (content_key_to_size.size() == max_keys) {
+            next_continuation_token = it->first;
+            break;
+        }
+
         auto key = expectation.url;
         if (!key.empty() && key[0] == '/') {
             // Remove / character that S3 client adds
@@ -89,6 +111,8 @@ ss::sstring list_objects_resp(
           prefix
           + key.substr(prefix.size(), delimiter_pos - prefix.size() + 1));
     }
+
+    const bool is_truncated = (it != end_it);
     // Populate the returned XML.
     ss::sstring ret;
     ret += fmt::format(
@@ -97,14 +121,17 @@ ss::sstring list_objects_resp(
   <Name>test-bucket</Name>
   <Prefix>{}</Prefix>
   <KeyCount>{}</KeyCount>
-  <MaxKeys>1000</MaxKeys>
+  <MaxKeys>{}</MaxKeys>
   <Delimiter>{}</Delimiter>
-  <IsTruncated>false</IsTruncated>
-  <NextContinuationToken>next</NextContinuationToken>
+  <IsTruncated>{}</IsTruncated>
+  <NextContinuationToken>{}</NextContinuationToken>
 )xml",
       prefix,
       content_key_to_size.size(),
-      delimiter);
+      max_keys,
+      delimiter,
+      is_truncated,
+      next_continuation_token);
     for (const auto& [key, size] : content_key_to_size) {
         ret += fmt::format(
           R"xml(
@@ -241,15 +268,33 @@ void s3_imposter_fixture::set_routes(
                 if (
                   fixture._search_on_get_list
                   && request.get_query_param("list-type") == "2") {
-                    auto prefix = request.get_header("prefix");
-                    auto delimiter = request.get_header("delimiter");
+                    auto prefix = request.get_query_param("prefix");
+                    auto delimiter = request.get_query_param("delimiter");
+                    auto max_keys_str = request.get_query_param("max-keys");
+                    auto continuation_token_str = request.get_query_param(
+                      "continuation-token");
+                    std::optional<size_t> max_keys = (max_keys_str.empty())
+                                                       ? std::optional<size_t>{}
+                                                       : std::stoi(
+                                                         max_keys_str);
+                    std::optional<ss::sstring> continuation_token
+                      = (continuation_token_str.empty())
+                          ? std::optional<ss::sstring>{}
+                          : continuation_token_str;
                     vlog(
                       fixt_log.trace,
-                      "S3 imposter list request {} - {} - {}",
+                      "S3 imposter list request {} - {} - {} - {} - {}",
                       prefix,
                       delimiter,
+                      max_keys,
+                      continuation_token,
                       request._method);
-                    return list_objects_resp(expectations, prefix, delimiter);
+                    return list_objects_resp(
+                      expectations,
+                      prefix,
+                      delimiter,
+                      max_keys,
+                      continuation_token);
                 }
                 auto it = expectations.find(request._url);
                 if (it == expectations.end() || !it->second.body.has_value()) {
