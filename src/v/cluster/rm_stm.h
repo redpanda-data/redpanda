@@ -497,11 +497,6 @@ private:
     template<class T>
     void fill_snapshot_wo_seqs(T&);
 
-    bool is_transaction_partitioning() const {
-        return _feature_table.local().is_active(
-          features::feature::transaction_partitioning);
-    }
-
     friend std::ostream& operator<<(std::ostream&, const log_state&);
     ss::future<> maybe_log_tx_stats();
     void log_tx_stats();

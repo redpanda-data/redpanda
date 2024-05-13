@@ -211,10 +211,7 @@ model::record_batch rm_stm::make_fence_batch(
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms,
   model::partition_id tm) {
-    if (is_transaction_partitioning()) {
-        return make_fence_batch_v2(pid, tx_seq, transaction_timeout_ms, tm);
-    }
-    return make_fence_batch_v1(pid, tx_seq, transaction_timeout_ms);
+    return make_fence_batch_v2(pid, tx_seq, transaction_timeout_ms, tm);
 }
 
 model::control_record_type
@@ -1984,12 +1981,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     }
 }
 
-uint8_t rm_stm::active_snapshot_version() {
-    if (_feature_table.local().is_active(features::feature::idempotency_v2)) {
-        return tx_snapshot::version;
-    }
-    return tx_snapshot_v4::version;
-}
+uint8_t rm_stm::active_snapshot_version() { return tx_snapshot::version; }
 
 template<class T>
 void rm_stm::fill_snapshot_wo_seqs(T& snapshot) {

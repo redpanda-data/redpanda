@@ -144,11 +144,7 @@ ss::future<> tx_topic_manager::do_reconcile_topic_properties() {
 ss::future<> tx_topic_manager::stop() { return _gate.close(); }
 
 ss::future<std::error_code> tx_topic_manager::try_create_coordinator_topic() {
-    const int32_t partition_count
-      = _features.local().is_active(features::feature::transaction_partitioning)
-          ? _partition_count()
-          : 1;
-
+    const int32_t partition_count = _partition_count();
     cluster::topic_configuration topic_cfg{
       model::kafka_internal_namespace,
       model::tx_manager_topic,

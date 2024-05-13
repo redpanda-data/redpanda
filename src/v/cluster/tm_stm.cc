@@ -127,14 +127,7 @@ ss::future<> tm_stm::start() {
     co_await persisted_stm::start();
 }
 
-uint8_t tm_stm::active_snapshot_version() {
-    if (_feature_table.local().is_active(
-          features::feature::transaction_partitioning)) {
-        return tm_snapshot::version;
-    }
-
-    return tm_snapshot_v0::version;
-}
+uint8_t tm_stm::active_snapshot_version() { return tm_snapshot::version; }
 
 std::optional<tm_transaction> tm_stm::find_tx(kafka::transactional_id tx_id) {
     auto tx_opt = _cache->find_mem(tx_id);
