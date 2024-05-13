@@ -9,9 +9,15 @@
  * by the Apache License, Version 2.0
  */
 #include "test_utils/async.h"
+#include "test_utils/gtest_utils.h"
 #include "test_utils/test.h"
 
+#include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/util/defer.hh>
+#include <seastar/util/file.hh>
+
+#include <gtest/gtest.h>
 
 #include <chrono>
 
@@ -163,3 +169,36 @@ TEST_P(NotSeastarFixtureParam, T) {}
 
 INSTANTIATE_TEST_SUITE_P(
   NotSeastarParamTest, NotSeastarFixtureParam, testing::Values(1, 2, 3));
+
+class directory_test {
+public:
+    // Test body that creates and removes a test directory.
+    // Encapsulated to be reused across different test harness types.
+    void create_and_remove() {
+        auto dir = get_test_directory();
+        auto dir_again = get_test_directory();
+
+        // Repeated calls to get_test_directory() from the same test process
+        // should result in the same output.
+        ASSERT_EQ(dir, dir_again);
+
+        ASSERT_FALSE(ss::file_exists(dir).get());
+        ss::recursive_touch_directory(dir).get();
+        auto cleanup = ss::defer([&dir] {
+            ss::recursive_remove_directory(std::filesystem::path{dir}).get();
+        });
+        ASSERT_TRUE(ss::file_exists(dir).get());
+    }
+};
+
+TEST(NotSeastar, TestGetTestDirectory) {
+    ASSERT_NO_FATAL_FAILURE(directory_test{}.create_and_remove());
+}
+
+TEST_F(MySeastarFixture, TestGetTestDirectory) {
+    ASSERT_NO_FATAL_FAILURE(directory_test{}.create_and_remove());
+}
+
+TEST_P(MySeastarParamFixture, TestGetTestDirectory) {
+    ASSERT_NO_FATAL_FAILURE(directory_test{}.create_and_remove());
+}
