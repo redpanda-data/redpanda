@@ -1777,12 +1777,20 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
         }
         co_return errc::waiting_for_recovery;
     } else {
+        auto current_leader = partition->get_leader_id();
+        if (current_leader && current_leader != _self) {
+            // The leader is alive and we are a follower. Wait for the leader to
+            // replicate the aborting configuration, but don't append it
+            // ourselves to minimize the chance of log inconsistency.
+            co_return errc::not_leader;
+        }
+
         auto ec = co_await partition->force_abort_replica_set_update(rev);
 
         if (ec) {
             co_return ec;
         }
-        auto current_leader = partition->get_leader_id();
+        current_leader = partition->get_leader_id();
         if (!current_leader.has_value() || current_leader == _self) {
             co_return check_configuration_update(
               _self, partition, replicas, rev);
