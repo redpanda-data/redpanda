@@ -1953,6 +1953,10 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                     }
                 }
             },
+            [&](immutable_partition& p) {
+                p.report_failure(change_reason::partition_count_rebalancing);
+                should_stop = false;
+            },
             [](auto&) {});
 
           return ss::stop_iteration::no;
