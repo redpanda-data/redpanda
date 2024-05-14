@@ -106,6 +106,12 @@ public:
 
     const request_header& header() const { return _header; }
 
+    // override the client id. This method is used when handling virtual
+    // connections and an actual client id is part of the client id buffer.
+    void override_client_id(std::optional<std::string_view> new_client_id) {
+        _header.client_id = new_client_id;
+    }
+
     ss::lw_shared_ptr<connection_context> connection() { return _conn; }
 
     ssx::sharded_abort_source& abort_source() { return _conn->abort_source(); }
