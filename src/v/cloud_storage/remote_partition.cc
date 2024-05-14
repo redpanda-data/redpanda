@@ -578,6 +578,18 @@ private:
                       = _partition->_manifest_view->stm_manifest()
                           .full_log_start_kafka_offset();
 
+                    vlog(
+                      _ctxlog.debug,
+                      "log start offset {}, query offset {}, archive start "
+                      "offset {}, delta: {}, start kafka offset {}",
+                      log_start_offset,
+                      query_offset,
+                      _partition->_manifest_view->stm_manifest()
+                        .get_archive_start_offset(),
+                      _partition->_manifest_view->stm_manifest()
+                        .get_archive_start_offset_delta(),
+                      _partition->_manifest_view->stm_manifest()
+                        .get_start_kafka_offset());
                     if (log_start_offset && query_offset < *log_start_offset) {
                         vlog(
                           _ctxlog.debug,
