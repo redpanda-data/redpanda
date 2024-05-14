@@ -11,7 +11,7 @@ import json
 from logging import Logger
 import os
 import subprocess
-from typing import Any
+from typing import Any, Union, Generator
 
 SUPPORTED_PROVIDERS = ['aws', 'gcp']
 
@@ -178,7 +178,7 @@ class KubectlTool:
         cmd = _kubectl + _kcmd
         return self._cmd(cmd)
 
-    def exec(self, remote_cmd, pod_name=None):
+    def exec(self, remote_cmd, pod_name=None) -> str:
         """Execute a command inside of a redpanda pod container.
 
         :param remote_cmd: string of bash command to run inside of pod container
@@ -192,7 +192,7 @@ class KubectlTool:
             'kubectl', 'exec', pod_name, f'-n={self._namespace}',
             '-c=redpanda', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
-        return self._cmd(cmd)
+        return self._ssh_cmd(cmd)  # type: ignore
 
     def exists(self, remote_path):
         self._install()
