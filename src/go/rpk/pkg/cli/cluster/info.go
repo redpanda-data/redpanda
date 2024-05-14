@@ -34,10 +34,10 @@ func newMetadataCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		detailed bool
 	)
 	cmd := &cobra.Command{
-		Use:     "metadata",
-		Aliases: []string{"status", "info"},
+		Use:     "info",
+		Aliases: []string{"status", "metadata"},
 		Short:   "Request broker metadata",
-		Long: `Request broker metadata.
+		Long: `Request broker metadata information.
 
 The Kafka protocol's metadata contains information about brokers, topics, and
 the cluster as a whole.
