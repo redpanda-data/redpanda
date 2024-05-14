@@ -3835,7 +3835,7 @@ class RedpandaService(RedpandaServiceBase):
 
         def is_fips_capable(node) -> bool:
             cur_ver = self._installer.installed_version(node)
-            return cur_ver == RedpandaInstaller.HEAD or cur_ver >= (24, 1, 1)
+            return cur_ver == RedpandaInstaller.HEAD or cur_ver >= (24, 2, 1)
 
         if in_fips_environment() and is_fips_capable(node):
             self.logger.info(
