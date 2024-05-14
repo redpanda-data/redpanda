@@ -11,7 +11,7 @@ import json
 from logging import Logger
 import os
 import subprocess
-from typing import Any
+from typing import Any, Union, Generator
 
 SUPPORTED_PROVIDERS = ['aws', 'gcp']
 
@@ -223,7 +223,10 @@ class KubectlTool:
         # return that instead.
         return s_out if len(s_out) > 0 else s_err
 
-    def _ssh_cmd(self, cmd: list[str], capture: bool = False):
+    def _ssh_cmd(
+            self,
+            cmd: list[str],
+            capture: bool = False) -> Union[str, Generator[bytes, Any, None]]:
         """Execute a command on a the remote node using ssh/tsh as appropriate."""
         local_cmd = self._ssh_prefix() + cmd
         if capture:
@@ -255,7 +258,7 @@ class KubectlTool:
         cmd = _kubectl + _kcmd
         return self._ssh_cmd(cmd, capture=capture)
 
-    def exec(self, remote_cmd, pod_name=None):
+    def exec(self, remote_cmd, pod_name=None) -> str:
         """Execute a command inside of a redpanda pod container.
 
         :param remote_cmd: string of bash command to run inside of pod container
@@ -269,7 +272,7 @@ class KubectlTool:
             'kubectl', 'exec', pod_name, f'-n={self._namespace}',
             '-c=redpanda', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
-        return self._ssh_cmd(cmd)
+        return self._ssh_cmd(cmd)  # type: ignore
 
     def exists(self, remote_path):
         self._install()
