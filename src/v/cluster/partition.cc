@@ -734,6 +734,7 @@ ss::future<> partition::update_configuration(topic_properties properties) {
                         && model::is_archival_enabled(
                           new_ntp_config.shadow_indexing_mode.value());
 
+    bool old_compaction_status = old_ntp_config.has_compacted_override();
     bool new_compaction_status
       = new_ntp_config.cleanup_policy_bitflags.has_value()
         && model::is_compaction_enabled(
@@ -742,7 +743,7 @@ ss::future<> partition::update_configuration(topic_properties properties) {
       old_ntp_config.is_archival_enabled() != new_archival
       || old_ntp_config.is_read_replica_mode_enabled()
            != new_ntp_config.read_replica
-      || old_ntp_config.is_compacted() != new_compaction_status) {
+      || old_compaction_status != new_compaction_status) {
         cloud_storage_changed = true;
     }
 
