@@ -915,13 +915,16 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
 
 ss::future<election_success>
 consensus::dispatch_prevote(bool leadership_transfer) {
-    if (leadership_transfer) {
-        co_return true;
-    }
     auto pv_stm = std::make_unique<vote_stm>(this, is_prevote::yes);
 
     election_success success = election_success::no;
     try {
+        vlog(
+          _ctxlog.info,
+          "starting pre-vote leader election, current term: {}, leadership "
+          "transfer: {}",
+          _term,
+          leadership_transfer);
         success = co_await pv_stm->vote(leadership_transfer);
     } catch (...) {
         vlog(
@@ -997,7 +1000,16 @@ void consensus::dispatch_vote(bool leadership_transfer) {
             return dispatch_prevote(leadership_transfer)
               .then([this, leadership_transfer](
                       election_success prevote_success) mutable {
-                  if (!prevote_success) {
+                  vlog(
+                    _ctxlog.debug,
+                    "pre-vote phase success: {}, current term: {}, "
+                    "leadership transfer: {}",
+                    prevote_success,
+                    _term,
+                    leadership_transfer);
+                  // if a current node is not longer candidate we should skip
+                  // proceeding to actual vote phase
+                  if (!prevote_success || _vstate != vote_state::candidate) {
                       return ss::make_ready_future<>();
                   }
                   auto vstm = std::make_unique<vote_stm>(this);

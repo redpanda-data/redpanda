@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "model/fundamental.h"
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
@@ -73,6 +74,9 @@ private:
             error,
         };
 
+        explicit vmeta(vote_stm& stm)
+          : _vote_stm(stm) {}
+
         void set_value(result<vote_reply> r) {
             value = std::make_unique<result<vote_reply>>(r);
         }
@@ -84,6 +88,10 @@ private:
             }
 
             if (value->has_value()) {
+                if (value->value().term != _vote_stm.request_term()) {
+                    return state::vote_not_granted;
+                }
+
                 if (value->value().granted) {
                     return state::vote_granted;
                 }
@@ -101,11 +109,14 @@ private:
             return value && value->has_value() && !value->value().log_ok;
         }
         std::unique_ptr<result<vote_reply>> value;
+        vote_stm& _vote_stm;
     };
 
     bool has_request_in_progress() const;
 
     bool can_wait_for_all() const;
+
+    model::term_id request_term() const { return _req.term; }
 
     ss::future<> wait_for_next_reply();
 
