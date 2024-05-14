@@ -50,7 +50,9 @@ licenses           @emaxerrno @dswang
 /src/v/config/node_config.h                         @redpanda-data/documentation
 /src/v/kafka/client/configuration.cc                @redpanda-data/documentation
 /src/v/kafka/client/configuration.h                 @redpanda-data/documentation
+/src/v/pandaproxy/api/api-doc                       @redpanda-data/documentation
 /src/v/pandaproxy/rest/configuration.cc             @redpanda-data/documentation
 /src/v/pandaproxy/rest/configuration.h              @redpanda-data/documentation
 /src/v/pandaproxy/schema_registry/configuration.cc  @redpanda-data/documentation
 /src/v/pandaproxy/schema_registry/configuration.h   @redpanda-data/documentation
+/src/v/redpanda/admin/api-doc                       @redpanda-data/documentation
