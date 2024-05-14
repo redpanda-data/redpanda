@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub(crate) fn check() {
+pub(crate) unsafe fn check() {
     panic!();
 }
 
-pub(crate) fn get_schema_definition_len(_schema_id: i32, _len: *mut i32) -> i32 {
+pub(crate) unsafe fn get_schema_definition_len(_schema_id: i32, _len: *mut i32) -> i32 {
     panic!();
 }
 
-pub(crate) fn get_schema_definition(_schema_id: i32, _buf: *mut u8, _len: i32) -> i32 {
+pub(crate) unsafe fn get_schema_definition(_schema_id: i32, _buf: *mut u8, _len: i32) -> i32 {
     panic!();
 }
 
-pub(crate) fn get_schema_subject_len(
+pub(crate) unsafe fn get_schema_subject_len(
     _subject: *const u8,
     _subject_len: i32,
     _version: i32,
@@ -33,7 +33,7 @@ pub(crate) fn get_schema_subject_len(
     panic!();
 }
 
-pub(crate) fn get_schema_subject(
+pub(crate) unsafe fn get_schema_subject(
     _subject: *const u8,
     _subject_len: i32,
     _version: i32,
@@ -43,7 +43,7 @@ pub(crate) fn get_schema_subject(
     panic!();
 }
 
-pub(crate) fn create_subject_schema(
+pub(crate) unsafe fn create_subject_schema(
     _subject: *const u8,
     _subject_len: i32,
     _buf: *const u8,

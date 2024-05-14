@@ -35,7 +35,9 @@ pub struct AbiSchemaRegistryClient {}
 
 impl AbiSchemaRegistryClient {
     pub fn new() -> AbiSchemaRegistryClient {
-        abi::check();
+        unsafe {
+            abi::check();
+        }
         Self {}
     }
 }
@@ -43,12 +45,13 @@ impl AbiSchemaRegistryClient {
 impl SchemaRegistryClientImpl for AbiSchemaRegistryClient {
     fn lookup_schema_by_id(&self, id: SchemaId) -> Result<Schema> {
         let mut length: i32 = 0;
-        let errno = abi::get_schema_definition_len(id.0, &mut length);
+        let errno = unsafe { abi::get_schema_definition_len(id.0, &mut length) };
         if errno != 0 {
             return Err(SchemaRegistryError::Unknown(errno));
         }
         let mut buf = vec![0; length as usize];
-        let errno_or_amt = get_schema_definition(id.0, buf.as_mut_ptr(), buf.len() as i32);
+        let errno_or_amt =
+            unsafe { get_schema_definition(id.0, buf.as_mut_ptr(), buf.len() as i32) };
         if errno_or_amt < 0 {
             return Err(SchemaRegistryError::Unknown(errno_or_amt));
         }
@@ -61,23 +64,27 @@ impl SchemaRegistryClientImpl for AbiSchemaRegistryClient {
         version: SchemaVersion,
     ) -> Result<SubjectSchema> {
         let mut length: i32 = 0;
-        let errno = abi::get_schema_subject_len(
-            subject.as_ptr(),
-            subject.len() as i32,
-            version.0,
-            &mut length,
-        );
+        let errno = unsafe {
+            abi::get_schema_subject_len(
+                subject.as_ptr(),
+                subject.len() as i32,
+                version.0,
+                &mut length,
+            )
+        };
         if errno != 0 {
             return Err(SchemaRegistryError::Unknown(errno));
         }
         let mut buf = vec![0; length as usize];
-        let errno_or_amt = get_schema_subject(
-            subject.as_ptr(),
-            subject.len() as i32,
-            version.0,
-            buf.as_mut_ptr(),
-            buf.len() as i32,
-        );
+        let errno_or_amt = unsafe {
+            get_schema_subject(
+                subject.as_ptr(),
+                subject.len() as i32,
+                version.0,
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+            )
+        };
         if errno_or_amt < 0 {
             return Err(SchemaRegistryError::Unknown(errno_or_amt));
         }
@@ -96,13 +103,15 @@ impl SchemaRegistryClientImpl for AbiSchemaRegistryClient {
         // version here (take it as a parameter to this method), we should bump the ABI and
         // expose that method.
         let schema_version: i32 = 0;
-        let errno = abi::create_subject_schema(
-            subject.as_ptr(),
-            subject.len() as i32,
-            buf.as_ptr(),
-            buf.len() as i32,
-            &mut schema_id,
-        );
+        let errno = unsafe {
+            abi::create_subject_schema(
+                subject.as_ptr(),
+                subject.len() as i32,
+                buf.as_ptr(),
+                buf.len() as i32,
+                &mut schema_id,
+            )
+        };
         if errno != 0 {
             return Err(SchemaRegistryError::Unknown(errno));
         }
