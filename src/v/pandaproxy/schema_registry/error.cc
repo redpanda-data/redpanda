@@ -53,6 +53,8 @@ struct error_category final : std::error_category {
         case error_code::compatibility_not_found:
             return "Subject does not have subject-level compatibility "
                    "configured";
+        case error_code::mode_not_found:
+            return "Subject does not have subject-level mode configured";
         case error_code::subject_version_operaton_not_permitted:
             return "Overwrite new schema is not permitted.";
         case error_code::subject_version_has_references:
@@ -69,6 +71,8 @@ struct error_category final : std::error_category {
             return "Invalid compatibility level. Valid values are NONE, "
                    "BACKWARD, FORWARD, FULL, BACKWARD_TRANSITIVE, "
                    "FORWARD_TRANSITIVE, and FULL_TRANSITIVE";
+        case error_code::mode_invalid:
+            return "Invalid mode. Valid values are READWRITE, READONLY";
         }
         return "(unrecognized error)";
     }
@@ -93,6 +97,8 @@ struct error_category final : std::error_category {
             return reply_error_code::subject_version_not_deleted; // 40407
         case error_code::compatibility_not_found:
             return reply_error_code::compatibility_not_found; // 40408
+        case error_code::mode_not_found:
+            return reply_error_code::mode_not_found; // 40409
         case error_code::subject_schema_invalid:
             return reply_error_code::internal_server_error; // 500
         case error_code::write_collision:
@@ -117,6 +123,8 @@ struct error_category final : std::error_category {
             return reply_error_code::zookeeper_error; // 50001
         case error_code::compatibility_level_invalid:
             return reply_error_code::compatibility_level_invalid; // 42203
+        case error_code::mode_invalid:
+            return reply_error_code::mode_invalid; // 42204
         }
         return {};
     }

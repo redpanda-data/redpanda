@@ -58,6 +58,11 @@ class store {
 public:
     using schema_id_set = absl::btree_set<schema_id>;
 
+    explicit store() = default;
+
+    explicit store(is_mutable mut)
+      : _mutable(mut) {}
+
     struct insert_result {
         schema_version version;
         schema_id id;
@@ -185,6 +190,15 @@ public:
         return res;
     }
 
+    ///\brief Return if there are subjects.
+    bool has_subjects(include_deleted inc_del) const {
+        return absl::c_any_of(_subjects, [inc_del](auto const& sub) {
+            return absl::c_any_of(
+              sub.second.versions,
+              [inc_del](auto const& v) { return inc_del || !v.deleted; });
+        });
+    }
+
     ///\brief Return a list of versions and associated schema_id.
     result<std::vector<schema_version>>
     get_versions(const subject& sub, include_deleted inc_del) const {
@@ -268,6 +282,34 @@ public:
           std::back_inserter(result),
           [](const auto& sm) {
               return sm.key_type == seq_marker_key_type::config;
+          });
+
+        return result;
+    }
+
+    /// \brief Return the seq_marker write history of a subject, but only
+    /// mode_keys
+    ///
+    /// \return A vector (possibly empty)
+    result<std::vector<seq_marker>>
+    get_subject_mode_written_at(const subject& sub) const {
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
+
+        // This should never happen (how can a record get into the
+        // store without an originating sequenced record?), but return
+        // an error instead of vasserting out.
+        if (sub_it->second.written_at.empty()) {
+            return not_found(sub);
+        }
+
+        std::vector<seq_marker> result;
+        std::copy_if(
+          sub_it->second.written_at.begin(),
+          sub_it->second.written_at.end(),
+          std::back_inserter(result),
+          [](const auto& sm) {
+              return sm.key_type == seq_marker_key_type::mode;
           });
 
         return result;
@@ -463,6 +505,46 @@ public:
         return true;
     }
 
+    ///\brief Get the global mode.
+    result<mode> get_mode() const { return _mode; }
+
+    ///\brief Get the mode for a subject, or fallback to global.
+    result<mode>
+    get_mode(const subject& sub, default_to_global fallback) const {
+        auto sub_it = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it && (sub_it.assume_value())->second.mode.has_value()) {
+            return (sub_it.assume_value())->second.mode.value();
+        } else if (fallback) {
+            return _mode;
+        }
+        return mode_not_found(sub);
+    }
+
+    ///\brief Set the global mode.
+    result<bool> set_mode(mode m, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        return std::exchange(_mode, m) != m;
+    }
+
+    ///\brief Set the mode for a subject.
+    result<bool>
+    set_mode(seq_marker marker, const subject& sub, mode m, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        auto& sub_entry = _subjects[sub];
+        sub_entry.written_at.push_back(marker);
+        return std::exchange(sub_entry.mode, m) != m;
+    }
+
+    ///\brief Clear the mode for a subject.
+    result<bool>
+    clear_mode(const seq_marker& marker, const subject& sub, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
+        std::erase(sub_it->second.written_at, marker);
+        return std::exchange(sub_it->second.mode, std::nullopt) != std::nullopt;
+    }
+
     ///\brief Get the global compatibility level.
     result<compatibility_level> get_compatibility() const {
         return _compatibility;
@@ -598,6 +680,16 @@ public:
         return !found;
     }
 
+    //// \brief Return error if the store is not mutable
+    result<void> check_mode_mutability(force f) const {
+        if (!_mutable && !f) {
+            return error_info{
+              error_code::subject_version_operaton_not_permitted,
+              "Mode changes are not allowed"};
+        }
+        return outcome::success();
+    }
+
 private:
     struct schema_entry {
         explicit schema_entry(canonical_schema_definition definition)
@@ -608,6 +700,7 @@ private:
 
     struct subject_entry {
         std::optional<compatibility_level> compatibility;
+        std::optional<mode> mode;
         std::vector<subject_version_entry> versions;
         is_deleted deleted{false};
 
@@ -672,6 +765,8 @@ private:
     schema_map _schemas;
     subject_map _subjects;
     compatibility_level _compatibility{compatibility_level::backward};
+    mode _mode{mode::read_write};
+    is_mutable _mutable{is_mutable::no};
 };
 
 } // namespace pandaproxy::schema_registry

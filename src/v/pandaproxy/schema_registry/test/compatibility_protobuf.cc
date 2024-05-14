@@ -26,7 +26,8 @@ namespace pps = pp::schema_registry;
 
 struct simple_sharded_store {
     simple_sharded_store() {
-        store.start(ss::default_smp_service_group()).get();
+        store.start(pps::is_mutable::yes, ss::default_smp_service_group())
+          .get();
     }
     ~simple_sharded_store() { store.stop().get(); }
     simple_sharded_store(const simple_sharded_store&) = delete;

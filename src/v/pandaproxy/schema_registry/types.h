@@ -28,6 +28,7 @@
 
 namespace pandaproxy::schema_registry {
 
+using is_mutable = ss::bool_class<struct is_mutable_tag>;
 using permanent_delete = ss::bool_class<struct delete_tag>;
 using include_deleted = ss::bool_class<struct include_deleted_tag>;
 using is_deleted = ss::bool_class<struct is_deleted_tag>;
@@ -37,6 +38,28 @@ using force = ss::bool_class<struct force_tag>;
 template<typename E>
 std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
   from_string_view(std::string_view);
+
+enum class mode { import = 0, read_only, read_write };
+
+constexpr std::string_view to_string_view(mode e) {
+    switch (e) {
+    case mode::import:
+        return "IMPORT";
+    case mode::read_only:
+        return "READONLY";
+    case mode::read_write:
+        return "READWRITE";
+    }
+    return "{invalid}";
+}
+template<>
+constexpr std::optional<mode> from_string_view<mode>(std::string_view sv) {
+    return string_switch<std::optional<mode>>(sv)
+      .match(to_string_view(mode::import), mode::import)
+      .match(to_string_view(mode::read_only), mode::read_only)
+      .match(to_string_view(mode::read_write), mode::read_write)
+      .default_match(std::nullopt);
+}
 
 enum class schema_type { avro = 0, json, protobuf };
 
@@ -289,22 +312,28 @@ struct subject_version {
 };
 
 // Very similar to topic_key_type, separate to avoid intermingling storage code
-enum class seq_marker_key_type { invalid = 0, schema, delete_subject, config };
+enum class seq_marker_key_type {
+    invalid = 0,
+    schema,
+    delete_subject,
+    config,
+    mode
+};
 
 constexpr std::string_view to_string_view(seq_marker_key_type v) {
     switch (v) {
     case seq_marker_key_type::schema:
         return "schema";
-        break;
     case seq_marker_key_type::delete_subject:
         return "delete_subject";
-        break;
     case seq_marker_key_type::config:
         return "config";
+    case seq_marker_key_type::mode:
+        return "mode";
+    case seq_marker_key_type::invalid:
         break;
-    default:
-        return "invalid";
     }
+    return "invalid";
 }
 
 // Record the sequence+node where updates were made to a subject,
