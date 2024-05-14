@@ -39,10 +39,10 @@ constexpr decoder_t build_decoder_table() {
 static constexpr decoder_t decoder = build_decoder_table();
 } // namespace
 
-invalid_xid::invalid_xid(const ss::sstring& current_string)
+invalid_xid::invalid_xid(std::string_view current_string)
   : _msg(ssx::sformat("String '{}' is not a valid xid", current_string)) {}
 
-xid xid::from_string(const ss::sstring& str) {
+xid xid::from_string(std::string_view str) {
     if (str.size() != str_size) {
         throw invalid_xid(str);
     }
