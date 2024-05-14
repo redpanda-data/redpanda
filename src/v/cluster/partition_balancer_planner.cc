@@ -1752,7 +1752,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
     // haven't been able to improve the objective, this means that we've reached
     // (local) optimum and rebalance can be finished.
 
-    bool actions_added = false;
+    bool should_stop = true;
     co_await ctx.for_each_partition_random_order([&](partition& part) {
         part.match_variant(
           [&](reassignable_partition& part) {
@@ -1785,10 +1785,14 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                           // number of partitions)
                           part.revert(res.value());
                       } else {
-                          actions_added = true;
+                          should_stop = false;
                       }
                   }
               }
+          },
+          [&](immutable_partition& p) {
+              p.report_failure(change_reason::partition_count_rebalancing);
+              should_stop = false;
           },
           [](auto&) {});
 
@@ -1820,7 +1824,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         return true;
     };
 
-    if (!actions_added && all_nodes_healthy()) {
+    if (should_stop && all_nodes_healthy()) {
         ctx._counts_rebalancing_finished = true;
     }
 }
