@@ -188,7 +188,7 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
     co_return storage::translating_reader(std::move(rdr), _translator);
 }
 
-ss::future<std::vector<cluster::rm_stm::tx_range>>
+ss::future<std::vector<cluster::tx::tx_range>>
 replicated_partition::aborted_transactions_local(
   cloud_storage::offset_range offsets,
   ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
@@ -217,10 +217,10 @@ replicated_partition::aborted_transactions_local(
         trim_at = offsets.begin_rp;
     }
 
-    std::vector<cluster::rm_stm::tx_range> target;
+    std::vector<cluster::tx::tx_range> target;
     target.reserve(source.size());
     for (const auto& range : source) {
-        target.push_back(cluster::rm_stm::tx_range{
+        target.push_back(cluster::tx::tx_range{
           .pid = range.pid,
           .first = ot_state->from_log_offset(std::max(trim_at, range.first)),
           .last = ot_state->from_log_offset(range.last)});
@@ -229,15 +229,15 @@ replicated_partition::aborted_transactions_local(
     co_return target;
 }
 
-ss::future<std::vector<cluster::rm_stm::tx_range>>
+ss::future<std::vector<cluster::tx::tx_range>>
 replicated_partition::aborted_transactions_remote(
   cloud_storage::offset_range offsets,
   ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
     auto source = co_await _partition->aborted_transactions_cloud(offsets);
-    std::vector<cluster::rm_stm::tx_range> target;
+    std::vector<cluster::tx::tx_range> target;
     target.reserve(source.size());
     for (const auto& range : source) {
-        target.push_back(cluster::rm_stm::tx_range{
+        target.push_back(cluster::tx::tx_range{
           .pid = range.pid,
           .first = ot_state->from_log_offset(
             std::max(offsets.begin_rp, range.first)),
@@ -256,7 +256,7 @@ bool replicated_partition::may_read_from_cloud(kafka::offset start_offset) {
            && (start_offset < model::offset_cast(_translator->from_log_offset(_partition->raft_start_offset())));
 }
 
-ss::future<std::vector<cluster::rm_stm::tx_range>>
+ss::future<std::vector<cluster::tx::tx_range>>
 replicated_partition::aborted_transactions(
   model::offset base,
   model::offset last,

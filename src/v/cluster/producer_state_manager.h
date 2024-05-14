@@ -19,7 +19,7 @@
 
 #include <seastar/core/sharded.hh>
 
-namespace cluster {
+namespace cluster::tx {
 class producer_state_manager {
 public:
     explicit producer_state_manager(
@@ -89,4 +89,4 @@ private:
 
     friend struct ::test_fixture;
 };
-} // namespace cluster
+} // namespace cluster::tx

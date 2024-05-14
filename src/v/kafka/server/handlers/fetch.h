@@ -264,7 +264,7 @@ struct read_result {
       model::offset start_offset,
       model::offset hw,
       model::offset lso,
-      std::vector<cluster::rm_stm::tx_range> aborted_transactions)
+      std::vector<cluster::tx::tx_range> aborted_transactions)
       : data(std::move(data))
       , start_offset(start_offset)
       , high_watermark(hw)
@@ -325,7 +325,7 @@ struct read_result {
     std::optional<model::node_id> preferred_replica;
     error_code error;
     model::partition_id partition;
-    std::vector<cluster::rm_stm::tx_range> aborted_transactions;
+    std::vector<cluster::tx::tx_range> aborted_transactions;
     memory_units_t memory_units;
 };
 // struct aggregating fetch requests and corresponding response iterators for

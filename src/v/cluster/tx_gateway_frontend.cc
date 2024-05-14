@@ -422,11 +422,6 @@ tx_gateway_frontend::find_coordinator(kafka::transactional_id tid) {
 
 std::optional<model::ntp>
 tx_gateway_frontend::ntp_for_tx_id(const kafka::transactional_id& id) {
-    if (!_feature_table.local().is_active(
-          features::feature::transaction_partitioning)) {
-        return model::legacy_tm_ntp;
-    }
-
     vlog(txlog.trace, "[tx_id={}] getting coordinator ntp", id);
     auto tp_md = _metadata_cache.local().get_topic_metadata_ref(
       model::tx_manager_nt);

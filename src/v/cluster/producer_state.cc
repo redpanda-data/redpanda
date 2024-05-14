@@ -13,8 +13,9 @@
 
 #include "base/vassert.h"
 #include "cluster/logger.h"
+#include "cluster/rm_stm_types.h"
 
-namespace cluster {
+namespace cluster::tx {
 
 result_promise_t::future_type request::result() const {
     return _result.get_shared_future();
@@ -341,4 +342,4 @@ producer_state::snapshot(kafka::offset log_start_offset) const {
     return snapshot;
 }
 
-} // namespace cluster
+} // namespace cluster::tx

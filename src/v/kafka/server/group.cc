@@ -193,15 +193,6 @@ static model::record_batch make_tx_batch(
 }
 
 static model::record_batch make_tx_fence_batch(
-  const model::producer_identity& pid, group_log_fencing_v1 cmd) {
-    return make_tx_batch(
-      model::record_batch_type::tx_fence,
-      group::fence_control_record_v1_version,
-      pid,
-      std::move(cmd));
-}
-
-static model::record_batch make_tx_fence_batch(
   const model::producer_identity& pid, group_log_fencing cmd) {
     return make_tx_batch(
       model::record_batch_type::tx_fence,
@@ -1885,25 +1876,13 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         co_return cluster::begin_group_tx_reply(_term, cluster::tx_errc::none);
     }
 
-    std::optional<model::record_batch> batch{};
-
-    if (is_transaction_partitioning()) {
-        group_log_fencing fence{
-          .group_id = id(),
-          .tx_seq = r.tx_seq,
-          .transaction_timeout_ms = r.timeout,
-          .tm_partition = r.tm_partition};
-        batch = make_tx_fence_batch(r.pid, std::move(fence));
-    } else {
-        group_log_fencing_v1 fence{
-          .group_id = id(),
-          .tx_seq = r.tx_seq,
-          .transaction_timeout_ms = r.timeout};
-        batch = make_tx_fence_batch(r.pid, std::move(fence));
-    }
-
-    auto reader = model::make_memory_record_batch_reader(
-      std::move(batch.value()));
+    group_log_fencing fence{
+      .group_id = id(),
+      .tx_seq = r.tx_seq,
+      .transaction_timeout_ms = r.timeout,
+      .tm_partition = r.tm_partition};
+    model::record_batch batch = make_tx_fence_batch(r.pid, std::move(fence));
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto res = co_await _partition->raft()->replicate(
       _term,
       std::move(reader),

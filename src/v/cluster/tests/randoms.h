@@ -14,7 +14,7 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_balancer_types.h"
-#include "cluster/tx_snapshot_utils.h"
+#include "cluster/rm_stm_types.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "storage/tests/randoms.h"
@@ -150,39 +150,39 @@ inline cluster_report_filter random_cluster_report_filter() {
       })};
 }
 
-inline cluster::tx_data_snapshot random_tx_data_snapshot() {
-    return cluster::tx_data_snapshot{
+inline cluster::tx::tx_data_snapshot random_tx_data_snapshot() {
+    return {
       model::random_producer_identity(),
       tests::random_named_int<model::tx_seq>(),
       tests::random_named_int<model::partition_id>()};
 }
 
-inline cluster::expiration_snapshot random_expiration_snapshot() {
-    return cluster::expiration_snapshot{
+inline cluster::tx::expiration_snapshot random_expiration_snapshot() {
+    return {
       model::random_producer_identity(),
-      tests::random_duration<rm_stm::duration_type>()};
+      tests::random_duration<cluster::tx::duration_type>()};
 }
 
-inline rm_stm::prepare_marker random_prepare_marker() {
+inline cluster::tx::prepare_marker random_prepare_marker() {
     return {
       tests::random_named_int<model::partition_id>(),
       tests::random_named_int<model::tx_seq>(),
       model::random_producer_identity()};
 }
 
-inline rm_stm::abort_index random_abort_index() {
+inline cluster::tx::abort_index random_abort_index() {
     return {model::random_offset(), model::random_offset()};
 }
 
-inline cluster::deprecated_seq_entry::deprecated_seq_cache_entry
+inline cluster::tx::deprecated_seq_entry::deprecated_seq_cache_entry
 random_seq_cache_entry() {
     return {
       random_generators::get_int<int32_t>(),
       tests::random_named_int<kafka::offset>()};
 }
 
-inline cluster::deprecated_seq_entry random_seq_entry() {
-    cluster::deprecated_seq_entry entry;
+inline cluster::tx::deprecated_seq_entry random_seq_entry() {
+    cluster::tx::deprecated_seq_entry entry;
     entry.pid = model::random_producer_identity(),
     entry.seq = random_generators::get_int<int32_t>(),
     entry.last_offset = tests::random_named_int<kafka::offset>(),
@@ -191,18 +191,12 @@ inline cluster::deprecated_seq_entry random_seq_entry() {
     return entry;
 }
 
-inline tx_snapshot_v3::tx_seqs_snapshot random_tx_seqs_snapshot() {
-    return {
-      model::random_producer_identity(),
-      tests::random_named_int<model::tx_seq>()};
-}
-
 } // namespace cluster
 
 namespace tests {
 
-inline cluster::producer_ptr random_producer_state() {
-    return ss::make_lw_shared<cluster::producer_state>(
+inline cluster::tx::producer_ptr random_producer_state() {
+    return ss::make_lw_shared<cluster::tx::producer_state>(
       model::producer_identity{
         random_generators::get_int<int64_t>(),
         random_generators::get_int<int16_t>()},

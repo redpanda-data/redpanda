@@ -63,7 +63,6 @@ class feature_manager;
 class drain_manager;
 class partition_balancer_backend;
 class partition_balancer_state;
-class producer_state_manager;
 class node_status_backend;
 class node_status_table;
 class ephemeral_credential_frontend;
@@ -82,6 +81,13 @@ class shard_balancer;
 class id_allocator_stm;
 class tm_stm;
 class rm_stm;
+
+namespace tx {
+class producer_state_manager;
+class producer_state;
+class request;
+struct producer_state_snapshot;
+} // namespace tx
 
 namespace node {
 class local_monitor;

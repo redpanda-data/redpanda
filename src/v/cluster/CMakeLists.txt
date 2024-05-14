@@ -100,7 +100,6 @@ v_cc_library(
     rm_partition_frontend.cc
     tx_gateway_frontend.cc
     tx_gateway.cc
-    tx_snapshot_utils.cc
     service.cc
     metadata_dissemination_handler.cc
     metadata_dissemination_service.cc
@@ -125,6 +124,7 @@ v_cc_library(
     tm_stm_cache.cc
     tm_stm.cc
     rm_stm.cc
+    rm_stm_types.cc
     log_eviction_stm.cc
     tx_helpers.cc
     security_manager.cc

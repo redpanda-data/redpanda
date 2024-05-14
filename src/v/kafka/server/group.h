@@ -878,11 +878,6 @@ private:
     void try_arm(time_point_type);
     void maybe_rearm_timer();
 
-    bool is_transaction_partitioning() const {
-        return _feature_table.local().is_active(
-          features::feature::transaction_partitioning);
-    }
-
     void update_subscriptions();
     std::optional<absl::node_hash_set<model::topic>> _subscriptions;
 

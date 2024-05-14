@@ -30,11 +30,12 @@
 #include <vector>
 
 using namespace std::chrono_literals;
+using namespace cluster::tx;
 
 ss::logger logger{"producer_state_test"};
 
 struct test_fixture {
-    using psm_ptr = std::unique_ptr<cluster::producer_state_manager>;
+    using psm_ptr = std::unique_ptr<producer_state_manager>;
 
     static constexpr uint64_t default_max_producers = 10;
 
@@ -50,7 +51,7 @@ struct test_fixture {
 
     void create_producer_state_manager(
       size_t max_producers, size_t min_producers_per_vcluster) {
-        _psm = std::make_unique<cluster::producer_state_manager>(
+        _psm = std::make_unique<producer_state_manager>(
           config::mock_binding<size_t>(max_producers),
           std::chrono::milliseconds::max(),
           config::mock_binding<size_t>(min_producers_per_vcluster));
@@ -65,12 +66,12 @@ struct test_fixture {
         }
     }
 
-    cluster::producer_state_manager& manager() { return *_psm; }
+    producer_state_manager& manager() { return *_psm; }
 
-    cluster::producer_ptr new_producer(
+    producer_ptr new_producer(
       ss::noncopyable_function<void()> f = [] {},
       std::optional<model::vcluster_id> vcluster = std::nullopt) {
-        auto p = ss::make_lw_shared<cluster::producer_state>(
+        auto p = ss::make_lw_shared<producer_state>(
           model::random_producer_identity(),
           raft::group_id{_counter++},
           std::move(f));
@@ -78,7 +79,7 @@ struct test_fixture {
         return p;
     }
 
-    void clean(std::vector<cluster::producer_ptr>& producers) {
+    void clean(std::vector<producer_ptr>& producers) {
         for (auto& producer : producers) {
             manager().deregister_producer(*producer, std::nullopt);
             producer->shutdown_input();
@@ -93,7 +94,7 @@ struct test_fixture {
 FIXTURE_TEST(test_locked_producer_is_not_evicted, test_fixture) {
     create_producer_state_manager(10, 10);
     const size_t num_producers = 10;
-    std::vector<cluster::producer_ptr> producers;
+    std::vector<producer_ptr> producers;
     producers.reserve(num_producers);
     for (int i = 0; i < num_producers; i++) {
         producers.push_back(new_producer());
@@ -132,7 +133,7 @@ FIXTURE_TEST(test_locked_producer_is_not_evicted, test_fixture) {
 FIXTURE_TEST(test_lru_maintenance, test_fixture) {
     create_producer_state_manager(10, 10);
     const size_t num_producers = 5;
-    std::vector<cluster::producer_ptr> producers;
+    std::vector<producer_ptr> producers;
     producers.reserve(num_producers);
     for (int i = 0; i < num_producers; i++) {
         auto prod = new_producer();
@@ -153,7 +154,7 @@ FIXTURE_TEST(test_lru_maintenance, test_fixture) {
 FIXTURE_TEST(test_eviction_max_pids, test_fixture) {
     create_producer_state_manager(10, 10);
     int evicted_so_far = 0;
-    std::vector<cluster::producer_ptr> producers;
+    std::vector<producer_ptr> producers;
     producers.reserve(default_max_producers);
     for (int i = 0; i < default_max_producers; i++) {
         producers.push_back(new_producer([&] { evicted_so_far++; }));
@@ -199,7 +200,7 @@ FIXTURE_TEST(test_state_management_with_multiple_namespaces, test_fixture) {
     create_producer_state_manager(total_producers, 5);
     struct vcluster_producer {
         model::vcluster_id vcluster;
-        cluster::producer_ptr producer;
+        producer_ptr producer;
     };
     std::vector<vcluster_producer> producers;
     producers.reserve(default_max_producers);

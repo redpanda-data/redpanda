@@ -65,8 +65,6 @@ std::string_view to_string_view(feature f) {
         return "controller_snapshots";
     case feature::cloud_storage_manifest_format_v2:
         return "cloud_storage_manifest_format_v2";
-    case feature::transaction_partitioning:
-        return "transaction_partitioning";
     case feature::force_partition_reconfiguration:
         return "force_partition_reconfiguration";
     case feature::raft_append_entries_serde:
@@ -87,8 +85,6 @@ std::string_view to_string_view(feature f) {
         return "wasm_transforms";
     case feature::raft_config_serde:
         return "raft_config_serde";
-    case feature::idempotency_v2:
-        return "idempotency_v2";
     case feature::fast_partition_reconfiguration:
         return "fast_partition_reconfiguration";
     case feature::disabling_partitions:

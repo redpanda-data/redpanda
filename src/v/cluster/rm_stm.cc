@@ -12,8 +12,8 @@
 #include "bytes/iostream.h"
 #include "cluster/logger.h"
 #include "cluster/producer_state_manager.h"
+#include "cluster/rm_stm_types.h"
 #include "cluster/tx_gateway_frontend.h"
-#include "cluster/tx_snapshot_utils.h"
 #include "cluster/types.h"
 #include "kafka/protocol/wire.h"
 #include "metrics/metrics.h"
@@ -43,56 +43,12 @@
 #include <utility>
 
 namespace cluster {
+using namespace tx;
 using namespace std::chrono_literals;
 
 namespace {
 ss::sstring abort_idx_name(model::offset first, model::offset last) {
     return fmt::format("abort.idx.{}.{}", first, last);
-}
-
-model::record_batch make_tx_control_batch(
-  model::producer_identity pid, model::control_record_type crt) {
-    iobuf key;
-    kafka::protocol::encoder kw(key);
-    kw.write(model::current_control_record_version());
-    kw.write(static_cast<int16_t>(crt));
-
-    iobuf value;
-    kafka::protocol::encoder vw(value);
-    vw.write(static_cast<int16_t>(0));
-    vw.write(static_cast<int32_t>(0));
-
-    storage::record_batch_builder builder(
-      model::record_batch_type::raft_data, model::offset(0));
-    builder.set_producer_identity(pid.id, pid.epoch);
-    builder.set_control_type();
-    builder.set_transactional_type();
-    builder.add_raw_kw(
-      std::move(key), std::move(value), std::vector<model::record_header>());
-
-    return std::move(builder).build();
-}
-
-model::control_record_type parse_control_batch(const model::record_batch& b) {
-    const auto& hdr = b.header();
-
-    vassert(
-      hdr.type == model::record_batch_type::raft_data,
-      "expect data batch type got {}",
-      hdr.type);
-    vassert(hdr.attrs.is_control(), "expect control attrs got {}", hdr.attrs);
-    vassert(
-      b.record_count() == 1, "control batch must contain a single record");
-
-    auto r = b.copy_records();
-    auto& record = *r.begin();
-    auto key = record.release_key();
-    kafka::protocol::decoder key_reader(std::move(key));
-    auto version = model::control_record_version(key_reader.read_int16());
-    vassert(
-      version == model::current_control_record_version,
-      "unknown control record version");
-    return model::control_record_type(key_reader.read_int16());
 }
 
 raft::replicate_options make_replicate_options() {
@@ -102,120 +58,6 @@ raft::replicate_options make_replicate_options() {
 }
 
 } // namespace
-
-fence_batch_data read_fence_batch(model::record_batch&& b) {
-    const auto& hdr = b.header();
-    auto bid = model::batch_identity::from(hdr);
-
-    vassert(
-      b.record_count() == 1,
-      "model::record_batch_type::tx_fence batch must contain a single record");
-    auto r = b.copy_records();
-    auto& record = *r.begin();
-    auto val_buf = record.release_value();
-
-    iobuf_parser val_reader(std::move(val_buf));
-    auto version = reflection::adl<int8_t>{}.from(val_reader);
-    vassert(
-      version <= rm_stm::fence_control_record_version,
-      "unknown fence record version: {} expected: {}",
-      version,
-      rm_stm::fence_control_record_version);
-
-    std::optional<model::tx_seq> tx_seq{};
-    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
-    if (version >= rm_stm::fence_control_record_v1_version) {
-        tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
-        transaction_timeout_ms
-          = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
-    }
-    model::partition_id tm{model::legacy_tm_ntp.tp.partition};
-    if (version >= rm_stm::fence_control_record_version) {
-        tm = reflection::adl<model::partition_id>{}.from(val_reader);
-    }
-
-    auto key_buf = record.release_key();
-    iobuf_parser key_reader(std::move(key_buf));
-    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
-      key_reader);
-    vassert(
-      hdr.type == batch_type,
-      "broken model::record_batch_type::tx_fence batch. expected batch type {} "
-      "got: {}",
-      hdr.type,
-      batch_type);
-    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
-    vassert(
-      p_id == bid.pid.id,
-      "broken model::record_batch_type::tx_fence batch. expected pid {} got: "
-      "{}",
-      bid.pid.id,
-      p_id);
-    return fence_batch_data{bid, tx_seq, transaction_timeout_ms, tm};
-}
-
-model::record_batch make_fence_batch_v1(
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms) {
-    iobuf key;
-    auto pid_id = pid.id;
-    reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
-
-    iobuf value;
-    reflection::serialize(
-      value,
-      rm_stm::fence_control_record_v1_version,
-      tx_seq,
-      transaction_timeout_ms);
-
-    storage::record_batch_builder builder(
-      model::record_batch_type::tx_fence, model::offset(0));
-    builder.set_producer_identity(pid.id, pid.epoch);
-    builder.set_control_type();
-    builder.add_raw_kv(std::move(key), std::move(value));
-
-    return std::move(builder).build();
-}
-
-model::record_batch make_fence_batch_v2(
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms,
-  model::partition_id tm) {
-    iobuf key;
-    auto pid_id = pid.id;
-    reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
-
-    iobuf value;
-    // the key byte representation must not change because it's used in
-    // compaction
-    reflection::serialize(
-      value,
-      rm_stm::fence_control_record_version,
-      tx_seq,
-      transaction_timeout_ms,
-      tm);
-
-    storage::record_batch_builder builder(
-      model::record_batch_type::tx_fence, model::offset(0));
-    builder.set_producer_identity(pid.id, pid.epoch);
-    builder.set_control_type();
-    builder.add_raw_kv(std::move(key), std::move(value));
-
-    return std::move(builder).build();
-}
-
-model::record_batch rm_stm::make_fence_batch(
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms,
-  model::partition_id tm) {
-    if (is_transaction_partitioning()) {
-        return make_fence_batch_v2(pid, tx_seq, transaction_timeout_ms, tm);
-    }
-    return make_fence_batch_v1(pid, tx_seq, transaction_timeout_ms);
-}
 
 model::control_record_type
 rm_stm::parse_tx_control_batch(const model::record_batch& b) {
@@ -248,7 +90,7 @@ rm_stm::rm_stm(
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<producer_state_manager>& producer_state_manager,
+  ss::sharded<tx::producer_state_manager>& producer_state_manager,
   std::optional<model::vcluster_id> vcluster_id)
   : raft::persisted_stm<>(rm_stm_snapshot, logger, c)
   , _tx_locks(
@@ -907,7 +749,7 @@ ss::future<> rm_stm::stop() {
 
 ss::future<> rm_stm::start() { return persisted_stm::start(); }
 
-std::optional<rm_stm::expiration_info>
+std::optional<expiration_info>
 rm_stm::get_expiration_info(model::producer_identity pid) const {
     auto it = _log_state.expiration.find(pid);
     if (it == _log_state.expiration.end()) {
@@ -926,7 +768,7 @@ rm_stm::get_seq_number(model::producer_identity pid) const {
     return it->second->last_sequence_number();
 }
 
-ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
+ss::future<result<transaction_set>> rm_stm::get_transactions() {
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
     }
@@ -1358,8 +1200,8 @@ model::offset rm_stm::last_stable_offset() {
 }
 
 static void filter_intersecting(
-  fragmented_vector<rm_stm::tx_range>& target,
-  const fragmented_vector<rm_stm::tx_range>& source,
+  fragmented_vector<tx_range>& target,
+  const fragmented_vector<tx_range>& source,
   model::offset from,
   model::offset to) {
     for (auto& range : source) {
@@ -1373,7 +1215,7 @@ static void filter_intersecting(
     }
 }
 
-ss::future<fragmented_vector<rm_stm::tx_range>>
+ss::future<fragmented_vector<tx_range>>
 rm_stm::aborted_transactions(model::offset from, model::offset to) {
     return _state_lock.hold_read_lock().then(
       [from, to, this](ss::basic_rwlock<>::holder unit) mutable {
@@ -1386,9 +1228,9 @@ model::producer_id rm_stm::highest_producer_id() const {
     return _highest_producer_id;
 }
 
-ss::future<fragmented_vector<rm_stm::tx_range>>
+ss::future<fragmented_vector<tx_range>>
 rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
-    fragmented_vector<rm_stm::tx_range> result;
+    fragmented_vector<tx_range> result;
     if (!_is_tx_enabled) {
         co_return result;
     }
@@ -1861,15 +1703,6 @@ model::offset rm_stm::to_log_offset(kafka::offset k_offset) const {
 
     return model::offset(k_offset);
 }
-template<class T>
-static void move_snapshot_wo_seqs(tx_snapshot_v4& target, T& source) {
-    target.fenced = std::move(source.fenced);
-    target.ongoing = std::move(source.ongoing);
-    target.prepared = std::move(source.prepared);
-    target.aborted = std::move(source.aborted);
-    target.abort_indexes = std::move(source.abort_indexes);
-    target.offset = std::move(source.offset);
-}
 
 ss::future<>
 rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
@@ -1882,21 +1715,6 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     if (hdr.version == tx_snapshot_v4::version) {
         tx_snapshot_v4 data_v4
           = co_await reflection::async_adl<tx_snapshot_v4>{}.from(data_parser);
-        data = tx_snapshot(std::move(data_v4), _raft->group());
-    } else if (hdr.version == tx_snapshot_v3::version) {
-        tx_snapshot_v4 data_v4;
-        auto data_v3 = reflection::adl<tx_snapshot_v3>{}.from(data_parser);
-        // convert to v4
-        move_snapshot_wo_seqs(data_v4, data_v3);
-        data_v4.seqs = std::move(data_v3.seqs);
-        data_v4.expiration = std::move(data_v3.expiration);
-        for (auto& entry : data_v3.tx_seqs) {
-            data.tx_data.push_back(tx_data_snapshot{
-              .pid = entry.pid,
-              .tx_seq = entry.tx_seq,
-              .tm = model::legacy_tm_ntp.tp.partition});
-        }
-        // convert to v5
         data = tx_snapshot(std::move(data_v4), _raft->group());
     } else if (hdr.version == tx_snapshot::version) {
         data = co_await reflection::async_adl<tx_snapshot>{}.from(data_parser);
@@ -1984,12 +1802,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     }
 }
 
-uint8_t rm_stm::active_snapshot_version() {
-    if (_feature_table.local().is_active(features::feature::idempotency_v2)) {
-        return tx_snapshot::version;
-    }
-    return tx_snapshot_v4::version;
-}
+uint8_t rm_stm::active_snapshot_version() { return tx_snapshot::version; }
 
 template<class T>
 void rm_stm::fill_snapshot_wo_seqs(T& snapshot) {
@@ -2232,7 +2045,7 @@ ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
       std::make_pair(first_offset, last_offset), snapshot_disk_size);
 }
 
-ss::future<std::optional<rm_stm::abort_snapshot>>
+ss::future<std::optional<abort_snapshot>>
 rm_stm::load_abort_snapshot(abort_index index) {
     auto filename = abort_idx_name(index.first, index.last);
 
@@ -2299,16 +2112,6 @@ ss::future<> rm_stm::apply_raft_snapshot(const iobuf&) {
     co_await reset_producers();
     set_next(_raft->start_offset());
     co_return;
-}
-
-std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
-    fmt::print(
-      o,
-      "{{first: {}, last: {}, aborted tx count: {}}}",
-      as.first,
-      as.last,
-      as.aborted.size());
-    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const rm_stm::log_state& state) {

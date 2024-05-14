@@ -14,10 +14,10 @@
 #include "bytes/iobuf.h"
 #include "cluster/fwd.h"
 #include "cluster/producer_state.h"
+#include "cluster/rm_stm_types.h"
 #include "cluster/state_machine_registry.h"
 #include "cluster/topic_table.h"
 #include "cluster/tx_utils.h"
-#include "cluster/types.h"
 #include "config/property.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"
@@ -63,58 +63,16 @@ namespace cluster {
 class rm_stm final : public raft::persisted_stm<> {
 public:
     static constexpr std::string_view name = "rm_stm";
-    using clock_type = ss::lowres_clock;
-    using time_point_type = clock_type::time_point;
-    using duration_type = clock_type::duration;
 
-    using producers_t = mt::
-      map_t<absl::btree_map, model::producer_identity, cluster::producer_ptr>;
-
-    static constexpr const int8_t abort_snapshot_version = 0;
-    using tx_range = model::tx_range;
-
-    struct abort_index {
-        model::offset first;
-        model::offset last;
-
-        bool operator==(const abort_index&) const = default;
-    };
-
-    struct prepare_marker {
-        // partition of the transaction manager
-        // reposible for curent transaction
-        model::partition_id tm_partition;
-        // tx_seq identifies a transaction within a session
-        model::tx_seq tx_seq;
-        model::producer_identity pid;
-
-        bool operator==(const prepare_marker&) const = default;
-    };
-
-    struct abort_snapshot {
-        model::offset first;
-        model::offset last;
-        fragmented_vector<tx_range> aborted;
-
-        bool match(abort_index idx) {
-            return idx.first == first && idx.last == last;
-        }
-        friend std::ostream& operator<<(std::ostream&, const abort_snapshot&);
-
-        bool operator==(const abort_snapshot&) const = default;
-    };
-
-    static constexpr int8_t prepare_control_record_version{0};
-    static constexpr int8_t fence_control_record_v0_version{0};
-    static constexpr int8_t fence_control_record_v1_version{1};
-    static constexpr int8_t fence_control_record_version{2};
+    using producers_t
+      = mt::map_t<absl::btree_map, model::producer_identity, tx::producer_ptr>;
 
     explicit rm_stm(
       ss::logger&,
       raft::consensus*,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<features::feature_table>&,
-      ss::sharded<producer_state_manager>&,
+      ss::sharded<tx::producer_state_manager>&,
       std::optional<model::vcluster_id>);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
@@ -131,7 +89,7 @@ public:
      * transactions this will return next offset to be applied to the the stm.
      */
     model::offset last_stable_offset();
-    ss::future<fragmented_vector<rm_stm::tx_range>>
+    ss::future<fragmented_vector<tx::tx_range>>
       aborted_transactions(model::offset, model::offset);
 
     /**
@@ -189,71 +147,7 @@ public:
 
     void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
 
-    struct expiration_info {
-        duration_type timeout;
-        time_point_type last_update;
-        bool is_expiration_requested;
-
-        time_point_type deadline() const { return last_update + timeout; }
-
-        bool is_expired(time_point_type now) const {
-            return is_expiration_requested || deadline() <= now;
-        }
-    };
-
-    struct tx_data {
-        model::tx_seq tx_seq;
-        model::partition_id tm_partition;
-    };
-
-    struct transaction_info {
-        enum class status_t { ongoing, preparing, prepared, initiating };
-        status_t status;
-
-        model::offset lso_bound;
-        std::optional<expiration_info> info;
-
-        std::optional<int32_t> seq;
-
-        std::string_view get_status() const {
-            switch (status) {
-            case status_t::ongoing:
-                return "ongoing";
-            case status_t::prepared:
-                return "prepared";
-            case status_t::preparing:
-                return "preparing";
-            case status_t::initiating:
-                return "initiating";
-            }
-        }
-
-        bool is_expired() const {
-            return !info.has_value()
-                   || info.value().deadline() <= clock_type::now();
-        }
-
-        std::optional<duration_type> get_staleness() const {
-            if (is_expired()) {
-                return std::nullopt;
-            }
-
-            auto now = ss::lowres_clock::now();
-            return now - info->last_update;
-        }
-
-        std::optional<duration_type> get_timeout() const {
-            if (is_expired()) {
-                return std::nullopt;
-            }
-
-            return info->timeout;
-        }
-    };
-
-    using transaction_set
-      = absl::btree_map<model::producer_identity, rm_stm::transaction_info>;
-    ss::future<result<transaction_set>> get_transactions();
+    ss::future<result<tx::transaction_set>> get_transactions();
 
     ss::future<std::error_code> mark_expired(model::producer_identity pid);
 
@@ -271,16 +165,11 @@ protected:
 private:
     void setup_metrics();
     ss::future<> do_remove_persistent_state();
-    ss::future<fragmented_vector<rm_stm::tx_range>>
+    ss::future<fragmented_vector<tx::tx_range>>
       do_aborted_transactions(model::offset, model::offset);
-    producer_ptr maybe_create_producer(model::producer_identity);
+    tx::producer_ptr maybe_create_producer(model::producer_identity);
     void cleanup_producer_state(model::producer_identity);
     ss::future<> reset_producers();
-    model::record_batch make_fence_batch(
-      model::producer_identity,
-      model::tx_seq,
-      std::chrono::milliseconds,
-      model::partition_id);
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
       model::producer_identity,
       model::tx_seq,
@@ -296,9 +185,10 @@ private:
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
     ss::future<raft::stm_snapshot> take_local_snapshot() override;
     ss::future<raft::stm_snapshot> do_take_local_snapshot(uint8_t version);
-    ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
-    ss::future<> save_abort_snapshot(abort_snapshot);
-    void update_tx_offsets(producer_ptr, const model::record_batch_header&);
+    ss::future<std::optional<tx::abort_snapshot>>
+      load_abort_snapshot(tx::abort_index);
+    ss::future<> save_abort_snapshot(tx::abort_snapshot);
+    void update_tx_offsets(tx::producer_ptr, const model::record_batch_header&);
 
     ss::future<result<kafka_result>> do_replicate(
       model::batch_identity,
@@ -310,14 +200,14 @@ private:
       model::batch_identity, model::record_batch_reader);
 
     ss::future<result<kafka_result>> do_sync_and_transactional_replicate(
-      producer_ptr,
+      tx::producer_ptr,
       model::batch_identity,
       model::record_batch_reader,
       ssx::semaphore_units);
 
     ss::future<result<kafka_result>> do_transactional_replicate(
       model::term_id,
-      producer_ptr,
+      tx::producer_ptr,
       model::batch_identity,
       model::record_batch_reader);
 
@@ -329,7 +219,7 @@ private:
 
     ss::future<result<kafka_result>> do_idempotent_replicate(
       model::term_id,
-      producer_ptr,
+      tx::producer_ptr,
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options,
@@ -337,7 +227,7 @@ private:
       ssx::semaphore_units&);
 
     ss::future<result<kafka_result>> do_sync_and_idempotent_replicate(
-      producer_ptr,
+      tx::producer_ptr,
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options,
@@ -357,7 +247,7 @@ private:
     ss::future<> do_abort_old_txes();
     ss::future<> try_abort_old_tx(model::producer_identity);
     ss::future<tx_errc> do_try_abort_old_tx(model::producer_identity);
-    void try_arm(time_point_type);
+    void try_arm(tx::time_point_type);
 
     ss::future<std::error_code> do_mark_expired(model::producer_identity pid);
 
@@ -421,17 +311,19 @@ private:
                             absl::flat_hash_map,
                             model::producer_id,
                             model::producer_epoch>(_tracker))
-          , ongoing_map(
-              mt::map<absl::flat_hash_map, model::producer_identity, tx_range>(
-                _tracker))
+          , ongoing_map(mt::map<
+                        absl::flat_hash_map,
+                        model::producer_identity,
+                        tx::tx_range>(_tracker))
           , ongoing_set(mt::set<absl::btree_set, model::offset>(_tracker))
           , current_txes(
-              mt::map<absl::flat_hash_map, model::producer_identity, tx_data>(
-                _tracker))
+              mt::
+                map<absl::flat_hash_map, model::producer_identity, tx::tx_data>(
+                  _tracker))
           , expiration(mt::map<
                        absl::flat_hash_map,
                        model::producer_identity,
-                       expiration_info>(_tracker)) {}
+                       tx::expiration_info>(_tracker)) {}
 
         log_state(log_state&) noexcept = delete;
         log_state(log_state&&) noexcept = delete;
@@ -451,22 +343,22 @@ private:
         mt::unordered_map_t<
           absl::flat_hash_map,
           model::producer_identity,
-          tx_range>
+          tx::tx_range>
           ongoing_map;
         // a heap of the first offsets of the ongoing transactions
         mt::set_t<absl::btree_set, model::offset> ongoing_set;
-        fragmented_vector<tx_range> aborted;
-        fragmented_vector<abort_index> abort_indexes;
-        abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
+        fragmented_vector<tx::tx_range> aborted;
+        fragmented_vector<tx::abort_index> abort_indexes;
+        tx::abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
         mt::unordered_map_t<
           absl::flat_hash_map,
           model::producer_identity,
-          tx_data>
+          tx::tx_data>
           current_txes;
         mt::unordered_map_t<
           absl::flat_hash_map,
           model::producer_identity,
-          expiration_info>
+          tx::expiration_info>
           expiration;
 
         void forget(const model::producer_identity& pid);
@@ -486,7 +378,7 @@ private:
     kafka::offset from_log_offset(model::offset old_offset) const;
     model::offset to_log_offset(kafka::offset new_offset) const;
 
-    std::optional<expiration_info>
+    std::optional<tx::expiration_info>
     get_expiration_info(model::producer_identity pid) const;
     std::optional<int32_t> get_seq_number(model::producer_identity pid) const;
 
@@ -496,11 +388,6 @@ private:
 
     template<class T>
     void fill_snapshot_wo_seqs(T&);
-
-    bool is_transaction_partitioning() const {
-        return _feature_table.local().is_active(
-          features::feature::transaction_partitioning);
-    }
 
     friend std::ostream& operator<<(std::ostream&, const log_state&);
     ss::future<> maybe_log_tx_stats();
@@ -518,7 +405,7 @@ private:
       ss::lw_shared_ptr<mutex>>
       _tx_locks;
     log_state _log_state;
-    ss::timer<clock_type> auto_abort_timer;
+    ss::timer<tx::clock_type> auto_abort_timer;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _tx_timeout_delay;
     std::chrono::milliseconds _abort_interval_ms;
@@ -532,9 +419,9 @@ private:
       _abort_snapshot_sizes{};
     ss::sharded<features::feature_table>& _feature_table;
     config::binding<std::chrono::seconds> _log_stats_interval_s;
-    ss::timer<clock_type> _log_stats_timer;
+    ss::timer<tx::clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
-    ss::sharded<producer_state_manager>& _producer_state_manager;
+    ss::sharded<tx::producer_state_manager>& _producer_state_manager;
     std::optional<model::vcluster_id> _vcluster_id;
 
     producers_t _producers;
@@ -549,20 +436,13 @@ private:
     friend struct ::rm_stm_test_fixture;
 };
 
-struct fence_batch_data {
-    model::batch_identity bid;
-    std::optional<model::tx_seq> tx_seq;
-    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
-    model::partition_id tm;
-};
-
 class rm_stm_factory : public state_machine_factory {
 public:
     rm_stm_factory(
       bool enable_transactions,
       bool enable_idempotence,
       ss::sharded<tx_gateway_frontend>&,
-      ss::sharded<cluster::producer_state_manager>&,
+      ss::sharded<cluster::tx::producer_state_manager>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::topic_table>&);
     bool is_applicable_for(const storage::ntp_config&) const final;
@@ -572,22 +452,9 @@ private:
     bool _enable_transactions;
     bool _enable_idempotence;
     ss::sharded<tx_gateway_frontend>& _tx_gateway_frontend;
-    ss::sharded<cluster::producer_state_manager>& _producer_state_manager;
+    ss::sharded<cluster::tx::producer_state_manager>& _producer_state_manager;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<topic_table>& _topics;
 };
-
-model::record_batch make_fence_batch_v1(
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms);
-
-model::record_batch make_fence_batch_v2(
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms,
-  model::partition_id tm);
-
-fence_batch_data read_fence_batch(model::record_batch&& b);
 
 } // namespace cluster

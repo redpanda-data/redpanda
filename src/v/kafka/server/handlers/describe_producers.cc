@@ -34,7 +34,7 @@ namespace kafka {
 
 namespace {
 
-using ret_res = checked<cluster::rm_stm::transaction_set, kafka::error_code>;
+using ret_res = checked<cluster::tx::transaction_set, kafka::error_code>;
 
 partition_response
 make_error_response(model::partition_id id, kafka::error_code ec) {

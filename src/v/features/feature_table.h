@@ -57,7 +57,6 @@ enum class feature : std::uint64_t {
     membership_change_controller_cmds = 1ULL << 22U,
     controller_snapshots = 1ULL << 23U,
     cloud_storage_manifest_format_v2 = 1ULL << 24U,
-    transaction_partitioning = 1ULL << 25U,
     force_partition_reconfiguration = 1ULL << 26U,
     raft_append_entries_serde = 1ULL << 28U,
     delete_records = 1ULL << 29U,
@@ -68,7 +67,6 @@ enum class feature : std::uint64_t {
     broker_time_based_retention = 1ULL << 34U,
     wasm_transforms = 1ULL << 35U,
     raft_config_serde = 1ULL << 36U,
-    idempotency_v2 = 1ULL << 37U,
     fast_partition_reconfiguration = 1ULL << 38U,
     disabling_partitions = 1ULL << 39U,
     cloud_metadata_cluster_recovery = 1ULL << 40U,
@@ -99,6 +97,8 @@ inline const std::unordered_set<std::string_view> retired_features = {
   "mtls_authentication",
   "rm_stm_kafka_cache",
   "transaction_ga",
+  "idempotency_v2",
+  "transaction_partitioning",
 };
 
 /**
@@ -274,12 +274,6 @@ constexpr static std::array feature_schema{
     feature_spec::prepare_policy::always},
   feature_spec{
     cluster::cluster_version{10},
-    "transaction_partitioning",
-    feature::transaction_partitioning,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    cluster::cluster_version{10},
     "force_partition_reconfiguration",
     feature::force_partition_reconfiguration,
     feature_spec::available_policy::always,
@@ -336,12 +330,6 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{11},
     "raft_config_serde",
     feature::raft_config_serde,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    cluster::cluster_version{11},
-    "idempotency_v2",
-    feature::idempotency_v2,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
