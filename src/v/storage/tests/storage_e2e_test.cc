@@ -466,8 +466,8 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
     ss::circular_buffer<model::record_batch> batches;
     std::vector<size_t> term_batches_counts;
     for (auto i = 0; i < 5; i++) {
-        auto term_batches = model::test::make_random_batches(
-          model::offset(0), 10);
+        auto term_batches
+          = model::test::make_random_batches(model::offset(0), 10).get();
         for (auto& b : term_batches) {
             b.set_term(model::term_id(i));
         }
@@ -511,7 +511,8 @@ struct custom_ts_batch_generator {
       [[maybe_unused]] std::optional<model::timestamp> ts = std::nullopt) {
         // The input timestamp is unused, this class does its own timestamping
         auto batches = model::test::make_random_batches(
-          model::offset(0), random_generators::get_int(1, 10));
+                         model::offset(0), random_generators::get_int(1, 10))
+                         .get();
 
         for (auto& b : batches) {
             b.header().first_timestamp = _start_ts;

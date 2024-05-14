@@ -56,7 +56,8 @@ inline iobuf iobuf_deep_copy(const iobuf& i) {
 };
 
 inline iobuf generate_segment(model::offset base_offset, int count) {
-    auto buff = model::test::make_random_batches(base_offset, count, false);
+    auto buff
+      = model::test::make_random_batches(base_offset, count, false).get();
     iobuf result;
     for (auto&& batch : buff) {
         auto hdr = storage::batch_header_to_disk_iobuf(batch.header());

@@ -22,6 +22,7 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <random>
 #include <vector>
@@ -201,7 +202,7 @@ model::record_batch make_random_batch(
       ts);
 }
 
-ss::circular_buffer<model::record_batch> make_random_batches(
+ss::future<ss::circular_buffer<model::record_batch>> make_random_batches(
   model::offset o,
   int count,
   bool allow_compression,
@@ -218,15 +219,19 @@ ss::circular_buffer<model::record_batch> make_random_batches(
         o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));
+        if (i % 5 == 0) {
+            co_await ss::coroutine::maybe_yield();
+        }
     }
-    return ret;
+    co_return ret;
 }
 
-ss::circular_buffer<model::record_batch> make_random_batches(model::offset o) {
+ss::future<ss::circular_buffer<model::record_batch>>
+make_random_batches(model::offset o) {
     return make_random_batches(o, get_int(2, 30), true);
 }
 
-ss::circular_buffer<model::record_batch>
+ss::future<ss::circular_buffer<model::record_batch>>
 make_random_batches(record_batch_spec spec) {
     // start offset + count
     ss::circular_buffer<model::record_batch> ret;
@@ -251,34 +256,10 @@ make_random_batches(record_batch_spec spec) {
         o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));
+        if (i % 5 == 0) {
+            co_await ss::coroutine::maybe_yield();
+        }
     }
-    return ret;
+    co_return ret;
 }
-
-model::record_batch_reader make_random_memory_record_batch_reader(
-  model::offset offset, int batch_size, int n_batches, bool allow_compression) {
-    return make_random_memory_record_batch_reader(
-      record_batch_spec{
-        .offset = offset,
-        .allow_compression = allow_compression,
-        .count = batch_size},
-      n_batches);
-}
-
-model::record_batch_reader
-make_random_memory_record_batch_reader(record_batch_spec spec, int n_batches) {
-    return model::make_generating_record_batch_reader(
-      [offset = spec.offset, spec, n_batches]() mutable {
-          model::record_batch_reader::data_t batches;
-          if (n_batches--) {
-              auto batch_spec = spec;
-              batch_spec.offset = offset;
-              batches = make_random_batches(batch_spec);
-              offset = batches.back().last_offset()++;
-          }
-          return ss::make_ready_future<model::record_batch_reader::data_t>(
-            std::move(batches));
-      });
-}
-
 } // namespace model::test

@@ -58,7 +58,7 @@ public:
     ss::future<ss::circular_buffer<model::record_batch>>
     write_random_batches(int num_batches) {
         segment_appender appender(pager_.get());
-        auto in_batches = model::test::make_random_batches(
+        auto in_batches = co_await model::test::make_random_batches(
           model::offset{0}, num_batches, true);
         for (auto& b : in_batches) {
             co_await appender.append(b.copy());

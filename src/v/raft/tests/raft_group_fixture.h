@@ -568,13 +568,14 @@ private:
     size_t _segment_size;
 };
 
-inline model::record_batch_reader random_batches_reader(int max_batches) {
-    auto batches = model::test::make_random_batches(
+inline ss::future<model::record_batch_reader>
+random_batches_reader(int max_batches) {
+    auto batches = co_await model::test::make_random_batches(
       model::test::record_batch_spec{
         .offset = model::offset(0),
         .allow_compression = true,
         .count = max_batches});
-    return model::make_memory_record_batch_reader(std::move(batches));
+    co_return model::make_memory_record_batch_reader(std::move(batches));
 }
 
 inline model::record_batch_reader
@@ -587,10 +588,10 @@ random_batch_reader(model::test::record_batch_spec spec) {
     return model::make_memory_record_batch_reader(std::move(batches));
 }
 
-inline model::record_batch_reader
+inline ss::future<model::record_batch_reader>
 random_batches_reader(model::test::record_batch_spec spec) {
-    auto batches = model::test::make_random_batches(spec);
-    return model::make_memory_record_batch_reader(std::move(batches));
+    auto batches = co_await model::test::make_random_batches(spec);
+    co_return model::make_memory_record_batch_reader(std::move(batches));
 }
 
 template<typename Rep, typename Period, typename Pred>
@@ -768,16 +769,28 @@ ss::future<bool> retry_with_leader(
                    "Leader action - retry attempt: {}", meta->current_retry);
                  return do_with_leader(gr, tout, f)
                    .then([meta](bool success) mutable {
+                       tstlog.info(
+                         "Leader action - retry attempt: {}, success",
+                         meta->current_retry);
                        meta->current_retry++;
                        meta->success = success;
                    })
                    .handle_exception([meta](const std::exception_ptr&) {
+                       tstlog.info(
+                         "Leader action - retry attempt: {}, failure",
+                         meta->current_retry);
                        meta->success = false;
                        meta->current_retry++;
                    })
                    .then([meta] {
                        if (!meta->success) {
-                           return ss::sleep(200ms * meta->current_retry);
+                           auto sleep_ms = 200ms * meta->current_retry;
+                           tstlog.info(
+                             "Leader action, sleeping for {} before retry "
+                             "attempt: {}",
+                             sleep_ms,
+                             meta->current_retry);
+                           return ss::sleep(sleep_ms);
                        }
                        return ss::now();
                    });
@@ -792,15 +805,16 @@ inline ss::future<bool> replicate_random_batches(
   model::timeout_clock::duration tout = 1s) {
     return retry_with_leader(
       gr, 5, tout, [count, c_lvl](raft_node& leader_node) {
-          auto rdr = random_batches_reader(count);
-          raft::replicate_options opts(c_lvl);
-
-          return leader_node.consensus->replicate(std::move(rdr), opts)
-            .then([](result<raft::replicate_result> res) {
-                if (!res) {
-                    return false;
-                }
-                return true;
+          return random_batches_reader(count).then(
+            [&leader_node, c_lvl](auto rdr) {
+                raft::replicate_options opts(c_lvl);
+                return leader_node.consensus->replicate(std::move(rdr), opts)
+                  .then([](result<raft::replicate_result> res) {
+                      if (!res) {
+                          return false;
+                      }
+                      return true;
+                  });
             });
       });
 }
@@ -814,15 +828,17 @@ inline ss::future<bool> replicate_random_batches(
     return retry_with_leader(
       gr, 5, tout, [count, expected_term, c_lvl](raft_node& leader_node) {
           auto rdr = random_batches_reader(count);
-          raft::replicate_options opts(c_lvl);
-
-          return leader_node.consensus
-            ->replicate(expected_term, std::move(rdr), opts)
-            .then([](result<raft::replicate_result> res) {
-                if (!res) {
-                    return false;
-                }
-                return true;
+          return random_batches_reader(count).then(
+            [&leader_node, c_lvl, expected_term](auto rdr) {
+                raft::replicate_options opts(c_lvl);
+                return leader_node.consensus
+                  ->replicate(expected_term, std::move(rdr), opts)
+                  .then([](result<raft::replicate_result> res) {
+                      if (!res) {
+                          return false;
+                      }
+                      return true;
+                  });
             });
       });
 }

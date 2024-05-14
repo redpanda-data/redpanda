@@ -31,7 +31,7 @@ struct offset_validating_consumer {
 };
 
 SEASTAR_THREAD_TEST_CASE(test_offset_assignment) {
-    auto batches = model::test::make_random_batches(model::offset(0), 10);
+    auto batches = model::test::make_random_batches(model::offset(0), 10).get();
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     auto starting_offset = model::offset(123);
     reader

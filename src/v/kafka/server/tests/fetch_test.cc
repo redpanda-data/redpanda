@@ -400,8 +400,8 @@ FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
         [ntp, this](cluster::partition_manager& mgr) {
             auto partition = mgr.get(ntp);
             {
-                auto batches = model::test::make_random_batches(
-                  model::offset(0), 5);
+                auto batches
+                  = model::test::make_random_batches(model::offset(0), 5).get();
                 auto rdr = model::make_memory_record_batch_reader(
                   std::move(batches));
                 partition->raft()
@@ -415,8 +415,8 @@ FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
             partition->raft()->step_down("trigger epoch change").get0();
             wait_for_leader(ntp).get0();
             {
-                auto batches = model::test::make_random_batches(
-                  model::offset(0), 5);
+                auto batches
+                  = model::test::make_random_batches(model::offset(0), 5).get();
                 auto rdr = model::make_memory_record_batch_reader(
                   std::move(batches));
                 partition->raft()
@@ -496,14 +496,16 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
           .invoke_on(
             *shard,
             [ntp](cluster::partition_manager& mgr) {
-                auto partition = mgr.get(ntp);
-                auto batches = model::test::make_random_batches(
-                  model::offset(0), 5);
-                auto rdr = model::make_memory_record_batch_reader(
-                  std::move(batches));
-                return partition->raft()->replicate(
-                  std::move(rdr),
-                  raft::replicate_options(raft::consistency_level::quorum_ack));
+                return model::test::make_random_batches(model::offset(0), 5)
+                  .then([ntp, &mgr](auto batches) {
+                      auto partition = mgr.get(ntp);
+                      auto rdr = model::make_memory_record_batch_reader(
+                        std::move(batches));
+                      return partition->raft()->replicate(
+                        std::move(rdr),
+                        raft::replicate_options(
+                          raft::consistency_level::quorum_ack));
+                  });
             })
           .discard_result()
           .get0();
@@ -563,14 +565,16 @@ FIXTURE_TEST(fetch_leader_ack, redpanda_thread_fixture) {
       .invoke_on(
         *shard,
         [ntp](cluster::partition_manager& mgr) {
-            auto partition = mgr.get(ntp);
-            auto batches = model::test::make_random_batches(
-              model::offset(0), 5);
-            auto rdr = model::make_memory_record_batch_reader(
-              std::move(batches));
-            return partition->raft()->replicate(
-              std::move(rdr),
-              raft::replicate_options(raft::consistency_level::leader_ack));
+            return model::test::make_random_batches(model::offset(0), 5)
+              .then([ntp, &mgr](auto batches) {
+                  auto partition = mgr.get(ntp);
+                  auto rdr = model::make_memory_record_batch_reader(
+                    std::move(batches));
+                  return partition->raft()->replicate(
+                    std::move(rdr),
+                    raft::replicate_options(
+                      raft::consistency_level::leader_ack));
+              });
         })
       .discard_result()
       .get0();
@@ -620,14 +624,16 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
       .invoke_on(
         *shard,
         [ntp](cluster::partition_manager& mgr) {
-            auto partition = mgr.get(ntp);
-            auto batches = model::test::make_random_batches(
-              model::offset(0), 5);
-            auto rdr = model::make_memory_record_batch_reader(
-              std::move(batches));
-            return partition->raft()->replicate(
-              std::move(rdr),
-              raft::replicate_options(raft::consistency_level::quorum_ack));
+            return model::test::make_random_batches(model::offset(0), 5)
+              .then([ntp, &mgr](auto batches) {
+                  auto partition = mgr.get(ntp);
+                  auto rdr = model::make_memory_record_batch_reader(
+                    std::move(batches));
+                  return partition->raft()->replicate(
+                    std::move(rdr),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack));
+              });
         })
       .discard_result()
       .get0();
@@ -699,14 +705,16 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
           .invoke_on(
             *shard,
             [ntp](cluster::partition_manager& mgr) {
-                auto partition = mgr.get(ntp);
-                auto batches = model::test::make_random_batches(
-                  model::offset(0), 5);
-                auto rdr = model::make_memory_record_batch_reader(
-                  std::move(batches));
-                return partition->raft()->replicate(
-                  std::move(rdr),
-                  raft::replicate_options(raft::consistency_level::quorum_ack));
+                return model::test::make_random_batches(model::offset(0), 5)
+                  .then([ntp, &mgr](auto batches) {
+                      auto partition = mgr.get(ntp);
+                      auto rdr = model::make_memory_record_batch_reader(
+                        std::move(batches));
+                      return partition->raft()->replicate(
+                        std::move(rdr),
+                        raft::replicate_options(
+                          raft::consistency_level::quorum_ack));
+                  });
             })
           .discard_result()
           .get0();
@@ -750,14 +758,16 @@ FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
       .invoke_on(
         *shard,
         [ntp](cluster::partition_manager& mgr) {
-            auto partition = mgr.get(ntp);
-            auto batches = model::test::make_random_batches(
-              model::offset(0), 20);
-            auto rdr = model::make_memory_record_batch_reader(
-              std::move(batches));
-            return partition->raft()->replicate(
-              std::move(rdr),
-              raft::replicate_options(raft::consistency_level::quorum_ack));
+            return model::test::make_random_batches(model::offset(0), 20)
+              .then([ntp, &mgr](auto batches) {
+                  auto partition = mgr.get(ntp);
+                  auto rdr = model::make_memory_record_batch_reader(
+                    std::move(batches));
+                  return partition->raft()->replicate(
+                    std::move(rdr),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack));
+              });
         })
       .get();
 

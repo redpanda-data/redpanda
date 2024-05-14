@@ -27,8 +27,8 @@ namespace storage::experimental::mvlog {
 
 TEST(BatchCollectingStreamTest, TestBasicStream) {
     iobuf buf;
-    auto in_batches = model::test::make_random_batches(
-      model::offset{0}, 10, true);
+    auto in_batches
+      = model::test::make_random_batches(model::offset{0}, 10, true).get();
     for (int i = 0; i < 10; i++) {
         in_batches[i].header().ctx.term = model::term_id{i};
     }

@@ -142,17 +142,18 @@ SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
     // use serde
     cfg_2.set_version(raft::group_configuration::v_6);
     auto cfg_batch_2 = raft::details::serialize_configuration_as_batches(cfg_2);
-    auto batches = model::test::make_random_batches(model::offset(0), 10, true);
+    auto batches
+      = model::test::make_random_batches(model::offset(0), 10, true).get();
 
     std::vector<batches_t> ranges;
     ranges.reserve(4);
     // interleave config batches with data batches
     ranges.push_back(std::move(cfg_batch_1));
     ranges.push_back(
-      model::test::make_random_batches(model::offset(0), 10, true));
+      model::test::make_random_batches(model::offset(0), 10, true).get());
     ranges.push_back(std::move(cfg_batch_2));
     ranges.push_back(
-      model::test::make_random_batches(model::offset(0), 10, true));
+      model::test::make_random_batches(model::offset(0), 10, true).get());
 
     for (auto& r : ranges) {
         std::move(r.begin(), r.end(), std::back_inserter(all_batches));

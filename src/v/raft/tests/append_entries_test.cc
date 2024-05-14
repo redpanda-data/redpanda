@@ -322,7 +322,7 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
     // append some entries to leader log
     auto leader_raft = gr.get_member(first_leader_id).consensus;
     auto f = leader_raft->replicate(
-      random_batches_reader(2), default_replicate_opts);
+      random_batches_reader(2).get(), default_replicate_opts);
     leader_raft.release();
     // since replicate doesn't accept timeout client have to deal with it.
     ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
@@ -737,7 +737,7 @@ FIXTURE_TEST(test_mixed_consisteny_levels, raft_test_fixture) {
     validate_offset_translation(gr);
 };
 
-FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
+FIXTURE_TEST(test_linearizable_barrier, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
@@ -772,7 +772,7 @@ FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
     BOOST_REQUIRE_EQUAL(r.value(), leader_offsets.dirty_offset);
 };
 
-FIXTURE_TEST(test_linarizable_barrier_single_node, raft_test_fixture) {
+FIXTURE_TEST(test_linearizable_barrier_single_node, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
