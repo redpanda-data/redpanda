@@ -18,6 +18,7 @@ rp_test(
   SOURCES
     sharded_store.cc
     consume_to_store.cc
+    compatibility_common.cc
     compatibility_store.cc
     compatibility_3rdparty.cc
     compatibility_avro.cc
