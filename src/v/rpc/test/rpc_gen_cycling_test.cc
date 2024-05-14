@@ -303,7 +303,7 @@ FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {
     auto creds_builder = config::tls_config(
                            true,
                            config::key_cert{"redpanda.key", "redpanda.crt"},
-                           "root_certificate_authority.chain_cert",
+                           "root_certificate_authority.crt",
                            false)
                            .get_credentials_builder()
                            .get0();
@@ -374,7 +374,7 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
     auto client_key = tmp.copy_file("redpanda.key", "client.key");
     auto client_crt = tmp.copy_file("redpanda.crt", "client.crt");
     auto client_ca = tmp.copy_file(
-      "root_certificate_authority.chain_cert", "ca_client.pem");
+      "root_certificate_authority.crt", "ca_client.pem");
     auto client_creds_builder = config::tls_config(
                                   true,
                                   config::key_cert{
@@ -387,7 +387,7 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
     auto server_key = tmp.copy_file("redpanda.other.key", "server.key");
     auto server_crt = tmp.copy_file("redpanda.other.crt", "server.crt");
     auto server_ca = tmp.copy_file(
-      "root_certificate_authority.other.chain_cert", "ca_server.pem");
+      "root_certificate_authority.other.crt", "ca_server.pem");
     auto server_creds_builder = config::tls_config(
                                   true,
                                   config::key_cert{
@@ -430,7 +430,7 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
     info("replacing files");
     tmp.copy_file("redpanda.key", "server.key");
     tmp.copy_file("redpanda.crt", "server.crt");
-    tmp.copy_file("root_certificate_authority.chain_cert", "ca_server.pem");
+    tmp.copy_file("root_certificate_authority.crt", "ca_server.pem");
 
     context->cvar.wait([context] { return context->updated.size() == 3; })
       .get();

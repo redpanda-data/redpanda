@@ -76,12 +76,12 @@ rp_test(
   SOURCES rpc_gen_cycling_test.cc
   LIBRARIES v::seastar_testing_main v::rpc_testing
   LABELS rpc
-  INPUT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.crt
-              ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.key
-              ${CMAKE_CURRENT_SOURCE_DIR}/root_certificate_authority.chain_cert
-              ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.other.crt
-              ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.other.key
-              ${CMAKE_CURRENT_SOURCE_DIR}/root_certificate_authority.other.chain_cert
+  INPUT_FILES ${CMAKE_CURRENT_BINARY_DIR}/redpanda.crt
+              ${CMAKE_CURRENT_BINARY_DIR}/redpanda.key
+              ${CMAKE_CURRENT_BINARY_DIR}/root_certificate_authority.crt
+              ${CMAKE_CURRENT_BINARY_DIR}/redpanda.other.crt
+              ${CMAKE_CURRENT_BINARY_DIR}/redpanda.other.key
+              ${CMAKE_CURRENT_BINARY_DIR}/root_certificate_authority.other.crt
   ARGS "-- -c 1"
   BUILD_DEPENDENCIES rpcgenerator_cycling_test_certs
 )
