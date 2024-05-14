@@ -44,6 +44,32 @@ rp_test(
   ARGS "-- -c 1"
 )
 
+set(cert_ca "root_certificate_authority")
+set(other_cert_ca "root_certificate_authority.other")
+set(cert "redpanda")
+set(other_cert "redpanda.other")
+
+redpanda_sign_cert(${cert_ca}
+  COMMON_NAME "redpanda.com")
+
+redpanda_sign_cert(${other_cert_ca}
+  COMMON_NAME "redpanda.other.com")
+
+redpanda_sign_cert(${cert}
+  CA ${cert_ca}
+  SERIAL_NUM 1
+  COMMON_NAME "cert.com")
+
+redpanda_sign_cert(${other_cert}
+  CA ${other_cert_ca}
+  SERIAL_NUM 2
+  COMMON_NAME "cert.other.com")
+
+add_custom_target(rpcgenerator_cycling_test_certs
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${cert_ca}.crt
+          ${CMAKE_CURRENT_BINARY_DIR}/${other_cert_ca}.crt
+          ${CMAKE_CURRENT_BINARY_DIR}/${cert}.crt
+          ${CMAKE_CURRENT_BINARY_DIR}/${other_cert}.crt)
 rp_test(
   UNIT_TEST
   BINARY_NAME rpcgenerator_cycling
@@ -57,6 +83,7 @@ rp_test(
               ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.other.key
               ${CMAKE_CURRENT_SOURCE_DIR}/root_certificate_authority.other.chain_cert
   ARGS "-- -c 1"
+  BUILD_DEPENDENCIES rpcgenerator_cycling_test_certs
 )
 
 rp_test(
