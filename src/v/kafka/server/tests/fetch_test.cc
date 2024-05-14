@@ -413,7 +413,7 @@ FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
                   .get0();
             }
             partition->raft()->step_down("trigger epoch change").get0();
-            wait_for_leader(ntp).get0();
+            wait_for_leader(ntp, 10s).get0();
             {
                 auto batches
                   = model::test::make_random_batches(model::offset(0), 5).get();
