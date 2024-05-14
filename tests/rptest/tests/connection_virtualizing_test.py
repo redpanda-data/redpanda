@@ -8,10 +8,12 @@
 # by the Apache License, Version 2.0
 
 from dataclasses import dataclass
+import random
 from types import MethodType
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from kafka.protocol.fetch import FetchRequest
+from ducktape.mark import matrix
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until
@@ -21,6 +23,8 @@ from kafka.record.memory_records import MemoryRecordsBuilder
 
 from kafka import KafkaClient, KafkaConsumer
 from kafka.protocol.produce import ProduceRequest
+
+from rptest.utils.xid_utils import random_xid_string
 
 
 @dataclass
@@ -157,6 +161,10 @@ def no_validation_process_response(self, read_buffer):
     return (recv_correlation_id, response)
 
 
+def create_client_id(vcluster_id: str, connection_id: int, client_id: str):
+    return f"{vcluster_id}{connection_id:08x}{client_id}"
+
+
 class TestVirtualConnections(RedpandaTest):
     def __init__(self, test_context):
         super(TestVirtualConnections, self).__init__(
@@ -187,7 +195,10 @@ class TestVirtualConnections(RedpandaTest):
         return (fetch_fut, produce_fut)
 
     @cluster(num_nodes=3)
-    def test_no_head_of_line_blocking(self):
+    @matrix(different_clusters=[True, False],
+            different_connections=[True, False])
+    def test_no_head_of_line_blocking(self, different_clusters,
+                                      different_connections):
 
         # create topic with single partition
         spec = TopicSpec(partition_count=1, replication_factor=3)
@@ -195,14 +206,20 @@ class TestVirtualConnections(RedpandaTest):
 
         mpx_client = MpxMockClient(self.redpanda)
         mpx_client.start()
+        v_cluster_1 = random_xid_string()
+        v_cluster_2 = random_xid_string()
 
+        fetch_client = create_client_id(v_cluster_1, 0, "client-fetch")
+        produce_client = create_client_id(
+            v_cluster_1 if not different_clusters else v_cluster_2,
+            0 if not different_connections else 1, "client-produce")
         # validate that fetch request is blocking produce request first as mpx extensions are disabled
         (fetch_fut, produce_fut) = self._fetch_and_produce(
             client=mpx_client,
             topic=spec.name,
             partition=0,
-            fetch_client_id="v-cluster-1",
-            produce_client_id="v-cluster-2")
+            fetch_client_id=fetch_client,
+            produce_client_id=produce_client)
 
         mpx_client.poll(produce_fut)
         assert produce_fut.is_done and produce_fut.succeeded
@@ -231,8 +248,8 @@ class TestVirtualConnections(RedpandaTest):
             client=mpx_client,
             topic=spec.name,
             partition=0,
-            fetch_client_id="v-cluster-10",
-            produce_client_id="v-cluster-20")
+            fetch_client_id=fetch_client,
+            produce_client_id=produce_client)
 
         for connection in mpx_client.client._conns.values():
             if len(connection._protocol.in_flight_requests) == 2:
@@ -241,9 +258,11 @@ class TestVirtualConnections(RedpandaTest):
                     no_validation_process_response, connection._protocol)
 
         # wait for fetch as it will be released after produce finishes
+        should_interleave_requests = different_clusters or different_connections
 
         def _produce_is_ready():
-            mpx_client.poll(fetch_fut)
+            mpx_client.poll(
+                fetch_fut if should_interleave_requests else produce_fut)
             return produce_fut.is_done
 
         wait_until(
@@ -260,7 +279,58 @@ class TestVirtualConnections(RedpandaTest):
 
         f_resp = fetch_fut.value
 
-        #assert produce_fut.is_done and produce_fut.succeeded, "produce future should be ready when fetch resolved"
-        assert f_resp.topics[0][1][0][
-            6] != b'', "Fetch should be unblocked by produce from another virtual connection"
+        if should_interleave_requests:
+            assert f_resp.topics[0][1][0][
+                6] != b'', "Fetch should be unblocked by produce from another virtual connection"
+        else:
+            assert f_resp.topics[0][1][0][
+                6] == b'', "Fetch should be executed before the produce finishes"
         mpx_client.close()
+
+    @cluster(num_nodes=3)
+    def test_handling_invalid_ids(self):
+        self.redpanda.set_cluster_config({"enable_mpx_extensions": True})
+        # create topic with single partition
+        spec = TopicSpec(partition_count=1, replication_factor=3)
+        topic = spec.name
+        self.client().create_topic(spec)
+
+        def produce_with_client(client_id: str):
+            mpx_client = MpxMockClient(self.redpanda)
+            mpx_client.start()
+            partition_info = mpx_client.get_partition_info(topic, 0)
+            mpx_client.set_client_id(client_id)
+            produce_fut = mpx_client.send(
+                node_id=partition_info.leader_id,
+                request=mpx_client.create_produce_request(topic=topic,
+                                                          partition=0))
+
+            mpx_client.poll(produce_fut)
+            assert produce_fut.is_done and produce_fut.succeeded
+            pi = mpx_client.get_partition_info(topic, 0)
+            mpx_client.close()
+            return pi
+
+        v_cluster = random_xid_string()
+        valid_client_id = create_client_id(v_cluster, 0, "client-fetch")
+        p_info = produce_with_client(valid_client_id)
+
+        assert p_info.end_offset > 0, "Produce request should be successful"
+        starting_end_offset = p_info.end_offset
+        invalid_xid_id = create_client_id("zzzzzzzzzzzzzzzzzzzz", 0,
+                                          "client-fetch")
+
+        p_info = produce_with_client(invalid_xid_id)
+
+        assert starting_end_offset == p_info.end_offset, "Produce request with invalid client id should fail"
+
+        invalid_connection_id = f"{v_cluster}00blob00client"
+
+        p_info = produce_with_client(invalid_connection_id)
+
+        assert starting_end_offset == p_info.end_offset, "Produce request with invalid client id should fail"
+
+        valid_client_id_empty = create_client_id(v_cluster, 0, "")
+        p_info = produce_with_client(valid_client_id_empty)
+
+        assert starting_end_offset < p_info.end_offset, "Produce request with valid client id should succeed "
