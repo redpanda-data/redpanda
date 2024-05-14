@@ -120,7 +120,28 @@ struct session_resources {
     std::unique_ptr<request_tracker> tracker;
     request_data request_data;
 };
+using vcluster_connection_id
+  = named_type<uint32_t, struct vcluster_connection_id_tag>;
+/**
+ * Struct representing virtual connection identifier. Each virtual cluster may
+ * have multiple connections identified with connection_id.
+ */
+struct virtual_connection_id {
+    xid virtual_cluster_id;
+    vcluster_connection_id connection_id;
 
+    template<typename H>
+    friend H AbslHashValue(H h, const virtual_connection_id& id) {
+        return H::combine(
+          std::move(h), id.virtual_cluster_id, id.connection_id);
+    }
+    friend bool
+    operator==(const virtual_connection_id&, const virtual_connection_id&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const virtual_connection_id& id);
+};
 class connection_context final
   : public ss::enable_lw_shared_from_this<connection_context>
   , public boost::intrusive::list_base_hook<> {
@@ -416,7 +437,9 @@ private:
      * A map keeping virtual connection states, during default operation the map
      * is empty
      */
-    absl::node_hash_map<bytes, ss::lw_shared_ptr<virtual_connection_state>>
+    absl::node_hash_map<
+      virtual_connection_id,
+      ss::lw_shared_ptr<virtual_connection_state>>
       _virtual_states;
 
     ss::gate _gate;

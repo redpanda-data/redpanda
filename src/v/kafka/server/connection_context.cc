@@ -64,24 +64,94 @@ public:
     explicit invalid_virtual_connection_id(ss::sstring msg)
       : _msg(std::move(msg)) {}
 
+    const char* what() const noexcept final { return _msg.c_str(); }
+
 private:
     ss::sstring _msg;
 };
 
-bytes parse_virtual_connection_id(const kafka::request_header& header) {
+// Tuple containing virtual connection id and client id. It is returned after
+// parsing parts of virtual connection id.
+struct virtual_connection_client_id {
+    virtual_connection_id v_connection_id;
+    std::optional<std::string_view> client_id;
+};
+
+const std::regex hex_characters_regexp{R"REGEX(^[a-f0-9A-F]{8}$)REGEX"};
+
+vcluster_connection_id
+parse_vcluster_connection_id(const std::string& hex_str) {
+    std::smatch matches;
+    auto match = std::regex_match(
+      hex_str.cbegin(), hex_str.cend(), matches, hex_characters_regexp);
+    if (!match) {
+        throw invalid_virtual_connection_id(fmt::format(
+          "virtual cluster connection id '{}' is not a hexadecimal integer",
+          hex_str));
+    }
+
+    vcluster_connection_id cid;
+
+    std::stringstream sstream(hex_str);
+    sstream >> std::hex >> cid;
+    return cid;
+}
+
+/**
+ * Virtual connection id is encoded as with the following structure:
+ *
+ * [vcluster_id][connection_id][actual client id]
+ *
+ * vcluster_id - is a string encoded XID representing virtual cluster (20
+ *               characters)
+ * connection_id - is a hex encoded 32 bit integer representing virtual
+ *                 connection id (8 characters)
+ *
+ * client_id - standard protocol defined client id
+ */
+virtual_connection_client_id
+parse_virtual_connection_id(const kafka::request_header& header) {
+    static constexpr size_t connection_id_str_size
+      = sizeof(vcluster_connection_id::type) * 2;
+    static constexpr size_t v_connection_id_size = xid::str_size
+                                                   + connection_id_str_size;
     if (header.client_id_buffer.empty()) {
         throw invalid_virtual_connection_id(
           "virtual connection client id can not be empty");
     }
 
-    // TODO: should we use vcluster_id here ?
-    return bytes{
-      reinterpret_cast<const uint8_t*>(header.client_id_buffer.begin()),
-      header.client_id_buffer.size()};
+    if (header.client_id->size() < v_connection_id_size) {
+        throw invalid_virtual_connection_id(fmt::format(
+          "virtual connection client id size must contain at least {} "
+          "characters. Current size: {}",
+          v_connection_id_size,
+          header.client_id_buffer.size()));
+    }
+    try {
+        virtual_connection_id connection_id{
+          .virtual_cluster_id = xid::from_string(
+            std::string_view(header.client_id->begin(), xid::str_size)),
+          .connection_id = parse_vcluster_connection_id(std::string(
+            std::next(header.client_id_buffer.begin(), xid::str_size),
+            connection_id_str_size))};
+
+        return virtual_connection_client_id{
+          .v_connection_id = connection_id,
+          // a reminder of client id buffer is used as a standard protocol
+          // client_id.
+          .client_id
+          = header.client_id_buffer.size() == v_connection_id_size
+              ? std::nullopt
+              : std::make_optional<std::string_view>(
+                std::next(
+                  header.client_id_buffer.begin(), v_connection_id_size),
+                header.client_id_buffer.size() - v_connection_id_size),
+        };
+    } catch (const invalid_xid& e) {
+        throw invalid_virtual_connection_id(e.what());
+    }
 }
-
 } // namespace
-
 connection_context::connection_context(
   std::optional<
     std::reference_wrapper<boost::intrusive::list<connection_context>>> hook,
@@ -637,17 +707,25 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
      * Not virtualized connection, simply forward to protocol state for request
      * processing.
      */
-    if (!_is_virtualized_connection) {
+    if (
+      !_is_virtualized_connection
+      || rctx.header().client_id == multi_proxy_initial_client_id) {
         co_return co_await _protocol_state.process_request(
           shared_from_this(), std::move(rctx), sres);
     }
-
-    auto v_connection_id = parse_virtual_connection_id(rctx.header());
+    auto client_connection_id = parse_virtual_connection_id(rctx.header());
+    rctx.override_client_id(client_connection_id.client_id);
+    vlog(
+      klog.trace,
+      "request from virtual connection {}, client id: {}",
+      client_connection_id.v_connection_id,
+      client_connection_id.client_id);
     auto it = _virtual_states.lazy_emplace(
-      v_connection_id, [v_connection_id](const auto& ctr) mutable {
+      client_connection_id.v_connection_id,
+      [v_connection_id = client_connection_id.v_connection_id](
+        const auto& ctr) mutable {
           return ctr(
-            std::move(v_connection_id),
-            ss::make_lw_shared<virtual_connection_state>());
+            v_connection_id, ss::make_lw_shared<virtual_connection_state>());
       });
 
     co_await it->second->process_request(
@@ -863,6 +941,15 @@ ss::future<> connection_context::client_protocol_state::maybe_process_responses(
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     });
+}
+
+std::ostream& operator<<(std::ostream& o, const virtual_connection_id& id) {
+    fmt::print(
+      o,
+      "{{virtual_cluster_id: {}, connection_id: {}}}",
+      id.virtual_cluster_id,
+      id.connection_id);
+    return o;
 }
 
 } // namespace kafka
