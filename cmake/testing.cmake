@@ -153,3 +153,94 @@ if(RP_ENABLE_TESTS)
     COMMAND ctest --output-on-failure
     DEPENDS "${UNIT_TESTS} ${FIXTURE_TESTS} ${BENCHMARK_TESTS}")
 endif()
+
+if (RP_ENABLE_TESTS)
+  find_program(OPENSSL openssl)
+  if (NOT OPENSSL)
+    message(FATAL_ERROR "openssl is required for performing tests!")
+  endif()
+
+  set(OVERRIDE_LD_PATH)
+
+  if(VECTORIZED_CMAKE_DIR)
+    if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^arm|aarch64")
+      set(OSSL_LIB_DIR "lib")
+    else()
+      set(OSSL_LIB_DIR "lib64")
+    endif()
+    set(OVERRIDE_LD_PATH "${REDPANDA_DEPS_INSTALL_DIR}/${OSSL_LIB_DIR}")
+  endif()
+
+  # The following function can be used to setup a simple CA
+  # Arguments:
+  #   name (required) - Name to use for output files (crt, key, and csr)
+  #   CA (optional) - If provided, will use specified name as the signing
+  #                   CA, if not provided will generate self-signed certificate
+  #   SERIAL_NUM (required if CA provided) - Serial number of cert when issued by CA
+  #   COMMON_NAME (required) - The CN to use when setting the subject name
+  #
+  # This function was inspired by, and heavily copied from, a function foun in
+  # ScyllaDB's Seastar:
+  # https://github.com/scylladb/seastar/blob/998d29970b9207c4ba8a125684f883c363d1010a/tests/unit/CMakeLists.txt#L574-L629
+  function(redpanda_sign_cert name)
+    cmake_parse_arguments(CERT
+    ""
+    "CA;SERIAL_NUM;COMMON_NAME"
+    ""
+    ${ARGN})
+    set(cert ${name}.crt)
+    set(privkey ${name}.key)
+    set(extension "subjectAltName = IP:127.0.0.1")
+    set(subj "/C=US/ST=California/L=San Francisco/O=Redpanda Data/OU=Core/CN=${CERT_COMMON_NAME}")
+
+    # The following command generates an ECDSA key pair using the prime256v1 curve
+    add_custom_command(OUTPUT ${privkey}
+      COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${OVERRIDE_LD_PATH}"
+        ${OPENSSL} ecparam
+        -name prime256v1 -genkey -noout
+        -out ${privkey}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+      if(DEFINED CERT_CA)
+        set(req ${name}.csr)
+        # This will generate a certificate signing request (CSR) using the generated
+        # private key
+        add_custom_command(OUTPUT ${req}
+          COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${OVERRIDE_LD_PATH}"
+            ${OPENSSL} req
+            -new -sha256
+            -key ${privkey}
+            -out ${req}
+            -subj ${subj}
+          DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${privkey}
+          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+        set(ca_cert ${CERT_CA}.crt)
+        set(ca_privkey ${CERT_CA}.key)
+        # This function will sign the generated CSR (above) with the specified CA
+        add_custom_command(OUTPUT ${cert}
+          COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${OVERRIDE_LD_PATH}"
+            ${OPENSSL} x509
+            -req -days 1000 -sha256
+            -set_serial ${CERT_SERIAL_NUM}
+            -in ${req}
+            -CA ${ca_cert}
+            -CAkey ${ca_privkey}
+            -out ${cert}
+          DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${req} ${CMAKE_CURRENT_BINARY_DIR}/${ca_cert} ${CMAKE_CURRENT_BINARY_DIR}/${ca_privkey}
+          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+      else()
+        # This will generate a self-signed certificate to use as the root CA
+        add_custom_command(OUTPUT ${cert}
+          COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${OVERRIDE_LD_PATH}"
+            ${OPENSSL} req
+            -new -x509 -sha256
+            -key ${privkey}
+            -out ${cert}
+            -subj ${subj}
+            -addext ${extension}
+          DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${privkey}
+          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+      endif()
+  endfunction(redpanda_sign_cert)
+endif()
