@@ -5,12 +5,11 @@ from enum import Enum
 import json
 import logging
 import os
-import requests
-from requests.auth import HTTPBasicAuth
+import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 class NoJiraIssueFound(Exception):
@@ -37,24 +36,21 @@ def get_issue_state(state: str) -> IssueState:
 
 class JiraHelper():
     _base_url = 'https://redpandadata.atlassian.net'
-    _project_key = 'CORE'
     _done_status_name = 'DONE'
     _backlog_status_name = 'BACKLOG'
     _bug_labels = ['kind/bug', 'ci-failure']
 
-    def __init__(self, command: Command, logger: logging.Logger):
+    def __init__(self, command: Command, logger: logging.Logger, project: str,
+                 pandoc: Optional[str]):
         self.logger: logging.Logger = logger
         self.command: Command = command
+        self._pandoc = pandoc
+        self._project_key = project
         self._check_env()
         self._jira = Jira(url=self._base_url,
                           username=os.environ['JIRA_USER'],
                           password=os.environ['JIRA_TOKEN'],
                           cloud=True)
-
-    @staticmethod
-    def _get_auth() -> HTTPBasicAuth:
-        return HTTPBasicAuth(username=os.environ['JIRA_USER'],
-                             password=os.environ['JIRA_TOKEN'])
 
     def _check_env_val(self, val: str):
         self.logger.debug(f'Checking environment for {val}')
@@ -84,7 +80,20 @@ class JiraHelper():
 
     def _get_gh_issue_comments(self, url):
         return json.loads(
-            self._get_gh_output(f'gh issue view {url} --json comments'))
+            self._run_cmd_return_stdout(
+                f'gh issue view {url} --json comments'))
+
+    def _ghm_to_jira(self, ghm: str) -> str:
+        if self._pandoc is not None:
+            with tempfile.NamedTemporaryFile(delete=False) as tf:
+                tf.write(ghm.encode())
+                tf.flush()
+                tf.close()
+                jmd = self._run_cmd_return_stdout(
+                    f'{self._pandoc} -f gfm -w jira {tf.name}')
+                os.unlink(tf.name)
+                return jmd
+        return ghm
 
     def _issue_helper(self):
         event_name = os.environ['EVENT_NAME']
@@ -126,7 +135,7 @@ class JiraHelper():
             raise NotImplementedError(
                 f'Command {self.command} not yet implemented')
 
-    def _get_gh_output(self, command) -> str:
+    def _run_cmd_return_stdout(self, command) -> str:
         return subprocess.check_output(command.split(' ')).decode()
 
     def _transition_issue(self, issue_id, status_name):
@@ -193,12 +202,8 @@ class JiraHelper():
         labels = self._get_gh_issue_labels()
         issue_type = self._get_issue_type(labels)
 
-        # Replace "```" with "{code}" because Jira's format is different than
-        # GitHubs
-        jira_issue_body = issue_body.replace("```", "{code}")
+        jira_issue_body = self._ghm_to_jira(issue_body)
 
-        # When creating a bug, must use customfield_10083 as 'description' is not part of
-        # bug creation screen anymore
         fields = {
             "description" if issue_type == 'Task' else "customfield_10083":
             f"{jira_issue_body}",
@@ -243,7 +248,7 @@ issue that triggered this issue's creation.
         return issue_id
 
     def _add_comment_to_issue(self, issue_id, comment):
-        comment = comment.replace("```", "{code}")
+        comment = self._ghm_to_jira(comment)
         self.logger.debug(
             f'Updating issue {issue_id} with comment "{comment}"')
         try:
@@ -318,16 +323,24 @@ def parse_args() -> Tuple[Command, bool]:
                         '--verbose',
                         action='store_true',
                         help='Increase verbosity')
+    parser.add_argument('-p',
+                        '--project',
+                        required=True,
+                        help="The project to use")
     args = parser.parse_args()
-    return (Command[args.command], args.verbose)
+    return (Command[args.command], args.verbose, args.project)
+
+
+def find_program(prog) -> Optional[str]:
+    return shutil.which(prog)
 
 
 def main():
     logger = logging.getLogger(__name__)
-    (command, verbose) = parse_args()
+    (command, verbose, project) = parse_args()
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
     logger.info(f'Executing command {command}')
-    helper = JiraHelper(command, logger)
+    helper = JiraHelper(command, logger, project, find_program('pandoc'))
     helper.execute()
 
 

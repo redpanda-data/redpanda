@@ -24,6 +24,8 @@ jobs:
         env:
           SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
         run: pip install -r ${SCRIPT_DIR}/requirements.txt
+      - name: install pandoc
+        run: sudo apt-get update && sudo apt-get install -y pandoc
       - name: Manage JIRA Issue
         env:
           SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
@@ -36,4 +38,4 @@ jobs:
           ISSUE_LABELS: ${{ join(github.event.issue.labels.*.name) }}
           ISSUE_STATE: ${{ github.event.issue.state }}
           EVENT_NAME: ${{ github.event.action }}
-        run: python ${SCRIPT_DIR}/jira_helper.py ISSUE --verbose
+        run: python ${SCRIPT_DIR}/jira_helper.py ISSUE --verbose -p CORE
