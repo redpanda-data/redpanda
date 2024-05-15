@@ -29,19 +29,21 @@ import (
 
 type (
 	detailedTransformMetadata struct {
-		Name         string                              `json:"name" yaml:"name"`
-		InputTopic   string                              `json:"input_topic" yaml:"input_topic"`
-		OutputTopics []string                            `json:"output_topics" yaml:"output_topics"`
-		Environment  map[string]string                   `json:"environment" yaml:"environment"`
-		Status       []adminapi.PartitionTransformStatus `json:"status" yaml:"status"`
+		Name            string                              `json:"name" yaml:"name"`
+		InputTopic      string                              `json:"input_topic" yaml:"input_topic"`
+		OutputTopics    []string                            `json:"output_topics" yaml:"output_topics"`
+		Environment     map[string]string                   `json:"environment" yaml:"environment"`
+		Status          []adminapi.PartitionTransformStatus `json:"status" yaml:"status"`
+		CompressionMode string                              `json:"compression" yaml:"compression"`
 	}
 	summarizedTransformMetadata struct {
-		Name         string            `json:"name" yaml:"name"`
-		InputTopic   string            `json:"input_topic" yaml:"input_topic"`
-		OutputTopics []string          `json:"output_topics" yaml:"output_topics"`
-		Environment  map[string]string `json:"environment" yaml:"environment"`
-		Running      string            `json:"running" yaml:"running"`
-		Lag          int               `json:"lag" yaml:"lag"`
+		Name            string            `json:"name" yaml:"name"`
+		InputTopic      string            `json:"input_topic" yaml:"input_topic"`
+		OutputTopics    []string          `json:"output_topics" yaml:"output_topics"`
+		Environment     map[string]string `json:"environment" yaml:"environment"`
+		Running         string            `json:"running" yaml:"running"`
+		Lag             int               `json:"lag" yaml:"lag"`
+		CompressionMode string            `json:"compression" yaml:"compression"`
 	}
 )
 
@@ -133,12 +135,13 @@ func summarizedView(metadata []adminapi.TransformMetadata) (resp []summarizedTra
 			lag += v.Lag
 		}
 		resp = append(resp, summarizedTransformMetadata{
-			Name:         meta.Name,
-			InputTopic:   meta.InputTopic,
-			OutputTopics: meta.OutputTopics,
-			Environment:  makeEnvMap(meta.Environment),
-			Running:      fmt.Sprintf("%d / %d", running, total),
-			Lag:          lag,
+			Name:            meta.Name,
+			InputTopic:      meta.InputTopic,
+			OutputTopics:    meta.OutputTopics,
+			Environment:     makeEnvMap(meta.Environment),
+			Running:         fmt.Sprintf("%d / %d", running, total),
+			Lag:             lag,
+			CompressionMode: meta.CompressionMode,
 		})
 	}
 	return
@@ -161,11 +164,12 @@ func detailView(metadata []adminapi.TransformMetadata) (resp []detailedTransform
 	resp = make([]detailedTransformMetadata, 0, len(metadata))
 	for _, meta := range metadata {
 		resp = append(resp, detailedTransformMetadata{
-			Name:         meta.Name,
-			InputTopic:   meta.InputTopic,
-			OutputTopics: meta.OutputTopics,
-			Environment:  makeEnvMap(meta.Environment),
-			Status:       meta.Status,
+			Name:            meta.Name,
+			InputTopic:      meta.InputTopic,
+			OutputTopics:    meta.OutputTopics,
+			Environment:     makeEnvMap(meta.Environment),
+			Status:          meta.Status,
+			CompressionMode: meta.CompressionMode,
 		})
 	}
 	return
