@@ -866,6 +866,22 @@ bool async_manifest_view::in_archive(async_view_search_query_t o) {
                       kafka::offset::min());
       },
       [this](async_view_timestamp_query ts_query) {
+          // For a query to be satisfiable by the archive the min offset must be
+          // in the archive. The same condition can be stated as: min offset
+          // must be before the start of the STM manifest.
+          //
+          // Otherwise, even though the last timestamp in the archive could
+          // satisfy the query, it can't be used because offset-wise it is
+          // outside of the queried range.
+          kafka::offset archive_end_offset = kafka::prev_offset(
+            _stm_manifest.get_start_kafka_offset().value_or(
+              kafka::offset::min()));
+
+          bool range_overlaps
+            = ts_query.min_offset <= archive_end_offset
+              && ts_query.max_offset
+                   >= _stm_manifest.get_archive_start_kafka_offset();
+
           // The condition for timequery is tricky. With offsets there is a
           // clear pivot point. The start_offset of the STM manifest separates
           // the STM region from the archive. With timestamps it's not as
@@ -873,13 +889,6 @@ bool async_manifest_view::in_archive(async_view_search_query_t o) {
           // and the first segment in the STM manifest. We need in_stm and
           // in_archive to be consistent with each other. To do this we can use
           // last timestamp in the archive as a pivot point.
-          bool range_overlaps
-            = ts_query.min_offset
-                < _stm_manifest.get_start_kafka_offset().value_or(
-                  kafka::offset::min())
-              && ts_query.max_offset
-                   >= _stm_manifest.get_archive_start_kafka_offset();
-
           return range_overlaps
                  && _stm_manifest.get_spillover_map()
                         .last_segment()
@@ -911,8 +920,7 @@ bool async_manifest_view::in_stm(async_view_search_query_t o) {
               // STM manifest with spillover segments is never empty.
               return true;
           }
-          // The last timestamp in the archive is used as a pivot point. See
-          // description in in_archive.
+
           bool range_overlaps
             = ts_query.min_offset
                 <= _stm_manifest.get_last_kafka_offset().value_or(
@@ -921,6 +929,8 @@ bool async_manifest_view::in_stm(async_view_search_query_t o) {
                    >= _stm_manifest.get_start_kafka_offset().value_or(
                      kafka::offset::max());
 
+          // The last timestamp in the archive is used as a pivot point. See
+          // description in in_archive.
           return range_overlaps
                  && _stm_manifest.get_spillover_map()
                         .last_segment()
