@@ -1512,7 +1512,7 @@ class KubeServiceMixin:
             # If dir doesn't exist yet, use the parent.
             df_path = os.path.dirname(RedpandaServiceBase.PERSISTENT_ROOT)
         df_out = self.kubectl.exec(f"df --output=avail {df_path}")
-        avail_kb = int(df_out.strip().split(b"\n")[1].strip())
+        avail_kb = int(df_out.strip().split("\n")[1].strip())
         return avail_kb * 1024
 
 
