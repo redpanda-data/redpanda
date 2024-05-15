@@ -160,7 +160,7 @@ if (RP_ENABLE_TESTS)
     message(FATAL_ERROR "openssl is required for performing tests!")
   endif()
 
-  set(OVERRIDE_LD_PATH)
+  set(OPENSSL_ENV)
 
   if(VECTORIZED_CMAKE_DIR)
     if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^arm|aarch64")
@@ -168,7 +168,7 @@ if (RP_ENABLE_TESTS)
     else()
       set(OSSL_LIB_DIR "lib64")
     endif()
-    set(OVERRIDE_LD_PATH "${REDPANDA_DEPS_INSTALL_DIR}/${OSSL_LIB_DIR}")
+    set(OPENSSL_ENV "LD_LIBRARY_PATH=${REDPANDA_DEPS_INSTALL_DIR}/${OSSL_LIB_DIR};OPENSSL_CONF=${REDPANDA_DEPS_INSTALL_DIR}/etc/ssl/openssl.cnf")
   endif()
 
   # The following function can be used to setup a simple CA
@@ -195,7 +195,7 @@ if (RP_ENABLE_TESTS)
 
     # The following command generates an ECDSA key pair using the prime256v1 curve
     add_custom_command(OUTPUT ${privkey}
-      COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${OVERRIDE_LD_PATH}"
+      COMMAND ${CMAKE_COMMAND} -E env ${OPENSSL_ENV}
         ${OPENSSL} ecparam
         -name prime256v1 -genkey -noout
         -out ${privkey}
@@ -206,7 +206,7 @@ if (RP_ENABLE_TESTS)
         # This will generate a certificate signing request (CSR) using the generated
         # private key
         add_custom_command(OUTPUT ${req}
-          COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${OVERRIDE_LD_PATH}"
+          COMMAND ${CMAKE_COMMAND} -E env ${OPENSSL_ENV}
             ${OPENSSL} req
             -new -sha256
             -key ${privkey}
@@ -219,7 +219,7 @@ if (RP_ENABLE_TESTS)
         set(ca_privkey ${CERT_CA}.key)
         # This function will sign the generated CSR (above) with the specified CA
         add_custom_command(OUTPUT ${cert}
-          COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${OVERRIDE_LD_PATH}"
+          COMMAND ${CMAKE_COMMAND} -E env ${OPENSSL_ENV}
             ${OPENSSL} x509
             -req -days 1000 -sha256
             -set_serial ${CERT_SERIAL_NUM}
@@ -232,7 +232,7 @@ if (RP_ENABLE_TESTS)
       else()
         # This will generate a self-signed certificate to use as the root CA
         add_custom_command(OUTPUT ${cert}
-          COMMAND ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${OVERRIDE_LD_PATH}"
+          COMMAND ${CMAKE_COMMAND} -E env ${OPENSSL_ENV}
             ${OPENSSL} req
             -new -x509 -sha256
             -key ${privkey}
