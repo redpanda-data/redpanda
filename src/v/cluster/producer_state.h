@@ -113,7 +113,8 @@ public:
     result<request_ptr> try_emplace(
       seq_t first, seq_t last, model::term_id current, bool reset_sequences);
 
-    bool stm_apply(const model::batch_identity& bid, kafka::offset offset);
+    bool stm_apply(
+      const model::batch_identity& bid, model::term_id, kafka::offset offset);
 
     void shutdown();
 
@@ -127,6 +128,7 @@ private:
       static_cast<unsigned long>(requests_cached_max));
     bool is_valid_sequence(seq_t incoming) const;
     std::optional<request_ptr> last_request() const;
+    void gc_requests_from_older_terms(model::term_id current);
     ss::chunked_fifo<request_ptr, chunk_size> _inflight_requests;
     ss::chunked_fifo<request_ptr, chunk_size> _finished_requests;
     friend producer_state;
@@ -185,7 +187,8 @@ public:
       const model::batch_identity&,
       model::term_id current_term,
       bool reset_sequences = false);
-    bool apply_data(const model::batch_identity&, kafka::offset);
+    bool
+    apply_data(const model::batch_identity&, model::term_id, kafka::offset);
 
     void touch() { _last_updated_ts = ss::lowres_system_clock::now(); }
 
@@ -210,6 +213,11 @@ public:
     void update_current_txn_start_offset(std::optional<kafka::offset> offset) {
         _current_txn_start_offset = offset;
     }
+
+    void gc_requests_from_older_terms(model::term_id current_term) {
+        _requests.gc_requests_from_older_terms(current_term);
+    }
+
     safe_intrusive_list_hook _hook;
 
 private:

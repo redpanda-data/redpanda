@@ -1275,6 +1275,13 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
     if (ready) {
         if (current_insync_term != _insync_term) {
             _last_known_lso = model::offset{-1};
+            vlog(
+              _ctx_log.trace,
+              "garbage collecting requests from terms < {}",
+              _insync_term);
+            for (auto& [_, producer] : _producers) {
+                producer->gc_requests_from_older_terms(_insync_term);
+            }
         }
     }
     co_return ready;
@@ -1601,6 +1608,7 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
     if (_is_autoabort_enabled && !_is_autoabort_active) {
         abort_old_txes();
     }
+
     co_return;
 }
 
@@ -1672,7 +1680,8 @@ void rm_stm::apply_data(
         _highest_producer_id = std::max(_highest_producer_id, bid.pid.get_id());
         const auto last_kafka_offset = from_log_offset(header.last_offset());
         auto producer = maybe_create_producer(bid.pid);
-        auto needs_touch = producer->apply_data(bid, last_kafka_offset);
+        auto term = _raft->get_term(header.last_offset());
+        auto needs_touch = producer->apply_data(bid, term, last_kafka_offset);
         if (needs_touch) {
             _producer_state_manager.local().touch(*producer, _vcluster_id);
         }

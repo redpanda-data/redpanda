@@ -118,16 +118,7 @@ result<request_ptr> requests::try_emplace(
         // gc and fail any inflight requests from old terms
         // these are guaranteed to be failed because of sync() guarantees
         // prior to this request.
-        while (!_inflight_requests.empty()
-               && _inflight_requests.front()->_term < current) {
-            if (!_inflight_requests.front()->has_completed()) {
-                // Here we know for sure the term change, these in flight
-                // requests are going to fail anyway, mark them so.
-                _inflight_requests.front()->set_value(errc::timeout);
-            }
-            _inflight_requests.pop_front();
-        }
-
+        gc_requests_from_older_terms(current);
         // check if an existing request matches
         auto match_it = std::find_if(
           _finished_requests.begin(),
@@ -166,7 +157,7 @@ result<request_ptr> requests::try_emplace(
 }
 
 bool requests::stm_apply(
-  const model::batch_identity& bid, kafka::offset offset) {
+  const model::batch_identity& bid, model::term_id term, kafka::offset offset) {
     bool relink_producer = false;
     auto first = bid.first_seq;
     auto last = bid.last_seq;
@@ -183,6 +174,7 @@ bool requests::stm_apply(
         // applying changes from a different leader thus prompting a relink.
         relink_producer = true;
     }
+    gc_requests_from_older_terms(term);
     result_promise_t ready{};
     ready.set_value(kafka_result{.last_offset = offset});
     _finished_requests.emplace_back(ss::make_lw_shared<request>(
@@ -192,6 +184,18 @@ bool requests::stm_apply(
         _finished_requests.pop_front();
     }
     return relink_producer;
+}
+
+void requests::gc_requests_from_older_terms(model::term_id current_term) {
+    while (!_inflight_requests.empty()
+           && _inflight_requests.front()->_term < current_term) {
+        if (!_inflight_requests.front()->has_completed()) {
+            // Here we know for sure the term change, these in flight
+            // requests are going to fail anyway, mark them so.
+            _inflight_requests.front()->set_value(errc::timeout);
+        }
+        _inflight_requests.pop_front();
+    }
 }
 
 void requests::shutdown() {
@@ -299,16 +303,17 @@ result<request_ptr> producer_state::try_emplace_request(
 }
 
 bool producer_state::apply_data(
-  const model::batch_identity& bid, kafka::offset offset) {
+  const model::batch_identity& bid, model::term_id term, kafka::offset offset) {
     if (_evicted) {
         return false;
     }
-    bool relink_producer = _requests.stm_apply(bid, offset);
+    bool relink_producer = _requests.stm_apply(bid, term, offset);
     vlog(
       _logger.trace,
-      "[{}] applied stm update, batch meta: {}, relink_producer: {}",
+      "[{}] applied stm update, batch meta: {}, term: {}, relink_producer: {}",
       *this,
       bid,
+      term,
       relink_producer);
     return relink_producer;
 }
