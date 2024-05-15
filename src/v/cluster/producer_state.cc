@@ -156,9 +156,8 @@ result<request_ptr> requests::try_emplace(
     return _inflight_requests.back();
 }
 
-bool requests::stm_apply(
+void requests::stm_apply(
   const model::batch_identity& bid, model::term_id term, kafka::offset offset) {
-    bool relink_producer = false;
     auto first = bid.first_seq;
     auto last = bid.last_seq;
     if (!_inflight_requests.empty()) {
@@ -167,12 +166,6 @@ bool requests::stm_apply(
             // Promote the request from in_flight -> finished.
             _inflight_requests.pop_front();
         }
-    } else {
-        // on leaders, producer state is relinked with the manager as a part
-        // of run_with_lock. On followers this happens as their stms catch up
-        // with the committed changes. This branch is taken only when the stm is
-        // applying changes from a different leader thus prompting a relink.
-        relink_producer = true;
     }
     gc_requests_from_older_terms(term);
     result_promise_t ready{};
@@ -183,7 +176,6 @@ bool requests::stm_apply(
     while (_finished_requests.size() > requests_cached_max) {
         _finished_requests.pop_front();
     }
-    return relink_producer;
 }
 
 void requests::gc_requests_from_older_terms(model::term_id current_term) {
@@ -265,6 +257,14 @@ bool producer_state::can_evict() {
         return false;
     }
 
+    if (!_requests._inflight_requests.empty()) {
+        vlog(
+          _logger.debug,
+          "[{}] cannot evict because of pending inflight requests",
+          *this);
+        return false;
+    }
+
     vlog(_logger.debug, "[{}] evicting producer", *this);
     _evicted = true;
     shutdown_input();
@@ -302,20 +302,18 @@ result<request_ptr> producer_state::try_emplace_request(
     return result;
 }
 
-bool producer_state::apply_data(
+void producer_state::apply_data(
   const model::batch_identity& bid, model::term_id term, kafka::offset offset) {
     if (_evicted) {
-        return false;
+        return;
     }
-    bool relink_producer = _requests.stm_apply(bid, term, offset);
+    _requests.stm_apply(bid, term, offset);
     vlog(
       _logger.trace,
-      "[{}] applied stm update, batch meta: {}, term: {}, relink_producer: {}",
+      "[{}] applied stm update, batch meta: {}, term: {}",
       *this,
       bid,
-      term,
-      relink_producer);
-    return relink_producer;
+      term);
 }
 
 std::optional<seq_t> producer_state::last_sequence_number() const {

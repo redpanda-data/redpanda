@@ -113,7 +113,7 @@ public:
     result<request_ptr> try_emplace(
       seq_t first, seq_t last, model::term_id current, bool reset_sequences);
 
-    bool stm_apply(
+    void stm_apply(
       const model::batch_identity& bid, model::term_id, kafka::offset offset);
 
     void shutdown();
@@ -187,7 +187,7 @@ public:
       const model::batch_identity&,
       model::term_id current_term,
       bool reset_sequences = false);
-    bool
+    void
     apply_data(const model::batch_identity&, model::term_id, kafka::offset);
 
     void touch() { _last_updated_ts = ss::lowres_system_clock::now(); }
