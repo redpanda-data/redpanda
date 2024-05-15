@@ -1540,3 +1540,15 @@ class Admin:
                                         node: Optional[ClusterNode] = None):
         path = "transform/debug/committed_offsets/garbage_collect"
         return self._request("POST", path, node=node)
+
+    def transforms_patch_meta(self,
+                              name: str,
+                              pause: bool | None = None,
+                              env: dict[str, str] | None = None):
+        path = f"transform/{name}/meta"
+        body = {}
+        if pause is not None:
+            body["is_paused"] = pause
+        if env is not None:
+            body["env"] = [dict(key=k, value=env[k]) for k in env]
+        return self._request("PUT", path, json=body)

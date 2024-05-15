@@ -23,6 +23,7 @@ from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricSamples, MetricsEndpoint
 from ducktape.utils.util import wait_until
+from ducktape.errors import TimeoutError
 from rptest.services.transform_verifier_service import TransformVerifierProduceConfig, TransformVerifierProduceStatus, TransformVerifierService, TransformVerifierConsumeConfig, TransformVerifierConsumeStatus
 from rptest.services.admin import Admin, CommittedWasmOffset
 
@@ -316,6 +317,86 @@ class DataTransformsTest(BaseDataTransformsTest):
             err_msg=f"all offsets where not removed",
             retry_on_exc=True,
         )
+
+    @cluster(num_nodes=3)
+    @matrix(use_rpk=[False, True])
+    def test_patch(self, use_rpk):
+        input_topic = self.topics[0]
+        output_topic = self.topics[1]
+        self._deploy_wasm(name="identity-xform",
+                          input_topic=input_topic,
+                          output_topic=output_topic,
+                          wait_running=True)
+
+        def all_partitions_status(stat: str):
+            report = self._rpk.list_wasm()
+            return all(s.status == stat for s in report[0].status)
+
+        def env_is(env: dict[str, str]):
+            report = self._rpk.list_wasm()
+            return report[0].environment == env
+
+        if use_rpk:
+            self._rpk.pause_wasm("identity-xform")
+        else:
+            rsp = self._admin.transforms_patch_meta("identity-xform",
+                                                    pause=True)
+            assert rsp.status_code == 200, f"/meta request failed, status: {rsp.status_code}"
+
+        wait_until(lambda: all_partitions_status("inactive"),
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg=f"some partitions didn't become inactive",
+                   retry_on_exc=True)
+
+        with expect_exception(TimeoutError, lambda _: True):
+            wait_until(lambda: all_partitions_status("running"),
+                       timeout_sec=15,
+                       backoff_sec=1,
+                       retry_on_exc=True)
+
+        if use_rpk:
+            self._rpk.resume_wasm("identity-xform")
+            wait_until(lambda: all_partitions_status("running"),
+                       timeout_sec=30,
+                       backoff_sec=1,
+                       err_msg=f"some partitions didn't become active",
+                       retry_on_exc=True)
+        else:  # NOTE: patching ENV is not yet implemented in rpk
+            env1 = {
+                "FOO": "bar",
+                "BAZ": "quux",
+            }
+            env2 = {"FOO": "bells"}
+
+            rsp = self._admin.transforms_patch_meta("identity-xform",
+                                                    pause=False,
+                                                    env=env1)
+            assert rsp.status_code == 200, f"/meta request failed, status: {rsp.status_code}"
+
+            wait_until(
+                lambda: all_partitions_status("running") and env_is(env1),
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg=f"some partitions didn't come back",
+                retry_on_exc=True)
+
+            rsp = self._admin.transforms_patch_meta("identity-xform", env=env2)
+
+            wait_until(
+                lambda: all_partitions_status("running") and env_is(env2),
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg="some partitions didn't take the env update",
+                retry_on_exc=True)
+
+            rsp = self._admin.transforms_patch_meta("identity-xform", env={})
+
+            wait_until(lambda: all_partitions_status("running") and env_is({}),
+                       timeout_sec=30,
+                       backoff_sec=1,
+                       err_msg="some partitions did not clear their envs",
+                       retry_on_exc=True)
 
 
 class DataTransformsChainingTest(BaseDataTransformsTest):

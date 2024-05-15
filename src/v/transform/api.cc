@@ -816,7 +816,28 @@ service::compute_node_local_report() {
 model::cluster_transform_report service::compute_default_report() {
     using state = model::transform_report::processor::state;
     model::cluster_transform_report report;
-    // Mark all transforms in an unknown state if they don't get an update
+
+    // Mark all partitions for each transform in an unknown or inactive state if
+    // they don't get an update.
+    //
+    // This pattern arises from the way we model state in transform_manager.
+    // Namely, when the plugin_table reports an update to some transform, the
+    // manager responds by removing ALL processors associated with that
+    // transform ID from the processor_table, irrespective of the exact details
+    // of the update, susequently restarting those processors in all but two
+    // cases:
+    //   a. The ID no longer exists in the plugin table (i.e. the transform
+    //      has been removed from the system)
+    //   b. The transform is "paused"
+    // If either (a) or (b) is true (i.e. processors were NOT restarted), the
+    // report entries below will not get an update, and the processor entries
+    // in the final report carry the "default" status noted below.
+    //
+    // Therefore, since, by design, the processor_table does not contain any
+    // entries for a paused transform at rest and this is only reflected in
+    // the _absence_ of processor entries in the cluster-wide report, we must
+    // account for the "paused"ness of each transform in the default report,
+    // below.
     for (auto [id, transform] : _plugin_frontend->local().all_transforms()) {
         auto cfg = _topic_table->local().get_topic_cfg(transform.input_topic);
         if (!cfg) {
@@ -828,7 +849,7 @@ model::cluster_transform_report service::compute_default_report() {
               transform,
               {
                 .id = model::partition_id(i),
-                .status = state::unknown,
+                .status = transform.paused ? state::inactive : state::unknown,
                 .node = _self,
                 .lag = 0,
               });
@@ -888,6 +909,31 @@ ss::future<std::error_code> service::garbage_collect_committed_offsets() {
     }
     co_return co_await _rpc_client->local().delete_committed_offsets(
       std::move(ids));
+}
+
+ss::future<std::error_code> service::patch_transform_metadata(
+  model::transform_name name, model::transform_metadata_patch patch) {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
+    }
+    auto _ = _gate.hold();
+    auto transform = _plugin_frontend->local().lookup_transform(name);
+    if (!transform.has_value()) {
+        co_return cluster::make_error_code(
+          cluster::errc::transform_does_not_exist);
+    }
+
+    transform->paused = patch.paused.value_or(transform->paused);
+    if (patch.env.has_value()) {
+        std::exchange(transform->environment, std::move(patch.env).value());
+    }
+    cluster::errc ec = co_await _plugin_frontend->local().upsert_transform(
+      transform.value(), model::timeout_clock::now() + metadata_timeout);
+
+    vlog(tlog.info, "patching transform metadata {}", transform.value());
+
+    co_return cluster::make_error_code(ec);
 }
 
 } // namespace transform

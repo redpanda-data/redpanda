@@ -84,6 +84,10 @@ public:
     std::optional<model::transform_metadata>
       lookup_transform(model::transform_id) const;
 
+    // Lookup a transform by name.
+    std::optional<model::transform_metadata>
+    lookup_transform(const model::transform_name&) const;
+
     // Lookup transforms for input topics.
     absl::btree_map<model::transform_id, model::transform_metadata>
       lookup_transforms_by_input_topic(model::topic_namespace_view) const;

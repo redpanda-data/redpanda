@@ -1738,13 +1738,16 @@ class RpkTool:
                 input_topic=loaded["input_topic"],
                 output_topics=loaded["output_topics"],
                 status=[status_from_json(s) for s in loaded["status"]],
-                environment={
-                    obj["key"]: obj["value"]
-                    for obj in loaded["environment"]
-                },
+                environment=loaded["environment"],
             )
 
         return [transform_from_json(o) for o in loaded]
+
+    def pause_wasm(self, name):
+        self._run_wasm(["pause", name])
+
+    def resume_wasm(self, name):
+        self._run_wasm(["resume", name])
 
     def describe_txn_producers(self, topics, partitions, all=False):
         cmd = [

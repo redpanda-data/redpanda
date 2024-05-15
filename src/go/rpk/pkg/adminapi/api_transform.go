@@ -69,3 +69,28 @@ func (a *AdminAPI) ListWasmTransforms(ctx context.Context) ([]TransformMetadata,
 	err := a.sendAny(ctx, http.MethodGet, baseTransformEndpoint, nil, &resp)
 	return resp, err
 }
+
+type patchMetadataRequest struct {
+	IsPaused    *bool                  `json:"is_paused,omitempty"`
+	Environment *[]EnvironmentVariable `json:"env,omitempty"`
+}
+
+// PauseTransform patches transform metadata to set paused = true, with no effect on the transform's env
+func (a *AdminAPI) PauseTransform(ctx context.Context, transformName string) error {
+	paused := true
+	body := patchMetadataRequest{
+		IsPaused:    &paused,
+		Environment: nil,
+	}
+	return a.sendAny(ctx, http.MethodPut, baseTransformEndpoint+url.PathEscape(transformName)+"/meta", body, nil)
+}
+
+// ResumeTransform patches transform metadata to set paused = false, with no effect on the transform's env
+func (a *AdminAPI) ResumeTransform(ctx context.Context, transformName string) error {
+	paused := false
+	body := patchMetadataRequest{
+		IsPaused:    &paused,
+		Environment: nil,
+	}
+	return a.sendAny(ctx, http.MethodPut, baseTransformEndpoint+url.PathEscape(transformName)+"/meta", body, nil)
+}

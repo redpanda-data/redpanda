@@ -71,6 +71,12 @@ using transform_name_view
   = named_type<std::string_view, struct transform_name_view_tag>;
 
 /**
+ * Whether a transform is or should be paused (i.e. stopped but not removed from
+ * the system).
+ */
+using is_transform_paused = ss::bool_class<struct is_paused_tag>;
+
+/**
  * The options related to the offset at which transforms are at.
  *
  * Currently, this struct only supports specifying an initial position, but in
@@ -112,7 +118,7 @@ struct transform_offset_options
 struct transform_metadata
   : serde::envelope<
       transform_metadata,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     // The user specified name of the transform.
     transform_name name;
@@ -133,6 +139,8 @@ struct transform_metadata
     // The options related to the offset that the transform processor.
     transform_offset_options offset_options;
 
+    model::is_transform_paused paused{false};
+
     friend bool operator==(const transform_metadata&, const transform_metadata&)
       = default;
 
@@ -146,8 +154,22 @@ struct transform_metadata
           environment,
           uuid,
           source_ptr,
-          offset_options);
+          offset_options,
+          paused);
     }
+};
+
+// A patch update for transform metadata.
+//
+// This is used by the Admin API handler for `PUT /v1/transform/{name}/meta`
+// See `redpanda/admin/transform.cc` or `redpanda/admin/api-doc/transform.json`
+// for detail.
+struct transform_metadata_patch {
+    // This has PUT semantics, such that the existing env values will be
+    // completely overwritten by the contents of this map.
+    std::optional<absl::flat_hash_map<ss::sstring, ss::sstring>> env;
+    // Desired paused state for the transform
+    std::optional<is_transform_paused> paused;
 };
 
 using output_topic_index = named_type<uint32_t, struct output_topic_index_tag>;

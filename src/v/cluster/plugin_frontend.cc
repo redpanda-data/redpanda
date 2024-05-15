@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/transform.h"
 #include "strings/utf8.h"
 
 #include <absl/container/flat_hash_set.h>
@@ -631,6 +632,10 @@ void plugin_frontend::unregister_for_updates(notification_id id) {
 std::optional<transform_metadata>
 plugin_frontend::lookup_transform(transform_id id) const {
     return _table->find_by_id(id);
+}
+std::optional<transform_metadata>
+plugin_frontend::lookup_transform(const transform_name& name) const {
+    return _table->find_by_name(name);
 }
 absl::btree_map<transform_id, transform_metadata>
 plugin_frontend::lookup_transforms_by_input_topic(

@@ -112,6 +112,12 @@ public:
     ss::future<std::error_code> garbage_collect_committed_offsets();
 
     /**
+     * Patch the metadata for the given transform.
+     */
+    ss::future<std::error_code> patch_transform_metadata(
+      model::transform_name, model::transform_metadata_patch data);
+
+    /**
      * Create a reporter of the transform subsystem.
      */
     static std::unique_ptr<rpc::reporter>

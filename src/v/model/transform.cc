@@ -91,13 +91,14 @@ std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
     fmt::print(
       os,
       "{{name: \"{}\", input: {}, outputs: {}, "
-      "env: <redacted>, uuid: {}, source_ptr: {} }}",
+      "env: <redacted>, uuid: {}, source_ptr: {}, is_paused: {} }}",
       meta.name,
       meta.input_topic,
       meta.output_topics,
       // skip env becuase of pii
       meta.uuid,
-      meta.source_ptr);
+      meta.source_ptr,
+      meta.paused);
     return os;
 }
 
