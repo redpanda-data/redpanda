@@ -7,11 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "base/units.h"
-#include "io/page_cache.h"
-#include "io/pager.h"
-#include "io/persistence.h"
-#include "io/scheduler.h"
+#include "storage/mvlog/file.h"
 #include "storage/mvlog/readable_segment.h"
 #include "storage/mvlog/segment_reader.h"
 
@@ -26,20 +22,12 @@ using namespace experimental;
 class SegmentReaderTest : public ::testing::Test {
 public:
     void SetUp() override {
-        storage_ = std::make_unique<io::disk_persistence>();
-        storage_->create(file_.string()).get()->close().get();
         cleanup_files_.emplace_back(file_);
-
-        io::page_cache::config cache_config{
-          .cache_size = 2_MiB, .small_size = 1_MiB};
-        cache_ = std::make_unique<io::page_cache>(cache_config);
-        scheduler_ = std::make_unique<io::scheduler>(100);
-        pager_ = std::make_unique<io::pager>(
-          file_, 0, storage_.get(), cache_.get(), scheduler_.get());
+        paging_file_ = file_manager_.create_file(file_).get();
     }
 
     void TearDown() override {
-        pager_->close().get();
+        paging_file_->close().get();
 
         for (auto& file : cleanup_files_) {
             try {
@@ -51,15 +39,13 @@ public:
 
 protected:
     const std::filesystem::path file_{"segment"};
-    std::unique_ptr<io::persistence> storage_;
-    std::unique_ptr<io::page_cache> cache_;
-    std::unique_ptr<io::scheduler> scheduler_;
-    std::unique_ptr<io::pager> pager_;
+    file_manager file_manager_;
+    std::unique_ptr<file> paging_file_;
     std::vector<std::filesystem::path> cleanup_files_;
 };
 
 TEST_F(SegmentReaderTest, TestCountReaders) {
-    readable_segment readable_seg(pager_.get());
+    readable_segment readable_seg(paging_file_.get());
     ASSERT_EQ(0, readable_seg.num_readers());
     {
         auto reader = readable_seg.make_reader();
@@ -79,7 +65,7 @@ TEST_F(SegmentReaderTest, TestCountReaders) {
 }
 
 TEST_F(SegmentReaderTest, TestEmptyRead) {
-    readable_segment readable_seg(pager_.get());
+    readable_segment readable_seg(paging_file_.get());
     auto reader = readable_seg.make_reader();
     auto stream = reader->make_stream();
     auto buf = stream.read().get();
@@ -88,8 +74,10 @@ TEST_F(SegmentReaderTest, TestEmptyRead) {
 
 TEST_F(SegmentReaderTest, TestBasicReads) {
     ss::sstring data = "0123456789";
-    pager_->append(ss::temporary_buffer<char>{data.begin(), data.size()}).get();
-    readable_segment readable_seg(pager_.get());
+    iobuf buf;
+    buf.append(data.data(), data.size());
+    paging_file_->append(std::move(buf)).get();
+    readable_segment readable_seg(paging_file_.get());
     for (int i = 0; i < data.size(); i++) {
         auto reader = readable_seg.make_reader();
         auto stream = reader->make_stream(i);

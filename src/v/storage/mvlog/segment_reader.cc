@@ -10,8 +10,7 @@
 #include "storage/mvlog/segment_reader.h"
 
 #include "base/vlog.h"
-#include "io/pager.h"
-#include "io/paging_data_source.h"
+#include "storage/mvlog/file.h"
 #include "storage/mvlog/logger.h"
 #include "storage/mvlog/readable_segment.h"
 #include "storage/mvlog/skipping_data_source.h"
@@ -33,7 +32,7 @@ segment_reader::make_read_intervals(size_t start_pos, size_t length) const {
 }
 
 ss::input_stream<char> segment_reader::make_stream(size_t start_pos) const {
-    return make_stream(start_pos, segment_->pager_->size() - start_pos);
+    return make_stream(start_pos, segment_->file_->size() - start_pos);
 }
 
 ss::input_stream<char>
@@ -48,7 +47,7 @@ segment_reader::make_stream(size_t start_pos, size_t length) const {
     }
     return ss::input_stream<char>(
       ss::data_source(std::make_unique<skipping_data_source>(
-        segment_->pager_, std::move(read_intervals))));
+        segment_->file_, std::move(read_intervals))));
 }
 
 } // namespace storage::experimental::mvlog

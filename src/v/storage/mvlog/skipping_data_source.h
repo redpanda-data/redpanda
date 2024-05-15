@@ -15,11 +15,8 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/core/temporary_buffer.hh>
 
-namespace experimental::io {
-class pager;
-} // namespace experimental::io
-
 namespace storage::experimental::mvlog {
+class file;
 
 class skipping_data_source final : public seastar::data_source_impl {
 public:
@@ -28,16 +25,16 @@ public:
         uint64_t length;
     };
     using read_list_t = ss::chunked_fifo<read_interval>;
-    skipping_data_source(::experimental::io::pager* pager, read_list_t reads)
+    skipping_data_source(file* f, read_list_t reads)
       : reads_(std::move(reads))
-      , pager_(pager) {}
+      , file_(f) {}
 
     ss::future<ss::temporary_buffer<char>> get() noexcept override;
 
 private:
     read_list_t reads_;
     std::optional<ss::input_stream<char>> cur_stream_;
-    ::experimental::io::pager* pager_;
+    file* file_;
 };
 
 } // namespace storage::experimental::mvlog

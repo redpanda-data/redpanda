@@ -9,11 +9,8 @@
 
 #include "base/units.h"
 #include "bytes/random.h"
-#include "io/page_cache.h"
-#include "io/pager.h"
-#include "io/persistence.h"
-#include "io/scheduler.h"
 #include "random/generators.h"
+#include "storage/mvlog/file.h"
 #include "storage/mvlog/skipping_data_source.h"
 
 #include <seastar/core/seastar.hh>
@@ -26,19 +23,11 @@ using namespace experimental;
 class SkippingStreamTest : public ::testing::Test {
 public:
     void SetUp() override {
-        storage_ = std::make_unique<io::disk_persistence>();
-        storage_->create(file_.string()).get()->close().get();
         cleanup_files_.emplace_back(file_);
-
-        io::page_cache::config cache_config{
-          .cache_size = 2_MiB, .small_size = 1_MiB};
-        cache_ = std::make_unique<io::page_cache>(cache_config);
-        scheduler_ = std::make_unique<io::scheduler>(100);
-        pager_ = std::make_unique<io::pager>(
-          file_, 0, storage_.get(), cache_.get(), scheduler_.get());
+        paging_file_ = file_manager_.create_file(file_).get();
     }
     void TearDown() override {
-        pager_->close().get();
+        paging_file_->close().get();
         for (auto& file : cleanup_files_) {
             try {
                 ss::remove_file(file.string()).get();
@@ -48,15 +37,13 @@ public:
     }
 
     ss::future<> write_buf(iobuf buf) {
-        for (auto& io_frag : buf) {
-            co_await pager_->append(std::move(io_frag).release());
-        }
+        co_await paging_file_->append(std::move(buf));
     }
     ss::input_stream<char>
     make_skipping_stream(skipping_data_source::read_list_t read_list) {
         return ss::input_stream<char>(
           ss::data_source(std::make_unique<skipping_data_source>(
-            pager_.get(), std::move(read_list))));
+            paging_file_.get(), std::move(read_list))));
     }
 
     void check_equivalent(ss::input_stream<char> stream, iobuf expected_buf) {
@@ -73,10 +60,8 @@ public:
 
 protected:
     const std::filesystem::path file_{"skipping_file"};
-    std::unique_ptr<io::persistence> storage_;
-    std::unique_ptr<io::page_cache> cache_;
-    std::unique_ptr<io::scheduler> scheduler_;
-    std::unique_ptr<io::pager> pager_;
+    file_manager file_manager_;
+    std::unique_ptr<file> paging_file_;
     std::vector<std::filesystem::path> cleanup_files_;
 };
 

@@ -11,11 +11,9 @@
 #include "model/record.h"
 #include "storage/mvlog/entry.h"
 
-namespace experimental::io {
-class pager;
-} // namespace experimental::io
-
 namespace storage::experimental::mvlog {
+
+class file;
 
 // Encapsulates writes to a given segment file.
 //
@@ -23,16 +21,16 @@ namespace storage::experimental::mvlog {
 // serialize calls into the appender.
 class segment_appender {
 public:
-    explicit segment_appender(::experimental::io::pager* pager)
-      : pager_(pager) {}
+    explicit segment_appender(file* file)
+      : file_(file) {}
 
     // Serializes and appends the given batch to the underlying segment.
     // Callers are expected to flush the file after this returns.
     ss::future<> append(model::record_batch);
 
 private:
-    // The pager with which to perform I/O.
-    ::experimental::io::pager* pager_;
+    // The paging file with which to perform I/O.
+    file* file_;
 };
 
 } // namespace storage::experimental::mvlog

@@ -7,17 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "base/units.h"
-#include "io/page_cache.h"
-#include "io/pager.h"
-#include "io/persistence.h"
-#include "io/scheduler.h"
 #include "model/tests/random_batch.h"
-#include "storage/logger.h"
 #include "storage/mvlog/batch_collecting_stream_utils.h"
 #include "storage/mvlog/batch_collector.h"
 #include "storage/mvlog/entry.h"
 #include "storage/mvlog/entry_stream.h"
+#include "storage/mvlog/file.h"
 #include "storage/mvlog/readable_segment.h"
 #include "storage/mvlog/segment_appender.h"
 #include "storage/mvlog/segment_reader.h"
@@ -32,20 +27,12 @@ using namespace experimental;
 class SegmentTest : public ::testing::Test {
 public:
     void SetUp() override {
-        storage_ = std::make_unique<io::disk_persistence>();
-        storage_->create(file_.string()).get()->close().get();
         cleanup_files_.emplace_back(file_);
-
-        io::page_cache::config cache_config{
-          .cache_size = 2_MiB, .small_size = 1_MiB};
-        cache_ = std::make_unique<io::page_cache>(cache_config);
-        scheduler_ = std::make_unique<io::scheduler>(100);
-        pager_ = std::make_unique<io::pager>(
-          file_, 0, storage_.get(), cache_.get(), scheduler_.get());
+        paging_file_ = file_manager_.create_file(file_).get();
     }
 
     void TearDown() override {
-        pager_->close().get();
+        paging_file_->close().get();
 
         for (auto& file : cleanup_files_) {
             try {
@@ -57,7 +44,7 @@ public:
 
     ss::future<ss::circular_buffer<model::record_batch>>
     write_random_batches(int num_batches) {
-        segment_appender appender(pager_.get());
+        segment_appender appender(paging_file_.get());
         auto in_batches = co_await model::test::make_random_batches(
           model::offset{0}, num_batches, true);
         for (auto& b : in_batches) {
@@ -68,19 +55,17 @@ public:
 
 protected:
     const std::filesystem::path file_{"segment"};
-    std::unique_ptr<io::persistence> storage_;
-    std::unique_ptr<io::page_cache> cache_;
-    std::unique_ptr<io::scheduler> scheduler_;
-    std::unique_ptr<io::pager> pager_;
+    file_manager file_manager_;
+    std::unique_ptr<file> paging_file_;
     std::vector<std::filesystem::path> cleanup_files_;
 };
 
 // Basic test that we can append and read some batches.
 TEST_F(SegmentTest, TestBasicRoundTrip) {
     auto in_batches = write_random_batches(100).get();
-    readable_segment readable_seg(pager_.get());
+    readable_segment readable_seg(paging_file_.get());
 
-    ASSERT_GT(pager_->size(), 0);
+    ASSERT_GT(paging_file_->size(), 0);
     storage::log_reader_config cfg{
       model::offset{0}, model::offset::max(), ss::default_priority_class()};
     batch_collector collector(cfg, model::term_id{0}, 128_MiB);
@@ -101,9 +86,9 @@ TEST_F(SegmentTest, TestBasicRoundTrip) {
 // the batch collector.
 TEST_F(SegmentTest, TestFullCollector) {
     auto in_batches = write_random_batches(100).get();
-    readable_segment readable_seg(pager_.get());
+    readable_segment readable_seg(paging_file_.get());
 
-    ASSERT_GT(pager_->size(), 0);
+    ASSERT_GT(paging_file_->size(), 0);
     storage::log_reader_config cfg{
       model::offset{0}, model::offset::max(), ss::default_priority_class()};
     batch_collector collector(
@@ -130,9 +115,9 @@ TEST_F(SegmentTest, TestFullCollector) {
 // Test that we can append and read some batches within a certain range.
 TEST_F(SegmentTest, TestBoundedOffsets) {
     auto in_batches = write_random_batches(5).get();
-    readable_segment readable_seg(pager_.get());
+    readable_segment readable_seg(paging_file_.get());
 
-    ASSERT_GT(pager_->size(), 0);
+    ASSERT_GT(paging_file_->size(), 0);
     auto reader = readable_seg.make_reader();
     auto bounded_offset = model::prev_offset(in_batches.back().base_offset());
 

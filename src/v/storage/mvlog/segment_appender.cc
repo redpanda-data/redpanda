@@ -9,10 +9,10 @@
 #include "storage/mvlog/segment_appender.h"
 
 #include "base/vlog.h"
-#include "io/pager.h"
 #include "model/record.h"
 #include "storage/mvlog/entry.h"
 #include "storage/mvlog/entry_stream_utils.h"
+#include "storage/mvlog/file.h"
 #include "storage/mvlog/logger.h"
 #include "storage/record_batch_utils.h"
 
@@ -34,22 +34,18 @@ ss::future<> segment_appender::append(model::record_batch batch) {
       body_size,
       entry_type::record_batch,
     };
-    auto orig_size = pager_->size();
+    auto orig_size = file_->size();
     iobuf buf;
     buf.append(entry_header_to_iobuf(entry_hdr));
     buf.append(std::move(entry_body_buf));
-    // TODO(awong): the entire buffer probably needs to be appended atomically.
-    for (auto& io_frag : buf) {
-        co_await pager_->append(std::move(io_frag).release());
-    }
-    // TODO(awong): add a filename to this message.
+    co_await file_->append(std::move(buf));
     vlog(
       log.trace,
       "Appended offsets [{}, {}], pos [{}, {})",
       batch.base_offset(),
       batch.last_offset(),
       orig_size,
-      pager_->size());
+      file_->size());
 }
 
 } // namespace storage::experimental::mvlog
