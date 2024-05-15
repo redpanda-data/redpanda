@@ -905,11 +905,10 @@ bool async_manifest_view::in_stm(async_view_search_query_t o) {
           vlog(
             _ctxlog.debug, "Checking timestamp {} using timequery", ts_query);
           if (_stm_manifest.get_spillover_map().empty()) {
-              // The STM manifest is empty, so the timestamp has to be directed
-              // to the STM manifest.
-              // Implicitly, this case also handles the empty manifest case
-              // because the STM manifest with spillover segments is never
-              // empty.
+              // The spillover manifest is empty, so the timestamp query has to
+              // be directed to the STM manifest. Otherwise, we can safely
+              // direct the query either to spillover or stm because the
+              // STM manifest with spillover segments is never empty.
               return true;
           }
           // The last timestamp in the archive is used as a pivot point. See
