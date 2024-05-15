@@ -146,6 +146,18 @@
             "type": "environment_variable"
           },
           "description": "The environment variable configuration for a transform"
+        },
+        "compression" :{
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "snappy",
+            "lz4",
+            "zstd"
+          ],
+          "required": false,
+          "description": "Output batch compression mode"
         }
       }
     },
@@ -176,7 +188,18 @@
             "type": "environment_variable"
           },
           "description": "The environment variable configuration for a transform"
-        }
+        },
+        "compression" :{
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "snappy",
+            "lz4",
+            "zstd"
+          ],
+          "description": "Output batch compression mode"
+        } 
       }
     },
     "partition_transform_status": {
@@ -253,6 +276,18 @@
           "required": false,
           "description": "If present, sets the transform's 'paused' state. If not present, paused state is unchanged.",
           "type": "boolean"
+        },
+        "compression" :{
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "snappy",
+            "lz4",
+            "zstd"
+          ],
+          "required": false,
+          "description": "Output batch compression mode"
         }
       }
     }
