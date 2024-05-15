@@ -768,6 +768,7 @@ std::vector<model::record_batch_header> scan_remote_partition(
 /// Similar to previous function but uses timequery to start the scan
 scan_result scan_remote_partition(
   cloud_storage_fixture& imposter,
+  model::offset min,
   model::timestamp timestamp,
   model::offset max,
   size_t maybe_max_segments,
@@ -792,7 +793,7 @@ scan_result scan_remote_partition(
     }
     auto manifest = hydrate_manifest(imposter.api.local(), bucket);
     storage::log_reader_config reader_config(
-      model::offset(0), max, ss::default_priority_class());
+      min, max, ss::default_priority_class());
     reader_config.first_timestamp = timestamp;
 
     partition_probe probe(manifest.get_ntp());

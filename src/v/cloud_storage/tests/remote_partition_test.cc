@@ -2128,9 +2128,11 @@ FIXTURE_TEST(test_stale_reader, cloud_storage_fixture) {
 // Returns true if a kafka::offset scan returns the expected number of records.
 bool timequery(
   cloud_storage_fixture& fixture,
+  model::offset min,
   model::timestamp tm,
   int expected_num_records) {
-    auto scan_res = scan_remote_partition(fixture, tm);
+    auto scan_res = scan_remote_partition(
+      fixture, min, tm, model::offset::max());
     int num_data_records = 0;
     size_t bytes_read_acc = 0;
     for (const auto& hdr : scan_res.headers) {
@@ -2176,6 +2178,14 @@ bool timequery(
           scan_res.headers);
     }
     return ret;
+}
+
+// Returns true if a kafka::offset scan returns the expected number of records.
+bool timequery(
+  cloud_storage_fixture& fixture,
+  model::timestamp tm,
+  int expected_num_records) {
+    return timequery(fixture, model::offset(0), tm, expected_num_records);
 }
 
 FIXTURE_TEST(test_scan_by_timestamp, cloud_storage_fixture) {
@@ -2397,9 +2407,22 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
     BOOST_REQUIRE(
       scan_remote_partition(*this, archive_start, max).size() == 3 * 6);
 
+    // Can timequery from start of the archive.
+    BOOST_TEST_REQUIRE(
+      timequery(*this, archive_start, model::timestamp(100), 3 * 6));
+
     // Can't query from the start of partition.
     BOOST_REQUIRE_EXCEPTION(
       scan_remote_partition(*this, base, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Can't timequery from the base offset.
+    BOOST_REQUIRE_EXCEPTION(
+      timequery(*this, base, model::timestamp(100), 3 * 6),
       std::runtime_error,
       [](const auto& ex) {
           ss::sstring what{ex.what()};
@@ -2417,17 +2440,20 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
           return what.find("Failed to query spillover manifests") != what.npos;
       });
 
-    // Timestamp undershoots the partition.
-    // It shouldn't throw. But as an interim workaround we throw until
-    // clean offset catches up with start offset.
-    // The clients will retry.
-    BOOST_REQUIRE_EXCEPTION(
-      timequery(*this, model::timestamp(100), 3 * 6),
-      std::runtime_error,
-      [](const auto& ex) {
-          ss::sstring what{ex.what()};
-          return what.find("Failed to query spillover manifests") != what.npos;
-      });
+    // Can't query from start of the still valid spillover manifest.
+    // Since we don't rewrite spillover manifests we want to be sure that
+    // we don't allow querying stale segments (below the start offset).
+    // BUG: Currently it succeeds. This is a bug and should be fixed.
+    // BOOST_REQUIRE_EXCEPTION(
+    //   timequery(*this, segments[2].base_offset, model::timestamp(100), 3 *
+    //   6), std::runtime_error,
+    //   [](const auto& ex) {
+    //       ss::sstring what{ex.what()};
+    //       return what.find("Failed to query spillover manifests") !=
+    //       what.npos;
+    //   });
+    BOOST_TEST_REQUIRE(
+      timequery(*this, segments[2].base_offset, model::timestamp(100), 3 * 6));
 
     test_log.debug("Timestamp within valid spillover but below archive start");
     BOOST_TEST_REQUIRE(
@@ -2459,6 +2485,18 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
         .url = manifest_url, .body = serialize_manifest(manifest)},
     });
 
-    // This query should now succeed.
-    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp(100), 3 * 6));
+    // Still can't query from the base offset.
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, base, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Timequery from base offset must fail too as the regular query.
+    // BUG: Currently it succeeds. This is a bug and should be fixed.
+    BOOST_TEST_REQUIRE(timequery(*this, base, model::timestamp(100), 3 * 6));
+    BOOST_TEST_REQUIRE(
+      timequery(*this, segments[2].base_offset, model::timestamp(100), 3 * 6));
 }
