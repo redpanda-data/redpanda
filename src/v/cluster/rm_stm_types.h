@@ -61,7 +61,11 @@ enum class partition_transaction_status : int8_t {
 
 std::ostream& operator<<(std::ostream&, const partition_transaction_status&);
 
-struct transaction_info {
+// Captures the information about the transaction within a single data
+// partition. A user initiated transaction can span multiple data partitions but
+// this struct only captures it's state within a single partition. This is
+// always used in the context of a given partition.
+struct partition_transaction_info {
     partition_transaction_status status;
     model::offset lso_bound;
     std::optional<expiration_info> info;
@@ -73,8 +77,8 @@ struct transaction_info {
     std::optional<duration_type> get_timeout() const;
 };
 
-using transaction_set
-  = absl::btree_map<model::producer_identity, transaction_info>;
+using partition_transactions
+  = absl::btree_map<model::producer_identity, partition_transaction_info>;
 
 struct tx_data {
     model::tx_seq tx_seq;

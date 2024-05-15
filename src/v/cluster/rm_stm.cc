@@ -770,13 +770,13 @@ rm_stm::get_seq_number(model::producer_identity pid) const {
     return it->second->last_sequence_number();
 }
 
-ss::future<result<transaction_set>> rm_stm::get_transactions() {
+ss::future<result<partition_transactions>> rm_stm::get_transactions() {
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
     }
-    transaction_set ans;
+    partition_transactions ans;
     for (auto& [id, offset] : _log_state.ongoing_map) {
-        transaction_info tx_info;
+        partition_transaction_info tx_info;
         tx_info.lso_bound = offset.first;
         tx_info.status = offset.last > offset.first
                            ? partition_transaction_status::ongoing

@@ -94,15 +94,15 @@ operator<<(std::ostream& o, const partition_transaction_status& status) {
     return o;
 }
 
-ss::sstring transaction_info::get_status() const {
+ss::sstring partition_transaction_info::get_status() const {
     return fmt::format("{}", status);
 }
 
-bool transaction_info::is_expired() const {
+bool partition_transaction_info::is_expired() const {
     return !info.has_value() || info.value().deadline() <= clock_type::now();
 }
 
-std::optional<duration_type> transaction_info::get_staleness() const {
+std::optional<duration_type> partition_transaction_info::get_staleness() const {
     if (is_expired()) {
         return std::nullopt;
     }
@@ -111,7 +111,7 @@ std::optional<duration_type> transaction_info::get_staleness() const {
     return now - info->last_update;
 }
 
-std::optional<duration_type> transaction_info::get_timeout() const {
+std::optional<duration_type> partition_transaction_info::get_timeout() const {
     if (is_expired()) {
         return std::nullopt;
     }
