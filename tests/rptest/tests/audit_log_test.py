@@ -2037,16 +2037,13 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
             _ = self.find_matching_record(
                 lambda record: self.match_authn_record(record, StatusID.SUCCESS
                                                        ),
-                lambda record_count: record_count > 1,
+                lambda record_count: record_count >= 1,
                 'authn fail attempt in sr')
 
         with expect_exception(TimeoutError, lambda _: True):
             _ = self.find_matching_record(
                 lambda record: self.match_api_record(record, "subjects"),
-                lambda aggregate_count: aggregate_count > 1, 'API call')
-            assert False, f'Should not have found any records but found {self.aggregate_count(records)}: {records}'
-        except TimeoutError:
-            pass
+                lambda aggregate_count: aggregate_count >= 1, 'API call')
 
     @ok_to_fail_fips
     @cluster(num_nodes=5)
