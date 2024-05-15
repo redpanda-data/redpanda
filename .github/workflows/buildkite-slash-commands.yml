@@ -8,11 +8,11 @@ on:
       - dt-command
       - microbench-command
       - publish-to-install-pack-command
+      - rp-unit-test-command
       - test-arm64-command
       - test-codecov-command
       - test-rc-pipeline-command
       - test-release-pipeline-command
-
 jobs:
   run-build:
     runs-on: ubuntu-latest
