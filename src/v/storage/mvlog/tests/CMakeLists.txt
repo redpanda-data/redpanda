@@ -4,6 +4,7 @@ rp_test(
   USE_CWD
   BINARY_NAME mvlog
   SOURCES
+    active_segment_test.cc
     batch_collecting_stream_utils_test.cc
     batch_collector_test.cc
     entry_stream_utils_test.cc
@@ -19,6 +20,7 @@ rp_test(
     v::model_test_utils
     v::mvlog
     v::random
+    v::storage
   ARGS "-- -c1"
 )
 
