@@ -109,6 +109,7 @@ TEST(IntervalSet, InsertWithGap) {
     // [0, 10) [11, 21): a gap at [10, 11).
     EXPECT_TRUE(set.insert({0, 10}).second);
     EXPECT_TRUE(set.insert({11, 10}).second);
+    EXPECT_EQ(2, set.size());
 
     // We can't find the gap.
     auto found = set.find(10);
@@ -140,6 +141,7 @@ TEST(IntervalSet, InsertOverlapFront) {
     EXPECT_EQ(ret1, ret3);
     EXPECT_EQ(ret1.first->start, 0);
     EXPECT_EQ(ret1.first->end, 100);
+    EXPECT_EQ(1, set.size());
 
     check_no_overlap(set);
 }
@@ -212,6 +214,7 @@ TEST(IntervalSet, Erase) {
     set_t set;
     auto res = set.insert({0, 10});
     EXPECT_FALSE(set.empty());
+    EXPECT_EQ(1, set.size());
     set.erase(res.first);
     EXPECT_TRUE(set.empty());
 }
@@ -222,9 +225,11 @@ TEST(IntervalSet, EraseMerged) {
     EXPECT_TRUE(set.insert({20, 10}).second);
     EXPECT_TRUE(set.insert({10, 10}).second);
     EXPECT_FALSE(set.empty());
+    EXPECT_EQ(1, set.size());
     auto found = set.find(0);
     EXPECT_NE(found, set.end());
     set.erase(found);
+    EXPECT_EQ(0, set.size());
     EXPECT_TRUE(set.empty());
 }
 
@@ -233,6 +238,7 @@ TEST(IntervalSet, EraseBeginToEnd) {
     EXPECT_TRUE(set.insert({0, 10}).second);
     EXPECT_TRUE(set.insert({20, 10}).second);
     EXPECT_TRUE(set.insert({40, 10}).second);
+    EXPECT_EQ(3, set.size());
     EXPECT_TRUE(set.begin()->start == 0);
     EXPECT_TRUE(set.begin()->end == 10);
 
