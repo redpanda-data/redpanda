@@ -11,6 +11,7 @@
 #pragma once
 #include "base/seastarx.h"
 #include "config/property.h"
+#include "container/chunked_hash_map.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/logger.h"
@@ -437,7 +438,7 @@ private:
      * A map keeping virtual connection states, during default operation the map
      * is empty
      */
-    absl::node_hash_map<
+    chunked_hash_map<
       virtual_connection_id,
       ss::lw_shared_ptr<virtual_connection_state>>
       _virtual_states;
