@@ -720,13 +720,14 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
       "request from virtual connection {}, client id: {}",
       client_connection_id.v_connection_id,
       client_connection_id.client_id);
-    auto it = _virtual_states.lazy_emplace(
-      client_connection_id.v_connection_id,
-      [v_connection_id = client_connection_id.v_connection_id](
-        const auto& ctr) mutable {
-          return ctr(
-            v_connection_id, ss::make_lw_shared<virtual_connection_state>());
-      });
+
+    auto it = _virtual_states.find(client_connection_id.v_connection_id);
+    if (it == _virtual_states.end()) {
+        auto p = _virtual_states.emplace(
+          client_connection_id.v_connection_id,
+          ss::make_lw_shared<virtual_connection_state>());
+        it = p.first;
+    }
 
     co_await it->second->process_request(
       shared_from_this(), std::move(rctx), sres);
