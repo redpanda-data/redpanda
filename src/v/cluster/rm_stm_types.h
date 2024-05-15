@@ -49,10 +49,14 @@ struct expiration_info {
 // Not to be confused with user visible transaction status
 // that can potentially span multiple data partitions.
 enum class partition_transaction_status : int8_t {
-    ongoing,
-    preparing,
-    prepared,
-    initiating
+    // Data has been appended as a part of the transaction.
+    ongoing = 0,
+    //
+    // note: couple of unused status types [1, 2] were removed.
+    //
+    // Partition is aware of the transaction but the client has
+    // not produced data as a part of this transaction.
+    initialized = 3
 };
 
 std::ostream& operator<<(std::ostream&, const partition_transaction_status&);
