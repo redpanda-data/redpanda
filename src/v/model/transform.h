@@ -141,6 +141,8 @@ struct transform_metadata
 
     model::is_transform_paused paused{false};
 
+    model::compression compression_mode{model::compression::none};
+
     friend bool operator==(const transform_metadata&, const transform_metadata&)
       = default;
 
@@ -155,7 +157,8 @@ struct transform_metadata
           uuid,
           source_ptr,
           offset_options,
-          paused);
+          paused,
+          compression_mode);
     }
 };
 
@@ -165,11 +168,19 @@ struct transform_metadata
 // See `redpanda/admin/transform.cc` or `redpanda/admin/api-doc/transform.json`
 // for detail.
 struct transform_metadata_patch {
-    // This has PUT semantics, such that the existing env values will be
-    // completely overwritten by the contents of this map.
+    // Update the env map for a transform.
+    // If absent, the existing map is unchanged.
+    // NOTE: The update has PUT semantics, with the existing transform env
+    // map replaced by the new one, wholesale.
     std::optional<absl::flat_hash_map<ss::sstring, ss::sstring>> env;
-    // Desired paused state for the transform
+    // Update paused state for a transform.
+    // If absent, transform state is unchanged.
     std::optional<is_transform_paused> paused;
+    // Update compression mode for a transform.
+    // If absent, transform compression mode is unchanged.
+    std::optional<compression> compression_mode;
+
+    bool empty() const noexcept;
 };
 
 using output_topic_index = named_type<uint32_t, struct output_topic_index_tag>;
