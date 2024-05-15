@@ -185,7 +185,7 @@ public:
       const model::batch_identity&,
       model::term_id current_term,
       bool reset_sequences = false);
-    bool update(const model::batch_identity&, kafka::offset);
+    bool apply_data(const model::batch_identity&, kafka::offset);
 
     void touch() { _last_updated_ts = ss::lowres_system_clock::now(); }
 

@@ -298,7 +298,7 @@ result<request_ptr> producer_state::try_emplace_request(
     return result;
 }
 
-bool producer_state::update(
+bool producer_state::apply_data(
   const model::batch_identity& bid, kafka::offset offset) {
     if (_evicted) {
         return false;

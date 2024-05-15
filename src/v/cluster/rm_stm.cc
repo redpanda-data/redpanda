@@ -1672,7 +1672,7 @@ void rm_stm::apply_data(
         _highest_producer_id = std::max(_highest_producer_id, bid.pid.get_id());
         const auto last_kafka_offset = from_log_offset(header.last_offset());
         auto producer = maybe_create_producer(bid.pid);
-        auto needs_touch = producer->update(bid, last_kafka_offset);
+        auto needs_touch = producer->apply_data(bid, last_kafka_offset);
         if (needs_touch) {
             _producer_state_manager.local().touch(*producer, _vcluster_id);
         }
