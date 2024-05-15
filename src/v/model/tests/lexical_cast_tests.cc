@@ -8,6 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "model/record.h"
+
+#include <boost/test/tools/old/interface.hpp>
 #define BOOST_TEST_MODULE model
 #include "model/compression.h"
 #include "model/metadata.h"
@@ -35,6 +37,10 @@ BOOST_AUTO_TEST_CASE(test_cast_from_string) {
     BOOST_CHECK_EQUAL(
       boost::lexical_cast<model::compression>("zstd"),
       model::compression::zstd);
+    BOOST_CHECK_EXCEPTION(
+      boost::lexical_cast<model::compression>("plzmakesmaller"),
+      boost::bad_lexical_cast,
+      [](const boost::bad_lexical_cast&) { return true; });
 };
 BOOST_AUTO_TEST_CASE(removing_compression) {
     model::record_batch_attributes attr(std::numeric_limits<uint16_t>::max());
