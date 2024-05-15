@@ -199,7 +199,7 @@ bool topic_properties::has_overrides() const {
            || initial_retention_local_target_bytes.is_engaged()
            || initial_retention_local_target_ms.is_engaged()
            || write_caching.has_value() || flush_ms.has_value()
-           || flush_bytes.has_value();
+           || flush_bytes.has_value() || datalake_topic.has_value();
 }
 
 bool topic_properties::requires_remote_erase() const {
@@ -232,6 +232,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.write_caching = write_caching;
     ret.flush_ms = flush_ms;
     ret.flush_bytes = flush_bytes;
+    ret.datalake_topic = datalake_topic;
     return ret;
 }
 
@@ -270,6 +271,7 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .write_caching = properties.write_caching,
             .flush_ms = properties.flush_ms,
             .flush_bytes = properties.flush_bytes,
+            .datalake_topic = properties.datalake_topic,
           });
     }
     return {
@@ -365,7 +367,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "mpx_virtual_cluster_id: {}, "
       "write_caching: {}, "
       "flush_ms: {}, "
-      "flush_bytes: {}}}",
+      "flush_bytes: {}"
+      "datalake_topic: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -396,7 +399,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.mpx_virtual_cluster_id,
       properties.write_caching,
       properties.flush_ms,
-      properties.flush_bytes);
+      properties.flush_bytes,
+      properties.datalake_topic);
 
     return o;
 }
@@ -674,7 +678,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "record_value_subject_name_strategy_compat: {}, "
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
-      "flush_bytes: {}",
+      "flush_bytes: {}"
+      "datalake_topic: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -700,7 +705,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.initial_retention_local_target_ms,
       i.write_caching,
       i.flush_ms,
-      i.flush_bytes);
+      i.flush_bytes,
+      i.datalake_topic);
     return o;
 }
 
@@ -1752,7 +1758,8 @@ void adl<cluster::incremental_topic_updates>::to(
       t.initial_retention_local_target_ms,
       t.write_caching,
       t.flush_ms,
-      t.flush_bytes);
+      t.flush_bytes,
+      t.datalake_topic);
 }
 
 cluster::incremental_topic_updates
@@ -1885,6 +1892,11 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
                              .from(in);
         updates.flush_bytes
           = adl<cluster::property_update<std::optional<size_t>>>{}.from(in);
+    }
+
+    if (version <= cluster::incremental_topic_updates::version_with_datalake) {
+        updates.datalake_topic
+          = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
     }
 
     return updates;
@@ -2113,6 +2125,7 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       tristate<size_t>{std::nullopt},
       tristate<std::chrono::milliseconds>{std::nullopt},
+      std::nullopt,
       std::nullopt,
       std::nullopt,
       std::nullopt,

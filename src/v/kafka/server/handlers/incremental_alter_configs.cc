@@ -300,6 +300,11 @@ create_topic_properties_update(
                   flush_bytes_validator{});
                 continue;
             }
+            if (cfg.name == topic_property_datalake_topic) {
+                parse_and_set_optional(
+                  update.properties.datalake_topic, cfg.value, op);
+                continue;
+            }
 
         } catch (const validation_error& e) {
             vlog(
