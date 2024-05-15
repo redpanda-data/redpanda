@@ -368,14 +368,28 @@ std::optional<model::offset> partition_manifest::full_log_start_offset() const {
 
 std::optional<kafka::offset>
 partition_manifest::get_start_kafka_offset() const {
+    vlog(
+      cst_log.debug,
+      "{}: get_start_kafka_offset: start offset {}",
+      _ntp,
+      _start_offset);
     if (_start_offset == model::offset{}) {
         return std::nullopt;
     }
 
     if (unlikely(!_cached_start_kafka_offset_local)) {
+        vlog(
+          cst_log.debug,
+          "{}: get_start_kafka_offset: compute start offset",
+          _ntp);
         _cached_start_kafka_offset_local = compute_start_kafka_offset_local();
     }
 
+    vlog(
+      cst_log.debug,
+      "{}: get_start_kafka_offset: computed start offset {}",
+      _ntp,
+      _cached_start_kafka_offset_local);
     return _cached_start_kafka_offset_local;
 }
 
@@ -393,7 +407,30 @@ partition_manifest::compute_start_kafka_offset_local() const {
     if (iter != _segments.end()) {
         auto delta = iter->delta_offset;
         local_start_offset = _start_offset - delta;
+        vlog(
+          cst_log.debug,
+          "{}: compute_start_kafka_offset_local: delta {}, local_start_offset "
+          "{}",
+          _ntp,
+          delta,
+          local_start_offset);
     } else {
+        if (_segments.empty()) {
+            vlog(
+              cst_log.debug,
+              "{}: compute_start_kafka_offset_local: no segments in manifest",
+              _ntp);
+        } else {
+            auto front_it = _segments.begin();
+            vlog(
+              cst_log.debug,
+              "{}: compute_start_kafka_offset_local: manifest front offset {}, "
+              "front delta {}, start offset {}",
+              _ntp,
+              front_it->base_offset,
+              front_it->delta_offset,
+              _start_offset);
+        }
         // If start offset points outside a segment, then we cannot
         // translate it.  If there are any segments ahead of it, then
         // those may be considered the start of the remote log.
@@ -401,6 +438,14 @@ partition_manifest::compute_start_kafka_offset_local() const {
             front_it != _segments.end()
             && front_it->base_offset >= _start_offset) {
             local_start_offset = front_it->base_offset - front_it->delta_offset;
+            vlog(
+              cst_log.debug,
+              "{}: compute_start_kafka_offset_local: front it base {}, front "
+              "it delta {}, local_start_offset {}",
+              _ntp,
+              front_it->base_offset,
+              front_it->delta_offset,
+              local_start_offset);
         }
     }
     return local_start_offset;

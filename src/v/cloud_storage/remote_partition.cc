@@ -574,29 +574,49 @@ private:
                     // Special case queries below the start offset of the log.
                     // The start offset may have advanced while the request was
                     // in progress. This is expected, so log at debug level.
-                    const auto log_start_offset
-                      = _partition->_manifest_view->stm_manifest()
-                          .full_log_start_kafka_offset();
+                    const auto& manifest
+                      = _partition->_manifest_view->stm_manifest();
 
-                    vlog(
-                      _ctxlog.debug,
-                      "log start offset {}, query offset {}, archive start "
-                      "offset {}, delta: {}, start kafka offset {}",
-                      log_start_offset,
-                      query_offset,
-                      _partition->_manifest_view->stm_manifest()
-                        .get_archive_start_offset(),
-                      _partition->_manifest_view->stm_manifest()
-                        .get_archive_start_offset_delta(),
-                      _partition->_manifest_view->stm_manifest()
-                        .get_start_kafka_offset());
-                    if (log_start_offset && query_offset < *log_start_offset) {
+                    const auto log_start_offset
+                      = manifest.full_log_start_kafka_offset();
+
+                    // The log has been truncated fully due to retention, IE
+                    // start offset is ahead of all segments in the log. The log
+                    // start offset computes to nullopt.
+                    const auto is_log_fully_truncated
+                      = manifest.get_start_offset().has_value()
+                        && manifest.get_start_offset()
+                             > manifest.get_last_offset()
+                        && !log_start_offset.has_value();
+
+                    // The query is within the manifest segments, we cannot
+                    // translate the current start offset to kafka offset, as we
+                    // do not have its delta. So we combine two different
+                    // checks: the query is within manifest segments, and the
+                    // manifest segments are all below the start offset. We also
+                    // can not check that query is greater than the start kafka
+                    // offset because the start kafka offset is not computable
+                    // if the start offset is outside the range of current
+                    // segments.
+                    const auto query_within_truncated_range
+                      = is_log_fully_truncated
+                        && manifest.get_last_kafka_offset().has_value()
+                        && query_offset
+                             <= manifest.get_last_kafka_offset().value();
+
+                    const auto query_below_log_start
+                      = log_start_offset.has_value()
+                        && query_offset < log_start_offset.value();
+
+                    if (query_below_log_start || query_within_truncated_range) {
                         vlog(
                           _ctxlog.debug,
                           "Manifest query below the log's start Kafka offset: "
-                          "{} < {}",
+                          "{} < {}, log start offset: {}, log end offset: {}",
                           query_offset(),
-                          log_start_offset.value()());
+                          log_start_offset.value()(),
+                          manifest.get_start_offset(),
+                          manifest.get_last_offset());
                         return true;
                     }
                     return false;
