@@ -942,14 +942,7 @@ connection_context::client_protocol_state::do_process_responses(
     connection_ctx->_server.handler_probe(request_key)
       .add_bytes_sent(response_size);
     try {
-        co_return co_await connection_ctx->conn->write(std::move(msg))
-          .then([] {
-              return ss::make_ready_future<ss::stop_iteration>(
-                ss::stop_iteration::no);
-          })
-          // release the resources only once it has been written to
-          // the connection.
-          .finally([resources = resp_and_res.resources] {});
+        co_await connection_ctx->conn->write(std::move(msg));
     } catch (...) {
         resp_and_res.resources->tracker->mark_errored();
         vlog(
