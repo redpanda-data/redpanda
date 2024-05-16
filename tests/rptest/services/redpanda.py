@@ -29,7 +29,7 @@ import zipfile
 import pathlib
 import shlex
 from enum import Enum, IntEnum
-from typing import Callable, List, Generator, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
+from typing import Callable, List, Generator, Literal, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
 
 import yaml
 from ducktape.services.service import Service
@@ -458,7 +458,7 @@ class SISettings:
                  cloud_storage_region: str = 'panda-region',
                  cloud_storage_api_endpoint: str = 'minio-s3',
                  cloud_storage_api_endpoint_port: int = 9000,
-                 cloud_storage_url_style: str = 'virtual_host',
+                 cloud_storage_url_style: Literal['virtual_host', 'path'] = 'virtual_host',
                  cloud_storage_cache_size: Optional[int] = None,
                  cloud_storage_cache_max_objects: Optional[int] = None,
                  cloud_storage_enable_remote_read: bool = True,
@@ -482,7 +482,7 @@ class SISettings:
                  cloud_storage_signature_version: str = "s3v4",
                  before_call_headers: Optional[dict[str, Any]] = None,
                  skip_end_of_test_scrubbing: bool = False,
-                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
+                 addressing_style_override: S3AddressingStyle | None = None):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
@@ -538,7 +538,7 @@ class SISettings:
         self.cloud_storage_segment_max_upload_interval_sec = cloud_storage_segment_max_upload_interval_sec
         self.cloud_storage_manifest_max_upload_interval_sec = cloud_storage_manifest_max_upload_interval_sec
         self.cloud_storage_readreplica_manifest_sync_timeout_ms = cloud_storage_readreplica_manifest_sync_timeout_ms
-        self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
+        self.endpoint_url: str = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
         self.use_bucket_cleanup_policy = use_bucket_cleanup_policy
         self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
@@ -547,7 +547,10 @@ class SISettings:
         self.cloud_storage_max_throughput_per_shard = cloud_storage_max_throughput_per_shard
         self.cloud_storage_signature_version = cloud_storage_signature_version
         self.before_call_headers = before_call_headers
-        self.addressing_style = addressing_style
+        if addressing_style_override is not None:
+            self.addressing_style = addressing_style_override
+        elif self.cloud_storage_url_style is not None:
+            self.addressing_style = S3AddressingStyle.VIRTUAL if self.cloud_storage_url_style=='virtual_host' else S3AddressingStyle.PATH
 
         # Allow disabling end of test scrubbing.
         # It takes a long time with lots of segments i.e. as created in scale

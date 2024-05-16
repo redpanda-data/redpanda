@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 from re import T
 from typing import NamedTuple, Optional
+from rptest.archival.s3_client import S3AddressingStyle
 from rptest.services.cluster import cluster
 
 from rptest.clients.default import DefaultClient
