@@ -493,6 +493,12 @@ ss::future<session_resources> connection_context::throttle_request(
     auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
     auto fut = ss::now();
     if (delay.enforce > delay_t::clock::duration::zero()) {
+        vlog(
+          klog.trace,
+          "[{}:{}] enforcing throttling delay of {}",
+          _client_addr,
+          client_port(),
+          delay.enforce);
         fut = ss::sleep_abortable(delay.enforce, abort_source().local());
     }
     auto track = track_latency(hdr.key);
