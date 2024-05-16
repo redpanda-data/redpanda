@@ -41,7 +41,7 @@ from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, wait_until, wait_until_result
 from rptest.utils.rpk_config import read_redpanda_cfg
-from rptest.utils.schema_registry_utils import get_subjects
+from rptest.utils.schema_registry_utils import Mode, get_subjects, put_mode
 from urllib.parse import urlparse
 
 
@@ -1963,10 +1963,16 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
             record['user']['name'] == self.username and \
             record['status_id'] == status_id
 
-    def match_api_record(self, record, endpoint):
+    def match_api_record(self,
+                         record,
+                         endpoint,
+                         status_id: Optional[StatusID] = None):
         if record['class_uid'] == ClassUID.API_ACTIVITY and \
             record['dst_endpoint']['svc_name'] == self.sr_audit_svc_name:
             self.logger.debug(f"Validating api activity record: {record}")
+
+        if status_id and record.get('status_id', '') != status_id:
+            return False
 
         if record['class_uid'] == ClassUID.API_ACTIVITY \
             and record['dst_endpoint']['svc_name'] == self.sr_audit_svc_name \
@@ -1982,6 +1988,16 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
 
     def setup_cluster(self):
         self.admin.create_user(self.username, self.password, self.algorithm)
+
+        # wait for user to propagate to nodes
+        def user_exists():
+            for node in self.redpanda.nodes:
+                users = self.admin.list_users(node=node)
+                if self.username not in users:
+                    return False
+            return True
+
+        wait_until(user_exists, timeout_sec=10, backoff_sec=1)
 
     @ok_to_fail_fips
     @cluster(num_nodes=5)
@@ -2031,3 +2047,30 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
             assert False, f'Should not have found any records but found {self.aggregate_count(records)}: {records}'
         except TimeoutError:
             pass
+
+    @ok_to_fail_fips
+    @cluster(num_nodes=5)
+    def test_sr_audit_bad_authz(self):
+        self.setup_cluster()
+
+        r = put_mode(self.redpanda.nodes,
+                     self.logger,
+                     mode=Mode.READONLY,
+                     auth=(self.username, self.password))
+        assert r.json()['error_code'] == 403, f"Response: {r.json()}"
+
+        _ = self.find_matching_record(
+            lambda record: self.match_authn_record(record, StatusID.SUCCESS),
+            lambda record_count: record_count >= 1, 'authz fail attempt in sr')
+
+        with expect_exception(TimeoutError, lambda _: True):
+            _ = self.find_matching_record(
+                lambda record: self.match_authn_record(record, StatusID.FAILURE
+                                                       ),
+                lambda record_count: record_count >= 1,
+                'authn fail attempt in sr')
+
+        _ = self.find_matching_record(
+            lambda record: self.match_api_record(record, "mode", StatusID.
+                                                 FAILURE),
+            lambda aggregate_count: aggregate_count >= 1, 'API call')
