@@ -121,13 +121,18 @@ ss::future<> vote_stm::dispatch_one(vnode n) {
 }
 
 ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
-    using skip_vote = ss::bool_class<struct skip_vote_tag>;
+    enum class prepare_election_result {
+        skip_election,
+        proceed_with_election,
+        immediate_success,
+    };
     return _ptr->_op_lock
       .with([this, leadership_transfer] {
           _config = _ptr->config();
           // check again while under op_sem
           if (_ptr->should_skip_vote(leadership_transfer)) {
-              return ss::make_ready_future<skip_vote>(skip_vote::yes);
+              return ss::make_ready_future<prepare_election_result>(
+                prepare_election_result::skip_election);
           }
           // 5.2.1 mark node as candidate, and update leader id
           _ptr->_vstate = consensus::vote_state::candidate;
@@ -135,6 +140,10 @@ ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
           if (_ptr->_leader_id) {
               _ptr->_leader_id = std::nullopt;
               _ptr->trigger_leadership_notification();
+          }
+
+          if (_prevote && leadership_transfer) {
+              return ssx::now(prepare_election_result::immediate_success);
           }
 
           // 5.2.1.2
@@ -148,11 +157,11 @@ ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
 
           // special case, it may happen that node requesting votes is not a
           // voter, it may happen if it is a learner in previous configuration
-          _replies.emplace(_ptr->_self, vmeta{});
+          _replies.emplace(_ptr->_self, *this);
 
           // vote is the only method under _op_sem
           _config->for_each_voter(
-            [this](vnode id) { _replies.emplace(id, vmeta{}); });
+            [this](vnode id) { _replies.emplace(id, *this); });
 
           auto lstats = _ptr->_log->offsets();
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
@@ -167,14 +176,20 @@ ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
           // we have to self vote before dispatching vote request to
           // other nodes, this vote has to be done under op semaphore as
           // it changes voted_for state
-          return self_vote().then([] { return skip_vote::no; });
+          return self_vote().then(
+            [] { return prepare_election_result::proceed_with_election; });
       })
-      .then([this](skip_vote skip) {
-          if (skip) {
+      .then([this](prepare_election_result result) {
+          switch (result) {
+          case prepare_election_result::skip_election:
               return ss::make_ready_future<election_success>(
                 election_success::no);
+          case prepare_election_result::proceed_with_election:
+              return do_vote();
+          case prepare_election_result::immediate_success:
+              return ss::make_ready_future<election_success>(
+                election_success::yes);
           }
-          return do_vote();
       });
 }
 
@@ -349,7 +364,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
      * voting phase. (the term might have changed if a node received request
      * from other leader)
      */
-    auto term = _req.term;
+    auto term = request_term();
     if (
       _ptr->_vstate != consensus::vote_state::candidate
       || _ptr->_term != term) {
@@ -441,7 +456,7 @@ vote_stm::replicate_config_as_new_leader(ssx::semaphore_units u) {
 
 ss::future<> vote_stm::self_vote() {
     vote_reply reply;
-    reply.term = _req.term;
+    reply.term = request_term();
     reply.log_ok = true;
     reply.granted = true;
 
@@ -449,13 +464,13 @@ ss::future<> vote_stm::self_vote() {
       _ctxlog.trace,
       "[pre-vote: {}] voting for self in term {}",
       _prevote,
-      _req.term);
+      request_term());
     /**
      * If this is the actual vote phase, write voted_for
      */
     if (!_prevote) {
         _ptr->_voted_for = _ptr->_self;
-        co_await _ptr->write_voted_for({_ptr->_self, _req.term});
+        co_await _ptr->write_voted_for({_ptr->_self, request_term()});
     }
 
     auto m = _replies.find(_ptr->self());
