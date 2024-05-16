@@ -1275,11 +1275,17 @@ void partition_balancer_planner::reassignable_partition::revert(
       _reallocated->partition.is_original(move.previous()->node_id),
       "ntp {}: move {}->{} should have been from original node",
       _ntp,
-      move.current(),
-      move.previous());
+      move.previous(),
+      move.current());
 
     auto err = _reallocated->partition.try_revert(move);
     vassert(err == errc::success, "ntp {}: revert error: {}", _ntp, err);
+    vlog(
+      clusterlog.info,
+      "ntp {}: reverted previously scheduled move {} -> {}",
+      _ntp,
+      move.previous()->node_id,
+      move.current().node_id);
 
     {
         // adjust topic node counts
@@ -1947,6 +1953,10 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                     }
                 }
             },
+            [&](immutable_partition& p) {
+                p.report_failure(change_reason::partition_count_rebalancing);
+                should_stop = false;
+            },
             [](auto&) {});
 
           return ss::stop_iteration::no;
@@ -1956,7 +1966,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         double cur_objective = calc_objective(domain);
         vlog(
           clusterlog.info,
-          "counts rebalancing objective in domain {}: {:6} -> {:6}",
+          "counts rebalancing objective in domain {}: {:.6} -> {:.6}",
           domain,
           orig_objective,
           cur_objective);
