@@ -107,6 +107,7 @@ public:
       std::optional<char> delimiter = std::nullopt);
 
 private:
+    friend class s3_client;
     std::string make_host(const bucket_name& name) const;
 
     std::string
@@ -244,6 +245,15 @@ private:
       ss::future<T> request_future,
       const bucket_name& bucket,
       const object_key& key);
+
+    // Performs testing as part of the self-configuration step.
+    // If remote_read is true, the test will use list_objects().
+    // If remote_read is false, the test will instead use put_object() and
+    // delete_object(). If both remote_read and remote_write are false, the test
+    // will fail a vassert() call.
+    // Returns true if the test ran was succesfully and false otherwise.
+    ss::future<bool> self_configure_test(
+      const bucket_name& bucket, bool remote_read, bool remote_write);
 
 private:
     request_creator _requestor;

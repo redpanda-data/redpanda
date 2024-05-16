@@ -91,7 +91,7 @@ ss::future<> client_pool::client_self_configure(
         self_config_output = *result;
         vlog(
           pool_log.info,
-          "Client self configuration completed with result {} ",
+          "Client self configuration completed with result {}",
           *self_config_output);
     }
 

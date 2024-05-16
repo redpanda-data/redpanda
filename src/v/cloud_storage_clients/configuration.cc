@@ -74,6 +74,7 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
   const std::optional<cloud_roles::public_key_str>& pkey,
   const std::optional<cloud_roles::private_key_str>& skey,
   const cloud_roles::aws_region_name& region,
+  const std::optional<cloud_storage_clients::s3_url_style>& url_style,
   const default_overrides& overrides,
   net::metrics_disabled disable_metrics,
   net::public_metrics_disabled disable_public_metrics) {
@@ -91,7 +92,14 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     client_cfg.secret_key = skey;
     client_cfg.region = region;
     client_cfg.uri = access_point_uri(endpoint_uri);
-    client_cfg.url_style = overrides.url_style;
+
+    if (url_style.has_value()) {
+        client_cfg.url_style = url_style.value();
+    } else {
+        // If the url style is not specified, it will be determined with
+        // self configuration.
+        client_cfg.requires_self_configuration = true;
+    }
 
     if (overrides.disable_tls == false) {
         client_cfg.credentials = co_await build_tls_credentials(
@@ -119,8 +127,8 @@ std::ostream& operator<<(std::ostream& o, const s3_configuration& c) {
     o << "{access_key:"
       << c.access_key.value_or(cloud_roles::public_key_str{""})
       << ",region:" << c.region() << ",secret_key:****"
-      << ",access_point_uri:" << c.uri() << ",server_addr:" << c.server_addr
-      << ",max_idle_time:"
+      << ",url_style:" << c.url_style << ",access_point_uri:" << c.uri()
+      << ",server_addr:" << c.server_addr << ",max_idle_time:"
       << std::chrono::duration_cast<std::chrono::milliseconds>(c.max_idle_time)
            .count()
       << "}";
@@ -211,7 +219,10 @@ void apply_self_configuration_result(
                 "result {}",
                 cfg,
                 res);
-              // No self configuration for S3 at this point
+
+              cfg.url_style
+                = std::get<s3_self_configuration_result>(res).url_style;
+
           } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
               vassert(
                 std::holds_alternative<abs_self_configuration_result>(res),
@@ -246,8 +257,9 @@ operator<<(std::ostream& o, const abs_self_configuration_result& r) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const s3_self_configuration_result&) {
-    o << "{}";
+std::ostream&
+operator<<(std::ostream& o, const s3_self_configuration_result& r) {
+    o << "{s3_url_style: " << r.url_style << "}";
     return o;
 }
 

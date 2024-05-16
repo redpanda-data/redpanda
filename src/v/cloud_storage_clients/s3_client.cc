@@ -12,10 +12,12 @@
 
 #include "base/vlog.h"
 #include "bytes/bytes.h"
+#include "bytes/iostream.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
+#include "config/configuration.h"
 #include "hashing/secure.h"
 #include "http/client.h"
 #include "net/types.h"
@@ -27,6 +29,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/net/inet_address.hh>
@@ -550,11 +553,103 @@ s3_client::s3_client(
 
 ss::future<result<client_self_configuration_output, error_outcome>>
 s3_client::self_configure() {
+    // Test virtual host style addressing, fall back to path if necessary.
+    // If any configuration options prevent testing, addressing style will
+    // default to virtual_host.
+    // If both addressing methods fail, return an error.
+    auto result = s3_self_configuration_result{
+      .url_style = s3_url_style::virtual_host};
+    const auto remote_read
+      = config::shard_local_cfg().cloud_storage_enable_remote_read();
+    const auto remote_write
+      = config::shard_local_cfg().cloud_storage_enable_remote_write();
+    if (!remote_read && !remote_write) {
+        vlog(
+          s3_log.warn,
+          "Could not self-configure S3 Client, {}, {} are not enabled. "
+          "Defaulting to {} ",
+          config::shard_local_cfg().cloud_storage_enable_remote_read.name(),
+          config::shard_local_cfg().cloud_storage_enable_remote_write.name(),
+          result.url_style);
+        co_return result;
+    }
+
+    const auto& bucket_config = config::shard_local_cfg().cloud_storage_bucket;
+
+    if (!bucket_config.value().has_value()) {
+        vlog(
+          s3_log.warn,
+          "Could not self-configure S3 Client, {} is not set. Defaulting to {}",
+          bucket_config.name(),
+          result.url_style);
+        co_return result;
+    }
+
+    const auto bucket = cloud_storage_clients::bucket_name{
+      bucket_config.value().value()};
+
+    // Test virtual_host style.
+    vassert(
+      _requestor._ap_style == s3_url_style::virtual_host,
+      "_ap_style should be virtual host by default before self configuration "
+      "begins");
+    if (co_await self_configure_test(bucket, remote_read, remote_write)) {
+        // Virtual-host style request succeeded.
+        co_return result;
+    }
+
+    // Test path style.
+    _requestor._ap_style = s3_url_style::path;
+    result.url_style = _requestor._ap_style;
+    if (co_await self_configure_test(bucket, remote_read, remote_write)) {
+        // Path style request succeeded.
+        co_return result;
+    }
+
+    // Both addressing styles failed.
     vlog(
       s3_log.error,
-      "Call to self_configure was made, but the S3 client doesn't require self "
-      "configuration");
-    co_return s3_self_configuration_result{};
+      "Couldn't reach S3 storage with either path style or virtual_host style "
+      "requests.",
+      bucket_config.name());
+    co_return error_outcome::fail;
+}
+
+ss::future<bool> s3_client::self_configure_test(
+  const bucket_name& bucket, bool remote_read, bool remote_write) {
+    if (remote_read) {
+        // Verify with a list objects request.
+        auto list_objects_result = co_await list_objects(
+          bucket, std::nullopt, std::nullopt, 1);
+        co_return list_objects_result;
+    } else {
+        vassert(remote_write, "Remote write is not enabled");
+        // Verify with a upload and delete request.
+        auto now = ss::lowres_clock::now();
+        const ss::sstring key_and_payload = fmt::format(
+          "S3ClientSelfConfigurationKey.{}", now.time_since_epoch().count());
+        iobuf payload;
+        payload.append(key_and_payload.data(), key_and_payload.size());
+        auto payload_stream = make_iobuf_input_stream(std::move(payload));
+        const ss::lowres_clock::duration timeout = {std::chrono::seconds(30)};
+
+        auto upload_object_result = co_await put_object(
+          bucket,
+          object_key{key_and_payload},
+          key_and_payload.size(),
+          std::move(payload_stream),
+          timeout);
+
+        if (!upload_object_result) {
+            // Upload failed, return early.
+            co_return upload_object_result;
+        }
+
+        // Clean up uploaded object.
+        auto delete_object_result = co_await delete_object(
+          bucket, object_key{key_and_payload}, timeout);
+        co_return (upload_object_result && delete_object_result);
+    }
 }
 
 ss::future<> s3_client::stop() { return _client.stop(); }

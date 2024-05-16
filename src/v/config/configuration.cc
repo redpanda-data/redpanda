@@ -1685,15 +1685,23 @@ configuration::configuration()
   , cloud_storage_url_style(
       *this,
       "cloud_storage_url_style",
-      "The addressing style to use for S3 requests.",
+      "Specifies the addressing style to use for Amazon S3 requests. This "
+      "configuration determines how S3 bucket URLs are formatted. You can "
+      "choose between: `virtual_host`, (e.g. "
+      "`<bucket-name>.s3.amazonaws.com`), `path`, (e.g. "
+      "`s3.amazonaws.com/<bucket-name>`), and `null`. Path style is supported "
+      "for backward compatibility with legacy systems. When this property is "
+      "not set (`null`), the client tries to use `virtual_host` addressing. If "
+      "the initial request fails, the client automatically tries the `path` "
+      "style. If neither addressing style works, Redpanda terminates the "
+      "startup, requiring manual configuration to proceed.",
       {.needs_restart = needs_restart::yes,
        .example = "virtual_host",
        .visibility = visibility::user},
-      cloud_storage_clients::s3_url_style::virtual_host,
-      {
-        cloud_storage_clients::s3_url_style::virtual_host,
-        cloud_storage_clients::s3_url_style::path,
-      })
+      std::nullopt,
+      {cloud_storage_clients::s3_url_style::virtual_host,
+       cloud_storage_clients::s3_url_style::path,
+       std::nullopt})
   , cloud_storage_credentials_source(
       *this,
       "cloud_storage_credentials_source",
