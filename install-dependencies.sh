@@ -50,6 +50,7 @@ deb_deps=(
   libzstd-dev
   lld
   ninja-build
+  openssl
   protobuf-compiler
   python3
   python3-jinja2
@@ -83,6 +84,7 @@ fedora_deps=(
   lz4-static
   ninja-build
   numactl-devel
+  openssl
   openssl-devel
   procps
   protobuf-devel
