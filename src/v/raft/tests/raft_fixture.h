@@ -39,6 +39,7 @@
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/loop.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -540,6 +541,84 @@ private:
 
     ss::sharded<features::feature_table> _features;
     bool _enable_longest_log_detection = true;
+};
+
+template<class CRTPImpl, class... STM>
+struct stm_raft_fixture : raft_fixture {
+    using stm_shptrs_t = std::tuple<ss::shared_ptr<STM>...>;
+
+    stm_raft_fixture() {
+        static_assert(std::is_convertible_v<
+                      decltype(&stm_raft_fixture::create_stms),
+                      decltype(&CRTPImpl::create_stms)>);
+    }
+
+    ss::future<> initialize_state_machines() {
+        return initialize_state_machines(3);
+    }
+
+    ss::future<> initialize_state_machines(int node_cnt) {
+        for (auto i = 0; i < node_cnt; ++i) {
+            add_node(model::node_id(i), model::revision_id(0));
+        }
+        co_await start_nodes();
+    }
+
+    ss::future<> start_node(raft_node_instance& node) {
+        co_await node.initialise(all_vnodes());
+        raft::state_machine_manager_builder builder;
+        stm_shptrs_t stm_shptrs = static_cast<CRTPImpl*>(this)->create_stms(
+          builder, node);
+        co_await node.start(std::move(builder));
+        node_stms.emplace(node.get_vnode(), std::move(stm_shptrs));
+    }
+
+    ss::future<> start_nodes() {
+        co_await parallel_for_each_node(
+          [this](raft_node_instance& node) { return start_node(node); });
+    }
+
+    ss::future<> restart_nodes() {
+        absl::flat_hash_map<model::node_id, ss::sstring> data_directories;
+        for (auto& [id, node] : nodes()) {
+            data_directories[id]
+              = node->raft()->log()->config().base_directory();
+            node_stms.erase(node->get_vnode());
+        }
+
+        co_await ss::parallel_for_each(
+          std::views::keys(data_directories),
+          [this](model::node_id id) { return stop_node(id); });
+
+        for (auto& [id, data_dir] : data_directories) {
+            add_node(id, model::revision_id(0), std::move(data_dir));
+        }
+
+        co_await start_nodes();
+    }
+
+    // returns ss::shared_ptr<stm type>
+    template<int stm_id>
+    auto get_stm(raft_node_instance& node) {
+        return std::get<stm_id>(node_stms[node.get_vnode()]);
+    }
+
+    template<int stm_id, typename Func>
+    auto stm_retry_with_leader(std::chrono::milliseconds timeout, Func&& f) {
+        return retry_with_leader(
+          model::timeout_clock::now() + timeout,
+          [this, f = std::move(f)](raft_node_instance& leader_node) {
+              auto stm = get_stm<stm_id>(leader_node);
+              return f(stm);
+          });
+    }
+
+    absl::flat_hash_map<raft::vnode, stm_shptrs_t> node_stms;
+
+private:
+    // to be implemented in child classes
+    stm_shptrs_t create_stms(
+      state_machine_manager_builder& builder, raft_node_instance& node);
 };
 
 std::ostream& operator<<(std::ostream& o, msg_type type);

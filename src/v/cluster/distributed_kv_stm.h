@@ -89,9 +89,9 @@ template<
 requires std::is_trivially_copyable_v<Key>
          && std::is_trivially_copyable_v<Value>
 class distributed_kv_stm final : public raft::persisted_stm<> {
+public:
     using kv_data_t = absl::btree_map<Key, Value>;
 
-public:
     static constexpr std::string_view name = Name;
     explicit distributed_kv_stm(
       size_t max_partitions, ss::logger& logger, raft::consensus* raft)
@@ -267,7 +267,7 @@ public:
     }
 
     /** Batch write values to the stm. */
-    ss::future<errc> put(absl::btree_map<Key, Value> kvs) {
+    ss::future<errc> put(kv_data_t kvs) {
         auto holder = _gate.hold();
         auto units = co_await _snapshot_lock.hold_read_lock();
         if (!co_await sync(sync_timeout)) {

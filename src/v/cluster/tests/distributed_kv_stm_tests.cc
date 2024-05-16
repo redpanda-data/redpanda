@@ -7,82 +7,110 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "cluster/distributed_kv_stm.h"
+#include "errc.h"
+#include "raft/tests/raft_fixture.h"
 #include "raft/tests/raft_group_fixture.h"
-#include "raft/tests/simple_raft_fixture.h"
 #include "serde/envelope.h"
+#include "test_utils/test.h"
 
-static ss::logger logger{"kv_stm-test"};
+#include <seastar/core/future.hh>
+#include <seastar/core/shared_ptr.hh>
+
+#include <memory>
+#include <tuple>
+
+static ss::logger test_logger{"kv_stm-test"};
+
+using namespace raft;
 
 using test_key = int;
 using test_value = int;
 using stm_t = cluster::distributed_kv_stm<test_key, test_value>;
+using stm_cssshptrr_t = const ss::shared_ptr<stm_t>&;
 
-struct stm_test_fixture : simple_raft_fixture {
-    void create_stm_and_start_raft(
-      int num_partitions,
-      storage::ntp_config::default_overrides overrides = {}) {
-        create_raft(overrides);
-        raft::state_machine_manager_builder stm_m_builder;
-
-        _stm = stm_m_builder.create_stm<stm_t>(
-          num_partitions, logger, _raft.get());
-
-        _raft->start(std::move(stm_m_builder)).get();
-        _started = true;
+struct kv_stm_fixture : stm_raft_fixture<kv_stm_fixture, stm_t> {
+    static constexpr auto TIMEOUT = 30s;
+    //
+    stm_shptrs_t create_stms(
+      state_machine_manager_builder& builder, raft_node_instance& node) {
+        return builder.create_stm<stm_t>(1, test_logger, node.raft().get());
     }
 
-    ss::shared_ptr<stm_t> _stm;
+    ss::future<result<model::partition_id, cluster::errc>>
+    get_coordinator(test_key k) {
+        return stm_retry_with_leader<0>(
+          TIMEOUT, [k = std::move(k)](stm_cssshptrr_t stm) {
+              return stm->coordinator(k);
+          });
+    }
+
+    ss::future<> put(stm_t::kv_data_t kvs) {
+        auto res = co_await stm_retry_with_leader<0>(
+          TIMEOUT, [kvs = std::move(kvs)](stm_cssshptrr_t stm) {
+              return stm->put(kvs);
+          });
+        ASSERT_EQ_CORO(res, cluster::errc::success);
+    }
+
+    ss::future<result<std::optional<test_value>, cluster::errc>>
+    get(test_key k) {
+        return stm_retry_with_leader<0>(
+          TIMEOUT,
+          [k = std::move(k)](stm_cssshptrr_t stm) { return stm->get(k); });
+    }
+
+    ss::future<result<stm_t::kv_data_t, cluster::errc>> list() {
+        return stm_retry_with_leader<0>(
+          TIMEOUT, [](stm_cssshptrr_t stm) { return stm->list(); });
+    }
+
+    ss::future<result<size_t, cluster::errc>>
+    repartition(size_t new_partition_count) {
+        return stm_retry_with_leader<0>(
+          TIMEOUT, [new_partition_count](stm_cssshptrr_t stm) {
+              return stm->repartition(new_partition_count);
+          });
+    }
 };
 
-FIXTURE_TEST(test_stm_basic, stm_test_fixture) {
-    create_stm_and_start_raft(1);
-    auto& stm = *_stm;
-    stm.start().get0();
-    wait_for_confirmed_leader();
+TEST_F_CORO(kv_stm_fixture, test_stm_basic) {
+    co_await initialize_state_machines();
 
-    // simple query, should initialize state.
-    auto result = stm.coordinator(0).get0();
-    BOOST_REQUIRE(result);
-    BOOST_REQUIRE_EQUAL(result.value(), 0);
+    ASSERT_RESULT_EQ_CORO(co_await get_coordinator(0), 0);
+    ASSERT_RESULT_EQ_CORO(co_await get_coordinator(0), 0);
 
-    // same query, should return the same result.
-    auto result2 = stm.coordinator(0).get0();
-    BOOST_REQUIRE(result2);
-    BOOST_REQUIRE_EQUAL(result.value(), result2.value());
-
-    absl::btree_map<test_key, test_value> kvs;
+    stm_t::kv_data_t kvs;
     kvs[0] = 99;
     kvs[1] = 100;
+    co_await put(kvs);
 
-    auto result3 = stm.put(kvs).get0();
-    BOOST_REQUIRE_EQUAL(result3, cluster::errc::success);
+    ASSERT_RESULT_EQ_CORO(co_await get(0), test_value{99});
+    ASSERT_RESULT_EQ_CORO(co_await get(1), test_value{100});
 
-    BOOST_REQUIRE_EQUAL(stm.get(0).get0().value(), test_value{99});
-    BOOST_REQUIRE_EQUAL(stm.get(1).get0().value(), test_value{100});
-    BOOST_REQUIRE_EQUAL(stm.list().get().value().size(), 2);
+    auto list_result = co_await list();
+    ASSERT_TRUE_CORO(list_result);
+    ASSERT_EQ_CORO(list_result.assume_value().size(), 2);
 
     // delete key
-    BOOST_REQUIRE(stm.remove(0).get0() == cluster::errc::success);
+    auto del_result = co_await stm_retry_with_leader<0>(
+      TIMEOUT, [](stm_cssshptrr_t stm) { return stm->remove(0); });
+    ASSERT_EQ_CORO(del_result, cluster::errc::success);
     // mapping should be gone.
-    BOOST_REQUIRE(!stm.get(0).get0().value());
+    ASSERT_RESULT_EQ_CORO(co_await get(0), std::nullopt);
     // other mapping should be retained.
-    BOOST_REQUIRE_EQUAL(stm.get(1).get0().value(), test_value{100});
+    ASSERT_RESULT_EQ_CORO(co_await get(1), test_value{100});
     kvs.erase(0);
-    BOOST_REQUIRE_EQUAL(stm.list().get().value().size(), 1);
+    ASSERT_RESULT_EQ_CORO(co_await list(), kvs)
 }
 
-FIXTURE_TEST(test_stm_list, stm_test_fixture) {
-    create_stm_and_start_raft(1);
-    auto& stm = *_stm;
-    stm.start().get0();
-    wait_for_confirmed_leader();
+TEST_F_CORO(kv_stm_fixture, test_stm_list) {
+    co_await initialize_state_machines();
 
-    auto result = stm.coordinator(0).get0();
-    BOOST_REQUIRE(result);
-    BOOST_REQUIRE_EQUAL(result.value(), 0);
+    ASSERT_RESULT_EQ_CORO(co_await get_coordinator(0), 0);
 
-    absl::btree_map<test_key, test_value> kvs;
+    stm_t::kv_data_t kvs;
     for (int i = 0; i < 100; ++i) {
         kvs[i] = i * i;
     }
@@ -90,127 +118,121 @@ FIXTURE_TEST(test_stm_list, stm_test_fixture) {
     // (it's eventually consistent), but it shouldn't crash.
     for (int i = 0; i < 1000; ++i) {
         kvs[i] = i;
-        auto put_fut = stm.put(kvs);
-        auto list_fut = stm.list();
-        BOOST_REQUIRE_EQUAL(put_fut.get(), cluster::errc::success);
-        BOOST_REQUIRE(list_fut.get().has_value());
+        co_await put(kvs);
+        ASSERT_TRUE_CORO(co_await list());
     }
 }
 
-FIXTURE_TEST(test_batched_actions, stm_test_fixture) {
-    create_stm_and_start_raft(1);
-    auto& stm = *_stm;
-    stm.start().get0();
-    wait_for_confirmed_leader();
+TEST_F_CORO(kv_stm_fixture, test_batched_actions) {
+    constexpr static auto N_ENTRIES = 30;
+    co_await initialize_state_machines();
 
-    for (int i = 0; i < 30; i++) {
-        auto result = stm.coordinator(i).get0();
-        BOOST_REQUIRE(result);
-        BOOST_REQUIRE_EQUAL(result.value(), model::partition_id{0});
+    for (int i = 0; i < N_ENTRIES; i++) {
+        ASSERT_RESULT_EQ_CORO(co_await get_coordinator(i), 0);
     }
 
     absl::btree_map<test_key, test_value> kvs;
-    for (int i = 0; i < 30; i++) {
-        kvs[i] = test_value{i};
+    for (int i = 0; i < N_ENTRIES; i++) {
+        kvs[i] = i;
     }
-    stm.put(std::move(kvs)).get();
+    co_await put(std::move(kvs));
 
-    for (int i = 0; i < 30; i++) {
-        BOOST_REQUIRE_EQUAL(stm.get(i).get0().value(), test_value{i});
+    for (int i = 0; i < N_ENTRIES; i++) {
+        ASSERT_RESULT_EQ_CORO(co_await get(i), test_value{i});
     }
 
     // Delete the even keys
-    auto result = stm.remove_all([](int key) { return key % 2 == 0; }).get();
-    BOOST_REQUIRE_EQUAL(result, cluster::errc::success);
-    for (int i = 0; i < 30; i++) {
-        if (i % 2 == 0) {
-            BOOST_REQUIRE(!stm.get(i).get().value().has_value());
+    auto predicate = [](test_key key) { return key % 2 == 0; };
+    auto res = co_await stm_retry_with_leader<0>(
+      TIMEOUT,
+      [&predicate](stm_cssshptrr_t stm) { return stm->remove_all(predicate); });
+    ASSERT_EQ_CORO(res, cluster::errc::success);
+    for (int i = 0; i < N_ENTRIES; i++) {
+        if (predicate(i)) {
+            ASSERT_RESULT_EQ_CORO(co_await get(i), std::nullopt);
         } else {
-            BOOST_REQUIRE_EQUAL(stm.get(i).get().value(), test_value{i});
+            ASSERT_RESULT_EQ_CORO(co_await get(i), test_value{i});
         }
     }
 }
 
-FIXTURE_TEST(test_stm_repartitioning, stm_test_fixture) {
-    create_stm_and_start_raft(1);
-    auto& stm = *_stm;
-    stm.start().get0();
-    wait_for_confirmed_leader();
-
-    auto result = stm.coordinator(0).get0();
-    BOOST_REQUIRE(result);
-    BOOST_REQUIRE_EQUAL(result.value(), 0);
-
+TEST_F_CORO(kv_stm_fixture, test_stm_repartitioning) {
+    co_await initialize_state_machines();
+    ASSERT_RESULT_EQ_CORO(co_await get_coordinator(0), 0);
     // load up some keys, should all hash to 0 partition.
     for (int i = 0; i < 99; i++) {
-        auto result = stm.coordinator(i).get0();
-        BOOST_REQUIRE(result);
-        BOOST_REQUIRE_EQUAL(result.value(), model::partition_id{0});
+        ASSERT_RESULT_EQ_CORO(co_await get_coordinator(i), 0);
     }
-
     // repartition to bump the partition count.
-    auto repartition_result = stm.repartition(3).get0();
-    BOOST_REQUIRE(repartition_result);
-    BOOST_REQUIRE_EQUAL(repartition_result.value(), 3);
+    ASSERT_RESULT_EQ_CORO(co_await repartition(3), 3);
 
     // load up more keys that hash to all partitions
-    bool partition_1 = false, partition_2 = false;
-    for (int i = 100; partition_1 && partition_2; i++) {
-        auto result = stm.coordinator(i).get0();
-        BOOST_REQUIRE(result);
-        BOOST_REQUIRE_GE(result.value(), 0);
-        BOOST_REQUIRE_LE(result.value(), 2);
-        partition_1 = partition_1 || result.value() == 1;
-        partition_2 = partition_2 || result.value() == 2;
+    bool part1_has_entries = false, part2_has_entries = false;
+    for (int i = 100; !part1_has_entries || !part2_has_entries; i++) {
+        auto res = co_await get_coordinator(i);
+        ASSERT_RESULT_GE_CORO(res, 0);
+        ASSERT_RESULT_LE_CORO(res, 2);
+        part1_has_entries = part1_has_entries || res.assume_value() == 1;
+        part2_has_entries = part2_has_entries || res.assume_value() == 2;
     }
-
     // ensure the original set of keys are still with partition 0;
     for (int i = 0; i < 99; i++) {
-        auto result = stm.coordinator(i).get0();
-        BOOST_REQUIRE(result);
-        BOOST_REQUIRE_EQUAL(result.value(), model::partition_id{0});
+        ASSERT_RESULT_EQ_CORO(co_await get_coordinator(i), 0);
     }
-
-    repartition_result = stm.repartition(1).get0();
-    BOOST_REQUIRE_EQUAL(
-      repartition_result.error(), cluster::errc::invalid_request);
+    // downsizing prohibited
+    auto repartition_result = co_await repartition(1);
+    ASSERT_FALSE_CORO(repartition_result);
+    ASSERT_EQ_CORO(repartition_result.error(), cluster::errc::invalid_request);
 }
 
-FIXTURE_TEST(test_stm_snapshots, stm_test_fixture) {
-    create_stm_and_start_raft(1);
-    auto& stm = *_stm;
-    stm.start().get0();
-    wait_for_confirmed_leader();
+TEST_F_CORO(kv_stm_fixture, test_stm_snapshots) {
+    co_await initialize_state_machines();
 
     // load some data into the stm
     for (int i = 0; i < 99; i++) {
-        auto result = stm.coordinator(i).get0();
-        BOOST_REQUIRE(result);
+        ASSERT_TRUE_CORO(co_await get_coordinator(i));
     }
 
     for (int i = 0; i < 99; i++) {
         for (int j = 0; j < 10; j++) {
             absl::btree_map<test_key, test_value> kvs;
             kvs[i] = test_value{j};
-            auto result = stm.put(kvs).get0();
-            BOOST_REQUIRE(result == cluster::errc::success);
+            co_await put(kvs);
         }
     }
 
-    auto offset = stm.last_applied_offset();
-    stm.write_local_snapshot().get0();
-    _raft->write_snapshot(raft::write_snapshot_cfg(offset, iobuf())).get0();
+    auto offset_result = co_await stm_retry_with_leader<0>(
+      TIMEOUT, [](stm_cssshptrr_t stm) {
+          return ss::make_ready_future<result<model::offset>>(
+            stm->last_applied_offset());
+      });
+    auto offset = offset_result.value();
+
+    co_await stm_retry_with_leader<0>(TIMEOUT, [](stm_cssshptrr_t stm) {
+        return stm->write_local_snapshot().then(
+          []() { return ss::make_ready_future<bool>(true); });
+    });
+
+    co_await retry_with_leader(
+      model::timeout_clock::now() + TIMEOUT,
+      [offset](raft_node_instance& node) {
+          return node.raft()
+            ->write_snapshot(raft::write_snapshot_cfg(offset, iobuf()))
+            .then([]() { return ss::make_ready_future<bool>(true); });
+      });
 
     // restart raft after trunaction, ensure snapshot is loaded
     // correctly.
-    stop_all();
-    create_stm_and_start_raft(1);
-    wait_for_confirmed_leader();
-    BOOST_REQUIRE_EQUAL(_raft->start_offset(), model::next_offset(offset));
-    auto& new_stm = *_stm;
+    co_await restart_nodes();
+
+    auto start_offset_result = co_await retry_with_leader(
+      model::timeout_clock::now() + TIMEOUT, [](raft_node_instance& node) {
+          return ss::make_ready_future<result<model::offset>>(
+            node.raft()->start_offset());
+      });
+    ASSERT_RESULT_EQ_CORO(start_offset_result, model::next_offset(offset));
+
     for (int i = 0; i < 99; i++) {
-        auto result = new_stm.get(i).get0();
-        BOOST_REQUIRE(result);
-        BOOST_REQUIRE_EQUAL(result.value().value(), test_value{9});
+        ASSERT_RESULT_EQ_CORO(co_await get(i), test_value{9});
     }
 }
