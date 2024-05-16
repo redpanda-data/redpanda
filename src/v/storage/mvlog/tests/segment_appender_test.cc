@@ -7,15 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "base/units.h"
-#include "io/page_cache.h"
-#include "io/pager.h"
-#include "io/paging_data_source.h"
-#include "io/persistence.h"
-#include "io/scheduler.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
 #include "storage/mvlog/entry_stream_utils.h"
+#include "storage/mvlog/file.h"
 #include "storage/mvlog/segment_appender.h"
 #include "storage/record_batch_utils.h"
 
@@ -29,19 +24,11 @@ using namespace ::experimental;
 class SegmentAppenderTest : public ::testing::Test {
 public:
     void SetUp() override {
-        storage_ = std::make_unique<io::disk_persistence>();
-        storage_->create(file_.string()).get()->close().get();
         cleanup_files_.emplace_back(file_);
-
-        io::page_cache::config cache_config{
-          .cache_size = 2_MiB, .small_size = 1_MiB};
-        cache_ = std::make_unique<io::page_cache>(cache_config);
-        scheduler_ = std::make_unique<io::scheduler>(100);
-        pager_ = std::make_unique<io::pager>(
-          file_, 0, storage_.get(), cache_.get(), scheduler_.get());
+        paging_file_ = file_manager_.create_file(file_).get();
     }
     void TearDown() override {
-        pager_->close().get();
+        paging_file_->close().get();
         for (auto& file : cleanup_files_) {
             try {
                 ss::remove_file(file.string()).get();
@@ -52,15 +39,13 @@ public:
 
 protected:
     const std::filesystem::path file_{"segment"};
-    std::unique_ptr<io::persistence> storage_;
-    std::unique_ptr<io::page_cache> cache_;
-    std::unique_ptr<io::scheduler> scheduler_;
-    std::unique_ptr<io::pager> pager_;
+    file_manager file_manager_;
+    std::unique_ptr<file> paging_file_;
     std::vector<std::filesystem::path> cleanup_files_;
 };
 
 TEST_F(SegmentAppenderTest, TestAppendRecordBatches) {
-    segment_appender appender(pager_.get());
+    segment_appender appender(paging_file_.get());
     auto batches = model::test::make_random_batches().get();
 
     size_t prev_end_pos = 0;
@@ -75,16 +60,13 @@ TEST_F(SegmentAppenderTest, TestAppendRecordBatches) {
 
         appender.append(batch.copy()).get();
         ASSERT_EQ(
-          pager_->size(),
+          paging_file_->size(),
           prev_end_pos + entry_body_buf.size_bytes()
             + packed_entry_header_size);
 
         // The resulting pages should contain the header...
-        auto hdr_stream = ss::input_stream<char>(
-          ss::data_source(std::make_unique<io::paging_data_source>(
-            pager_.get(),
-            io::paging_data_source::config{
-              prev_end_pos, packed_entry_header_size})));
+        auto hdr_stream = paging_file_->make_stream(
+          prev_end_pos, packed_entry_header_size);
         iobuf hdr_buf;
         hdr_buf.append(hdr_stream.read_exactly(packed_entry_header_size).get());
 
@@ -95,16 +77,12 @@ TEST_F(SegmentAppenderTest, TestAppendRecordBatches) {
         ASSERT_EQ(entry_header_crc(hdr.body_size, hdr.type), hdr.header_crc);
 
         // ... followed by the entry body.
-        auto body_stream = ss::input_stream<char>(
-          ss::data_source(std::make_unique<io::paging_data_source>(
-            pager_.get(),
-            io::paging_data_source::config{
-              prev_end_pos + packed_entry_header_size,
-              entry_body_buf.size_bytes()})));
+        auto body_stream = paging_file_->make_stream(
+          prev_end_pos + packed_entry_header_size, entry_body_buf.size_bytes());
         iobuf body_buf;
         body_buf.append(
           body_stream.read_exactly(entry_body_buf.size_bytes()).get());
         ASSERT_EQ(entry_body_buf, body_buf);
-        prev_end_pos = pager_->size();
+        prev_end_pos = paging_file_->size();
     }
 }

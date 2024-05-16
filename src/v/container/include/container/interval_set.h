@@ -98,6 +98,11 @@ public:
      */
     void erase(const_iterator it);
 
+    /**
+     * Return the number of intervals in the set.
+     */
+    [[nodiscard]] size_t size() const;
+
 private:
     /**
      * Extend the interval being pointed at with any intervals that overlap
@@ -229,4 +234,9 @@ bool interval_set<T>::empty() const {
 template<std::integral T>
 void interval_set<T>::erase(interval_set<T>::const_iterator it) {
     set_.erase(it);
+}
+
+template<std::integral T>
+size_t interval_set<T>::size() const {
+    return set_.size();
 }

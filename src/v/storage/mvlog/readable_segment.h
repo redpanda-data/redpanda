@@ -10,20 +10,17 @@
 
 #include <memory>
 
-namespace experimental::io {
-class pager;
-}
-
 namespace storage::experimental::mvlog {
 
+class file;
 class segment_reader;
 
 // A readable segment file. This is a long-lived object, responsible for
 // passing out short-lived readers.
 class readable_segment {
 public:
-    explicit readable_segment(::experimental::io::pager* pager)
-      : pager_(pager) {}
+    explicit readable_segment(file* f)
+      : file_(f) {}
 
     std::unique_ptr<segment_reader> make_reader();
     size_t num_readers() const { return num_readers_; }
@@ -31,7 +28,7 @@ public:
 private:
     friend class segment_reader;
 
-    ::experimental::io::pager* pager_;
+    file* file_;
 
     size_t num_readers_{0};
 };
