@@ -179,6 +179,7 @@ where
             },
             writer,
         )
-        .expect("transforming record failed");
+        .inspect_err(|e| eprintln!("transforming record failed with error: {:?}", e))
+        .unwrap_or(())
     }
 }
