@@ -47,7 +47,6 @@ cloud_storage_fixture::cloud_storage_fixture() {
         })
       .get();
 
-    auto conf = get_configuration();
     pool
       .start(10, ss::sharded_parameter([this] { return get_configuration(); }))
       .get();
