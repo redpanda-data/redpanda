@@ -24,7 +24,7 @@ pub(crate) unsafe fn get_schema_definition(_schema_id: i32, _buf: *mut u8, _len:
     panic!();
 }
 
-pub(crate) unsafe fn get_schema_subject_len(
+pub(crate) unsafe fn get_subject_schema_len(
     _subject: *const u8,
     _subject_len: i32,
     _version: i32,
@@ -33,7 +33,7 @@ pub(crate) unsafe fn get_schema_subject_len(
     panic!();
 }
 
-pub(crate) unsafe fn get_schema_subject(
+pub(crate) unsafe fn get_subject_schema(
     _subject: *const u8,
     _subject_len: i32,
     _version: i32,
