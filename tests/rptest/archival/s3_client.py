@@ -111,9 +111,7 @@ class S3Client:
         #
         for h in self.logger.handlers:
             if isinstance(h, logging.FileHandler):
-                if h.level == logging.INFO:
-                    populate_handler(h.baseFilename, h.level)
-                elif h.level == logging.DEBUG:
+                if h.level == logging.INFO or h.level == logging.DEBUG:
                     populate_handler(h.baseFilename, h.level)
 
     def make_client(self):
