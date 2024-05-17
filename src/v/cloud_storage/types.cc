@@ -13,6 +13,7 @@
 #include "base/vlog.h"
 #include "cloud_storage/configuration.h"
 #include "cloud_storage/logger.h"
+#include "config/node_config.h"
 
 #include <absl/container/node_hash_set.h>
 
@@ -424,6 +425,7 @@ ss::future<configuration> configuration::get_s3_config() {
         secret_key,
         region,
         cloud_storage_clients::from_config(url_style),
+        config::node().fips_mode.value(),
         get_default_overrides(),
         disable_metrics,
         disable_public_metrics);
