@@ -111,8 +111,6 @@ rm_stm::rm_stm(
       std::filesystem::path(c->log_config().work_directory()),
       ss::default_priority_class())
   , _feature_table(feature_table)
-  , _log_stats_interval_s(
-      config::shard_local_cfg().tx_log_stats_interval_s.bind())
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
   , _producer_state_manager(producer_state_manager)
   , _vcluster_id(vcluster_id)
@@ -128,9 +126,6 @@ rm_stm::rm_stm(
         _is_autoabort_enabled = false;
     }
     auto_abort_timer.set_callback([this] { abort_old_txes(); });
-    _log_stats_timer.set_callback([this] { log_tx_stats(); });
-    _log_stats_timer.arm(clock_type::now() + _log_stats_interval_s());
-
     /// Wait to determine when the raft committed offset has been set at
     /// startup.
     ssx::spawn_with_gate(_gate, [this]() {
@@ -742,7 +737,6 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 ss::future<> rm_stm::stop() {
     _as.request_abort();
     auto_abort_timer.cancel();
-    _log_stats_timer.cancel();
     co_await _gate.close();
     co_await reset_producers();
     _metrics.clear();
@@ -2178,31 +2172,6 @@ void rm_stm::setup_metrics() {
       },
       {},
       {sm::shard_label, partition_label});
-}
-
-ss::future<> rm_stm::maybe_log_tx_stats() {
-    if (likely(!_ctx_log.logger().is_enabled(ss::log_level::debug))) {
-        co_return;
-    }
-    _ctx_log.debug(
-      "tx root mem_tracker aggregate consumption: {}",
-      human::bytes(static_cast<double>(_tx_root_tracker.consumption())));
-    _ctx_log.debug(
-      "tx mem tracker breakdown: {}", _tx_root_tracker.pretty_print_json());
-    auto units = co_await _state_lock.hold_read_lock();
-    _ctx_log.debug("tx memory snapshot stats: {{log_state: {}}}", _log_state);
-}
-
-void rm_stm::log_tx_stats() {
-    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
-                          return maybe_log_tx_stats().then([this] {
-                              if (!_gate.is_closed()) {
-                                  _log_stats_timer.rearm(
-                                    clock_type::now()
-                                    + _log_stats_interval_s());
-                              }
-                          });
-                      }).handle_exception([](const std::exception_ptr&) {});
 }
 
 rm_stm_factory::rm_stm_factory(

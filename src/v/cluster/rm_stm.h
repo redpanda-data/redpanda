@@ -390,8 +390,6 @@ private:
     void fill_snapshot_wo_seqs(T&);
 
     friend std::ostream& operator<<(std::ostream&, const log_state&);
-    ss::future<> maybe_log_tx_stats();
-    void log_tx_stats();
 
     // Defines the commit offset range for the stm bootstrap.
     // Set on first apply upcall and used to identify if the
@@ -418,8 +416,6 @@ private:
     absl::flat_hash_map<std::pair<model::offset, model::offset>, uint64_t>
       _abort_snapshot_sizes{};
     ss::sharded<features::feature_table>& _feature_table;
-    config::binding<std::chrono::seconds> _log_stats_interval_s;
-    ss::timer<tx::clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
     ss::sharded<tx::producer_state_manager>& _producer_state_manager;
     std::optional<model::vcluster_id> _vcluster_id;

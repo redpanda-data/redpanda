@@ -927,7 +927,8 @@ configuration::configuration()
       "tx_log_stats_interval_s",
       "How often to log per partition tx stats, works only with debug logging "
       "enabled.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       10s)
   , create_topic_timeout_ms(
       *this,
