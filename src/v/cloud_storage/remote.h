@@ -299,13 +299,15 @@ public:
     ///                  segment's data
     /// \param exposed_name is a segment's name in S3
     /// \param manifest is a manifest that should have the segment metadata
+    /// \param max_retries is a maximal number of allowed retries
     ss::future<upload_result> upload_segment(
       const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& segment_path,
       uint64_t content_length,
       const reset_input_stream& reset_str,
       retry_chain_node& parent,
-      lazy_abort_source& lazy_abort_source);
+      lazy_abort_source& lazy_abort_source,
+      std::optional<size_t> max_retries = std::nullopt);
 
     /// \brief Download segment from S3
     ///
@@ -565,7 +567,8 @@ private:
       api_activity_type event_type,
       FailedUploadMetricFn failed_upload_metric,
       SuccessfulUploadMetricFn successful_upload_metric,
-      UploadBackoffMetricFn upload_backoff_metric);
+      UploadBackoffMetricFn upload_backoff_metric,
+      std::optional<size_t> max_retries);
 
     template<
       typename DownloadLatencyMeasurementFn,
