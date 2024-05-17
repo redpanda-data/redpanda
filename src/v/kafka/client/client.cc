@@ -243,6 +243,9 @@ ss::future<produce_response> client::produce_records(
       partition_builders;
 
     // Assign records to batches per topic_partition
+    //
+    // If the \ref produce_partition_agnostic config option is enabled the
+    // initially selected partition_id may change if failures occur
     for (auto& record : records) {
         auto p_id = record.partition_id;
         if (!p_id) {
