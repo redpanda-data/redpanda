@@ -74,6 +74,7 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
   const std::optional<cloud_roles::public_key_str>& pkey,
   const std::optional<cloud_roles::private_key_str>& skey,
   const cloud_roles::aws_region_name& region,
+  const bucket_name& bucket,
   std::optional<cloud_storage_clients::s3_url_style> url_style,
   bool node_is_in_fips_mode,
   const default_overrides& overrides,
@@ -104,27 +105,38 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
         }
     }
 
-    const auto endpoint_uri = [&]() -> ss::sstring {
-        if (overrides.endpoint) {
-            return overrides.endpoint.value();
-        }
-        return ssx::sformat("s3.{}.amazonaws.com", region());
-    }();
-    client_cfg.tls_sni_hostname = endpoint_uri;
+    const auto base_endpoint_uri = overrides.endpoint.value_or(
+      endpoint_url{ssx::sformat("s3.{}.amazonaws.com", region())});
+
+    // if url_style is virtual_host, the complete url for s3 is
+    // [bucket].[s3hostname]. s3client will form the complete_endpoint
+    // independently, to allow for self_configuration.
+    const auto complete_endpoint_uri
+      = url_style == s3_url_style::virtual_host
+          ? ssx::sformat("{}.{}", bucket(), base_endpoint_uri())
+          : base_endpoint_uri();
+
+    client_cfg.tls_sni_hostname = complete_endpoint_uri;
 
     // Setup credentials for TLS
     client_cfg.access_key = pkey;
     client_cfg.secret_key = skey;
     client_cfg.region = region;
-    client_cfg.uri = access_point_uri(endpoint_uri);
+    // defer host creation to client, after it has performed self_configure to
+    // discover if the backend is in `virtual_host` or `path mode`
+    client_cfg.uri = access_point_uri(base_endpoint_uri);
 
     if (overrides.disable_tls == false) {
         client_cfg.credentials = co_await build_tls_credentials(
           "s3", overrides.trust_file, s3_log);
     }
 
+    // When using virtual host addressing, the client must connect to
+    // the s3 endpoint with the bucket name, e.g.
+    // <bucket>.s3.<region>.amazonaws.com.  This is especially required
+    // for S3 FIPS endpoints: <bucket>.s3-fips.<region>.amazonaws.com
     client_cfg.server_addr = net::unresolved_address(
-      client_cfg.uri(),
+      complete_endpoint_uri,
       overrides.port ? *overrides.port : default_port,
       ss::net::inet_address::family::INET);
     client_cfg.disable_metrics = disable_metrics;
@@ -133,7 +145,7 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
       disable_metrics,
       disable_public_metrics,
       region,
-      endpoint_url{endpoint_uri});
+      endpoint_url{complete_endpoint_uri});
     client_cfg.max_idle_time = overrides.max_idle_time
                                  ? *overrides.max_idle_time
                                  : default_max_idle_time;
