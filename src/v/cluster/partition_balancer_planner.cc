@@ -1174,11 +1174,17 @@ void partition_balancer_planner::reassignable_partition::revert(
       _reallocated->partition.is_original(move.previous()->node_id),
       "ntp {}: move {}->{} should have been from original node",
       _ntp,
-      move.current(),
-      move.previous());
+      move.previous(),
+      move.current());
 
     auto err = _reallocated->partition.try_revert(move);
     vassert(err == errc::success, "ntp {}: revert error: {}", _ntp, err);
+    vlog(
+      clusterlog.info,
+      "ntp {}: reverted previously scheduled move {} -> {}",
+      _ntp,
+      move.previous()->node_id,
+      move.current().node_id);
 
     auto from_it = _ctx.node_disk_reports.find(move.previous()->node_id);
     if (from_it != _ctx.node_disk_reports.end()) {
@@ -1746,7 +1752,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
     // haven't been able to improve the objective, this means that we've reached
     // (local) optimum and rebalance can be finished.
 
-    bool actions_added = false;
+    bool should_stop = true;
     co_await ctx.for_each_partition_random_order([&](partition& part) {
         part.match_variant(
           [&](reassignable_partition& part) {
@@ -1779,10 +1785,14 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                           // number of partitions)
                           part.revert(res.value());
                       } else {
-                          actions_added = true;
+                          should_stop = false;
                       }
                   }
               }
+          },
+          [&](immutable_partition& p) {
+              p.report_failure(change_reason::partition_count_rebalancing);
+              should_stop = false;
           },
           [](auto&) {});
 
@@ -1793,7 +1803,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         double cur_objective = calc_objective(domain);
         vlog(
           clusterlog.info,
-          "counts rebalancing objective in domain {}: {:6} -> {:6}",
+          "counts rebalancing objective in domain {}: {:.6} -> {:.6}",
           domain,
           orig_objective,
           cur_objective);
@@ -1814,7 +1824,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         return true;
     };
 
-    if (!actions_added && all_nodes_healthy()) {
+    if (should_stop && all_nodes_healthy()) {
         ctx._counts_rebalancing_finished = true;
     }
 }
