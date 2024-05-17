@@ -200,6 +200,7 @@ struct scan_result {
 /// Similar to prev function but uses timequery
 scan_result scan_remote_partition(
   cloud_storage_fixture& imposter,
+  model::offset min,
   model::timestamp timestamp,
   model::offset max = model::offset::max(),
   size_t maybe_max_segments = 0,
