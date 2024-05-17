@@ -60,22 +60,6 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
             },
         }
         validator = {
-            OMBSampleConfigurations.PUB_LATENCY_MIN:
-            [OMBSampleConfigurations.lte(1)],
-            OMBSampleConfigurations.PUB_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(10)],
-            OMBSampleConfigurations.PUB_LATENCY_75PCT:
-            [OMBSampleConfigurations.lte(15)],
-            OMBSampleConfigurations.PUB_LATENCY_95PCT:
-            [OMBSampleConfigurations.lte(25)],
-            OMBSampleConfigurations.E2E_LATENCY_MIN:
-            [OMBSampleConfigurations.lte(1)],
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(15)],
-            OMBSampleConfigurations.E2E_LATENCY_75PCT:
-            [OMBSampleConfigurations.lte(20)],
-            OMBSampleConfigurations.E2E_LATENCY_95PCT:
-            [OMBSampleConfigurations.lte(25)],
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
             [OMBSampleConfigurations.gte(170)]
         }

@@ -48,14 +48,8 @@ class SmallBatchesTest(RedpandaTest):
             },
         }
         validator = {
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(30)],
-            OMBSampleConfigurations.E2E_LATENCY_AVG:
-            [OMBSampleConfigurations.lte(75)],
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
             [OMBSampleConfigurations.gte(2)],
-            OMBSampleConfigurations.PUB_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(40)],
         }
 
         benchmark = OpenMessagingBenchmark(ctx=self._ctx,

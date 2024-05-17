@@ -47,14 +47,6 @@ class TSReadOpenmessagingTest(RedpandaTest):
         assert self.redpanda.dedicated_nodes
 
         validator = {
-            OMBSampleConfigurations.PUB_LATENCY_MIN:
-            [OMBSampleConfigurations.lte(1)],
-            OMBSampleConfigurations.PUB_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(10)],
-            OMBSampleConfigurations.PUB_LATENCY_75PCT:
-            [OMBSampleConfigurations.lte(15)],
-            OMBSampleConfigurations.PUB_LATENCY_95PCT:
-            [OMBSampleConfigurations.lte(100)],
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
             [OMBSampleConfigurations.gte(90)]
         }

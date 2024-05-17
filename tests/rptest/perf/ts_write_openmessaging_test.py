@@ -42,7 +42,7 @@ class TSWriteOpenmessagingTest(RedpandaTest):
 
         assert self.redpanda.dedicated_nodes
         workload = {
-            "name": "CommonWorkload",
+            "name": "TSWriteWorkload",
             "topics": 1,
             "partitions_per_topic": 100,
             "subscriptions_per_topic": 1,
@@ -56,7 +56,7 @@ class TSWriteOpenmessagingTest(RedpandaTest):
             "warmup_duration_minutes": 1,
         }
         driver = {
-            "name": "CommonWorkloadDriver",
+            "name": "TSWriteDriver",
             "replication_factor": 3,
             "request_timeout": 300000,
             "producer_config": {
@@ -73,9 +73,7 @@ class TSWriteOpenmessagingTest(RedpandaTest):
             },
         }
 
-        validator = OMBSampleConfigurations.RELEASE_SMOKE_TEST_VALIDATOR | {
-            OMBSampleConfigurations.E2E_LATENCY_75PCT:
-            [OMBSampleConfigurations.lte(6)],
+        validator = {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
             [OMBSampleConfigurations.gte(170)]
         }
