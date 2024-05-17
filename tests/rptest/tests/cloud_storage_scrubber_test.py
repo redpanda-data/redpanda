@@ -487,6 +487,9 @@ class CloudStorageScrubberTest(RedpandaTest):
         # Remove the metadata for the penultimate segment, thus creating an offset gap
         # for the scrubber to detect
         found = False
+        seg_to_remove_name = None
+        seg_to_remove_meta = None
+        detect_at_seg_meta = None
         for crnt_seg, next_seg in itertools.pairwise(sorted_segments):
             name, meta = crnt_seg
 
@@ -507,11 +510,27 @@ class CloudStorageScrubberTest(RedpandaTest):
                 found = True
                 break
 
-        assert found, f"Could not find a segment to remove from the STM manifest"
+        assert found, "Could not find a segment to remove from the STM manifest"
 
         self.logger.info(f"Removing segment with meta {seg_to_remove_meta}")
         self.logger.info(f"Anomaly should be detected at {detect_at_seg_meta}")
         manifest['segments'].pop(seg_to_remove_name)
+        """
+        The operation above may remove the first segment in the manifest. This
+        causes a difference between the manifest start offset and the first
+        segment start offset. The mismatch causes a validation to fail when
+        spillover is applied (which is correct behavior) by archival STM.
+
+        To avoid the test failing due to this expected set of events, the error
+        log is added to accept list here.
+        """
+        sorted_segments = sorted(manifest['segments'].items(),
+                                 key=lambda entry: entry[1]['base_offset'])
+        expect_error_at_offset = sorted_segments[0][1]['base_offset']
+        self.expected_error_logs.append(
+            re.compile(
+                fr"Can't apply spillover_cmd.*base_offset: {expect_error_at_offset}"
+            ))
 
         # Forcefully reset the manifest. Remote writes are disabled first
         # to make this operation safe.
