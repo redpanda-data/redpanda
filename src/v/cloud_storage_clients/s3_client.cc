@@ -18,6 +18,7 @@
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "hashing/secure.h"
 #include "http/client.h"
 #include "net/types.h"
@@ -559,6 +560,15 @@ s3_client::self_configure() {
     // If both addressing methods fail, return an error.
     auto result = s3_self_configuration_result{
       .url_style = s3_url_style::virtual_host};
+
+    // in fips mode this code path should not be reached, because after
+    // s3_configuration::make_configuration() url_style should already have a
+    // definitive value of s3_url_style::virtual_host
+    auto in_fips_mode = config::node().fips_mode.value();
+    vassert(
+      !in_fips_mode,
+      "node is in fips mode, s3_client::self_configure() should not be called");
+
     const auto remote_read
       = config::shard_local_cfg().cloud_storage_enable_remote_read();
     const auto remote_write
