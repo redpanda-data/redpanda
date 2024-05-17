@@ -36,7 +36,7 @@ scan_remote_partition_incrementally_with_reuploads(
   size_t maybe_max_readers = 0) {
     ss::lowres_clock::update();
     auto conf = fixt.get_configuration();
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    static auto bucket = fixt.bucket;
     if (maybe_max_segments) {
         config::shard_local_cfg()
           .cloud_storage_max_materialized_segments_per_shard.set_value(
@@ -456,8 +456,6 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
 
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
-
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
 
     auto manifest = hydrate_manifest(api.local(), bucket);
     partition_probe probe(manifest.get_ntp());

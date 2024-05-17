@@ -67,7 +67,6 @@ public:
     async_manifest_view_fixture()
       : cloud_storage_fixture()
       , stm_manifest(manifest_ntp, manifest_rev)
-      , bucket("test-bucket")
       , rtc(as)
       , ctxlog(test_log, rtc)
       , probe(manifest_ntp)
@@ -324,7 +323,6 @@ public:
     }
 
     partition_manifest stm_manifest;
-    cloud_storage_clients::bucket_name bucket;
     ss::abort_source as;
     retry_chain_node rtc;
     retry_chain_logger ctxlog;

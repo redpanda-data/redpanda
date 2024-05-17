@@ -95,7 +95,7 @@ result<http::client::request_header> request_creator::make_get_object_request(
     // x-amz-date:{req-datetime}
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-    auto host = make_host(name);
+    std::string host = _ap();
     auto target = make_target(name, key);
     header.method(boost::beast::http::verb::get);
     header.target(target);
@@ -131,7 +131,7 @@ result<http::client::request_header> request_creator::make_head_object_request(
     // x-amz-date:{req-datetime}
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-    auto host = make_host(name);
+    std::string host = _ap();
     auto target = make_target(name, key);
     header.method(boost::beast::http::verb::head);
     header.target(target);
@@ -164,7 +164,7 @@ request_creator::make_unsigned_put_object_request(
     // Expect: 100-continue
     // [11434 bytes of object data]
     http::client::request_header header{};
-    auto host = make_host(name);
+    std::string host = _ap();
     auto target = make_target(name, key);
     header.method(boost::beast::http::verb::put);
     header.target(target);
@@ -202,7 +202,7 @@ request_creator::make_list_objects_v2_request(
     // x-amz-date: 20160501T000433Z
     // Authorization: authorization string
     http::client::request_header header{};
-    auto host = make_host(name);
+    std::string host = _ap();
     auto key = fmt::format("?list-type=2");
     if (prefix.has_value()) {
         key = fmt::format("{}&prefix={}", key, (*prefix)().string());
@@ -251,7 +251,7 @@ request_creator::make_delete_object_request(
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
     //
     // NOTE: x-amz-mfa, x-amz-bypass-governance-retention are not used for now
-    auto host = make_host(name);
+    std::string host = _ap();
     auto target = make_target(name, key);
     header.method(boost::beast::http::verb::delete_);
     header.target(target);
@@ -344,7 +344,7 @@ request_creator::make_delete_objects_request(
 
     http::client::request_header header{};
     header.method(boost::beast::http::verb::post);
-    auto host = make_host(name);
+    std::string host = _ap();
     auto target = make_target(name, object_key{"?delete"});
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
@@ -367,17 +367,6 @@ request_creator::make_delete_objects_request(
       std::move(header),
       ss::input_stream<char>{ss::data_source{
         std::make_unique<delete_objects_body>(std::move(body))}}};
-}
-
-std::string request_creator::make_host(const bucket_name& name) const {
-    switch (_ap_style) {
-    case s3_url_style::virtual_host:
-        // Host: bucket-name.s3.region-code.amazonaws.com
-        return fmt::format("{}.{}", name(), _ap());
-    case s3_url_style::path:
-        // Host: s3.region-code.amazonaws.com
-        return fmt::format("{}", _ap());
-    }
 }
 
 std::string request_creator::make_target(

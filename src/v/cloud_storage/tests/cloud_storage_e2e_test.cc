@@ -46,9 +46,10 @@ class e2e_fixture
   , public enable_cloud_storage_fixture {
 public:
     e2e_fixture()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{},
-        httpd_port_number()) {
+      : s3_imposter_fixture(cloud_storage_clients::bucket_name("test-bucket"))
+      , redpanda_thread_fixture(
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number()) {
         // No expectations: tests will PUT and GET organically.
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
@@ -350,9 +351,10 @@ class cloud_storage_manual_e2e_test
 public:
     static constexpr auto segs_per_spill = 10;
     cloud_storage_manual_e2e_test()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{},
-        httpd_port_number()) {
+      : s3_imposter_fixture(cloud_storage_clients::bucket_name("test-bucket"))
+      , redpanda_thread_fixture(
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number()) {
         // No expectations: tests will PUT and GET organically.
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
@@ -558,9 +560,17 @@ FIXTURE_TEST(test_timequery_after_archival_gc, cloud_storage_manual_e2e_test) {
       kafka::next_offset(first_seg.last_kafka_offset()));
 }
 
+class reclaimable_reported_in_health_report_fixture
+  : public cloud_storage_manual_multinode_test_base {
+public:
+    reclaimable_reported_in_health_report_fixture()
+      : cloud_storage_manual_multinode_test_base(
+        cloud_storage_clients::bucket_name("test-bucket")) {}
+};
+
 FIXTURE_TEST(
   reclaimable_reported_in_health_report,
-  cloud_storage_manual_multinode_test_base) {
+  reclaimable_reported_in_health_report_fixture) {
     test_local_cfg.get("retention_local_trim_interval")
       .set_value(std::chrono::milliseconds(2000));
 

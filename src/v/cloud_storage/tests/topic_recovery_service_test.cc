@@ -12,6 +12,7 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/topic_recovery_service.h"
+#include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
 #include "utils/memory_data_source.h"
@@ -132,9 +133,10 @@ class fixture
   , public enable_cloud_storage_fixture {
 public:
     fixture()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{},
-        httpd_port_number()) {
+      : s3_imposter_fixture(cloud_storage_clients::bucket_name("test-bucket"))
+      , redpanda_thread_fixture(
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number()) {
         // This test will manually set expectations for list requests.
         set_search_on_get_list(false);
     }

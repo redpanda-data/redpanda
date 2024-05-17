@@ -74,7 +74,8 @@ class offsets_recovery_fixture
   : public cloud_storage_manual_multinode_test_base {
 public:
     offsets_recovery_fixture()
-      : bucket(cloud_storage_clients::bucket_name("test-bucket")) {
+      : cloud_storage_manual_multinode_test_base(
+        cloud_storage_clients::bucket_name("test-bucket")) {
         RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
             return app.storage.local().get_cluster_uuid().has_value();
         });
@@ -274,7 +275,7 @@ public:
         retry_chain_node retry_node(
           never_abort, ss::lowres_clock::time_point::max(), 10ms);
         offsets_uploader uploader(
-          bucket, app._group_manager, app.cloud_storage_api);
+          _bucket_name, app._group_manager, app.cloud_storage_api);
         std::vector<std::vector<cloud_storage::remote_segment_path>>
           paths_per_pid;
         paths_per_pid.resize(offset_ntps.size());
@@ -302,7 +303,7 @@ public:
             cloud_storage::remote_file rf(
               fixture.app.cloud_storage_api.local(),
               fixture.app.shadow_index_cache.local(),
-              bucket,
+              _bucket_name,
               p,
               retry_node,
               "offsets file");
@@ -324,7 +325,6 @@ public:
     }
 
 protected:
-    const cloud_storage_clients::bucket_name bucket;
     model::cluster_uuid cluster_uuid;
 };
 
@@ -525,7 +525,7 @@ FIXTURE_TEST(test_local_recovery, offsets_recovery_fixture) {
           model::kafka_consumer_offsets_nt.tp,
           model::partition_id(i),
         };
-        req.bucket = bucket;
+        req.bucket = _bucket_name;
         BOOST_REQUIRE_EQUAL(remote_paths[i].size(), 1);
         req.offsets_snapshot_paths.emplace_back(remote_paths[i][0]());
         auto small_batch_size = 1;
@@ -590,7 +590,7 @@ FIXTURE_TEST(
           model::kafka_consumer_offsets_nt.tp,
           model::partition_id(i),
         };
-        req.bucket = bucket;
+        req.bucket = _bucket_name;
         BOOST_REQUIRE_EQUAL(remote_paths[i].size(), 1);
         req.offsets_snapshot_paths.emplace_back(remote_paths[i][0]());
         auto reply = recoverer.recover(std::move(req)).get();
@@ -778,7 +778,7 @@ FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
       app.controller->get_topics_frontend());
     retry_chain_node retry_node(never_abort, 30s, 10ms);
     auto err = recovery_mgr
-                 .recover(retry_node, bucket, std::move(paths_per_pid))
+                 .recover(retry_node, _bucket_name, std::move(paths_per_pid))
                  .get();
     BOOST_REQUIRE_EQUAL(err, error_outcome::success);
 
@@ -854,7 +854,7 @@ FIXTURE_TEST(test_cluster_recovery_with_offsets, offsets_recovery_fixture) {
 
     auto recover_err = app.controller->get_cluster_recovery_manager()
                          .local()
-                         .initialize_recovery(bucket)
+                         .initialize_recovery(_bucket_name)
                          .get();
     BOOST_REQUIRE(recover_err.has_value());
     BOOST_REQUIRE_EQUAL(recover_err.value(), cluster::errc::success);

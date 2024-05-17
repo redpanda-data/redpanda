@@ -417,6 +417,7 @@ ss::future<configuration> configuration::get_s3_config() {
       config::shard_local_cfg().disable_metrics());
     auto disable_public_metrics = net::public_metrics_disabled(
       config::shard_local_cfg().disable_public_metrics());
+
     auto bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
       config::shard_local_cfg().cloud_storage_bucket, "cloud_storage_bucket"));
 

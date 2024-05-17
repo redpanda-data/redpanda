@@ -12,7 +12,11 @@
 
 #include "cloud_storage/tests/s3_imposter.h"
 
-cloud_storage_fixture::cloud_storage_fixture() {
+const cloud_storage_clients::bucket_name cloud_storage_fixture::bucket{
+  "bucket"};
+
+cloud_storage_fixture::cloud_storage_fixture()
+  : s3_imposter_fixture(bucket) {
     config::shard_local_cfg()
       .cloud_storage_max_segment_readers_per_shard.reset();
     config::shard_local_cfg()

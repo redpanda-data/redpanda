@@ -25,10 +25,12 @@ class cloud_storage_manual_multinode_test_base
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:
-    cloud_storage_manual_multinode_test_base()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{},
-        httpd_port_number()) {
+    cloud_storage_manual_multinode_test_base(
+      cloud_storage_clients::bucket_name bucket)
+      : s3_imposter_fixture(bucket)
+      , redpanda_thread_fixture(
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number()) {
         // No expectations: tests will PUT and GET organically.
         set_expectations_and_listen({});
 

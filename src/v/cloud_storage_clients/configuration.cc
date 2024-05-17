@@ -11,6 +11,7 @@
 #include "cloud_storage_clients/configuration.h"
 
 #include "cloud_storage_clients/logger.h"
+#include "cloud_storage_clients/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "net/tls.h"

@@ -45,7 +45,8 @@ class remote_file_fixture
   , public cache_test_fixture {
 public:
     remote_file_fixture()
-      : data_dir("data_dir") {
+      : s3_imposter_fixture(bucket)
+      , data_dir("data_dir") {
         ss::recursive_touch_directory(data_dir.get_path().string()).get();
         auto conf = get_configuration();
         pool

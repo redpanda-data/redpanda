@@ -14,6 +14,7 @@
 #include "cloud_storage_clients/client.h"
 #include "config/configuration.h"
 #include "http/tests/registered_urls.h"
+#include "model/fundamental.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -40,9 +41,10 @@ class s3_imposter_fixture {
 public:
     static constexpr size_t default_max_keys = 100;
     uint16_t httpd_port_number();
-    static constexpr const char* httpd_host_name = "127.0.0.1";
+    static constexpr const char* httpd_host_name = "localhost";
+    static constexpr const char* httpd_ip_addr = "127.0.0.1";
 
-    s3_imposter_fixture();
+    explicit s3_imposter_fixture(cloud_storage_clients::bucket_name bucket);
     ~s3_imposter_fixture();
 
     s3_imposter_fixture(const s3_imposter_fixture&) = delete;
@@ -95,6 +97,9 @@ public:
     cloud_storage_clients::s3_configuration get_configuration();
 
     void set_search_on_get_list(bool should) { _search_on_get_list = should; }
+
+protected:
+    cloud_storage_clients::bucket_name _bucket_name;
 
 private:
     void set_routes(

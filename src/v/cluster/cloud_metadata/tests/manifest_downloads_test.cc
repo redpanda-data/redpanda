@@ -35,10 +35,11 @@ class cluster_metadata_fixture
   , public enable_cloud_storage_fixture {
 public:
     cluster_metadata_fixture()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{}, httpd_port_number())
-      , remote(app.cloud_storage_api.local())
-      , bucket(cloud_storage_clients::bucket_name("test-bucket")) {
+      : s3_imposter_fixture(cloud_storage_clients::bucket_name("test-bucket"))
+      , redpanda_thread_fixture(
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number())
+      , remote(app.cloud_storage_api.local()) {
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
         tests::cooperative_spin_wait_with_timeout(5s, [this] {
@@ -48,7 +49,6 @@ public:
     }
 
     cloud_storage::remote& remote;
-    const cloud_storage_clients::bucket_name bucket;
     model::cluster_uuid cluster_uuid;
 };
 
@@ -60,7 +60,7 @@ FIXTURE_TEST(test_download_manifest, cluster_metadata_fixture) {
     retry_chain_node retry_node(
       never_abort, ss::lowres_clock::time_point::max(), 10ms);
     auto m_res = download_highest_manifest_for_cluster(
-                   remote, cluster_uuid, bucket, retry_node)
+                   remote, cluster_uuid, _bucket_name, retry_node)
                    .get();
     BOOST_REQUIRE(m_res.has_error());
     BOOST_REQUIRE_EQUAL(m_res.error(), error_outcome::no_matching_metadata);
@@ -72,17 +72,12 @@ FIXTURE_TEST(test_download_manifest, cluster_metadata_fixture) {
     for (int i = 0; i < 20; i += 2) {
         manifest.metadata_id = cluster_metadata_id(i);
         // As a sanity check, upload directly rather than using uploader APIs.
-        remote
-          .upload_manifest(
-            cloud_storage_clients::bucket_name("test-bucket"),
-            manifest,
-            retry_node)
-          .get();
+        remote.upload_manifest(_bucket_name, manifest, retry_node).get();
 
         // Downloading the manifest should always yield the manifest with the
         // highest metadata ID.
         auto m_res = download_highest_manifest_for_cluster(
-                       remote, cluster_uuid, bucket, retry_node)
+                       remote, cluster_uuid, _bucket_name, retry_node)
                        .get();
         BOOST_REQUIRE(m_res.has_value());
         BOOST_CHECK_EQUAL(i, m_res.value().metadata_id());
@@ -92,7 +87,7 @@ FIXTURE_TEST(test_download_manifest, cluster_metadata_fixture) {
     retry_chain_node timeout_retry_node(
       never_abort, ss::lowres_clock::time_point::min(), 10ms);
     m_res = download_highest_manifest_for_cluster(
-              remote, cluster_uuid, bucket, timeout_retry_node)
+              remote, cluster_uuid, _bucket_name, timeout_retry_node)
               .get();
     BOOST_CHECK(m_res.has_error());
     BOOST_CHECK_EQUAL(error_outcome::list_failed, m_res.error());
@@ -102,21 +97,20 @@ FIXTURE_TEST(
   test_download_highest_manifest_in_bucket, cluster_metadata_fixture) {
     retry_chain_node retry_node(
       never_abort, ss::lowres_clock::time_point::max(), 10ms);
-    auto m_res
-      = download_highest_manifest_in_bucket(remote, bucket, retry_node).get();
+    auto m_res = download_highest_manifest_in_bucket(
+                   remote, _bucket_name, retry_node)
+                   .get();
     BOOST_REQUIRE(m_res.has_error());
     BOOST_REQUIRE_EQUAL(m_res.error(), error_outcome::no_matching_metadata);
 
     cluster_metadata_manifest manifest;
     manifest.cluster_uuid = cluster_uuid;
     manifest.metadata_id = cluster_metadata_id(10);
-    remote
-      .upload_manifest(
-        cloud_storage_clients::bucket_name("test-bucket"), manifest, retry_node)
-      .get();
+    remote.upload_manifest(_bucket_name, manifest, retry_node).get();
 
-    m_res
-      = download_highest_manifest_in_bucket(remote, bucket, retry_node).get();
+    m_res = download_highest_manifest_in_bucket(
+              remote, _bucket_name, retry_node)
+              .get();
     BOOST_REQUIRE(m_res.has_value());
     BOOST_CHECK_EQUAL(cluster_uuid, m_res.value().cluster_uuid);
     BOOST_CHECK_EQUAL(10, m_res.value().metadata_id());
@@ -126,12 +120,10 @@ FIXTURE_TEST(
     manifest.metadata_id = cluster_metadata_id(15);
 
     // Upload a new manifest with a higher metadata ID for a new cluster.
-    remote
-      .upload_manifest(
-        cloud_storage_clients::bucket_name("test-bucket"), manifest, retry_node)
-      .get();
-    m_res
-      = download_highest_manifest_in_bucket(remote, bucket, retry_node).get();
+    remote.upload_manifest(_bucket_name, manifest, retry_node).get();
+    m_res = download_highest_manifest_in_bucket(
+              remote, _bucket_name, retry_node)
+              .get();
     BOOST_REQUIRE(m_res.has_value());
     BOOST_REQUIRE_EQUAL(15, m_res.value().metadata_id());
     BOOST_REQUIRE_EQUAL(new_uuid, m_res.value().cluster_uuid);
@@ -139,14 +131,14 @@ FIXTURE_TEST(
     // Sanity check that searching by the cluster UUIDs return the expected
     // manifests.
     m_res = download_highest_manifest_for_cluster(
-              remote, cluster_uuid, bucket, retry_node)
+              remote, cluster_uuid, _bucket_name, retry_node)
               .get();
     BOOST_REQUIRE(m_res.has_value());
     BOOST_REQUIRE_EQUAL(10, m_res.value().metadata_id());
     BOOST_REQUIRE_EQUAL(cluster_uuid, m_res.value().cluster_uuid);
 
     m_res = download_highest_manifest_for_cluster(
-              remote, new_uuid, bucket, retry_node)
+              remote, new_uuid, _bucket_name, retry_node)
               .get();
     BOOST_REQUIRE(m_res.has_value());
     BOOST_REQUIRE_EQUAL(15, m_res.value().metadata_id());

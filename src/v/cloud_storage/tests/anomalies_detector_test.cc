@@ -223,7 +223,7 @@ ss::sstring iobuf_to_string(iobuf buf) {
 
 class bucket_view_fixture : http_imposter_fixture {
 public:
-    static constexpr auto host_name = "127.0.0.1";
+    static constexpr auto host_name = "localhost";
     static constexpr auto port = 4447;
 
     bucket_view_fixture()

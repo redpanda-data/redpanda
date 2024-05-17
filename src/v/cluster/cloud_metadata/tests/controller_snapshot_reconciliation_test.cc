@@ -38,12 +38,13 @@ class controller_snapshot_reconciliation_fixture
   , public enable_cloud_storage_fixture {
 public:
     controller_snapshot_reconciliation_fixture()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{}, httpd_port_number())
+      : s3_imposter_fixture(cloud_storage_clients::bucket_name("test-bucket"))
+      , redpanda_thread_fixture(
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number())
       , raft0(app.partition_manager.local().get(model::controller_ntp)->raft())
       , controller_stm(app.controller->get_controller_stm().local())
       , remote(app.cloud_storage_api.local())
-      , bucket(cloud_storage_clients::bucket_name("test-bucket"))
       , reconciler(
           app.controller->get_cluster_recovery_table().local(),
           app.feature_table.local(),
@@ -61,7 +62,6 @@ protected:
     cluster::consensus_ptr raft0;
     cluster::controller_stm& controller_stm;
     cloud_storage::remote& remote;
-    const cloud_storage_clients::bucket_name bucket;
     model::cluster_uuid cluster_uuid;
 
     controller_snapshot_reconciler reconciler;

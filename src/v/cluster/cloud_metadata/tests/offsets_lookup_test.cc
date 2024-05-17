@@ -34,9 +34,10 @@ class offsets_lookup_fixture
   , public enable_cloud_storage_fixture {
 public:
     offsets_lookup_fixture()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{},
-        httpd_port_number()) {
+      : s3_imposter_fixture(cloud_storage_clients::bucket_name("test-bucket"))
+      , redpanda_thread_fixture(
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number()) {
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
         RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
