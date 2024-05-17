@@ -795,10 +795,6 @@ void rm_stm::update_tx_offsets(
             ongoing_it->second.last = last_offset;
         }
     } else {
-        // we do no have to check if the value is empty as it is already
-        // done with ongoing map
-        producer->update_current_txn_start_offset(from_log_offset(base_offset));
-
         _log_state.ongoing_map.emplace(
           pid, tx_range{.pid = pid, .first = base_offset, .last = last_offset});
         _log_state.ongoing_set.insert(header.base_offset);
@@ -1614,15 +1610,6 @@ void rm_stm::apply_control(
     // case we don't fence off aborts and commits because transactional
     // manager already decided a tx's outcome and acked it to the client
     auto producer = maybe_create_producer(pid);
-
-    if (likely(
-          crt == model::control_record_type::tx_abort
-          || crt == model::control_record_type::tx_commit)) {
-        /**
-         * Transaction is finished, update producer tx start offset
-         */
-        producer->update_current_txn_start_offset(std::nullopt);
-    }
 
     // there are only two types of control batches
     if (crt == model::control_record_type::tx_abort) {

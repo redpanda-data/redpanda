@@ -81,6 +81,11 @@ tx_snapshot::tx_snapshot(tx_snapshot_v4 snap_v4, raft::group_id group)
     }
 }
 
+bool producer_partition_transaction_state::is_in_progress() const {
+    return status == partition_transaction_status::ongoing
+           || status == partition_transaction_status::initialized;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const partition_transaction_status& status) {
     switch (status) {
@@ -89,6 +94,12 @@ operator<<(std::ostream& o, const partition_transaction_status& status) {
         break;
     case partition_transaction_status::initialized:
         o << "initialized";
+        break;
+    case partition_transaction_status::committed:
+        o << "committed";
+        break;
+    case partition_transaction_status::aborted:
+        o << "aborted";
         break;
     }
     return o;
@@ -126,6 +137,21 @@ std::ostream& operator<<(std::ostream& o, const abort_snapshot& as) {
       as.first,
       as.last,
       as.aborted.size());
+    return o;
+}
+
+std::ostream& operator<<(
+  std::ostream& o, const producer_partition_transaction_state& tx_state) {
+    fmt::print(
+      o,
+      "{{first: {}, last: {}, sequence: {}, timeout: {}, coordinator "
+      "partition: {}, status: {} }}",
+      tx_state.first,
+      tx_state.last,
+      tx_state.sequence,
+      tx_state.timeout,
+      tx_state.coordinator_partition,
+      tx_state.status);
     return o;
 }
 

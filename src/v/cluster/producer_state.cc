@@ -13,7 +13,6 @@
 
 #include "base/vassert.h"
 #include "cluster/logger.h"
-#include "cluster/rm_stm_types.h"
 
 namespace cluster::tx {
 
@@ -222,7 +221,8 @@ producer_state::producer_state(
 
 bool producer_state::operator==(const producer_state& other) const {
     return _id == other._id && _group == other._group
-           && _requests == other._requests;
+           && _requests == other._requests
+           && _transaction_state == other._transaction_state;
 }
 
 std::ostream& operator<<(std::ostream& o, const requests& requests) {
@@ -238,11 +238,13 @@ std::ostream& operator<<(std::ostream& o, const producer_state& state) {
     fmt::print(
       o,
       "{{ id: {}, group: {}, requests: {}, "
-      "ms_since_last_update: {} }}",
+      "ms_since_last_update: {}, transaction_state: {}, evicted: {} }}",
       state._id,
       state._group,
       state._requests,
-      state.ms_since_last_update());
+      state.ms_since_last_update(),
+      state._transaction_state,
+      state._evicted);
     return o;
 }
 
@@ -252,19 +254,18 @@ void producer_state::shutdown_input() {
 }
 
 bool producer_state::can_evict() {
-    // oplock is taken, do not allow producer state to be evicted
-    if (!_op_lock.ready() || _evicted) {
+    if (
+      // Check if already evicted
+      _evicted
+      // Check if an operation is in progress using this producer
+      || !_op_lock.ready()
+      // Check if there are operations pending state machine sync
+      || !_requests._inflight_requests.empty()
+      //  Check if there are any open transactions on this producer.
+      || has_transaction_in_progress()) {
+        vlog(_logger.debug, "[{}] cannot evict producer.", *this);
         return false;
     }
-
-    if (!_requests._inflight_requests.empty()) {
-        vlog(
-          _logger.debug,
-          "[{}] cannot evict because of pending inflight requests",
-          *this);
-        return false;
-    }
-
     vlog(_logger.debug, "[{}] evicting producer", *this);
     _evicted = true;
     shutdown_input();
@@ -324,6 +325,19 @@ std::optional<seq_t> producer_state::last_sequence_number() const {
     return maybe_ptr.value()->_last_sequence;
 }
 
+bool producer_state::has_transaction_in_progress() const {
+    return _transaction_state ? _transaction_state->is_in_progress() : false;
+}
+
+bool producer_state::has_transaction_expired() const {
+    if (!has_transaction_in_progress()) {
+        // nothing to expire.
+        return false;
+    }
+    return _force_transaction_expiry
+           || ms_since_last_update() > _transaction_state->timeout_ms();
+}
+
 producer_state_snapshot
 producer_state::snapshot(kafka::offset log_start_offset) const {
     producer_state_snapshot snapshot;
@@ -350,6 +364,35 @@ producer_state::snapshot(kafka::offset log_start_offset) const {
         }
     }
     return snapshot;
+}
+
+std::optional<model::tx_seq> producer_state::get_transaction_sequence() const {
+    if (has_transaction_in_progress()) {
+        return _transaction_state->sequence;
+    }
+    return std::nullopt;
+}
+
+std::optional<model::offset>
+producer_state::get_current_tx_start_offset() const {
+    if (has_transaction_in_progress()) {
+        return _transaction_state->first;
+    }
+    return std::nullopt;
+}
+
+std::optional<expiration_info> producer_state::get_expiration_info() const {
+    if (!has_transaction_in_progress()) {
+        return std::nullopt;
+    }
+    auto duration = std::chrono::duration_cast<clock_type::duration>(
+      ms_since_last_update());
+    auto timeout = std::chrono::duration_cast<clock_type::duration>(
+      _transaction_state->timeout_ms());
+    return expiration_info{
+      .timeout = timeout,
+      .last_update = tx::clock_type::now() - duration,
+      .is_expiration_requested = has_transaction_expired()};
 }
 
 } // namespace cluster::tx

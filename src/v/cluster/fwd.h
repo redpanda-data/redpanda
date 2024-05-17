@@ -87,6 +87,7 @@ class producer_state_manager;
 class producer_state;
 class request;
 struct producer_state_snapshot;
+struct producer_partition_transaction_state;
 } // namespace tx
 
 namespace node {

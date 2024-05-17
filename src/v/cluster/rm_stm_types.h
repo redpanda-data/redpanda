@@ -49,14 +49,19 @@ struct expiration_info {
 // Not to be confused with user visible transaction status
 // that can potentially span multiple data partitions.
 enum class partition_transaction_status : int8_t {
-    // Data has been appended as a part of the transaction.
-    ongoing = 0,
-    //
     // note: couple of unused status types [1, 2] were removed.
+    // enumerators are defined in the order in which a transaction
+    // state progresses but the enum values are all over the place
+    // to maintain backward compatibility with original definitions
+    // that definied ongoing = 0
     //
     // Partition is aware of the transaction but the client has
     // not produced data as a part of this transaction.
-    initialized = 3
+    initialized = 3,
+    // Data has been appended as a part of the transaction.
+    ongoing = 0,
+    committed = 4,
+    aborted = 5
 };
 
 std::ostream& operator<<(std::ostream&, const partition_transaction_status&);
@@ -130,6 +135,49 @@ struct abort_snapshot {
 
     bool operator==(const abort_snapshot&) const = default;
 };
+
+// All transaction related state of an open transaction
+// on a single partition.
+struct producer_partition_transaction_state
+  : serde::envelope<
+      producer_partition_transaction_state,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    // begin offset of the open transaction.
+    model::offset first;
+    // current last offset of the open transaction. This
+    // changes as more data batches are appended as a part
+    // of the transaction.
+    model::offset last;
+    // sequence is bumped for every completed (committed/aborted) transaction
+    // using the same producer id. This helps disambiguate requests meant for
+    // different transactions with the same producer id.
+    model::tx_seq sequence;
+    // An optional user set timeout for the transaction.
+    std::optional<std::chrono::milliseconds> timeout;
+    // Transaction coordinator partition (tx/n) coordinating this transaction.
+    model::partition_id coordinator_partition{
+      model::legacy_tm_ntp.tp.partition};
+    // Current status of the transaction.
+    partition_transaction_status status;
+
+    std::chrono::milliseconds timeout_ms() const {
+        return timeout.value_or(std::chrono::milliseconds::max());
+    }
+
+    bool operator==(const producer_partition_transaction_state&) const
+      = default;
+
+    bool is_in_progress() const;
+
+    auto serde_fields() {
+        return std::tie(
+          first, last, sequence, timeout, coordinator_partition, status);
+    }
+};
+
+std::ostream&
+operator<<(std::ostream& o, const producer_partition_transaction_state&);
 
 struct producer_state_snapshot {
     struct finished_request {

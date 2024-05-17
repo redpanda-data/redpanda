@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/namespaced_cache.h"
+#include "cluster/rm_stm_types.h"
 #include "cluster/types.h"
 #include "container/intrusive_list_helpers.h"
 #include "model/record.h"
@@ -204,41 +205,65 @@ public:
         return model::timestamp(_last_updated_ts.time_since_epoch() / 1ms);
     }
 
-    std::optional<kafka::offset> current_txn_start_offset() const {
-        return _current_txn_start_offset;
-    }
-
     model::producer_identity id() const { return _id; }
-
-    void update_current_txn_start_offset(std::optional<kafka::offset> offset) {
-        _current_txn_start_offset = offset;
-    }
 
     void gc_requests_from_older_terms(model::term_id current_term) {
         _requests.gc_requests_from_older_terms(current_term);
     }
 
+    bool has_transaction_in_progress() const;
+
+    // Returns the start offset of a transaction if one is in progress
+    // or a disengaged optional.
+    std::optional<model::offset> get_current_tx_start_offset() const;
+
+    // Returns the sequence number of a transaction if one is in progress
+    // or a disengaged optional.
+    std::optional<model::tx_seq> get_transaction_sequence() const;
+
+    // Returns the expiration information of a transaction if one is in
+    // progress or a disengaged optional.
+    std::optional<expiration_info> get_expiration_info() const;
+
+    const std::unique_ptr<producer_partition_transaction_state>&
+    transaction_state() const {
+        return _transaction_state;
+    }
+
+    // Returns true if there is an open transaction _and_ if it
+    // has expired.
+    bool has_transaction_expired() const;
+
+    void force_transaction_expiry() { _force_transaction_expiry = true; }
+
     safe_intrusive_list_hook _hook;
 
-private:
     std::chrono::milliseconds ms_since_last_update() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
           ss::lowres_system_clock::now() - _last_updated_ts);
     }
 
+private:
     prefix_logger& _logger;
+
+    // --- fields serialized to snapshot ---
     model::producer_identity _id;
     raft::group_id _group;
-    // serializes all the operations on this producer
-    mutex _op_lock{"producer_state::_op_lock"};
-
     requests _requests;
     // Tracks the last time an operation is run with this producer.
     // Used to evict stale producers.
     ss::lowres_system_clock::time_point _last_updated_ts;
+
+    std::unique_ptr<producer_partition_transaction_state> _transaction_state;
+
+    // --- in memory only state, not serialized to snapshot ---
+    //
+    // serializes all the operations on this producer
+    mutex _op_lock{"producer_state::_op_lock"};
     bool _evicted = false;
     ss::noncopyable_function<void()> _post_eviction_hook;
-    std::optional<kafka::offset> _current_txn_start_offset;
+    // Used to implement force eviction via admin APIs
+    bool _force_transaction_expiry{false};
     friend class producer_state_manager;
     friend struct ::test_fixture;
 };
