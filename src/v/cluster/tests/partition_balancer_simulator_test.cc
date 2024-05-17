@@ -10,6 +10,7 @@
 #include "base/vlog.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/tests/partition_balancer_planner_fixture.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
@@ -918,4 +919,49 @@ FIXTURE_TEST(test_replica_pair_frequency, partition_balancer_sim_fixture) {
     logger.info("second rebalance finished");
     validate_even_replica_distribution();
     validate_replica_pair_frequencies();
+}
+
+FIXTURE_TEST(test_mixed_replication_factors, partition_balancer_sim_fixture) {
+    add_node(model::node_id{0}, 100_GiB, 1);
+    add_node(model::node_id{1}, 400_GiB, 1);
+    add_node(model::node_id{2}, 100_GiB, 1);
+    /**
+     * Corner case from real deployment with the following configuration of
+     * topics:
+     * - partitions:  1, rf: 3, topic_count:  96
+     * - partitions:  5, rf: 1, topic_count: 118
+     * - partitions: 16, rf: 3, topic_count:   1
+     * - partitions:  5, rf: 3, topic_count:  36
+     * - partitions: 25, rf: 3, topic_count:  16
+     * - partitions:  3, rf: 3, topic_count:   2
+     * - partitions:  1, rf: 1, topic_count:  37
+     * - partitions: 10, rf: 1, topic_count:   1
+     */
+    for (int i = 0; i < 96; ++i) {
+        add_topic(fmt::format("topic_1_3_{}", i), 1, 3, 10_MiB);
+    }
+    for (int i = 0; i < 118; ++i) {
+        add_topic(fmt::format("topic_5_1_{}", i), 5, 1, 10_MiB);
+    }
+
+    add_topic("topic_10_1", 10, 1, 10_MiB);
+    for (int i = 0; i < 36; ++i) {
+        add_topic(fmt::format("topic_5_3_{}", i), 5, 3, 10_MiB);
+    }
+    for (int i = 0; i < 16; ++i) {
+        add_topic(fmt::format("topic_25_1_{}", i), 25, 3, 10_MiB);
+    }
+    for (int i = 0; i < 2; ++i) {
+        add_topic(fmt::format("topic_3_3_{}", i), 3, 3, 10_MiB);
+    }
+
+    for (int i = 0; i < 37; ++i) {
+        add_topic(fmt::format("topic_1_1_{}", i), 3, 3, 10_MiB);
+    }
+
+    add_node(model::node_id{4}, 300_GiB, 1);
+    add_node_to_rebalance(model::node_id{4});
+    BOOST_REQUIRE(run_to_completion(1000));
+    set_decommissioning(model::node_id{4});
+    BOOST_REQUIRE(run_to_completion(1000));
 }
