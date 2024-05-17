@@ -420,7 +420,34 @@ private:
     ss::sharded<tx::producer_state_manager>& _producer_state_manager;
     std::optional<model::vcluster_id> _vcluster_id;
 
+    // All the producers producing to this transaction.
+    // There are two types of producers we track here
+    // 1. idempotent
+    // 2. transactions
+    // All other produce requests do not have an associated producer_id.
+    // A producer is uniquely identified by the tuple  <producer_id, epoch>.
+    // For idempotent producers epoch is never used and is always 0, so a
+    // producer_id uniquely identifies the producer instance.
+    //
+    // for transactional producers, epoch is used to fence older instances of
+    // of the the same producer_id. A transactional client maps the client
+    // side property transactional.id to it's corresponding producer_id using
+    // init_producer_id request and the coordinator ensures fencing by only
+    // retaining the latest epoch for a given producer_id.
+    //
+    // A list of open transactions is maintained below for convenience.
     producers_t _producers;
+
+    // All the producers with open transactions in this partition.
+    // The list is sorted by the open transaction begin offset, so
+    // the first entry in the list is the earliest open transaction
+    // on the partition. This property is used to efficiently compute
+    // the LSO without having traverse the whole list.
+    using active_transactional_producers_t = counted_intrusive_list<
+      tx::producer_state,
+      &tx::producer_state::_active_transaction_hook>;
+    active_transactional_producers_t _active_tx_producers;
+
     metrics::internal_metric_groups _metrics;
     ss::abort_source _as;
     ss::gate _gate;

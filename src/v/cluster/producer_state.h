@@ -236,7 +236,14 @@ public:
 
     void force_transaction_expiry() { _force_transaction_expiry = true; }
 
+    // Used to track all active producers on a shard (across all the
+    // partitions).
     safe_intrusive_list_hook _hook;
+
+    // Used to track all the active transactions in a partition.
+    // The hook is linked (in the state machine) if there is an open transaction
+    // on the partition using this producer.
+    safe_intrusive_list_hook _active_transaction_hook;
 
     std::chrono::milliseconds ms_since_last_update() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
