@@ -30,10 +30,10 @@ namespace cluster {
 /// shard_balancer and current shard-local state is supposed to be modified by
 /// controller_backend as it creates/deletes/moves partitions.
 ///
-/// Currently shard-local and target states are in-memory and target states
-/// duplicate shard assignments that are stored in topic_table, but in the
-/// future they will be persisted in the kvstore and target states will be set
-/// independently.
+/// Shard-local assignments and current states are persisted to kvstore on every
+/// change. On startup this kvstore state is used to recover in-memory state.
+/// In other words, we read kvstore only when initializing, and during normal
+/// operation we only write to it.
 ///
 /// Note that in contrast to `cluster::shard_table` (that helps other parts of
 /// the system to find the shard where the `cluster::partition` object for some
