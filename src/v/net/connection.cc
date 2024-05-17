@@ -17,8 +17,6 @@
 #include <seastar/core/future.hh>
 #include <seastar/net/tls.hh>
 
-#include <gnutls/gnutls.h>
-
 namespace net {
 
 /**
@@ -27,22 +25,21 @@ namespace net {
  * indirectly as errors from the TLS layer.
  */
 bool is_reconnect_error(const std::system_error& e) {
-    auto v = e.code().value();
+    const auto v = e.code().value();
+    static const std::array ss_tls_reconnect_errors{
+      ss::tls::ERROR_PUSH,
+      ss::tls::ERROR_PULL,
+      ss::tls::ERROR_UNEXPECTED_PACKET,
+      ss::tls::ERROR_INVALID_SESSION,
+      ss::tls::ERROR_UNSUPPORTED_VERSION,
+      ss::tls::ERROR_NO_CIPHER_SUITES,
+      ss::tls::ERROR_PREMATURE_TERMINATION,
+      ss::tls::ERROR_DECRYPTION_FAILED,
+      ss::tls::ERROR_MAC_VERIFY_FAILED};
 
     if (e.code().category() == ss::tls::error_category()) {
-        switch (v) {
-        case GNUTLS_E_PUSH_ERROR:
-        case GNUTLS_E_PULL_ERROR:
-        case GNUTLS_E_UNEXPECTED_PACKET:
-        case GNUTLS_E_INVALID_SESSION:
-        case GNUTLS_E_UNSUPPORTED_VERSION_PACKET:
-        case GNUTLS_E_NO_CIPHER_SUITES:
-        case GNUTLS_E_PREMATURE_TERMINATION:
-        case GNUTLS_E_DECRYPTION_FAILED:
-            return true;
-        default:
-            return false;
-        }
+        return absl::c_any_of(
+          ss_tls_reconnect_errors, [v](int ec) { return v == ec; });
     } else {
         switch (v) {
         case ECONNREFUSED:
