@@ -14,15 +14,16 @@ jobs:
           issue-type: both
           commands: |
             backport
-            ci-repeat
-            test-codecov
             cdt
-            test-release-pipeline
-            test-arm64
+            ci-repeat
             dt
             microbench
             publish-to-install-pack
+            rp-unit-test
+            test-arm64
+            test-codecov
             test-rc-pipeline
+            test-release-pipeline
           static-args: |
             org=redpanda-data
             repo=redpanda

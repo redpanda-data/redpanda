@@ -3,16 +3,16 @@ name: BK slash-command
 on:
   repository_dispatch:
     types: 
-      - ci-repeat-command
-      - test-codecov-command
       - cdt-command
-      - test-release-pipeline-command
-      - test-arm64-command
+      - ci-repeat-command
       - dt-command
       - microbench-command
       - publish-to-install-pack-command
+      - rp-unit-test-command
+      - test-arm64-command
+      - test-codecov-command
       - test-rc-pipeline-command
-
+      - test-release-pipeline-command
 jobs:
   run-build:
     runs-on: ubuntu-latest
