@@ -98,6 +98,12 @@ public:
                   return do_consume(consumer, timeout);
               });
         }
+        template<typename ReferenceConsumer>
+        auto peek_each_ref(ReferenceConsumer c, timeout_clock::time_point tm) {
+            return ss::do_with(std::move(c), [this, tm](ReferenceConsumer& c) {
+                return do_peek_each_ref(c, tm);
+            });
+        }
 
     private:
         record_batch pop_batch() {
@@ -140,6 +146,31 @@ public:
         auto do_consume(Consumer& consumer, timeout_clock::time_point timeout) {
             return do_action(consumer, timeout, [this](Consumer& c) {
                 return c(pop_batch());
+            });
+        }
+        template<typename ReferenceConsumer>
+        auto do_peek_each_ref(
+          ReferenceConsumer& refc, timeout_clock::time_point timeout) {
+            return do_action(refc, timeout, [this](ReferenceConsumer& c) {
+                return ss::visit(
+                  _slice,
+                  [&c](data_t& d) {
+                      return c(d.front()).then([&](ss::stop_iteration stop) {
+                          if (!stop) {
+                              d.pop_front();
+                          }
+                          return stop;
+                      });
+                  },
+                  [&c](foreign_data_t& d) {
+                      return c((*d.buffer)[d.index])
+                        .then([&](ss::stop_iteration stop) {
+                            if (!stop) {
+                                ++d.index;
+                            }
+                            return stop;
+                        });
+                  });
             });
         }
         template<typename ConsumerType, typename ActionFn>
@@ -247,6 +278,16 @@ public:
           .finally([raw, i = std::move(_impl)]() mutable {
               return raw->finally().finally([i = std::move(i)] {});
           });
+    }
+
+    /// Similar to for_each_ref, but advances only if the consumer returns
+    /// ss::stop_iteration::no. I.e. the batch where the consumer stopped
+    /// remains available for reading by subsequent consumers.
+    template<typename ReferenceConsumer>
+    requires ReferenceBatchReaderConsumer<ReferenceConsumer>
+    auto peek_each_ref(
+      ReferenceConsumer consumer, timeout_clock::time_point timeout) & {
+        return _impl->peek_each_ref(std::move(consumer), timeout);
     }
 
     std::unique_ptr<impl> release() && { return std::move(_impl); }
