@@ -12,6 +12,7 @@
 
 #include "cloud_storage_clients/logger.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
 
@@ -74,11 +75,37 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
   const std::optional<cloud_roles::public_key_str>& pkey,
   const std::optional<cloud_roles::private_key_str>& skey,
   const cloud_roles::aws_region_name& region,
-  const std::optional<cloud_storage_clients::s3_url_style>& url_style,
+  std::optional<cloud_storage_clients::s3_url_style> url_style,
   const default_overrides& overrides,
   net::metrics_disabled disable_metrics,
   net::public_metrics_disabled disable_public_metrics) {
     s3_configuration client_cfg;
+
+    auto in_fips_mode = config::node().fips_mode.value();
+
+    // fips mode in s3 can only be used with url_style==virtual_host
+    if (!url_style.has_value() && in_fips_mode) {
+        vlog(
+          client_config_log.info,
+          "in fips mode, url_style set to {}",
+          s3_url_style::virtual_host);
+        url_style = s3_url_style::virtual_host;
+    }
+
+    if (url_style.has_value()) {
+        vassert(
+          !in_fips_mode || url_style.value() == s3_url_style::virtual_host,
+          "node is in fips mode, but url_style is not set to virtual_host");
+        client_cfg.url_style = url_style.value();
+    } else {
+        // If the url style in not specified, it will be determined with
+        // self configuration.
+        vassert(
+          !in_fips_mode,
+          "node is in fips mode, url_style to has be set or overridden");
+        client_cfg.requires_self_configuration = true;
+    }
+
     const auto endpoint_uri = [&]() -> ss::sstring {
         if (overrides.endpoint) {
             return overrides.endpoint.value();
@@ -92,14 +119,6 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     client_cfg.secret_key = skey;
     client_cfg.region = region;
     client_cfg.uri = access_point_uri(endpoint_uri);
-
-    if (url_style.has_value()) {
-        client_cfg.url_style = url_style.value();
-    } else {
-        // If the url style is not specified, it will be determined with
-        // self configuration.
-        client_cfg.requires_self_configuration = true;
-    }
 
     if (overrides.disable_tls == false) {
         client_cfg.credentials = co_await build_tls_credentials(
