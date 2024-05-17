@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from enum import Enum
 import random
 import requests
 import time
@@ -17,6 +18,14 @@ HTTP_POST_HEADERS = {
     "Accept": "application/vnd.schemaregistry.v1+json",
     "Content-Type": "application/vnd.schemaregistry.v1+json"
 }
+
+
+class Mode(str, Enum):
+    READWRITE = "READWRITE"
+    READONLY = "READONLY"
+
+    def to_json(self) -> dict:
+        return {"mode": self.value}
 
 
 def _request(nodes, logger, verb, path, hostname=None, **kwargs):
@@ -116,5 +125,38 @@ def get_subjects(nodes,
                     logger,
                     "GET",
                     f"subjects{'?deleted=true' if deleted else ''}",
+                    headers=headers,
+                    **kwargs)
+
+
+def put_mode(nodes, logger, mode: Mode, headers=HTTP_POST_HEADERS, **kwargs):
+    """Sets the mode. Requires superuser privileges
+
+    Parameters
+    ----------
+    nodes :
+        List of nodes to pick from
+
+    logger :
+        Logger to use
+
+    mode : Mode
+       The mode to change to
+
+    headers : {str:str}, optional
+        Headers to use
+
+    **kwargs : optional
+        Additional parameters to request module
+
+    Returns
+    -------
+    Changes the read-write-ness mode of the schema registry
+    """
+    return _request(nodes,
+                    logger,
+                    "PUT",
+                    "mode",
+                    json=mode.to_json(),
                     headers=headers,
                     **kwargs)

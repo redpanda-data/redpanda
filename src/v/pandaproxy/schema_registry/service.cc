@@ -24,7 +24,6 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
-#include "pandaproxy/auth_utils.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
@@ -55,6 +54,15 @@ const security::acl_principal principal{
 
 class wrap {
 public:
+    enum class auth_level {
+        // Unauthenticated endpoint (not a typo, 'public' is a keyword)
+        publik,
+        // Requires authentication (if enabled) but not superuser status
+        user,
+        // Requires authentication (if enabled) and superuser status
+        superuser
+    };
+
     wrap(ss::gate& g, one_shot& os, auth_level lvl, server::function_handler h)
       : _g{g}
       , _os{os}
@@ -63,28 +71,10 @@ public:
 
     ss::future<server::reply_t>
     operator()(server::request_t rq, server::reply_t rp) const {
-        rq.authn_method = config::get_authn_method(
-          rq.service().config().schema_registry_api.value(),
-          rq.req->get_listener_idx());
-        try {
-            rq.user = maybe_authorize_request(
-              rq.authn_method,
-              _auth_level,
-              rq.service().authenticator(),
-              *rq.req);
-        } catch (unauthorized_user_exception& e) {
-            audit_authn_failure(rq, e.get_username(), e.what());
-            throw;
-        } catch (ss::httpd::base_exception& e) {
-            audit_authn_failure(rq, "", e.what());
-            throw;
-        }
-
-        audit_authn(rq);
+        handle_auth(rq);
 
         co_await _os();
         auto guard = _g.hold();
-        audit_authz(rq);
         try {
             co_return co_await _h(std::move(rq), std::move(rp));
         } catch (kafka::client::partition_error const& ex) {
@@ -100,6 +90,62 @@ public:
     }
 
 private:
+    // Authenticates and authorizes the request when HTTP Basic Auth is enabled
+    // and handles audit logging. It throws on failure.
+    void handle_auth(server::request_t& rq) const {
+        rq.authn_method = config::get_authn_method(
+          rq.service().config().schema_registry_api.value(),
+          rq.req->get_listener_idx());
+
+        if (rq.authn_method != config::rest_authn_method::none) {
+            // Will throw 400 & 401 if auth fails
+            auto auth_result = [this, &rq]() {
+                try {
+                    return rq.service().authenticator().authenticate(*rq.req);
+                } catch (const unauthorized_user_exception& e) {
+                    audit_authn_failure(rq, e.get_username(), e.what());
+                    throw;
+                } catch (const ss::httpd::base_exception& e) {
+                    audit_authn_failure(rq, "", e.what());
+                    throw;
+                }
+            }();
+
+            rq.user = credential_t{
+              auth_result.get_username(),
+              auth_result.get_password(),
+              auth_result.get_sasl_mechanism()};
+            audit_authn_success(rq);
+
+            // Will throw 403 if user enabled HTTP Basic Auth but
+            // did not give the authorization header.
+            [this, &rq, &auth_result]() {
+                try {
+                    switch (_auth_level) {
+                    case auth_level::superuser:
+                        auth_result.require_superuser();
+                        break;
+                    case auth_level::user:
+                        auth_result.require_authenticated();
+                        break;
+                    case auth_level::publik:
+                        auth_result.pass();
+                        break;
+                    }
+                } catch (const ss::httpd::base_exception& e) {
+                    audit_authz_failure(rq, auth_result, e.what());
+                    throw;
+                }
+            }();
+
+            audit_authz_success(rq);
+        } else {
+            rq.user = credential_t{};
+            audit_authn_success(rq);
+            audit_authz_success(rq);
+        }
+    }
+
     inline net::unresolved_address
     from_ss_sa(const ss::socket_address& sa) const {
         return {fmt::format("{}", sa.addr()), sa.port(), sa.addr().in_family()};
@@ -147,11 +193,38 @@ private:
           rq, make_authn_event_error(rq, username, std::move(reason)));
     }
 
-    void audit_authn(const server::request_t& rq) const {
+    void audit_authn_success(const server::request_t& rq) const {
         do_audit_authn(rq, make_authn_event_options(rq));
     }
 
-    void audit_authz(const server::request_t& rq) const { do_audit_authz(rq); }
+    void audit_authz_success(const server::request_t& rq) const {
+        do_audit_authz(rq);
+    }
+
+    void audit_authz_failure(
+      const server::request_t& rq,
+      const request_auth_result auth_result,
+      ss::sstring reason) const {
+        vlog(
+          plog.trace, "Attempting to audit authz for {}", rq.req->format_url());
+        auto success = rq.service().audit_mgr().enqueue_api_activity_event(
+          security::audit::event_type::schema_registry,
+          *rq.req,
+          auth_result,
+          audit_svc_name,
+          false,
+          std::move(reason));
+
+        if (!success) {
+            vlog(
+              plog.error,
+              "Failed to audit authorization request for endpoint: {}",
+              rq.req->format_url());
+            throw ss::httpd::base_exception(
+              "Failed to audit authorization request",
+              ss::http::reply::status_type::service_unavailable);
+        }
+    }
 
     void do_audit_authn(
       const server::request_t& rq,
@@ -163,7 +236,7 @@ private:
         if (!success) {
             vlog(
               plog.error,
-              "Failed to audit authnetication request for endpoint: {}",
+              "Failed to audit authentication request for endpoint: {}",
               rq.req->format_url());
             throw ss::httpd::base_exception(
               "Failed to audit authentication request",
@@ -199,6 +272,7 @@ private:
 };
 
 server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
+    using auth_level = wrap::auth_level;
     server::routes_t routes;
     routes.api = ss::httpd::schema_registry_json::name;
 
