@@ -77,7 +77,7 @@ struct test_fixture {
 
     void clean(std::vector<cluster::producer_ptr>& producers) {
         for (auto& producer : producers) {
-            producer->shutdown_input().get0();
+            producer->shutdown_input();
         }
         producers.clear();
     }

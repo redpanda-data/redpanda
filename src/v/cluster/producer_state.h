@@ -180,24 +180,21 @@ public:
     ///   considering candidates for eviction.
     template<AcceptsUnits AsyncFunc>
     auto run_with_lock(AsyncFunc&& func) {
-        return ss::with_gate(
-          _gate, [this, func = std::forward<AsyncFunc>(func)]() mutable {
-              return _op_lock.get_units().then(
-                [this, f = std::forward<AsyncFunc>(func)](auto units) {
-                    unlink_self();
-                    _ops_in_progress++;
-                    return ss::futurize_invoke(f, std::move(units))
-                      .then_wrapped([this](auto result) {
-                          _ops_in_progress--;
-                          link_self();
-                          return result;
-                      });
+        return _op_lock.get_units().then(
+          [this, f = std::forward<AsyncFunc>(func)](auto units) {
+              unlink_self();
+              _ops_in_progress++;
+              return ss::futurize_invoke(f, std::move(units))
+                .then_wrapped([this](auto result) {
+                    _ops_in_progress--;
+                    link_self();
+                    return result;
                 });
           });
     }
 
-    ss::future<> shutdown_input();
-    ss::future<> evict();
+    void shutdown_input();
+    void evict();
     bool is_evicted() const { return _evicted; }
 
     /* reset sequences resets the tracking state and skips the sequence
@@ -233,6 +230,8 @@ private:
     void link_self();
     void unlink_self();
 
+    void do_shutdown_input();
+
     std::chrono::milliseconds ms_since_last_update() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
           ss::lowres_system_clock::now() - _last_updated_ts);
@@ -251,7 +250,6 @@ private:
     // Used to evict stale producers.
     ss::lowres_system_clock::time_point _last_updated_ts;
     intrusive_list_hook _hook;
-    ss::gate _gate;
     // function hook called on eviction
     bool _evicted = false;
     size_t _ops_in_progress = 0;

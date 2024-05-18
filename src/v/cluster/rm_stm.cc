@@ -11,6 +11,7 @@
 
 #include "bytes/iostream.h"
 #include "cluster/logger.h"
+#include "cluster/producer_state_manager.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_snapshot_utils.h"
 #include "kafka/protocol/wire.h"
@@ -386,12 +387,11 @@ void rm_stm::cleanup_producer_state(model::producer_identity pid) {
 };
 
 ss::future<> rm_stm::reset_producers() {
-    co_await ss::max_concurrent_for_each(
-      _producers.begin(), _producers.end(), 32, [](auto& it) {
-          auto& producer = it.second;
-          return producer->shutdown_input().discard_result();
-      });
+    for (auto& [_, producer] : _producers) {
+        producer->shutdown_input();
+    }
     _producers.clear();
+    co_return;
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
