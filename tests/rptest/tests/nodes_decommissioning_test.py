@@ -616,6 +616,13 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.start_producer()
         self.start_consumer()
 
+        # wait for more data to be produced, so that the cluster re-balancing will not finish immediately
+        wait_until(lambda: self.producer.produce_status.acked >
+                   (self.msg_count / 2),
+                   timeout_sec=240,
+                   backoff_sec=1)
+        # set recovery rate to small value but allow the controller to recover
+        self._set_recovery_rate(10 * 1024)
         # throttle recovery
         self.redpanda.clean_node(self.redpanda.nodes[-1],
                                  preserve_current_install=True)
