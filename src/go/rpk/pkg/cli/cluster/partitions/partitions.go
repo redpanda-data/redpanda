@@ -32,6 +32,7 @@ func NewPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newPartitionDisableCommand(fs, p),
 		newPartitionEnableCommand(fs, p),
 		newPartitionMovementsStatusCommand(fs, p),
+		newTransferLeaderCommand(fs, p),
 		newUnsafeRecoveryCommand(fs, p),
 	)
 	return cmd
