@@ -27,10 +27,6 @@
 #include <boost/lexical_cast.hpp>
 #include <fmt/chrono.h>
 #include <fmt/ranges.h>
-#include <gnutls/gnutls.h>
-#include <gnutls/gnutlsxx.h>
-#include <gnutls/x509-ext.h>
-#include <gnutls/x509.h>
 
 #include <chrono>
 #include <ostream>

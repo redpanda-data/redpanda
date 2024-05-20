@@ -16,7 +16,6 @@ v_cc_library(
     v::metrics
     v::hashing
     v::compression
-    GnuTLS::GnuTLS
   )
 
 add_subdirectory(tests)
