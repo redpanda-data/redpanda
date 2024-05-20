@@ -28,7 +28,6 @@ set(srcs
     topic_table_partition_generator_test.cc
     idempotency_tests.cc
     feature_barrier_test.cc
-    tm_stm_tests.cc
     tm_coordinator_mapper_tests.cc
     tx_hash_ranges_tests.cc
     rm_stm_tests.cc
@@ -52,6 +51,7 @@ endforeach()
 set(srcs
     distributed_kv_stm_tests.cc
     id_allocator_stm_test.cc
+    tm_stm_tests.cc
     )
 
 foreach(cluster_test_src ${srcs})
