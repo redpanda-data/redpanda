@@ -37,6 +37,8 @@ using namespace cluster::cloud_metadata;
 namespace {
 ss::logger logger("uploader_test");
 static ss::abort_source never_abort;
+
+auto in_5_seconds() { return ss::lowres_clock::now() + 5s; }
 } // anonymous namespace
 
 class cluster_metadata_uploader_fixture
@@ -66,8 +68,7 @@ public:
     ss::future<bool> downloaded_manifest_has_higher_id(
       cluster_metadata_id initial_meta_id,
       cluster_metadata_manifest* downloaded_manifest) {
-        retry_chain_node retry_node(
-          never_abort, ss::lowres_clock::time_point::max(), 10ms);
+        retry_chain_node retry_node(never_abort, in_5_seconds(), 10ms);
         auto m_res = co_await download_highest_manifest_for_cluster(
           remote, cluster_uuid, _bucket_name, retry_node);
         if (!m_res.has_value()) {
@@ -97,8 +98,7 @@ public:
     ss::future<bool> list_contains_manifest_contents(
       const cluster::cloud_metadata::cluster_metadata_manifest& manifest) {
         ss::abort_source as;
-        retry_chain_node retry_node(
-          as, ss::lowres_clock::time_point::max(), 10ms);
+        retry_chain_node retry_node(as, in_5_seconds(), 10ms);
         auto list_res = co_await remote.list_objects(_bucket_name, retry_node);
         BOOST_REQUIRE(!list_res.has_error());
         const auto& items = list_res.value().contents;
@@ -135,8 +135,7 @@ protected:
 FIXTURE_TEST(
   test_download_highest_manifest, cluster_metadata_uploader_fixture) {
     auto& uploader = app.controller->metadata_uploader().value().get();
-    retry_chain_node retry_node(
-      never_abort, ss::lowres_clock::time_point::max(), 10ms);
+    retry_chain_node retry_node(never_abort, in_5_seconds(), 10ms);
 
     // When there are no manifests, the uploader should start out with an
     // inavlid metadata ID.
@@ -184,8 +183,7 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(test_upload_next_metadata, cluster_metadata_uploader_fixture) {
     auto& uploader = app.controller->metadata_uploader().value().get();
-    retry_chain_node retry_node(
-      never_abort, ss::lowres_clock::time_point::max(), 10ms);
+    retry_chain_node retry_node(never_abort, in_5_seconds(), 10ms);
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] { return raft0->is_leader(); });
     auto down_res
       = uploader.download_highest_manifest_or_create(retry_node).get();
