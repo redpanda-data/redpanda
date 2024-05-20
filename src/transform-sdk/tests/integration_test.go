@@ -242,7 +242,7 @@ type (
 var (
 	RecordV1Schema = avro.MustParse(`{
 		"type": "record",
-		"name": "com.example.Example",
+		"name": "Example",
 		"fields": [
 			{"name": "a", "type": "long", "default": 0},
 			{"name": "b", "type": "string", "default": ""}
@@ -250,7 +250,7 @@ var (
 	}`)
 	RawRecordV2Schema = `{
 		"type": "record",
-		"name": "com.example.Example",
+		"name": "Example",
 		"fields": [
 			{"name": "a", "type": "long", "default": 0},
 			{"name": "b", "type": "string", "default": ""},
