@@ -14,7 +14,7 @@ from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from random import randbytes
 
-BASE32_ALPHABET = "0123456789abcdefghijklmnopqrstuv"
+from rptest.utils.xid_utils import random_xid_string
 
 
 def get_vcluster_id(topic_properties: dict):
@@ -28,17 +28,12 @@ class VirtualClusterTopicPropertyTest(RedpandaTest):
         super(VirtualClusterTopicPropertyTest,
               self).__init__(test_context=test_context, num_brokers=3)
 
-    def _random_xid_string(self):
-        xid = ''.join([random.choice(BASE32_ALPHABET) for _ in range(19)])
-
-        return xid + random.choice(['0', 'g'])
-
     @cluster(num_nodes=3)
     def test_basic_virtual_cluster_property(self):
         rpk = RpkTool(self.redpanda)
         # try creating vcluster enabled topic with extensions disabled
         topic = TopicSpec()
-        vcluster_id = self._random_xid_string()
+        vcluster_id = random_xid_string()
         rpk.create_topic(
             topic=topic.name,
             partitions=1,
@@ -72,7 +67,7 @@ class VirtualClusterTopicPropertyTest(RedpandaTest):
         try:
             rpk.alter_topic_config(topic.name,
                                    TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID,
-                                   self._random_xid_string())
+                                   random_xid_string())
             assert False, "Altering topic virtual cluster property should not be supported"
         except RpkException as e:
             assert "INVALID_CONFIG" in e.msg
