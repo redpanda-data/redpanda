@@ -188,6 +188,7 @@ pub enum SchemaRegistryError {
     DecodingError(varint::DecodeError),
     UnknownFormat(i64),
     InvalidSchema,
+    BadHeader,
 }
 
 impl std::fmt::Display for SchemaRegistryError {
@@ -204,6 +205,9 @@ impl std::fmt::Display for SchemaRegistryError {
             }
             SchemaRegistryError::InvalidSchema => {
                 write!(f, "invalid utf8 in schema")
+            }
+            SchemaRegistryError::BadHeader => {
+                write!(f, "5 byte header is missing or does not have 0 magic byte")
             }
         }
     }
