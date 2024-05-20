@@ -35,9 +35,10 @@ public:
     void deregister_producer(producer_state&);
     // temporary relink already accounted producer
     void link(producer_state&);
+    void rearm_timer_for_testing(std::chrono::milliseconds);
 
 private:
-    static constexpr std::chrono::seconds period{5};
+    std::chrono::milliseconds _reaper_period{5000};
     void setup_metrics();
     void evict_excess_producers();
     void do_evict_excess_producers();
@@ -57,7 +58,7 @@ private:
     // is the responsibility of the producers themselves.
     // Check producer_state::run_func()
     intrusive_list<producer_state, &producer_state::_hook> _lru_producers;
-    ss::timer<ss::steady_clock_type> _reaper;
+    ss::timer<ss::lowres_clock> _reaper;
     ss::gate _gate;
     metrics::internal_metric_groups _metrics;
 
