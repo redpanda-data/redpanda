@@ -438,8 +438,13 @@ std::ostream& operator<<(std::ostream& o, const partition_assignment& p_as) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const shard_placement_target& eg) {
-    fmt::print(o, "{{log_revision: {}, shard: {}}}", eg.log_revision, eg.shard);
+std::ostream& operator<<(std::ostream& o, const shard_placement_target& spt) {
+    fmt::print(
+      o,
+      "{{group: {}, log_revision: {}, shard: {}}}",
+      spt.group,
+      spt.log_revision,
+      spt.shard);
     return o;
 }
 

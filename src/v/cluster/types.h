@@ -2442,10 +2442,13 @@ using replicas_revision_map
 /// Log revision is needed to distinguish different incarnations of the
 /// partition.
 struct shard_placement_target {
-    shard_placement_target(model::revision_id lr, ss::shard_id s)
-      : log_revision(lr)
+    shard_placement_target(
+      raft::group_id g, model::revision_id lr, ss::shard_id s)
+      : group(g)
+      , log_revision(lr)
       , shard(s) {}
 
+    raft::group_id group;
     model::revision_id log_revision;
     ss::shard_id shard;
 

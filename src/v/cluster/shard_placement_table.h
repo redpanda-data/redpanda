@@ -14,7 +14,9 @@
 #include "base/seastarx.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
+#include "storage/fwd.h"
 #include "utils/mutex.h"
+#include "utils/rwlock.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -28,10 +30,10 @@ namespace cluster {
 /// shard_balancer and current shard-local state is supposed to be modified by
 /// controller_backend as it creates/deletes/moves partitions.
 ///
-/// Currently shard-local and target states are in-memory and target states
-/// duplicate shard assignments that are stored in topic_table, but in the
-/// future they will be persisted in the kvstore and target states will be set
-/// independently.
+/// Shard-local assignments and current states are persisted to kvstore on every
+/// change. On startup this kvstore state is used to recover in-memory state.
+/// In other words, we read kvstore only when initializing, and during normal
+/// operation we only write to it.
 ///
 /// Note that in contrast to `cluster::shard_table` (that helps other parts of
 /// the system to find the shard where the `cluster::partition` object for some
@@ -46,6 +48,7 @@ public:
     /// Struct used to express the fact that a partition replica of some ntp is
     /// expected on this shard.
     struct shard_local_assignment {
+        raft::group_id group;
         model::revision_id log_revision;
         model::shard_revision_id shard_revision;
 
@@ -65,25 +68,25 @@ public:
 
     /// Current state of shard-local partition kvstore data on this shard.
     struct shard_local_state {
+        raft::group_id group;
         model::revision_id log_revision;
         hosted_status status;
         model::shard_revision_id shard_revision;
 
-        static shard_local_state initial(const shard_local_assignment& as) {
-            return shard_local_state{
-              .log_revision = as.log_revision,
-              .status = hosted_status::hosted,
-              .shard_revision = as.shard_revision,
-            };
-        }
+        shard_local_state(
+          raft::group_id g,
+          model::revision_id lr,
+          hosted_status s,
+          model::shard_revision_id sr)
+          : group(g)
+          , log_revision(lr)
+          , status(s)
+          , shard_revision(sr) {}
 
-        static shard_local_state receiving(const shard_local_assignment& as) {
-            return shard_local_state{
-              .log_revision = as.log_revision,
-              .status = hosted_status::receiving,
-              .shard_revision = as.shard_revision,
-            };
-        }
+        shard_local_state(
+          const shard_local_assignment& as, hosted_status status)
+          : shard_local_state(
+            as.group, as.log_revision, status, as.shard_revision) {}
 
         friend std::ostream&
         operator<<(std::ostream&, const shard_local_state&);
@@ -137,8 +140,23 @@ public:
         std::optional<ss::shard_id> _next;
     };
 
-    // must be called on each shard
-    ss::future<> initialize(const topic_table&, model::node_id self);
+    using ntp2state_t = absl::node_hash_map<model::ntp, placement_state>;
+
+    explicit shard_placement_table(storage::kvstore&);
+
+    /// Must be called on assignment_shard_id.
+    bool is_persistence_enabled() const;
+    ss::future<> enable_persistence();
+
+    /// Must be called on assignment_shard_id.
+    /// precondition: is_persistence_enabled() == true
+    ss::future<> initialize_from_kvstore(
+      const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp);
+
+    /// Must be called on assignment_shard_id.
+    /// precondition: is_persistence_enabled() == false
+    ss::future<>
+    initialize_from_topic_table(ss::sharded<topic_table>&, model::node_id self);
 
     using shard_callback_t = std::function<void(const model::ntp&)>;
 
@@ -151,12 +169,12 @@ public:
 
     // getters
 
+    /// Must be called on assignment_shard_id.
+    std::optional<shard_placement_target> get_target(const model::ntp&) const;
+
     std::optional<placement_state> state_on_this_shard(const model::ntp&) const;
 
-    const absl::node_hash_map<model::ntp, placement_state>&
-    shard_local_states() const {
-        return _states;
-    }
+    const ntp2state_t& shard_local_states() const { return _states; }
 
     // partition lifecycle methods
 
@@ -184,17 +202,23 @@ public:
     finish_delete(const model::ntp&, model::revision_id expected_log_rev);
 
 private:
-    ss::future<> set_assigned_on_this_shard(
+    ss::future<> do_delete(
       const model::ntp&,
-      model::revision_id target_log_revision,
-      model::shard_revision_id,
-      bool is_initial,
-      shard_callback_t);
+      placement_state&,
+      ss::rwlock::holder& persistence_lock_holder);
+
+    ss::future<> persist_shard_local_state();
+
+    ss::future<ss::foreign_ptr<std::unique_ptr<ntp2state_t>>>
+    gather_init_states(const chunked_hash_map<raft::group_id, model::ntp>&);
+
+    struct ntp_init_data;
 
     ss::future<>
-    remove_assigned_on_this_shard(const model::ntp&, shard_callback_t);
+    scatter_init_data(const chunked_hash_map<model::ntp, ntp_init_data>&);
 
-    ss::future<> do_delete(const model::ntp&, placement_state&);
+    ss::future<>
+    do_initialize_from_topic_table(const topic_table&, model::node_id self);
 
 private:
     friend class shard_placement_test_fixture;
@@ -202,7 +226,12 @@ private:
     // per-shard state
     //
     // node_hash_map for pointer stability
-    absl::node_hash_map<model::ntp, placement_state> _states;
+    ntp2state_t _states;
+    // lock is needed to sync enabling persistence with shard-local
+    // modifications.
+    ssx::rwlock _persistence_lock;
+    bool _persistence_enabled = false;
+    storage::kvstore& _kvstore;
 
     // only on shard 0, _ntp2entry will hold targets for all ntps on this node.
     struct entry_t {

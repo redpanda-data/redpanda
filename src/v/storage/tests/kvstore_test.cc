@@ -59,6 +59,18 @@ FIXTURE_TEST(key_space, kvstore_test_fixture) {
       kvs->get(storage::kvstore::key_space::consensus, empty_key).value()
       == value_d);
 
+    std::map<bytes, iobuf> testing_kvs;
+    kvs
+      ->for_each(
+        storage::kvstore::key_space::testing,
+        [&](bytes_view key, const iobuf& val) {
+            BOOST_REQUIRE(testing_kvs.emplace(key, val.copy()).second);
+        })
+      .get();
+    BOOST_REQUIRE_EQUAL(testing_kvs.size(), 2);
+    BOOST_REQUIRE(testing_kvs.at(key) == value_a);
+    BOOST_REQUIRE(testing_kvs.at(empty_key) == value_c);
+
     kvs->stop().get();
 
     // still all true after recovery

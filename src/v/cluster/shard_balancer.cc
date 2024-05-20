@@ -14,15 +14,18 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "config/node_config.h"
+#include "ssx/async_algorithm.h"
 
 namespace cluster {
 
 shard_balancer::shard_balancer(
-  ss::sharded<topic_table>& topics,
   ss::sharded<shard_placement_table>& spt,
+  ss::sharded<features::feature_table>& features,
+  ss::sharded<topic_table>& topics,
   ss::sharded<controller_backend>& cb)
-  : _topics(topics)
-  , _shard_placement(spt)
+  : _shard_placement(spt.local())
+  , _features(features.local())
+  , _topics(topics)
   , _controller_backend(cb)
   , _self(*config::node().node_id()) {}
 
@@ -32,19 +35,81 @@ ss::future<> shard_balancer::start() {
       "method can only be invoked on shard {}",
       shard_id);
 
+    // We expect topic_table to remain unchanged throughout the method
+    // invocation because it is supposed to be called after local controller
+    // replay is finished but before we start getting new controller updates
+    // from the leader.
     auto tt_version = _topics.local().topics_map_revision();
 
-    co_await _shard_placement.invoke_on_all([this](shard_placement_table& spt) {
-        return spt.initialize(_topics.local(), _self);
-    });
+    if (_shard_placement.is_persistence_enabled()) {
+        // 1. collect the set of node-local ntps from topic_table
 
-    // we shouldn't be receiving any controller updates at this point, so no
-    // risk of missing a notification between initializing shard_placement_table
-    // and subscribing.
+        chunked_hash_map<raft::group_id, model::ntp> local_group2ntp;
+        chunked_hash_map<model::ntp, model::revision_id> local_ntp2log_revision;
+        const auto& topics = _topics.local();
+        ssx::async_counter counter;
+        for (const auto& [ns_tp, md_item] : topics.all_topics_metadata()) {
+            vassert(
+              tt_version == topics.topics_map_revision(),
+              "topic_table unexpectedly changed");
+
+            co_await ssx::async_for_each_counter(
+              counter,
+              md_item.get_assignments().begin(),
+              md_item.get_assignments().end(),
+              [&](const partition_assignment& p_as) {
+                  vassert(
+                    tt_version == topics.topics_map_revision(),
+                    "topic_table unexpectedly changed");
+
+                  model::ntp ntp{ns_tp.ns, ns_tp.tp, p_as.id};
+                  auto replicas_view = topics.get_replicas_view(
+                    ntp, md_item, p_as);
+                  auto log_rev = log_revision_on_node(replicas_view, _self);
+                  if (log_rev) {
+                      local_group2ntp.emplace(
+                        replicas_view.assignment.group, ntp);
+                      local_ntp2log_revision.emplace(ntp, *log_rev);
+                  }
+              });
+        }
+
+        // 2. restore shard_placement_table from the kvstore
+
+        co_await _shard_placement.initialize_from_kvstore(local_group2ntp);
+
+        // 3. assign non-assigned ntps that have to be assigned
+
+        co_await ssx::async_for_each_counter(
+          counter,
+          local_ntp2log_revision.begin(),
+          local_ntp2log_revision.end(),
+          [&](const std::pair<const model::ntp&, model::revision_id> kv) {
+              const auto& [ntp, log_revision] = kv;
+              auto existing_target = _shard_placement.get_target(ntp);
+              if (
+                !existing_target
+                || existing_target->log_revision != log_revision) {
+                  _to_assign.insert(ntp);
+              }
+          });
+        co_await do_assign_ntps();
+    } else {
+        co_await _shard_placement.initialize_from_topic_table(_topics, _self);
+
+        if (_features.is_active(
+              features::feature::shard_placement_persistence)) {
+            co_await _shard_placement.enable_persistence();
+        }
+    }
+
     vassert(
       tt_version == _topics.local().topics_map_revision(),
       "topic_table unexpectedly changed");
 
+    // we shouldn't be receiving any controller updates at this point, so no
+    // risk of missing a notification between initializing shard_placement_table
+    // and subscribing.
     _topic_table_notify_handle = _topics.local().register_delta_notification(
       [this](topic_table::delta_range_t deltas_range) {
           for (const auto& delta : deltas_range) {
@@ -88,6 +153,12 @@ ss::future<> shard_balancer::assign_fiber() {
             co_return;
         }
 
+        if (
+          _features.is_active(features::feature::shard_placement_persistence)
+          && !_shard_placement.is_persistence_enabled()) {
+            co_await _shard_placement.enable_persistence();
+        }
+
         co_await do_assign_ntps();
     }
 }
@@ -118,8 +189,7 @@ ss::future<> shard_balancer::assign_ntp(const model::ntp& ntp) {
       target);
 
     try {
-        co_await _shard_placement.local().set_target(
-          ntp, target, shard_callback);
+        co_await _shard_placement.set_target(ntp, target, shard_callback);
     } catch (...) {
         auto ex = std::current_exception();
         if (!ssx::is_shutdown_exception(ex)) {

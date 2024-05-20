@@ -39,13 +39,15 @@ SEASTAR_THREAD_TEST_CASE(test_find_shard_on_node) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_placement_target_on_node) {
+    raft::group_id group{111};
+
     cluster::replicas_t orig_replicas{
       model::broker_shard{model::node_id(1), 2},
       model::broker_shard{model::node_id(2), 1},
       model::broker_shard{model::node_id(3), 0}};
 
     cluster::partition_assignment orig_assignment(
-      raft::group_id(111), model::partition_id(23), orig_replicas);
+      group, model::partition_id(23), orig_replicas);
 
     cluster::topic_table::partition_meta partition_meta{
       .replicas_revisions = {
@@ -59,13 +61,13 @@ SEASTAR_THREAD_TEST_CASE(test_placement_target_on_node) {
     // node_id, log_revision, shard_id
     using expected_list_t = std::vector<std::tuple<int32_t, int64_t, uint32_t>>;
 
-    auto check = [](
+    auto check = [group](
                    std::string_view case_id,
                    const cluster::topic_table::partition_replicas_view& rv,
                    expected_list_t expected_list) {
         for (auto [node_id, log_revision, shard_id] : expected_list) {
             cluster::shard_placement_target expected{
-              model::revision_id(log_revision), shard_id};
+              group, model::revision_id(log_revision), shard_id};
             auto actual = cluster::placement_target_on_node(
               rv, model::node_id(node_id));
             BOOST_REQUIRE_MESSAGE(

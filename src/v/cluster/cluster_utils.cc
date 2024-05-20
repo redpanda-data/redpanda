@@ -237,12 +237,16 @@ std::optional<shard_placement_target> placement_target_on_node(
             // expected shard is determined by the resulting assignment
             // (including cancellation effects).
             return shard_placement_target{
-              log_revision, resulting_shard_on_node.value()};
+              replicas_view.assignment.group,
+              log_revision,
+              resulting_shard_on_node.value()};
         } else {
             // partition is moved away from this node, but we keep the original
             // replica until update is finished.
             return shard_placement_target{
-              log_revision, orig_shard_on_node.value()};
+              replicas_view.assignment.group,
+              log_revision,
+              orig_shard_on_node.value()};
         }
     } else if (replicas_view.update) {
         // if partition appears on the node as a result of the update, create
@@ -252,6 +256,7 @@ std::optional<shard_placement_target> placement_target_on_node(
           replicas_view.update->get_target_replicas(), node);
         if (updated_shard_on_node) {
             return shard_placement_target{
+              replicas_view.assignment.group,
               replicas_view.update->get_update_revision(),
               updated_shard_on_node.value()};
         }

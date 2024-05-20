@@ -101,6 +101,7 @@ public:
         offset_translator = 4,
         usage = 5,
         stms = 6,
+        shard_placement = 7,
         /* your sub-system here */
     };
 
@@ -116,6 +117,12 @@ public:
     std::optional<iobuf> get(key_space ks, bytes_view key);
     ss::future<> put(key_space ks, bytes key, iobuf value);
     ss::future<> remove(key_space ks, bytes key);
+
+    /// Iterate over all key-value pairs in a keyspace.
+    /// NOTE: this will stall all updates, so use with a lot of caution.
+    ss::future<> for_each(
+      key_space ks,
+      ss::noncopyable_function<void(bytes_view, const iobuf&)> visitor);
 
     bool empty() const {
         vassert(_started, "kvstore has not been started");

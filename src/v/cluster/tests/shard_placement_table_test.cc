@@ -18,6 +18,7 @@
 #include "storage/storage_resources.h"
 #include "test_utils/randoms.h"
 #include "test_utils/test.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/util/file.hh>
@@ -91,7 +92,8 @@ public:
       ss::sharded<ntp2shards_t>& ntp2shards)
       : _ntpt(ntpt.local())
       , _shard_placement(spt.local())
-      , _ntp2shards(ntp2shards) {}
+      , _ntp2shards(ntp2shards)
+      , _logger(clusterlog, "RB") {}
 
     ss::future<> stop() {
         for (auto& [_, rs] : _states) {
@@ -115,7 +117,7 @@ public:
         auto& rs = *rs_it->second;
         rs.pending_notifies += 1;
         vlog(
-          clusterlog.trace,
+          _logger.trace,
           "[{}] notify reconciliation, pending_notifies: {}",
           ntp,
           rs.pending_notifies);
@@ -175,7 +177,7 @@ private:
                 auto ex = std::current_exception();
                 if (!ssx::is_shutdown_exception(ex)) {
                     vlog(
-                      clusterlog.error,
+                      _logger.error,
                       "[{}] unexpected exception during reconciliation: {}",
                       ntp,
                       ex);
@@ -205,7 +207,7 @@ private:
                 if (res.has_value()) {
                     if (res.value() == ss::stop_iteration::yes) {
                         vlog(
-                          clusterlog.trace,
+                          _logger.trace,
                           "[{}] reconciled, notify count: {}",
                           ntp,
                           notifies);
@@ -217,7 +219,7 @@ private:
                     continue;
                 } else {
                     vlog(
-                      clusterlog.trace,
+                      _logger.trace,
                       "[{}] reconciliation attempt error: {}",
                       ntp,
                       res.error());
@@ -226,7 +228,7 @@ private:
             } catch (ss::abort_requested_exception const&) {
             } catch (...) {
                 vlog(
-                  clusterlog.warn,
+                  _logger.warn,
                   "[{}] exception occured during reconciliation: {}",
                   ntp,
                   std::current_exception());
@@ -250,7 +252,7 @@ private:
         }
 
         vlog(
-          clusterlog.trace,
+          _logger.trace,
           "[{}] placement state on this shard: {}, expected_log_revision: {}",
           ntp,
           placement,
@@ -298,12 +300,17 @@ private:
       model::revision_id log_revision,
       bool state_expected) {
         auto ec = co_await _shard_placement.prepare_create(ntp, log_revision);
-        vlog(clusterlog.trace, "[{}] creating partition: {}", ntp, ec);
+        vlog(_logger.trace, "[{}] creating partition: {}", ntp, ec);
         if (ec) {
             co_return ec;
         }
 
         _launched.insert(ntp);
+        vlog(
+          _logger.trace,
+          "[{}] started partition log_revision: {}",
+          ntp,
+          log_revision);
         co_await ss::sleep(1ms * random_generators::get_int(30));
 
         co_await _ntp2shards.invoke_on(
@@ -358,7 +365,7 @@ private:
       model::revision_id cmd_revision) {
         auto ec = co_await _shard_placement.prepare_delete(ntp, cmd_revision);
         vlog(
-          clusterlog.trace,
+          _logger.trace,
           "[{}] deleting partition at cmd_revision: {}, ec: {}",
           ntp,
           cmd_revision,
@@ -373,6 +380,13 @@ private:
         }
 
         bool launched_expected = _launched.erase(ntp);
+        if (launched_expected) {
+            vlog(
+              _logger.trace,
+              "[{}] stopped partition log_revision: {}",
+              ntp,
+              placement.current->log_revision);
+        }
         co_await ss::sleep(1ms * random_generators::get_int(30));
 
         co_await _ntp2shards.invoke_on(
@@ -442,7 +456,7 @@ private:
           ntp, log_revision);
         if (maybe_dest.has_error()) {
             vlog(
-              clusterlog.trace,
+              _logger.trace,
               "[{}] preparing transfer error: {}",
               ntp,
               maybe_dest.error());
@@ -450,13 +464,20 @@ private:
         }
 
         vlog(
-          clusterlog.trace,
+          _logger.trace,
           "[{}] preparing transfer dest: {}",
           ntp,
           maybe_dest.value());
         ss::shard_id destination = maybe_dest.value();
 
         bool launched_expected = _launched.erase(ntp);
+        if (launched_expected) {
+            vlog(
+              _logger.trace,
+              "[{}] stopped partition for transfer, log_revision: {}",
+              ntp,
+              log_revision);
+        }
 
         co_await _ntp2shards.invoke_on(
           0,
@@ -562,7 +583,7 @@ private:
           });
 
         co_await _shard_placement.finish_transfer_on_source(ntp, log_revision);
-        vlog(clusterlog.trace, "[{}] transferred", ntp);
+        vlog(_logger.trace, "[{}] transferred", ntp);
         co_return errc::success;
     }
 
@@ -575,6 +596,7 @@ private:
       _states;
     absl::flat_hash_set<model::ntp> _launched;
     ss::gate _gate;
+    prefix_logger _logger;
 };
 
 // Limit concurrency to 4 so that there are more interesting repeats in randomly
@@ -598,8 +620,14 @@ public:
       , _rb(rb) {}
 
     ss::future<> start() {
-        // TODO: bootstrap _shard_placement. We don't need it for now because we
-        // don't restart in this test yet.
+        for (const auto& [ntp, meta] : _ntpt.ntp2meta) {
+            auto maybe_target = _shard_placement.get_target(ntp);
+            if (
+              !maybe_target
+              || maybe_target->log_revision != meta.log_revision) {
+                assign_eventually(ntp);
+            }
+        }
 
         ssx::background = assign_fiber();
         co_return;
@@ -608,6 +636,13 @@ public:
     ss::future<> stop() {
         _wakeup_event.set();
         return _gate.close();
+    }
+
+    void enable_persistence_eventually() {
+        if (!_enable_persistence) {
+            _enable_persistence = true;
+            _wakeup_event.set();
+        }
     }
 
     void assign_eventually(const model::ntp& ntp) {
@@ -630,6 +665,10 @@ private:
                 co_return;
             }
 
+            if (_enable_persistence) {
+                co_await _shard_placement.enable_persistence();
+            }
+
             auto to_assign = std::exchange(_to_assign, {});
             _in_progress = true;
             co_await ss::max_concurrent_for_each(
@@ -644,6 +683,7 @@ private:
         std::optional<shard_placement_target> target;
         if (auto it = _ntpt.ntp2meta.find(ntp); it != _ntpt.ntp2meta.end()) {
             target = shard_placement_target(
+              it->second.group,
               it->second.log_revision,
               random_generators::get_int(get_max_shard_id()));
         }
@@ -673,11 +713,37 @@ private:
     ntp2shards_t& _ntp2shards;
     ss::sharded<reconciliation_backend>& _rb;
 
+    bool _enable_persistence = false;
     chunked_hash_set<model::ntp> _to_assign;
     bool _in_progress = false;
     ssx::event _wakeup_event{"shard_assigner"};
     ss::gate _gate;
 };
+
+template<typename Left, typename Right>
+void assert_key_sets_equal(
+  const Left& left,
+  std::string_view left_str,
+  const Right& right,
+  std::string_view right_str) {
+    std::vector<typename Left::key_type> keys1;
+    for (const auto& kv : left) {
+        if (!right.contains(kv.first)) {
+            keys1.push_back(kv.first);
+        }
+    }
+    ASSERT_TRUE(keys1.empty()) << "keys in " << left_str << ", but not in "
+                               << right_str << ": " << keys1;
+
+    std::vector<typename Right::key_type> keys2;
+    for (const auto& kv : right) {
+        if (!left.contains(kv.first)) {
+            keys2.push_back(kv.first);
+        }
+    }
+    ASSERT_TRUE(keys2.empty()) << "keys in " << right_str << ", but not in "
+                               << left_str << ": " << keys2;
+}
 
 } // namespace
 
@@ -686,22 +752,25 @@ public:
     shard_placement_test_fixture()
       : test_dir("test.data." + random_generators::gen_alphanum_string(10)) {}
 
-    ss::future<> quiescent_state_checks() {
-        auto shard2states = co_await spt.map(
+    using ntp2shard2state_t = absl::node_hash_map<
+      model::ntp,
+      std::map<ss::shard_id, shard_placement_table::placement_state>>;
+
+    ss::future<ntp2shard2state_t> get_ntp2shard2state() const {
+        auto shard2states = co_await spt->map(
           [](shard_placement_table& spt) { return spt._states; });
 
-        absl::node_hash_map<
-          model::ntp,
-          std::map<ss::shard_id, shard_placement_table::placement_state>>
-          ntp2shard2state;
+        ntp2shard2state_t ntp2shard2state;
         for (size_t s = 0; s < shard2states.size(); ++s) {
             for (const auto& [ntp, state] : shard2states[s]) {
                 ntp2shard2state[ntp].emplace(s, state);
             }
         }
 
-        ASSERT_EQ_CORO(ntp2shard2state.size(), ntpt.local().ntp2meta.size());
+        co_return ntp2shard2state;
+    }
 
+    void clean_ntp2shards() {
         auto& ntp2shards = _ntp2shards.local();
         for (auto it = ntp2shards.begin(); it != ntp2shards.end();) {
             auto it_copy = it++;
@@ -718,8 +787,23 @@ public:
                 ntp2shards.erase(it_copy);
             }
         }
+    }
 
-        ASSERT_EQ_CORO(ntp2shards.size(), ntpt.local().ntp2meta.size());
+    ss::future<> quiescent_state_checks() {
+        auto ntp2shard2state = co_await get_ntp2shard2state();
+        assert_key_sets_equal(
+          ntp2shard2state,
+          "spt placement state map",
+          ntpt.local().ntp2meta,
+          "ntp2meta map");
+
+        clean_ntp2shards();
+        const auto& ntp2shards = _ntp2shards.local();
+        assert_key_sets_equal(
+          ntp2shards,
+          "reference ntp state map",
+          ntpt.local().ntp2meta,
+          "ntp2meta map");
 
         for (const auto& [ntp, meta] : ntpt.local().ntp2meta) {
             auto states_it = ntp2shard2state.find(ntp);
@@ -727,8 +811,8 @@ public:
               << "ntp: " << ntp;
             const auto& shard2state = states_it->second;
 
-            auto entry_it = spt.local()._ntp2entry.find(ntp);
-            ASSERT_TRUE_CORO(entry_it != spt.local()._ntp2entry.end())
+            auto entry_it = spt->local()._ntp2entry.find(ntp);
+            ASSERT_TRUE_CORO(entry_it != spt->local()._ntp2entry.end())
               << "ntp: " << ntp;
             ASSERT_TRUE_CORO(entry_it->second->target) << "ntp: " << ntp;
             ASSERT_TRUE_CORO(entry_it->second->mtx.ready()) << "ntp: " << ntp;
@@ -779,7 +863,7 @@ public:
             ASSERT_EQ_CORO(shards.rev2shards.size(), 1) << "ntp: " << ntp;
             auto p_shards_it = shards.rev2shards.find(meta.log_revision);
             ASSERT_TRUE_CORO(p_shards_it != shards.rev2shards.end())
-              << "ntp: " << ntp;
+              << "ntp: " << ntp << ", log_revision: " << meta.log_revision;
             const auto& p_shards = p_shards_it->second;
             ASSERT_EQ_CORO(p_shards.launched_on, target.shard)
               << "ntp: " << ntp;
@@ -790,18 +874,118 @@ public:
         }
     }
 
+    ss::future<> check_spt_recovery() {
+        clean_ntp2shards();
+        const auto& ntp2shards = _ntp2shards.local();
+        auto ntp2shard2state = co_await get_ntp2shard2state();
+        assert_key_sets_equal(
+          ntp2shards,
+          "reference ntp state map",
+          ntp2shard2state,
+          "spt placement state map");
+
+        for (const auto& [ntp, expected] : ntp2shards) {
+            auto states_it = ntp2shard2state.find(ntp);
+            ASSERT_TRUE_CORO(states_it != ntp2shard2state.end())
+              << "ntp: " << ntp;
+            const auto& shard2state = states_it->second;
+
+            // check main target map
+            auto entry_it = spt->local()._ntp2entry.find(ntp);
+            if (expected.target) {
+                ASSERT_TRUE_CORO(entry_it != spt->local()._ntp2entry.end())
+                  << "ntp: " << ntp;
+                ASSERT_EQ_CORO(entry_it->second->target, expected.target)
+                  << "ntp: " << ntp;
+                ASSERT_TRUE_CORO(entry_it->second->mtx.ready())
+                  << "ntp: " << ntp;
+            } else {
+                ASSERT_TRUE_CORO(entry_it == spt->local()._ntp2entry.end())
+                  << "ntp: " << ntp;
+            }
+
+            // check assigned markers
+            if (expected.target) {
+                ASSERT_TRUE_CORO(shard2state.contains(expected.target->shard));
+            }
+            for (const auto& [s, placement] : shard2state) {
+                if (expected.target && s == expected.target->shard) {
+                    ASSERT_TRUE_CORO(placement.assigned)
+                      << "ntp: " << ntp << ", shard: " << s;
+                    ASSERT_EQ_CORO(
+                      placement.assigned->log_revision,
+                      expected.target->log_revision)
+                      << "ntp: " << ntp << ", shard: " << s;
+                } else {
+                    ASSERT_TRUE_CORO(!placement.assigned)
+                      << "ntp: " << ntp << ", shard: " << s;
+                }
+            }
+
+            // check that all shards with state are known in the placement map.
+            for (ss::shard_id s : expected.shards_with_some_state) {
+                auto state_it = shard2state.find(s);
+                ASSERT_TRUE_CORO(state_it != shard2state.end())
+                  << "ntp: " << ntp << ", shard: " << s;
+                ASSERT_TRUE_CORO(state_it->second.current)
+                  << "ntp: " << ntp << ", shard: " << s;
+            }
+        }
+    }
+
     ss::future<> start() {
         co_await ft.start();
         co_await ft.invoke_on_all(
           [](features::feature_table& ft) { ft.testing_activate_all(); });
-
         co_await ntpt.start();
-
         co_await _ntp2shards.start_single();
-
         co_await sr.start();
 
-        co_await kvs.start(
+        co_await restart_node(true);
+    }
+
+    ss::future<> stop() {
+        if (_shard_assigner) {
+            co_await _shard_assigner->stop();
+        }
+        if (rb) {
+            co_await rb->stop();
+        }
+        if (spt) {
+            co_await spt->stop();
+        }
+        if (kvs) {
+            co_await kvs->stop();
+        }
+        co_await sr.stop();
+        co_await _ntp2shards.stop();
+        co_await ntpt.stop();
+        co_await ft.stop();
+    }
+
+    ss::future<> restart_node(bool first_start) {
+        if (_shard_assigner) {
+            co_await _shard_assigner->stop();
+        }
+        if (rb) {
+            co_await rb->stop();
+        }
+        if (spt) {
+            co_await spt->stop();
+        }
+        if (kvs) {
+            co_await kvs->stop();
+        }
+
+        for (auto& [ntp, shards] : _ntp2shards.local()) {
+            for (auto& [lr, p_shards] : shards.rev2shards) {
+                // "stop" mock partitions
+                p_shards.launched_on = std::nullopt;
+            }
+        }
+
+        kvs = std::make_unique<decltype(kvs)::element_type>();
+        co_await kvs->start(
           storage::kvstore_config(
             1_MiB,
             config::mock_binding(10ms),
@@ -809,32 +993,42 @@ public:
             storage::make_sanitized_file_config()),
           ss::sharded_parameter([this] { return std::ref(sr.local()); }),
           std::ref(ft));
-        co_await kvs.invoke_on_all(
+        co_await kvs->invoke_on_all(
           [](storage::kvstore& kvs) { return kvs.start(); });
 
-        co_await spt.start();
+        spt = std::make_unique<decltype(spt)::element_type>();
+        co_await spt->start(
+          ss::sharded_parameter([this] { return std::ref(kvs->local()); }));
 
-        co_await rb.start(std::ref(ntpt), std::ref(spt), std::ref(_ntp2shards));
+        if (!first_start) {
+            chunked_hash_map<raft::group_id, model::ntp> local_group2ntp;
+            for (const auto& [ntp, meta] : ntpt.local().ntp2meta) {
+                local_group2ntp.emplace(meta.group, ntp);
+            }
+            co_await spt->local().initialize_from_kvstore(local_group2ntp);
+
+            for (auto& [ntp, shards] : _ntp2shards.local()) {
+                if (
+                  shards.target
+                  && !local_group2ntp.contains(shards.target->group)) {
+                    // clear obsolete targets
+                    shards.target = std::nullopt;
+                }
+            }
+        }
+
+        co_await check_spt_recovery();
+
+        rb = std::make_unique<decltype(rb)::element_type>();
+        co_await rb->start(
+          std::ref(ntpt), std::ref(*spt), std::ref(_ntp2shards));
 
         _shard_assigner = std::make_unique<shard_assigner>(
-          ntpt, spt, _ntp2shards, rb);
+          ntpt, *spt, _ntp2shards, *rb);
         co_await _shard_assigner->start();
 
-        co_await rb.invoke_on_all(
+        co_await rb->invoke_on_all(
           [](reconciliation_backend& rb) { return rb.start(); });
-    }
-
-    ss::future<> stop() {
-        if (_shard_assigner) {
-            co_await _shard_assigner->stop();
-        }
-        co_await rb.stop();
-        co_await spt.stop();
-        co_await kvs.stop();
-        co_await sr.stop();
-        co_await _ntp2shards.stop();
-        co_await ntpt.stop();
-        co_await ft.stop();
     }
 
     ss::future<> TearDownAsync() override {
@@ -848,33 +1042,51 @@ public:
     ss::sharded<ntp_table> ntpt;
     ss::sharded<ntp2shards_t> _ntp2shards; // only on shard 0
     ss::sharded<storage::storage_resources> sr;
-    ss::sharded<storage::kvstore> kvs;
-    ss::sharded<shard_placement_table> spt;
-    ss::sharded<reconciliation_backend> rb;
+    std::unique_ptr<ss::sharded<storage::kvstore>> kvs;
+    std::unique_ptr<ss::sharded<shard_placement_table>> spt;
+    std::unique_ptr<ss::sharded<reconciliation_backend>> rb;
     std::unique_ptr<shard_assigner> _shard_assigner;
 };
 
 TEST_F_CORO(shard_placement_test_fixture, StressTest) {
     model::revision_id cur_revision{1};
     raft::group_id cur_group{1};
+    prefix_logger logger(clusterlog, "TEST");
 
     co_await start();
 
+    // enable persistence midway through the test
+    size_t enable_persistence_at = random_generators::get_int(4'000, 6'000);
+
     for (size_t i = 0; i < 10'000; ++i) {
+        if (i == enable_persistence_at) {
+            _shard_assigner->enable_persistence_eventually();
+        }
+
         if (random_generators::get_int(15) == 0) {
-            vlog(clusterlog.info, "waiting for reconciliation");
+            vlog(logger.info, "waiting for reconciliation");
             for (size_t i = 0;; ++i) {
                 ASSERT_TRUE_CORO(i < 50) << "taking too long to reconcile";
                 if (!(_shard_assigner->is_reconciled()
-                      && co_await rb.local().is_reconciled())) {
+                      && co_await rb->local().is_reconciled())) {
                     co_await ss::sleep(100ms);
                 } else {
                     break;
                 }
             }
 
-            vlog(clusterlog.info, "reconciled");
+            vlog(logger.info, "reconciled");
             co_await quiescent_state_checks();
+            continue;
+        }
+
+        if (
+          spt->local().is_persistence_enabled()
+          && random_generators::get_int(50) == 0) {
+            vlog(logger.info, "restarting");
+            co_await restart_node(false);
+            vlog(logger.info, "restarted");
+            continue;
         }
 
         // small set of ntps to ensure frequent overlaps
@@ -887,7 +1099,7 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             auto group = cur_group++;
             auto revision = cur_revision++;
             vlog(
-              clusterlog.info,
+              logger.info,
               "[{}] OP: add, group: {}, log revision: {}",
               ntp,
               group,
@@ -915,11 +1127,11 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
               {op_t::transfer, op_t::remove, op_t::increase_log_rev});
             switch (op) {
             case op_t::transfer:
-                vlog(clusterlog.info, "[{}] OP: reassign shard", ntp);
+                vlog(logger.info, "[{}] OP: reassign shard", ntp);
                 _shard_assigner->assign_eventually(ntp);
                 break;
             case op_t::remove: {
-                vlog(clusterlog.info, "[{}] OP: remove", ntp);
+                vlog(logger.info, "[{}] OP: remove", ntp);
                 auto revision = cur_revision++;
                 co_await ntpt.invoke_on_all([&](ntp_table& ntpt) {
                     ntpt.ntp2meta.erase(ntp);
@@ -933,7 +1145,7 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             case op_t::increase_log_rev:
                 ntp_meta.log_revision = cur_revision++;
                 vlog(
-                  clusterlog.info,
+                  logger.info,
                   "[{}] OP: increase log revision to: {}",
                   ntp,
                   ntp_meta.log_revision);
@@ -949,7 +1161,7 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
         }
     }
 
-    vlog(clusterlog.info, "finished");
+    vlog(logger.info, "finished");
 }
 
 } // namespace cluster
