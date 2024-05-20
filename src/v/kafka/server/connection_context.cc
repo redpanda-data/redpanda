@@ -618,9 +618,7 @@ ss::future<session_resources> connection_context::throttle_request(
     // affect.
     const delay_t delay = co_await record_tp_and_calculate_throttle(
       r_data, request_size);
-    auto& h_probe = _server.handler_probe(r_data.request_key);
-    auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
-    auto fut = ss::now();
+
     if (delay.enforce > delay_t::clock::duration::zero()) {
         vlog(
           klog.trace,
@@ -628,40 +626,28 @@ ss::future<session_resources> connection_context::throttle_request(
           _client_addr,
           client_port(),
           delay.enforce);
-        fut = ss::sleep_abortable(delay.enforce, abort_source().local());
+        co_await ss::sleep_abortable(delay.enforce, abort_source().local());
     }
+
+    auto mem_units = co_await reserve_request_units(
+      r_data.request_key, request_size);
+
+    auto qd_units = co_await server().get_request_unit();
+
+    auto& h_probe = _server.handler_probe(r_data.request_key);
+    auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
     auto track = track_latency(r_data.request_key);
-    co_return co_await fut
-      .then([this, key = r_data.request_key, request_size] {
-          return reserve_request_units(key, request_size);
-      })
-      .then([this,
-             r_data = std::move(r_data),
-             delay = delay.request,
-             track,
-             tracker = std::move(tracker),
-             &h_probe](ssx::semaphore_units units) mutable {
-          return server().get_request_unit().then(
-            [this,
-             r_data = std::move(r_data),
-             delay,
-             mem_units = std::move(units),
-             track,
-             tracker = std::move(tracker),
-             &h_probe](ssx::semaphore_units qd_units) mutable {
-                session_resources r{
-                  .backpressure_delay = delay,
-                  .memlocks = std::move(mem_units),
-                  .queue_units = std::move(qd_units),
-                  .tracker = std::move(tracker),
-                  .request_data = std::move(r_data)};
-                if (track) {
-                    r.method_latency = _server.hist().auto_measure();
-                }
-                r.handler_latency = h_probe.auto_latency_measurement();
-                return r;
-            });
-      });
+    session_resources r{
+      .backpressure_delay = delay.request,
+      .memlocks = std::move(mem_units),
+      .queue_units = std::move(qd_units),
+      .tracker = std::move(tracker),
+      .request_data = std::move(r_data)};
+    if (track) {
+        r.method_latency = _server.hist().auto_measure();
+    }
+    r.handler_latency = h_probe.auto_latency_measurement();
+    co_return r;
 }
 
 ss::future<ssx::semaphore_units>
