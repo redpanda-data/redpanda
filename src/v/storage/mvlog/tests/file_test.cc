@@ -35,12 +35,17 @@ public:
     ss::future<> SetUpAsync() override {
         co_await ss::recursive_touch_directory(base_dir_);
     }
+
     ss::future<> TearDownAsync() override {
         for (auto& file : files_) {
             co_await file->close();
         }
-        co_await ss::recursive_remove_directory(
-          std::filesystem::path{base_dir_});
+        // NOTE: death tests may clean themselves up in the test body to avoid
+        // leaving behind directories from child processes.
+        if (co_await ss::file_exists(base_dir_)) {
+            co_await ss::recursive_remove_directory(
+              std::filesystem::path{base_dir_});
+        }
     }
 
     std::filesystem::path test_path(ss::sstring component) {
@@ -141,22 +146,30 @@ TEST_F_CORO(FileTest, TestAppend) {
     }
 }
 
-TEST_F(FileTest, TestAppendAfterClose) {
+using FileDeathTest = FileTest;
+TEST_F(FileDeathTest, TestAppendAfterClose) {
     const auto path = test_path("foo");
     auto created = file_mgr_->create_file(path).get();
     created->close().get();
 
+    // Clean up the files in the test body. Death tests may not run teardown.
+    ss::recursive_remove_directory(std::filesystem::path{base_dir_}).get();
+
     auto buf = random_generators::make_iobuf();
-    EXPECT_DEATH(created->append(buf.copy()).get(), "file has been closed");
+    ASSERT_DEATH(created->append(buf.copy()).get(), "file has been closed");
 }
 
-TEST_F(FileTest, TestStreamAfterClose) {
+TEST_F(FileDeathTest, TestStreamAfterClose) {
     const auto path = test_path("foo");
     auto created = file_mgr_->create_file(path).get();
     auto buf = random_generators::make_iobuf();
     created->append(buf.copy()).get();
     created->close().get();
-    EXPECT_DEATH(
+
+    // Clean up the files in the test body. Death tests may not run teardown.
+    ss::recursive_remove_directory(std::filesystem::path{base_dir_}).get();
+
+    ASSERT_DEATH(
       created->make_stream(0, created->size()), "file has been closed");
 }
 
