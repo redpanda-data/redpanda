@@ -26,6 +26,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
 #include "test_utils/randoms.h"
+#include "test_utils/scoped_config.h"
 #include "utils/directory_walker.h"
 
 #include <seastar/util/defer.hh>
@@ -951,4 +952,71 @@ FIXTURE_TEST(test_tx_expiration_without_data_batches, rm_stm_test_fixture) {
         auto expired = get_expired_producers();
         return std::find(expired.begin(), expired.end(), pid) != expired.end();
     }).get0();
+}
+
+/*
+ * This test ensures concurrent evictions can happen in the presence of
+ * replication operations and operations that reset the state (snapshots,
+ * partition stop).
+ */
+FIXTURE_TEST(test_concurrent_producer_evictions, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
+    stm.start().get0();
+    stm.testing_only_disable_auto_abort();
+
+    wait_for_confirmed_leader();
+    wait_for_meta_initialized();
+
+    // Ensure eviction runs with higher frequency
+    // and evicts everything.
+    scoped_config config;
+    config.get("max_concurrent_producer_ids").set_value(0UL);
+    rearm_eviction_timer(1ms);
+
+    int64_t counter = 0;
+    bool stop = false;
+    ss::gate gate;
+    size_t max_replication_fibers = 1000;
+
+    auto replicate_f = ss::do_until(
+      [&stop] { return stop; },
+      [&, this] {
+          for (int i = 0; i < 5; i++) {
+              auto producer = maybe_create_producer(
+                model::producer_identity{counter++, 0});
+              if (
+                gate.get_count() < max_replication_fibers
+                && tests::random_bool()) {
+                  // simulates replication.
+                  ssx::spawn_with_gate(gate, [this, producer] {
+                      return stm_read_lock().then([producer](auto stm_units) {
+                          return producer
+                            ->run_with_lock([](auto units) {
+                                auto sleep_ms = std::chrono::milliseconds{
+                                  random_generators::get_int(3)};
+                                return ss::sleep(sleep_ms).finally(
+                                  [units = std::move(units)] {});
+                            })
+                            .finally(
+                              [producer, stm_units = std::move(stm_units)] {});
+                      });
+                  });
+              }
+          }
+          return ss::sleep(1ms);
+      });
+
+    // simulates raft snapshot application / partition shutdown
+    auto reset_f = ss::do_until(
+      [&stop] { return stop; },
+      [&, this] {
+          return reset_producers().then([] { return ss::sleep(3ms); });
+      });
+
+    ss::sleep(20s).get();
+    stop = true;
+    std::move(replicate_f).get();
+    std::move(reset_f).get();
+    gate.close().get();
 }
