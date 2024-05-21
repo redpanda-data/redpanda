@@ -10,6 +10,7 @@
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
+from ducktape.mark import ok_to_fail_fips
 
 
 class RpkPluginTest(RedpandaTest):
@@ -18,6 +19,7 @@ class RpkPluginTest(RedpandaTest):
         self._ctx = ctx
         self._rpk = RpkTool(self.redpanda)
 
+    @ok_to_fail_fips
     @cluster(num_nodes=1)
     def test_managed_byoc(self):
         """
