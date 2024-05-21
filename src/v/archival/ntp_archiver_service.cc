@@ -239,6 +239,13 @@ ntp_archiver::ntp_archiver(
         _next_housekeeping = _housekeeping_jitter();
     });
 
+    if (_local_segment_merger) {
+        _local_segment_merger->set_enabled(false);
+    }
+    if (_scrubber) {
+        _scrubber->set_enabled(false);
+    }
+
     _start_term = _parent.term();
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {
