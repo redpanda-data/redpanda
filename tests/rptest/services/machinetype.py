@@ -21,6 +21,7 @@ class MachineTypeName(str, Enum):
     N2_STANDARD_2 = 'n2-standard-2'
     N2_STANDARD_4 = 'n2-standard-4'
     N2_STANDARD_8 = 'n2-standard-8'
+    N2_STANDARD_16 = 'n2-standard-16'
     N2D_STANDARD_2 = 'n2d-standard-2'
     N2D_STANDARD_4 = 'n2d-standard-4'
     N2D_STANDARD_16 = 'n2d-standard-16'
@@ -72,6 +73,8 @@ MachineTypeConfigs = {
     MachineTypeConfig(num_shards=3, memory=16 * GiB),
     MachineTypeName.N2_STANDARD_8:
     MachineTypeConfig(num_shards=7, memory=32 * GiB),
+    MachineTypeName.N2_STANDARD_16:
+    MachineTypeConfig(num_shards=15, memory=64 * GiB),
     MachineTypeName.N2D_STANDARD_2:
     MachineTypeConfig(num_shards=1, memory=8 * GiB),
     MachineTypeName.N2D_STANDARD_4:
