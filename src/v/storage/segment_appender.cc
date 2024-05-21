@@ -358,6 +358,13 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
                    _fallocation_offset,
                    _committed_offset);
                  return _out.allocate(_fallocation_offset, step)
+                   .then([this, step] {
+                       // ss::file::allocate does not adjust logical file size
+                       // hence we need to do that explicitly with an extra
+                       // truncate. This allows for more efficient writes.
+                       // https://github.com/redpanda-data/redpanda/pull/18598.
+                       return _out.truncate(_fallocation_offset + step);
+                   })
                    .then([this, step] { _fallocation_offset += step; });
              })
       .handle_exception([this](std::exception_ptr e) {
