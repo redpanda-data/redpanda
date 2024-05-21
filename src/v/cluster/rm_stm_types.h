@@ -45,22 +45,40 @@ struct expiration_info {
     }
 };
 
-struct transaction_info {
-    enum class status_t { ongoing, preparing, prepared, initiating };
+// Status of a single transaction within a data partition.
+// Not to be confused with user visible transaction status
+// that can potentially span multiple data partitions.
+enum class partition_transaction_status : int8_t {
+    // Data has been appended as a part of the transaction.
+    ongoing = 0,
+    //
+    // note: couple of unused status types [1, 2] were removed.
+    //
+    // Partition is aware of the transaction but the client has
+    // not produced data as a part of this transaction.
+    initialized = 3
+};
 
-    status_t status;
+std::ostream& operator<<(std::ostream&, const partition_transaction_status&);
+
+// Captures the information about the transaction within a single data
+// partition. A user initiated transaction can span multiple data partitions but
+// this struct only captures it's state within a single partition. This is
+// always used in the context of a given partition.
+struct partition_transaction_info {
+    partition_transaction_status status;
     model::offset lso_bound;
     std::optional<expiration_info> info;
     std::optional<int32_t> seq;
 
-    std::string_view get_status() const;
+    ss::sstring get_status() const;
     bool is_expired() const;
     std::optional<duration_type> get_staleness() const;
     std::optional<duration_type> get_timeout() const;
 };
 
-using transaction_set
-  = absl::btree_map<model::producer_identity, transaction_info>;
+using partition_transactions
+  = absl::btree_map<model::producer_identity, partition_transaction_info>;
 
 struct tx_data {
     model::tx_seq tx_seq;

@@ -16,6 +16,7 @@
 #include "container/intrusive_list_helpers.h"
 #include "model/record.h"
 #include "utils/mutex.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_future.hh>
@@ -112,7 +113,8 @@ public:
     result<request_ptr> try_emplace(
       seq_t first, seq_t last, model::term_id current, bool reset_sequences);
 
-    bool stm_apply(const model::batch_identity& bid, kafka::offset offset);
+    void stm_apply(
+      const model::batch_identity& bid, model::term_id, kafka::offset offset);
 
     void shutdown();
 
@@ -126,6 +128,7 @@ private:
       static_cast<unsigned long>(requests_cached_max));
     bool is_valid_sequence(seq_t incoming) const;
     std::optional<request_ptr> last_request() const;
+    void gc_requests_from_older_terms(model::term_id current);
     ss::chunked_fifo<request_ptr, chunk_size> _inflight_requests;
     ss::chunked_fifo<request_ptr, chunk_size> _finished_requests;
     friend producer_state;
@@ -138,14 +141,17 @@ public:
     using clock_type = ss::lowres_system_clock;
 
     producer_state(
+      prefix_logger& logger,
       model::producer_identity id,
       raft::group_id group,
       ss::noncopyable_function<void()> post_eviction_hook)
-      : _id(id)
+      : _logger(logger)
+      , _id(id)
       , _group(group)
       , _last_updated_ts(ss::lowres_system_clock::now())
       , _post_eviction_hook(std::move(post_eviction_hook)) {}
     producer_state(
+      prefix_logger&,
       ss::noncopyable_function<void()> post_eviction_hook,
       producer_state_snapshot) noexcept;
 
@@ -181,7 +187,8 @@ public:
       const model::batch_identity&,
       model::term_id current_term,
       bool reset_sequences = false);
-    bool update(const model::batch_identity&, kafka::offset);
+    void
+    apply_data(const model::batch_identity&, model::term_id, kafka::offset);
 
     void touch() { _last_updated_ts = ss::lowres_system_clock::now(); }
 
@@ -206,6 +213,11 @@ public:
     void update_current_txn_start_offset(std::optional<kafka::offset> offset) {
         _current_txn_start_offset = offset;
     }
+
+    void gc_requests_from_older_terms(model::term_id current_term) {
+        _requests.gc_requests_from_older_terms(current_term);
+    }
+
     safe_intrusive_list_hook _hook;
 
 private:
@@ -214,6 +226,7 @@ private:
           ss::lowres_system_clock::now() - _last_updated_ts);
     }
 
+    prefix_logger& _logger;
     model::producer_identity _id;
     raft::group_id _group;
     // serializes all the operations on this producer

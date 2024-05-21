@@ -173,7 +173,9 @@ producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
         return it->second;
     }
     auto producer = ss::make_lw_shared<producer_state>(
-      pid, _raft->group(), [pid, this] { cleanup_producer_state(pid); });
+      _ctx_log, pid, _raft->group(), [pid, this] {
+          cleanup_producer_state(pid);
+      });
     _producer_state_manager.local().register_producer(*producer, _vcluster_id);
     _producers.emplace(pid, producer);
 
@@ -768,17 +770,17 @@ rm_stm::get_seq_number(model::producer_identity pid) const {
     return it->second->last_sequence_number();
 }
 
-ss::future<result<transaction_set>> rm_stm::get_transactions() {
+ss::future<result<partition_transactions>> rm_stm::get_transactions() {
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
     }
-    transaction_set ans;
+    partition_transactions ans;
     for (auto& [id, offset] : _log_state.ongoing_map) {
-        transaction_info tx_info;
+        partition_transaction_info tx_info;
         tx_info.lso_bound = offset.first;
         tx_info.status = offset.last > offset.first
-                           ? transaction_info::status_t::ongoing
-                           : transaction_info::status_t::initiating;
+                           ? partition_transaction_status::ongoing
+                           : partition_transaction_status::initialized;
         tx_info.info = get_expiration_info(id);
         tx_info.seq = get_seq_number(id);
         ans.emplace(id, tx_info);
@@ -1273,6 +1275,13 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
     if (ready) {
         if (current_insync_term != _insync_term) {
             _last_known_lso = model::offset{-1};
+            vlog(
+              _ctx_log.trace,
+              "garbage collecting requests from terms < {}",
+              _insync_term);
+            for (auto& [_, producer] : _producers) {
+                producer->gc_requests_from_older_terms(_insync_term);
+            }
         }
     }
     co_return ready;
@@ -1599,6 +1608,7 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
     if (_is_autoabort_enabled && !_is_autoabort_active) {
         abort_old_txes();
     }
+
     co_return;
 }
 
@@ -1670,10 +1680,8 @@ void rm_stm::apply_data(
         _highest_producer_id = std::max(_highest_producer_id, bid.pid.get_id());
         const auto last_kafka_offset = from_log_offset(header.last_offset());
         auto producer = maybe_create_producer(bid.pid);
-        auto needs_touch = producer->update(bid, last_kafka_offset);
-        if (needs_touch) {
-            _producer_state_manager.local().touch(*producer, _vcluster_id);
-        }
+        producer->apply_data(bid, header.ctx.term, last_kafka_offset);
+        _producer_state_manager.local().touch(*producer, _vcluster_id);
 
         if (bid.is_transactional) {
             vlog(
@@ -1759,7 +1767,9 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         }
         auto pid = entry._id;
         auto producer = ss::make_lw_shared<producer_state>(
-          [pid, this] { cleanup_producer_state(pid); }, std::move(entry));
+          _ctx_log,
+          [pid, this] { cleanup_producer_state(pid); },
+          std::move(entry));
         try {
             _producer_state_manager.local().register_producer(
               *producer, _vcluster_id);

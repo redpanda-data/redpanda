@@ -14,6 +14,7 @@
 #include "cluster/types.h"
 #include "config/mock_property.h"
 #include "config/property.h"
+#include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
@@ -33,6 +34,7 @@ using namespace std::chrono_literals;
 using namespace cluster::tx;
 
 ss::logger logger{"producer_state_test"};
+prefix_logger ctx_logger{logger, ""};
 
 struct test_fixture {
     using psm_ptr = std::unique_ptr<producer_state_manager>;
@@ -72,6 +74,7 @@ struct test_fixture {
       ss::noncopyable_function<void()> f = [] {},
       std::optional<model::vcluster_id> vcluster = std::nullopt) {
         auto p = ss::make_lw_shared<producer_state>(
+          ctx_logger,
           model::random_producer_identity(),
           raft::group_id{_counter++},
           std::move(f));
@@ -128,6 +131,22 @@ FIXTURE_TEST(test_locked_producer_is_not_evicted, test_fixture) {
 
     clean(producers);
     validate_producer_count(0);
+}
+
+FIXTURE_TEST(test_inflight_producer_is_not_evicted, test_fixture) {
+    create_producer_state_manager(1, 1);
+    auto producer = new_producer();
+    validate_producer_count(1);
+
+    auto batch = model::test::make_random_batch(
+      model::offset{10}, 7, true, model::record_batch_type::raft_data);
+    auto bid = model::batch_identity::from(batch.header());
+    auto request = producer->try_emplace_request(bid, model::term_id{1});
+    // producer has an inflight request
+    BOOST_REQUIRE(!producer->can_evict());
+    producer->apply_data(bid, model::term_id{1}, kafka::offset{10});
+    BOOST_REQUIRE(producer->can_evict());
+    manager().deregister_producer(*producer, std::nullopt);
 }
 
 FIXTURE_TEST(test_lru_maintenance, test_fixture) {

@@ -118,16 +118,7 @@ result<request_ptr> requests::try_emplace(
         // gc and fail any inflight requests from old terms
         // these are guaranteed to be failed because of sync() guarantees
         // prior to this request.
-        while (!_inflight_requests.empty()
-               && _inflight_requests.front()->_term < current) {
-            if (!_inflight_requests.front()->has_completed()) {
-                // Here we know for sure the term change, these in flight
-                // requests are going to fail anyway, mark them so.
-                _inflight_requests.front()->set_value(errc::timeout);
-            }
-            _inflight_requests.pop_front();
-        }
-
+        gc_requests_from_older_terms(current);
         // check if an existing request matches
         auto match_it = std::find_if(
           _finished_requests.begin(),
@@ -153,14 +144,7 @@ result<request_ptr> requests::try_emplace(
         if (match_it != _inflight_requests.end()) {
             return *match_it;
         }
-
         if (!is_valid_sequence(first)) {
-            vlog(
-              clusterlog.trace,
-              "out of order sequence for request range [{}, {}], term: {}",
-              first,
-              last,
-              current);
             return errc::sequence_out_of_order;
         }
     }
@@ -172,9 +156,8 @@ result<request_ptr> requests::try_emplace(
     return _inflight_requests.back();
 }
 
-bool requests::stm_apply(
-  const model::batch_identity& bid, kafka::offset offset) {
-    bool relink_producer = false;
+void requests::stm_apply(
+  const model::batch_identity& bid, model::term_id term, kafka::offset offset) {
     auto first = bid.first_seq;
     auto last = bid.last_seq;
     if (!_inflight_requests.empty()) {
@@ -183,13 +166,8 @@ bool requests::stm_apply(
             // Promote the request from in_flight -> finished.
             _inflight_requests.pop_front();
         }
-    } else {
-        // on leaders, producer state is relinked with the manager as a part
-        // of run_with_lock. On followers this happens as their stms catch up
-        // with the committed changes. This branch is taken only when the stm is
-        // applying changes from a different leader thus prompting a relink.
-        relink_producer = true;
     }
+    gc_requests_from_older_terms(term);
     result_promise_t ready{};
     ready.set_value(kafka_result{.last_offset = offset});
     _finished_requests.emplace_back(ss::make_lw_shared<request>(
@@ -198,7 +176,18 @@ bool requests::stm_apply(
     while (_finished_requests.size() > requests_cached_max) {
         _finished_requests.pop_front();
     }
-    return relink_producer;
+}
+
+void requests::gc_requests_from_older_terms(model::term_id current_term) {
+    while (!_inflight_requests.empty()
+           && _inflight_requests.front()->_term < current_term) {
+        if (!_inflight_requests.front()->has_completed()) {
+            // Here we know for sure the term change, these in flight
+            // requests are going to fail anyway, mark them so.
+            _inflight_requests.front()->set_value(errc::timeout);
+        }
+        _inflight_requests.pop_front();
+    }
 }
 
 void requests::shutdown() {
@@ -212,9 +201,11 @@ void requests::shutdown() {
 }
 
 producer_state::producer_state(
+  prefix_logger& logger,
   ss::noncopyable_function<void()> post_eviction_hook,
   producer_state_snapshot snapshot) noexcept
-  : _id(snapshot._id)
+  : _logger(logger)
+  , _id(snapshot._id)
   , _group(snapshot._group)
   , _post_eviction_hook(std::move(post_eviction_hook)) {
     // Hydrate from snapshot.
@@ -266,7 +257,15 @@ bool producer_state::can_evict() {
         return false;
     }
 
-    vlog(clusterlog.debug, "evicting producer: {}", *this);
+    if (!_requests._inflight_requests.empty()) {
+        vlog(
+          _logger.debug,
+          "[{}] cannot evict because of pending inflight requests",
+          *this);
+        return false;
+    }
+
+    vlog(_logger.debug, "[{}] evicting producer", *this);
     _evicted = true;
     shutdown_input();
     return true;
@@ -279,31 +278,42 @@ result<request_ptr> producer_state::try_emplace_request(
         return errc::invalid_request;
     }
     vlog(
-      clusterlog.trace,
-      "new request from producer: {}, batch meta: {}, term: {}, "
+      _logger.trace,
+      "[{}] new request, batch meta: {}, term: {}, "
       "reset: {}, request_state: {}",
       *this,
       bid,
       current_term,
       reset,
       _requests);
-    return _requests.try_emplace(
+    auto result = _requests.try_emplace(
       bid.first_seq, bid.last_seq, current_term, reset);
+
+    if (unlikely(result.has_error())) {
+        vlog(
+          _logger.debug,
+          "[{}] error {} processing request {}, term: {}, reset: {}",
+          *this,
+          result.error(),
+          bid,
+          current_term,
+          reset);
+    }
+    return result;
 }
 
-bool producer_state::update(
-  const model::batch_identity& bid, kafka::offset offset) {
+void producer_state::apply_data(
+  const model::batch_identity& bid, model::term_id term, kafka::offset offset) {
     if (_evicted) {
-        return false;
+        return;
     }
-    bool relink_producer = _requests.stm_apply(bid, offset);
+    _requests.stm_apply(bid, term, offset);
     vlog(
-      clusterlog.trace,
-      "applied stm update for pid: {}, batch meta: {}, relink_producer: {}",
+      _logger.trace,
+      "[{}] applied stm update, batch meta: {}, term: {}",
       *this,
       bid,
-      relink_producer);
-    return relink_producer;
+      term);
 }
 
 std::optional<seq_t> producer_state::last_sequence_number() const {

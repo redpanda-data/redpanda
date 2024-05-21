@@ -81,24 +81,28 @@ tx_snapshot::tx_snapshot(tx_snapshot_v4 snap_v4, raft::group_id group)
     }
 }
 
-std::string_view transaction_info::get_status() const {
+std::ostream&
+operator<<(std::ostream& o, const partition_transaction_status& status) {
     switch (status) {
-    case status_t::ongoing:
-        return "ongoing";
-    case status_t::prepared:
-        return "prepared";
-    case status_t::preparing:
-        return "preparing";
-    case status_t::initiating:
-        return "initiating";
+    case partition_transaction_status::ongoing:
+        o << "ongoing";
+        break;
+    case partition_transaction_status::initialized:
+        o << "initiating";
+        break;
     }
+    return o;
 }
 
-bool transaction_info::is_expired() const {
+ss::sstring partition_transaction_info::get_status() const {
+    return fmt::format("{}", status);
+}
+
+bool partition_transaction_info::is_expired() const {
     return !info.has_value() || info.value().deadline() <= clock_type::now();
 }
 
-std::optional<duration_type> transaction_info::get_staleness() const {
+std::optional<duration_type> partition_transaction_info::get_staleness() const {
     if (is_expired()) {
         return std::nullopt;
     }
@@ -107,7 +111,7 @@ std::optional<duration_type> transaction_info::get_staleness() const {
     return now - info->last_update;
 }
 
-std::optional<duration_type> transaction_info::get_timeout() const {
+std::optional<duration_type> partition_transaction_info::get_timeout() const {
     if (is_expired()) {
         return std::nullopt;
     }

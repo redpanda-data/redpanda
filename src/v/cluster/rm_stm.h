@@ -147,7 +147,7 @@ public:
 
     void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
 
-    ss::future<result<tx::transaction_set>> get_transactions();
+    ss::future<result<tx::partition_transactions>> get_transactions();
 
     ss::future<std::error_code> mark_expired(model::producer_identity pid);
 
