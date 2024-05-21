@@ -23,7 +23,7 @@ type Example struct {
 	B string `json:"b"`
 }
 
-const ExampleAvroCRC64Fingerprint = "\x90\x96ќ\\\x13jW"
+const ExampleAvroCRC64Fingerprint = "\x81\xb6A0\x7fV\x1a\xdc"
 
 func NewExample() Example {
 	r := Example{}
@@ -73,11 +73,11 @@ func (r Example) Serialize(w io.Writer) error {
 }
 
 func (r Example) Schema() string {
-	return "{\"fields\":[{\"default\":0,\"name\":\"a\",\"type\":\"long\"},{\"default\":\"\",\"name\":\"b\",\"type\":\"string\"}],\"name\":\"com.example.Example\",\"type\":\"record\"}"
+	return "{\"fields\":[{\"default\":0,\"name\":\"a\",\"type\":\"long\"},{\"default\":\"\",\"name\":\"b\",\"type\":\"string\"}],\"name\":\"Example\",\"type\":\"record\"}"
 }
 
 func (r Example) SchemaName() string {
-	return "com.example.Example"
+	return "Example"
 }
 
 func (_ Example) SetBoolean(v bool)    { panic("Unsupported operation") }

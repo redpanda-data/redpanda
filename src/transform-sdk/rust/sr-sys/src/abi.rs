@@ -23,16 +23,16 @@ extern "C" {
     #[link_name = "get_schema_definition"]
     pub(crate) fn get_schema_definition(schema_id: i32, buf: *mut u8, len: i32) -> i32;
 
-    #[link_name = "get_schema_subject_len"]
-    pub(crate) fn get_schema_subject_len(
+    #[link_name = "get_subject_schema_len"]
+    pub(crate) fn get_subject_schema_len(
         subject: *const u8,
         subject_len: i32,
         version: i32,
         len: *mut i32,
     ) -> i32;
 
-    #[link_name = "get_schema_subject"]
-    pub(crate) fn get_schema_subject(
+    #[link_name = "get_subject_schema"]
+    pub(crate) fn get_subject_schema(
         subject: *const u8,
         subject_len: i32,
         version: i32,

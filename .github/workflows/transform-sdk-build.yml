@@ -144,7 +144,8 @@ jobs:
           cargo build --target=wasm32-wasi --release \
             --example=identity \
             --example=identity_logging \
-            --example=tee
+            --example=tee \
+            --example=schema_registry
       - name: Download integration test suite
         uses: actions/download-artifact@v4
         with:
@@ -156,7 +157,7 @@ jobs:
           IDENTITY: target/wasm32-wasi/release/examples/identity.wasm
           LOGGING: target/wasm32-wasi/release/examples/identity_logging.wasm
           TEE: target/wasm32-wasi/release/examples/tee.wasm
-          SCHEMA_REGISTRY: "@UNIMPLEMENTED@"
+          SCHEMA_REGISTRY: target/wasm32-wasi/release/examples/schema_registry.wasm
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v

@@ -22,7 +22,7 @@
 mod abi;
 #[cfg(not(target_os = "wasi"))]
 mod stub_abi;
-use abi::{get_schema_definition, get_schema_subject};
+use abi::{get_schema_definition, get_subject_schema};
 #[cfg(not(target_os = "wasi"))]
 use stub_abi as abi;
 mod serde;
@@ -65,7 +65,7 @@ impl SchemaRegistryClientImpl for AbiSchemaRegistryClient {
     ) -> Result<SubjectSchema> {
         let mut length: i32 = 0;
         let errno = unsafe {
-            abi::get_schema_subject_len(
+            abi::get_subject_schema_len(
                 subject.as_ptr(),
                 subject.len() as i32,
                 version.0,
@@ -77,7 +77,7 @@ impl SchemaRegistryClientImpl for AbiSchemaRegistryClient {
         }
         let mut buf = vec![0; length as usize];
         let errno_or_amt = unsafe {
-            get_schema_subject(
+            get_subject_schema(
                 subject.as_ptr(),
                 subject.len() as i32,
                 version.0,

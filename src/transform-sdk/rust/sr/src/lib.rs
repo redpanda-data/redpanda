@@ -79,3 +79,11 @@ impl Default for SchemaRegistryClient {
         Self::new()
     }
 }
+
+pub fn extract_id(buf: &[u8]) -> Result<SchemaId> {
+    static MAGIC_BYTES: [u8; 1] = [0x00];
+    if !buf.starts_with(&MAGIC_BYTES) || buf.len() < 5 {
+        return Err(SchemaRegistryError::BadHeader);
+    }
+    Ok(SchemaId(i32::from_be_bytes(buf[1..5].try_into().unwrap())))
+}
