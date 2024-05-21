@@ -1329,12 +1329,13 @@ class TopicRecoveryTest(RedpandaTest):
             self.redpanda.remove_local_data(node)
 
     @staticmethod
-    def _normalize_lw_seg_key(key: str, lw_seg_meta: dict) -> str:
-        """adds archiver_term to key, to match the actual object key in cloud storage"""
-        if not key.endswith(".log"):
-            # key already has archiver term set in the name
-            return key
-        return f"{key}.{lw_seg_meta['archiver_term']}" if "archiver_term" in lw_seg_meta else key
+    def _cloud_segment_key(lw_seg_meta: dict) -> str:
+        """calculates the segment key in cloud storage from segment meta"""
+        assert lw_seg_meta.get("sname_format") == 3
+        sm = lw_seg_meta
+        return (
+            f"{sm['base_offset']}-{sm['committed_offset']}-{sm['size_bytes']}"
+            f"-{sm['segment_term']}-v1.log.{sm['archiver_term']}")
 
     def _collect_replaced_segments(self, replaced: dict[NTPR, dict[str, dict]],
                                    manifest_key: str):
@@ -1349,7 +1350,7 @@ class TopicRecoveryTest(RedpandaTest):
         assert manifest is not None, f"failed to load manifest from path {manifest_key}"
         if replaced_segments := manifest.get('replaced'):
             replaced[parse_s3_manifest_path(manifest_key)] = {
-                TopicRecoveryTest._normalize_lw_seg_key(k, v): v
+                TopicRecoveryTest._cloud_segment_key(v): v
                 for k, v in replaced_segments.items()
             }
 
@@ -1419,8 +1420,7 @@ class TopicRecoveryTest(RedpandaTest):
                         tmp_size += size
                 size_on_disk = max(tmp_size, size_on_disk)
 
-            size_in_cloud = sum(obj.content_length for obj in segments
-                                if obj.content_length > EMPTY_SEGMENT_SIZE)
+            size_in_cloud = sum(obj.content_length for obj in segments)
             self.logger.debug(
                 f'segments in cloud: {pprint.pformat(segments, indent=2)}, '
                 f'size in cloud: {size_in_cloud}')
