@@ -87,7 +87,7 @@ fedora_deps=(
   python3
   python3-jinja2
   python3-jsonschema
-  ragel-devel
+  ragel
   re2-devel
   rust
   snappy-devel
