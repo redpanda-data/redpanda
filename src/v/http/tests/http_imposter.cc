@@ -21,7 +21,7 @@ static ss::logger http_imposter_log("http_imposter"); // NOLINT
 
 http_imposter_fixture::http_imposter_fixture(uint16_t port)
   : _port(port)
-  , _server_addr{ss::ipv4_addr{httpd_host_name.data(), httpd_port_number()}}
+  , _server_addr{ss::ipv4_addr{httpd_ip_addr.data(), httpd_port_number()}}
   , _address{
       {httpd_host_name.data(), httpd_host_name.size()}, httpd_port_number()} {
     _id = fmt::format("{}", uuid_t::create());

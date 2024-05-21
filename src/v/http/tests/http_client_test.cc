@@ -49,7 +49,7 @@
 using namespace std::chrono_literals;
 
 static const uint16_t httpd_port_number = 8128;
-static const char* httpd_host_name = "127.0.0.1";
+static const char* httpd_host_name = "localhost";
 static const char* httpd_server_reply
   = "The Hypertext Transfer Protocol (HTTP) is an "
     "application-level protocol "

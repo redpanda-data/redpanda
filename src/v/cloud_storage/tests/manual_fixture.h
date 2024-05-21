@@ -50,7 +50,7 @@ public:
           8082 + 10,
           8081 + 10,
           std::vector<config::seed_server>{
-            {.addr = net::unresolved_address("127.0.0.1", 33145)}},
+            {.addr = net::unresolved_address("localhost", 33145)}},
           ssx::sformat("test.second_dir{}", time(0)),
           app.sched_groups,
           true,

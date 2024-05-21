@@ -29,7 +29,7 @@ using namespace std::chrono_literals;
 
 ss::logger test_log("test-log");
 static const uint16_t httpd_port_number = 4434;
-static constexpr const char* httpd_host_name = "127.0.0.1";
+static constexpr const char* httpd_host_name = "localhost";
 
 static cloud_storage_clients::s3_configuration transport_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);

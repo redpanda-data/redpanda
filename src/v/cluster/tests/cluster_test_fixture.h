@@ -168,7 +168,7 @@ public:
         std::vector<config::seed_server> seeds = {};
         if (!empty_seed_starts_cluster_val || node_id != 0) {
             seeds.push_back(
-              {.addr = net::unresolved_address("127.0.0.1", 11000)});
+              {.addr = net::unresolved_address("localhost", 11000)});
         }
         add_node(
           node_id,

@@ -20,7 +20,8 @@
 
 class http_imposter_fixture {
 public:
-    static constexpr std::string_view httpd_host_name = "127.0.0.1";
+    static constexpr std::string_view httpd_host_name = "localhost";
+    static constexpr std::string_view httpd_ip_addr = "127.0.0.1";
 
     uint16_t httpd_port_number();
 

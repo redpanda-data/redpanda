@@ -31,7 +31,7 @@ using segment_meta = cloud_storage::partition_manifest::segment_meta;
 namespace {
 ss::logger fixture_logger{"archival_stm_fixture"};
 
-constexpr const char* httpd_host_name = "127.0.0.1";
+constexpr const char* httpd_host_name = "localhost";
 constexpr uint16_t httpd_port_number = 4442;
 
 cloud_storage_clients::s3_configuration get_configuration() {
