@@ -23,8 +23,10 @@ namespace cluster {
 /// shard_placement_table and notifying controller_backend of these modification
 /// so that it can perform necessary reconciling actions.
 ///
-/// Currently shard_balancer simply uses assignments from topic_table, but in
-/// the future it will calculate them on its own.
+/// If node-local core assignment is enabled, shard_balancer is responsible for
+/// assigning partitions to shards and it will do it using topic-aware counts
+/// balancing heuristic. In legacy mode it will use shard assignments from
+/// topic_table.
 class shard_balancer {
 public:
     // single instance
@@ -65,6 +67,11 @@ private:
         int32_t total_count = 0;
         shard2count_t shard2count;
     };
+
+    ss::shard_id choose_shard(
+      const model::ntp&,
+      const topic_data_t&,
+      std::optional<ss::shard_id> prev) const;
 
     void update_counts(
       const model::ntp&,

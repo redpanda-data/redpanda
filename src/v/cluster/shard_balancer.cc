@@ -14,6 +14,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "config/node_config.h"
+#include "random/generators.h"
 #include "ssx/async_algorithm.h"
 
 namespace cluster {
@@ -215,18 +216,43 @@ void shard_balancer::maybe_assign(
     std::optional<shard_placement_target> prev_target
       = _shard_placement.get_target(ntp);
 
-    std::optional<shard_placement_target> target;
+    std::optional<model::revision_id> log_revision;
     auto replicas_view = _topics.local().get_replicas_view(ntp);
     if (replicas_view) {
-        // Has value if the partition is expected to exist on this node.
-        target = placement_target_on_node(replicas_view.value(), _self);
+        log_revision = log_revision_on_node(*replicas_view, _self);
     }
 
-    if (prev_target == target) {
+    if (!log_revision && !prev_target) {
         return;
     }
 
     auto& topic_data = _topic2data[model::topic_namespace_view{ntp}];
+
+    std::optional<shard_placement_target> target;
+    if (log_revision) {
+        // partition is expected to exist on this node, choose its shard.
+
+        if (_features.is_active(
+              features::feature::node_local_core_assignment)) {
+            vassert(
+              _shard_placement.is_persistence_enabled(),
+              "expected persistence to be enabled");
+
+            if (prev_target && prev_target->log_revision == log_revision) {
+                // partition already assigned, keep current shard.
+                return;
+            }
+
+            target.emplace(
+              replicas_view->assignment.group,
+              log_revision.value(),
+              choose_shard(ntp, topic_data, std::nullopt));
+        } else {
+            // node-local shard placement not enabled yet, get target from
+            // topic_table.
+            target = placement_target_on_node(replicas_view.value(), _self);
+        }
+    }
 
     vlog(
       clusterlog.debug,
@@ -271,6 +297,64 @@ ss::future<> shard_balancer::set_target(
 
         throw;
     }
+}
+
+ss::shard_id shard_balancer::choose_shard(
+  const model::ntp&,
+  const topic_data_t& topic_data,
+  std::optional<ss::shard_id> prev) const {
+    std::vector<ss::shard_id> candidates;
+
+    // lower score is better
+    auto optimize_level = [&](auto candidates_range, auto get_shard_score) {
+        std::vector<ss::shard_id> next_candidates;
+        std::optional<decltype(get_shard_score(0))> min_score;
+        for (ss::shard_id shard : candidates_range) {
+            auto score = get_shard_score(shard);
+            if (!min_score || *min_score >= score) {
+                if (min_score != score) {
+                    min_score = score;
+                    next_candidates.clear();
+                }
+                next_candidates.push_back(shard);
+            }
+        }
+        candidates = std::move(next_candidates);
+    };
+
+    // Hierarchical optimization, first optimize topic counts, then total
+    // counts.
+
+    auto topic_count_score = [&](ss::shard_id shard) {
+        auto score = topic_data.shard2count.at(shard);
+        if (prev != shard) {
+            score += 1;
+        }
+        return score;
+    };
+    optimize_level(
+      std::views::iota(ss::shard_id(0), ss::shard_id(ss::smp::count)),
+      topic_count_score);
+
+    auto total_count_score = [&](ss::shard_id shard) {
+        auto score = _total_counts.at(shard);
+        if (prev != shard) {
+            score += 1;
+        }
+        return score;
+    };
+    optimize_level(candidates, total_count_score);
+
+    if (prev) {
+        for (ss::shard_id cand : candidates) {
+            if (cand == prev) {
+                // if prev shard has the optimal score, keep it.
+                return cand;
+            }
+        }
+    }
+
+    return random_generators::random_choice(candidates);
 }
 
 void shard_balancer::update_counts(
