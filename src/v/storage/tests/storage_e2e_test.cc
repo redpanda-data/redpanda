@@ -283,10 +283,20 @@ FIXTURE_TEST(test_reading_range_from_a_log, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(range.size(), 5);
     BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
     BOOST_REQUIRE_EQUAL(range.back().header().crc, batches[7].header().crc);
-    // range from base of beging to the middle of end
+
+    // Range that starts and ends in the middle of the same batch.
     range = read_range_to_vector(
       log,
-      batches[3].base_offset(),
+      batches[3].base_offset() + model::offset(batches[3].record_count() / 3),
+      batches[3].base_offset()
+        + model::offset(batches[3].record_count() / 3 * 2LL));
+    BOOST_REQUIRE_EQUAL(range.size(), 1);
+    BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);
+
+    // Range that starts and ends in the middle of batches.
+    range = read_range_to_vector(
+      log,
+      batches[3].base_offset() + model::offset(batches[3].record_count() / 2),
       batches[7].base_offset() + model::offset(batches[7].record_count() / 2));
     BOOST_REQUIRE_EQUAL(range.size(), 5);
     BOOST_REQUIRE_EQUAL(range.front().header().crc, batches[3].header().crc);

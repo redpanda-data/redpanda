@@ -18,6 +18,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
+#include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/tests/s3_imposter.h"
@@ -58,6 +59,7 @@
 #include <exception>
 #include <iterator>
 #include <numeric>
+#include <stdexcept>
 #include <system_error>
 
 using namespace std::chrono_literals;
@@ -436,7 +438,14 @@ FIXTURE_TEST(test_scan_by_kafka_offset_truncated, cloud_storage_fixture) {
       *this, model::offset(6), model::offset_delta(3), batch_types);
     print_segments(segments);
     for (int i = 0; i <= 2; i++) {
-        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), false));
+        BOOST_REQUIRE_EXCEPTION(
+          check_fetch(*this, kafka::offset(i), false),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(
+                       "Failed to query spillover manifests")
+                     != std::string::npos;
+          });
     }
     for (int i = 3; i <= 8; i++) {
         BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 9 - i));
@@ -488,7 +497,14 @@ FIXTURE_TEST(
     auto segments = setup_s3_imposter(
       *this, model::offset(6), model::offset_delta(3), batch_types);
     print_segments(segments);
-    BOOST_REQUIRE(check_fetch(*this, kafka::offset(2), false));
+    BOOST_REQUIRE_EXCEPTION(
+      check_fetch(*this, kafka::offset(2), false),
+      std::runtime_error,
+      [](const std::runtime_error& e) {
+          return std::string(e.what()).find(
+                   "Failed to query spillover manifests")
+                 != std::string::npos;
+      });
     BOOST_REQUIRE(check_scan(*this, kafka::offset(3), 1));
     BOOST_REQUIRE(check_fetch(*this, kafka::offset(3), true));
     BOOST_REQUIRE(check_scan(*this, kafka::offset(4), 0));
@@ -536,7 +552,14 @@ FIXTURE_TEST(
       *this, model::offset(6), model::offset_delta(0), batch_types);
     print_segments(segments);
     for (int i = 0; i < 6; i++) {
-        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), false));
+        BOOST_REQUIRE_EXCEPTION(
+          check_fetch(*this, kafka::offset(i), false),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(
+                       "Failed to query spillover manifests")
+                     != std::string::npos;
+          });
     }
     BOOST_REQUIRE(check_scan(*this, kafka::offset(6), 1));
     BOOST_REQUIRE(check_fetch(*this, kafka::offset(6), true));
@@ -1241,12 +1264,14 @@ FIXTURE_TEST(
         vlog(test_log.debug, "Creating new reader {}", reader_config);
 
         // After truncation reading from the old end should be impossible
-        auto reader = partition->make_reader(reader_config).get().reader;
-        auto headers_read
-          = reader.consume(counting_batch_consumer(100), model::no_timeout)
-              .get();
-
-        BOOST_REQUIRE(headers_read.size() == 0);
+        BOOST_REQUIRE_EXCEPTION(
+          partition->make_reader(reader_config).get(),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(
+                       "Failed to query spillover manifests")
+                     != std::string::npos;
+          });
     }
 }
 
@@ -2103,9 +2128,11 @@ FIXTURE_TEST(test_stale_reader, cloud_storage_fixture) {
 // Returns true if a kafka::offset scan returns the expected number of records.
 bool timequery(
   cloud_storage_fixture& fixture,
+  model::offset min,
   model::timestamp tm,
   int expected_num_records) {
-    auto scan_res = scan_remote_partition(fixture, tm);
+    auto scan_res = scan_remote_partition(
+      fixture, min, tm, model::offset::max());
     int num_data_records = 0;
     size_t bytes_read_acc = 0;
     for (const auto& hdr : scan_res.headers) {
@@ -2151,6 +2178,14 @@ bool timequery(
           scan_res.headers);
     }
     return ret;
+}
+
+// Returns true if a kafka::offset scan returns the expected number of records.
+bool timequery(
+  cloud_storage_fixture& fixture,
+  model::timestamp tm,
+  int expected_num_records) {
+    return timequery(fixture, model::offset(0), tm, expected_num_records);
 }
 
 FIXTURE_TEST(test_scan_by_timestamp, cloud_storage_fixture) {
@@ -2214,4 +2249,254 @@ FIXTURE_TEST(test_scan_by_timestamp, cloud_storage_fixture) {
 
     test_log.debug("Timestamp undershoots the partition");
     BOOST_REQUIRE(timequery(*this, model::timestamp(100), num_data_batches));
+}
+
+FIXTURE_TEST(test_out_of_range_query, cloud_storage_fixture) {
+    auto data = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::raft_data,
+          .timestamp = model::timestamp(t)};
+    };
+
+    const std::vector<std::vector<batch_t>> batches = {
+      {data(1000), data(1002), data(1004), data(1006), data(1008), data(1010)},
+      {data(1012), data(1014), data(1016), data(1018), data(1020), data(1022)},
+    };
+
+    auto segments = make_segments(batches, false, false);
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
+
+    auto expectations = make_imposter_expectations(manifest, segments);
+    set_expectations_and_listen(expectations);
+
+    // Advance start offset as-if archiver did apply retention but didn't
+    // run GC yet (the clean offset is not updated).
+    BOOST_REQUIRE(manifest.advance_start_offset(segments[1].base_offset));
+    auto serialize_manifest = [](const cloud_storage::partition_manifest& m) {
+        auto s_data = m.serialize().get();
+        auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
+        return ss::sstring(buf.begin(), buf.end());
+    };
+    std::ostringstream ostr;
+    manifest.serialize_json(ostr);
+
+    vlog(
+      test_util_log.info,
+      "Rewriting manifest at {}:\n{}",
+      manifest.get_manifest_path(),
+      ostr.str());
+
+    auto manifest_url = "/" + manifest.get_manifest_path()().string();
+    remove_expectations({manifest_url});
+    add_expectations({
+      cloud_storage_fixture::expectation{
+        .url = manifest_url, .body = serialize_manifest(manifest)},
+    });
+
+    auto base = segments[0].base_offset;
+    auto max = segments[segments.size() - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    BOOST_REQUIRE(
+      scan_remote_partition(*this, segments[1].base_offset, max).size() == 6);
+
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, base, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    test_log.debug("Timestamp undershoots the partition");
+    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp(100), 6));
+
+    test_log.debug("Timestamp withing segment");
+    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp(1014), 5));
+}
+
+FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
+    auto data = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::raft_data,
+          .timestamp = model::timestamp(t)};
+    };
+
+    const std::vector<std::vector<batch_t>> batches = {
+      {data(1000), data(1002), data(1004), data(1006), data(1008), data(1010)},
+      {data(1012), data(1014), data(1016), data(1018), data(1020), data(1022)},
+      {data(1024), data(1026), data(1028), data(1030), data(1032), data(1034)},
+      {data(1036), data(1038), data(1040), data(1042), data(1044), data(1046)},
+      {data(1048), data(1050), data(1052), data(1054), data(1056), data(1058)},
+      {data(1060), data(1062), data(1064), data(1066), data(1068), data(1070)},
+    };
+
+    auto segments = make_segments(batches, false, false);
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
+
+    auto expectations = make_imposter_expectations(manifest, segments);
+    set_expectations_and_listen(expectations);
+
+    for (int i = 0; i < 2; i++) {
+        spillover_manifest spm(manifest_ntp, manifest_revision);
+
+        for (int j = 0; auto s : manifest) {
+            spm.add(s);
+            if (++j == 2) {
+                break;
+            }
+        }
+        manifest.spillover(spm.make_manifest_metadata());
+
+        std::ostringstream ostr;
+        spm.serialize_json(ostr);
+
+        vlog(
+          test_util_log.info,
+          "Uploading spillover manifest at {}:\n{}",
+          spm.get_manifest_path(),
+          ostr.str());
+
+        auto s_data = spm.serialize().get();
+        auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
+        add_expectations({cloud_storage_fixture::expectation{
+          .url = "/" + spm.get_manifest_path()().string(),
+          .body = ss::sstring(buf.begin(), buf.end()),
+        }});
+    }
+
+    // Advance start offset as-if archiver did apply retention but didn't
+    // run GC yet (the clean offset is not updated).
+    //
+    // We set it to the second segment of the second spillover manifest in an
+    // attempt to cover more potential edge cases.
+    auto archive_start = segments[3].base_offset;
+    manifest.set_archive_start_offset(archive_start, model::offset_delta(0));
+
+    // Upload latest manifest version.
+    auto serialize_manifest = [](const cloud_storage::partition_manifest& m) {
+        auto s_data = m.serialize().get();
+        auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
+        return ss::sstring(buf.begin(), buf.end());
+    };
+    std::ostringstream ostr;
+    manifest.serialize_json(ostr);
+
+    vlog(
+      test_util_log.info,
+      "Rewriting manifest at {}:\n{}",
+      manifest.get_manifest_path(),
+      ostr.str());
+
+    auto manifest_url = "/" + manifest.get_manifest_path()().string();
+    remove_expectations({manifest_url});
+    add_expectations({
+      cloud_storage_fixture::expectation{
+        .url = manifest_url, .body = serialize_manifest(manifest)},
+    });
+
+    auto base = segments[0].base_offset;
+    auto max = segments[segments.size() - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    // Can query from start of the archive.
+    BOOST_REQUIRE(
+      scan_remote_partition(*this, archive_start, max).size() == 3 * 6);
+
+    // Can timequery from start of the archive.
+    BOOST_TEST_REQUIRE(
+      timequery(*this, archive_start, model::timestamp(100), 3 * 6));
+
+    // Can't query from the start of partition.
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, base, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Can't timequery from the base offset.
+    BOOST_REQUIRE_EXCEPTION(
+      timequery(*this, base, model::timestamp(100), 3 * 6),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Can't query from start of the still valid spillover manifest.
+    // Since we don't rewrite spillover manifests we want to be sure that
+    // we don't allow querying stale segments (below the start offset).
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, segments[2].base_offset, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Can't query from start of the still valid spillover manifest.
+    // Since we don't rewrite spillover manifests we want to be sure that
+    // we don't allow querying stale segments (below the start offset).
+    // BUG: Currently it succeeds. This is a bug and should be fixed.
+    // BOOST_REQUIRE_EXCEPTION(
+    //   timequery(*this, segments[2].base_offset, model::timestamp(100), 3 *
+    //   6), std::runtime_error,
+    //   [](const auto& ex) {
+    //       ss::sstring what{ex.what()};
+    //       return what.find("Failed to query spillover manifests") !=
+    //       what.npos;
+    //   });
+    BOOST_TEST_REQUIRE(
+      timequery(*this, segments[2].base_offset, model::timestamp(100), 3 * 6));
+
+    test_log.debug("Timestamp within valid spillover but below archive start");
+    BOOST_TEST_REQUIRE(
+      timequery(*this, segments[2].base_timestamp.value(), 3 * 6));
+
+    test_log.debug("Valid timestamp start of retention");
+    BOOST_TEST_REQUIRE(
+      timequery(*this, batches[3][0].timestamp.value(), 3 * 6));
+
+    test_log.debug("Valid timestamp within retention");
+    BOOST_TEST_REQUIRE(
+      timequery(*this, batches[3][1].timestamp.value(), 3 * 6 - 1));
+
+    test_log.debug("Timestamp overshoots the partition");
+    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp::max(), 0));
+
+    // Rewrite the manifest with clean offset to match start offset.
+    manifest.set_archive_clean_offset(
+      archive_start, manifest.archive_size_bytes() / 2);
+    vlog(
+      test_util_log.info,
+      "Rewriting manifest at {}:\n{}",
+      manifest.get_manifest_path(),
+      ostr.str());
+
+    remove_expectations({manifest_url});
+    add_expectations({
+      cloud_storage_fixture::expectation{
+        .url = manifest_url, .body = serialize_manifest(manifest)},
+    });
+
+    // Still can't query from the base offset.
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, base, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Timequery from base offset must fail too as the regular query.
+    // BUG: Currently it succeeds. This is a bug and should be fixed.
+    BOOST_TEST_REQUIRE(timequery(*this, base, model::timestamp(100), 3 * 6));
+    BOOST_TEST_REQUIRE(
+      timequery(*this, segments[2].base_offset, model::timestamp(100), 3 * 6));
 }

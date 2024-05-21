@@ -37,9 +37,32 @@
 
 namespace cloud_storage {
 
+struct async_view_timestamp_query {
+    async_view_timestamp_query(
+      kafka::offset min_offset, model::timestamp ts, kafka::offset max_offset)
+      : min_offset(min_offset)
+      , ts(ts)
+      , max_offset(max_offset) {}
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const async_view_timestamp_query& q) {
+        fmt::print(
+          o,
+          "async_view_timestamp_query{{min_offset:{}, ts:{}, max_offset:{}}}",
+          q.min_offset,
+          q.ts,
+          q.max_offset);
+        return o;
+    }
+
+    kafka::offset min_offset;
+    model::timestamp ts;
+    kafka::offset max_offset;
+};
+
 /// Search query type
 using async_view_search_query_t
-  = std::variant<model::offset, kafka::offset, model::timestamp>;
+  = std::variant<model::offset, kafka::offset, async_view_timestamp_query>;
 
 std::ostream& operator<<(std::ostream&, const async_view_search_query_t&);
 
@@ -80,6 +103,17 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    enum class cursor_base_t {
+        archive_start_offset,
+
+        /// Special case that is used when computing retention.
+        ///
+        /// For details, see:
+        /// GitHub: https://github.com/redpanda-data/redpanda/pull/12177
+        /// Commit: 1b6ab7be8818e3878a32f9037694ae5c4cf4fea2
+        archive_clean_offset,
+    };
+
     /// Get active spillover manifests asynchronously
     ///
     /// \note the method may hydrate manifests in the cache or
@@ -89,7 +123,8 @@ public:
       result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
     get_cursor(
       async_view_search_query_t q,
-      std::optional<model::offset> end_inclusive = std::nullopt) noexcept;
+      std::optional<model::offset> end_inclusive = std::nullopt,
+      cursor_base_t cursor_base = cursor_base_t::archive_start_offset) noexcept;
 
     /// Get inactive spillover manifests which are waiting for
     /// retention

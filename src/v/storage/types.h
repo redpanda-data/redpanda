@@ -226,20 +226,25 @@ using opt_abort_source_t
 
 using opt_client_address_t = std::optional<model::client_address_t>;
 
+/// A timequery configuration specifies the range of offsets to search for a
+/// record with a timestamp equal to or greater than the specified time.
 struct timequery_config {
     timequery_config(
+      model::offset min_offset,
       model::timestamp t,
-      model::offset o,
+      model::offset max_offset,
       ss::io_priority_class iop,
       std::optional<model::record_batch_type> type_filter,
       opt_abort_source_t as = std::nullopt,
       opt_client_address_t client_addr = std::nullopt) noexcept
-      : time(t)
-      , max_offset(o)
+      : min_offset(min_offset)
+      , time(t)
+      , max_offset(max_offset)
       , prio(iop)
       , type_filter(type_filter)
       , abort_source(as)
       , client_address(std::move(client_addr)) {}
+    model::offset min_offset;
     model::timestamp time;
     model::offset max_offset;
     ss::io_priority_class prio;
@@ -289,6 +294,8 @@ struct truncate_prefix_config {
     operator<<(std::ostream&, const truncate_prefix_config&);
 };
 
+using translate_offsets = ss::bool_class<struct translate_tag>;
+
 /**
  * Log reader configuration.
  *
@@ -300,7 +307,21 @@ struct truncate_prefix_config {
  * search when the size of the filter set is small (e.g. < 5). If you need to
  * use a larger filter then this design should be revisited.
  *
- * Start and max offset are inclusive.
+ * Start and max offset are inclusive. Because the reader only looks at batch
+ * headers the first batch may start before the start offset and the last batch
+ * may end after the max offset.
+ *
+ * Consider the following case:
+ *
+ *         cfg = {start offset = 14, max offset = 17}
+ *                    +                      +
+ *                    v                      v
+ *  //-------+-------------+------------+-------------+-------//
+ *  \\...9   |   10...14   |   15..15   |  16.....22  |  23...\\
+ *  //-------+-------------+------------+-------------+-------//
+ *           ^                                        ^
+ *           |                                        |
+ * The reader will actually return whole batches: [10, 14], [15, 15], [16, 22].
  */
 struct log_reader_config {
     model::offset start_offset;

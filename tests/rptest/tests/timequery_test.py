@@ -9,7 +9,6 @@
 
 import concurrent.futures
 import re
-import time
 import threading
 from logging import Logger
 from typing import Callable
@@ -22,9 +21,8 @@ from rptest.services.metrics_check import MetricCheck
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.util import (wait_until, segments_count,
-                         wait_for_local_storage_truncate)
+from rptest.util import (wait_until, wait_for_local_storage_truncate,
+                         wait_until_result)
 
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.utils.si_utils import BucketView, NTP
@@ -38,7 +36,6 @@ from ducktape.mark.resource import cluster as ducktape_cluster
 from kafkatest.version import V_3_0_0
 from ducktape.tests.test import Test
 from rptest.clients.default import DefaultClient
-from rptest.utils.mode_checks import skip_debug_mode
 
 
 class BaseTimeQuery:
@@ -457,6 +454,157 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                     self.logger.info(f"Query at {o} succeeded on retry")
 
         assert not any([e > 0 for e in errors])
+
+    @cluster(num_nodes=4)
+    # @parametrize(cloud_storage=True, spillover=False)
+    # @parametrize(cloud_storage=True, spillover=True)
+    @parametrize(cloud_storage=False, spillover=False)
+    def test_timequery_with_trim_prefix(self, cloud_storage: bool,
+                                        spillover: bool):
+        self.set_up_cluster(cloud_storage=cloud_storage,
+                            batch_cache=False,
+                            spillover=spillover)
+        total_segments = 12
+        record_size = 1024
+        base_ts = 1664453149000
+        msg_count = (self.log_segment_size * total_segments) // record_size
+        local_retention = self.log_segment_size * 4
+        topic, timestamps = self._create_and_produce(self.redpanda, True,
+                                                     local_retention, base_ts,
+                                                     record_size, msg_count)
+
+        # Confirm messages written
+        rpk = RpkTool(self.redpanda)
+        p = next(rpk.describe_topic(topic.name))
+        assert p.high_watermark == msg_count
+
+        if cloud_storage:
+            # If using cloud storage, we must wait for some segments
+            # to fall out of local storage, to ensure we are really
+            # hitting the cloud storage read path when querying.
+            wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                            topic=topic.name,
+                                            target_bytes=local_retention)
+
+        num_batches_per_segment = self.log_segment_size // record_size
+        new_lwm = int(num_batches_per_segment * 2.5)
+        trim_response = rpk.trim_prefix(topic.name,
+                                        offset=new_lwm,
+                                        partitions=[0])
+        assert len(trim_response) == 1
+        assert new_lwm == trim_response[0].new_start_offset
+
+        # Double check that the start offset has advanced.
+        p = next(rpk.describe_topic(topic.name))
+        assert new_lwm == p.start_offset, f"Expected {new_lwm}, got {p.start_offset}"
+
+        # Query below valid timestamps the offset of the first message.
+        kcat = KafkaCat(self.redpanda)
+        offset = kcat.query_offset(topic.name, 0, timestamps[0] - 1000)
+        assert offset == new_lwm, f"Expected {new_lwm}, got {offset}"
+
+        # Leave just the last message in the log.
+        trim_response = rpk.trim_prefix(topic.name,
+                                        offset=p.high_watermark - 1,
+                                        partitions=[0])
+
+        # Query below valid timestamps the offset of the only message left.
+        # This is an edge-case where tiered storage, if in use, becomes
+        # completely irrelevant.
+        kcat = KafkaCat(self.redpanda)
+        offset = kcat.query_offset(topic.name, 0, timestamps[0] - 1000)
+        assert offset == msg_count - 1, f"Expected {msg_count - 1}, got {offset}"
+
+    @cluster(
+        num_nodes=4,
+        log_allow_list=["Failed to upload spillover manifest {timed_out}"])
+    def test_timequery_with_spillover_gc_delayed(self):
+        self.set_up_cluster(cloud_storage=True,
+                            batch_cache=False,
+                            spillover=True)
+        total_segments = 16
+        record_size = 1024
+        base_ts = 1664453149000
+        msg_count = (self.log_segment_size * total_segments) // record_size
+        local_retention = self.log_segment_size * 4
+        topic_retention = self.log_segment_size * 8
+        topic, timestamps = self._create_and_produce(self.redpanda, True,
+                                                     local_retention, base_ts,
+                                                     record_size, msg_count)
+
+        # Confirm messages written
+        rpk = RpkTool(self.redpanda)
+        p = next(rpk.describe_topic(topic.name))
+        assert p.high_watermark == msg_count
+
+        # If using cloud storage, we must wait for some segments
+        # to fall out of local storage, to ensure we are really
+        # hitting the cloud storage read path when querying.
+        wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                        topic=topic.name,
+                                        target_bytes=local_retention)
+
+        # Set timeout to 0 to prevent the cloud storage housekeeping from
+        # running, triggering gc, and advancing clean offset.
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_manifest_upload_timeout_ms": 0})
+        # Disable internal scrubbing as it won't be able to make progress.
+        self.redpanda.si_settings.skip_end_of_test_scrubbing = True
+
+        self.client().alter_topic_config(topic.name, 'retention.bytes',
+                                         topic_retention)
+        self.logger.info("Waiting for start offset to advance...")
+        start_offset = wait_until_result(
+            lambda: next(rpk.describe_topic(topic.name)).start_offset > 0,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="Start offset did not advance")
+
+        start_offset = next(rpk.describe_topic(topic.name)).start_offset
+
+        # Query below valid timestamps the offset of the first message.
+        kcat = KafkaCat(self.redpanda)
+
+        test_cases = [
+            (timestamps[0] - 1000, start_offset, "before start of log"),
+            (timestamps[0], start_offset,
+             "first message but out of retention now"),
+            (timestamps[start_offset - 1], start_offset,
+             "before new HWM, out of retention"),
+            (timestamps[start_offset], start_offset, "new HWM"),
+            (timestamps[start_offset + 10], start_offset + 10,
+             "few messages after new HWM"),
+            (timestamps[msg_count - 1] + 1000, -1, "after last message"),
+        ]
+
+        # Basic time query cases.
+        for ts, expected_offset, desc in test_cases:
+            self.logger.info(f"Querying ts={ts} ({desc})")
+            offset = kcat.query_offset(topic.name, 0, ts)
+            self.logger.info(f"Time query returned offset {offset}")
+            assert offset == expected_offset, f"Expected {expected_offset}, got {offset}"
+
+        # Now check every single one of them to make sure there are no
+        # off-by-one errors, iterators aren't getting stuck on segment and
+        # spillover boundaries, etc. The segment boundaries are not exact
+        # due to internal messages, segment roll logic, etc. but the tolerance
+        # should cover that.
+        boundary_ranges = []
+        for i in range(1, total_segments):
+            boundary_ranges.append(
+                (int(i * self.log_segment_size / record_size - 100),
+                 int(i * self.log_segment_size / record_size + 100)))
+
+        for r in boundary_ranges:
+            self.logger.debug(f"Checking range {r}")
+            for o in range(int(r[0]), int(r[1])):
+                ts = timestamps[o]
+                self.logger.debug(f"  Querying ts={ts}")
+                offset = kcat.query_offset(topic.name, 0, ts)
+                if o < start_offset:
+                    assert offset == start_offset, f"Expected {start_offset}, got {offset}"
+                else:
+                    assert offset == o, f"Expected {o}, got {offset}"
 
 
 class TimeQueryKafkaTest(Test, BaseTimeQuery):
