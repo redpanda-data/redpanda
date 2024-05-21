@@ -82,6 +82,8 @@ struct test_fixture {
         producers.clear();
     }
 
+    void local_eviction_tick() { manager().do_evict_excess_producers(); }
+
     long _counter = 0;
     ss::sharded<config::mock_property<uint64_t>> _max_producers;
     ss::sharded<cluster::producer_state_manager> _psm;
@@ -195,5 +197,36 @@ FIXTURE_TEST(test_eviction_expired_pids, test_fixture) {
     // by the time next tick runs.
     RPTEST_REQUIRE_EVENTUALLY(
       10s, [&] { return evicted_so_far == total_producers; });
+    clean(producers);
+}
+
+FIXTURE_TEST(test_evict_many_producers_at_once, test_fixture) {
+    // disable eviction timer.
+    // we manually invoke it below.
+    _psm
+      .invoke_on_all([](cluster::producer_state_manager& local) {
+          local.rearm_timer_for_testing(std::chrono::milliseconds{1h});
+      })
+      .get();
+
+    auto total_producers = 100000;
+    int evicted_so_far = 0;
+    std::vector<cluster::producer_ptr> producers;
+    producers.reserve(total_producers);
+    for (int i = 0; i < total_producers; i++) {
+        producers.push_back(ss::make_lw_shared<cluster::producer_state>(
+          _psm.local(),
+          model::random_producer_identity(),
+          raft::group_id{i},
+          [&] { evicted_so_far++; }));
+    }
+    check_producers(total_producers, total_producers);
+    BOOST_REQUIRE_EQUAL(evicted_so_far, 0);
+
+    // allow producer eviction
+    _max_producers.invoke_on_all([](auto& local) { local.update(0UL); }).get();
+    local_eviction_tick();
+    BOOST_REQUIRE_EQUAL(evicted_so_far, 10000);
+
     clean(producers);
 }

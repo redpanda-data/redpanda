@@ -107,7 +107,11 @@ void producer_state_manager::do_evict_excess_producers() {
     }
     vlog(clusterlog.debug, "producer eviction tick");
     auto it = _lru_producers.begin();
-    while (it != _lru_producers.end() && can_evict_producer(*it)) {
+    // to avoid reactor stalls.
+    static constexpr auto max_evictions_per_tick = 10000;
+    int evicted_so_far = 0;
+    while (evicted_so_far++ < max_evictions_per_tick
+           && it != _lru_producers.end() && can_evict_producer(*it)) {
         auto it_copy = it;
         ++it;
         auto& state = *it_copy;
