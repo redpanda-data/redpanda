@@ -55,15 +55,7 @@ public:
     using clock = ss::lowres_clock;
 
     struct throttle_delay {
-        bool enforce{false};
         clock::duration duration{0};
-        clock::duration enforce_duration() const {
-            if (enforce) {
-                return duration;
-            } else {
-                return clock::duration::zero();
-            }
-        }
     };
 
     quota_manager();
@@ -125,7 +117,6 @@ private:
     // pm_rate: partition mutation quota tracking - only on home shard
     struct client_quota {
         clock::time_point last_seen;
-        clock::duration delay;
         rate_tracker tp_produce_rate;
         rate_tracker tp_fetch_rate;
         std::optional<token_bucket_rate_tracker> pm_rate;
