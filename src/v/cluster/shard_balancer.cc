@@ -27,7 +27,10 @@ shard_balancer::shard_balancer(
   , _features(features.local())
   , _topics(topics)
   , _controller_backend(cb)
-  , _self(*config::node().node_id()) {}
+  , _self(*config::node().node_id())
+  , _total_counts(ss::smp::count, 0) {
+    _total_counts.at(0) += 1; // controller partition
+}
 
 ss::future<> shard_balancer::start() {
     vassert(
@@ -41,60 +44,40 @@ ss::future<> shard_balancer::start() {
     // from the leader.
     auto tt_version = _topics.local().topics_map_revision();
 
-    if (_shard_placement.is_persistence_enabled()) {
-        // 1. collect the set of node-local ntps from topic_table
+    // 1. collect the set of node-local ntps from topic_table
 
-        chunked_hash_map<raft::group_id, model::ntp> local_group2ntp;
-        chunked_hash_map<model::ntp, model::revision_id> local_ntp2log_revision;
-        const auto& topics = _topics.local();
-        ssx::async_counter counter;
-        for (const auto& [ns_tp, md_item] : topics.all_topics_metadata()) {
-            vassert(
-              tt_version == topics.topics_map_revision(),
-              "topic_table unexpectedly changed");
-
-            co_await ssx::async_for_each_counter(
-              counter,
-              md_item.get_assignments().begin(),
-              md_item.get_assignments().end(),
-              [&](const partition_assignment& p_as) {
-                  vassert(
-                    tt_version == topics.topics_map_revision(),
-                    "topic_table unexpectedly changed");
-
-                  model::ntp ntp{ns_tp.ns, ns_tp.tp, p_as.id};
-                  auto replicas_view = topics.get_replicas_view(
-                    ntp, md_item, p_as);
-                  auto log_rev = log_revision_on_node(replicas_view, _self);
-                  if (log_rev) {
-                      local_group2ntp.emplace(
-                        replicas_view.assignment.group, ntp);
-                      local_ntp2log_revision.emplace(ntp, *log_rev);
-                  }
-              });
-        }
-
-        // 2. restore shard_placement_table from the kvstore
-
-        co_await _shard_placement.initialize_from_kvstore(local_group2ntp);
-
-        // 3. assign non-assigned ntps that have to be assigned
+    chunked_hash_map<raft::group_id, model::ntp> local_group2ntp;
+    chunked_hash_map<model::ntp, model::revision_id> local_ntp2log_revision;
+    const auto& topics = _topics.local();
+    ssx::async_counter counter;
+    for (const auto& [ns_tp, md_item] : topics.all_topics_metadata()) {
+        vassert(
+          tt_version == topics.topics_map_revision(),
+          "topic_table unexpectedly changed");
 
         co_await ssx::async_for_each_counter(
           counter,
-          local_ntp2log_revision.begin(),
-          local_ntp2log_revision.end(),
-          [&](const std::pair<const model::ntp&, model::revision_id> kv) {
-              const auto& [ntp, log_revision] = kv;
-              auto existing_target = _shard_placement.get_target(ntp);
-              if (
-                !existing_target
-                || existing_target->log_revision != log_revision) {
-                  _to_assign.insert(ntp);
+          md_item.get_assignments().begin(),
+          md_item.get_assignments().end(),
+          [&](const partition_assignment& p_as) {
+              vassert(
+                tt_version == topics.topics_map_revision(),
+                "topic_table unexpectedly changed");
+
+              model::ntp ntp{ns_tp.ns, ns_tp.tp, p_as.id};
+              auto replicas_view = topics.get_replicas_view(ntp, md_item, p_as);
+              auto log_rev = log_revision_on_node(replicas_view, _self);
+              if (log_rev) {
+                  local_group2ntp.emplace(replicas_view.assignment.group, ntp);
+                  local_ntp2log_revision.emplace(ntp, *log_rev);
               }
           });
+    }
 
-        co_await do_assign_ntps();
+    // 2. restore shard_placement_table from the kvstore or from topic_table.
+
+    if (_shard_placement.is_persistence_enabled()) {
+        co_await _shard_placement.initialize_from_kvstore(local_group2ntp);
     } else if (_features.is_active(
                  features::feature::node_local_core_assignment)) {
         // joiner node? enable persistence without initializing
@@ -111,6 +94,34 @@ ss::future<> shard_balancer::start() {
             co_await _shard_placement.enable_persistence();
         }
     }
+
+    // 3. Initialize shard partition counts and assign non-assigned local ntps.
+    //
+    // Note: old assignments for ntps not in local_group2ntp have already been
+    // removed during shard_placement_table initialization.
+
+    co_await ssx::async_for_each_counter(
+      counter,
+      local_ntp2log_revision.begin(),
+      local_ntp2log_revision.end(),
+      [&](const std::pair<const model::ntp&, model::revision_id> kv) {
+          const auto& [ntp, log_revision] = kv;
+          auto existing_target = _shard_placement.get_target(ntp);
+
+          if (existing_target) {
+              update_counts(
+                ntp,
+                _topic2data[model::topic_namespace_view{ntp}],
+                std::nullopt,
+                existing_target);
+          }
+
+          if (
+            !existing_target || existing_target->log_revision != log_revision) {
+              _to_assign.insert(ntp);
+          }
+      });
+    co_await do_assign_ntps();
 
     vassert(
       tt_version == _topics.local().topics_map_revision(),
@@ -177,18 +188,32 @@ ss::future<> shard_balancer::assign_fiber() {
     }
 }
 
+using ntp2target_t
+  = chunked_hash_map<model::ntp, std::optional<shard_placement_target>>;
+
 ss::future<> shard_balancer::do_assign_ntps() {
+    ntp2target_t new_targets;
     auto to_assign = std::exchange(_to_assign, {});
+    co_await ssx::async_for_each(
+      to_assign.begin(), to_assign.end(), [&](const model::ntp& ntp) {
+          maybe_assign(ntp, new_targets);
+      });
+
     co_await ss::max_concurrent_for_each(
-      to_assign, 128, [this](const model::ntp& ntp) {
-          return assign_ntp(ntp);
+      new_targets, 128, [this](const decltype(new_targets)::value_type& kv) {
+          const auto& [ntp, target] = kv;
+          return set_target(ntp, target)
+            .handle_exception([this, &ntp](const std::exception_ptr&) {
+                // Retry on the next tick.
+                _to_assign.insert(ntp);
+            });
       });
 }
 
-ss::future<> shard_balancer::assign_ntp(const model::ntp& ntp) {
-    auto shard_callback = [this](const model::ntp& ntp) {
-        _controller_backend.local().notify_reconciliation(ntp);
-    };
+void shard_balancer::maybe_assign(
+  const model::ntp& ntp, ntp2target_t& new_targets) {
+    std::optional<shard_placement_target> prev_target
+      = _shard_placement.get_target(ntp);
 
     std::optional<shard_placement_target> target;
     auto replicas_view = _topics.local().get_replicas_view(ntp);
@@ -196,11 +221,31 @@ ss::future<> shard_balancer::assign_ntp(const model::ntp& ntp) {
         // Has value if the partition is expected to exist on this node.
         target = placement_target_on_node(replicas_view.value(), _self);
     }
+
+    if (prev_target == target) {
+        return;
+    }
+
+    auto& topic_data = _topic2data[model::topic_namespace_view{ntp}];
+
     vlog(
-      clusterlog.trace,
-      "[{}] setting placement target on this node: {}",
+      clusterlog.debug,
+      "[{}] assigning shard {} (prev: {}, topic counts: {}, total counts: {})",
       ntp,
-      target);
+      target ? std::optional(target->shard) : std::nullopt,
+      prev_target ? std::optional(prev_target->shard) : std::nullopt,
+      topic_data.shard2count,
+      _total_counts);
+
+    update_counts(ntp, topic_data, prev_target, target);
+    new_targets.emplace(ntp, target);
+}
+
+ss::future<> shard_balancer::set_target(
+  const model::ntp& ntp, const std::optional<shard_placement_target>& target) {
+    auto shard_callback = [this](const model::ntp& ntp) {
+        _controller_backend.local().notify_reconciliation(ntp);
+    };
 
     try {
         co_await _shard_placement.set_target(ntp, target, shard_callback);
@@ -212,9 +257,42 @@ ss::future<> shard_balancer::assign_ntp(const model::ntp& ntp) {
               "[{}] exception while setting target: {}",
               ntp,
               ex);
-            // Retry on the next tick.
-            _to_assign.insert(ntp);
         }
+
+        // revert shard counts update if needed
+        auto cur_target = _shard_placement.get_target(ntp);
+        if (cur_target != target) {
+            update_counts(
+              ntp,
+              _topic2data[model::topic_namespace_view{ntp}],
+              target,
+              cur_target);
+        }
+
+        throw;
+    }
+}
+
+void shard_balancer::update_counts(
+  const model::ntp& ntp,
+  topic_data_t& topic_data,
+  const std::optional<shard_placement_target>& prev,
+  const std::optional<shard_placement_target>& next) {
+    if (prev) {
+        topic_data.shard2count.at(prev->shard) -= 1;
+        topic_data.total_count -= 1;
+        // TODO: check negative values
+        _total_counts.at(prev->shard) -= 1;
+    }
+
+    if (next) {
+        topic_data.shard2count.at(next->shard) += 1;
+        topic_data.total_count += 1;
+        _total_counts.at(next->shard) += 1;
+    }
+
+    if (topic_data.total_count == 0) {
+        _topic2data.erase(model::topic_namespace_view{ntp});
     }
 }
 

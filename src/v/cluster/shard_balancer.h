@@ -49,7 +49,28 @@ private:
 
     ss::future<> assign_fiber();
     ss::future<> do_assign_ntps();
-    ss::future<> assign_ntp(const model::ntp&);
+
+    void maybe_assign(
+      const model::ntp&,
+      chunked_hash_map<model::ntp, std::optional<shard_placement_target>>&);
+
+    ss::future<>
+    set_target(const model::ntp&, const std::optional<shard_placement_target>&);
+
+    using shard2count_t = std::vector<int32_t>;
+    struct topic_data_t {
+        explicit topic_data_t()
+          : shard2count(ss::smp::count, 0) {}
+
+        int32_t total_count = 0;
+        shard2count_t shard2count;
+    };
+
+    void update_counts(
+      const model::ntp&,
+      topic_data_t&,
+      const std::optional<shard_placement_target>& prev,
+      const std::optional<shard_placement_target>& next);
 
 private:
     shard_placement_table& _shard_placement;
@@ -59,10 +80,18 @@ private:
     model::node_id _self;
 
     cluster::notification_id_type _topic_table_notify_handle;
-
-    chunked_hash_set<model::ntp> _to_assign;
     ssx::event _wakeup_event{"shard_balancer"};
     ss::gate _gate;
+
+    chunked_hash_set<model::ntp> _to_assign;
+
+    chunked_hash_map<
+      model::topic_namespace,
+      topic_data_t,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>
+      _topic2data;
+    shard2count_t _total_counts;
 };
 
 } // namespace cluster
