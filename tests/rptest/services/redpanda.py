@@ -4177,7 +4177,8 @@ class RedpandaService(RedpandaServiceBase):
         """Run command that computes MD5 hash of every file in redpanda data
         directory. The results of the command are turned into a map from path
         to hash-size tuples."""
-        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec md5sum -z '{{}}' \; -exec stat -c ' %s' '{{}}' \;"
+        script_path = inject_remote_script(node, "compute_storage.py")
+        cmd = f"python3 {script_path} --sizes --md5 --print-flat --data-dir {RedpandaService.DATA_DIR}"
         lines = node.account.ssh_output(cmd, timeout_sec=120)
         lines = lines.decode().split("\n")
 
@@ -4198,7 +4199,7 @@ class RedpandaService(RedpandaServiceBase):
             lines.pop()
 
         return {
-            tokens[1].rstrip("\x00"): (tokens[0], int(tokens[2]))
+            tokens[0]: (tokens[2], int(tokens[1]))
             for tokens in map(lambda l: l.split(), lines)
         }
 
