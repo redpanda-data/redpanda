@@ -13,6 +13,12 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "defaultToGlobal",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "produces": ["application/vnd.schemaregistry.v1+json"],
@@ -20,12 +26,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "compatibilityLevel": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/get_compatibility"
             }
           },
           "500": {
@@ -55,12 +56,7 @@
             "name": "config",
             "in": "body",
             "schema": {
-              "type": "object",
-              "properties": {
-                "compatibility": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/put_compatibility"
             }
           }
         ],
@@ -69,12 +65,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "compatibility": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/put_compatibility"
             }
           },
           "500": {
@@ -106,12 +97,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "compatibility": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/put_compatibility"
             }
           },
           "404": {
@@ -144,12 +130,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "compatibilityLevel": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/get_compatibility"
             }
           },
           "500": {
@@ -173,12 +154,7 @@
             "name": "config",
             "in": "body",
             "schema": {
-              "type": "object",
-              "properties": {
-                "compatibility": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/put_compatibility"
             }
           }
         ],
@@ -187,12 +163,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "compatibility": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/put_compatibility"
             }
           },
           "500": {
@@ -452,7 +423,7 @@
     },
     "/subjects/{subject}": {
       "post": {
-        "summary": "Check if a schema is already registred for the subject.",
+        "summary": "Check if a schema is already registered for the subject.",
         "operationId": "post_subject",
         "consumes": [
           "application/vnd.schemaregistry.v1+json",
