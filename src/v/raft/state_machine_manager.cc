@@ -433,7 +433,9 @@ ss::future<> state_machine_manager::background_apply_fiber(
   entry_ptr entry, ssx::semaphore_units units) {
     while (!_as.abort_requested() && entry->stm->next() < _next) {
         storage::log_reader_config config(
-          entry->stm->next(), _next, ss::default_priority_class());
+          entry->stm->next(),
+          model::prev_offset(_next),
+          ss::default_priority_class());
 
         vlog(
           _log.debug,
