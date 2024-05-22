@@ -156,7 +156,7 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 			}
 
 			if p.Name == common.ContainerProfileName {
-				fmt.Printf("You are talking to a localhost 'rpk container' cluster (rpk profile name: %q)", p.Name)
+				fmt.Printf("You are talking to a localhost 'rpk container' cluster (rpk profile name: %q)\n", p.Name)
 			} else {
 				fmt.Printf("You are talking to a self hosted cluster (rpk profile name: %q)\n", p.Name)
 			}
