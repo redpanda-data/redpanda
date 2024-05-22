@@ -32,3 +32,16 @@ rp_test(
     LABELS datalake
     ARGS "-- -c 1"
   )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME arrow_writer
+  SOURCES arrow_writer_bench.cc
+  LIBRARIES
+  Arrow::arrow_shared
+    Parquet::parquet_shared
+    # v::cluster
+    v::datalake
+    Seastar::seastar_perf_testing
+LABELS datalake
+)

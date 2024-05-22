@@ -28,9 +28,11 @@ TEST(ArrowWriter, SimpleMessageTest) {
     using namespace datalake;
     std::string serialized_message = generate_simple_message(
       "Hello world", 12345);
+    std::cerr << "Serialized message is " << serialized_message.size()
+              << " bytes\n";
+    EXPECT_TRUE(false);
 
-    test_data test_data;
-    proto_to_arrow_converter converter(test_data.simple_schema);
+    proto_to_arrow_converter converter(test_data().simple_schema);
     EXPECT_EQ(converter._arrays.size(), 6);
     auto parsed_message = converter.parse_message(serialized_message);
     EXPECT_NE(parsed_message, nullptr);
@@ -70,8 +72,7 @@ TEST(ArrowWriter, NestedMessageTest) {
     std::string serialized_message = generate_nested_message(
       "Hello world", 12345);
 
-    test_data test_data;
-    proto_to_arrow_converter converter(test_data.nested_schema);
+    proto_to_arrow_converter converter(test_data().nested_schema);
     EXPECT_EQ(converter._arrays.size(), 3);
     auto parsed_message = converter.parse_message(serialized_message);
     EXPECT_NE(parsed_message, nullptr);

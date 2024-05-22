@@ -37,15 +37,22 @@ public:
     void finish_batch();
 
     std::shared_ptr<arrow::Table> build_table();
+    void clear();
 
     std::vector<std::shared_ptr<arrow::Field>> build_field_vec();
 
     std::shared_ptr<arrow::Schema> build_schema();
 
+    /// Parse the message to a protobuf message.
+    /// Return nullptr on error.
+    std::unique_ptr<google::protobuf::Message>
+    parse_message(const std::string& message);
+
 private:
     FRIEND_TEST(ArrowWriter, EmptyMessageTest);
     FRIEND_TEST(ArrowWriter, SimpleMessageTest);
     FRIEND_TEST(ArrowWriter, NestedMessageTest);
+    FRIEND_TEST(ArrowWriter, NestedMessageBench);
 
     void add_message_parsed(std::unique_ptr<google::protobuf::Message> message);
 
@@ -53,10 +60,6 @@ private:
 
     bool initialize_arrow_arrays();
 
-    /// Parse the message to a protobuf message.
-    /// Return nullptr on error.
-    std::unique_ptr<google::protobuf::Message>
-    parse_message(const std::string& message);
     const google::protobuf::Descriptor* message_descriptor();
 
 private:

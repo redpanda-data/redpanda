@@ -33,6 +33,7 @@ void datalake::proto_to_arrow_converter::finish_batch() {
         }
     }
 }
+
 std::shared_ptr<arrow::Table>
 datalake::proto_to_arrow_converter::build_table() {
     // TODO: if there is still data in the builders, call finish_batch and

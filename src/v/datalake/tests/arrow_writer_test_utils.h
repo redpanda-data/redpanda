@@ -77,6 +77,32 @@ message nested_message {
 }
 )schema");
 
+    static std::string
+    generate_schema(int int32_elements, int string_elements) {
+        std::stringstream schema;
+        schema << R"schema(
+        syntax = "proto2";
+        package datalake.proto;
+
+        message message_type {
+
+        )schema";
+
+        int elem = 1;
+
+        for (int i = 1; i <= int32_elements; i++) {
+            schema << "optional int32 number_" << i << " = " << elem++ << ";\n";
+        }
+
+        for (int i = 1; i <= string_elements; i++) {
+            schema << "optional string str_" << i << " = " << elem++ << ";\n";
+        }
+
+        schema << "}\n";
+
+        return schema.str();
+    }
+
     std::string test_message_name = "simple_message";
 };
 
@@ -84,6 +110,22 @@ message nested_message {
 struct test_message_builder {
     test_message_builder(test_data data)
       : _proto_input_stream{data.combined_schema.c_str(), int(data.combined_schema.size())}
+      , _tokenizer{&_proto_input_stream, nullptr} {
+        if (!_parser.Parse(&_tokenizer, &_file_descriptor_proto)) {
+            exit(-1);
+        }
+
+        if (!_file_descriptor_proto.has_name()) {
+            _file_descriptor_proto.set_name("proto_file");
+        }
+
+        // Build a descriptor pool
+        _file_desc = _pool.BuildFile(_file_descriptor_proto);
+        assert(_file_desc != nullptr);
+    }
+
+    test_message_builder(std::string schema)
+      : _proto_input_stream{schema.c_str(), int(schema.size())}
       , _tokenizer{&_proto_input_stream, nullptr} {
         if (!_parser.Parse(&_tokenizer, &_file_descriptor_proto)) {
             exit(-1);
@@ -170,6 +212,38 @@ generate_simple_message(const std::string& label, int32_t number) {
                   reflection->SetDouble(message, field_desc, number / 100.0);
               } else if (field_desc->name() == "true_or_false") {
                   reflection->SetBool(message, field_desc, number % 2 == 0);
+              }
+          }
+      });
+}
+
+inline std::string random_string() {
+    int min_length = 4;
+    int max_length = 11;
+    int length = min_length + rand() % (max_length - min_length);
+    std::string res;
+    for (int i = 0; i < length; i++) {
+        res.push_back('a' + rand() % 26);
+    }
+    return res;
+}
+
+inline std::string generate_big_message(const std::string& schema) {
+    test_message_builder builder(schema);
+    return builder.generate_message_generic(
+      "message_type", [&](google::protobuf::Message* message) {
+          auto reflection = message->GetReflection();
+          // Have to use field indices here because
+          // message->GetReflections()->ListFields() only returns fields
+          // that are actually present in the message;
+          for (int field_idx = 0;
+               field_idx < message->GetDescriptor()->field_count();
+               field_idx++) {
+              auto field_desc = message->GetDescriptor()->field(field_idx);
+              if (field_desc->name().starts_with("str_")) {
+                  reflection->SetString(message, field_desc, random_string());
+              } else if (field_desc->name() == "number_") {
+                  reflection->SetInt32(message, field_desc, rand());
               }
           }
       });

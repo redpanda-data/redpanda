@@ -1154,7 +1154,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     auto datalake_config = datalake::topic_config::get_config(
       config::shard_local_cfg(), _parent);
-    if (datalake_config.has_value()) {
+    if (true || datalake_config.has_value()) {
         vlog(ctxlog.debug, "Uploading datalake segment {}", candidate);
         datalake::parquet_uploader uploader(
           _parent.log(), _parent.get_schema_registry());
