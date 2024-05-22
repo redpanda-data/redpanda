@@ -242,34 +242,23 @@ abs_configuration abs_configuration::make_adls_configuration() const {
 void apply_self_configuration_result(
   client_configuration& cfg, const client_self_configuration_output& res) {
     std::visit(
-      [&res](auto& cfg) -> void {
-          using cfg_type = std::decay_t<decltype(cfg)>;
-          if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
-              vassert(
-                std::holds_alternative<s3_self_configuration_result>(res),
-                "Incompatible client configuration {} and self configuration "
-                "result {}",
-                cfg,
-                res);
-
-              cfg.url_style
-                = std::get<s3_self_configuration_result>(res).url_style;
-
-          } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
-              vassert(
-                std::holds_alternative<abs_self_configuration_result>(res),
-                "Incompatible client configuration {} and self configuration "
-                "result {}",
-                cfg,
-                res);
-
-              cfg.is_hns_enabled
-                = std::get<abs_self_configuration_result>(res).is_hns_enabled;
-          } else {
-              static_assert(always_false_v<cfg_type>, "Unknown client type");
-          }
-      },
-      cfg);
+      ss::make_visitor(
+        [](s3_configuration& cfg, s3_self_configuration_result res) {
+            cfg.url_style = res.url_style;
+        },
+        [](abs_configuration& cfg, abs_self_configuration_result res) {
+            cfg.is_hns_enabled = res.is_hns_enabled;
+        },
+        [](auto& cfg, auto& res) {
+            vassert(
+              false,
+              "Incompatible client configuration {} and self configuration "
+              "result {}",
+              cfg,
+              res);
+        }),
+      cfg,
+      res);
 }
 
 std::ostream& operator<<(std::ostream& o, const abs_configuration& c) {
