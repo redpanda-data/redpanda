@@ -279,7 +279,7 @@ private:
     // Hash key-map to use across multiple compactions to reuse reserved memory
     // rather than reallocating repeatedly.
     std::unique_ptr<hash_key_offset_map> _compaction_hash_key_map;
-    ss::gate _open_gate;
+    ss::gate _gate;
     ss::abort_source _abort_source;
 
     friend std::ostream& operator<<(std::ostream&, const log_manager&);
