@@ -39,15 +39,6 @@ static ss::logger fpt_logger("fpt_test");
 
 using namespace std::chrono_literals; // NOLINT
 struct fixture {
-    static kafka::fetch_session_partition make_fetch_partition(
-      model::topic topic, model::partition_id p_id, model::offset offset) {
-        return kafka::fetch_session_partition{
-          .topic_partition = {std::move(topic), p_id},
-          .max_bytes = 1_MiB,
-          .fetch_offset = offset,
-          .high_watermark = offset};
-    }
-
     static kafka::fetch_request::topic
     make_fetch_request_topic(model::topic tp, int partitions_count) {
         kafka::fetch_request::topic fetch_topic{
