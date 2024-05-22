@@ -41,8 +41,7 @@ namespace {
 ss::logger idstmlog{"idstm-test"};
 using stm_ssshptr_t = const ss::shared_ptr<cluster::id_allocator_stm>&;
 
-struct id_allocator_stm_fixture
-  : stm_raft_fixture<id_allocator_stm_fixture, cluster::id_allocator_stm> {
+struct id_allocator_stm_fixture : stm_raft_fixture<cluster::id_allocator_stm> {
     //
     id_allocator_stm_fixture() {
         test_local_cfg.get("id_allocator_batch_size").set_value(int16_t(1));
