@@ -239,23 +239,28 @@ abs_configuration abs_configuration::make_adls_configuration() const {
     return adls_config;
 }
 
-void apply_self_configuration_result(
-  client_configuration& cfg, const client_self_configuration_output& res) {
-    std::visit(
+ss::future<> apply_self_configuration_result(
+  client_configuration& cfg, client_self_configuration_output res) {
+    return std::visit(
       ss::make_visitor(
-        [](s3_configuration& cfg, s3_self_configuration_result res) {
+        [](s3_configuration& cfg, s3_self_configuration_result res)
+          -> ss::future<> {
             cfg.url_style = res.url_style;
+            return ss::now();
         },
-        [](abs_configuration& cfg, abs_self_configuration_result res) {
+        [](abs_configuration& cfg, abs_self_configuration_result res)
+          -> ss::future<> {
             cfg.is_hns_enabled = res.is_hns_enabled;
+            return ss::now();
         },
-        [](auto& cfg, auto& res) {
+        [](auto& cfg, auto res) -> ss::future<> {
             vassert(
               false,
               "Incompatible client configuration {} and self configuration "
               "result {}",
               cfg,
               res);
+            return ss::now();
         }),
       cfg,
       res);

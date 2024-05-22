@@ -155,7 +155,7 @@ ss::future<> client_pool::accept_self_configure_result(
     }
 
     if (result) {
-        cloud_storage_clients::apply_self_configuration_result(
+        co_await cloud_storage_clients::apply_self_configuration_result(
           _config, *result);
     }
 

@@ -120,8 +120,8 @@ struct s3_self_configuration_result {
 using client_self_configuration_output
   = std::variant<abs_self_configuration_result, s3_self_configuration_result>;
 
-void apply_self_configuration_result(
-  client_configuration&, const client_self_configuration_output&);
+ss::future<> apply_self_configuration_result(
+  client_configuration&, client_self_configuration_output);
 
 std::ostream& operator<<(std::ostream&, const abs_self_configuration_result&);
 std::ostream& operator<<(std::ostream&, const s3_self_configuration_result&);
