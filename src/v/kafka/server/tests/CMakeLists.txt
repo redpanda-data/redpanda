@@ -8,7 +8,7 @@ rp_test(
     types_conversion_tests.cc
     topic_utils_test.cc
     handler_interface_test.cc
-    quota_managers_test.cc
+    snc_quota_manager_test.cc
     validator_tests.cc
     fetch_unit_test.cc
     config_utils_test.cc
@@ -68,6 +68,14 @@ rp_test(
   LABELS kafka
 )
 
+rp_test(
+  FIXTURE_TEST
+  BINARY_NAME quota_manager
+  SOURCES quota_manager_test.cc
+  LIBRARIES v::seastar_testing_main v::kafka
+  ARGS "-- -c 4"
+  LABELS kafka
+)
 
 rp_test(
   BENCHMARK_TEST
