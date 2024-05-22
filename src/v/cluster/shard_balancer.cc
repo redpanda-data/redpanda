@@ -39,6 +39,9 @@ ss::future<> shard_balancer::start() {
       "method can only be invoked on shard {}",
       shard_id);
 
+    auto gate_holder = _gate.hold();
+    auto lock = co_await _mtx.get_units();
+
     // We expect topic_table to remain unchanged throughout the method
     // invocation because it is supposed to be called after local controller
     // replay is finished but before we start getting new controller updates
@@ -122,7 +125,7 @@ ss::future<> shard_balancer::start() {
               _to_assign.insert(ntp);
           }
       });
-    co_await do_assign_ntps();
+    co_await do_assign_ntps(lock);
 
     vassert(
       tt_version == _topics.local().topics_map_revision(),
@@ -173,6 +176,48 @@ ss::future<> shard_balancer::enable_persistence() {
     co_await _shard_placement.enable_persistence();
 }
 
+ss::future<errc>
+shard_balancer::reassign_shard(model::ntp ntp, ss::shard_id shard) {
+    if (_gate.is_closed()) {
+        co_return errc::shutting_down;
+    }
+    auto gate_holder = _gate.hold();
+
+    if (!_features.is_active(features::feature::node_local_core_assignment)) {
+        co_return errc::feature_disabled;
+    }
+
+    auto lock = co_await _mtx.get_units();
+
+    if (shard >= ss::smp::count) {
+        co_return errc::invalid_request;
+    }
+    auto replicas_view = _topics.local().get_replicas_view(ntp);
+    if (!replicas_view) {
+        co_return errc::partition_not_exists;
+    }
+    auto log_revision = log_revision_on_node(*replicas_view, _self);
+    if (!log_revision) {
+        co_return errc::replica_does_not_exist;
+    }
+
+    auto target = shard_placement_target{
+      replicas_view->assignment.group, *log_revision, shard};
+    vlog(
+      clusterlog.info,
+      "[{}] manually setting placement target to {}",
+      ntp,
+      target);
+
+    update_counts(
+      ntp,
+      _topic2data[model::topic_namespace_view{ntp}],
+      _shard_placement.get_target(ntp),
+      target);
+    co_await set_target(ntp, target, lock);
+    co_return errc::success;
+}
+
 ss::future<> shard_balancer::assign_fiber() {
     if (_gate.is_closed()) {
         co_return;
@@ -185,14 +230,15 @@ ss::future<> shard_balancer::assign_fiber() {
             co_return;
         }
 
-        co_await do_assign_ntps();
+        auto lock = co_await _mtx.get_units();
+        co_await do_assign_ntps(lock);
     }
 }
 
 using ntp2target_t
   = chunked_hash_map<model::ntp, std::optional<shard_placement_target>>;
 
-ss::future<> shard_balancer::do_assign_ntps() {
+ss::future<> shard_balancer::do_assign_ntps(mutex::units& lock) {
     ntp2target_t new_targets;
     auto to_assign = std::exchange(_to_assign, {});
     co_await ssx::async_for_each(
@@ -201,9 +247,11 @@ ss::future<> shard_balancer::do_assign_ntps() {
       });
 
     co_await ss::max_concurrent_for_each(
-      new_targets, 128, [this](const decltype(new_targets)::value_type& kv) {
+      new_targets,
+      128,
+      [this, &lock](const decltype(new_targets)::value_type& kv) {
           const auto& [ntp, target] = kv;
-          return set_target(ntp, target)
+          return set_target(ntp, target, lock)
             .handle_exception([this, &ntp](const std::exception_ptr&) {
                 // Retry on the next tick.
                 _to_assign.insert(ntp);
@@ -268,7 +316,9 @@ void shard_balancer::maybe_assign(
 }
 
 ss::future<> shard_balancer::set_target(
-  const model::ntp& ntp, const std::optional<shard_placement_target>& target) {
+  const model::ntp& ntp,
+  const std::optional<shard_placement_target>& target,
+  mutex::units& /*lock*/) {
     auto shard_callback = [this](const model::ntp& ntp) {
         _controller_backend.local().notify_reconciliation(ntp);
     };

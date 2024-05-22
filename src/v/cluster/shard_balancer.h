@@ -15,6 +15,7 @@
 #include "cluster/shard_placement_table.h"
 #include "container/chunked_hash_map.h"
 #include "ssx/event.h"
+#include "utils/mutex.h"
 
 namespace cluster {
 
@@ -46,18 +47,23 @@ public:
     /// in the "preparing" state).
     ss::future<> enable_persistence();
 
+    /// Manually set shard placement for an ntp that has a replica on this node.
+    ss::future<errc> reassign_shard(model::ntp, ss::shard_id);
+
 private:
     void process_delta(const topic_table::delta&);
 
     ss::future<> assign_fiber();
-    ss::future<> do_assign_ntps();
+    ss::future<> do_assign_ntps(mutex::units& lock);
 
     void maybe_assign(
       const model::ntp&,
       chunked_hash_map<model::ntp, std::optional<shard_placement_target>>&);
 
-    ss::future<>
-    set_target(const model::ntp&, const std::optional<shard_placement_target>&);
+    ss::future<> set_target(
+      const model::ntp&,
+      const std::optional<shard_placement_target>&,
+      mutex::units& lock);
 
     using shard2count_t = std::vector<int32_t>;
     struct topic_data_t {
@@ -88,6 +94,7 @@ private:
 
     cluster::notification_id_type _topic_table_notify_handle;
     ssx::event _wakeup_event{"shard_balancer"};
+    mutex _mtx{"shard_balancer"};
     ss::gate _gate;
 
     chunked_hash_set<model::ntp> _to_assign;
