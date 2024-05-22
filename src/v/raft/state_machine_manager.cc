@@ -300,7 +300,7 @@ ss::future<> state_machine_manager::apply_snapshot_to_stm(
       std::max(model::next_offset(last_offset), stm_entry->stm->next()));
 }
 
-ss::future<> state_machine_manager::apply() {
+ss::future<> state_machine_manager::try_apply_in_foreground() {
     try {
         ss::coroutine::switch_to sg_sw(_apply_sg);
         // wait until consensus commit index is >= _next
@@ -315,6 +315,30 @@ ss::future<> state_machine_manager::apply() {
             co_return co_await apply_raft_snapshot();
         }
 
+        // collect STMs which has the same _next offset as the offset in
+        // manager and there is no background apply taking place
+        std::vector<entry_ptr> machines;
+        for (auto& [_, entry] : _machines) {
+            /**
+             * We can simply check if a mutex is ready here as calling
+             * maybe_start_background_apply() will make the mutex underlying
+             * semaphore immediately not ready as there are no scheduling points
+             * before calling `get_units`
+             */
+            if (
+              entry->stm->next() == _next
+              && entry->background_apply_mutex.ready()) {
+                machines.push_back(entry);
+            }
+        }
+        if (machines.empty()) {
+            vlog(
+              _log.debug,
+              "no machines were selected to apply in foreground, current next "
+              "offset: {}",
+              _next);
+            co_return;
+        }
         /**
          * Raft make_reader method allows callers reading up to
          * last_visible index. In order to make the STMs safe and working
@@ -334,27 +358,12 @@ ss::future<> state_machine_manager::apply() {
           _next, _raft->committed_offset(), ss::default_priority_class());
 
         model::record_batch_reader reader = co_await _raft->make_reader(config);
-        // collect STMs which has the same _next offset as the offset in
-        // manager and there is no background apply taking place
-        std::vector<entry_ptr> machines;
-        for (auto& [_, entry] : _machines) {
-            /**
-             * We can simply check if a mutex is ready here as calling
-             * maybe_start_background_apply() will make the mutex underlying
-             * semaphore immediately not ready as there are no scheduling points
-             * before calling `get_units`
-             */
-            if (
-              entry->stm->next() == _next
-              && entry->background_apply_mutex.ready()) {
-                machines.push_back(entry);
-            }
-        }
-        auto last_applied = co_await std::move(reader).consume(
+
+        auto max_last_applied = co_await std::move(reader).consume(
           batch_applicator(default_ctx, machines, _as, _log),
           model::no_timeout);
 
-        _next = std::max(model::next_offset(last_applied), _next);
+        _next = std::max(model::next_offset(max_last_applied), _next);
         vlog(_log.trace, "updating _next offset with: {}", _next);
     } catch (const ss::timed_out_error&) {
         vlog(_log.debug, "state machine apply timeout");
@@ -365,6 +374,10 @@ ss::future<> state_machine_manager::apply() {
         vlog(
           _log.warn, "manager apply exception: {}", std::current_exception());
     }
+}
+
+ss::future<> state_machine_manager::apply() {
+    co_await try_apply_in_foreground();
     /**
      * If any of the state machine is behind, dispatch background apply fibers
      */
