@@ -70,6 +70,7 @@ struct s3_configuration : common_configuration {
       const cloud_roles::aws_region_name& region,
       const bucket_name& bucket,
       std::optional<cloud_storage_clients::s3_url_style> url_style,
+      bool node_is_in_fips_mode,
       const default_overrides& overrides = {},
       net::metrics_disabled disable_metrics = net::metrics_disabled::yes,
       net::public_metrics_disabled disable_public_metrics
