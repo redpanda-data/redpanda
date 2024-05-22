@@ -96,21 +96,17 @@ public:
     //   * partition::get_revision_id()
     //   * raft::group_configuration::revision_id()
 
-    class concurrent_modification_error final : public std::exception {
+    class concurrent_modification_error final
+      : public ::concurrent_modification_error {
     public:
         concurrent_modification_error(
           model::revision_id initial_revision,
           model::revision_id current_revision)
-          : _msg(ssx::sformat(
-            "Topic table was modified by concurrent fiber. (initial_revision: "
-            "{}, current_revision: {}) ",
+          : ::concurrent_modification_error(ssx::sformat(
+            "Topic table was modified by concurrent fiber. "
+            "(initial_revision: {}, current_revision: {}) ",
             initial_revision,
             current_revision)) {}
-
-        const char* what() const noexcept final { return _msg.c_str(); }
-
-    private:
-        ss::sstring _msg;
     };
 
     class in_progress_update {
@@ -532,8 +528,13 @@ private:
 
     updates_t _updates_in_progress;
     model::revision_id _last_applied_revision_id;
-    // Monotonic counter that is bumped for every addition/deletion to topics
-    // map. Unlike other revisions this does not correspond to the command
+
+    // Monotonic counter that is bumped each time _topics, _disabled_partitions,
+    // or _updates_in_progress are modified in a way that makes iteration over
+    // them unsafe (i.e. invalidates iterators or references, including
+    // for nested collections like partition sets and replica sets).
+    //
+    // Unlike other revisions this does not correspond to the command
     // revision that updated the map.
     model::revision_id _topics_map_revision{0};
 
