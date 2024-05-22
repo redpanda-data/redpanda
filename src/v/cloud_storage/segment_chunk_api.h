@@ -112,7 +112,15 @@ private:
     /// extracts exceptions if any.
     void resolve_prefetch_futures();
 
+    /// The chunk map holds a mapping from file offset to chunk metadata. This
+    /// struct is initialized when the object starts, and will never change
+    /// after this during the lifetime of this object, IE no inserts or deletes
+    /// are performed on the map. The metadata may change, specifically the
+    /// chunk state or number of waiters. The map cannot be initialized when
+    /// this object is constructed because we need the segment index to be
+    /// available to ocnstruct the map.
     chunk_map_t _chunks;
+
     remote_segment& _segment;
 
     simple_time_jitter<ss::lowres_clock> _cache_backoff_jitter;
