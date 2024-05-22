@@ -385,7 +385,8 @@ ss::future<configuration> configuration::get_config() {
     }
 }
 
-ss::future<configuration> configuration::get_s3_config() {
+ss::future<configuration> configuration::get_s3_config(
+  std::optional<cloud_storage_clients::s3_url_style> url_style_override) {
     vlog(cst_log.debug, "Generating S3 cloud storage configuration");
 
     auto cloud_credentials_source
@@ -412,7 +413,10 @@ ss::future<configuration> configuration::get_s3_config() {
 
     auto region = cloud_roles::aws_region_name(get_value_or_throw(
       config::shard_local_cfg().cloud_storage_region, "cloud_storage_region"));
-    auto url_style = config::shard_local_cfg().cloud_storage_url_style.value();
+    auto url_style = url_style_override;
+    if (!url_style.has_value()) {
+        url_style = config::shard_local_cfg().cloud_storage_url_style.value();
+    }
 
     auto disable_metrics = net::metrics_disabled(
       config::shard_local_cfg().disable_metrics());

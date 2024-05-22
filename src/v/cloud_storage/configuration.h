@@ -29,7 +29,9 @@ struct configuration {
     friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 
     static ss::future<configuration> get_config();
-    static ss::future<configuration> get_s3_config();
+    static ss::future<configuration> get_s3_config(
+      std::optional<cloud_storage_clients::s3_url_style> url_style_override
+      = std::nullopt);
     static ss::future<configuration> get_abs_config();
     static const config::property<std::optional<ss::sstring>>&
     get_bucket_config();
