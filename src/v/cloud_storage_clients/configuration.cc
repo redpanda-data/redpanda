@@ -10,6 +10,7 @@
 
 #include "cloud_storage_clients/configuration.h"
 
+#include "cloud_storage/configuration.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/types.h"
 #include "config/configuration.h"
@@ -238,14 +239,21 @@ abs_configuration abs_configuration::make_adls_configuration() const {
     return adls_config;
 }
 
+ss::future<s3_configuration>
+do_apply_s3_self_configuration(s3_self_configuration_result res) {
+    auto full_cfg = co_await cloud_storage::configuration::get_s3_config(
+      res.url_style);
+    co_return std::get<s3_configuration>(full_cfg.client_config);
+}
+
 ss::future<> apply_self_configuration_result(
   client_configuration& cfg, client_self_configuration_output res) {
     return std::visit(
       ss::make_visitor(
         [](s3_configuration& cfg, s3_self_configuration_result res)
           -> ss::future<> {
-            cfg.url_style = res.url_style;
-            return ss::now();
+            return do_apply_s3_self_configuration(res).then(
+              [&cfg](s3_configuration new_cfg) { cfg = std::move(new_cfg); });
         },
         [](abs_configuration& cfg, abs_self_configuration_result res)
           -> ss::future<> {
