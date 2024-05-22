@@ -20,6 +20,8 @@
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
+#include "net/connection.h"
 #include "ssx/future-util.h"
 #include "ssx/watchdog.h"
 #include "storage/log_reader.h"
@@ -510,7 +512,10 @@ private:
 
         async_view_search_query_t query;
         if (config.first_timestamp.has_value()) {
-            query = config.first_timestamp.value();
+            query = async_view_timestamp_query(
+              model::offset_cast(config.start_offset),
+              config.first_timestamp.value(),
+              model::offset_cast(config.max_offset));
         } else {
             // NOTE: config.start_offset actually contains kafka offset
             // stored using model::offset type.
@@ -523,66 +528,72 @@ private:
                 co_return;
             }
 
-            if (
-              cur.error() == error_outcome::out_of_range
-              && ss::visit(
-                query,
-                [&](model::offset) { return false; },
-                [&](kafka::offset query_offset) {
-                    // Special case queries below the start offset of the log.
-                    // The start offset may have advanced while the request was
-                    // in progress. This is expected, so log at debug level.
-                    const auto log_start_offset
-                      = _partition->_manifest_view->stm_manifest()
-                          .full_log_start_kafka_offset();
+            // Out of range queries are unexpected. The caller must take care
+            // to send only valid queries to remote_partition. I.e. the fetch
+            // handler does such validation. Similar validation is done inside
+            // remote partition.
+            //
+            // Out of range at this point is due to a race condition or due to
+            // a bug. In both cases the only valid action is to throw an
+            // exception and let the caller deal with it. If the caller doesn't
+            // handle it it leads to a closed kafka connection which the
+            // end clients retry.
+            if (cur.error() == error_outcome::out_of_range) {
+                ss::visit(
+                  query,
+                  [&](model::offset) {
+                      vassert(
+                        false,
+                        "Unreachable code. Remote partition doesn't know how "
+                        "to "
+                        "handle model::offset queries.");
+                  },
+                  [&](kafka::offset query_offset) {
+                      // Bug or retention racing with the query.
+                      const auto log_start_offset
+                        = _partition->_manifest_view->stm_manifest()
+                            .full_log_start_kafka_offset();
 
-                    if (log_start_offset && query_offset < *log_start_offset) {
-                        vlog(
-                          _ctxlog.debug,
-                          "Manifest query below the log's start Kafka offset: "
-                          "{} < {}",
-                          query_offset(),
-                          log_start_offset.value()());
-                        return true;
-                    }
-                    return false;
-                },
-                [&](model::timestamp query_ts) {
-                    // Special case, it can happen when a timequery falls below
-                    // the clean offset. Caused when the query races with
-                    // retention/gc. log a warning, since the kafka client can
-                    // handle a failed query
-                    auto const& spillovers = _partition->_manifest_view
-                                               ->stm_manifest()
-                                               .get_spillover_map();
-                    if (
-                      spillovers.empty()
-                      || spillovers.get_max_timestamp_column()
-                             .last_value()
-                             .value_or(model::timestamp::max()())
-                           >= query_ts()) {
-                        vlog(
-                          _ctxlog.debug,
-                          "Manifest query raced with retention and the result "
-                          "is below the clean/start offset for {}",
-                          query_ts);
-                        return true;
-                    }
+                      if (
+                        log_start_offset && query_offset < *log_start_offset) {
+                          vlog(
+                            _ctxlog.warn,
+                            "Manifest query below the log's start Kafka "
+                            "offset: "
+                            "{} < {}",
+                            query_offset(),
+                            log_start_offset.value()());
+                      }
+                  },
+                  [&](const async_view_timestamp_query& query_ts) {
+                      // Special case, it can happen when a timequery falls
+                      // below the clean offset. Caused when the query races
+                      // with retention/gc.
+                      auto const& spillovers = _partition->_manifest_view
+                                                 ->stm_manifest()
+                                                 .get_spillover_map();
 
-                    // query was not meant for archive region. fallthrough and
-                    // log an error
-                    return false;
-                })) {
-                // error was handled
-                co_return;
+                      bool timestamp_inside_spillover
+                        = query_ts.ts()
+                          <= spillovers.get_max_timestamp_column()
+                               .last_value()
+                               .value_or(model::timestamp::min()());
+
+                      if (timestamp_inside_spillover) {
+                          vlog(
+                            _ctxlog.debug,
+                            "Manifest query raced with retention and the "
+                            "result "
+                            "is below the clean/start offset for {}",
+                            query_ts);
+                      }
+                  });
             }
 
-            vlog(
-              _ctxlog.error,
+            throw std::runtime_error(fmt::format(
               "Failed to query spillover manifests: {}, query: {}",
               cur.error(),
-              query);
-            co_return;
+              query));
         }
         _view_cursor = std::move(cur.value());
         co_await _view_cursor->with_manifest(

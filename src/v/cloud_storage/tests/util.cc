@@ -743,6 +743,10 @@ std::vector<model::record_batch_header> scan_remote_partition(
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
       imposter.api, imposter.cache, manifest, bucket);
+    auto manifest_view_stop = ss::defer(
+      [&manifest_view] { manifest_view->stop().get(); });
+    manifest_view->start().get();
+
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
       imposter.api.local(),
@@ -765,6 +769,7 @@ std::vector<model::record_batch_header> scan_remote_partition(
 /// Similar to previous function but uses timequery to start the scan
 scan_result scan_remote_partition(
   cloud_storage_fixture& imposter,
+  model::offset min,
   model::timestamp timestamp,
   model::offset max,
   size_t maybe_max_segments,
@@ -789,12 +794,16 @@ scan_result scan_remote_partition(
     }
     auto manifest = hydrate_manifest(imposter.api.local(), bucket);
     storage::log_reader_config reader_config(
-      model::offset(0), max, ss::default_priority_class());
+      min, max, ss::default_priority_class());
     reader_config.first_timestamp = timestamp;
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
       imposter.api, imposter.cache, manifest, bucket);
+    auto manifest_view_stop = ss::defer(
+      [&manifest_view] { manifest_view->stop().get(); });
+
+    manifest_view->start().get();
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
       imposter.api.local(),
