@@ -1321,14 +1321,10 @@ consensus::abort_configuration_change(model::revision_id revision) {
     if (latest_cfg.revision_id() > revision) {
         co_return errc::invalid_configuration_update;
     }
+
     auto new_cfg = latest_cfg;
     new_cfg.abort_configuration_change(revision);
 
-    auto batches = details::serialize_configuration_as_batches(
-      std::move(new_cfg));
-    for (auto& b : batches) {
-        b.set_term(_term);
-    };
     /**
      * Aborting configuration change is an operation that may lead to data loss.
      * It must be possible to abort configuration change even if there is no
@@ -1336,21 +1332,10 @@ consensus::abort_configuration_change(model::revision_id revision) {
      * replicas log. If new leader will be elected using new configuration it
      * will eventually propagate valid configuration to all the followers.
      */
-    auto append_result = co_await disk_append(
-      model::make_memory_record_batch_reader(std::move(batches)),
-      update_last_quorum_index::yes);
-    vlog(
-      _ctxlog.info,
-      "appended reconfiguration aborting configuration at offset {}",
-      append_result.base_offset);
-    // flush log as all configuration changes must eventually be committed.
-    co_await flush_log();
-    // if current node is a leader make sure we will try to update committed
-    // index, it may be required for single participant raft groups
-    if (is_leader()) {
-        maybe_update_majority_replicated_index();
-        maybe_update_leader_commit_idx();
-    }
+    update_follower_stats(new_cfg);
+    _configuration_manager.set_override(std::move(new_cfg));
+    do_step_down("reconfiguration-aborted");
+
     co_return errc::success;
 }
 
@@ -1372,22 +1357,10 @@ ss::future<std::error_code> consensus::force_replace_configuration_locally(
             new_cfg.set_version(group_configuration::v_6);
         }
         vlog(_ctxlog.info, "Force replacing configuration with: {}", new_cfg);
-        auto batches = details::serialize_configuration_as_batches(
-          std::move(new_cfg));
-        for (auto& b : batches) {
-            b.set_term(_term);
-        };
 
-        auto result = co_await disk_append(
-          model::make_memory_record_batch_reader(std::move(batches)),
-          update_last_quorum_index::yes);
-        vlog(
-          _ctxlog.debug,
-          "appended reconfiguration to force update replica "
-          "set at "
-          "offset {}",
-          result.base_offset);
-        co_await flush_log();
+        update_follower_stats(new_cfg);
+        _configuration_manager.set_override(std::move(new_cfg));
+        do_step_down("forced-reconfiguration");
 
     } catch (const ss::broken_semaphore&) {
         co_return errc::shutting_down;
@@ -2863,8 +2836,11 @@ ss::future<storage::append_result> consensus::disk_append(
           auto f = ss::now();
           if (!configurations.empty()) {
               // we can use latest configuration to update follower stats
-              update_follower_stats(configurations.back().cfg);
-              f = _configuration_manager.add(std::move(configurations));
+              f = _configuration_manager.add(std::move(configurations))
+                    .then([this] {
+                        update_follower_stats(
+                          _configuration_manager.get_latest());
+                    });
           }
 
           return f.then([this, ret = ret] {
