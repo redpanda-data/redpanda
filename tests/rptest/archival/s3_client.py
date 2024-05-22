@@ -58,17 +58,18 @@ def retry_on_slowdown(tries=4, delay=1.0, backoff=2.0):
 
 class S3Client:
     """Simple S3 client"""
-    def __init__(self,
-                 region,
-                 access_key,
-                 secret_key,
-                 logger,
-                 endpoint=None,
-                 disable_ssl=True,
-                 signature_version='s3v4',
-                 before_call_headers=None,
-                 use_fips_endpoint=False,
-                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
+    def __init__(
+            self,
+            region,
+            access_key,
+            secret_key,
+            logger,
+            endpoint=None,
+            disable_ssl=True,
+            signature_version='s3v4',
+            before_call_headers=None,
+            use_fips_endpoint=False,
+            addressing_style: S3AddressingStyle = S3AddressingStyle.VIRTUAL):
 
         logger.debug(
             f"Constructed S3Client in region {region}, endpoint {endpoint}, key is set = {access_key is not None}, fips mode {use_fips_endpoint}, addressing style {addressing_style}"
@@ -98,7 +99,7 @@ class S3Client:
                 'max_attempts': 10,
                 'mode': 'adaptive'
             },
-            s3={'addressing_style': f'{self._addressing_style}'},
+            s3={'addressing_style': 'auto'},
             use_fips_endpoint=True if self._use_fips_endpoint else None)
         cl = boto3.client('s3',
                           config=cfg,

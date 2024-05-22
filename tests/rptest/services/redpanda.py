@@ -447,42 +447,43 @@ class SISettings:
     ABS_AZURITE_ACCOUNT = "devstoreaccount1"
     ABS_AZURITE_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
-    def __init__(self,
-                 test_context,
-                 *,
-                 log_segment_size: int = 16 * 1000000,
-                 cloud_storage_cache_chunk_size: Optional[int] = None,
-                 cloud_storage_credentials_source: str = 'config_file',
-                 cloud_storage_access_key: str = 'panda-user',
-                 cloud_storage_secret_key: str = 'panda-secret',
-                 cloud_storage_region: str = 'panda-region',
-                 cloud_storage_api_endpoint: str = 'minio-s3',
-                 cloud_storage_api_endpoint_port: int = 9000,
-                 cloud_storage_url_style: str = 'virtual_host',
-                 cloud_storage_cache_size: Optional[int] = None,
-                 cloud_storage_cache_max_objects: Optional[int] = None,
-                 cloud_storage_enable_remote_read: bool = True,
-                 cloud_storage_enable_remote_write: bool = True,
-                 cloud_storage_max_connections: Optional[int] = None,
-                 cloud_storage_disable_tls: bool = True,
-                 cloud_storage_segment_max_upload_interval_sec: Optional[
-                     int] = None,
-                 cloud_storage_manifest_max_upload_interval_sec: Optional[
-                     int] = None,
-                 cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
-                     int] = None,
-                 bypass_bucket_creation: bool = False,
-                 use_bucket_cleanup_policy: bool = True,
-                 cloud_storage_housekeeping_interval_ms: Optional[int] = None,
-                 cloud_storage_spillover_manifest_max_segments: Optional[
-                     int] = None,
-                 fast_uploads=False,
-                 retention_local_strict=True,
-                 cloud_storage_max_throughput_per_shard: Optional[int] = None,
-                 cloud_storage_signature_version: str = "s3v4",
-                 before_call_headers: Optional[dict[str, Any]] = None,
-                 skip_end_of_test_scrubbing: bool = False,
-                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
+    def __init__(
+            self,
+            test_context,
+            *,
+            log_segment_size: int = 16 * 1000000,
+            cloud_storage_cache_chunk_size: Optional[int] = None,
+            cloud_storage_credentials_source: str = 'config_file',
+            cloud_storage_access_key: str = 'panda-user',
+            cloud_storage_secret_key: str = 'panda-secret',
+            cloud_storage_region: str = 'panda-region',
+            cloud_storage_api_endpoint: str = 'minio-s3',
+            cloud_storage_api_endpoint_port: int = 9000,
+            cloud_storage_url_style: str = 'virtual_host',
+            cloud_storage_cache_size: Optional[int] = None,
+            cloud_storage_cache_max_objects: Optional[int] = None,
+            cloud_storage_enable_remote_read: bool = True,
+            cloud_storage_enable_remote_write: bool = True,
+            cloud_storage_max_connections: Optional[int] = None,
+            cloud_storage_disable_tls: bool = True,
+            cloud_storage_segment_max_upload_interval_sec: Optional[
+                int] = None,
+            cloud_storage_manifest_max_upload_interval_sec: Optional[
+                int] = None,
+            cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
+                int] = None,
+            bypass_bucket_creation: bool = False,
+            use_bucket_cleanup_policy: bool = True,
+            cloud_storage_housekeeping_interval_ms: Optional[int] = None,
+            cloud_storage_spillover_manifest_max_segments: Optional[
+                int] = None,
+            fast_uploads=False,
+            retention_local_strict=True,
+            cloud_storage_max_throughput_per_shard: Optional[int] = None,
+            cloud_storage_signature_version: str = "s3v4",
+            before_call_headers: Optional[dict[str, Any]] = None,
+            skip_end_of_test_scrubbing: bool = False,
+            addressing_style: S3AddressingStyle = S3AddressingStyle.VIRTUAL):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
