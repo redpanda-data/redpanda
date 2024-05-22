@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model/fundamental.h"
 #include "outcome.h"
 #include "raft/logger.h"
 #include "raft/types.h"
@@ -51,11 +52,13 @@ private:
     ss::future<result<vote_reply>> do_dispatch_prevote(vnode);
     ss::future<> process_reply(vnode n, ss::future<result<vote_reply>> f);
     ss::future<> process_replies();
+    ss::future<> update_term();
     // args
     consensus* _ptr;
     // make sure to always make a copy; never move() this struct
     vote_request _req;
     bool _success = false;
+    std::optional<model::term_id> _term_update;
     // for sequentiality/progress
     ssx::semaphore _sem;
     std::optional<raft::group_configuration> _config;
