@@ -650,7 +650,13 @@ public:
         _wakeup_event.set();
     }
 
-    bool is_reconciled() const { return !_in_progress && _to_assign.empty(); }
+    ss::future<> assign(const model::ntp& ntp) {
+        auto gate_holder = _gate.hold();
+        auto lock = co_await _mtx.get_units();
+        co_await assign_ntp(ntp, lock);
+    }
+
+    bool is_reconciled() const { return _mtx.ready() && _to_assign.empty(); }
 
 private:
     ss::future<> assign_fiber() {
@@ -664,22 +670,21 @@ private:
             if (_gate.is_closed()) {
                 co_return;
             }
+            auto lock = co_await _mtx.get_units();
 
             if (_enable_persistence) {
                 co_await _shard_placement.enable_persistence();
             }
 
             auto to_assign = std::exchange(_to_assign, {});
-            _in_progress = true;
             co_await ss::max_concurrent_for_each(
-              to_assign,
-              128,
-              [this](const model::ntp& ntp) { return assign_ntp(ntp); })
-              .finally([this] { _in_progress = false; });
+              to_assign, 128, [this, &lock](const model::ntp& ntp) {
+                  return assign_ntp(ntp, lock);
+              });
         }
     }
 
-    ss::future<> assign_ntp(const model::ntp& ntp) {
+    ss::future<> assign_ntp(const model::ntp& ntp, mutex::units& /*lock*/) {
         std::optional<shard_placement_target> target;
         if (auto it = _ntpt.ntp2meta.find(ntp); it != _ntpt.ntp2meta.end()) {
             target = shard_placement_target(
@@ -715,8 +720,8 @@ private:
 
     bool _enable_persistence = false;
     chunked_hash_set<model::ntp> _to_assign;
-    bool _in_progress = false;
     ssx::event _wakeup_event{"shard_assigner"};
+    mutex _mtx{"shard_assigner"};
     ss::gate _gate;
 };
 
@@ -1128,7 +1133,7 @@ TEST_F_CORO(shard_placement_test_fixture, StressTest) {
             switch (op) {
             case op_t::transfer:
                 vlog(logger.info, "[{}] OP: reassign shard", ntp);
-                _shard_assigner->assign_eventually(ntp);
+                co_await _shard_assigner->assign(ntp);
                 break;
             case op_t::remove: {
                 vlog(logger.info, "[{}] OP: remove", ntp);
