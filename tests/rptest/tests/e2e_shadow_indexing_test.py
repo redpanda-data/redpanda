@@ -1126,11 +1126,13 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         # Topic creation happens here
         super().setUp()
 
-    @cluster(num_nodes=8,
-             log_allow_list=[
-                 r"failed to hydrate chunk.*Connection reset by peer",
-                 r"failed to hydrate chunk.*NotFound"
-             ])
+    @cluster(
+        num_nodes=8,
+        log_allow_list=[
+            r"failed to hydrate chunk.*Connection reset by peer",
+            r"failed to hydrate chunk.*NotFound",
+            r"Failed to query spillover manifests: cloud_storage::error_outcome:10",
+        ])
     @matrix(short_retention=[False, True],
             cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode
