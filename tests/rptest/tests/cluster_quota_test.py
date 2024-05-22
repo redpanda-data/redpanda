@@ -30,7 +30,7 @@ class ClusterQuotaPartitionMutationTest(RedpandaTest):
     Ducktape tests for partition mutation quota
     """
     def __init__(self, *args, **kwargs):
-        additional_options = {'kafka_admin_topic_api_rate': 1}
+        additional_options = {'kafka_admin_topic_api_rate': 10}
         super().__init__(*args,
                          num_brokers=3,
                          extra_rp_conf=additional_options,
@@ -44,13 +44,14 @@ class ClusterQuotaPartitionMutationTest(RedpandaTest):
         Ensure the partition throttling mechanism (KIP-599) works
         """
 
-        # The kafka_admin_topic_api_rate is 1, quota will be 10. This test will
+        # The kafka_admin_topic_api_rate quota is 10. This test will
         # make 1 request within containing three topics to create, each containing
         # different number of partitions.
         #
         # The first topic should succeed, the second will exceed the quota but
-        # succeed since the throttling algorithms burst settings will allow it
-        # to. The third however should fail since the quota has already exceeded.
+        # succeed since the throttling algorithms allows the first request
+        # exceeding the quota to pass. The third however should fail since the
+        # quota has already exceeded.
         exceed_quota_req = [
             KclCreateTopicsRequestTopic('baz', 1, 1),
             KclCreateTopicsRequestTopic('foo', 10, 1),
@@ -63,11 +64,11 @@ class ClusterQuotaPartitionMutationTest(RedpandaTest):
         response = self.kcl.raw_create_topics(6, exceed_quota_req)
         response = json.loads(response)
         assert response['Version'] == 6
+        baz_response = [t for t in response['Topics'] if t['Topic'] == 'baz']
         foo_response = [t for t in response['Topics'] if t['Topic'] == 'foo']
         bar_response = [t for t in response['Topics'] if t['Topic'] == 'bar']
-        baz_response = [t for t in response['Topics'] if t['Topic'] == 'baz']
-        assert foo_response[0]['ErrorCode'] == 0  # success
         assert baz_response[0]['ErrorCode'] == 0  # success
+        assert foo_response[0]['ErrorCode'] == 0  # success
         assert bar_response[0]['ErrorCode'] == 89  # throttling_quota_exceeded
 
         # Respect throttle millis response - exhaust the timeout so quota resets
