@@ -153,6 +153,7 @@ private:
     ss::future<> do_apply_raft_snapshot(
       raft::snapshot_metadata metadata, storage::snapshot_reader& reader);
     ss::future<> apply();
+    ss::future<> try_apply_in_foreground();
 
     ss::future<std::vector<ssx::semaphore_units>>
     acquire_background_apply_mutexes();
