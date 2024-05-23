@@ -37,7 +37,7 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var file string
 
 	cmd := &cobra.Command{
-		Use:   "deploy [WASM]",
+		Use:   "deploy",
 		Short: "Deploy a transform",
 		Long: `Deploy a transform.
 
