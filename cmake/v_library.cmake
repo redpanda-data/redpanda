@@ -94,6 +94,10 @@ function(v_cc_library)
       ${V_DEFAULT_LINKOPTS}
       )
     target_compile_definitions(${_NAME} PUBLIC ${V_CC_LIB_DEFINES})
+    ## TODO: Remove this when fully switched over to OSSL
+    if (ENABLE_OSSL_IN_SEASTAR)
+      target_compile_definitions(${_NAME} PUBLIC ENABLE_OSSL_IN_SEASTAR)
+    endif()
     # INTERFACE libraries can't have the CXX_STANDARD property set
     set_property(TARGET ${_NAME} PROPERTY CXX_STANDARD ${V_CXX_STANDARD})
     set_property(TARGET ${_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
@@ -116,6 +120,10 @@ function(v_cc_library)
       ${V_DEFAULT_LINKOPTS}
       )
     target_compile_definitions(${_NAME} INTERFACE ${V_CC_LIB_DEFINES})
+    ## TODO: Remove this when fully switched over to OSSL
+    if (ENABLE_OSSL_IN_SEASTAR)
+      target_compile_definitions(${_NAME} INTERFACE ENABLE_OSSL_IN_SEASTAR)
+    endif()
   endif()
   # main symbol exported
   add_library(v::${V_CC_LIB_NAME} ALIAS ${_NAME})
