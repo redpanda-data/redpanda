@@ -7,8 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from abc import ABC, abstractmethod
 
-class ExampleBase:
+
+class ExampleBase(ABC):
     """
     The base class for example
     """
@@ -19,6 +21,11 @@ class ExampleBase:
         # The result of the internal condiiton.
         # The internal condition is defined in the children.
         self._condition_met = False
+
+    @abstractmethod
+    def _condition(self, line: str) -> bool:
+        """Subclasses override this to define the condition."""
+        ...
 
     # Calls the internal condition and
     # automatically stores the result

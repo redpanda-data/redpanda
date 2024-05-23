@@ -82,7 +82,7 @@ class ExampleRunner(BackgroundThreadService):
     def node_name(self):
         return self._example.node_name()
 
-    def stop_node(self, node):
+    def stop_node(self, node, **_):
         self._stopping.set()
 
         try:
@@ -96,5 +96,5 @@ class ExampleRunner(BackgroundThreadService):
             else:
                 raise
 
-    def clean_node(self, nodes):
+    def clean_node(self, node, **_):
         pass
