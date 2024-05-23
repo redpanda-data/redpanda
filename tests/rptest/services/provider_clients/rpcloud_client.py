@@ -1,3 +1,4 @@
+from typing import Any, Literal, overload
 import requests
 from typing import Union
 
@@ -9,7 +10,7 @@ class RpCloudApiClient(object):
         self._logger = log
         self.lasterror = None
 
-    def _handle_error(self, response, quite=False):
+    def _handle_error(self, response: requests.Response, quite=False):
         try:
             response.raise_for_status()
         except requests.HTTPError as e:
@@ -47,6 +48,27 @@ class RpCloudApiClient(object):
             self._token = j['access_token']
         return self._token
 
+    @overload
+    def _http_get(self,
+                  endpoint: str = ...,
+                  base_url=...,
+                  override_headers=...,
+                  *,
+                  text_response: Literal[True],
+                  quite: bool = ...,
+                  **kwargs) -> str:
+        ...
+
+    @overload
+    def _http_get(self,
+                  endpoint: str = ...,
+                  base_url=...,
+                  override_headers=...,
+                  text_response: Literal[False] = False,
+                  quite: bool = ...,
+                  **kwargs) -> Any:
+        ...
+
     def _http_get(self,
                   endpoint='',
                   base_url=None,
@@ -65,8 +87,9 @@ class RpCloudApiClient(object):
         resp = requests.get(f'{_base}{endpoint}', headers=headers, **kwargs)
         _r = self._handle_error(resp, quite=quite)
         if text_response:
-            return _r if _r is None else _r.text
-        return _r if _r is None else _r.json()
+            return _r.text
+        else:
+            return _r.json()
 
     def _http_post(self, base_url=None, endpoint='', **kwargs):
         token = self._get_token()
