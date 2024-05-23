@@ -46,6 +46,14 @@ struct key_cert {
     }
 };
 
+static constexpr std::string_view tlsv1_2_cipher_string
+  = "ECDHE-RSA-AES128-GCM-SHA256:AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:"
+    "AES256-GCM-SHA384:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-RSA-AES128-SHA:AES128-"
+    "SHA:AES128-CCM:ECDHE-RSA-AES256-SHA:AES256-SHA:AES256-CCM";
+
+static constexpr std::string_view tlsv1_3_ciphersuites
+  = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_"
+    "SHA256:TLS_AES_128_CCM_SHA256";
 class tls_config {
 public:
     tls_config()

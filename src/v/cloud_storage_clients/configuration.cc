@@ -12,6 +12,7 @@
 
 #include "cloud_storage_clients/logger.h"
 #include "config/configuration.h"
+#include "config/tls_config.h"
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
 
@@ -25,11 +26,20 @@ build_tls_credentials(
   std::optional<cloud_storage_clients::ca_trust_file> trust_file,
   ss::logger& log) {
     ss::tls::credentials_builder cred_builder;
+#ifdef ENABLE_OSSL_IN_SEASTAR
+    cred_builder.set_cipher_string(
+      {config::tlsv1_2_cipher_string.data(),
+       config::tlsv1_2_cipher_string.size()});
+    cred_builder.set_ciphersuites(
+      {config::tlsv1_3_ciphersuites.data(),
+       config::tlsv1_3_ciphersuites.size()});
+#else
     // NOTE: this is a pre-defined gnutls priority string that
     // picks the ciphersuites with 128-bit ciphers which
     // leads to up to 10x improvement in upload speed, compared
     // to 256-bit ciphers
     cred_builder.set_priority_string("PERFORMANCE");
+#endif
     if (trust_file.has_value()) {
         auto file = trust_file.value();
         vlog(log.info, "Use non-default trust file {}", file());
