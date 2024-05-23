@@ -68,15 +68,11 @@ struct cloud_storage_fixture : s3_imposter_fixture {
             })
           .get();
 
-        auto conf = get_configuration();
-        pool
-          .start(
-            10, ss::sharded_parameter([this] { return get_configuration(); }))
-          .get();
+        pool.start(10, ss::sharded_parameter([this] { return conf; })).get();
         api
           .start(
             std::ref(pool),
-            ss::sharded_parameter([this] { return get_configuration(); }),
+            ss::sharded_parameter([this] { return conf; }),
             ss::sharded_parameter([] { return config_file; }))
           .get();
         api

@@ -13,7 +13,7 @@ import sys
 import time
 import traceback
 from collections import namedtuple, defaultdict
-from typing import DefaultDict
+from typing import DefaultDict, List
 
 from ducktape.mark import matrix
 
@@ -22,7 +22,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import RedpandaService, SISettings, CloudStorageTypeAndUrlStyle, get_cloud_storage_type, get_cloud_storage_type_and_url_style
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     segments_count,
@@ -230,8 +230,13 @@ class ArchivalTest(RedpandaTest):
                                         'true')
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_write(self, cloud_storage_type):
+    @matrix(
+        cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
+        ))
+    def test_write(
+            self,
+            cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]
+    ):
         """Simple smoke test, write data to redpanda and check if the
         data hit the S3 storage bucket"""
         self.kafka_tools.produce(self.topic, 10000, 1024)

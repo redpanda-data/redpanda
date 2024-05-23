@@ -36,7 +36,6 @@ scan_remote_partition_incrementally_with_reuploads(
   size_t maybe_max_readers = 0) {
     ss::lowres_clock::update();
     auto conf = fixt.get_configuration();
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     if (maybe_max_segments) {
         config::shard_local_cfg()
           .cloud_storage_max_materialized_segments_per_shard.set_value(
@@ -50,12 +49,16 @@ scan_remote_partition_incrementally_with_reuploads(
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
-    auto manifest = hydrate_manifest(fixt.api.local(), bucket);
+    auto manifest = hydrate_manifest(fixt.api.local(), fixt.bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      fixt.api, fixt.cache, manifest, bucket);
+      fixt.api, fixt.cache, manifest, fixt.bucket_name);
     auto partition = ss::make_shared<remote_partition>(
-      manifest_view, fixt.api.local(), fixt.cache.local(), bucket, probe);
+      manifest_view,
+      fixt.api.local(),
+      fixt.cache.local(),
+      fixt.bucket_name,
+      probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -457,14 +460,12 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
-    static auto bucket = cloud_storage_clients::bucket_name("bucket");
-
-    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket);
+      api, cache, manifest, bucket_name);
     auto partition = ss::make_shared<remote_partition>(
-      manifest_view, api.local(), this->cache.local(), bucket, probe);
+      manifest_view, api.local(), this->cache.local(), bucket_name, probe);
     partition->start().get();
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
