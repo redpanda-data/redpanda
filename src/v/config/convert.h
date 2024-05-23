@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cloud_storage_clients/types.h"
+#include "config/types.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -226,8 +226,8 @@ struct convert<model::timestamp_type> {
 };
 
 template<>
-struct convert<cloud_storage_clients::s3_url_style> {
-    using type = cloud_storage_clients::s3_url_style;
+struct convert<config::s3_url_style> {
+    using type = config::s3_url_style;
     static Node encode(const type& rhs) {
         Node node;
         return node = fmt::format("{}", rhs);

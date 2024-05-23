@@ -423,7 +423,7 @@ ss::future<configuration> configuration::get_s3_config() {
         access_key,
         secret_key,
         region,
-        url_style,
+        cloud_storage_clients::from_config(url_style),
         get_default_overrides(),
         disable_metrics,
         disable_public_metrics);
