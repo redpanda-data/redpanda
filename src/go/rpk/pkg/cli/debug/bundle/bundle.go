@@ -76,7 +76,8 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "bundle",
 		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect",
 		Long:  bundleHelpText,
-		Run: func(cmd *cobra.Command, args []string) {
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
 			//  Redpanda queries for samples from Seastar every ~13 seconds by
 			//  default. Setting wait_ms to anything less than 13 seconds will
 			//  result in no samples being returned.

@@ -21,6 +21,7 @@ func newCreateCommand(_ afero.Fs, _ *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "create [NAME]",
 		Short:  "Create an rpk cloud auth",
+		Args:   cobra.ExactArgs(1),
 		Hidden: true,
 		Run: func(*cobra.Command, []string) {
 			fmt.Println("'rpk cloud auth create' is deprecated as a no-op; use 'rpk cloud login' instead.")

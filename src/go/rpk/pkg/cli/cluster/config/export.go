@@ -142,6 +142,7 @@ command.
 By default, low level tunables are excluded: use the '--all' flag
 to include all properties including these low level tunables.
 `,
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
