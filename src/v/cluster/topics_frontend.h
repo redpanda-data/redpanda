@@ -66,6 +66,7 @@ public:
       ss::sharded<cluster::members_table>&,
       ss::sharded<partition_manager>&,
       ss::sharded<shard_table>&,
+      ss::sharded<shard_balancer>&,
       plugin_table&,
       metadata_cache&,
       config::binding<unsigned> hard_max_disk_usage_ratio,
@@ -206,6 +207,10 @@ public:
     /// less than the minimum specified in minimum_topic_replication
     void print_rf_warning_message();
 
+    /// Assign a partition that is expected to be present on this node to a
+    /// shard.
+    ss::future<errc> set_local_partition_shard(model::ntp, ss::shard_id);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -283,6 +288,7 @@ private:
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<features::feature_table>& _features;
+    ss::sharded<shard_balancer>& _shard_balancer;
     plugin_table& _plugin_table;
     metadata_cache& _metadata_cache;
 

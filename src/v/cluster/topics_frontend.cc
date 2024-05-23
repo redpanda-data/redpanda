@@ -26,6 +26,7 @@
 #include "cluster/remote_topic_configuration_source.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
+#include "cluster/shard_balancer.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_recovery_validator.h"
 #include "cluster/types.h"
@@ -74,6 +75,7 @@ topics_frontend::topics_frontend(
   ss::sharded<cluster::members_table>& members_table,
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& shard_table,
+  ss::sharded<shard_balancer>& sb,
   plugin_table& plugin_table,
   metadata_cache& metadata_cache,
   config::binding<unsigned> hard_max_disk_usage_ratio,
@@ -89,6 +91,7 @@ topics_frontend::topics_frontend(
   , _as(as)
   , _cloud_storage_api(cloud_storage_api)
   , _features(features)
+  , _shard_balancer(sb)
   , _plugin_table(plugin_table)
   , _metadata_cache(metadata_cache)
   , _members_table(members_table)
@@ -1973,6 +1976,15 @@ void topics_frontend::print_rf_warning_message() {
           rf,
           min_rf);
     }
+}
+
+ss::future<errc>
+topics_frontend::set_local_partition_shard(model::ntp ntp, ss::shard_id shard) {
+    return _shard_balancer.invoke_on(
+      shard_balancer::shard_id,
+      [ntp = std::move(ntp), shard](shard_balancer& sb) {
+          return sb.reassign_shard(ntp, shard);
+      });
 }
 
 } // namespace cluster
