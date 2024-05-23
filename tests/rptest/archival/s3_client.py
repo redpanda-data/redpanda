@@ -473,11 +473,12 @@ class S3Client:
 
     @retry_on_slowdown()
     def _list_objects(self,
+                      *,
                       bucket,
                       token=None,
                       limit=1000,
                       prefix: Optional[str] = None,
-                      client=None):
+                      client):
         try:
             if token is not None:
                 return client.list_objects_v2(Bucket=bucket,
@@ -512,8 +513,8 @@ class S3Client:
         truncated = True
         while truncated:
             try:
-                res = self._list_objects(bucket,
-                                         token,
+                res = self._list_objects(bucket=bucket,
+                                         token=token,
                                          limit=100,
                                          prefix=prefix,
                                          client=client)
@@ -585,9 +586,9 @@ class S3Client:
 
     def _gcp_create_expiration_policy(self, bucket: str, days: int):
         gcs_client = gcs.Client()
-        bucket = gcs_client.get_bucket(bucket)
-        bucket.add_lifecycle_delete_rule(age=days)
-        bucket.patch()
+        gcs_bucket = gcs_client.get_bucket(bucket)
+        gcs_bucket.add_lifecycle_delete_rule(age=days)
+        gcs_bucket.patch()
 
     def _add_header(self, model, params, request_signer, **kwargs):
         params['headers'].update(self._before_call_headers)
