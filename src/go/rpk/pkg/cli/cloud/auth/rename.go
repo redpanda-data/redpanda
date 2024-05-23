@@ -22,6 +22,7 @@ func newRenameToCommand(_ afero.Fs, _ *config.Params) *cobra.Command {
 		Use:     "rename-to [NAME]",
 		Short:   "Rename the current rpk auth",
 		Aliases: []string{"rename"},
+		Args:    cobra.ExactArgs(1),
 		Hidden:  true,
 		Run: func(*cobra.Command, []string) {
 			fmt.Println("rename-to is deprecated, rpk now fully manages auth names.")

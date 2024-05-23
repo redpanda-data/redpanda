@@ -21,6 +21,7 @@ func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "status",
 		Short: "Get status",
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			c, err := common.NewDockerClient(cmd.Context())
 			out.MaybeDieErr(err)

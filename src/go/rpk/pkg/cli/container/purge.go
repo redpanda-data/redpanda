@@ -30,6 +30,7 @@ func newPurgeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "purge",
 		Short: "Stop and remove an existing local container cluster's data",
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			c, err := common.NewDockerClient(cmd.Context())
 			out.MaybeDie(err, "unable to create docker client: %v", err)

@@ -57,7 +57,6 @@ format with print partitions included.
 
 If no transactional IDs are requested, all transactional IDs are printed.
 `,
-
 		Run: func(cmd *cobra.Command, txnIDs []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]describeResponse{}); ok {

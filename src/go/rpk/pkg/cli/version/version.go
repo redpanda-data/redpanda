@@ -59,6 +59,7 @@ version running on each node in your cluster.
 
 To list the Redpanda version of each node in your cluster you may pass the
 Admin API hosts via flags, profile, or environment variables.`,
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			rv := rpkVersion{
 				Version:   version,

@@ -125,7 +125,8 @@ metrics endpoint used.
 
 To see a list of all available dashboards, use the '--dashboard help' flag.
 `,
-		Run: func(cmd *cobra.Command, args []string) {
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
 			switch {
 			case dashboard == "legacy":
 				if datasource == "" {
