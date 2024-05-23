@@ -188,8 +188,14 @@ public:
       const model::batch_identity&,
       model::term_id current_term,
       bool reset_sequences = false);
-    void
-    apply_data(const model::batch_identity&, model::term_id, kafka::offset);
+
+    void apply_data(const model::record_batch_header&, kafka::offset);
+
+    void apply_transaction_begin(
+      const model::record_batch_header&, const fence_batch_data& parsed_batch);
+
+    std::optional<model::tx_range>
+      apply_transaction_end(model::control_record_type);
 
     void touch() { _last_updated_ts = ss::lowres_system_clock::now(); }
 

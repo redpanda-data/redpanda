@@ -304,17 +304,93 @@ result<request_ptr> producer_state::try_emplace_request(
 }
 
 void producer_state::apply_data(
-  const model::batch_identity& bid, model::term_id term, kafka::offset offset) {
-    if (_evicted) {
+  const model::record_batch_header& header, kafka::offset offset) {
+    auto bid = model::batch_identity::from(header);
+    if (!bid.is_idempotent() || _evicted) {
         return;
     }
-    _requests.stm_apply(bid, term, offset);
+    _requests.stm_apply(bid, header.ctx.term, offset);
+    if (bid.is_transactional) {
+        if (!_transaction_state) {
+            // possible if begin batch got truncated.
+            _transaction_state
+              = std::make_unique<producer_partition_transaction_state>(
+                producer_partition_transaction_state{
+                  .first = header.base_offset,
+                  .last = header.last_offset(),
+                  .sequence = model::tx_seq{-1},
+                  .timeout = std::nullopt,
+                  .coordinator_partition = model::partition_id{-1},
+                  .status = partition_transaction_status::ongoing});
+        } else {
+            _transaction_state->last = header.last_offset();
+            _transaction_state->status = partition_transaction_status::ongoing;
+        }
+    }
     vlog(
       _logger.trace,
       "[{}] applied stm update, batch meta: {}, term: {}",
       *this,
       bid,
-      term);
+      header.ctx.term);
+}
+
+void producer_state::apply_transaction_begin(
+  const model::record_batch_header& header,
+  const fence_batch_data& parsed_batch) {
+    vassert(
+      !_transaction_state && !_active_transaction_hook.is_linked(),
+      "Transaction already in progress {} for producer {}, hook {}",
+      _transaction_state,
+      *this,
+      _active_transaction_hook.is_linked());
+    // update pid incase the producer got fenced.
+    const auto& pid = parsed_batch.bid.pid;
+    vassert(
+      pid.epoch >= _id.epoch,
+      "[{}] Invalid fencing using a pid with lower epoch: {}",
+      *this,
+      header);
+    _id = pid;
+    _transaction_state = std::make_unique<producer_partition_transaction_state>(
+      producer_partition_transaction_state{
+        .first = header.base_offset,
+        .last = header.last_offset(),
+        .sequence = parsed_batch.tx_seq.value_or(model::tx_seq{0}),
+        .timeout = parsed_batch.transaction_timeout_ms,
+        .coordinator_partition = parsed_batch.tm,
+        .status = partition_transaction_status::initialized,
+      });
+}
+
+std::optional<model::tx_range>
+producer_state::apply_transaction_end(model::control_record_type crt) {
+    if (
+      crt != model::control_record_type::tx_abort
+      && crt != model::control_record_type::tx_commit) {
+        return std::nullopt;
+    }
+
+    if (!_transaction_state) {
+        vlog(
+          _logger.debug,
+          "[{}] Ignoring end transaction: {} as there is no "
+          "transaction in progress, log may have been truncated?",
+          *this,
+          crt);
+        return std::nullopt;
+    }
+
+    vlog(_logger.trace, "[{}] Applying transaction end batch: {}", *this, crt);
+    if (crt == model::control_record_type::tx_commit) {
+        _transaction_state->status = partition_transaction_status::committed;
+    } else if (crt == model::control_record_type::tx_abort) {
+        _transaction_state->status = partition_transaction_status::aborted;
+    } else {
+        vassert(false, "Invalid control batch type: {}", crt);
+    }
+    return model::tx_range{
+      id(), _transaction_state->first, _transaction_state->last};
 }
 
 std::optional<seq_t> producer_state::last_sequence_number() const {
