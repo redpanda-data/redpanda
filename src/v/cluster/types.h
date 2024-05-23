@@ -4653,6 +4653,39 @@ struct delete_topics_reply
     auto serde_fields() { return std::tie(results); }
 };
 
+struct set_partition_shard_request
+  : serde::envelope<
+      set_partition_shard_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::ntp ntp;
+    uint32_t shard = -1;
+
+    friend bool operator==(
+      const set_partition_shard_request&, const set_partition_shard_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(ntp, shard); }
+};
+
+struct set_partition_shard_reply
+  : serde::envelope<
+      set_partition_shard_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    errc ec;
+
+    friend bool operator==(
+      const set_partition_shard_reply&, const set_partition_shard_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
 } // namespace cluster
 namespace std {
 template<>
