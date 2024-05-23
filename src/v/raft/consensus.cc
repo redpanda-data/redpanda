@@ -899,11 +899,26 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
 }
 
 ss::future<bool> consensus::dispatch_prevote(bool leadership_transfer) {
+    vlog(
+      _ctxlog.info,
+      "starting pre-vote leader election, current term: {}, leadership "
+      "transfer: {}",
+      _term,
+      leadership_transfer);
+
+    if (leadership_transfer) {
+        return _op_lock.with([this]() {
+            _vstate = vote_state::candidate;
+            if (_leader_id) {
+                _leader_id = std::nullopt;
+                trigger_leadership_notification();
+            }
+            return true;
+        });
+    }
     auto pvstm_p = std::make_unique<prevote_stm>(this);
     auto pvstm = pvstm_p.get();
-    if (leadership_transfer) {
-        return ss::make_ready_future<bool>(true);
-    }
+
     return pvstm->prevote(leadership_transfer)
       .then_wrapped([this, pvstm_p = std::move(pvstm_p), pvstm](
                       ss::future<bool> prevote_f) mutable {
@@ -982,7 +997,16 @@ void consensus::dispatch_vote(bool leadership_transfer) {
       = ssx::spawn_with_gate_then(_bg, [this, leadership_transfer] {
             return dispatch_prevote(leadership_transfer)
               .then([this, leadership_transfer](bool ready) mutable {
-                  if (!ready) {
+                  vlog(
+                    _ctxlog.debug,
+                    "pre-vote phase success: {}, current term: {}, "
+                    "leadership transfer: {}",
+                    ready,
+                    _term,
+                    leadership_transfer);
+                  // if a current node is not longer candidate we should skip
+                  // proceeding to actual vote phase
+                  if (!ready || _vstate != vote_state::candidate) {
                       return ss::make_ready_future<>();
                   }
                   auto vstm = std::make_unique<vote_stm>(this);

@@ -21,6 +21,7 @@
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <chrono>
@@ -81,6 +82,18 @@ prevote_stm::process_reply(vnode n, ss::future<result<vote_reply>> f) {
                 auto r = f.get0();
                 if (r.has_value()) {
                     auto v = r.value();
+                    if (v.term != _req.term) {
+                        vlog(
+                          _ctxlog.trace,
+                          "prevote ack: node {} has a higher term {}",
+                          n,
+                          v.term);
+                        voter_reply->second._is_failed = true;
+                        voter_reply->second._is_pending = false;
+                        if (v.term > _req.term) {
+                            _term_update = v.term;
+                        }
+                    }
                     _ptr->maybe_update_node_reply_timestamp(n);
                     if (v.log_ok) {
                         vlog(
@@ -182,20 +195,32 @@ ss::future<bool> prevote_stm::do_prevote() {
       [this](vnode id) { ssx::background = dispatch_prevote(id); });
 
     // process results
-    return process_replies().then([this]() {
-        const auto only_voter = _config->unique_voter_count() == 1
-                                && _config->is_voter(_ptr->self());
-        if (
-          _success && !only_voter
-          && _ptr->_node_priority_override == zero_voter_priority) {
-            vlog(
-              _ctxlog.debug,
-              "Ignoring successful pre-vote. Node priority too low: {}",
-              _ptr->_node_priority_override.value());
-            _success = false;
-        }
-        return _success;
-    });
+    return process_replies()
+      .then([this]() {
+          const auto only_voter = _config->unique_voter_count() == 1
+                                  && _config->is_voter(_ptr->self());
+          if (
+            _success && !only_voter
+            && _ptr->_node_priority_override == zero_voter_priority) {
+              vlog(
+                _ctxlog.debug,
+                "Ignoring successful pre-vote. Node priority too low: {}",
+                _ptr->_node_priority_override.value());
+              _success = false;
+          }
+      })
+      .then([this] {
+          if (_term_update) {
+              return update_term().then([this] { return _success; });
+          }
+          return ss::make_ready_future<bool>(_success);
+      });
+}
+
+ss::future<> prevote_stm::update_term() {
+    auto u = co_await _ptr->_op_lock.get_units();
+    _ptr->_term = std::max(_ptr->term(), _term_update.value());
+    _ptr->_vstate = consensus::vote_state::candidate;
 }
 
 ss::future<> prevote_stm::process_replies() {
