@@ -30,6 +30,9 @@ struct rm_stm_test_fixture : simple_raft_fixture {
         _raft->start(std::move(stm_m_builder)).get();
         _started = true;
     }
+    auto apply_raft_snapshot(const iobuf& buf) {
+        return _stm->apply_raft_snapshot(buf);
+    }
 
     const cluster::rm_stm::producers_t& producers() const {
         return _stm->_producers;
@@ -49,6 +52,25 @@ struct rm_stm_test_fixture : simple_raft_fixture {
     }
 
     auto get_expired_producers() const { return _stm->get_expired_producers(); }
+
+    auto maybe_create_producer(model::producer_identity pid) {
+        return _stm->maybe_create_producer(pid);
+    }
+
+    auto reset_producers() {
+        return _stm->_state_lock.hold_write_lock().then([this](auto units) {
+            return _stm->reset_producers().then([units = std::move(units)] {});
+        });
+    }
+
+    auto rearm_eviction_timer(std::chrono::milliseconds period) {
+        return _producer_state_manager
+          .invoke_on_all(
+            [period](auto& mgr) { return mgr.rearm_timer_for_testing(period); })
+          .get();
+    }
+
+    auto stm_read_lock() { return _stm->_state_lock.hold_read_lock(); }
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
     ss::shared_ptr<cluster::rm_stm> _stm;

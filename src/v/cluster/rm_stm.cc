@@ -11,6 +11,7 @@
 
 #include "bytes/iostream.h"
 #include "cluster/logger.h"
+#include "cluster/producer_state_manager.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_snapshot_utils.h"
 #include "kafka/protocol/wire.h"
@@ -386,12 +387,11 @@ void rm_stm::cleanup_producer_state(model::producer_identity pid) {
 };
 
 ss::future<> rm_stm::reset_producers() {
-    co_await ss::max_concurrent_for_each(
-      _producers.begin(), _producers.end(), 32, [](auto& it) {
-          auto& producer = it.second;
-          return producer->shutdown_input().discard_result();
-      });
+    for (auto& [_, producer] : _producers) {
+        producer->shutdown_input();
+    }
     _producers.clear();
+    co_return;
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
@@ -2067,13 +2067,16 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     for (auto& entry : data.fenced) {
         _log_state.fence_pid_epoch.emplace(entry.get_id(), entry.get_epoch());
     }
+    data.fenced.clear();
     for (auto& entry : data.ongoing) {
         _log_state.ongoing_map.emplace(entry.pid, entry);
         _log_state.ongoing_set.insert(entry.first);
     }
+    data.ongoing.clear();
     for (auto& entry : data.prepared) {
         _log_state.prepared.emplace(entry.pid, entry);
     }
+    data.prepared.clear();
     for (auto it = std::make_move_iterator(data.aborted.begin());
          it != std::make_move_iterator(data.aborted.end());
          it++) {
@@ -2109,6 +2112,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             [this, pid] { cleanup_producer_state(pid); },
             std::move(entry)));
     }
+    data.producers.clear();
 
     abort_index last{.last = model::offset(-1)};
     for (auto& entry : _log_state.abort_indexes) {
@@ -2127,6 +2131,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         _log_state.current_txes.emplace(
           entry.pid, tx_data{entry.tx_seq, entry.tm});
     }
+    data.tx_data.clear();
 
     for (auto& entry : data.expiration) {
         _log_state.expiration.emplace(

@@ -259,26 +259,30 @@ std::ostream& operator<<(std::ostream& o, const producer_state& state) {
     return o;
 }
 
-ss::future<> producer_state::shutdown_input() {
-    if (_evicted) {
-        return ss::now();
-    }
+void producer_state::do_shutdown_input() {
+    // linked hook ensures no task in progress.
+    vassert(
+      _hook.is_linked(), "unexpected state, producer {} unlinked.", *this);
+    deregister_self();
     _op_lock.broken();
-    return _gate.close().then([this] { _requests.shutdown(); });
+    _requests.shutdown();
 }
 
-ss::future<> producer_state::evict() {
+void producer_state::shutdown_input() {
     if (_evicted) {
-        return ss::now();
+        return;
+    }
+    do_shutdown_input();
+}
+
+void producer_state::evict() {
+    if (_evicted) {
+        return;
     }
     vlog(clusterlog.debug, "evicting producer: {}", *this);
     _evicted = true;
-    vassert(_hook.is_linked(), "unexpected state, producer unlinked.");
-    unlink_self();
-    return shutdown_input().then_wrapped([this](auto result) {
-        _post_eviction_hook();
-        return result;
-    });
+    do_shutdown_input();
+    _post_eviction_hook();
 }
 
 void producer_state::register_self() {
@@ -326,7 +330,7 @@ result<request_ptr> producer_state::try_emplace_request(
 
 void producer_state::update(
   const model::batch_identity& bid, kafka::offset offset) {
-    if (_gate.is_closed()) {
+    if (_evicted) {
         return;
     }
     bool relink_producer = _requests.stm_apply(bid, offset);

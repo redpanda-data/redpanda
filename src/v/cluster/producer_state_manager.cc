@@ -29,7 +29,7 @@ producer_state_manager::producer_state_manager(
 
 ss::future<> producer_state_manager::start() {
     _reaper.set_callback([this] { evict_excess_producers(); });
-    _reaper.arm(period);
+    _reaper.arm(_reaper_period);
     vlog(clusterlog.info, "Started producer state manager");
     return ss::now();
 }
@@ -55,6 +55,12 @@ void producer_state_manager::setup_metrics() {
          "evicted_producers",
          [this] { return _eviction_counter; },
          sm::description("Number of evicted producers so far."))});
+}
+
+void producer_state_manager::rearm_timer_for_testing(
+  std::chrono::milliseconds new_period) {
+    _reaper_period = new_period;
+    _reaper.rearm(ss::lowres_clock::now() + _reaper_period);
 }
 
 void producer_state_manager::register_producer(producer_state& state) {
@@ -90,7 +96,7 @@ void producer_state_manager::evict_excess_producers() {
                           do_evict_excess_producers();
                       }).finally([this] {
         if (!_gate.is_closed()) {
-            _reaper.arm(period);
+            _reaper.arm(_reaper_period);
         }
     });
 }
@@ -101,7 +107,11 @@ void producer_state_manager::do_evict_excess_producers() {
     }
     vlog(clusterlog.debug, "producer eviction tick");
     auto it = _lru_producers.begin();
-    while (it != _lru_producers.end() && can_evict_producer(*it)) {
+    // to avoid reactor stalls.
+    static constexpr auto max_evictions_per_tick = 10000;
+    int evicted_so_far = 0;
+    while (evicted_so_far++ < max_evictions_per_tick
+           && it != _lru_producers.end() && can_evict_producer(*it)) {
         auto it_copy = it;
         ++it;
         auto& state = *it_copy;
@@ -111,8 +121,7 @@ void producer_state_manager::do_evict_excess_producers() {
         // temporarily and relinks back after the operation is finished
         // essentially resulting in the fact that only currently inactive
         // producers are in the list. This makes the whole logic lock free.
-        ssx::spawn_with_gate(_gate, [&state] { return state.evict(); });
-        --_num_producers;
+        state.evict();
         ++_eviction_counter;
     }
 }

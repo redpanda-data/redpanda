@@ -70,7 +70,10 @@ struct simple_raft_fixture {
           .get();
         _producer_state_manager
           .start(
-            config::mock_binding(std::numeric_limits<uint64_t>::max()),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .max_concurrent_producer_ids.bind();
+            }),
             std::chrono::milliseconds::max())
           .get();
         _producer_state_manager
