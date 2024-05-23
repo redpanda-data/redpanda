@@ -89,6 +89,7 @@ enum class errc : int16_t {
     topic_invalid_partitions_decreased,
     producer_ids_vcluster_limit_exceeded,
     validation_of_recovery_topic_failed,
+    replica_does_not_exist,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -259,6 +260,8 @@ struct errc_category final : public std::error_category {
             return "To many vclusters registered in producer state cache";
         case errc::validation_of_recovery_topic_failed:
             return "Validation of recovery topic failed";
+        case errc::replica_does_not_exist:
+            return "Partition replica does not exist";
         }
         return "cluster::errc::unknown";
     }
