@@ -1004,6 +1004,16 @@ class Admin:
         path = "partitions/force_recover_from_nodes"
         return self._request('post', path, node, json=payload)
 
+    def set_partition_replica_core(self,
+                                   topic: str,
+                                   partition: int,
+                                   replica: int,
+                                   core: int,
+                                   namespace: str = "kafka",
+                                   node=None):
+        path = f"partitions/{namespace}/{topic}/{partition}/replicas/{replica}"
+        return self._request('post', path, node=node, json={"core": core})
+
     def create_user(self,
                     username,
                     password="12345678",
