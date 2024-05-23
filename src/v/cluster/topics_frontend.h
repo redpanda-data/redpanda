@@ -207,6 +207,15 @@ public:
     /// less than the minimum specified in minimum_topic_replication
     void print_rf_warning_message();
 
+    bool node_local_core_assignment_enabled() const;
+
+    /// Assign a partition replica to a shard on that node.
+    ss::future<std::error_code> set_partition_replica_shard(
+      model::ntp,
+      model::node_id replica,
+      ss::shard_id,
+      model::timeout_clock::time_point deadline);
+
     /// Assign a partition that is expected to be present on this node to a
     /// shard.
     ss::future<errc> set_local_partition_shard(model::ntp, ss::shard_id);

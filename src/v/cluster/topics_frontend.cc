@@ -1978,6 +1978,54 @@ void topics_frontend::print_rf_warning_message() {
     }
 }
 
+bool topics_frontend::node_local_core_assignment_enabled() const {
+    return _features.local().is_active(
+      features::feature::node_local_core_assignment);
+}
+
+ss::future<std::error_code> topics_frontend::set_partition_replica_shard(
+  model::ntp ntp,
+  model::node_id replica,
+  ss::shard_id shard,
+  model::timeout_clock::time_point deadline) {
+    if (!node_local_core_assignment_enabled()) {
+        co_return errc::feature_disabled;
+    }
+
+    if (replica == _self) {
+        co_return co_await set_local_partition_shard(ntp, shard);
+    }
+
+    auto replicas_view = _topics.local().get_replicas_view(ntp);
+    if (!replicas_view) {
+        co_return errc::partition_not_exists;
+    }
+    if (!log_revision_on_node(replicas_view.value(), replica)) {
+        co_return errc::replica_does_not_exist;
+    }
+
+    auto reply = co_await _connections.local()
+                   .with_node_client<cluster::controller_client_protocol>(
+                     _self,
+                     ss::this_shard_id(),
+                     replica,
+                     deadline,
+                     [ntp, shard, deadline](
+                       controller_client_protocol cp) mutable {
+                         return cp
+                           .set_partition_shard(
+                             set_partition_shard_request{
+                               .ntp = std::move(ntp), .shard = shard},
+                             rpc::client_opts(deadline))
+                           .then(&rpc::get_ctx_data<set_partition_shard_reply>);
+                     });
+
+    if (reply.has_error()) {
+        co_return reply.error();
+    }
+    co_return reply.value().ec;
+}
+
 ss::future<errc>
 topics_frontend::set_local_partition_shard(model::ntp ntp, ss::shard_id shard) {
     return _shard_balancer.invoke_on(
