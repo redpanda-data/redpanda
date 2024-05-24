@@ -251,6 +251,13 @@ def one_or_many(value):
         return value
 
 
+def get_cloud_provider() -> str:
+    """
+    Returns the cloud provider in use.  If one is not set then return 'docker'
+    """
+    return os.getenv("CLOUD_PROVIDER", "docker")
+
+
 def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
                            | None = None,
                            docker_use_arbitrary=False):
@@ -275,7 +282,7 @@ def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
     if applies_only_on is None:
         applies_only_on = []
 
-    cloud_provider = os.getenv("CLOUD_PROVIDER", "docker")
+    cloud_provider = get_cloud_provider()
     if cloud_provider == "docker":
         if docker_use_arbitrary:
             cloud_storage_type = [CloudStorageType.S3]
