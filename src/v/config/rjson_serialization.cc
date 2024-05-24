@@ -80,7 +80,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const custom_aggregate& v) {
+  json::Writer<json::StringBuffer>& w, const testing::custom_aggregate& v) {
     w.StartObject();
 
     w.Key("string_value");
@@ -178,12 +178,6 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const model::cloud_storage_chunk_eviction_strategy& v) {
-    stringize(w, v);
-}
-
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const pandaproxy::schema_registry::subject_name_strategy& v) {
     stringize(w, v);
 }
 
