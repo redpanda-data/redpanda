@@ -12,6 +12,7 @@ from google.cloud import storage as gcs
 
 from concurrent.futures import ThreadPoolExecutor
 import datetime
+from enum import Enum
 from functools import wraps
 from itertools import islice
 from time import sleep
@@ -28,6 +29,11 @@ class ObjectMetadata(NamedTuple):
     bucket: str
     etag: str
     content_length: int
+
+
+class S3AddressingStyle(str, Enum):
+    VIRTUAL = 'virtual'
+    PATH = 'path'
 
 
 def retry_on_slowdown(tries=4, delay=1.0, backoff=2.0):
@@ -61,17 +67,20 @@ class S3Client:
                  endpoint=None,
                  disable_ssl=True,
                  signature_version='s3v4',
-                 before_call_headers=None):
+                 before_call_headers=None,
+                 use_fips_endpoint=False,
+                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
 
         logger.debug(
-            f"Constructed S3Client in region {region}, endpoint {endpoint}, key is set = {access_key is not None}"
+            f"Constructed S3Client in region {region}, endpoint {endpoint}, key is set = {access_key is not None}, fips mode {use_fips_endpoint}, addressing style {addressing_style}"
         )
 
+        self._use_fips_endpoint = use_fips_endpoint
         self._region = region
         self._access_key = access_key
         self._secret_key = secret_key
         self._endpoint = endpoint
-        self._disable_ssl = disable_ssl
+        self._disable_ssl = False if self._use_fips_endpoint else disable_ssl
         if signature_version.lower() == "unsigned":
             self._signature_version = UNSIGNED
         else:
@@ -79,6 +88,7 @@ class S3Client:
         self._before_call_headers = before_call_headers
         self.logger = logger
         self.update_boto3_loggers()
+        self._addressing_style = addressing_style
         self._cli = self.make_client()
         self.register_custom_events()
 
@@ -116,12 +126,15 @@ class S3Client:
                     populate_handler(h.baseFilename, h.level)
 
     def make_client(self):
-        cfg = Config(region_name=self._region,
-                     signature_version=self._signature_version,
-                     retries={
-                         'max_attempts': 10,
-                         'mode': 'adaptive'
-                     })
+        cfg = Config(
+            region_name=self._region,
+            signature_version=self._signature_version,
+            retries={
+                'max_attempts': 10,
+                'mode': 'adaptive'
+            },
+            s3={'addressing_style': f'{self._addressing_style}'},
+            use_fips_endpoint=True if self._use_fips_endpoint else None)
         cl = boto3.client('s3',
                           config=cfg,
                           aws_access_key_id=self._access_key,
