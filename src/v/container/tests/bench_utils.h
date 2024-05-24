@@ -11,7 +11,7 @@
 #pragma once
 #include "random/generators.h"
 #include "utils/functional.h"
-#include "utils/type_traits.h"
+#include "base/type_traits.h"
 
 #include <seastar/testing/perf_tests.hh>
 

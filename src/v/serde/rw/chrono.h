@@ -11,7 +11,7 @@
 
 #include "serde/logger.h"
 #include "serde/rw/rw.h"
-#include "utils/type_traits.h"
+#include "base/type_traits.h"
 
 #include <chrono>
 

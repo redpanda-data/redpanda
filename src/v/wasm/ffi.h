@@ -16,7 +16,7 @@
 #include "bytes/iobuf.h"
 #include "reflection/type_traits.h"
 #include "utils/named_type.h"
-#include "utils/type_traits.h"
+#include "base/type_traits.h"
 
 #include <cstdint>
 #include <span>

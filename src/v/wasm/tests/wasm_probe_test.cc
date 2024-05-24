@@ -12,7 +12,7 @@
 #include "base/units.h"
 #include "gmock/gmock.h"
 #include "metrics/metrics.h"
-#include "utils/type_traits.h"
+#include "base/type_traits.h"
 #include "wasm/logger.h"
 
 #include <seastar/core/metrics.hh>

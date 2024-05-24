@@ -28,7 +28,7 @@
 #include "reflection/type_traits.h"
 #include "security/acl.h"
 #include "ssx/sformat.h"
-#include "utils/type_traits.h"
+#include "base/type_traits.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/smp.hh>

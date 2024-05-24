@@ -28,7 +28,7 @@
 #include "transform/rpc/deps.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
-#include "utils/type_traits.h"
+#include "base/type_traits.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>

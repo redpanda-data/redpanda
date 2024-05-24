@@ -28,7 +28,6 @@
 #include "transform_module.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
-#include "utils/type_traits.h"
 #include "wasi.h"
 #include "wasm/api.h"
 #include "wasm/errc.h"

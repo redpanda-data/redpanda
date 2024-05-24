@@ -32,7 +32,7 @@
 #include "security/types.h"
 #include "storage/node.h"
 #include "transform/fwd.h"
-#include "utils/type_traits.h"
+#include "base/type_traits.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/scheduling.hh>
