@@ -16,7 +16,6 @@
 #include "config/validators.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/mtls.h"
 #include "security/oidc_principal_mapping.h"
