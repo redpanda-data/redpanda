@@ -139,8 +139,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const cloud_storage_clients::s3_url_style& v) {
+  json::Writer<json::StringBuffer>& w, const config::s3_url_style& v) {
     stringize(w, v);
 }
 

@@ -1699,9 +1699,7 @@ configuration::configuration()
        .example = "virtual_host",
        .visibility = visibility::user},
       std::nullopt,
-      {cloud_storage_clients::s3_url_style::virtual_host,
-       cloud_storage_clients::s3_url_style::path,
-       std::nullopt})
+      {s3_url_style::virtual_host, s3_url_style::path, std::nullopt})
   , cloud_storage_credentials_source(
       *this,
       "cloud_storage_credentials_source",

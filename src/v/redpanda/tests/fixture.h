@@ -29,6 +29,7 @@
 #include "config/broker_authn_endpoint.h"
 #include "config/mock_property.h"
 #include "config/node_config.h"
+#include "config/types.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/schemata/fetch_request.h"
@@ -371,12 +372,17 @@ public:
                   .set_value(std::make_optional((*s3_config->access_key)()));
                 config.get("cloud_storage_secret_key")
                   .set_value(std::make_optional((*s3_config->secret_key)()));
-                config.get("cloud_storage_url_style")
-                  .set_value(std::make_optional((s3_config->url_style)));
                 config.get("cloud_storage_api_endpoint")
                   .set_value(std::make_optional(s3_config->server_addr.host()));
                 config.get("cloud_storage_url_style")
-                  .set_value(std::make_optional(s3_config->url_style));
+                  .set_value(std::make_optional([&] {
+                      switch (s3_config->url_style) {
+                      case cloud_storage_clients::s3_url_style::virtual_host:
+                          return config::s3_url_style::virtual_host;
+                      case cloud_storage_clients::s3_url_style::path:
+                          return config::s3_url_style::path;
+                      }
+                  }()));
                 config.get("cloud_storage_api_endpoint_port")
                   .set_value(
                     static_cast<int16_t>(s3_config->server_addr.port()));

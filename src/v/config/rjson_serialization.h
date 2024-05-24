@@ -63,8 +63,7 @@ void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const model::cleanup_policy_bitflags& v);
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const cloud_storage_clients::s3_url_style& v);
+  json::Writer<json::StringBuffer>& w, const config::s3_url_style& v);
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,

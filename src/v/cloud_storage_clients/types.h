@@ -11,6 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "config/types.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
@@ -72,6 +73,19 @@ inline std::ostream& operator<<(std::ostream& os, const s3_url_style& us) {
     case s3_url_style::path:
         return os << "path";
     }
+}
+
+inline std::optional<s3_url_style>
+from_config(std::optional<config::s3_url_style> us) {
+    if (us.has_value()) {
+        switch (us.value()) {
+        case config::s3_url_style::virtual_host:
+            return s3_url_style::virtual_host;
+        case config::s3_url_style::path:
+            return s3_url_style::path;
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace cloud_storage_clients
