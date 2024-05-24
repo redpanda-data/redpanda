@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "base/type_traits.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/tx_gateway_frontend.h"
@@ -32,7 +33,6 @@
 #include "security/types.h"
 #include "storage/node.h"
 #include "transform/fwd.h"
-#include "base/type_traits.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/scheduling.hh>

@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/type_traits.h"
 #include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "reflection/type_traits.h"
 #include "utils/named_type.h"
-#include "base/type_traits.h"
 
 #include <cstdint>
 #include <span>

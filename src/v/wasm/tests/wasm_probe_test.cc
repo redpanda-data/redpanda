@@ -9,10 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/type_traits.h"
 #include "base/units.h"
 #include "gmock/gmock.h"
 #include "metrics/metrics.h"
-#include "base/type_traits.h"
 #include "wasm/logger.h"
 
 #include <seastar/core/metrics.hh>

@@ -14,8 +14,8 @@
 #include "base/seastarx.h"
 #include "base/type_traits.h"
 #include "container/fragmented_vector.h"
-#include "utils/tristate.h"
 #include "utils/named_type.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/circular_buffer.hh>
