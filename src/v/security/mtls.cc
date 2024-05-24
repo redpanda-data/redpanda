@@ -27,9 +27,6 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules);
 
 } // namespace detail
 
-std::optional<ss::sstring>
-validate_rules(const std::optional<std::vector<ss::sstring>>& r) noexcept;
-
 std::ostream& operator<<(std::ostream& os, const rule& r) {
     fmt::print(os, "{}", r);
     return os;

@@ -86,9 +86,6 @@ private:
     std::optional<ss::sstring> _subject;
 };
 
-std::optional<ss::sstring>
-validate_rules(const std::optional<std::vector<ss::sstring>>& r) noexcept;
-
 } // namespace security::tls
 
 template<>

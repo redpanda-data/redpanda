@@ -40,7 +40,5 @@ private:
 };
 
 result<principal_mapping_rule> parse_principal_mapping_rule(std::string_view);
-std::optional<ss::sstring>
-validate_principal_mapping_rule(ss::sstring const& rule);
 
 } // namespace security::oidc
