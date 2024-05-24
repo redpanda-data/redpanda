@@ -32,7 +32,7 @@ struct test_config : public config::config_store {
     config::property<int> optional_int;
     config::property<ss::sstring> required_string;
     config::property<int64_t> an_int64_t;
-    config::property<custom_aggregate> an_aggregate;
+    config::property<testing::custom_aggregate> an_aggregate;
     config::property<std::vector<ss::sstring>> strings;
     config::property<std::optional<int16_t>> nullable_int;
     config::property<std::optional<ss::sstring>> nullable_string;
@@ -64,7 +64,7 @@ struct test_config : public config::config_store {
           "an_aggregate",
           "Aggregate type",
           {},
-          custom_aggregate{"str", 10})
+          testing::custom_aggregate{"str", 10})
       , strings(
           *this,
           "strings",
@@ -145,7 +145,8 @@ YAML::Node valid_configuration() {
 } // namespace
 
 namespace std {
-static inline ostream& operator<<(ostream& o, const custom_aggregate& c) {
+static inline ostream&
+operator<<(ostream& o, const testing::custom_aggregate& c) {
     o << "int_value=" << c.int_value << ", string_value=" << c.string_value;
     return o;
 }
@@ -164,8 +165,8 @@ operator<<(std::ostream& ostr, const std::optional<int16_t>& rhs) {
 
 namespace YAML {
 template<>
-struct convert<custom_aggregate> {
-    using type = custom_aggregate;
+struct convert<testing::custom_aggregate> {
+    using type = testing::custom_aggregate;
     static Node encode(const type& rhs) {
         Node node;
         node["string_value"] = rhs.string_value;

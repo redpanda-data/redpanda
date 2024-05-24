@@ -80,7 +80,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const custom_aggregate& v) {
+  json::Writer<json::StringBuffer>& w, const testing::custom_aggregate& v) {
     w.StartObject();
 
     w.Key("string_value");
