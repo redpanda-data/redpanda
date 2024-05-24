@@ -23,8 +23,8 @@
 #include "ssx/sformat.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
-#include "utils/bottomless_token_bucket.h"
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 
@@ -2978,7 +2978,8 @@ configuration::configuration()
       "balancer, in milliseconds",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       5000ms,
-      {.min = 1ms, .max = bottomless_token_bucket::max_width})
+      {.min = 1ms,
+       .max = std::chrono::milliseconds(std::numeric_limits<int32_t>::max())})
   , kafka_quota_balancer_node_period(
       *this,
       "kafka_quota_balancer_node_period_ms",
