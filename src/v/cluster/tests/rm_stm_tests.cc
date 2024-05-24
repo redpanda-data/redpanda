@@ -913,7 +913,11 @@ FIXTURE_TEST(test_tx_expiration_without_data_batches, rm_stm_test_fixture) {
     BOOST_REQUIRE(term_op.has_value());
     BOOST_REQUIRE_EQUAL(term_op.value(), _raft->confirmed_term());
     tests::cooperative_spin_wait_with_timeout(5s, [this, pid]() {
-        auto expired = get_expired_producers();
-        return std::find(expired.begin(), expired.end(), pid) != expired.end();
+        auto [expired, _] = get_expired_producers();
+        return std::find_if(
+                 expired.begin(),
+                 expired.end(),
+                 [pid](auto producer) { return producer->id() == pid; })
+               != expired.end();
     }).get0();
 }

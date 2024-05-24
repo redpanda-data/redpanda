@@ -339,7 +339,7 @@ void producer_state::apply_transaction_begin(
   const model::record_batch_header& header,
   const fence_batch_data& parsed_batch) {
     vassert(
-      !_transaction_state && !_active_transaction_hook.is_linked(),
+      !has_transaction_in_progress() && !_active_transaction_hook.is_linked(),
       "Transaction already in progress {} for producer {}, hook {}",
       _transaction_state,
       *this,

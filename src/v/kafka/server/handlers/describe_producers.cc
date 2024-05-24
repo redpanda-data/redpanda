@@ -74,7 +74,7 @@ do_get_producers_for_partition(cluster::partition_manager& pm, model::ktp ntp) {
               tx_start.value());
         }
         resp.active_producers.push_back(producer_state{
-          .producer_id = pid.id,
+          .producer_id = pid,
           .producer_epoch = state->id().get_epoch(),
           .last_sequence = state->last_sequence_number().value_or(-1),
           .last_timestamp = state->last_update_timestamp().value(),
