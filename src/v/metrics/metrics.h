@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "config/configuration.h"
 #include "metrics/metrics_registry.h"
 #include "ssx/sformat.h"
 #include "utils/hdr_hist.h"
