@@ -12,6 +12,7 @@
 
 #include "cloud_storage_clients/client_probe.h"
 #include "cloud_storage_clients/types.h"
+#include "model/metadata.h"
 #include "net/transport.h"
 #include "net/types.h"
 

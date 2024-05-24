@@ -11,7 +11,9 @@
 #include "wasmtime.h"
 
 #include "allocator.h"
+#include "base/type_traits.h"
 #include "base/vassert.h"
+#include "base/vlog.h"
 #include "engine_probe.h"
 #include "ffi.h"
 #include "logger.h"
@@ -25,6 +27,7 @@
 #include "storage/parser_utils.h"
 #include "transform_module.h"
 #include "utils/human.h"
+#include "utils/to_string.h"
 #include "utils/type_traits.h"
 #include "wasi.h"
 #include "wasm/api.h"
@@ -49,6 +52,7 @@
 
 #include <absl/algorithm/container.h>
 #include <absl/strings/escaping.h>
+#include <fmt/ostream.h>
 
 #include <alloca.h>
 #include <csignal>

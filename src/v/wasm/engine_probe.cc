@@ -11,6 +11,7 @@
 
 #include "engine_probe.h"
 
+#include "base/vassert.h"
 #include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
 

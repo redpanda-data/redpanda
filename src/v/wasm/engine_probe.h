@@ -16,6 +16,7 @@
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/core/weak_ptr.hh>
 
 #include <absl/container/btree_map.h>

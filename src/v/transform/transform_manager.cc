@@ -32,6 +32,8 @@
 #include <seastar/util/log.hh>
 
 #include <absl/algorithm/container.h>
+#include <absl/container/btree_map.h>
+#include <absl/container/btree_set.h>
 
 #include <algorithm>
 #include <chrono>
