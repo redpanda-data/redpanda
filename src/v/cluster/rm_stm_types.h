@@ -105,9 +105,16 @@ make_tx_control_batch(model::producer_identity pid, model::control_record_type);
 
 // snapshot related types
 
-struct abort_index {
+struct abort_index
+  : serde::envelope<abort_index, serde::version<0>, serde::compat_version<0>> {
+    abort_index() = default;
+    abort_index(model::offset first, model::offset last)
+      : first(first)
+      , last(last) {}
     model::offset first;
     model::offset last;
+
+    auto serde_fields() { return std::tie(first, last); }
 
     bool operator==(const abort_index&) const = default;
 };
@@ -179,17 +186,61 @@ struct producer_partition_transaction_state
 std::ostream&
 operator<<(std::ostream& o, const producer_partition_transaction_state&);
 
-struct producer_state_snapshot {
-    struct finished_request {
-        int32_t _first_sequence;
-        int32_t _last_sequence;
-        kafka::offset _last_offset;
+struct producer_state_snapshot
+  : serde::envelope<
+      producer_state_snapshot,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    struct finished_request
+      : serde::envelope<
+          finished_request,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        finished_request() = default;
+        finished_request(int32_t first, int32_t last, kafka::offset last_offset)
+          : first_sequence(first)
+          , last_sequence(last)
+          , last_offset(last_offset) {}
+
+        int32_t first_sequence;
+        int32_t last_sequence;
+        kafka::offset last_offset;
+
+        auto serde_fields() {
+            return std::tie(first_sequence, last_sequence, last_offset);
+        }
     };
 
-    model::producer_identity _id;
-    raft::group_id _group;
-    std::vector<finished_request> _finished_requests;
-    std::chrono::milliseconds _ms_since_last_update;
+    model::producer_identity id;
+    raft::group_id group;
+    std::vector<finished_request> finished_requests;
+    std::chrono::milliseconds ms_since_last_update;
+    std::optional<producer_partition_transaction_state> transaction_state;
+
+    bool operator==(const producer_state_snapshot&) const = default;
+
+    auto serde_fields() {
+        return std::tie(
+          id,
+          group,
+          finished_requests,
+          ms_since_last_update,
+          transaction_state);
+    }
+};
+
+// Used in the older version of snapshots when the snapshot payload was
+// serialized using reflection.
+struct producer_state_snapshot_deprecated {
+    struct finished_request {
+        int32_t first_sequence;
+        int32_t last_sequence;
+        kafka::offset last_offset;
+    };
+    model::producer_identity id;
+    raft::group_id group;
+    std::vector<finished_request> finished_requests;
+    std::chrono::milliseconds ms_since_last_update;
 };
 
 struct tx_data_snapshot {
@@ -250,11 +301,11 @@ struct tx_snapshot_v4 {
     bool operator==(const tx_snapshot_v4&) const = default;
 };
 
-struct tx_snapshot {
+struct tx_snapshot_v5 {
     static constexpr uint8_t version = 5;
 
-    tx_snapshot() = default;
-    explicit tx_snapshot(tx_snapshot_v4, raft::group_id);
+    tx_snapshot_v5() = default;
+    explicit tx_snapshot_v5(tx_snapshot_v4, raft::group_id);
 
     model::offset offset;
     // NOTE:
@@ -263,7 +314,7 @@ struct tx_snapshot {
     // members for transactional state. Once transactional state
     // is ported into producer_state, these data members can
     // be removed.
-    fragmented_vector<producer_state_snapshot> producers;
+    fragmented_vector<producer_state_snapshot_deprecated> producers;
 
     // transactional state
     fragmented_vector<model::producer_identity> fenced;
@@ -276,8 +327,34 @@ struct tx_snapshot {
     fragmented_vector<expiration_snapshot> expiration;
     model::producer_id highest_producer_id{};
 
-    bool operator==(const tx_snapshot&) const = default;
+    bool operator==(const tx_snapshot_v5&) const = default;
 };
+
+struct tx_snapshot_v6
+  : serde::
+      envelope<tx_snapshot_v6, serde::version<0>, serde::compat_version<0>> {
+    static constexpr uint8_t version = 6;
+
+    tx_snapshot_v6() = default;
+    explicit tx_snapshot_v6(tx_snapshot_v5, raft::group_id);
+
+    fragmented_vector<producer_state_snapshot> producers;
+    fragmented_vector<tx_range> aborted;
+    fragmented_vector<abort_index> abort_indexes;
+    model::producer_id highest_producer_id;
+
+    tx_snapshot_v5 downgrade_to_v5() &&;
+
+    friend std::ostream& operator<<(std::ostream&, const tx_snapshot_v6&);
+
+    bool operator==(const tx_snapshot_v6&) const = default;
+
+    auto serde_fields() {
+        return std::tie(producers, aborted, abort_indexes, highest_producer_id);
+    }
+};
+
+using tx_snapshot = tx_snapshot_v6;
 
 }; // namespace cluster::tx
 
@@ -290,10 +367,29 @@ struct async_adl<tx_snapshot_v4> {
     ss::future<tx_snapshot_v4> from(iobuf_parser&);
 };
 
-using tx_snapshot = cluster::tx::tx_snapshot;
+using tx_snapshot_v5 = cluster::tx::tx_snapshot_v5;
 template<>
-struct async_adl<tx_snapshot> {
-    ss::future<> to(iobuf&, tx_snapshot);
-    ss::future<tx_snapshot> from(iobuf_parser&);
+struct async_adl<tx_snapshot_v5> {
+    ss::future<> to(iobuf&, tx_snapshot_v5);
+    ss::future<tx_snapshot_v5> from(iobuf_parser&);
 };
+
+template<>
+struct async_adl<cluster::tx::abort_index> {
+    ss::future<> to(iobuf& out, cluster::tx::abort_index t);
+    ss::future<cluster::tx::abort_index> from(iobuf_parser& in);
+};
+
+template<>
+struct adl<model::tx_range> {
+    void to(iobuf& out, model::tx_range t);
+    model::tx_range from(iobuf_parser& in);
+};
+
+template<>
+struct async_adl<model::tx_range> {
+    ss::future<> to(iobuf& out, model::tx_range t);
+    ss::future<model::tx_range> from(iobuf_parser& in);
+};
+
 }; // namespace reflection

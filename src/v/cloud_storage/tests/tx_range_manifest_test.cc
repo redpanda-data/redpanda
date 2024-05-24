@@ -55,14 +55,14 @@ make_fragmented_vector(std::initializer_list<T> in) {
 
 static auto ranges = {
   tx_range_t{
-    .pid = model::producer_identity(1, 2),
-    .first = model::offset(3),
-    .last = model::offset(5),
+    model::producer_identity(1, 2),
+    model::offset(3),
+    model::offset(5),
   },
   tx_range_t{
-    .pid = model::producer_identity(2, 3),
-    .first = model::offset(4),
-    .last = model::offset(6),
+    model::producer_identity(2, 3),
+    model::offset(4),
+    model::offset(6),
   }};
 
 SEASTAR_THREAD_TEST_CASE(manifest_type_tx) {

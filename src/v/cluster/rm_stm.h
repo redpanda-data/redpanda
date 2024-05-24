@@ -265,38 +265,11 @@ private:
      */
     ss::future<model::offset> bootstrap_committed_offset();
 
-    // The state of this state machine maybe change via two paths
-    //
-    //   - by reading the already replicated commands from raft and
-    //     applying them in sequence (the classic RSM approach)
-    //
-    //   - by applying a command before replicating it accepting the
-    //     risk that the replication may fail
-    //
-    // It's error prone to let this two stream of changes to modify
-    // the same state e.g. in that case the pre-replicated command
-    // may override legit state, fail and cause an anomaly.
-    //
-    // We use a segregated state to avoid this problem and reconcile the
-    // different part of the state when it's needed. log_state is used
-    // to replay replicated commands and mem_state to keep the effect of
-    // not replicated yet commands.
-
-    struct log_state {
-        // we enforce monotonicity of epochs related to the same producer_id
-        // and fence off out of order requests
-        absl::flat_hash_map<model::producer_id, model::producer_epoch>
-          fence_pid_epoch;
-        // a map from session id (aka producer_identity) to its current tx
-        absl::flat_hash_map<model::producer_identity, tx::tx_range> ongoing_map;
-        // a heap of the first offsets of the ongoing transactions
-        absl::btree_set<model::offset> ongoing_set;
+    // Populated from state machine up calls.
+    struct aborted_tx_state {
         fragmented_vector<tx::tx_range> aborted;
         fragmented_vector<tx::abort_index> abort_indexes;
         tx::abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
-        absl::flat_hash_map<model::producer_identity, tx::tx_data> current_txes;
-        absl::flat_hash_map<model::producer_identity, tx::expiration_info>
-          expiration;
     };
 
     kafka::offset from_log_offset(model::offset old_offset) const;
@@ -312,10 +285,7 @@ private:
 
     uint8_t active_snapshot_version();
 
-    template<class T>
-    void fill_snapshot_wo_seqs(T&);
-
-    friend std::ostream& operator<<(std::ostream&, const log_state&);
+    friend std::ostream& operator<<(std::ostream&, const aborted_tx_state&);
 
     // Defines the commit offset range for the stm bootstrap.
     // Set on first apply upcall and used to identify if the
@@ -323,7 +293,7 @@ private:
     std::optional<model::offset> _bootstrap_committed_offset;
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};
-    log_state _log_state;
+    aborted_tx_state _aborted_tx_state;
     ss::timer<tx::clock_type> auto_abort_timer;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _tx_timeout_delay;
