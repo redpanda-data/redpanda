@@ -19,6 +19,7 @@
 #include "container/intrusive_list_helpers.h"
 #include "model/record.h"
 #include "ssx/semaphore.h"
+#include "storage/config.h"
 #include "storage/fwd.h"
 #include "storage/segment_appender_chunk.h"
 #include "storage/storage_resources.h"
@@ -53,7 +54,8 @@ class segment_appender {
 public:
     using chunk = segment_appender_chunk;
 
-    static constexpr const size_t fallocation_alignment = 4_KiB;
+    static constexpr const size_t fallocation_alignment
+      = segment_appender_fallocation_alignment;
     static constexpr const size_t write_behind_memory = 1_MiB;
 
     struct options {
@@ -130,20 +132,6 @@ public:
     };
 
     void set_callbacks(callbacks* callbacks) { _callbacks = callbacks; }
-
-    /** Validator for fallocation step configuration setting */
-    static std::optional<ss::sstring>
-    validate_fallocation_step(const size_t& value) {
-        if (value % segment_appender::fallocation_alignment != 0) {
-            return "Fallocation step must be multiple of 4096";
-        } else if (value < segment_appender::fallocation_alignment) {
-            return "Fallocation step must be at least 4 KiB (4096)";
-        } else if (value > 1_GiB) {
-            return "Fallocation step can't be larger than 1 GiB (1073741824)";
-        } else {
-            return std::nullopt;
-        }
-    }
 
     constexpr ss::io_priority_class get_priority_class() const {
         return _opts.priority;

@@ -21,8 +21,7 @@
 #include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
 #include "ssx/sformat.h"
-#include "storage/chunk_cache.h"
-#include "storage/segment_appender.h"
+#include "storage/config.h"
 
 #include <chrono>
 #include <cstdint>
@@ -1170,7 +1169,7 @@ configuration::configuration()
        .example = "32768",
        .visibility = visibility::tunable},
       32_MiB,
-      storage::segment_appender::validate_fallocation_step)
+      storage::validate_fallocation_step)
   , storage_target_replay_bytes(
       *this,
       "storage_target_replay_bytes",
