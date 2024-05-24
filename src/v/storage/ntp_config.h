@@ -15,7 +15,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "ssx/sformat.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/sstring.hh>
 

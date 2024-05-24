@@ -19,7 +19,7 @@
 #include "features/feature_table.h"
 #include "model/namespace.h"
 #include "ssx/future-util.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sleep.hh>

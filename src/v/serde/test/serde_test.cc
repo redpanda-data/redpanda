@@ -16,7 +16,7 @@
 #include "serde/rw/variant.h"
 #include "serde/serde.h"
 #include "test_utils/randoms.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/scheduling.hh>

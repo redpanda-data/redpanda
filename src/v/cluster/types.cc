@@ -17,7 +17,7 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "security/acl.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/chunked_fifo.hh>

@@ -14,7 +14,7 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/future-util.h"
 #include "ssx/sharded_ptr.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/metrics.hh>
 

@@ -22,7 +22,7 @@
 #include "kafka/protocol/produce.h"
 #include "pandaproxy/json/iobuf.h"
 #include "pandaproxy/json/types.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/sstring.hh>
 
