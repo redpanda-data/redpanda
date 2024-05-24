@@ -70,9 +70,6 @@ concept is_ss_circular_buffer
   = ::detail::is_specialization_of_v<T, ss::circular_buffer>;
 
 template<typename T>
-concept is_std_optional = ::detail::is_specialization_of_v<T, std::optional>;
-
-template<typename T>
 concept is_rp_named_type
   = ::detail::is_specialization_of_v<T, ::detail::base_named_type>;
 

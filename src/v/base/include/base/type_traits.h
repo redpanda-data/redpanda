@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <optional>
 #include <type_traits>
 
 namespace utils {
@@ -70,3 +71,10 @@ inline constexpr bool is_specialization_of_v
   = is_specialization_of<T, C>::value;
 
 } // namespace detail
+
+namespace reflection {
+
+template<typename T>
+concept is_std_optional = ::detail::is_specialization_of_v<T, std::optional>;
+
+}
