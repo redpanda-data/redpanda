@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "throughput_control_group.h"
+#include "config/throughput_control_group.h"
 
 #include "config/convert.h"
 #include "ssx/sformat.h"
