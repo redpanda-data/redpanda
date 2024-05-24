@@ -658,11 +658,17 @@ void admin_server::log_exception(
 void admin_server::rearm_log_level_timer() {
     _log_level_timer.cancel();
 
-    auto next = std::min_element(
-      _log_level_resets.begin(), _log_level_resets.end());
+    if (_log_level_resets.empty()) {
+        return;
+    }
 
-    if (next != _log_level_resets.end() && next->second.expires.has_value()) {
-        _log_level_timer.arm(next->second.expires.value());
+    auto reset_values = _log_level_resets | std::views::values;
+    auto& lvl_rst = *std::ranges::min_element(
+      reset_values, std::less<>{}, [](level_reset const& l) {
+          return l.expires.value_or(ss::timer<>::clock::time_point::max());
+      });
+    if (lvl_rst.expires.has_value()) {
+        _log_level_timer.arm(lvl_rst.expires.value());
     }
 }
 
@@ -1410,17 +1416,20 @@ void admin_server::register_config_routes() {
 
           ss::global_logger_registry().set_logger_level(name, new_level);
 
-          // expires=0 is same as not specifying it at all
-          if (expires_v / 1s > 0) {
-              auto when = ss::timer<>::clock::now() + expires_v;
-              auto res = _log_level_resets.try_emplace(name, cur_level, when);
-              if (!res.second) {
-                  res.first->second.expires = when;
+          auto when = [&]() -> std::optional<level_reset::time_point> {
+              // expires=0 is same as not specifying it at all
+              if (expires_v / 1s > 0) {
+                  return ss::timer<>::clock::now() + expires_v;
+              } else {
+                  // new log level never expires, but we still want an entry in
+                  // the resets map as a record of the default
+                  return std::nullopt;
               }
-          } else {
-              // new log level never expires, but we still want an entry in the
-              // resets map as a record of the default
-              _log_level_resets.try_emplace(name, cur_level, std::nullopt);
+          }();
+
+          auto res = _log_level_resets.try_emplace(name, cur_level, when);
+          if (!res.second) {
+              res.first->second.expires = when;
           }
 
           rsp.expiration = expires_v / 1s;

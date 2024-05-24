@@ -655,16 +655,6 @@ private:
           : level(level)
           , expires(expires) {}
 
-        friend bool operator<(const level_reset& l, const level_reset& r) {
-            if (!l.expires.has_value()) {
-                return false;
-            } else if (!r.expires.has_value()) {
-                return true;
-            } else {
-                return l.expires.value() < r.expires.value();
-            }
-        }
-
         ss::log_level level;
         std::optional<time_point> expires;
     };
