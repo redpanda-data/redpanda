@@ -29,7 +29,7 @@ import zipfile
 import pathlib
 import shlex
 from enum import Enum, IntEnum
-from typing import Callable, List, Generator, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
+from typing import Callable, List, Generator, Literal, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
 
 import yaml
 from ducktape.services.service import Service
@@ -222,7 +222,8 @@ class CloudStorageType(IntEnum):
     ABS = 2
 
 
-CloudStorageTypeAndUrlStyle = Tuple[CloudStorageType, str]
+CloudStorageTypeAndUrlStyle = Tuple[CloudStorageType, Literal['virtual_host',
+                                                              'path']]
 
 
 def prepare_allow_list(allow_list):
@@ -293,8 +294,10 @@ def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
     return cloud_storage_type
 
 
-def get_cloud_storage_url_style(cloud_storage_type: CloudStorageType
-                                | None = None) -> str:
+def get_cloud_storage_url_style(
+    cloud_storage_type: CloudStorageType
+    | None = None
+) -> list[Literal['virtual_host', 'path']]:
     if cloud_storage_type is None:
         return ['virtual_host', 'path']
 
