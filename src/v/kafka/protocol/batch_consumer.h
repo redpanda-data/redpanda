@@ -31,6 +31,7 @@ public:
         uint32_t record_count;
         model::offset base_offset;
         model::offset last_offset;
+        model::timestamp first_timestamp;
         // First batch with the transactional bit set.
         // We only return aborted transactions from this point on.
         // This is needed for the correctness of consumption logic for
@@ -59,6 +60,7 @@ public:
     ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
         if (unlikely(record_count_ == 0)) {
             _base_offset = batch.base_offset();
+            _first_timestamp = batch.header().first_timestamp;
         }
         if (unlikely(
               !_first_tx_batch_offset
@@ -78,6 +80,7 @@ public:
           .record_count = record_count_,
           .base_offset = _base_offset,
           .last_offset = _last_offset,
+          .first_timestamp = _first_timestamp,
           .first_tx_batch_offset = _first_tx_batch_offset,
         };
     }
@@ -92,6 +95,7 @@ private:
     protocol::encoder _wr;
     model::offset _base_offset;
     model::offset _last_offset;
+    model::timestamp _first_timestamp;
     std::optional<model::offset> _first_tx_batch_offset;
     uint32_t record_count_ = 0;
 };
