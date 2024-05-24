@@ -209,6 +209,15 @@ std::error_code check_configuration_update(
           partition->ntp());
         return errc::partition_configuration_in_joint_mode;
     }
+
+    if (includes_self && partition->raft()->has_configuration_override()) {
+        vlog(
+          clusterlog.trace,
+          "[{}] contains current node and there is configuration override "
+          "active",
+          partition->ntp());
+        return errc::partition_configuration_in_joint_mode;
+    }
     /*
      * if replica set is a leader it must have configuration committed i.e. it
      * was successfully replicated to majority of followers.

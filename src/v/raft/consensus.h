@@ -523,6 +523,10 @@ public:
         return _replication_monitor;
     }
 
+    bool has_configuration_override() const {
+        return _configuration_manager.has_configuration_override();
+    }
+
 private:
     friend replication_monitor;
     friend replicate_entries_stm;
