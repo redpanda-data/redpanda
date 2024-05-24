@@ -36,7 +36,7 @@ rp_test(
 rp_test(
   BENCHMARK_TEST
   BINARY_NAME arrow_writer
-  SOURCES arrow_writer_bench.cc
+  SOURCES arrow_writer_bench.cc bigschema.pb.cc
   LIBRARIES
   Arrow::arrow_shared
     Parquet::parquet_shared

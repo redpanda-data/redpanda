@@ -30,7 +30,6 @@ TEST(ArrowWriter, SimpleMessageTest) {
       "Hello world", 12345);
     std::cerr << "Serialized message is " << serialized_message.size()
               << " bytes\n";
-    EXPECT_TRUE(false);
 
     proto_to_arrow_converter converter(test_data().simple_schema);
     EXPECT_EQ(converter._arrays.size(), 6);
@@ -99,5 +98,23 @@ TEST(ArrowWriter, NestedMessageTest) {
         table_field_names.push_back(field->name());
     }
     EXPECT_EQ(table_field_names, schema->field_names());
+}
+
+TEST(ArrowWriter, MapMessageTest) {
+    using namespace datalake;
+    test_data test_data;
+    std::string schema = test_data.map_schema;
+
+    proto_to_arrow_converter converter(schema);
+
+    std::string serialized_message = generate_map_message();
+
+    auto parsed_message = converter.parse_message(serialized_message);
+    EXPECT_NE(parsed_message, nullptr);
+    EXPECT_EQ(parsed_message->GetTypeName(), "datalake.proto.map_message");
+    std::cerr << "serialized_message.size() = " << serialized_message.size()
+              << std::endl;
+    std::cerr << "serialized_message: '" << serialized_message << "'"
+              << std::endl;
 }
 } // namespace datalake

@@ -1,6 +1,7 @@
 #include "datalake/protobuf_to_arrow_converter.h"
 
 #include <arrow/type.h>
+#include <google/protobuf/descriptor.h>
 
 #include <stdexcept>
 
@@ -124,36 +125,43 @@ bool datalake::proto_to_arrow_converter::initialize_arrow_arrays() {
          field_idx++) {
         auto desc = message_desc->field(field_idx);
 
-        if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT32) {
-            _arrays[field_idx]
-              = std::make_unique<proto_to_arrow_scalar<arrow::Int32Type>>();
-        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT64) {
-            _arrays[field_idx]
-              = std::make_unique<proto_to_arrow_scalar<arrow::Int64Type>>();
-        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_BOOL) {
-            _arrays[field_idx]
-              = std::make_unique<proto_to_arrow_scalar<arrow::BooleanType>>();
-        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_FLOAT) {
-            _arrays[field_idx]
-              = std::make_unique<proto_to_arrow_scalar<arrow::FloatType>>();
-        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_DOUBLE) {
-            _arrays[field_idx]
-              = std::make_unique<proto_to_arrow_scalar<arrow::DoubleType>>();
-        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_STRING) {
-            _arrays[field_idx]
-              = std::make_unique<proto_to_arrow_scalar<arrow::StringType>>();
-        } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_MESSAGE) {
-            auto field_message_descriptor = desc->message_type();
-            if (field_message_descriptor == nullptr) {
-                return false;
-            }
-            _arrays[field_idx] = std::make_unique<proto_to_arrow_struct>(
-              field_message_descriptor);
+        if (desc->is_repeated()) {
         } else {
-            throw std::runtime_error(
-              std::string("Unknown type: ") + desc->cpp_type_name());
+            if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT32) {
+                _arrays[field_idx]
+                  = std::make_unique<proto_to_arrow_scalar<arrow::Int32Type>>();
+            } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT64) {
+                _arrays[field_idx]
+                  = std::make_unique<proto_to_arrow_scalar<arrow::Int64Type>>();
+            } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_BOOL) {
+                _arrays[field_idx] = std::make_unique<
+                  proto_to_arrow_scalar<arrow::BooleanType>>();
+            } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_FLOAT) {
+                _arrays[field_idx]
+                  = std::make_unique<proto_to_arrow_scalar<arrow::FloatType>>();
+            } else if (
+              desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_DOUBLE) {
+                _arrays[field_idx] = std::make_unique<
+                  proto_to_arrow_scalar<arrow::DoubleType>>();
+            } else if (
+              desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_STRING) {
+                _arrays[field_idx] = std::make_unique<
+                  proto_to_arrow_scalar<arrow::StringType>>();
+            } else if (
+              desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_MESSAGE) {
+                auto field_message_descriptor = desc->message_type();
+                if (field_message_descriptor == nullptr) {
+                    return false;
+                }
+                _arrays[field_idx] = std::make_unique<proto_to_arrow_struct>(
+                  field_message_descriptor);
+            } else {
+                throw std::runtime_error(
+                  std::string("Unknown type: ") + desc->cpp_type_name());
+            }
         }
     }
+
     return true;
 }
 std::unique_ptr<google::protobuf::Message>

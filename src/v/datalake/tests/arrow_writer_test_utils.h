@@ -6,6 +6,8 @@
 #include <seastar/core/circular_buffer.hh>
 
 #include <compression/compression.h>
+#include <google/protobuf/dynamic_message.h>
+#include <google/protobuf/generated_message_reflection.h>
 #include <google/protobuf/message.h>
 
 #include <cstdlib>
@@ -50,6 +52,15 @@ message nested_message {
 }
 )schema");
 
+    std::string map_schema = (R"schema(
+          syntax = "proto2";
+    package datalake.proto;
+
+    message map_message {
+      map<string, string> kv =1;
+    }
+        )schema");
+
     std::string combined_schema = (R"schema(
 syntax = "proto2";
 package datalake.proto;
@@ -74,6 +85,10 @@ message nested_message {
   optional string label = 1;
   optional int32 number = 2;
   optional inner_message_t inner_message = 3;
+}
+
+message map_message {
+  map<string, string> kv = 1;
 }
 )schema");
 
@@ -295,6 +310,64 @@ generate_nested_message(const std::string& label, int32_t number) {
                   reflection->SetInt32(message, field_desc, number);
               } else if (field_desc->name() == "inner_message") {
                   reflection->SetAllocatedMessage(message, inner, field_desc);
+              }
+          }
+      });
+}
+
+inline std::string generate_map_message() {
+    test_data test_data;
+    test_message_builder builder(test_data);
+
+    return builder.generate_message_generic(
+      "map_message", [&](google::protobuf::Message* message) {
+          auto reflection = message->GetReflection();
+          // Have to use field indices here because
+          // message->GetReflections()->ListFields() only returns fields
+          // that are actually present in the message;
+
+          for (int field_idx = 0;
+               field_idx < message->GetDescriptor()->field_count();
+               field_idx++) {
+              auto field_desc = message->GetDescriptor()->field(field_idx);
+              if (field_desc->name() == "kv") {
+                  //     // auto key_descriptor =
+                  //     // field_desc->message_type()->map_key(); auto
+                  //     val_descriptor
+                  //     // = field_desc->message_type()->map_value();
+                  auto mutable_field_ref
+                    = reflection
+                        ->GetMutableRepeatedFieldRef<google::protobuf::Message>(
+                          message, field_desc);
+                  // std::cerr << "Generated factory " << builder._factory
+                  //           << std::endl;
+                  std::cerr
+                    << "Prototype "
+                    << builder._factory.GetPrototype(field_desc->message_type())
+                    << std::endl;
+                  std::cerr << "Message type " << field_desc->message_type()
+                            << std::endl;
+
+                  std::cerr << "message "
+                            << builder._factory
+                                 .GetPrototype(field_desc->message_type())
+                                 ->New(message->GetArena())
+                            << std::endl;
+
+                  std::unique_ptr<google::protobuf::Message> entry_message(
+                    builder._factory.GetPrototype(field_desc->message_type())
+                      ->New(message->GetArena()));
+
+                  entry_message->GetReflection()->SetString(
+                    entry_message.get(),
+                    field_desc->message_type()->field(0),
+                    "hello");
+                  entry_message->GetReflection()->SetString(
+                    entry_message.get(),
+                    field_desc->message_type()->field(1),
+                    "world");
+
+                  mutable_field_ref.Add(*entry_message);
               }
           }
       });
