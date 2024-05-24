@@ -58,3 +58,15 @@ template<auto V>
 struct unsupported_value : std::false_type {};
 
 } // namespace utils
+
+namespace detail {
+
+template<typename T, template<typename...> class C>
+struct is_specialization_of : std::false_type {};
+template<template<typename...> class C, typename... Args>
+struct is_specialization_of<C<Args...>, C> : std::true_type {};
+template<typename T, template<typename...> class C>
+inline constexpr bool is_specialization_of_v
+  = is_specialization_of<T, C>::value;
+
+} // namespace detail
