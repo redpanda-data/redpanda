@@ -37,6 +37,8 @@ using offset = named_type<int64_t, struct kafka_offset_type>;
 inline offset next_offset(offset p) {
     if (p < offset{0}) {
         return offset{0};
+    } else if (p == offset::max()) {
+        return offset::max();
     }
     return p + offset{1};
 }
