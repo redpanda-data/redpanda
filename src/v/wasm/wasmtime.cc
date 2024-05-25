@@ -344,7 +344,7 @@ wasmtime_val_t convert_to_wasmtime(T value) {
           .kind = WASMTIME_I32, .of = {.i32 = static_cast<int32_t>(value)}};
     } else {
         static_assert(
-          utils::unsupported_type<T>::value, "Unsupported wasm result type");
+          base::unsupported_type<T>::value, "Unsupported wasm result type");
     }
 }
 
@@ -552,7 +552,7 @@ public:
             return &_sr_module;
         } else {
             static_assert(
-              utils::unsupported_type<T>::value, "unsupported module");
+              base::unsupported_type<T>::value, "unsupported module");
         }
     }
 

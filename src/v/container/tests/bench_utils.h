@@ -56,6 +56,6 @@ static auto make_value() {
           .okdone = random_generators::get_int<size_t>(),
         };
     } else {
-        static_assert(utils::unsupported_type<ValueT>::value, "unsupported");
+        static_assert(base::unsupported_type<ValueT>::value, "unsupported");
     }
 }

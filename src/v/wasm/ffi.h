@@ -244,7 +244,7 @@ void transform_type(std::vector<val_type>& types) {
     } else if constexpr (ss::is_future<Type>::value) {
         transform_type<typename Type::value_type>(types);
     } else {
-        static_assert(utils::unsupported_type<Type>::value, "Unknown type");
+        static_assert(base::unsupported_type<Type>::value, "Unknown type");
     }
 }
 
@@ -293,7 +293,7 @@ std::tuple<Type> extract_parameter(
           mem, raw_params, idx);
         return std::tuple<Type>(underlying);
     } else {
-        static_assert(utils::unsupported_type<Type>::value, "Unknown type");
+        static_assert(base::unsupported_type<Type>::value, "Unknown type");
     }
 }
 

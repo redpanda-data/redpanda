@@ -146,7 +146,7 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
             ec = r.ec;
         } else {
             static_assert(
-              utils::unsupported_type<result_type>::value,
+              base::unsupported_type<result_type>::value,
               "unsupported response type");
         }
         switch (ec) {

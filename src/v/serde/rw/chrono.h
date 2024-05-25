@@ -116,7 +116,7 @@ void tag_invoke(
 template<typename Clock, typename Duration>
 void write(iobuf&, std::chrono::time_point<Clock, Duration> t) {
     static_assert(
-      utils::unsupported_type<decltype(t)>::value,
+      base::unsupported_type<decltype(t)>::value,
       "Time point serialization is risky and can have unintended "
       "consequences. Check with Redpanda team before fixing this.");
 }
@@ -127,7 +127,7 @@ void read(
   std::chrono::time_point<Clock, Duration>& t,
   std::size_t const /* bytes_left_limit */) {
     static_assert(
-      utils::unsupported_type<decltype(t)>::value,
+      base::unsupported_type<decltype(t)>::value,
       "Time point serialization is risky and can have unintended "
       "consequences. Check with Redpanda team before fixing this.");
 }

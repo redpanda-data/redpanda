@@ -172,7 +172,7 @@ private:
                 auth_state.pass();
             } else {
                 static_assert(
-                  utils::unsupported_value<required_auth>::value,
+                  base::unsupported_value<required_auth>::value,
                   "Invalid auth_level");
             }
 

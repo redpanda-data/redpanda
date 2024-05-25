@@ -55,7 +55,7 @@ std::optional<T> find_metric_value(
     } else if constexpr (std::is_same_v<uint64_t, T>) {
         return sample.ui();
     } else {
-        static_assert(utils::unsupported_type<T>::value, "unsupported type");
+        static_assert(base::unsupported_type<T>::value, "unsupported type");
     }
 }
 

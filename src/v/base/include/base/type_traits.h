@@ -14,7 +14,7 @@
 #include <optional>
 #include <type_traits>
 
-namespace utils {
+namespace base {
 
 /**
  * A utility for statically asserting false.
@@ -27,7 +27,7 @@ namespace utils {
  *   if constexpr (...) {
  *     // ...
  *   } else {
- *     static_assert(utils::unsupported_type<T>::value, "unsupported type");
+ *     static_assert(base::unsupported_type<T>::value, "unsupported type");
  *   }
  * }
  *
@@ -51,14 +51,14 @@ struct unsupported_type : std::false_type {};
  *   } else if constexpr (value == foo::baz) {
  *     // ...
  *   } else {
- *     static_assert(utils::unsupported_value<value>::value, "supported foo");
+ *     static_assert(base::unsupported_value<value>::value, "supported foo");
  *   }
  * }
  */
 template<auto V>
 struct unsupported_value : std::false_type {};
 
-} // namespace utils
+} // namespace base
 
 namespace detail {
 

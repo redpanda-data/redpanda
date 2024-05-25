@@ -653,7 +653,7 @@ consteval std::string_view property_type_name() {
         return "recovery_validation_mode";
     } else {
         static_assert(
-          utils::unsupported_type<T>::value, "Type name not defined");
+          base::unsupported_type<T>::value, "Type name not defined");
     }
 }
 
