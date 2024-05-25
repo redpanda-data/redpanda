@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "security/config.h"
 #include "security/mtls.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
