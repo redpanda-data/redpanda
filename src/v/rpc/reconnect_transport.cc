@@ -15,6 +15,7 @@
 #include "rpc/logger.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
+#include "utils/to_string.h"
 
 #include <seastar/net/inet_address.hh>
 
