@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "security/config.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/mtls.h"
 #include "security/oidc_error.h"

@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/type_traits.h"
 #include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "reflection/type_traits.h"
 #include "utils/named_type.h"
-#include "utils/type_traits.h"
 
 #include <cstdint>
 #include <span>
@@ -244,7 +244,7 @@ void transform_type(std::vector<val_type>& types) {
     } else if constexpr (ss::is_future<Type>::value) {
         transform_type<typename Type::value_type>(types);
     } else {
-        static_assert(utils::unsupported_type<Type>::value, "Unknown type");
+        static_assert(base::unsupported_type<Type>::value, "Unknown type");
     }
 }
 
@@ -293,7 +293,7 @@ std::tuple<Type> extract_parameter(
           mem, raw_params, idx);
         return std::tuple<Type>(underlying);
     } else {
-        static_assert(utils::unsupported_type<Type>::value, "Unknown type");
+        static_assert(base::unsupported_type<Type>::value, "Unknown type");
     }
 }
 

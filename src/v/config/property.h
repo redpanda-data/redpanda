@@ -11,13 +11,13 @@
 
 #pragma once
 #include "base/oncore.h"
+#include "base/type_traits.h"
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
 #include "container/intrusive_list_helpers.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
-#include "reflection/type_traits.h"
 #include "utils/to_string.h"
 
 #include <seastar/util/noncopyable_function.hh>
@@ -653,7 +653,7 @@ consteval std::string_view property_type_name() {
         return "recovery_validation_mode";
     } else {
         static_assert(
-          utils::unsupported_type<T>::value, "Type name not defined");
+          base::unsupported_type<T>::value, "Type name not defined");
     }
 }
 

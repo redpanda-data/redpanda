@@ -34,7 +34,7 @@
 #include "storage/types.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 #include "v8_engine/data_policy.h"
 
 #include <seastar/core/chunked_fifo.hh>

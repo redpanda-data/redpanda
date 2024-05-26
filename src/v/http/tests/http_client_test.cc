@@ -15,6 +15,7 @@
 #include "http/client.h"
 #include "http/logger.h"
 #include "json/document.h"
+#include "json/json.h"
 #include "net/dns.h"
 #include "net/transport.h"
 

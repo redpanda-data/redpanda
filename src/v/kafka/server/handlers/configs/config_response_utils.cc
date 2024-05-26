@@ -134,7 +134,7 @@ consteval describe_configs_type property_config_type() {
         return describe_configs_type::list;
     } else {
         static_assert(
-          utils::unsupported_type<T>::value,
+          base::unsupported_type<T>::value,
           "Type name is not supported in describe_configs_type");
     }
 }

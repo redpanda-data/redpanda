@@ -11,9 +11,10 @@
 
 #pragma once
 
+#include <optional>
 #include <type_traits>
 
-namespace utils {
+namespace base {
 
 /**
  * A utility for statically asserting false.
@@ -26,7 +27,7 @@ namespace utils {
  *   if constexpr (...) {
  *     // ...
  *   } else {
- *     static_assert(utils::unsupported_type<T>::value, "unsupported type");
+ *     static_assert(base::unsupported_type<T>::value, "unsupported type");
  *   }
  * }
  *
@@ -50,11 +51,30 @@ struct unsupported_type : std::false_type {};
  *   } else if constexpr (value == foo::baz) {
  *     // ...
  *   } else {
- *     static_assert(utils::unsupported_value<value>::value, "supported foo");
+ *     static_assert(base::unsupported_value<value>::value, "supported foo");
  *   }
  * }
  */
 template<auto V>
 struct unsupported_value : std::false_type {};
 
-} // namespace utils
+} // namespace base
+
+namespace detail {
+
+template<typename T, template<typename...> class C>
+struct is_specialization_of : std::false_type {};
+template<template<typename...> class C, typename... Args>
+struct is_specialization_of<C<Args...>, C> : std::true_type {};
+template<typename T, template<typename...> class C>
+inline constexpr bool is_specialization_of_v
+  = is_specialization_of<T, C>::value;
+
+} // namespace detail
+
+namespace reflection {
+
+template<typename T>
+concept is_std_optional = ::detail::is_specialization_of_v<T, std::optional>;
+
+}

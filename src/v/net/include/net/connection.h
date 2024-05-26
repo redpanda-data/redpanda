@@ -19,6 +19,7 @@
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/net/tls.hh>
+#include <seastar/util/log.hh>
 
 #include <boost/intrusive/list.hpp>
 

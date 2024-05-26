@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "base/type_traits.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/tx_gateway_frontend.h"
@@ -32,7 +33,6 @@
 #include "security/types.h"
 #include "storage/node.h"
 #include "transform/fwd.h"
-#include "utils/type_traits.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/scheduling.hh>
@@ -172,7 +172,7 @@ private:
                 auth_state.pass();
             } else {
                 static_assert(
-                  utils::unsupported_value<required_auth>::value,
+                  base::unsupported_value<required_auth>::value,
                   "Invalid auth_level");
             }
 

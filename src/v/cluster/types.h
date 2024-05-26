@@ -33,7 +33,7 @@
 #include "security/types.h"
 #include "serde/envelope.h"
 #include "storage/ntp_config.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 #include "v8_engine/data_policy.h"
 
 #include <seastar/core/chunked_fifo.hh>

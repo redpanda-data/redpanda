@@ -9,10 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/type_traits.h"
 #include "base/units.h"
 #include "gmock/gmock.h"
 #include "metrics/metrics.h"
-#include "utils/type_traits.h"
 #include "wasm/logger.h"
 
 #include <seastar/core/metrics.hh>
@@ -55,7 +55,7 @@ std::optional<T> find_metric_value(
     } else if constexpr (std::is_same_v<uint64_t, T>) {
         return sample.ui();
     } else {
-        static_assert(utils::unsupported_type<T>::value, "unsupported type");
+        static_assert(base::unsupported_type<T>::value, "unsupported type");
     }
 }
 

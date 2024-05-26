@@ -26,6 +26,7 @@
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "reflection/to_tuple.h"
+#include "reflection/type_traits.h"
 #include "serde/envelope.h"
 #include "serde/envelope_for_each_field.h"
 #include "serde/serde.h"

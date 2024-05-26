@@ -58,7 +58,7 @@ consteval resource_type get_resource_type() {
     } else if constexpr (std::is_same_v<T, kafka::transactional_id>) {
         return resource_type::transactional_id;
     } else {
-        static_assert(utils::unsupported_type<T>::value, "Unsupported type");
+        static_assert(base::unsupported_type<T>::value, "Unsupported type");
     }
 }
 
