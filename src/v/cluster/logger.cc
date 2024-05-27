@@ -12,4 +12,7 @@
 namespace cluster {
 ss::logger clusterlog{"cluster"};
 ss::logger txlog{"tx"};
+namespace data_migrations {
+ss::logger dm_log{"data-migrate"};
+}
 } // namespace cluster
