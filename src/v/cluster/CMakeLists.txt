@@ -240,6 +240,7 @@ v_cc_library(
     data_migration_types.cc
     data_migration_table.cc
     data_migration_frontend.cc
+    data_migration_backend.cc
     data_migration_service_handler.cc
     data_migrated_resources.cc
   DEPS
