@@ -12,6 +12,7 @@
 #pragma once
 #include "bytes/iobuf_parser.h"
 #include "cluster/client_quota_serde.h"
+#include "cluster/data_migration_types.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
@@ -146,6 +147,11 @@ static constexpr int8_t cluster_recovery_update_cmd_type = 1;
 
 // client quota commands
 static constexpr int8_t alter_quotas_delta_cmd_type = 0;
+
+// data migration commands
+static constexpr int8_t create_data_migration_cmd_type = 0;
+static constexpr int8_t update_data_migration_state_cmd_type = 1;
+static constexpr int8_t remove_data_migration_cmd_type = 2;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -434,6 +440,24 @@ using alter_quotas_delta_cmd = controller_command<
   client_quota::alter_delta_cmd_data,
   alter_quotas_delta_cmd_type,
   model::record_batch_type::client_quota>;
+
+using create_data_migration_cmd = controller_command<
+  int8_t,
+  data_migrations::create_migration_cmd_data,
+  create_data_migration_cmd_type,
+  model::record_batch_type::data_migration_cmd>;
+
+using update_data_migration_state_cmd = controller_command<
+  int8_t,
+  data_migrations::update_migration_state_cmd_data,
+  update_data_migration_state_cmd_type,
+  model::record_batch_type::data_migration_cmd>;
+
+using remove_data_migration_cmd = controller_command<
+  int8_t,
+  data_migrations::remove_migration_cmd_data,
+  remove_data_migration_cmd_type,
+  model::record_batch_type::data_migration_cmd>;
 
 // typelist utils
 template<typename T>

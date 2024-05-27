@@ -123,3 +123,20 @@ std::ostream& operator<<(std::ostream& o, const migration_metadata& m) {
       m.state);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const create_migration_cmd_data& d) {
+    fmt::print(
+      o, "{{id: {}, migration: {}}}", d.id, print_migration(d.migration));
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const update_migration_state_cmd_data& d) {
+    fmt::print(o, "{{id: {}, requested_state: {}}}", d.id, d.requested_state);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const remove_migration_cmd_data& d) {
+    fmt::print(o, "{{id: {}}}", d.id);
+    return o;
+}

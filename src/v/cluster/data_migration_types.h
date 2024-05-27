@@ -235,3 +235,51 @@ struct migration_metadata
     friend std::ostream& operator<<(std::ostream&, const migration_metadata&);
 };
 
+struct create_migration_cmd_data
+  : serde::envelope<
+      create_migration_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    id id;
+    data_migration migration;
+
+    auto serde_fields() { return std::tie(id, migration); }
+    friend bool operator==(
+      const create_migration_cmd_data&, const create_migration_cmd_data&)
+      = default;
+    friend std::ostream&
+    operator<<(std::ostream&, const create_migration_cmd_data&);
+};
+
+struct update_migration_state_cmd_data
+  : serde::envelope<
+      update_migration_state_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    id id;
+    state requested_state;
+
+    auto serde_fields() { return std::tie(id, requested_state); }
+    friend bool operator==(
+      const update_migration_state_cmd_data&,
+      const update_migration_state_cmd_data&)
+      = default;
+    friend std::ostream&
+    operator<<(std::ostream&, const update_migration_state_cmd_data&);
+};
+
+struct remove_migration_cmd_data
+  : serde::envelope<
+      remove_migration_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    id id;
+
+    auto serde_fields() { return std::tie(id); }
+    friend bool operator==(
+      const remove_migration_cmd_data&, const remove_migration_cmd_data&)
+      = default;
+    friend std::ostream&
+    operator<<(std::ostream&, const remove_migration_cmd_data&);
+};
+
