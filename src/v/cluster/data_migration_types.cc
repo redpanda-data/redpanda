@@ -140,3 +140,37 @@ std::ostream& operator<<(std::ostream& o, const remove_migration_cmd_data& d) {
     fmt::print(o, "{{id: {}}}", d.id);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const create_migration_request& r) {
+    fmt::print(o, "{{migration: {}}}", print_migration(r.migration));
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const create_migration_reply& r) {
+    fmt::print(o, "{{id: {}, error_code: {}}}", r.id, r.ec);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const update_migration_state_request& r) {
+    fmt::print(o, "{{id: {}, state: {}}}", r.id, r.state);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const update_migration_state_reply& r) {
+    fmt::print(o, "{{error_code: {}}}", r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const remove_migration_request& r) {
+    fmt::print(o, "{{id: {}}}", r.id);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const remove_migration_reply& r) {
+    fmt::print(o, "{{error_code: {}}}", r.ec);
+    return o;
+}
+
+} // namespace cluster::data_migrations
