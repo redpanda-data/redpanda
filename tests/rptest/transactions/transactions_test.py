@@ -9,6 +9,7 @@
 
 from collections import defaultdict
 from contextlib import contextmanager
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.cluster import cluster
 from rptest.util import wait_until_result, expect_exception
 from rptest.clients.types import TopicSpec
@@ -103,6 +104,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         self.output_t = self.topics[1]
         self.max_records = 100
         self.admin = Admin(self.redpanda)
+        self.kafka_cli = KafkaCliTools(self.redpanda, "3.0.0")
 
     def wait_for_eviction(self, max_concurrent_producer_ids, num_to_evict):
         samples = [
@@ -728,18 +730,11 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                           on_delivery=self.on_delivery)
             p.flush()
 
-        def get_tx_metrics():
-            return self.redpanda.metrics_sample(
-                "tx_mem_tracker_consumption_bytes",
-                self.redpanda.started_nodes())
-
-        metrics = get_tx_metrics()
-        consumed_per_node = defaultdict(int)
-        for m in metrics.samples:
-            id = self.redpanda.node_id(m.node)
-            consumed_per_node[id] += int(m.value)
-        self.logger.info(
-            f"Bytes consumed by transactional subsystem: {consumed_per_node}")
+        # Capture the proudcer info before evicting the segments
+        producers_before = self.kafka_cli.describe_producers(topic=topic,
+                                                             partition=0)
+        assert len(
+            producers_before) == producers_count, "Producer metadata mismatch"
 
         self.client().alter_topic_config(
             topic=topic, key=TopicSpec.PROPERTY_RETENTION_BYTES, value=128)
@@ -767,7 +762,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             'bootstrap.servers':
             self.redpanda.brokers(),
             'enable.idempotence':
-            False,
+            True,
         })
 
         message_count_to_roll_segment = int(
@@ -784,20 +779,11 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         # which should be now cleaned and do not contain expired producer ids
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
-        metrics = get_tx_metrics()
-        consumed_per_node_after = defaultdict(int)
-        for m in metrics.samples:
-            id = self.redpanda.node_id(m.node)
-            consumed_per_node_after[id] += int(m.value)
-
-        self.logger.info(
-            f"Bytes consumed by transactional subsystem before eviction: {consumed_per_node}, after eviction: {consumed_per_node_after}"
-        )
-
-        assert all([
-            consumed_bytes > consumed_per_node_after[n]
-            for n, consumed_bytes in consumed_per_node.items()
-        ])
+        producers_after = self.kafka_cli.describe_producers(topic=topic,
+                                                            partition=0)
+        assert len(producers_after) < len(
+            producers_before
+        ), f"Incorrect number of producers restored from snapshot {len(producers_after)}"
 
     @cluster(num_nodes=3)
     def check_progress_after_fencing_test(self):
