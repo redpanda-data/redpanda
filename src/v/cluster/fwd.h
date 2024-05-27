@@ -81,6 +81,7 @@ class shard_balancer;
 class id_allocator_stm;
 class tm_stm;
 class rm_stm;
+class data_migrated_resources;
 
 namespace tx {
 class producer_state_manager;
