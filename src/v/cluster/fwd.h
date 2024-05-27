@@ -83,6 +83,7 @@ class tm_stm;
 class rm_stm;
 namespace data_migrations {
 class migrated_resources;
+class migrations_table;
 } // namespace data_migrations
 
 namespace tx {

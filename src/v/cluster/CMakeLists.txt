@@ -232,6 +232,7 @@ v_cc_library(
     tx_errc.cc
     tx_protocol_types.cc
     data_migration_types.cc
+    data_migration_table.cc
     data_migrated_resources.cc
   DEPS
     Seastar::seastar
