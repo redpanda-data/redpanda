@@ -83,6 +83,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET data_migrations_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/data_migration_rpc.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/data_migration_rpc_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster_topic_properties
   SRCS
@@ -232,6 +239,7 @@ v_cc_library(
     tx_protocol_types.cc
     data_migration_types.cc
     data_migration_table.cc
+    data_migration_service_handler.cc
     data_migrated_resources.cc
   DEPS
     Seastar::seastar
@@ -247,6 +255,7 @@ v_cc_library(
     self_test_rpc
     topic_recovery_status_rpc
     tx_manager_migrator_rpc
+    data_migrations_rpc
     v::raft
     Roaring::roaring
     absl::flat_hash_map

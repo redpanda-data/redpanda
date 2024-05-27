@@ -293,3 +293,108 @@ struct remove_data_migration_cmd_data
     operator<<(std::ostream&, const remove_data_migration_cmd_data&);
 };
 
+struct create_data_migration_request
+  : serde::envelope<
+      create_data_migration_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    data_migration migration;
+
+    auto serde_fields() { return std::tie(migration); }
+    friend bool operator==(
+      const create_data_migration_request&,
+      const create_data_migration_request&)
+      = default;
+    friend std::ostream&
+    operator<<(std::ostream&, const create_data_migration_request&);
+};
+struct create_data_migration_reply
+  : serde::envelope<
+      create_data_migration_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    data_migration_id id{-1};
+    cluster::errc ec;
+    auto serde_fields() { return std::tie(id, ec); }
+
+    friend bool operator==(
+      const create_data_migration_reply&, const create_data_migration_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const create_data_migration_reply&);
+};
+
+struct update_data_migration_state_request
+  : serde::envelope<
+      update_data_migration_state_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    data_migration_id id;
+    data_migration_state state;
+    auto serde_fields() { return std::tie(id, state); }
+    friend bool operator==(
+      const update_data_migration_state_request&,
+      const update_data_migration_state_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const update_data_migration_state_request&);
+};
+
+struct update_data_migration_state_reply
+  : serde::envelope<
+      update_data_migration_state_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    cluster::errc ec;
+    auto serde_fields() { return std::tie(ec); }
+
+    friend bool operator==(
+      const update_data_migration_state_reply&,
+      const update_data_migration_state_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const update_data_migration_state_reply&);
+};
+struct remove_data_migration_request
+  : serde::envelope<
+      remove_data_migration_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    data_migration_id id;
+    auto serde_fields() { return std::tie(id); }
+    friend bool operator==(
+      const remove_data_migration_request&,
+      const remove_data_migration_request&)
+      = default;
+    friend std::ostream&
+    operator<<(std::ostream&, const remove_data_migration_request&);
+};
+
+struct remove_data_migration_reply
+  : serde::envelope<
+      remove_data_migration_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    cluster::errc ec;
+
+    auto serde_fields() { return std::tie(ec); }
+
+    friend bool operator==(
+      const remove_data_migration_reply&, const remove_data_migration_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const remove_data_migration_reply&);
+};
+
+} // namespace cluster
