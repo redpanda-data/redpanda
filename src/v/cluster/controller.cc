@@ -191,7 +191,10 @@ ss::future<> controller::wire_up() {
                   .oidc_keys_refresh_interval.bind();
             }));
       })
-      .then([this] { return _tp_state.start(); })
+      .then([this] {
+          return _tp_state.start(ss::sharded_parameter(
+            [this] { return std::ref(_data_migrated_resources.local()); }));
+      })
       .then([this] {
           return _partition_balancer_state.start_single(
             std::ref(_tp_state),
@@ -399,6 +402,8 @@ ss::future<> controller::start(
             std::ref(_partition_manager),
             std::ref(_shard_table),
             std::ref(_shard_balancer),
+            ss::sharded_parameter(
+              [this] { return std::ref(_data_migrated_resources.local()); }),
             ss::sharded_parameter(
               [this] { return std::ref(_plugin_table.local()); }),
             ss::sharded_parameter(

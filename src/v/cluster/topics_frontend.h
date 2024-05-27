@@ -67,6 +67,7 @@ public:
       ss::sharded<partition_manager>&,
       ss::sharded<shard_table>&,
       ss::sharded<shard_balancer>&,
+      data_migrated_resources&,
       plugin_table&,
       metadata_cache&,
       config::binding<unsigned> hard_max_disk_usage_ratio,
@@ -304,6 +305,7 @@ private:
     ss::sharded<cluster::members_table>& _members_table;
     ss::sharded<partition_manager>& _pm;
     ss::sharded<shard_table>& _shard_table;
+    data_migrated_resources& _migrated_resources;
 
     config::binding<unsigned> _hard_max_disk_usage_ratio;
     config::binding<int16_t> _minimum_topic_replication;

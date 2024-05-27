@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/commands.h"
+#include "cluster/fwd.h"
 #include "cluster/notification.h"
 #include "cluster/topic_table_probe.h"
 #include "container/chunked_hash_map.h"
@@ -300,8 +301,7 @@ public:
         const in_progress_update* update = nullptr;
     };
 
-    explicit topic_table()
-      : _probe(*this){};
+    explicit topic_table(data_migrated_resources&);
 
     cluster::notification_id_type register_delta_notification(delta_cb_t cb) {
         auto id = _notification_id++;
@@ -683,7 +683,7 @@ private:
     topic_table_probe _probe;
     force_recoverable_partitions_t _partitions_to_force_reconfigure;
     model::revision_id _partitions_to_force_reconfigure_revision{0};
-
+    data_migrated_resources& _migrated_resources;
     friend class topic_table_partition_generator;
 };
 
