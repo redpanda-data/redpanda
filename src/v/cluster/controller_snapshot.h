@@ -13,6 +13,7 @@
 
 #include "cluster/client_quota_serde.h"
 #include "cluster/cluster_recovery_state.h"
+#include "cluster/data_migration_types.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
@@ -270,12 +271,24 @@ struct client_quotas_t
     auto serde_fields() { return std::tie(quotas); }
 };
 
+struct data_migrations_t
+  : public serde::
+      envelope<data_migrations_t, serde::version<0>, serde::compat_version<0>> {
+    data_migration_id next_id;
+    absl::node_hash_map<data_migration_id, data_migration_metadata> migrations;
+
+    friend bool operator==(const data_migrations_t&, const data_migrations_t&)
+      = default;
+
+    auto serde_fields() { return std::tie(next_id, migrations); }
+};
+
 } // namespace controller_snapshot_parts
 
 struct controller_snapshot
   : public serde::checksum_envelope<
       controller_snapshot,
-      serde::version<3>,
+      serde::version<4>,
       serde::compat_version<0>> {
     controller_snapshot_parts::bootstrap_t bootstrap;
     controller_snapshot_parts::features_t features;
@@ -287,6 +300,7 @@ struct controller_snapshot
     controller_snapshot_parts::plugins_t plugins;
     controller_snapshot_parts::cluster_recovery_t cluster_recovery;
     controller_snapshot_parts::client_quotas_t client_quotas;
+    controller_snapshot_parts::data_migrations_t data_migrations;
 
     friend bool
     operator==(const controller_snapshot&, const controller_snapshot&)
