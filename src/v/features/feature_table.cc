@@ -105,6 +105,8 @@ std::string_view to_string_view(feature f) {
         return "node_local_core_assignment";
     case feature::unified_tx_state:
         return "unified_tx_state";
+    case feature::data_migrations:
+        return "data_migrations";
 
     /*
      * testing features
