@@ -42,6 +42,7 @@
 #include <seastar/http/file_handler.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
+#include <seastar/http/request.hh>
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
@@ -429,6 +430,7 @@ private:
     void register_shadow_indexing_routes();
     void register_wasm_transform_routes();
     void register_recovery_mode_routes();
+    void register_data_migration_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -643,6 +645,16 @@ private:
       garbage_collect_committed_offsets(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       patch_transform_metadata(std::unique_ptr<ss::http::request>);
+
+    // Data migration routes
+    ss::future<std::unique_ptr<ss::http::reply>> list_data_migrations(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<std::unique_ptr<ss::http::reply>> add_data_migration(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<ss::json::json_return_type>
+      execute_migration_action(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      delete_migration(std::unique_ptr<ss::http::request>);
 
     ss::future<> throw_on_error(
       ss::http::request& req,

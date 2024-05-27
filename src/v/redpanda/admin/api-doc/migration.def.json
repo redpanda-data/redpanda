@@ -1,0 +1,150 @@
+"namespaced_topic": {
+    "type": "object",
+    "required": [
+        "topic"
+    ],
+    "properties": {
+        "topic": {
+            "type": "string",
+            "description": "Topic name"
+        },
+        "ns": {
+            "type": "string",
+            "description": "Topic namespace, if not present it is assumed that topic is in kafka namespace"
+        }
+    }
+},
+"outbound_migration": {
+    "type": "object",
+    "required": [
+        "migration_type"
+    ],
+    "properties": {
+        "migration_type": {
+            "type": "string",
+            "enum": [
+                "outbound"
+            ]
+        },
+        "topics": {
+            "type": "array",
+            "description": "List of migrated topics",
+            "items": {
+                "$ref": "namespaced_topic"
+            }
+        },
+        "consumer_groups": {
+            "type": "array",
+            "description": "List of migrated consumer groups",
+            "items": {
+                "type": "string"
+            }
+        },
+        "copy_to": {
+            "type": "bucket_configuration"
+        }
+    }
+},
+"inbound_migration": {
+    "type": "object",
+    "properties": {
+        "migration_type": {
+            "type": "string",
+            "enum": [
+                "inbound"
+            ]
+        },
+        "topics": {
+            "type": "array",
+            "items": {
+                "type": "inbound_topic"
+            }
+        },
+        "consumer_groups": {
+            "type": "array",
+            "description": "List of migrated consumer groups",
+            "items": {
+                "type": "string"
+            }
+        }
+    },
+    "required": [
+        "migration_type"
+    ]
+},
+"inbound_topic": {
+    "type": "object",
+    "properties": {
+        "source_topic": {
+            "description": "Name of the topic in the source cluster",
+            "type": "namespaced_topic"
+        },
+        "alias": {
+            "description": "Name of the topic in the destination cluster",
+            "type":  "namespaced_topic"
+        }
+    }
+},
+"bucket_configuration": {
+    "type": "object",
+    "required": [
+        "bucket"
+    ],
+    "properties": {
+        "access_key": {
+            "type": "string"
+        },
+        "secret_key": {
+            "type": "string"
+        },
+        "region": {
+            "type": "string"
+        },
+        "bucket": {
+            "type": "string"
+        },
+        "credential_source": {
+            "type": "string",
+            "enum": [
+                "config",
+                "instance_metadata",
+                "sts"
+            ]
+        },
+        "topic_manifest_prefix": {
+            "description": "path where topic manifests should be copied",
+            "type": "string"
+        }
+    }
+},
+"outbound_migration_state": {
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "int",
+            "description": "unique identifier of migration"
+        },
+        "state": {
+            "type": "string"
+        },
+        "migration": {
+            "type": "outbound_migration"
+        }
+    }
+},
+"inbound_migration_state": {
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "int",
+            "description": "unique identifier of migration"
+        },
+        "state": {
+            "type": "string",
+            "description": "Current migration state"
+        },
+        "migration": {
+            "type": "inbound_migration"
+        }
+    }
+}
