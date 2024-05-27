@@ -82,6 +82,7 @@ class id_allocator_stm;
 class tm_stm;
 class rm_stm;
 class data_migrated_resources;
+class data_migration_frontend;
 class data_migration_table;
 
 namespace tx {
