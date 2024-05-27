@@ -123,6 +123,7 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 	cmd := &cobra.Command{
 		Use:   "byoc",
 		Short: "Manage a Redpanda cloud BYOC agent",
+		Args:  cobra.MinimumNArgs(0), // This allows us to run "unknown" commands that live in the plugin.
 		Long: `Manage a Redpanda cloud BYOC agent
 
 For BYOC, Redpanda installs an agent service in your owned cluster. The agent
