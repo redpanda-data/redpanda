@@ -99,6 +99,7 @@ public:
     }
 
 private:
+    friend class frontend;
     friend testing_details::data_migration_table_test_accessor;
 
     ss::future<std::error_code> apply(create_data_migration_cmd);

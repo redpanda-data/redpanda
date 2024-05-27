@@ -240,6 +240,7 @@ v_cc_library(
     tx_protocol_types.cc
     data_migration_types.cc
     data_migration_table.cc
+    data_migration_frontend.cc
     data_migrated_resources.cc
   DEPS
     Seastar::seastar
