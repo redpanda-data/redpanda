@@ -77,6 +77,8 @@ enum class feature : std::uint64_t {
     cluster_topic_manifest_format_v2 = 1ULL << 45U,
     node_local_core_assignment = 1ULL << 46U,
     unified_tx_state = 1ULL << 47U,
+    shard_placement_persistence = 1ULL << 48U,
+    data_migrations = 1ULL << 49U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -392,6 +394,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{13},
     "unified_tx_state",
     feature::unified_tx_state,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{13},
+    "data_migrations",
+    feature::data_migrations,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };

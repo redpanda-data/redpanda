@@ -101,10 +101,14 @@ std::string_view to_string_view(feature f) {
         return "role_based_access_control";
     case feature::cluster_topic_manifest_format_v2:
         return "cluster_topic_manifest_format_v2";
+    case feature::shard_placement_persistence:
+        return "shard_placement_persistence";
     case feature::node_local_core_assignment:
         return "node_local_core_assignment";
     case feature::unified_tx_state:
         return "unified_tx_state";
+    case feature::data_migrations:
+        return "data_migrations";
 
     /*
      * testing features
