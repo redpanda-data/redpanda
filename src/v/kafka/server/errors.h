@@ -108,6 +108,10 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::producer_ids_vcluster_limit_exceeded:
     case cluster::errc::validation_of_recovery_topic_failed:
     case cluster::errc::replica_does_not_exist:
+    case cluster::errc::invalid_data_migration_state:
+    case cluster::errc::data_migration_already_exists:
+    case cluster::errc::data_migration_not_exists:
+    case cluster::errc::data_migration_invalid_resources:
         break;
     }
     return error_code::unknown_server_error;
