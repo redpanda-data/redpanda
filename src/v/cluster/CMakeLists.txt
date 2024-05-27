@@ -230,6 +230,7 @@ v_cc_library(
     tm_stm_types.cc
     tx_errc.cc
     tx_protocol_types.cc
+    data_migration_types.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
