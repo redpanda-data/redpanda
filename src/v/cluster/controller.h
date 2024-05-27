@@ -143,6 +143,10 @@ public:
     }
     ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
 
+    ss::sharded<data_migrations::frontend>& get_data_migration_frontend() {
+        return _data_migration_frontend;
+    }
+
     std::optional<std::reference_wrapper<cloud_metadata::uploader>>
     metadata_uploader() {
         if (_metadata_uploader) {
@@ -262,6 +266,8 @@ private:
     ss::sharded<members_table> _members_table;             // instance per core
     ss::sharded<partition_balancer_state>
       _partition_balancer_state; // single instance
+    ss::sharded<data_migrations::migrated_resources> _data_migrated_resources;
+    std::unique_ptr<data_migrations::migrations_table> _data_migration_table;
     ss::sharded<partition_leaders_table>
       _partition_leaders;                                // instance per core
     ss::sharded<shard_placement_table> _shard_placement; // istance per core
@@ -276,6 +282,7 @@ private:
     ss::sharded<members_backend> _members_backend;       // single instance
     ss::sharded<config_frontend> _config_frontend;       // instance per core
     ss::sharded<config_manager> _config_manager;         // single instance
+    ss::sharded<data_migrations::frontend> _data_migration_frontend;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<shard_table>& _shard_table;
@@ -307,7 +314,7 @@ private:
     ss::sharded<client_quota::frontend> _quota_frontend; // instance per core
     ss::sharded<client_quota::store> _quota_store;       // instance per core
     ss::sharded<client_quota::backend> _quota_backend;   // single instance
-
+    std::unique_ptr<data_migrations::backend> _data_migration_backend;
     ss::gate _gate;
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;

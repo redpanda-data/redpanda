@@ -34,6 +34,7 @@
 #include "cluster/cluster_uuid.h"
 #include "cluster/controller.h"
 #include "cluster/controller_snapshot.h"
+#include "cluster/data_migration_service_handler.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/ephemeral_credential_service.h"
 #include "cluster/fwd.h"
@@ -2861,6 +2862,12 @@ void application::start_runtime_services(
                   std::ref(controller->get_partition_leaders()),
                   config::node().node_id().value()));
           }
+          runtime_services.push_back(
+            std::make_unique<cluster::data_migrations::service_handler>(
+              sched_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(controller->get_data_migration_frontend())));
+
           s.add_services(std::move(runtime_services));
 
           // Done! Disallow unknown method errors.
