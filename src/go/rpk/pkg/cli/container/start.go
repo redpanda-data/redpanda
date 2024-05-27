@@ -127,6 +127,7 @@ Start a 3-broker cluster, selecting every admin API port:
 			// (POSIX standard)
 			UnknownFlags: true,
 		},
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			if nodes < 1 {
 				out.Die("--nodes should be 1 or greater")
