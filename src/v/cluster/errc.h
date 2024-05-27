@@ -90,6 +90,10 @@ enum class errc : int16_t {
     producer_ids_vcluster_limit_exceeded,
     validation_of_recovery_topic_failed,
     replica_does_not_exist,
+    invalid_data_migration_state,
+    data_migration_not_exists,
+    data_migration_already_exists,
+    data_migration_invalid_resources,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -262,6 +266,15 @@ struct errc_category final : public std::error_category {
             return "Validation of recovery topic failed";
         case errc::replica_does_not_exist:
             return "Partition replica does not exist";
+        case errc::invalid_data_migration_state:
+            return "Invalid data migration state transition requested";
+        case errc::data_migration_not_exists:
+            return "Requested data migration does not exists";
+        case errc::data_migration_already_exists:
+            return "Data migration with requested id already exists";
+        case errc::data_migration_invalid_resources:
+            return "Data migration contains resources that does not exists or "
+                   "are already being migrated";
         }
         return "cluster::errc::unknown";
     }
