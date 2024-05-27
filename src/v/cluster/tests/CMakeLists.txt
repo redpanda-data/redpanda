@@ -53,6 +53,7 @@ set(srcs
     distributed_kv_stm_tests.cc
     id_allocator_stm_test.cc
     tm_stm_tests.cc
+    data_migration_table_test.cc
     )
 
 foreach(cluster_test_src ${srcs})

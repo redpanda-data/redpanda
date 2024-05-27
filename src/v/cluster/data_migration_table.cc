@@ -1,0 +1,304 @@
+/*
+ * Copyright 2024 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+#include "cluster/data_migration_table.h"
+
+#include "cluster/controller_snapshot.h"
+#include "cluster/data_migrated_resources.h"
+#include "cluster/data_migration_types.h"
+#include "cluster/errc.h"
+#include "cluster/logger.h"
+#include "cluster/topic_table.h"
+
+#include <seastar/util/variant_utils.hh>
+
+namespace cluster {
+
+data_migration_table::data_migration_table(
+  ss::sharded<data_migrated_resources>& resources,
+  ss::sharded<topic_table>& topics)
+  : _resources(resources)
+  , _topics(topics) {}
+
+bool data_migration_table::is_valid_state_transition(
+  data_migration_state current, data_migration_state target) {
+    switch (current) {
+    case data_migration_state::planned:
+        return target == data_migration_state::preparing;
+    case data_migration_state::preparing:
+        return target == data_migration_state::prepared
+               || target == data_migration_state::canceling;
+    case data_migration_state::prepared:
+        return target == data_migration_state::executing
+               || target == data_migration_state::canceling;
+    case data_migration_state::executing:
+        return target == data_migration_state::executed
+               || target == data_migration_state::canceling;
+    case data_migration_state::executed:
+        return target == data_migration_state::finished
+               || target == data_migration_state::canceling;
+    case data_migration_state::canceling:
+        return target == data_migration_state::cancelled;
+    /**
+     * Those are the terminal states, there it is impossible to get out of them
+     * in other way than deleting migration object
+     **/
+    case data_migration_state::cancelled:
+        [[fallthrough]];
+    case data_migration_state::finished:
+        return false;
+    }
+}
+
+bool data_migration_table::is_empty_migration(const data_migration& m) {
+    return ss::visit(
+      m, [](const auto& m) { return m.topics.empty() && m.groups.empty(); });
+}
+
+ss::future<std::error_code>
+data_migration_table::apply_update(model::record_batch batch) {
+    auto cmd = co_await deserialize(std::move(batch), commands);
+
+    co_return co_await std::visit(
+      [this](auto cmd) { return apply(std::move(cmd)); }, std::move(cmd));
+}
+
+ss::future<>
+data_migration_table::fill_snapshot(controller_snapshot& snapshot) const {
+    snapshot.data_migrations.next_id = _next_id;
+    snapshot.data_migrations.migrations.reserve(_migrations.size());
+    for (auto& [id, migration] : _migrations) {
+        snapshot.data_migrations.migrations.emplace(id, migration.copy());
+    }
+
+    co_return;
+}
+
+ss::future<> data_migration_table::apply_snapshot(
+  model::offset, const controller_snapshot& snapshot) {
+    _next_id = snapshot.data_migrations.next_id;
+    _migrations.reserve(_migrations.size());
+    for (auto& [id, migration] : snapshot.data_migrations.migrations) {
+        auto [it, _] = _migrations.emplace(id, migration.copy());
+        co_await _resources.invoke_on_all(
+          [&meta = it->second](data_migrated_resources& resources) {
+              resources.apply_update(meta);
+          });
+    }
+
+    for (const auto& [id, _] : _migrations) {
+        notify_callbacks(id);
+    }
+
+    co_return;
+}
+
+std::optional<std::reference_wrapper<const data_migration_metadata>>
+data_migration_table::get_migration(data_migration_id id) const {
+    if (auto it = _migrations.find(id); it != _migrations.end()) {
+        return std::make_optional<
+          std::reference_wrapper<const data_migration_metadata>>(
+          std::ref(it->second));
+    }
+    return {};
+}
+
+data_migration_table::notification_id
+data_migration_table::register_notification(notification_callback clb) {
+    return _callbacks.try_emplace(++_latest_id, std::move(clb)).first->first;
+}
+
+void data_migration_table::unregister_notification(notification_id id) {
+    _callbacks.erase(id);
+}
+
+void data_migration_table::notify_callbacks(data_migration_id id) {
+    for (auto& [_, clb] : _callbacks) {
+        clb(id);
+    }
+}
+ss::future<std::error_code>
+data_migration_table::apply(create_data_migration_cmd cmd) {
+    auto migration = std::move(cmd.value.migration);
+    const auto id = cmd.value.id;
+    vlog(
+      dm_log.debug,
+      "applying create data migration: {} with id: {}",
+      migration,
+      id);
+    if (id <= _last_applied) {
+        co_return errc::data_migration_already_exists;
+    }
+    /**
+     * We do not allow to create empty data migrations
+     */
+    if (is_empty_migration(migration)) {
+        co_return errc::data_migration_invalid_resources;
+    }
+
+    auto err = validate_migrated_resources(migration);
+    if (err) {
+        vlog(dm_log.info, "migration validation error: {}", err.value());
+        co_return errc::data_migration_invalid_resources;
+    }
+
+    auto [it, success] = _migrations.try_emplace(
+      id, data_migration_metadata{.id = id, .migration = std::move(migration)});
+
+    if (!success) {
+        // TODO: consider explaining to the client that we had an internal race
+        // condition and it should retry
+        co_return errc::data_migration_already_exists;
+    }
+    _last_applied = id;
+    _next_id = std::max(_next_id, _last_applied + data_migration_id(1));
+    // update migrated resources
+    co_await _resources.invoke_on_all(
+      [&meta = it->second](data_migrated_resources& resources) {
+          resources.apply_update(meta);
+      });
+    notify_callbacks(id);
+
+    co_return errc::success;
+}
+
+std::optional<data_migration_table::validation_error>
+data_migration_table::validate_migrated_resources(
+  const data_migration& migration) const {
+    return ss::visit(migration, [this](const auto& migration) {
+        return validate_migrated_resources(migration);
+    });
+}
+
+std::optional<data_migration_table::validation_error>
+data_migration_table::validate_migrated_resources(
+  const inbound_data_migration& idm) const {
+    for (const auto& t : idm.topics) {
+        if (_topics.local().contains(t.effective_topic_name())) {
+            return validation_error{ssx::sformat(
+              "topic with name {} already exists in this cluster",
+              t.effective_topic_name())};
+        }
+
+        if (_resources.local().is_already_migrated(t.effective_topic_name())) {
+            return validation_error{ssx::sformat(
+              "topic with name {} is already part of active migration",
+              t.effective_topic_name())};
+        }
+    }
+
+    for (const auto& group : idm.groups) {
+        if (_resources.local().is_already_migrated(group)) {
+            return validation_error{ssx::sformat(
+              "group with name {} is already part of active migration", group)};
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<data_migration_table::validation_error>
+data_migration_table::validate_migrated_resources(
+  const outbound_data_migration& odm) const {
+    for (const auto& t : odm.topics) {
+        if (!_topics.local().contains(t)) {
+            return validation_error{ssx::sformat(
+              "topic with name {} does not exists in current cluster", t)};
+        }
+
+        if (_resources.local().is_already_migrated(t)) {
+            return validation_error{ssx::sformat(
+              "topic with name {} is already part of active migration", t)};
+        }
+    }
+
+    for (const auto& group : odm.groups) {
+        if (_resources.local().is_already_migrated(group)) {
+            return validation_error{ssx::sformat(
+              "group with name {} is already part of active migration", group)};
+        }
+    }
+
+    return std::nullopt;
+}
+
+ss::future<std::error_code>
+data_migration_table::apply(update_data_migration_state_cmd cmd) {
+    auto const id = cmd.value.id;
+    auto const requested_state = cmd.value.requested_state;
+    vlog(
+      dm_log.debug,
+      "applying update data migration {} state to {}",
+      id,
+      requested_state);
+    auto it = _migrations.find(id);
+    if (it == _migrations.end()) {
+        co_return errc::data_migration_not_exists;
+    }
+
+    if (!is_valid_state_transition(it->second.state, requested_state)) {
+        // invalid state transition
+        vlog(
+          dm_log.info,
+          "can not update migration {} state from {} to {}, this transition is "
+          "invalid",
+          id,
+          it->second.state,
+          requested_state);
+
+        co_return errc::invalid_data_migration_state;
+    }
+    it->second.state = requested_state;
+    co_await _resources.invoke_on_all(
+      [&meta = it->second](data_migrated_resources& resources) {
+          resources.apply_update(meta);
+      });
+    notify_callbacks(id);
+
+    co_return errc::success;
+}
+
+ss::future<std::error_code>
+data_migration_table::apply(remove_data_migration_cmd cmd) {
+    const auto id = cmd.value.id;
+    auto it = _migrations.find(id);
+    vlog(dm_log.debug, "applying remove migration {} command", id);
+
+    if (it == _migrations.end()) {
+        co_return errc::data_migration_not_exists;
+    }
+
+    switch (it->second.state) {
+    case cluster::data_migration_state::cancelled:
+    case cluster::data_migration_state::finished:
+    case cluster::data_migration_state::planned: {
+        co_await _resources.invoke_on_all(
+          [&meta = it->second](data_migrated_resources& resources) {
+              resources.remove_migration(meta);
+          });
+        _migrations.erase(it);
+
+        notify_callbacks(id);
+        co_return errc::success;
+    }
+    default:
+        vlog(
+          dm_log.warn,
+          "can not remove migration with id {} which is in {} state",
+          id,
+          it->second.state);
+
+        co_return errc::invalid_data_migration_state;
+    }
+
+    __builtin_unreachable();
+}
+
+} // namespace cluster
