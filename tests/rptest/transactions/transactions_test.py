@@ -137,6 +137,17 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         return len(producers_per_node) == len(
             brokers) and remaining_match and evicted_match
 
+    def no_running_transactions(self):
+        tx_list = self.admin.get_all_transactions()
+        # Filter out killed / aborting transactions.
+        # Note: killed (timedout) transactions are weirdly reported
+        # as 'aborting' for some reason.
+        tx_list = [
+            tx for tx in tx_list
+            if tx['status'] in ['ready', 'ongoing', 'preparing', 'prepared']
+        ]
+        return len(tx_list) == 0
+
     @cluster(num_nodes=3)
     def find_coordinator_creates_tx_topics_test(self):
         for node in self.redpanda.started_nodes():
@@ -384,12 +395,9 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
         # Default transactional id expiration is 7d, so the transaction
         # should be hung.
-        def no_running_transactions():
-            return len(admin.get_all_transactions()) == 0
-
         wait_timeout_s = 20
         try:
-            wait_until(no_running_transactions,
+            wait_until(self.no_running_transactions,
                        timeout_sec=wait_timeout_s,
                        backoff_sec=2,
                        err_msg="Transactions still running")
@@ -399,7 +407,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
         # transaction should be aborted.
         rpk.cluster_config_set("transactional_id_expiration_ms", 5000)
-        wait_until(no_running_transactions,
+        wait_until(self.no_running_transactions,
                    timeout_sec=wait_timeout_s,
                    backoff_sec=2,
                    err_msg="Transactions still running")
@@ -455,7 +463,14 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                              partition=0,
                              on_delivery=self.on_delivery)
         producer.flush()
-        sleep(10)
+
+        # Wait for transactions to hit expiration timeout.
+        wait_until(
+            self.no_running_transactions,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Transactions are still running, expected to be expired.")
+
         try:
             producer.commit_transaction()
             assert False, "tx is expected to be expired"
