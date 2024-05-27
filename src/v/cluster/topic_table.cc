@@ -18,6 +18,7 @@
 #include "cluster/topic_validators.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
+#include "data_migration_types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "storage/ntp_config.h"
@@ -33,11 +34,21 @@
 
 namespace cluster {
 
+topic_table::topic_table(
+  data_migrations::migrated_resources& migrated_resources)
+  : _probe(*this)
+  , _migrated_resources(migrated_resources) {}
+
 ss::future<std::error_code>
 topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     _last_applied_revision_id = model::revision_id(offset);
     if (_topics.contains(cmd.key)) {
         // topic already exists
+        return ss::make_ready_future<std::error_code>(
+          errc::topic_already_exists);
+    }
+
+    if (_migrated_resources.is_already_migrated(cmd.key)) {
         return ss::make_ready_future<std::error_code>(
           errc::topic_already_exists);
     }
@@ -98,6 +109,12 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
 
 std::error_code
 topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
+    auto const migration_state = _migrated_resources.get_topic_state(nt);
+    if (
+      migration_state
+      != data_migrations::migrated_resource_state::non_restricted) {
+        return errc::resource_is_being_migrated;
+    }
     if (auto tp = _topics.find(nt); tp != _topics.end()) {
         for (auto& p_as : tp->second.get_assignments()) {
             _partition_count--;
@@ -181,6 +198,13 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
 
 ss::future<std::error_code>
 topic_table::apply(create_partition_cmd cmd, model::offset offset) {
+    auto const migration_state = _migrated_resources.get_topic_state(
+      cmd.value.cfg.tp_ns);
+    if (
+      migration_state
+      != data_migrations::migrated_resource_state::non_restricted) {
+        co_return errc::resource_is_being_migrated;
+    }
     _last_applied_revision_id = model::revision_id(offset);
     auto tp = _topics.find(cmd.key);
     if (tp == _topics.end()) {
@@ -838,6 +862,12 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     auto tp = _topics.find(cmd.key);
     if (tp == _topics.end()) {
         co_return make_error_code(errc::topic_not_exists);
+    }
+    auto const migration_state = _migrated_resources.get_topic_state(cmd.key);
+    if (
+      migration_state
+      != data_migrations::migrated_resource_state::non_restricted) {
+        co_return errc::resource_is_being_migrated;
     }
     auto& properties = tp->second.get_configuration().properties;
     auto properties_snapshot = properties;
