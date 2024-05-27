@@ -85,6 +85,7 @@ namespace data_migrations {
 class migrated_resources;
 class migrations_table;
 class frontend;
+class backend;
 } // namespace data_migrations
 
 namespace tx {
