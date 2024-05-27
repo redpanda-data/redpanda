@@ -12,4 +12,5 @@
 namespace cluster {
 ss::logger clusterlog{"cluster"};
 ss::logger txlog{"tx"};
+ss::logger dm_log{"d-migrations"};
 } // namespace cluster
