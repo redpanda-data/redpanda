@@ -152,6 +152,8 @@ public:
             std::ref(app.controller->get_topics_frontend()),
             std::ref(app.controller->get_config_frontend()),
             std::ref(app.controller->get_feature_table()),
+            std::ref(app.controller->get_quota_frontend()),
+            std::ref(app.controller->get_quota_store()),
             std::ref(app.quota_mgr),
             std::ref(app.snc_quota_mgr),
             std::ref(app.group_router),

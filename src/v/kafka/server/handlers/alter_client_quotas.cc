@@ -38,6 +38,10 @@ ss::future<response_ptr> alter_client_quotas_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
+    // TODO: implement the AlterClientQuotas API
+    // ctx.quota_store().get_quota(...);
+    // ctx.quota_frontend().alter_quotas(...);
+
     alter_client_quotas_response response;
     make_error_response(request, response);
 
