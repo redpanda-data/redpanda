@@ -44,4 +44,14 @@ void store::clear() { _quotas.clear(); }
 
 const store::container_type& store::all_quotas() const { return _quotas; }
 
+void store::apply_delta(const alter_delta_cmd_data& data) {
+    for (auto& [key, value] : data.upsert) {
+        set_quota(key, value);
+    }
+    for (auto& [key] : data.remove) {
+        remove_quota(key);
+    }
+    _quotas.rehash(0);
+}
+
 } // namespace cluster::client_quota

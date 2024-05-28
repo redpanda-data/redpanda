@@ -110,6 +110,7 @@ class uploader;
 
 namespace client_quota {
 class frontend;
+class backend;
 class store;
 }; // namespace client_quota
 

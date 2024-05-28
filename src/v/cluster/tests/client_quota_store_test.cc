@@ -9,6 +9,7 @@
 
 #include "cluster/client_quota_serde.h"
 #include "cluster/client_quota_store.h"
+#include "cluster/controller_snapshot.h"
 #include "utils/to_string.h"
 
 #include <boost/algorithm/string.hpp>
@@ -109,6 +110,32 @@ BOOST_AUTO_TEST_CASE(quota_store_range) {
     BOOST_CHECK_EQUAL(specific_client_quota.size(), 1);
     BOOST_CHECK_EQUAL(specific_client_quota[0].first, key1);
     BOOST_CHECK_EQUAL(specific_client_quota[0].second, val1);
+}
+
+BOOST_AUTO_TEST_CASE(quota_store_snapshot_delta) {
+    auto snap = controller_snapshot_parts::client_quotas_t {
+        .quotas = {
+            {key0, val0},
+            {key1, val1},
+        },
+    };
+    store st{snap};
+
+    BOOST_CHECK_EQUAL(st.size(), 2);
+    BOOST_CHECK_EQUAL(st.get_quota(key0), val0);
+    BOOST_CHECK_EQUAL(st.get_quota(key1), val1);
+    BOOST_CHECK(!st.get_quota(key2).has_value());
+
+    auto delta = alter_delta_cmd_data{
+      .upsert = {{.key = key2, .value = val2}},
+      .remove = {{.key = key1}},
+    };
+    st.apply_delta(delta);
+
+    BOOST_CHECK_EQUAL(st.size(), 2);
+    BOOST_CHECK_EQUAL(st.get_quota(key0), val0);
+    BOOST_CHECK(!st.get_quota(key1).has_value());
+    BOOST_CHECK_EQUAL(st.get_quota(key2), val2);
 }
 
 } // namespace cluster::client_quota

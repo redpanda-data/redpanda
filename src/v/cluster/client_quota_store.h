@@ -8,7 +8,8 @@
 // by the Apache License, Version 2.0
 #pragma once
 
-#include "client_quota_serde.h"
+#include "cluster/client_quota_serde.h"
+#include "cluster/controller_snapshot.h"
 #include "container/fragmented_vector.h"
 
 #include <absl/algorithm/container.h>
@@ -23,6 +24,13 @@ public:
       = chunked_vector<std::pair<entity_key, entity_value>>;
     using range_callback_type
       = std::function<bool(const std::pair<entity_key, entity_value>&)>;
+
+    /// Constructs an empty store
+    store() = default;
+
+    /// Constructs a store based on a controller snapshot
+    explicit store(const controller_snapshot_parts::client_quotas_t& snap)
+      : _quotas{snap.quotas} {};
 
     /// Upserts the given quota at the given entity key
     /// All quota types are overwritten with the given entity_value, so on alter
@@ -47,6 +55,9 @@ public:
 
     /// Returns a copy of all the client quotas in the store
     const container_type& all_quotas() const;
+
+    /// Applies the given alter controller command to the store
+    void apply_delta(const alter_delta_cmd_data&);
 
     static constexpr auto entity_part_filter =
       [](
