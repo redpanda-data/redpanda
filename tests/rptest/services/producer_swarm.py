@@ -10,10 +10,11 @@
 from dataclasses import dataclass
 from ducktape.tests.test import TestContext
 from ducktape.services.service import Service
-from typing import Optional
+from typing import Any, Optional
 
-import time
 import requests
+
+from rptest.services.redpanda import AnyRedpandaService
 
 
 class ProducerSwarm(Service):
@@ -24,7 +25,7 @@ class ProducerSwarm(Service):
 
     def __init__(self,
                  context: TestContext,
-                 redpanda,
+                 redpanda: AnyRedpandaService,
                  topic: str,
                  producers: int,
                  records_per_producer: int,

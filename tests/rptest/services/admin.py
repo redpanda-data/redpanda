@@ -17,12 +17,13 @@ from time import sleep
 import urllib.parse
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 from ducktape.cluster.cluster import ClusterNode
 from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
 from rptest.util import wait_until_result
 from requests.exceptions import HTTPError
 from requests import Response
+from json.decoder import JSONDecodeError
 
 DEFAULT_TIMEOUT = 30
 
@@ -333,7 +334,7 @@ class Admin:
                 json = r.json()
                 self.redpanda.logger.debug(f"Response OK, JSON: {json}")
                 return json
-            except json.decoder.JSONDecodeError as e:
+            except JSONDecodeError as e:
                 self.redpanda.logger.debug(
                     f"Response OK, Malformed JSON: '{r.text}' ({e})")
                 return None

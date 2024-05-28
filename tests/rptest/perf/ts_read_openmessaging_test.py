@@ -69,7 +69,7 @@ class TSReadOpenmessagingTest(RedpandaTest):
         benchmark = OpenMessagingBenchmark(self._ctx,
                                            self.redpanda,
                                            driver=driver_idx,
-                                           workload=[workload, validator])
+                                           workload=(workload, validator))
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time(
         ) + TSReadOpenmessagingTest.BENCHMARK_WAIT_TIME_MIN

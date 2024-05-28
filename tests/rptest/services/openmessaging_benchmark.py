@@ -532,6 +532,9 @@ class OpenMessagingBenchmark(Service):
         return v
 
     def benchmark_time(self) -> int:
+        """An estimate of the runtime of the test in minutes. This simply sums the warmup and test runtime so
+        is always an underestimate (unless the run fails early), so you should add a few minutes of
+        buffer to the returned value to set timeouts."""
         return self.get_workload_int(
             "test_duration_minutes") + self.get_workload_int(
                 "warmup_duration_minutes")

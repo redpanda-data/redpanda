@@ -7,6 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from typing import Callable
+
+OMBValiatorFunction = Callable[[float], bool]
+OMBValidator = tuple[OMBValiatorFunction, str]
+
 
 # Pre populated OMB perf runner configurations.
 class OMBSampleConfigurations:
@@ -35,17 +40,17 @@ class OMBSampleConfigurations:
     AVG_THROUGHPUT_MBPS = "throughputMBps"
 
     @staticmethod
-    def range(min_val, max_val):
+    def range(min_val: float, max_val: float) -> OMBValidator:
         return (lambda x: x >= min_val and x <= max_val,
                 f"Expected in range [{min_val}, {max_val}], check failed.")
 
     @staticmethod
-    def lte(max_val):
+    def lte(max_val: float) -> OMBValidator:
         return (lambda x: x <= max_val,
                 f"Expected to be <= {max_val}, check failed.")
 
     @staticmethod
-    def gte(min_val):
+    def gte(min_val: float) -> OMBValidator:
         return (lambda x: x >= min_val,
                 f"Expected to be >= {min_val}, check failed.")
 
