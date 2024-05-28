@@ -24,6 +24,7 @@
 #include "cluster/topic_updates_dispatcher.h"
 #include "cluster/types.h"
 #include "container/fragmented_vector.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "random/generators.h"
@@ -62,9 +63,15 @@ public:
       : dispatcher(allocator, table, leaders, state) {
         table.start().get();
         members.start_single().get();
+        features.start().get();
+        features
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
         allocator
           .start_single(
             std::ref(members),
+            std::ref(features),
             config::mock_binding<std::optional<size_t>>(std::nullopt),
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
@@ -144,10 +151,12 @@ public:
         node_status_table.stop().get();
         table.stop().get();
         allocator.stop().get();
+        features.stop().get();
         members.stop().get();
     }
 
     ss::sharded<cluster::members_table> members;
+    ss::sharded<features::feature_table> features;
     ss::sharded<cluster::partition_allocator> allocator;
     ss::sharded<cluster::topic_table> table;
     ss::sharded<cluster::partition_leaders_table> leaders;

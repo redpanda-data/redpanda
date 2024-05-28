@@ -18,6 +18,7 @@
 #include "cluster/scheduling/types.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "random/generators.h"
 #include "ssx/async_algorithm.h"
@@ -44,6 +45,7 @@ namespace cluster {
 
 partition_allocator::partition_allocator(
   ss::sharded<members_table>& members,
+  ss::sharded<features::feature_table>& feature_table,
   config::binding<std::optional<size_t>> memory_per_partition,
   config::binding<std::optional<int32_t>> fds_per_partition,
   config::binding<uint32_t> partitions_per_shard,
@@ -51,8 +53,12 @@ partition_allocator::partition_allocator(
   config::binding<std::vector<ss::sstring>> internal_kafka_topics,
   config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>(
-    partitions_per_shard, partitions_reserve_shard0, internal_kafka_topics))
+    feature_table.local(),
+    partitions_per_shard,
+    partitions_reserve_shard0,
+    internal_kafka_topics))
   , _members(members)
+  , _feature_table(feature_table.local())
   , _memory_per_partition(std::move(memory_per_partition))
   , _fds_per_partition(std::move(fds_per_partition))
   , _partitions_per_shard(std::move(partitions_per_shard))
@@ -504,6 +510,7 @@ void partition_allocator::remove_final_counts(
 ss::future<>
 partition_allocator::apply_snapshot(const controller_snapshot& snap) {
     auto new_state = std::make_unique<allocation_state>(
+      _feature_table,
       _partitions_per_shard,
       _partitions_reserve_shard0,
       _internal_kafka_topics);

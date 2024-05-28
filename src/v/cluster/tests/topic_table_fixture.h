@@ -20,6 +20,7 @@
 #include "cluster/tests/utils.h"
 #include "cluster/topic_table.h"
 #include "config/property.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
@@ -47,9 +48,11 @@ struct topic_table_fixture {
     topic_table_fixture() {
         table.start().get0();
         members.start_single().get0();
+        features.start().get();
         allocator
           .start_single(
             std::ref(members),
+            std::ref(features),
             config::mock_binding<std::optional<size_t>>(std::nullopt),
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
@@ -79,6 +82,7 @@ struct topic_table_fixture {
         node_status.stop().get();
         table.stop().get0();
         allocator.stop().get0();
+        features.stop().get();
         members.stop().get0();
         as.request_abort();
     }
@@ -169,6 +173,7 @@ struct topic_table_fixture {
     }
 
     ss::sharded<cluster::members_table> members;
+    ss::sharded<features::feature_table> features;
     ss::sharded<cluster::partition_allocator> allocator;
     ss::sharded<cluster::topic_table> table;
     ss::sharded<cluster::partition_leaders_table> leaders;
