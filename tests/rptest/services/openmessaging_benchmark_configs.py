@@ -7,10 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from typing import Callable
+from typing import Any, Callable
 
 OMBValiatorFunction = Callable[[float], bool]
 OMBValidator = tuple[OMBValiatorFunction, str]
+ValidatorDict = dict[str, list[Any]]
 
 
 # Pre populated OMB perf runner configurations.
@@ -97,21 +98,24 @@ class OMBSampleConfigurations:
         AVG_THROUGHPUT_MBPS: [gte(600)]
     }
 
-    def validate_metrics(metrics, validator, raise_exceptions=True):
+    @staticmethod
+    def validate_metrics(metrics,
+                         validator: ValidatorDict,
+                         raise_exceptions=True):
         """Validates some predefined metrics rules against the metrics data.
-    
+
         Args:
             metrics: The metrics to validate.
             validator: A dictionary containing the validation rules.
             raise_exceptions: If True, raises an exception when validation fails. If False, returns the validation results.
-        
+
         Returns:
             A tuple (is_valid, results), where is_valid is a boolean indicating if all metrics passed validation,
             and results is a list of validation failures.
         """
         assert len(validator) > 0, "At least one metric should be validated"
 
-        results = []
+        results: list[str] = []
         kv_str = lambda k, v: f"Metric {k}, value {v}, "
 
         for key in validator.keys():
