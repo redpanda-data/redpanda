@@ -45,12 +45,11 @@ class ControlCharacterPermittedBase(RedpandaTest):
         assert config.keys().isdisjoint(
             {self.feature_legacy_permit_control_char})
 
-    def _perform_update(self, initial_version, version):
-        self._installer.install(self.redpanda.nodes, version)
-        self.redpanda.restart_nodes(self.redpanda.nodes)
-
-        unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert ver_string(initial_version) not in unique_versions
+    def _perform_update(self, initial_version):
+        versions = self.load_version_range(initial_version)[1:]
+        for version in self.upgrade_through_versions(versions,
+                                                     already_running=True):
+            self.logger.info(f"Updated to {version}")
 
         config = self._admin.get_cluster_config()
         assert config.keys() > {self.feature_legacy_permit_control_char}
@@ -84,7 +83,7 @@ class ControlCharacterPermittedAfterUpgrade(ControlCharacterPermittedBase):
         # Creates a user with invalid control characters
 
         self._admin.create_user("my\nuser", "password", "SCRAM-SHA-256")
-        self._perform_update(initial_version, RedpandaInstaller.HEAD)
+        self._perform_update(initial_version)
         # Should still be able to create a user
         self._admin.create_user("my\notheruser", "password", "SCRAM-SHA-256")
         self._admin.patch_cluster_config(
@@ -147,7 +146,7 @@ class ControlCharacterNag(ControlCharacterPermittedBase):
         # Nag shouldn't be in logs
         assert not self._has_flag_nag()
 
-        self._perform_update(initial_version, RedpandaInstaller.HEAD)
+        self._perform_update(initial_version)
 
         assert self._has_flag_nag()
 
