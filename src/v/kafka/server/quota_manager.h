@@ -30,7 +30,6 @@
 #include <absl/container/node_hash_map.h>
 
 #include <chrono>
-#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -116,6 +115,9 @@ private:
     using quota_mutation_callback_t
       = ss::noncopyable_function<clock::duration(client_quota&)>;
 
+    using quota_config
+      = std::unordered_map<ss::sstring, config::client_group_quota>;
+
     clock::duration cap_to_max_delay(
       std::optional<std::string_view> client_id, clock::duration delay);
 
@@ -141,10 +143,8 @@ private:
     config::binding<uint32_t> _default_target_produce_tp_rate;
     config::binding<std::optional<uint32_t>> _default_target_fetch_tp_rate;
     config::binding<std::optional<uint32_t>> _target_partition_mutation_quota;
-    config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
-      _target_produce_tp_rate_per_client_group;
-    config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
-      _target_fetch_tp_rate_per_client_group;
+    config::binding<quota_config> _target_produce_tp_rate_per_client_group;
+    config::binding<quota_config> _target_fetch_tp_rate_per_client_group;
 
     client_quotas_t& _client_quotas;
 
