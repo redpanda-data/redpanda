@@ -108,6 +108,11 @@ class producer_id_recovery_manager;
 class uploader;
 } // namespace cloud_metadata
 
+namespace client_quota {
+class frontend;
+class store;
+}; // namespace client_quota
+
 } // namespace cluster
 
 namespace seastar {
