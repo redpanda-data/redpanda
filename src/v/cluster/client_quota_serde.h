@@ -17,6 +17,7 @@
 #include <absl/container/flat_hash_set.h>
 
 #include <iosfwd>
+#include <vector>
 
 namespace cluster::client_quota {
 
@@ -143,22 +144,32 @@ struct entity_value
     std::optional<uint64_t> controller_mutation_rate;
 };
 
-/// remove_entity_value describes a removal action on an entity_value
-/// The fields set to true should be removed (set to std::nullopt) by the
-/// action.
-struct remove_entity_value
+struct alter_delta_cmd_data
   : serde::envelope<
-      remove_entity_value,
+      alter_delta_cmd_data,
       serde::version<0>,
       serde::compat_version<0>> {
-    auto serde_fields() {
-        return std::tie(
-          producer_byte_rate, consumer_byte_rate, controller_mutation_rate);
-    }
+    struct upsert_op
+      : serde::
+          envelope<upsert_op, serde::version<0>, serde::compat_version<0>> {
+        client_quota::entity_key key;
+        client_quota::entity_value value;
+        auto serde_fields() { return std::tie(key, value); }
+    };
 
-    bool producer_byte_rate;
-    bool consumer_byte_rate;
-    bool controller_mutation_rate;
+    struct remove_op
+      : serde::
+          envelope<remove_op, serde::version<0>, serde::compat_version<0>> {
+        client_quota::entity_key key;
+        auto serde_fields() { return std::tie(key); }
+    };
+
+    std::vector<upsert_op> upsert;
+    std::vector<remove_op> remove;
+
+    friend bool
+    operator==(const alter_delta_cmd_data&, const alter_delta_cmd_data&)
+      = default;
 };
 
 } // namespace cluster::client_quota
