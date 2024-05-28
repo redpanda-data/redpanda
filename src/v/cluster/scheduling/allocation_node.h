@@ -125,13 +125,18 @@ public:
         return _allocated_partitions == allocation_capacity{0};
     }
     bool is_full(const model::ntp&, bool will_add_allocation) const;
-    ss::shard_id allocate(partition_allocation_domain);
 
 private:
     friend allocation_state;
 
-    void deallocate_on(ss::shard_id core, partition_allocation_domain);
-    void allocate_on(ss::shard_id core, partition_allocation_domain);
+    ss::shard_id allocate_shard();
+
+    void add_allocation(partition_allocation_domain);
+    void add_allocation(ss::shard_id core);
+    void remove_allocation(partition_allocation_domain);
+    void remove_allocation(ss::shard_id core);
+    void add_final_count(partition_allocation_domain);
+    void remove_final_count(partition_allocation_domain);
 
     model::node_id _id;
     /// each index is a CPU. A weight is roughly the number of assignments

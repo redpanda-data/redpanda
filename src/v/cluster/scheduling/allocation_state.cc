@@ -158,7 +158,14 @@ void allocation_state::add_allocation(
   const partition_allocation_domain domain) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->allocate_on(replica.shard, domain);
+        it->second->add_allocation(domain);
+        it->second->add_allocation(replica.shard);
+        vlog(
+          clusterlog.trace,
+          "add allocation [node: {}, core: {}], total allocated: {}",
+          replica.node_id,
+          replica.shard,
+          it->second->_allocated_partitions);
     }
 }
 
@@ -167,7 +174,14 @@ void allocation_state::remove_allocation(
   const partition_allocation_domain domain) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->deallocate_on(replica.shard, domain);
+        it->second->remove_allocation(domain);
+        it->second->remove_allocation(replica.shard);
+        vlog(
+          clusterlog.trace,
+          "remove allocation [node: {}, core: {}], total allocated: {}",
+          replica.node_id,
+          replica.shard,
+          it->second->_allocated_partitions);
     }
 }
 
@@ -177,7 +191,10 @@ uint32_t allocation_state::allocate(
     auto it = _nodes.find(id);
     vassert(
       it != _nodes.end(), "allocated node with id {} have to be present", id);
-    return it->second->allocate(domain);
+
+    it->second->add_allocation(domain);
+    it->second->add_final_count(domain);
+    return it->second->allocate_shard();
 }
 
 void allocation_state::add_final_count(
@@ -185,8 +202,7 @@ void allocation_state::add_final_count(
   const partition_allocation_domain domain) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        ++it->second->_final_partitions;
-        ++it->second->_final_domain_partitions[domain];
+        it->second->add_final_count(domain);
     }
 }
 
@@ -195,8 +211,7 @@ void allocation_state::remove_final_count(
   const partition_allocation_domain domain) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        --it->second->_final_partitions;
-        --it->second->_final_domain_partitions[domain];
+        it->second->remove_final_count(domain);
     }
 }
 
