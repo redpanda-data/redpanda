@@ -15,27 +15,36 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>
+#include <seastar/util/defer.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
-
-#include <random>
 
 using namespace std::chrono_literals;
 
 const static auto client_id = "franz-go";
 
-template<typename F>
-ss::future<> run_quota_manager_test(F test_core) {
+struct fixture {
     kafka::quota_manager::client_quotas_t buckets_map;
     ss::sharded<kafka::quota_manager> sqm;
-    co_await sqm.start(std::ref(buckets_map));
-    co_await sqm.invoke_on_all(&kafka::quota_manager::start);
+
+    ss::future<> start() {
+        co_await sqm.start(std::ref(buckets_map));
+        co_await sqm.invoke_on_all(&kafka::quota_manager::start);
+    }
+
+    ss::future<> stop() { co_await sqm.stop(); }
+};
+
+template<typename F>
+ss::future<> run_quota_manager_test(F test_core) {
+    fixture f;
+    co_await f.start();
 
     // Run the core of the test now that everything's set up
-    co_await ss::futurize_invoke(test_core, sqm);
+    co_await ss::futurize_invoke(test_core, f.sqm);
 
-    co_await sqm.stop();
+    co_await f.stop();
 }
 
 template<typename F>
@@ -121,4 +130,96 @@ SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_stress_test) {
               }));
         }))
       .get();
+}
+
+constexpr std::string_view raw_basic_produce_config = R"([
+  {
+    "group_name": "not-franz-go-group",
+    "clients_prefix": "not-franz-go",
+    "quota": 2048
+  },
+  {
+    "group_name": "franz-go-group",
+    "clients_prefix": "franz-go",
+    "quota": 4096
+  }
+])";
+
+constexpr std::string_view raw_basic_fetch_config = R"([
+  {
+    "group_name": "not-franz-go-group",
+    "clients_prefix": "not-franz-go",
+    "quota": 2049
+  },
+  {
+    "group_name": "franz-go-group",
+    "clients_prefix": "franz-go",
+    "quota": 4097
+  }
+])";
+
+constexpr auto basic_config = [](config::configuration& conf) {
+    // produce
+    conf.target_quota_byte_rate.set_value(1024);
+    conf.kafka_client_group_byte_rate_quota.set_value(
+      YAML::Load(std::string(raw_basic_produce_config)));
+    // fetch
+    conf.target_fetch_quota_byte_rate.set_value(1025);
+    conf.kafka_client_group_fetch_byte_rate_quota.set_value(
+      YAML::Load(std::string(raw_basic_fetch_config)));
+    // partition mutation rate
+    conf.kafka_admin_topic_api_rate.set_value(1026);
+};
+
+SEASTAR_THREAD_TEST_CASE(static_config_test) {
+    fixture f;
+    f.start().get();
+    auto stop = ss::defer([&] { f.stop().get(); });
+
+    set_config(basic_config).get();
+
+    BOOST_REQUIRE_EQUAL(f.buckets_map.local()->size(), 0);
+
+    {
+        ss::sstring client_id = "franz-go";
+        f.sqm.local().record_fetch_tp(client_id, 1).get();
+        f.sqm.local().record_produce_tp_and_throttle(client_id, 1).get();
+        f.sqm.local().record_partition_mutations(client_id, 1).get();
+        auto it = f.buckets_map.local()->find(client_id + "-group");
+        BOOST_REQUIRE(it != f.buckets_map.local()->end());
+        BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 4096);
+        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4097);
+        BOOST_REQUIRE(it->second->pm_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->pm_rate->rate(), 1026);
+    }
+    {
+        ss::sstring client_id = "not-franz-go";
+        f.sqm.local().record_fetch_tp(client_id, 1).get();
+        f.sqm.local().record_produce_tp_and_throttle(client_id, 1).get();
+        f.sqm.local().record_partition_mutations(client_id, 1).get();
+        auto it = f.buckets_map.local()->find(client_id + "-group");
+        BOOST_REQUIRE(it != f.buckets_map.local()->end());
+        BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 2048);
+        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 2049);
+        BOOST_REQUIRE(it->second->pm_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->pm_rate->rate(), 1026);
+    }
+    {
+        ss::sstring client_id = "unconfigured";
+        f.sqm.local().record_fetch_tp(client_id, 1).get();
+        f.sqm.local().record_produce_tp_and_throttle(client_id, 1).get();
+        f.sqm.local().record_partition_mutations(client_id, 1).get();
+        auto it = f.buckets_map.local()->find(client_id);
+        BOOST_REQUIRE(it != f.buckets_map.local()->end());
+        BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 1024);
+        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 1025);
+        BOOST_REQUIRE(it->second->pm_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->pm_rate->rate(), 1026);
+    }
 }
