@@ -95,6 +95,7 @@ v_cc_library(
     config_frontend.cc
     config_manager.cc
     client_quota_serde.cc
+    client_quota_store.cc
     cluster_utils.cc
     id_allocator.cc
     id_allocator_frontend.cc
