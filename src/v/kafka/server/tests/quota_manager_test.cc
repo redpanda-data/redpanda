@@ -51,6 +51,7 @@ template<typename F>
 ss::future<> set_config(F update) {
     co_await ss::smp::invoke_on_all(
       [update{std::move(update)}]() { update(config::shard_local_cfg()); });
+    co_await ss::sleep(std::chrono::milliseconds(1));
 }
 
 SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_no_throttling) {
@@ -221,5 +222,80 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
         BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 1025);
         BOOST_REQUIRE(it->second->pm_rate.has_value());
         BOOST_CHECK_EQUAL(it->second->pm_rate->rate(), 1026);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(update_test) {
+    using clock = kafka::quota_manager::clock;
+    fixture f;
+    f.start().get();
+    auto stop = ss::defer([&] { f.stop().get(); });
+
+    set_config(basic_config).get();
+
+    auto now = clock::now();
+    {
+        // Update fetch config
+        ss::sstring client_id = "franz-go";
+        f.sqm.local().record_fetch_tp(client_id, 8194, now).get();
+        f.sqm.local()
+          .record_produce_tp_and_throttle(client_id, 8192, now)
+          .get();
+
+        set_config([](config::configuration& conf) {
+            auto fetch_config = YAML::Load(std::string(raw_basic_fetch_config));
+            for (auto n : fetch_config) {
+                n["quota"] = n["quota"].as<uint32_t>() + 1;
+            }
+            conf.kafka_client_group_fetch_byte_rate_quota.set_value(
+              fetch_config);
+        }).get();
+
+        // Check the rate has been updated
+        auto it = f.buckets_map.local()->find(client_id + "-group");
+        BOOST_REQUIRE(it != f.buckets_map.local()->end());
+        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4098);
+
+        // Check produce is the same bucket
+        BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
+        auto delay = f.sqm.local()
+                       .record_produce_tp_and_throttle(client_id, 1, now)
+                       .get();
+        BOOST_CHECK_EQUAL(delay / 1ms, 1000);
+    }
+
+    {
+        // Remove produce config
+        ss::sstring client_id = "franz-go";
+        f.sqm.local().record_fetch_tp(client_id, 8196, now).get();
+        f.sqm.local()
+          .record_produce_tp_and_throttle(client_id, 8192, now)
+          .get();
+
+        set_config([&](config::configuration& conf) {
+            auto produce_config = YAML::Load(
+              std::string(raw_basic_produce_config));
+            for (auto i = 0; i < produce_config.size(); ++i) {
+                if (
+                  produce_config[i]["clients_prefix"].as<std::string>()
+                  == client_id) {
+                    produce_config.remove(i);
+                    break;
+                }
+            }
+            conf.kafka_client_group_byte_rate_quota.set_value(produce_config);
+        }).get();
+
+        // Check the rate has been updated
+        auto it = f.buckets_map.local()->find(client_id + "-group");
+        BOOST_REQUIRE(it != f.buckets_map.local()->end());
+        BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 1024);
+
+        // Check fetch is the same bucket
+        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
+        auto delay = f.sqm.local().throttle_fetch_tp(client_id, now).get();
+        BOOST_CHECK_EQUAL(delay / 1ms, 1000);
     }
 }

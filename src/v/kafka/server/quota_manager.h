@@ -131,6 +131,7 @@ private:
       clock::time_point now,
       quota_mutation_callback_t cb);
     ss::future<> add_quota_id(std::string_view quota_id, clock::time_point now);
+    void update_client_quotas();
     int64_t get_client_target_produce_tp_rate(
       const std::optional<std::string_view>& quota_id);
     std::optional<int64_t> get_client_target_fetch_tp_rate(
