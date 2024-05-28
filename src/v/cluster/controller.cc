@@ -11,6 +11,9 @@
 
 #include "base/likely.h"
 #include "cluster/bootstrap_backend.h"
+#include "cluster/client_quota_backend.h"
+#include "cluster/client_quota_frontend.h"
+#include "cluster/client_quota_store.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/cluster_recovery_backend.h"
 #include "cluster/cloud_metadata/error_outcome.h"
@@ -265,6 +268,9 @@ ss::future<> controller::start(
       })
       .then([this] { return _plugin_table.start(); })
       .then([this] { return _plugin_backend.start_single(&_plugin_table); })
+      .then([this] { return _quota_store.start(); })
+      .then(
+        [this] { return _quota_backend.start_single(std::ref(_quota_store)); })
       .then([this] {
           return _config_frontend.start(
             std::ref(_stm),
@@ -327,7 +333,8 @@ ss::future<> controller::start(
             std::ref(_feature_backend),
             std::ref(_bootstrap_backend),
             std::ref(_plugin_backend),
-            std::ref(_recovery_manager));
+            std::ref(_recovery_manager),
+            std::ref(_quota_backend));
       })
       .then([this] {
           return _members_frontend.start(
@@ -401,6 +408,8 @@ ss::future<> controller::start(
             ss::sharded_parameter([this] { return &_connections.local(); }),
             ss::sharded_parameter([this] { return &_as.local(); }));
       })
+      .then(
+        [this] { return _quota_frontend.start(std::ref(_stm), std::ref(_as)); })
       .then([this] {
           return _members_backend.start_single(
             std::ref(_tp_frontend),
@@ -804,6 +813,7 @@ ss::future<> controller::stop() {
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _plugin_frontend.stop(); })
+          .then([this] { return _quota_frontend.stop(); })
           .then([this] { return _ephemeral_credential_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
           .then([this] { return _members_frontend.stop(); })
@@ -818,6 +828,8 @@ ss::future<> controller::stop() {
           .then([this] { return _tp_state.stop(); })
           .then([this] { return _members_manager.stop(); })
           .then([this] { return _stm.stop(); })
+          .then([this] { return _quota_backend.stop(); })
+          .then([this] { return _quota_store.stop(); })
           .then([this] { return _plugin_backend.stop(); })
           .then([this] { return _plugin_table.stop(); })
           .then([this] { return _drain_manager.stop(); })

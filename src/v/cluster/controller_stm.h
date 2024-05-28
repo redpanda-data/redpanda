@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/bootstrap_backend.h"
+#include "cluster/client_quota_backend.h"
 #include "cluster/cluster_recovery_manager.h"
 #include "cluster/config_manager.h"
 #include "cluster/controller_log_limiter.h"
@@ -37,7 +38,8 @@ class controller_stm final
       feature_backend,
       bootstrap_backend,
       plugin_backend,
-      cluster_recovery_manager> {
+      cluster_recovery_manager,
+      client_quota::backend> {
 public:
     template<typename... Args>
     controller_stm(

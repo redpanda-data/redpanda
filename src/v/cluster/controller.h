@@ -155,6 +155,12 @@ public:
         return _recovery_table;
     }
 
+    ss::sharded<client_quota::frontend>& get_quota_frontend() {
+        return _quota_frontend;
+    }
+
+    ss::sharded<client_quota::store>& get_quota_store() { return _quota_store; }
+
     bool is_raft0_leader() const {
         vassert(
           ss::this_shard_id() == ss::shard_id(0),
@@ -294,6 +300,9 @@ private:
     ss::sharded<cluster_recovery_table> _recovery_table; // instance per core
     ss::sharded<cluster_recovery_manager> _recovery_manager; // single instance
     std::unique_ptr<cloud_metadata::cluster_recovery_backend> _recovery_backend;
+    ss::sharded<client_quota::frontend> _quota_frontend; // instance per core
+    ss::sharded<client_quota::store> _quota_store;       // instance per core
+    ss::sharded<client_quota::backend> _quota_backend;   // single instance
 
     ss::gate _gate;
     consensus_ptr _raft0;
