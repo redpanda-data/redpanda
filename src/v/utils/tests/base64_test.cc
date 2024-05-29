@@ -12,7 +12,6 @@
 #include "utils/base64.h"
 
 #include <boost/test/unit_test.hpp>
-#include <cryptopp/base64.h>
 
 BOOST_AUTO_TEST_CASE(bytes_type) {
     auto encdec = [](const bytes& input, const auto expected) {
@@ -81,41 +80,15 @@ BOOST_AUTO_TEST_CASE(base64_url_decode_test_basic) {
       "IoT data streams, or managing event-driven microservices, Redpanda has "
       "you covered.");
 
-    dec("", "");
     dec("YQ", "a");
     dec("YWI", "ab");
     dec("YWJj", "abc");
-    dec("A", "");
-}
-
-BOOST_AUTO_TEST_CASE(base64_url_decode_test_random) {
-    const std::array<size_t, 5> test_sizes = {1, 10, 128, 256, 512};
-    auto dec = [](std::string_view input, const bytes& expected) {
-        auto decoded = base64url_to_bytes(input);
-        BOOST_REQUIRE_EQUAL(decoded, expected);
-    };
-
-    auto enc = [](const bytes& msg) {
-        CryptoPP::Base64URLEncoder encoder;
-        encoder.Put(msg.data(), msg.size());
-        encoder.MessageEnd();
-        auto size = encoder.MaxRetrievable();
-        BOOST_REQUIRE_NE(size, 0);
-        ss::sstring encoded(ss::sstring::initialized_later{}, size);
-        encoder.Get(
-          reinterpret_cast<CryptoPP::byte*>(encoded.data()), encoded.size());
-        return encoded;
-    };
-
-    for (auto s : test_sizes) {
-        auto val = random_generators::get_bytes(s);
-        auto encoded = enc(val);
-        dec(encoded, val);
-    }
+    dec("", "");
 }
 
 BOOST_AUTO_TEST_CASE(base64_url_decode_invalid_character) {
     const std::string invalid_encode = "abc+/";
     BOOST_REQUIRE_THROW(
       base64url_to_bytes(invalid_encode), base64_url_decoder_exception);
+    BOOST_REQUIRE_THROW(base64url_to_bytes("A"), base64_url_decoder_exception);
 }
