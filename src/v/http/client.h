@@ -227,6 +227,7 @@ private:
     /// Throw exception if _as is aborted
     void check() const;
 
+    bool _stopped{false};
     ss::gate _connect_gate;
     const ss::abort_source* _as;
     ss::shared_ptr<http::client_probe> _probe;
