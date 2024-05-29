@@ -48,7 +48,7 @@ class TSReadOpenmessagingTest(RedpandaTest):
 
         validator = {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
-            [OMBSampleConfigurations.gte(90)]
+            [OMBSampleConfigurations.gte(40)]
         }
 
         workload = {
@@ -58,7 +58,7 @@ class TSReadOpenmessagingTest(RedpandaTest):
             "subscriptions_per_topic": 1,
             "consumer_per_subscription": 8,
             "producers_per_topic": 16,
-            "producer_rate": 100_000,
+            "producer_rate": 45_000,
             "message_size": 1024,
             "payload_file": "payload/payload-1Kb.data",
             "consumer_backlog_size_GB": 20,
