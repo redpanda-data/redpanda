@@ -521,6 +521,11 @@ public:
     bool has_configuration_override() const {
         return _configuration_manager.has_configuration_override();
     }
+    /**
+     * Returns the number of bytes that are required to deliver to all
+     * learners that are being recovered.
+     */
+    size_t bytes_to_deliver_to_learners() const;
 
 private:
     friend replicate_entries_stm;

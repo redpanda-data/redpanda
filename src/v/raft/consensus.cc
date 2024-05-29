@@ -3979,4 +3979,18 @@ std::optional<model::offset> consensus::get_learner_start_offset() const {
     return std::nullopt;
 }
 
+size_t consensus::bytes_to_deliver_to_learners() const {
+    if (!is_leader()) {
+        return 0;
+    }
+
+    size_t total = 0;
+    for (auto& [f_id, f_meta] : _fstats) {
+        if (f_meta.is_learner) [[unlikely]] {
+            total += _log->size_bytes_after_offset(f_meta.match_index);
+        }
+    }
+    return total;
+}
+
 } // namespace raft
