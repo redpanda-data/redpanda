@@ -17,7 +17,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import RedpandaService, SISettings, make_redpanda_service
 from rptest.services.admin import Admin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import wait_for_local_storage_truncate, wait_until_result
@@ -37,6 +37,7 @@ class FollowerFetchingTest(PreallocNodesTest):
             log_segment_size=self.log_segment_size,
             cloud_storage_enable_remote_read=True,
             cloud_storage_enable_remote_write=True,
+            fast_uploads=True,
         )
         self.s3_bucket_name = si_settings.cloud_storage_bucket
 
@@ -66,29 +67,33 @@ class FollowerFetchingTest(PreallocNodesTest):
         producer.wait()
         producer.free()
 
-    def get_node_metric(self, node, topic, metric):
-        return self.redpanda.metric_sum(namespace="kafka",
-                                        nodes=[node],
-                                        topic=topic,
-                                        metric_name=metric)
+    def get_node_metric(self, redpanda, node, topic, metric):
+        return redpanda.metric_sum(namespace="kafka",
+                                   nodes=[node],
+                                   topic=topic,
+                                   metric_name=metric)
 
-    def get_fetch_bytes(self, node, topic):
+    def get_fetch_bytes(self, redpanda, node, topic):
         return self.get_node_metric(
-            node, topic, "vectorized_cluster_partition_bytes_fetched_total")
+            redpanda, node, topic,
+            "vectorized_cluster_partition_bytes_fetched_total")
 
-    def get_follower_fetched_bytes(self, node, topic):
+    def get_follower_fetched_bytes(self, redpanda, node, topic):
         return self.get_node_metric(
-            node, topic,
+            redpanda, node, topic,
             "vectorized_cluster_partition_bytes_fetched_from_follower_total")
 
-    def create_consumer(self, topic, rack=None):
+    def create_consumer(self,
+                        redpanda: RedpandaService,
+                        topic: str,
+                        rack: str | None = None):
 
         properties = {}
         if rack:
             properties['client.rack'] = rack
         return KafkaCliConsumer(
             self.test_context,
-            self.redpanda,
+            redpanda,
             topic=topic,
             group=
             f'test-gr-{"".join(random.choice(string.ascii_lowercase) for _ in range(8))}',
@@ -102,23 +107,77 @@ class FollowerFetchingTest(PreallocNodesTest):
             },
         )
 
-    def _metrics_per_node(self, topic, metric):
+    def _metrics_per_node(self, redpanda: RedpandaService, topic: str,
+                          metric: str):
         per_node = {}
-        for n in self.redpanda.nodes:
-            per_node[n] = self.get_node_metric(n, topic, metric=metric)
+        for n in redpanda.nodes:
+            per_node[n] = self.get_node_metric(redpanda,
+                                               n,
+                                               topic,
+                                               metric=metric)
             self.logger.info(
-                f"{metric}={per_node[n]} at {n.account.hostname}:{self.redpanda.node_id(n)}"
+                f"{metric}={per_node[n]} at {n.account.hostname}:{redpanda.node_id(n)}"
             )
         return per_node
 
-    def _bytes_fetched_per_node(self, topic):
+    def _bytes_fetched_per_node(self, redpanda: RedpandaService, topic: str):
         return self._metrics_per_node(
-            topic, "vectorized_cluster_partition_bytes_fetched_total")
+            redpanda, topic,
+            "vectorized_cluster_partition_bytes_fetched_total")
 
-    def _follower_bytes_fetched_per_node(self, topic):
+    def _follower_bytes_fetched_per_node(self, redpanda: RedpandaService,
+                                         topic: str):
         return self._metrics_per_node(
-            topic,
+            redpanda, topic,
             "vectorized_cluster_partition_bytes_fetched_from_follower_total")
+
+    def _validate_follower_fetching(self, redpanda: RedpandaService,
+                                    rack_layout_str: str, topic_name: str):
+        number_of_samples = 10
+        for n in range(0, number_of_samples):
+            node_idx = random.randint(0, 2)
+            consumer_rack = rack_layout_str[node_idx]
+            self.logger.info(
+                f"Using consumer with {consumer_rack} in {n+1}/{number_of_samples} sample"
+            )
+            fetched_per_node_before = self._bytes_fetched_per_node(
+                redpanda, topic_name)
+            f_fetched_before = self._follower_bytes_fetched_per_node(
+                redpanda, topic_name)
+            consumer = self.create_consumer(topic=topic_name,
+                                            redpanda=redpanda,
+                                            rack=consumer_rack)
+            consumer.start()
+            consumer.wait_for_messages(1000)
+            consumer.stop()
+            consumer.wait()
+            consumer.clean()
+            consumer.free()
+
+            fetched_per_node_after = self._bytes_fetched_per_node(
+                redpanda, topic_name)
+            f_fetched_after = self._follower_bytes_fetched_per_node(
+                redpanda, topic_name)
+            preferred_replica = redpanda.nodes[node_idx]
+            self.logger.info(
+                f"preferred replica {preferred_replica.account.hostname}:{redpanda.node_id(preferred_replica)} in rack {consumer_rack}"
+            )
+
+            for n, new_fetched_bytes in fetched_per_node_after.items():
+                current_bytes_fetched = new_fetched_bytes - fetched_per_node_before[
+                    n]
+                if n == preferred_replica:
+                    assert current_bytes_fetched > 0
+                else:
+                    assert current_bytes_fetched == 0
+
+            for n, new_fetched_bytes in f_fetched_after.items():
+                follower_fetched = new_fetched_bytes - f_fetched_before[n]
+                if n == preferred_replica:
+                    # follower fetched bytes may be equal to 0 if preferred replica is a leader
+                    assert follower_fetched >= 0
+                else:
+                    assert follower_fetched == 0
 
     @cluster(num_nodes=5)
     @matrix(read_from_object_store=[True, False])
@@ -153,46 +212,9 @@ class FollowerFetchingTest(PreallocNodesTest):
             wait_for_local_storage_truncate(self.redpanda,
                                             topic.name,
                                             target_bytes=self.local_retention)
-        number_of_samples = 10
-        for n in range(0, number_of_samples):
-            node_idx = random.randint(0, 2)
-            consumer_rack = rack_layout_str[node_idx]
-            self.logger.info(
-                f"Using consumer with {consumer_rack} in {n+1}/{number_of_samples} sample"
-            )
-            fetched_per_node_before = self._bytes_fetched_per_node(topic.name)
-            f_fetched_before = self._follower_bytes_fetched_per_node(
-                topic.name)
-            consumer = self.create_consumer(topic.name, rack=consumer_rack)
-            consumer.start()
-            consumer.wait_for_messages(1000)
-            consumer.stop()
-            consumer.wait()
-            consumer.clean()
-            consumer.free()
-
-            fetched_per_node_after = self._bytes_fetched_per_node(topic.name)
-            f_fetched_after = self._follower_bytes_fetched_per_node(topic.name)
-            preferred_replica = self.redpanda.nodes[node_idx]
-            self.logger.info(
-                f"preferred replica {preferred_replica.account.hostname}:{self.redpanda.node_id(preferred_replica)} in rack {consumer_rack}"
-            )
-
-            for n, new_fetched_bytes in fetched_per_node_after.items():
-                current_bytes_fetched = new_fetched_bytes - fetched_per_node_before[
-                    n]
-                if n == preferred_replica:
-                    assert current_bytes_fetched > 0
-                else:
-                    assert current_bytes_fetched == 0
-
-            for n, new_fetched_bytes in f_fetched_after.items():
-                follower_fetched = new_fetched_bytes - f_fetched_before[n]
-                if n == preferred_replica:
-                    # follower fetched bytes may be equal to 0 if preferred replica is a leader
-                    assert follower_fetched >= 0
-                else:
-                    assert follower_fetched == 0
+        self._validate_follower_fetching(redpanda=self.redpanda,
+                                         topic_name=topic.name,
+                                         rack_layout_str=rack_layout_str)
 
     @cluster(num_nodes=5)
     def test_with_leadership_transfers(self):
@@ -225,7 +247,9 @@ class FollowerFetchingTest(PreallocNodesTest):
         producer.start()
 
         # consume from the same rack as node 0
-        consumer = self.create_consumer(topic.name, rack=rack_layout[0])
+        consumer = self.create_consumer(self.redpanda,
+                                        topic.name,
+                                        rack=rack_layout[0])
         consumer.start()
 
         admin = Admin(self.redpanda)
@@ -304,8 +328,11 @@ class FollowerFetchingTest(PreallocNodesTest):
                 rpk.cluster_maintenance_enable(
                     self.redpanda.node_id(preferred_replica), wait=True)
 
-            fetched_per_node_before = self._bytes_fetched_per_node(topic.name)
-            consumer = self.create_consumer(topic.name, rack=consumer_rack)
+            fetched_per_node_before = self._bytes_fetched_per_node(
+                self.redpanda, topic.name)
+            consumer = self.create_consumer(self.redpanda,
+                                            topic.name,
+                                            rack=consumer_rack)
             consumer.start()
             consumer.wait_for_messages(1000)
             consumer.stop()
@@ -313,7 +340,8 @@ class FollowerFetchingTest(PreallocNodesTest):
             consumer.clean()
             consumer.free()
 
-            fetched_per_node_after = self._bytes_fetched_per_node(topic.name)
+            fetched_per_node_after = self._bytes_fetched_per_node(
+                self.redpanda, topic.name)
 
             for n, new_fetched_bytes in fetched_per_node_after.items():
                 current_bytes_fetched = new_fetched_bytes - fetched_per_node_before[
@@ -332,6 +360,65 @@ class FollowerFetchingTest(PreallocNodesTest):
                     self.redpanda.node_id(preferred_replica))
 
             enable_maintenance_mode = not enable_maintenance_mode
+
+    @cluster(num_nodes=8)
+    def test_read_replica_follower_fetching(self):
+
+        # setup cluster
+        self.redpanda.start()
+        topic = TopicSpec(name="ff-rr-test-topic",
+                          partition_count=1,
+                          replication_factor=3)
+
+        self.client().create_topic(topic)
+
+        self.produce(topic.name)
+        self.logger.info(f"Producing to {topic.name} finished")
+        self.redpanda.wait_for_manifest_uploads()
+
+        rr_si_settings = SISettings(
+            self.test_context,
+            bypass_bucket_creation=True,
+            cloud_storage_enable_remote_write=False,
+            cloud_storage_max_connections=5,
+            log_segment_size=1024 * 1024,
+            cloud_storage_readreplica_manifest_sync_timeout_ms=500,
+            cloud_storage_segment_max_upload_interval_sec=5,
+            cloud_storage_housekeeping_interval_ms=10)
+        # setup read replica cluster
+        second_cluster = make_redpanda_service(
+            self.test_context,
+            num_brokers=3,
+            si_settings=rr_si_settings,
+            extra_rp_conf={
+                "enable_cluster_metadata_upload_loop": False,
+            })
+        rack_layout_str = "ABC"
+        rack_layout = [str(i) for i in rack_layout_str]
+
+        for ix, node in enumerate(second_cluster.nodes):
+            extra_node_conf = {
+                # We're introducing two racks, small and large.
+                # The small rack has only one node and the
+                # large one has four nodes.
+                'rack': rack_layout[ix],
+            }
+            second_cluster.set_extra_node_conf(node, extra_node_conf)
+        second_cluster.start(start_si=False)
+        second_cluster.set_cluster_config({"enable_rack_awareness": True})
+        rpk = RpkTool(second_cluster)
+
+        rpk.create_topic(topic.name,
+                         partitions=1,
+                         replicas=3,
+                         config={
+                             "redpanda.remote.readreplica":
+                             self.si_settings.cloud_storage_bucket
+                         })
+
+        self._validate_follower_fetching(redpanda=second_cluster,
+                                         rack_layout_str=rack_layout_str,
+                                         topic_name=topic.name)
 
 
 class IncrementalFollowerFetchingTest(PreallocNodesTest):
