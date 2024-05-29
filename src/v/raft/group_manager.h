@@ -100,6 +100,7 @@ private:
     void setup_metrics();
 
     ss::future<> flush_groups();
+    void collect_learner_metrics();
 
     raft::group_configuration create_initial_configuration(
       std::vector<model::broker>, model::revision_id) const;
@@ -114,6 +115,7 @@ private:
     notification_list<leader_cb_t, cluster::notification_id_type>
       _notifications;
     metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
     storage::api& _storage;
     coordinated_recovery_throttle& _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
@@ -121,7 +123,9 @@ private:
     features::feature_table& _feature_table;
     ss::timer<clock_type> _flush_timer;
     timeout_jitter _flush_timer_jitter;
-
+    std::chrono::milliseconds _metric_collection_interval;
+    ss::timer<> _metrics_timer;
+    size_t _learners_gap_bytes{0};
     bool _is_ready;
 };
 
