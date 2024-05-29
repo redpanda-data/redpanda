@@ -20,6 +20,7 @@
 #include "raft/raftgen_service.h"
 #include "ssx/sformat.h"
 #include "storage/snapshot.h"
+#include "utils/human.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
@@ -454,9 +455,14 @@ ss::future<> recovery_stm::install_snapshot(required_snapshot_type s_type) {
 ss::future<>
 recovery_stm::take_on_demand_snapshot(model::offset last_included_offset) {
     vlog(
-      _ctxlog.debug,
-      "creating on demand snapshot with last included offset: {}",
-      last_included_offset);
+      _ctxlog.info,
+      "creating on demand snapshot with last included offset: {}, current "
+      "leader start offset: {}. Total partition size on leader {}, expected to "
+      "transfer to learner: {}",
+      last_included_offset,
+      _ptr->start_offset(),
+      human::bytes(_ptr->log()->size_bytes()),
+      human::bytes(_ptr->log()->size_bytes_after_offset(last_included_offset)));
 
     _inflight_snapshot_last_included_index = last_included_offset;
     // if there is no stm_manager available for the raft group use empty
