@@ -116,6 +116,8 @@ if __name__ == "__main__":
         _target = "169.254.169.254"
         uri = f"{_prefix}{_target}{_suffix}"
         _meta = query_instance_meta(uri, headers={"Metadata-Flavor": "Google"})
+    else:
+        assert False, f"bad provider: {provider}"
 
     sys.stdout.write(json.dumps(_meta))
     sys.stdout.flush()

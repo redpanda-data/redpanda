@@ -58,7 +58,7 @@ from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.services import redpanda_types, tls
-from rptest.services.redpanda_types import KafkaClientSecurity
+from rptest.services.redpanda_types import KafkaClientSecurity, LogAllowListElem
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, RedpandaVersionTriple, int_tuple as ri_int_tuple
 from rptest.services.redpanda_cloud import CloudCluster, get_config_profile_name
@@ -330,8 +330,7 @@ def is_redpanda_cloud(context: TestContext):
         context.globals.get(RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG))
 
 
-def should_compile(
-        allow_list_element: str | AllowLogsOnPredicate | re.Pattern) -> bool:
+def should_compile(allow_list_element: LogAllowListElem) -> bool:
     return not isinstance(allow_list_element, re.Pattern) and not isinstance(
         allow_list_element, AllowLogsOnPredicate)
 
@@ -976,7 +975,11 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
          on this broker."""
         pass
 
-    def wait_until(self, fn, timeout_sec, backoff_sec, err_msg: str = ""):
+    def wait_until(self,
+                   fn: Callable[[], Any],
+                   timeout_sec: int,
+                   backoff_sec: int,
+                   err_msg: str | Callable[[], str] = "") -> None:
         """
         Cluster-aware variant of wait_until, which will fail out
         early if a node dies.
@@ -1354,7 +1357,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
                    namespace: str | None = None,
                    topic: str | None = None,
-                   nodes=None):
+                   nodes: Any = None):
         '''
         Pings the 'metrics_endpoint' of each node and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
@@ -1996,7 +1999,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
                    namespace: str | None = None,
                    topic: str | None = None,
-                   pods=None):
+                   pods: Any = None):
         '''
         Pings the 'metrics_endpoint' of each pod and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
@@ -4985,3 +4988,6 @@ def make_redpanda_mixed_service(context: TestContext,
         return make_redpanda_cloud_service(context, min_brokers=min_brokers)
     else:
         return make_redpanda_service(context, num_brokers=min_brokers)
+
+
+AnyRedpandaService = RedpandaService | RedpandaServiceCloud

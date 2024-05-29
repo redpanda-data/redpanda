@@ -15,7 +15,7 @@ import time
 import itertools
 import os
 from collections import namedtuple
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda_types import SSL_SECURITY, KafkaClientSecurity, check_username_password
@@ -329,7 +329,7 @@ class RpkTool:
                      topic: str,
                      partitions: int = 1,
                      replicas: int | None = None,
-                     config=None):
+                     config: dict[str, Any] | None = None):
         def create_topic():
             try:
                 cmd = ["create", topic]

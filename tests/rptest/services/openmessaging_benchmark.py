@@ -19,7 +19,7 @@ from ducktape.cluster.node_container import NodeContainer
 
 from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, RedpandaServiceCloud
 from rptest.services.utils import BadLogLines
-from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
+from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations, ValidatorDict
 
 LOG_ALLOW_LIST = [
     "No such file or directory", "cannot be started once stopped"
@@ -39,8 +39,6 @@ class OpenMessagingBenchmarkWorkers(Service):
             "collect_default": True
         }
     }
-
-    nodes: list[ClusterNode] | NodeContainer
 
     def __init__(self,
                  ctx,
@@ -122,14 +120,14 @@ class OpenMessagingBenchmarkWorkers(Service):
         for node in self.nodes:
             self.raise_on_bad_log_lines(node)
 
-    def stop_node(self, node, allow_fail=False):
+    def stop_node(self, node, allow_fail=False, **_):
         self.logger.info(
             f"Stopping Open Messaging Benchmark worker node on {node.account.hostname}"
         )
         node.account.kill_process("openmessaging-benchmark",
                                   allow_fail=allow_fail)
 
-    def clean_node(self, node):
+    def clean_node(self, node, **_):
         self.logger.info(
             f"Cleaning Open Messaging Benchmark worker node on {node.account.hostname}"
         )
@@ -145,7 +143,6 @@ class OpenMessagingBenchmarkWorkers(Service):
 
 
 WorkloadDict = dict[str, Any]
-ValidatorDict = dict[str, list[Any]]
 WorkloadTuple = tuple[WorkloadDict, ValidatorDict]
 
 
@@ -170,7 +167,7 @@ class OpenMessagingBenchmark(Service):
         },
     }
 
-    nodes: list[ClusterNode] | NodeContainer
+    nodes: list[ClusterNode]
 
     def __init__(self,
                  ctx,
@@ -340,11 +337,11 @@ class OpenMessagingBenchmark(Service):
     def check_succeed(self, validate_metrics=True, raise_exceptions=True):
         """
         Evaluates the success of a benchmark test based on various metrics and conditions.
-        
+
         Parameters:
         - validate_metrics (bool): If True, performs validation checks on the benchmark metrics to determine if
         the test results are within expected limits. Default is True.
-        
+
         - raise_exceptions (bool): If True, the method raises an exception if the benchmark test fails based
         on the validation of the metrics. Default is True.
 
@@ -390,9 +387,9 @@ class OpenMessagingBenchmark(Service):
             return is_valid, results
 
     def detect_spikes_by_percentile(self,
-                                    results,
-                                    max_spike_width=1,
-                                    expected_max_latencies=None):
+                                    results: dict[str, Any],
+                                    expected_max_latencies: dict[str, float],
+                                    max_spike_width=1):
         """
         Detects and evaluates latency spikes in multiple series of latency data based on predefined thresholds.
         This function analyzes each series to determine if there are isolated spikes or sustained high latency events that exceed the allowed maximum thresholds.
@@ -402,7 +399,7 @@ class OpenMessagingBenchmark(Service):
             By detecting these spikes, we can retry the test to help ensure that the results are not influenced by temporary anomalies.
             Additionally, this allows some degree of latency during specified periods which is controlled by the max_spike_width parameter.
             Related GH issue: https://github.com/redpanda-data/core-internal/issues/1180
-        
+
         Parameters:
             results (dict): A dictionary where each key is a series identifier and each value is a list of latency measurements for that series.
             max_spike_width (int): The maximum number of consecutive measurements that can exceed the expected maximum before being considered a sustained high latency rather than an isolated spike.
@@ -493,7 +490,7 @@ class OpenMessagingBenchmark(Service):
 
         return should_retry
 
-    def wait_node(self, node, timeout_sec):
+    def wait_node(self, node, timeout_sec=None):
         assert timeout_sec is not None
         process_pid = node.account.java_pids("benchmark")
         if len(process_pid) == 0:
@@ -508,7 +505,7 @@ class OpenMessagingBenchmark(Service):
         except Exception:
             return False
 
-    def stop_node(self, node, allow_fail=False):
+    def stop_node(self, node, allow_fail=False, **_):
         if self.workers is not None:
             self.workers.stop()
         self.logger.info(
@@ -517,7 +514,7 @@ class OpenMessagingBenchmark(Service):
         node.account.kill_process("openmessaging-benchmark",
                                   allow_fail=allow_fail)
 
-    def clean_node(self, node):
+    def clean_node(self, node, **_):
         self.logger.info(
             f"Cleaning Open Messaging Benchmark node on {node.account.hostname}"
         )
@@ -532,6 +529,9 @@ class OpenMessagingBenchmark(Service):
         return v
 
     def benchmark_time(self) -> int:
+        """An estimate of the runtime of the test in minutes. This simply sums the warmup and test runtime so
+        is always an underestimate (unless the run fails early), so you should add a few minutes of
+        buffer to the returned value to set timeouts."""
         return self.get_workload_int(
             "test_duration_minutes") + self.get_workload_int(
                 "warmup_duration_minutes")
