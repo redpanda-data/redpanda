@@ -98,7 +98,7 @@ ss::future<> shard_balancer::start() {
         co_await _shard_placement.initialize_from_topic_table(_topics, _self);
 
         if (_features.is_active(
-              features::feature::shard_placement_persistence)) {
+              features::feature::node_local_core_assignment)) {
             co_await _shard_placement.enable_persistence();
         }
     }
@@ -154,7 +154,7 @@ ss::future<> shard_balancer::assign_fiber() {
         }
 
         if (
-          _features.is_active(features::feature::shard_placement_persistence)
+          _features.is_active(features::feature::node_local_core_assignment)
           && !_shard_placement.is_persistence_enabled()) {
             co_await _shard_placement.enable_persistence();
         }
