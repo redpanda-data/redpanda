@@ -3723,6 +3723,14 @@ class RedpandaService(RedpandaServiceBase):
                                   clean_shutdown=False,
                                   allow_fail=True)
         if node.account.exists(RedpandaService.PERSISTENT_ROOT):
+            hidden_cache_folder = f'{RedpandaService.PERSISTENT_ROOT}/.cache'
+            self.logger.debug(
+                f"Checking for presence of {hidden_cache_folder}")
+            if node.account.exists(hidden_cache_folder):
+                self.logger.debug(
+                    f"Seeing {hidden_cache_folder}, removing that specifically first"
+                )
+                node.account.remove(hidden_cache_folder)
             if node.account.sftp_client.listdir(
                     RedpandaService.PERSISTENT_ROOT):
                 if not preserve_logs:
