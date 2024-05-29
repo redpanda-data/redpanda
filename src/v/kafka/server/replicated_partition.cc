@@ -617,23 +617,41 @@ result<partition_info> replicated_partition::get_partition_info() const {
     if (followers.has_error()) {
         return followers.error();
     }
-    auto start_offset = _partition->raft_start_offset();
 
-    auto clamped_translate = [this, start_offset](model::offset to_translate) {
-        return to_translate >= start_offset
-                 ? _translator->from_log_offset(to_translate)
-                 : _translator->from_log_offset(start_offset);
-    };
+    /**
+     * Special handling of read replicas.
+     *
+     * Read replica replicas have all the same high watermark as the leader
+     */
+    if (_partition->is_read_replica_mode_enabled()) {
+        for (const auto& follower_metric : followers.value()) {
+            ret.replicas.push_back(replica_info{
+              .id = follower_metric.id,
+              .high_watermark = high_watermark(),
+              .log_end_offset = log_end_offset(),
+              .is_alive = follower_metric.is_live,
+            });
+        }
+    } else {
+        auto start_offset = _partition->raft_start_offset();
 
-    for (const auto& follower_metric : followers.value()) {
-        ret.replicas.push_back(replica_info{
-          .id = follower_metric.id,
-          .high_watermark = model::next_offset(
-            clamped_translate(follower_metric.match_index)),
-          .log_end_offset = model::next_offset(
-            clamped_translate(follower_metric.dirty_log_index)),
-          .is_alive = follower_metric.is_live,
-        });
+        auto clamped_translate = [this,
+                                  start_offset](model::offset to_translate) {
+            return to_translate >= start_offset
+                     ? _translator->from_log_offset(to_translate)
+                     : _translator->from_log_offset(start_offset);
+        };
+
+        for (const auto& follower_metric : followers.value()) {
+            ret.replicas.push_back(replica_info{
+              .id = follower_metric.id,
+              .high_watermark = model::next_offset(
+                clamped_translate(follower_metric.match_index)),
+              .log_end_offset = model::next_offset(
+                clamped_translate(follower_metric.dirty_log_index)),
+              .is_alive = follower_metric.is_live,
+            });
+        }
     }
 
     ret.replicas.push_back(replica_info{
