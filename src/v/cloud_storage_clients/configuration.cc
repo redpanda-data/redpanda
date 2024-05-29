@@ -363,6 +363,7 @@ model::cloud_storage_backend infer_backend_from_configuration(
       = string_switch<model::cloud_storage_backend>(uri())
           .match_expr("google", model::cloud_storage_backend::google_s3_compat)
           .match_expr(R"(127\.0\.0\.1)", model::cloud_storage_backend::aws)
+          .match_expr("localhost", model::cloud_storage_backend::aws)
           .match_expr("minio", model::cloud_storage_backend::minio)
           .match_expr("amazon", model::cloud_storage_backend::aws)
           .default_match(model::cloud_storage_backend::unknown);
