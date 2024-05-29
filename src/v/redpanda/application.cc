@@ -2520,6 +2520,9 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
             *controller));
         _migrators.push_back(
           std::make_unique<features::migrators::rbac_migrator>(*controller));
+        _migrators.push_back(
+          std::make_unique<features::migrators::shard_placement_migrator>(
+            *controller));
     }
 
     if (cd.is_cluster_founder().get()) {

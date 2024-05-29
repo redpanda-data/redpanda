@@ -39,6 +39,11 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    /// Persist current shard_placement_table contents to kvstore. Executed once
+    /// when enabling the node_local_core_assignment feature (assumes that it is
+    /// in the "preparing" state).
+    ss::future<> enable_persistence();
+
 private:
     void process_delta(const topic_table::delta&);
 

@@ -93,12 +93,21 @@ ss::future<> shard_balancer::start() {
                   _to_assign.insert(ntp);
               }
           });
+
         co_await do_assign_ntps();
+    } else if (_features.is_active(
+                 features::feature::node_local_core_assignment)) {
+        // joiner node? enable persistence without initializing
+        co_await _shard_placement.enable_persistence();
     } else {
+        // topic_table is still the source of truth
         co_await _shard_placement.initialize_from_topic_table(_topics, _self);
 
-        if (_features.is_active(
+        if (_features.is_preparing(
               features::feature::node_local_core_assignment)) {
+            // We may have joined or restarted while the feature is still in the
+            // preparing state. Enable persistence here before we get new
+            // controller updates to avoid races with activation of the feature.
             co_await _shard_placement.enable_persistence();
         }
     }
@@ -141,6 +150,17 @@ ss::future<> shard_balancer::stop() {
     return _gate.close();
 }
 
+ss::future<> shard_balancer::enable_persistence() {
+    auto gate_holder = _gate.hold();
+    if (_shard_placement.is_persistence_enabled()) {
+        co_return;
+    }
+    vassert(
+      _features.is_preparing(features::feature::node_local_core_assignment),
+      "unexpected feature state");
+    co_await _shard_placement.enable_persistence();
+}
+
 ss::future<> shard_balancer::assign_fiber() {
     if (_gate.is_closed()) {
         co_return;
@@ -151,12 +171,6 @@ ss::future<> shard_balancer::assign_fiber() {
         co_await _wakeup_event.wait(1s);
         if (_gate.is_closed()) {
             co_return;
-        }
-
-        if (
-          _features.is_active(features::feature::node_local_core_assignment)
-          && !_shard_placement.is_persistence_enabled()) {
-            co_await _shard_placement.enable_persistence();
         }
 
         co_await do_assign_ntps();
