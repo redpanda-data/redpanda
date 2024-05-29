@@ -393,7 +393,7 @@ s3_imposter_fixture::s3_imposter_fixture(
   , conf(get_configuration()) {
     _server = ss::make_shared<ss::httpd::http_server_control>();
     _server->start().get();
-    ss::ipv4_addr ip_addr = {httpd_host_name, httpd_port_number()};
+    ss::ipv4_addr ip_addr = {httpd_ip_addr, httpd_port_number()};
     _server_addr = ss::socket_address(ip_addr);
 }
 
