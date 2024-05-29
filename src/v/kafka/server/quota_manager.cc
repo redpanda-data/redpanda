@@ -322,6 +322,32 @@ void quota_manager::gc() {
         });
 }
 
+namespace {
+
+/// A simplified copy paste of `std::set_intersection`. Copied here because we
+/// rely on the fact that we're allowed to have first1 == result for in-place
+/// set intersection in `do_gc()` which the contract of `std::set_intersection`
+/// does not allow despite that its implementation does.
+/// Requires: the inputs to be sorted
+/// Guarantees: the output to be sorted
+template<typename It1, typename It2, typename ItR>
+ItR set_intersection(It1 first1, It1 last1, It2 first2, It2 last2, ItR result) {
+    while (first1 != last1 && first2 != last2) {
+        if (*first1 < *first2) {
+            ++first1;
+        } else if (*first2 < *first1) {
+            ++first2;
+        } else { // *first1 == *first2
+            *result = *first1;
+            ++first1;
+            ++first2;
+        }
+    }
+    return result;
+}
+
+} // namespace
+
 ss::future<> quota_manager::do_gc(clock::time_point expire_threshold) {
     vassert(
       ss::this_shard_id() == _client_quotas.shard_id(),
@@ -344,17 +370,13 @@ ss::future<> quota_manager::do_gc(clock::time_point expire_threshold) {
         return res;
     };
 
-    auto reducer = [](const key_set& acc, const key_set& next) -> key_set {
-        key_set result;
-        // Note: std::set_intersection assumes the inputs are sorted and
-        // guarantees that the output is sorted
-        std::set_intersection(
-          acc.begin(),
-          acc.end(),
-          next.begin(),
-          next.end(),
-          std::back_inserter(result));
-        return result;
+    auto reducer = [](key_set acc, const key_set& next) -> key_set {
+        // In-place set intersection assumes that the inputs are sorted and
+        // guarantees that the output is also sorted
+        auto it = set_intersection(
+          acc.begin(), acc.end(), next.begin(), next.end(), acc.begin());
+        acc.erase_to_end(it);
+        return acc;
     };
 
     auto expired_keys = co_await container().map_reduce0(
