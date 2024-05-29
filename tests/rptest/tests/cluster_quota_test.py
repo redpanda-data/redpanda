@@ -30,7 +30,7 @@ class ClusterQuotaPartitionMutationTest(RedpandaTest):
     Ducktape tests for partition mutation quota
     """
     def __init__(self, *args, **kwargs):
-        additional_options = {'kafka_admin_topic_api_rate': 1}
+        additional_options = {'kafka_admin_topic_api_rate': 10}
         super().__init__(*args,
                          num_brokers=3,
                          extra_rp_conf=additional_options,
@@ -44,13 +44,14 @@ class ClusterQuotaPartitionMutationTest(RedpandaTest):
         Ensure the partition throttling mechanism (KIP-599) works
         """
 
-        # The kafka_admin_topic_api_rate is 1, quota will be 10. This test will
+        # The kafka_admin_topic_api_rate quota is 10. This test will
         # make 1 request within containing three topics to create, each containing
         # different number of partitions.
         #
         # The first topic should succeed, the second will exceed the quota but
-        # succeed since the throttling algorithms burst settings will allow it
-        # to. The third however should fail since the quota has already exceeded.
+        # succeed since the throttling algorithms allows the first request
+        # exceeding the quota to pass. The third however should fail since the
+        # quota has already exceeded.
         exceed_quota_req = [
             KclCreateTopicsRequestTopic('baz', 1, 1),
             KclCreateTopicsRequestTopic('foo', 10, 1),
@@ -63,11 +64,11 @@ class ClusterQuotaPartitionMutationTest(RedpandaTest):
         response = self.kcl.raw_create_topics(6, exceed_quota_req)
         response = json.loads(response)
         assert response['Version'] == 6
+        baz_response = [t for t in response['Topics'] if t['Topic'] == 'baz']
         foo_response = [t for t in response['Topics'] if t['Topic'] == 'foo']
         bar_response = [t for t in response['Topics'] if t['Topic'] == 'bar']
-        baz_response = [t for t in response['Topics'] if t['Topic'] == 'baz']
-        assert foo_response[0]['ErrorCode'] == 0  # success
         assert baz_response[0]['ErrorCode'] == 0  # success
+        assert foo_response[0]['ErrorCode'] == 0  # success
         assert bar_response[0]['ErrorCode'] == 89  # throttling_quota_exceeded
 
         # Respect throttle millis response - exhaust the timeout so quota resets
@@ -116,10 +117,14 @@ class ClusterRateQuotaTest(RedpandaTest):
     topics = (TopicSpec(replication_factor=1, max_message_bytes=1 * GB), )
 
     def __init__(self, *args, **kwargs):
+        # Note: the quotas apply based on the full size of the request (for
+        # produce) and response (for fetch) including the header size.
+        # Therefore these configurations need to adjust for that overhead.
         self.max_throttle_time = 10
         self.target_default_quota_byte_rate = 1048576
         self.target_group_quota_byte_rate = 10240
         self.message_size = 1024
+        self.under_group_quota_message_amount = 8
         self.break_default_quota_message_amount = int(
             self.target_default_quota_byte_rate / self.message_size) * 11
         self.break_group_quota_message_amount = int(
@@ -226,7 +231,7 @@ class ClusterRateQuotaTest(RedpandaTest):
                                  client_id="producer_group_alone_producer")
 
         # Produce under the limit
-        self.produce(producer, 10)
+        self.produce(producer, self.under_group_quota_message_amount)
         self.check_producer_not_throttled(producer)
 
         # Produce more than limit
@@ -245,7 +250,7 @@ class ClusterRateQuotaTest(RedpandaTest):
                                    client_id="producer_group_multiple_2")
 
         # Produce under the limit
-        self.produce(producer_1, 10)
+        self.produce(producer_1, self.under_group_quota_message_amount)
         self.check_producer_not_throttled(producer_1)
 
         # Produce more than the limit
@@ -253,7 +258,7 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.check_producer_throttled(producer_1)
 
         # Produce under the limit for client, but more than limit for group
-        self.produce(producer_2, 10)
+        self.produce(producer_2, self.under_group_quota_message_amount)
         self.check_producer_throttled(producer_2)
 
         self.redpanda.set_cluster_config({
@@ -414,11 +419,14 @@ class ClusterRateQuotaTest(RedpandaTest):
             bootstrap_servers=self.leader_node,
             client_id="consumer",
             consumer_timeout_ms=1000,
-            max_partition_fetch_bytes=self.target_default_quota_byte_rate * 10,
+            # Set the max fetch size such that the first fetch is above the quota limit AND completes in a single request
+            max_partition_fetch_bytes=self.break_default_quota_message_amount *
+            self.message_size,
             auto_offset_reset='earliest',
             enable_auto_commit=False)
 
-        self.produce(producer, self.break_default_quota_message_amount)
+        # Ensure we have plenty of data to consume
+        self.produce(producer, self.break_default_quota_message_amount * 2)
 
         # Consume more than the quota limit, next request must be throttled
         consumer.poll(timeout_ms=1000,
@@ -501,7 +509,7 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.check_consumer_throttled(consumer)
 
         # Produce must not be throttled
-        self.produce(producer, 10)
+        self.produce(producer, self.under_group_quota_message_amount)
         self.check_producer_not_throttled(producer)
 
     def _throttling_enforced_broker_side(self):

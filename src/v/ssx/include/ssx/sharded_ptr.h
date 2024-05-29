@@ -15,8 +15,9 @@
 #include "base/vassert.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
-#include <seastar/coroutine/parallel_for_each.hh>
 
 #include <memory>
 
@@ -65,13 +66,10 @@ public:
     ///
     /// Must be called on the home shard and is safe to call consurrently.
     ss::future<> reset(std::shared_ptr<T> u = nullptr) {
-        assert_shard();
-        auto mu{co_await _mutex.get_units()};
-        if (_state.empty()) {
-            _state.resize(ss::smp::count);
-        }
-
-        co_await ss::smp::invoke_on_all([this, u]() noexcept { local() = u; });
+        return update_shared(
+          [u{std::move(u)}](const std::shared_ptr<T>& /* ignored */) mutable {
+              return std::move(u);
+          });
     }
 
     /// replaces the managed object by constructing a new one.
@@ -83,11 +81,47 @@ public:
         return reset(std::make_shared<T>(std::forward<Args>(args)...));
     }
 
+    /// updates the managed object u with an update function
+    /// The update function takes a copy of the underlying object and creates a
+    /// new object using the update function. The update is executed inside the
+    /// guard of the update mutex to ensure that updates are executed
+    /// sequentially.
+    /// Must be called on the home shard and is safe to call concurrently.
+    /// returns an ss::broken_semaphore if stop() has been called.
+    template<typename F>
+    requires std::is_invocable_r_v<T, F, T>
+    ss::future<> update(F&& update_func) {
+        return update_shared([update_func{std::forward<F>(update_func)}](
+                               const std::shared_ptr<T>& v) {
+            return std::make_shared<T>(
+              update_func(v ? std::as_const(*v) : T{}));
+        });
+    }
+
+    /// Same as `update` but makes the update on the std::shared_ptr<T> instead
+    /// of the T inside the std::shared_ptr.
+    /// Must be called on the home shard and is safe to call concurrently.
+    /// returns an ss::broken_semaphore if stop() has been called.
+    template<typename F>
+    requires std::is_invocable_r_v<std::shared_ptr<T>, F, std::shared_ptr<T>>
+    ss::future<> update_shared(F update_func) {
+        assert_shard();
+        auto mu{co_await _mutex.get_units()};
+        if (_state.empty()) {
+            _state.resize(ss::smp::count);
+        }
+
+        auto copy_to_deallocate_on_owner_shard = local();
+        co_await ss::smp::invoke_on_all(
+          [this, u = update_func(local())]() noexcept { local() = u; });
+    }
+
     /// stop managing any object.
     ///
     /// Must be called on the home shard and is safe to call concurrently.
     /// returns an ss::broken_semaphore if stop() has been called.
     ss::future<> stop() {
+        assert_shard();
         co_await _mutex.with([this] { _mutex.broken(); });
         _state = {};
     }
@@ -115,7 +149,7 @@ private:
     void assert_shard() const {
         vassert(
           ss::this_shard_id() == _shard,
-          "reset must be called on home shard: ",
+          "must be called on home shard: ",
           _shard);
     }
     ss::shard_id _shard;
