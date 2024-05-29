@@ -522,6 +522,11 @@ public:
     replication_monitor& get_replication_monitor() {
         return _replication_monitor;
     }
+    /**
+     * Returns the number of bytes that are required to deliver to all
+     * learners that are being recovered.
+     */
+    size_t bytes_to_deliver_to_learners() const;
 
     bool has_configuration_override() const {
         return _configuration_manager.has_configuration_override();
