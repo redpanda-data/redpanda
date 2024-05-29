@@ -389,10 +389,10 @@ class RpkTool:
         return self._run(cmd)
 
     def sasl_allow_principal(self, *args, **kwargs):
-        self._sasl_set_principal_access(*args, **kwargs, deny=False)
+        return self._sasl_set_principal_access(*args, **kwargs, deny=False)
 
     def sasl_deny_principal(self, *args, **kwargs):
-        self._sasl_set_principal_access(*args, **kwargs, deny=True)
+        return self._sasl_set_principal_access(*args, **kwargs, deny=True)
 
     def allow_principal(self, principal, operations, resource, resource_name):
         if resource == "topic":
