@@ -218,33 +218,47 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         # delete chunks more aggressively to make sure some materialization ops fail.
         rm_chunks = DeleteRandomChunks(self.redpanda, self.topic)
         rm_chunks.start()
-        rand_cons.start()
-        rand_cons.wait(timeout_sec=300)
-        m.expect([(metric, lambda a, b: a < b <= 2 * self.default_chunk_size)])
 
-        # There should be no log files in cache
-        self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+        try:
+            rand_cons.start()
+            rand_cons.wait(timeout_sec=300)
+            m.expect([(metric,
+                       lambda a, b: a < b <= 2 * self.default_chunk_size)])
 
-        # We cannot assert that there are chunks in cache because the deleting thread
-        # could delete them all before we run the assertion, causing it to fail.
-        # We can check that the thread deleted some chunks.
-        assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files during rand-cons, none deleted"
-        rm_chunks.deleted_chunks = 0
+            # There should be no log files in cache
+            self._assert_not_in_cache(
+                fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
 
-        consumer = KgoVerifierSeqConsumer(self.test_context,
-                                          self.redpanda,
-                                          self.topic,
-                                          0,
-                                          nodes=self.preallocated_nodes)
-        consumer.start()
-        consumer.wait(timeout_sec=120)
-        rm_chunks.stop()
-        rm_chunks.join(timeout=10)
-        assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files during seq-cons, none deleted"
+            # We cannot assert that there are chunks in cache because the deleting thread
+            # could delete them all before we run the assertion, causing it to fail.
+            # We can check that the thread deleted some chunks.
+            assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files during rand-cons, none deleted"
+            rm_chunks.deleted_chunks = 0
 
-        self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+            consumer = KgoVerifierSeqConsumer(self.test_context,
+                                              self.redpanda,
+                                              self.topic,
+                                              0,
+                                              nodes=self.preallocated_nodes)
+            consumer.start()
+            consumer.wait(timeout_sec=120)
+            rm_chunks.stop()
+            rm_chunks.join(timeout=10)
+            assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files during seq-cons, none deleted"
 
-        self._trim_and_verify()
+            self._assert_not_in_cache(
+                fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+
+            self._trim_and_verify()
+        except Exception as ex:
+            try:
+                if not rm_chunks.stop_requested:
+                    rm_chunks.stop()
+                    rm_chunks.join(timeout=10)
+            except Exception as timed_out:
+                self.redpanda.logger.error(
+                    f'failed to stop rm_chunks: {timed_out}')
+            raise ex
 
     @cluster(num_nodes=4)
     @parametrize(prefetch=0)
@@ -388,9 +402,19 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         observe_cache_dir = ObserveCacheDir(self.redpanda, self.topic)
         observe_cache_dir.start()
 
-        self._consume_baseline(timeout=180, max_msgs=read_count)
-        observe_cache_dir.stop()
-        observe_cache_dir.join(timeout=10)
+        try:
+            self._consume_baseline(timeout=180, max_msgs=read_count)
+            observe_cache_dir.stop()
+            observe_cache_dir.join(timeout=10)
+        except Exception as ex:
+            try:
+                if not observe_cache_dir.stop_requested:
+                    observe_cache_dir.stop()
+                    observe_cache_dir.join(timeout=10)
+            except Exception as timed_out:
+                self.redpanda.logger.error(
+                    f'failed to stop observe_cache_dir: {timed_out}')
+            raise ex
         assert not observe_cache_dir.is_alive(
         ), 'cache observer is unexpectedly alive'
 

@@ -106,6 +106,11 @@ public:
 
     void set_search_on_get_list(bool should) { _search_on_get_list = should; }
 
+    void fail_request_if(req_pred_t pred, http_test_utils::response response);
+
+    std::optional<http_test_utils::response>
+    should_fail_request(const http_test_utils::request_info& ri);
+
     ss::sstring url_base() const;
 
     const cloud_storage_clients::bucket_name bucket_name
@@ -137,6 +142,9 @@ private:
     /// Whether or not to search through expectations for content when handling
     /// a list GET request.
     bool _search_on_get_list{true};
+
+    std::vector<req_pred_t> _fail_request_if;
+    std::vector<http_test_utils::response> _failure_response;
 };
 
 class enable_cloud_storage_fixture {

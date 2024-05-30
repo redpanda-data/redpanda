@@ -58,6 +58,7 @@ rp_test(
     async_manifest_view_test.cc
     read_replica_test.cc
     anomalies_detector_test.cc
+    segment_chunk_hydration_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     Boost::unit_test_framework
