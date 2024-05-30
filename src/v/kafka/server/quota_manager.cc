@@ -15,6 +15,7 @@
 #include "container/fragmented_vector.h"
 #include "kafka/server/atomic_token_bucket.h"
 #include "kafka/server/logger.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/map_reduce.hh>
@@ -26,7 +27,6 @@
 
 #include <chrono>
 #include <optional>
-#include <stdexcept>
 #include <string_view>
 
 using namespace std::chrono_literals;
@@ -55,6 +55,12 @@ quota_manager::quota_manager(client_quotas_t& client_quotas)
   , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
     if (seastar::this_shard_id() == _client_quotas.shard_id()) {
         _gc_timer.set_callback([this]() { gc(); });
+        auto update_quotas = [this]() { update_client_quotas(); };
+        _target_produce_tp_rate_per_client_group.watch(update_quotas);
+        _target_fetch_tp_rate_per_client_group.watch(update_quotas);
+        _target_partition_mutation_quota.watch(update_quotas);
+        _default_target_produce_tp_rate.watch(update_quotas);
+        _default_target_fetch_tp_rate.watch(update_quotas);
     }
 }
 
@@ -149,6 +155,69 @@ quota_manager::add_quota_id(std::string_view qid, clock::time_point now) {
     };
 
     co_await _client_quotas.update(std::move(update_func));
+}
+
+void quota_manager::update_client_quotas() {
+    vassert(
+      ss::this_shard_id() == _client_quotas.shard_id(),
+      "update_client_quotas must only be called on the owner shard");
+
+    ssx::spawn_with_gate(_gate, [this] {
+        return _client_quotas.update([this](client_quotas_map_t quotas) {
+            constexpr auto get_rate =
+              [](
+                const quota_config& quotas,
+                const client_quotas_map_t::value_type& quota,
+                std::optional<uint64_t> def) -> std::optional<uint64_t> {
+                if (auto it = quotas.find(quota.first); it != quotas.end()) {
+                    return it->second.quota;
+                } else {
+                    return def;
+                }
+            };
+
+            constexpr auto set_bucket =
+              [](
+                std::optional<atomic_token_bucket>& bucket,
+                std::optional<uint64_t> rate,
+                std::optional<uint64_t> replenish_threshold) {
+                  if (!rate) {
+                      bucket.reset();
+                      return;
+                  }
+                  if (bucket.has_value() && bucket->rate() == rate) {
+                      return;
+                  }
+                  bucket.emplace(
+                    *rate, *rate, replenish_threshold.value_or(1), true);
+              };
+
+            for (auto& quota : quotas) {
+                set_bucket(
+                  quota.second->tp_produce_rate,
+                  get_rate(
+                    _target_produce_tp_rate_per_client_group(),
+                    quota,
+                    _default_target_produce_tp_rate()),
+                  _replenish_threshold());
+
+                set_bucket(
+                  quota.second->tp_fetch_rate,
+                  get_rate(
+                    _target_fetch_tp_rate_per_client_group(),
+                    quota,
+                    _default_target_fetch_tp_rate()),
+                  _replenish_threshold());
+
+                set_bucket(
+                  quota.second->pm_rate,
+                  _target_partition_mutation_quota(),
+                  _replenish_threshold());
+            }
+
+            return quotas;
+        });
+    });
 }
 
 // If client is part of some group then client quota ID is a group
