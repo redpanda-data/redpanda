@@ -53,6 +53,12 @@ build_tls_credentials(
             co_await cred_builder.set_system_trust();
         }
     }
+    if (auto crl_file
+        = config::shard_local_cfg().cloud_storage_crl_file.value();
+        crl_file.has_value()) {
+        co_await cred_builder.set_x509_crl_file(
+          *crl_file, ss::tls::x509_crt_format ::PEM);
+    }
     co_return co_await net::build_reloadable_credentials_with_probe<
       ss::tls::certificate_credentials>(
       std::move(cred_builder), "cloud_storage_client", std::move(name));
