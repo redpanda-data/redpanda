@@ -107,6 +107,9 @@ class ProducerSwarm(Service):
 
         if self._keys is not None:
             cmd += f" --keys={self._keys}"
+        else:
+            # by default use a very large key space so all partitions are written to
+            cmd += " --keys=18446744073709551557"
 
         if self._unique_topics:
             cmd += " --unique-topics"
