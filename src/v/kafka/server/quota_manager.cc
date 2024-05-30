@@ -164,18 +164,6 @@ void quota_manager::update_client_quotas() {
 
     ssx::spawn_with_gate(_gate, [this] {
         return _client_quotas.update([this](client_quotas_map_t quotas) {
-            constexpr auto get_rate =
-              [](
-                const quota_config& quotas,
-                const client_quotas_map_t::value_type& quota,
-                std::optional<uint64_t> def) -> std::optional<uint64_t> {
-                if (auto it = quotas.find(quota.first); it != quotas.end()) {
-                    return it->second.quota;
-                } else {
-                    return def;
-                }
-            };
-
             constexpr auto set_bucket =
               [](
                 std::optional<atomic_token_bucket>& bucket,
@@ -195,18 +183,12 @@ void quota_manager::update_client_quotas() {
             for (auto& quota : quotas) {
                 set_bucket(
                   quota.second->tp_produce_rate,
-                  get_rate(
-                    _target_produce_tp_rate_per_client_group(),
-                    quota,
-                    _default_target_produce_tp_rate()),
+                  get_client_target_produce_tp_rate(quota.first),
                   _replenish_threshold());
 
                 set_bucket(
                   quota.second->tp_fetch_rate,
-                  get_rate(
-                    _target_fetch_tp_rate_per_client_group(),
-                    quota,
-                    _default_target_fetch_tp_rate()),
+                  get_client_target_fetch_tp_rate(quota.first),
                   _replenish_threshold());
 
                 set_bucket(
