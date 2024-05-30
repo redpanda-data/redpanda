@@ -1681,7 +1681,7 @@ configuration::configuration()
       "Optional API endpoint",
       {.visibility = visibility::user},
       std::nullopt,
-      &validate_non_empty_string_opt)
+      &validate_cloud_storage_api_endpoint)
   , cloud_storage_url_style(
       *this,
       "cloud_storage_url_style",

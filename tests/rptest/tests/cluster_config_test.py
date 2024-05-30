@@ -1180,7 +1180,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         # but on a non-secret property, thereby validating that our log scanning procedure
         # would have detected the secret if it had been printed
         unsecret_key = "cloud_storage_api_endpoint"
-        unsecret_value = "http://nowhere"
+        unsecret_value = "nowhere"
         set_and_search(unsecret_key, unsecret_value, True)
 
     @cluster(num_nodes=3)
