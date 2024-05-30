@@ -35,6 +35,7 @@ set(srcs
     local_monitor_test.cc
     tx_compaction_tests.cc
     producer_state_tests.cc
+    client_quota_store_test.cc
     )
 
 foreach(cluster_test_src ${srcs})
