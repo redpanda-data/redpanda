@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
+#include "kafka/server/client_quota_translator.h"
 #include "kafka/server/quota_manager.h"
 
 #include <seastar/core/coroutine.hh>
@@ -173,8 +174,8 @@ constexpr auto basic_config = [](config::configuration& conf) {
 };
 
 SEASTAR_THREAD_TEST_CASE(static_config_test) {
-    using k_client_id = kafka::quota_manager::k_client_id;
-    using k_group_name = kafka::quota_manager::k_group_name;
+    using k_client_id = kafka::k_client_id;
+    using k_group_name = kafka::k_group_name;
     fixture f;
     f.start().get();
     auto stop = ss::defer([&] { f.stop().get(); });
@@ -231,7 +232,7 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
 
 SEASTAR_THREAD_TEST_CASE(update_test) {
     using clock = kafka::quota_manager::clock;
-    using k_group_name = kafka::quota_manager::k_group_name;
+    using k_group_name = kafka::k_group_name;
     fixture f;
     f.start().get();
     auto stop = ss::defer([&] { f.stop().get(); });

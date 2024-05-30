@@ -14,6 +14,7 @@
 #include "config/client_group_byte_rate_quota.h"
 #include "config/property.h"
 #include "kafka/server/atomic_token_bucket.h"
+#include "kafka/server/client_quota_translator.h"
 #include "ssx/sharded_ptr.h"
 #include "ssx/sharded_value.h"
 #include "utils/absl_sstring_hash.h"
@@ -55,16 +56,6 @@ namespace kafka {
 class quota_manager : public ss::peering_sharded_service<quota_manager> {
 public:
     using clock = ss::lowres_clock;
-
-    using k_client_id = named_type<ss::sstring, struct k_client_id_tag>;
-    using k_group_name = named_type<ss::sstring, struct k_group_name_tag>;
-
-    /// tracker_key is the we use to key into the client quotas map
-    /// Note: if the default quota applies to the request, the tracker_key will
-    /// still be client id specific. In that case, the rate trackers of each
-    /// client will have the same (default) limit, but the rate trackers will be
-    /// independent.
-    using tracker_key = std::variant<k_client_id, k_group_name>;
 
     // Accounting for quota on per-client and per-client-group basis
     // last_seen_ms: used for gc keepalive
@@ -138,21 +129,13 @@ private:
       quota_mutation_callback_t cb);
     ss::future<> add_quota_id(tracker_key quota_id, clock::time_point now);
     void update_client_quotas();
-    int64_t get_client_target_produce_tp_rate(const tracker_key& quota_id);
-    std::optional<int64_t>
-    get_client_target_fetch_tp_rate(const tracker_key& quota_id);
 
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
     config::binding<std::optional<int64_t>> _replenish_threshold;
 
-    config::binding<uint32_t> _default_target_produce_tp_rate;
-    config::binding<std::optional<uint32_t>> _default_target_fetch_tp_rate;
-    config::binding<std::optional<uint32_t>> _target_partition_mutation_quota;
-    config::binding<quota_config> _target_produce_tp_rate_per_client_group;
-    config::binding<quota_config> _target_fetch_tp_rate_per_client_group;
-
     client_quotas_t& _client_quotas;
+    client_quota_translator _translator;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
