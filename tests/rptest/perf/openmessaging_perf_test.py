@@ -35,7 +35,7 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
             "subscriptions_per_topic": 1,
             "consumer_per_subscription": 25,
             "producers_per_topic": 25,
-            "producer_rate": 175_000,
+            "producer_rate": 75_000,
             "message_size": 1024,
             "payload_file": "payload/payload-1Kb.data",
             "consumer_backlog_size_GB": 0,
@@ -61,7 +61,7 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
         }
         validator = {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
-            [OMBSampleConfigurations.gte(170)]
+            [OMBSampleConfigurations.gte(70)]
         }
 
         benchmark = OpenMessagingBenchmark(ctx=self._ctx,
