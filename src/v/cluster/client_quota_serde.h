@@ -16,6 +16,8 @@
 
 #include <absl/container/flat_hash_set.h>
 
+#include <iosfwd>
+
 namespace cluster::client_quota {
 
 /// entity_key is used to key client quotas. It consists of multiple parts as a
@@ -42,7 +44,9 @@ struct entity_key
               client_id_default_match,
               serde::version<0>,
               serde::compat_version<0>> {
-            bool operator==(const client_id_default_match&) const = default;
+            friend bool operator==(
+              const client_id_default_match&, const client_id_default_match&)
+              = default;
 
             friend std::ostream&
             operator<<(std::ostream&, const client_id_default_match&);
@@ -61,8 +65,9 @@ struct entity_key
               client_id_match,
               serde::version<0>,
               serde::compat_version<0>> {
-            ss::sstring value;
-            bool operator==(const client_id_match&) const = default;
+            friend bool
+            operator==(const client_id_match&, const client_id_match&)
+              = default;
 
             friend std::ostream&
             operator<<(std::ostream&, const client_id_match&);
@@ -72,6 +77,8 @@ struct entity_key
                 return H::combine(
                   std::move(h), typeid(client_id_match).hash_code(), c.value);
             }
+
+            ss::sstring value;
         };
 
         /// client_id_prefix_match is the quota entity type corresponding to the
@@ -82,8 +89,9 @@ struct entity_key
               client_id_prefix_match,
               serde::version<0>,
               serde::compat_version<0>> {
-            ss::sstring value;
-            bool operator==(const client_id_prefix_match&) const = default;
+            friend bool operator==(
+              const client_id_prefix_match&, const client_id_prefix_match&)
+              = default;
 
             friend std::ostream&
             operator<<(std::ostream&, const client_id_prefix_match&);
@@ -95,6 +103,8 @@ struct entity_key
                   typeid(client_id_prefix_match).hash_code(),
                   c.value);
             }
+
+            ss::sstring value;
         };
 
         serde::variant<
@@ -102,8 +112,6 @@ struct entity_key
           client_id_match,
           client_id_prefix_match>
           part;
-
-        auto serde_fields() { return std::tie(part); }
     };
 
     auto serde_fields() { return std::tie(parts); }
@@ -122,11 +130,6 @@ struct entity_key
 /// entity_value describes the quotas applicable to an entity_key
 struct entity_value
   : serde::envelope<entity_value, serde::version<0>, serde::compat_version<0>> {
-    auto serde_fields() {
-        return std::tie(
-          producer_byte_rate, consumer_byte_rate, controller_mutation_rate);
-    }
-
     friend bool operator==(const entity_value&, const entity_value&) = default;
     friend std::ostream& operator<<(std::ostream&, const entity_value&);
 

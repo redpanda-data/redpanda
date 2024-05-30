@@ -17,8 +17,6 @@
 #include <boost/test/unit_test.hpp>
 #include <fmt/ostream.h>
 
-#include <vector>
-
 namespace cluster::client_quota {
 
 const entity_key key0{

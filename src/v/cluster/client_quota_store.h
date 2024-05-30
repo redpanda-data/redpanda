@@ -21,6 +21,8 @@ public:
     using container_type = absl::node_hash_map<entity_key, entity_value>;
     using range_container_type
       = chunked_vector<std::pair<entity_key, entity_value>>;
+    using range_callback_type
+      = std::function<bool(const std::pair<entity_key, entity_value>&)>;
 
     /// Upserts the given quota at the given entity key
     /// All quota types are overwritten with the given entity_value, so on alter
@@ -35,8 +37,7 @@ public:
     std::optional<entity_value> get_quota(const entity_key&) const;
 
     /// Returns a list of quotas that match the given predicate
-    store::range_container_type range(
-      std::function<bool(const std::pair<entity_key, entity_value>&)>&&) const;
+    store::range_container_type range(range_callback_type&&) const;
 
     /// Returns the number of quotas stored in the store
     container_type::size_type size() const;
