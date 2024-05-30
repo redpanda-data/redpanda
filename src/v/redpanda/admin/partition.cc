@@ -401,19 +401,32 @@ ss::future<std::vector<model::broker_shard>> validate_set_replicas(
               "`node_id` and `core` must be integers");
         }
         const auto node_id = model::node_id(r["node_id"].GetInt());
-        const auto shard = static_cast<uint32_t>(r["core"].GetInt());
-
-        // Validate node ID and shard - subsequent code assumes
-        // they exist and may assert if not.
-        bool is_valid = co_await topic_fe.validate_shard(node_id, shard);
-        if (!is_valid) {
-            throw ss::httpd::bad_request_exception(fmt::format(
-              "Replica set refers to non-existent node/shard (node "
-              "{} "
-              "shard {})",
-              node_id,
-              shard));
+        uint32_t shard = 0;
+        if (topic_fe.node_local_core_assignment_enabled()) {
+            bool is_valid = co_await topic_fe.validate_shard(node_id, 0);
+            if (!is_valid) {
+                throw ss::httpd::bad_request_exception(fmt::format(
+                  "Replica set refers to non-existent node {}", node_id));
+            }
+#ifndef NDEBUG
+            // set invalid shard in debug mode so that we can spot places
+            // where we are still using it.
+            shard = 32132132;
+#endif
+        } else {
+            shard = static_cast<uint32_t>(r["core"].GetInt());
+            // Validate node ID and shard - subsequent code assumes
+            // they exist and may assert if not.
+            bool is_valid = co_await topic_fe.validate_shard(node_id, shard);
+            if (!is_valid) {
+                throw ss::httpd::bad_request_exception(fmt::format(
+                  "Replica set refers to non-existent node/shard "
+                  "(node {} shard {})",
+                  node_id,
+                  shard));
+            }
         }
+
         auto contains_already = std::find_if(
                                   replicas.begin(),
                                   replicas.end(),
