@@ -56,6 +56,16 @@ class quota_manager : public ss::peering_sharded_service<quota_manager> {
 public:
     using clock = ss::lowres_clock;
 
+    using k_client_id = named_type<ss::sstring, struct k_client_id_tag>;
+    using k_group_name = named_type<ss::sstring, struct k_group_name_tag>;
+
+    /// tracker_key is the we use to key into the client quotas map
+    /// Note: if the default quota applies to the request, the tracker_key will
+    /// still be client id specific. In that case, the rate trackers of each
+    /// client will have the same (default) limit, but the rate trackers will be
+    /// independent.
+    using tracker_key = std::variant<k_client_id, k_group_name>;
+
     // Accounting for quota on per-client and per-client-group basis
     // last_seen_ms: used for gc keepalive
     // tp_produce_rate: produce throughput tracking
@@ -68,11 +78,8 @@ public:
         std::optional<atomic_token_bucket> pm_rate;
     };
 
-    using client_quotas_map_t = absl::node_hash_map<
-      ss::sstring,
-      ss::lw_shared_ptr<client_quota>,
-      sstring_hash,
-      sstring_eq>;
+    using client_quotas_map_t
+      = absl::node_hash_map<tracker_key, ss::lw_shared_ptr<client_quota>>;
     using client_quotas_t = ssx::sharded_ptr<client_quotas_map_t>;
 
     explicit quota_manager(client_quotas_t& client_quotas);
@@ -118,8 +125,7 @@ private:
     using quota_config
       = std::unordered_map<ss::sstring, config::client_group_quota>;
 
-    clock::duration cap_to_max_delay(
-      std::optional<std::string_view> client_id, clock::duration delay);
+    clock::duration cap_to_max_delay(const tracker_key&, clock::duration);
 
     // erase inactive tracked quotas. windows are considered inactive if they
     // have not received any updates in ten window's worth of time.
@@ -127,15 +133,14 @@ private:
     ss::future<> do_gc(clock::time_point expire_threshold);
 
     ss::future<clock::duration> maybe_add_and_retrieve_quota(
-      std::optional<std::string_view> quota_id,
+      tracker_key quota_id,
       clock::time_point now,
       quota_mutation_callback_t cb);
-    ss::future<> add_quota_id(std::string_view quota_id, clock::time_point now);
+    ss::future<> add_quota_id(tracker_key quota_id, clock::time_point now);
     void update_client_quotas();
-    int64_t get_client_target_produce_tp_rate(
-      const std::optional<std::string_view>& quota_id);
-    std::optional<int64_t> get_client_target_fetch_tp_rate(
-      const std::optional<std::string_view>& quota_id);
+    int64_t get_client_target_produce_tp_rate(const tracker_key& quota_id);
+    std::optional<int64_t>
+    get_client_target_fetch_tp_rate(const tracker_key& quota_id);
 
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;

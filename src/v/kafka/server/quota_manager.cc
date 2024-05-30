@@ -28,12 +28,16 @@
 #include <chrono>
 #include <optional>
 #include <string_view>
+#include <variant>
 
 using namespace std::chrono_literals;
 
 namespace kafka {
 
 using clock = quota_manager::clock;
+using k_client_id = quota_manager::k_client_id;
+using k_group_name = quota_manager::k_group_name;
+using tracker_key = quota_manager::tracker_key;
 
 quota_manager::quota_manager(client_quotas_t& client_quotas)
   : _default_num_windows(config::shard_local_cfg().default_num_windows.bind())
@@ -79,13 +83,7 @@ ss::future<> quota_manager::start() {
 }
 
 ss::future<clock::duration> quota_manager::maybe_add_and_retrieve_quota(
-  std::optional<std::string_view> quota_id,
-  clock::time_point now,
-  quota_mutation_callback_t cb) {
-    // requests without a client id are grouped into an anonymous group that
-    // shares a default quota. the anonymous group is keyed on empty string.
-    auto qid = quota_id.value_or("");
-
+  tracker_key qid, clock::time_point now, quota_mutation_callback_t cb) {
     vassert(_client_quotas, "_client_quotas should have been initialized");
 
     auto it = _client_quotas->find(qid);
@@ -116,13 +114,13 @@ ss::future<clock::duration> quota_manager::maybe_add_and_retrieve_quota(
 }
 
 ss::future<>
-quota_manager::add_quota_id(std::string_view qid, clock::time_point now) {
+quota_manager::add_quota_id(tracker_key qid, clock::time_point now) {
     vassert(
       ss::this_shard_id() == _client_quotas.shard_id(),
       "add_quota_id should only be called on the owner shard");
 
-    auto update_func = [this, qid = ss::sstring{qid}, now](
-                         client_quotas_map_t new_map) -> client_quotas_map_t {
+    auto update_func =
+      [this, qid, now](client_quotas_map_t new_map) -> client_quotas_map_t {
         auto produce_rate = get_client_target_produce_tp_rate(qid);
         auto fetch_rate = get_client_target_fetch_tp_rate(qid);
         auto partition_mutation_rate = _target_partition_mutation_quota();
@@ -204,46 +202,62 @@ void quota_manager::update_client_quotas() {
 
 // If client is part of some group then client quota ID is a group
 // else client quota ID is client_id
-static std::optional<std::string_view> get_client_quota_id(
+static tracker_key get_client_quota_id(
   const std::optional<std::string_view>& client_id,
   const std::unordered_map<ss::sstring, config::client_group_quota>&
     group_quota) {
     if (!client_id) {
-        return std::nullopt;
+        // requests without a client id are grouped into an anonymous group that
+        // shares a default quota. the anonymous group is keyed on empty string.
+        return k_client_id{""};
     }
     for (const auto& group_and_limit : group_quota) {
         if (client_id->starts_with(
               std::string_view(group_and_limit.second.clients_prefix))) {
-            return group_and_limit.first;
+            return k_group_name{group_and_limit.first};
         }
     }
-    return client_id;
+    return k_client_id{*client_id};
 }
 
-int64_t quota_manager::get_client_target_produce_tp_rate(
-  const std::optional<std::string_view>& quota_id) {
-    if (!quota_id) {
-        return _default_target_produce_tp_rate();
-    }
-    auto group_tp_rate = _target_produce_tp_rate_per_client_group().find(
-      ss::sstring(quota_id.value()));
-    if (group_tp_rate != _target_produce_tp_rate_per_client_group().end()) {
-        return group_tp_rate->second.quota;
-    }
-    return _default_target_produce_tp_rate();
+int64_t
+quota_manager::get_client_target_produce_tp_rate(const tracker_key& quota_id) {
+    return std::visit(
+      [this](const auto& qid) -> int64_t {
+          using T = std::decay_t<decltype(qid)>;
+          if constexpr (std::is_same_v<k_client_id, T>) {
+              return _default_target_produce_tp_rate();
+          } else if constexpr (std::is_same_v<k_group_name, T>) {
+              auto group = _target_produce_tp_rate_per_client_group().find(qid);
+              if (group != _target_produce_tp_rate_per_client_group().end()) {
+                  return group->second.quota;
+              }
+              return _default_target_produce_tp_rate();
+          } else {
+              static_assert(always_false_v<T>, "Unknown tracker_key type");
+          }
+      },
+      quota_id);
 }
 
-std::optional<int64_t> quota_manager::get_client_target_fetch_tp_rate(
-  const std::optional<std::string_view>& quota_id) {
-    if (!quota_id) {
-        return _default_target_fetch_tp_rate();
-    }
-    auto group_tp_rate = _target_fetch_tp_rate_per_client_group().find(
-      ss::sstring(quota_id.value()));
-    if (group_tp_rate != _target_fetch_tp_rate_per_client_group().end()) {
-        return group_tp_rate->second.quota;
-    }
-    return _default_target_fetch_tp_rate();
+std::optional<int64_t>
+quota_manager::get_client_target_fetch_tp_rate(const tracker_key& quota_id) {
+    return std::visit(
+      [this](const auto& qid) -> std::optional<int64_t> {
+          using T = std::decay_t<decltype(qid)>;
+          if constexpr (std::is_same_v<k_client_id, T>) {
+              return _default_target_fetch_tp_rate();
+          } else if constexpr (std::is_same_v<k_group_name, T>) {
+              auto group = _target_fetch_tp_rate_per_client_group().find(qid);
+              if (group != _target_fetch_tp_rate_per_client_group().end()) {
+                  return group->second.quota;
+              }
+              return _default_target_fetch_tp_rate();
+          } else {
+              static_assert(always_false_v<T>, "Unknown tracker_key type");
+          }
+      },
+      quota_id);
 }
 
 ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
@@ -276,7 +290,7 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
 }
 
 clock::duration quota_manager::cap_to_max_delay(
-  std::optional<std::string_view> quota_id, clock::duration delay) {
+  const tracker_key& quota_id, clock::duration delay) {
     std::chrono::milliseconds max_delay_ms(_max_delay());
     std::chrono::milliseconds delay_ms
       = std::chrono::duration_cast<std::chrono::milliseconds>(delay);
@@ -404,7 +418,7 @@ ss::future<> quota_manager::do_gc(clock::time_point expire_threshold) {
       ss::this_shard_id() == _client_quotas.shard_id(),
       "do_gc() should only be called on the owner shard");
 
-    using key_set = chunked_vector<ss::sstring>;
+    using key_set = chunked_vector<tracker_key>;
 
     auto mapper = [expire_threshold](const quota_manager& qm) -> key_set {
         auto res = key_set{};

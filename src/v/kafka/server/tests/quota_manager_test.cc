@@ -173,6 +173,8 @@ constexpr auto basic_config = [](config::configuration& conf) {
 };
 
 SEASTAR_THREAD_TEST_CASE(static_config_test) {
+    using k_client_id = kafka::quota_manager::k_client_id;
+    using k_group_name = kafka::quota_manager::k_group_name;
     fixture f;
     f.start().get();
     auto stop = ss::defer([&] { f.stop().get(); });
@@ -186,7 +188,8 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
         f.sqm.local().record_fetch_tp(client_id, 1).get();
         f.sqm.local().record_produce_tp_and_throttle(client_id, 1).get();
         f.sqm.local().record_partition_mutations(client_id, 1).get();
-        auto it = f.buckets_map.local()->find(client_id + "-group");
+        auto it = f.buckets_map.local()->find(
+          k_group_name{client_id + "-group"});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
         BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 4096);
@@ -200,7 +203,8 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
         f.sqm.local().record_fetch_tp(client_id, 1).get();
         f.sqm.local().record_produce_tp_and_throttle(client_id, 1).get();
         f.sqm.local().record_partition_mutations(client_id, 1).get();
-        auto it = f.buckets_map.local()->find(client_id + "-group");
+        auto it = f.buckets_map.local()->find(
+          k_group_name{client_id + "-group"});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
         BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 2048);
@@ -214,7 +218,7 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
         f.sqm.local().record_fetch_tp(client_id, 1).get();
         f.sqm.local().record_produce_tp_and_throttle(client_id, 1).get();
         f.sqm.local().record_partition_mutations(client_id, 1).get();
-        auto it = f.buckets_map.local()->find(client_id);
+        auto it = f.buckets_map.local()->find(k_client_id{client_id});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
         BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 1024);
@@ -227,6 +231,7 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
 
 SEASTAR_THREAD_TEST_CASE(update_test) {
     using clock = kafka::quota_manager::clock;
+    using k_group_name = kafka::quota_manager::k_group_name;
     fixture f;
     f.start().get();
     auto stop = ss::defer([&] { f.stop().get(); });
@@ -252,7 +257,8 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         }).get();
 
         // Check the rate has been updated
-        auto it = f.buckets_map.local()->find(client_id + "-group");
+        auto it = f.buckets_map.local()->find(
+          k_group_name{client_id + "-group"});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
         BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4098);
@@ -288,7 +294,8 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         }).get();
 
         // Check the rate has been updated
-        auto it = f.buckets_map.local()->find(client_id + "-group");
+        auto it = f.buckets_map.local()->find(
+          k_group_name{client_id + "-group"});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
         BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 1024);
