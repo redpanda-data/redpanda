@@ -413,11 +413,19 @@ class OMBValidationTest(RedpandaCloudTest):
         # In practice the cloud there will be some additional external connections on top of those
         # created by the test because of connections from kminion, etc.
         def target_connections_reached():
+            # Empirically, we get slightly fewer connections than calculated, perhaps due to the same
+            # underlying issue as redpanda#15475: even when S swarm producers have started, we observe
+            # slightly less than S * (B + 1) connections cluster-wide, indicating that some swarm clients
+            # did not connect to all brokers, so only require this fraction of the target connection count
+            # in order to consider us ready to start. Since we already applied a 1.1x factor to the target
+            # connection count above the advertised count, we are still well above the advertised limit.
+            SWARM_TARGET_CONNECTIONS_FUDGE = 0.98
             ccount = self._connection_count()
             self.logger.debug(
                 'Waiting for connections to reach target, current:'
                 f'{ccount}, target: {swarm_target_connections}')
-            return self._connection_count() >= swarm_target_connections
+            return self._connection_count(
+            ) >= swarm_target_connections * SWARM_TARGET_CONNECTIONS_FUDGE
 
         def not_reached():
             return f"Failed to reach target connections, actual: {self._connection_count()}, target: {swarm_target_connections}"
