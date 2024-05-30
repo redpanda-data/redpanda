@@ -1105,7 +1105,18 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                                                   version=1)
         assert result_raw.status_code == requests.codes.ok
 
-        self.logger.debug("Posting schema 1 again, expect same version")
+        self.logger.debug("Posting schema 1 again, expect incompatible")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        assert result_raw.status_code == requests.codes.conflict
+
+        self.logger.debug("Set subject config - NONE")
+        result_raw = self._set_config_subject(subject=f"{topic}-key",
+                                              data=json.dumps(
+                                                  {"compatibility": "NONE"}))
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Posting schema 1 again, expect same id")
         result_raw = self._post_subjects_subject_versions(
             subject=f"{topic}-key", data=schema_1_data)
         assert result_raw.status_code == requests.codes.ok
@@ -2648,6 +2659,67 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [2]
+
+    @cluster(num_nodes=3)
+    def test_delete_subject_bug(self):
+        topic = 'foo'
+        self.logger.debug(f"Register a schema against a subject")
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug(f"Register a schema against a subject")
+        schema_2_data = json.dumps({"schema": schema2_def})
+
+        self.logger.debug("Posting schema 2 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_2_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Soft delete subject 1 version 1")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=1,
+                                                  auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == 1, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Soft delete subject 1 version 2")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=2,
+                                                  auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == 2, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Posting schema 1 - again - as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == {'id': 1}, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Get subject versions")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-key", auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == [3], f"Json: {result_raw.json()}"
+
+        self.logger.debug("Posting schema 2 - again - as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_2_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == {'id': 2}, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Get subject versions")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-key", auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == [3, 4], f"Json: {result_raw.json()}"
 
 
 class SchemaRegistryTest(SchemaRegistryTestMethods):

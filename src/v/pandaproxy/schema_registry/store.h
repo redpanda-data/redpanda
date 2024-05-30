@@ -382,7 +382,14 @@ public:
     result<std::vector<subject_version_entry>>
     get_version_ids(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
-        return sub_it->second.versions;
+        std::vector<subject_version_entry> res;
+        absl::c_copy_if(
+          sub_it->second.versions,
+          std::back_inserter(res),
+          [inc_del](const subject_version_entry& e) {
+              return inc_del || !e.deleted;
+          });
+        return {std::move(res)};
     }
 
     ///\brief Return whether this subject has a version that references the
