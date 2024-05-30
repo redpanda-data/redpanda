@@ -11,6 +11,7 @@
 
 #include "base/oncore.h"
 #include "cluster/logger.h"
+#include "features/feature_table.h"
 #include "ssx/sformat.h"
 
 namespace cluster {
@@ -153,13 +154,20 @@ bool allocation_state::is_empty(model::node_id id) const {
     return it->second->empty();
 }
 
+bool allocation_state::node_local_core_assignment_enabled() const {
+    return _feature_table.is_active(
+      features::feature::node_local_core_assignment);
+}
+
 void allocation_state::add_allocation(
   const model::broker_shard& replica,
   const partition_allocation_domain domain) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
         it->second->add_allocation(domain);
-        it->second->add_allocation(replica.shard);
+        if (!node_local_core_assignment_enabled()) {
+            it->second->add_allocation(replica.shard);
+        }
         vlog(
           clusterlog.trace,
           "add allocation [node: {}, core: {}], total allocated: {}",
@@ -175,7 +183,9 @@ void allocation_state::remove_allocation(
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
         it->second->remove_allocation(domain);
-        it->second->remove_allocation(replica.shard);
+        if (!node_local_core_assignment_enabled()) {
+            it->second->remove_allocation(replica.shard);
+        }
         vlog(
           clusterlog.trace,
           "remove allocation [node: {}, core: {}], total allocated: {}",
@@ -194,7 +204,17 @@ uint32_t allocation_state::allocate(
 
     it->second->add_allocation(domain);
     it->second->add_final_count(domain);
-    return it->second->allocate_shard();
+    if (node_local_core_assignment_enabled()) {
+#ifndef NDEBUG
+        // return invalid shard in debug mode so that we can spot places where
+        // we are still using it.
+        return 12312312;
+#else
+        return 0;
+#endif
+    } else {
+        return it->second->allocate_shard();
+    }
 }
 
 void allocation_state::add_final_count(
