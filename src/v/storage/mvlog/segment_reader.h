@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "container/interval_set.h"
 #include "storage/mvlog/batch_collector.h"
 #include "storage/mvlog/skipping_data_source.h"
 #include "storage/types.h"
@@ -24,7 +25,8 @@ public:
     segment_reader& operator=(segment_reader&) = delete;
     segment_reader& operator=(segment_reader&&) = delete;
 
-    explicit segment_reader(readable_segment* segment);
+    explicit segment_reader(
+      interval_set<size_t> gaps, readable_segment* segment);
     ~segment_reader();
 
     // Returns a stream starting from the given file position, until the end of
@@ -33,14 +35,20 @@ public:
     // The stream must be consumed while this segment_reader remains in scope.
     ss::input_stream<char> make_stream(size_t start_pos = 0) const;
 
-private:
     // Returns the set of file position intervals appropriate for this reader's
-    // truncation id.
+    // size and gaps.
     skipping_data_source::read_list_t
     make_read_intervals(size_t start_pos, size_t length) const;
 
+private:
     // Returns a stream starting at the file position with the given length.
     ss::input_stream<char> make_stream(size_t start_pos, size_t length) const;
+
+    // Gaps to skip over when reading the file.
+    const interval_set<size_t> gaps_;
+
+    // Size of the file, at which to stop.
+    const size_t file_size_;
 
     // The underlying readable segment file.
     readable_segment* segment_;
