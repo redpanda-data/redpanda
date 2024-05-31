@@ -12,7 +12,7 @@ import time
 from collections import defaultdict
 from packaging.version import Version
 
-from ducktape.mark import parametrize, matrix, ok_to_fail
+from ducktape.mark import parametrize, matrix, ok_to_fail_fips
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
@@ -384,6 +384,8 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     def test_rolling_upgrade(self, cloud_storage_type):
         """
         Verify that when tiered storage writes happen during a rolling upgrade,

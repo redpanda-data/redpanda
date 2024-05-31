@@ -14,7 +14,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail_fips
 from ducktape.utils.util import wait_until
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.cluster import cluster
@@ -272,6 +272,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
     @matrix(enable_failures=[True, False],
             num_to_upgrade=[0, 3],
             with_tiered_storage=[True, False])
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     def test_node_operations(self, enable_failures, num_to_upgrade,
                              with_tiered_storage):
         # In order to reduce the number of parameters and at the same time cover

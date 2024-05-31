@@ -16,7 +16,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.util import expect_exception
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail_fips
 from ducktape.tests.test import TestContext
 
 from rptest.services.redpanda import CloudStorageType, CloudStorageTypeAndUrlStyle, MetricsEndpoint, RedpandaService, get_cloud_storage_type, get_cloud_storage_url_style, get_cloud_storage_type_and_url_style, make_redpanda_service
@@ -412,6 +412,8 @@ class TestReadReplicaService(EndToEndTest):
         partition_count=[10],
         cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
         ))
+    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
+    @ok_to_fail_fips
     def test_simple_end_to_end(
         self, partition_count: int,
         cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]
@@ -486,6 +488,8 @@ class ReadReplicasUpgradeTest(EndToEndTest):
     @cluster(num_nodes=8)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     def test_upgrades(self, cloud_storage_type):
         partition_count = 1
         install_opts = InstallOptions(install_previous_version=True)
