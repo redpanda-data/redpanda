@@ -199,6 +199,15 @@ public:
      */
     seastar::metrics::histogram internal_histogram_logform() const;
 
+    /*
+     * Generates a Prometheus histogram with 16 buckets. The first bucket has an
+     * upper bound of 4 - 1 and subsequent buckets have an upper bound of 2
+     * times the upper bound of the previous bucket.
+     *
+     * This is the histogram type used for the Kafka read distribution.
+     */
+    seastar::metrics::histogram read_dist_histogram_logform() const;
+
 private:
     friend measurement;
 
@@ -225,3 +234,10 @@ using log_hist_public = log_hist<std::chrono::microseconds, 18, 256ul>;
  * bounds] [8, 10], [16, 20], [32, 41], [64, 83], [128, 167], [256, 335]
  */
 using log_hist_internal = log_hist<std::chrono::microseconds, 26, 8ul>;
+
+/*
+ * This histogram has units of minutes instead of microseconds, and is used for
+ * measuring the Kafka read distribution on the scale of less than 4 minutes in
+ * the first bucket to greater than 91 days in the last bucket.
+ */
+using log_hist_read_dist = log_hist<std::chrono::minutes, 16, 4ul>;
