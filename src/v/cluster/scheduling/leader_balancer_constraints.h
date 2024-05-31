@@ -158,9 +158,10 @@ private:
     double _error{0};
 
     // Stores the number of leaders on a given node per topic.
-    topic_map<absl::flat_hash_map<model::node_id, size_t>> _topic_node_index;
+    topic_map<absl::flat_hash_map<model::broker_shard, size_t>>
+      _topic_shard_index;
     topic_map<size_t> _topic_partition_index;
-    topic_map<absl::flat_hash_set<model::node_id>> _topic_replica_index;
+    topic_map<absl::flat_hash_set<model::broker_shard>> _topic_replica_index;
     topic_map<double> _topic_skew;
     topic_map<double> _topic_opt_leaders;
 
