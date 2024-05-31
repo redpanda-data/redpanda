@@ -32,7 +32,6 @@ std::istream& operator>>(std::istream& i, abs_error_code& code) {
           .match("InternalError", abs_error_code::internal_error)
           .match("OperationTimedOut", abs_error_code::operation_timed_out)
           .match("SystemInUse", abs_error_code::system_in_use)
-          .match("BlobNotFound", abs_error_code::blob_not_found)
           .match("AccountBeingCreated", abs_error_code::account_being_created)
           .match(
             "ResourceAlreadyExists", abs_error_code::resource_already_exists)
