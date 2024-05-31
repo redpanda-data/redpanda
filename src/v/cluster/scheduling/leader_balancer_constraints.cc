@@ -17,9 +17,9 @@ namespace cluster::leader_balancer_types {
 
 even_topic_distributon_constraint::even_topic_distributon_constraint(
   group_id_to_topic_revision_t group_to_topic_rev,
-  shard_index si,
+  const shard_index& si,
   const muted_index& mi)
-  : _si(std::move(si))
+  : _si(si)
   , _mi(mi)
   , _group_to_topic_rev(std::move(group_to_topic_rev)) {
     rebuild_indexes();
@@ -44,10 +44,6 @@ void even_topic_distributon_constraint::update_index(const reassignment& r) {
     // Update _topic_shard_index
     _topic_shard_index.at(topic_id).at(r.from) -= 1;
     _topic_shard_index.at(topic_id).at(r.to) += 1;
-
-    // Update _si
-
-    _si.update_index(r);
 }
 
 std::optional<reassignment>
