@@ -287,6 +287,12 @@ ss::future<> cache::trim_manually(
   std::optional<size_t> object_limit_override) {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     auto units = co_await ss::get_units(_cleanup_sm, 1);
+    vlog(
+      cst_log.info,
+      "Beginning manual trim, requested bytes limit: {}, requested object "
+      "limit: {}",
+      size_limit_override,
+      object_limit_override);
     co_return co_await trim(size_limit_override, object_limit_override);
 }
 
