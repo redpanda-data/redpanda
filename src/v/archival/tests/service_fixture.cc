@@ -194,16 +194,15 @@ archiver_fixture::get_configurations() {
     s3conf.server_addr = server_addr;
 
     archival::configuration aconf{
+      .cloud_storage_initial_backoff = config::mock_binding(100ms),
+      .segment_upload_timeout = config::mock_binding(1000ms),
       .manifest_upload_timeout = config::mock_binding(1000ms),
-    };
+      .garbage_collect_timeout = config::mock_binding(1000ms),
+      .upload_loop_initial_backoff = config::mock_binding(100ms),
+      .upload_loop_max_backoff = config::mock_binding(5000ms)};
     aconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
     aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
     aconf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
-    aconf.cloud_storage_initial_backoff = 100ms;
-    aconf.segment_upload_timeout = 1s;
-    aconf.garbage_collect_timeout = 1s;
-    aconf.upload_loop_initial_backoff = 100ms;
-    aconf.upload_loop_max_backoff = 5s;
     aconf.time_limit = std::nullopt;
 
     cloud_storage::configuration cconf;

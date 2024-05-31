@@ -70,16 +70,15 @@ class archiver_cluster_fixture
         s3_conf.server_addr = server_addr;
 
         archival::configuration a_conf{
+          .cloud_storage_initial_backoff = config::mock_binding(100ms),
+          .segment_upload_timeout = config::mock_binding(1000ms),
           .manifest_upload_timeout = config::mock_binding(1000ms),
-        };
+          .garbage_collect_timeout = config::mock_binding(1000ms),
+          .upload_loop_initial_backoff = config::mock_binding(100ms),
+          .upload_loop_max_backoff = config::mock_binding(5000ms)};
         a_conf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
         a_conf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
         a_conf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
-        a_conf.cloud_storage_initial_backoff = 100ms;
-        a_conf.segment_upload_timeout = 1s;
-        a_conf.garbage_collect_timeout = 1s;
-        a_conf.upload_loop_initial_backoff = 100ms;
-        a_conf.upload_loop_max_backoff = 5s;
         a_conf.time_limit = std::nullopt;
 
         cloud_storage::configuration c_conf;

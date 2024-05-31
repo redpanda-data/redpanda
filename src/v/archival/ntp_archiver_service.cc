@@ -497,7 +497,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
     try {
         retry_chain_node fib(
           _conf->manifest_upload_timeout(),
-          _conf->cloud_storage_initial_backoff,
+          _conf->cloud_storage_initial_backoff(),
           &_rtcnode);
         retry_chain_logger ctxlog(archival_log, fib);
         vlog(ctxlog.info, "Uploading topic manifest {}", _parent.ntp());
@@ -605,7 +605,7 @@ ss::future<std::error_code> ntp_archiver::reset_scrubbing_metadata() {
 }
 
 ss::future<> ntp_archiver::upload_until_term_change() {
-    ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
+    auto backoff = _conf->upload_loop_initial_backoff();
 
     if (!_feature_table.local().is_active(
           features::feature::cloud_storage_manifest_format_v2)) {
@@ -747,9 +747,9 @@ ss::future<> ntp_archiver::upload_until_term_change() {
               _rtclog.trace, "Nothing to upload, applying backoff algorithm");
             co_await ss::sleep_abortable(
               backoff + _backoff_jitter.next_jitter_duration(), _as);
-            backoff = std::min(backoff * 2, _conf->upload_loop_max_backoff);
+            backoff = std::min(backoff * 2, _conf->upload_loop_max_backoff());
         } else {
-            backoff = _conf->upload_loop_initial_backoff;
+            backoff = _conf->upload_loop_initial_backoff();
         }
     }
 }
@@ -913,7 +913,7 @@ ntp_archiver::download_manifest() {
     auto guard = _gate.hold();
     retry_chain_node fib(
       _conf->manifest_upload_timeout(),
-      _conf->cloud_storage_initial_backoff,
+      _conf->cloud_storage_initial_backoff(),
       &_rtcnode);
     cloud_storage::partition_manifest tmp(_ntp, _rev);
     vlog(_rtclog.debug, "Downloading manifest");
@@ -1067,7 +1067,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
       _conf->manifest_upload_timeout(),
-      _conf->cloud_storage_initial_backoff,
+      _conf->cloud_storage_initial_backoff(),
       &rtc.get());
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
@@ -1150,8 +1150,8 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
-      _conf->segment_upload_timeout,
-      _conf->cloud_storage_initial_backoff,
+      _conf->segment_upload_timeout(),
+      _conf->cloud_storage_initial_backoff(),
       &rtc.get());
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
@@ -1275,8 +1275,8 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
       && idx_res.has_value()) {
         auto rtc = source_rtc.value_or(std::ref(_rtcnode));
         retry_chain_node fib(
-          _conf->segment_upload_timeout,
-          _conf->cloud_storage_initial_backoff,
+          _conf->segment_upload_timeout(),
+          _conf->cloud_storage_initial_backoff(),
           &rtc.get());
 
         // If we fail to upload the index but successfully upload the segment,
@@ -1376,8 +1376,8 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_tx(
     auto guard = _gate.hold();
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
-      _conf->segment_upload_timeout,
-      _conf->cloud_storage_initial_backoff,
+      _conf->segment_upload_timeout(),
+      _conf->cloud_storage_initial_backoff(),
       &rtc.get());
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
@@ -1563,12 +1563,12 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
           start_upload_offset,
           last_stable_offset,
           log,
-          _conf->segment_upload_timeout);
+          _conf->segment_upload_timeout());
         break;
     case segment_upload_kind::compacted:
         const auto& m = manifest();
         candidate_result = co_await _policy.get_next_compacted_segment(
-          start_upload_offset, log, m, _conf->segment_upload_timeout);
+          start_upload_offset, log, m, _conf->segment_upload_timeout());
         break;
     }
 
@@ -2097,7 +2097,7 @@ ntp_archiver::maybe_truncate_manifest() {
     for (const auto& meta : m) {
         retry_chain_node fib(
           _conf->manifest_upload_timeout(),
-          _conf->upload_loop_initial_backoff,
+          _conf->upload_loop_initial_backoff(),
           &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
           meta.base_offset, meta.segment_term);
@@ -2126,7 +2126,7 @@ ntp_archiver::maybe_truncate_manifest() {
           manifest().get_start_offset());
         retry_chain_node rc_node(
           _conf->manifest_upload_timeout(),
-          _conf->upload_loop_initial_backoff,
+          _conf->upload_loop_initial_backoff(),
           &rtc);
         auto error = co_await _parent.archival_meta_stm()->truncate(
           adjusted_start_offset,
@@ -2417,8 +2417,8 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     }
 
     retry_chain_node fib(
-      _conf->garbage_collect_timeout,
-      _conf->cloud_storage_initial_backoff,
+      _conf->garbage_collect_timeout(),
+      _conf->cloud_storage_initial_backoff(),
       &_rtcnode);
     const auto delete_result = co_await _remote.delete_objects(
       get_bucket_name(), objects_to_remove, fib);
@@ -2486,11 +2486,9 @@ ss::future<> ntp_archiver::apply_spillover() {
         co_return;
     }
 
-    const auto manifest_upload_timeout
-      = config::shard_local_cfg()
-          .cloud_storage_manifest_upload_timeout_ms.value();
-    const auto manifest_upload_backoff
-      = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value();
+    const auto manifest_upload_timeout = _conf->manifest_upload_timeout();
+    const auto manifest_upload_backoff = _conf->cloud_storage_initial_backoff();
+
     if (manifest_size_limit.has_value()) {
         vlog(
           _rtclog.debug,
@@ -2733,8 +2731,8 @@ ss::future<> ntp_archiver::garbage_collect() {
     }
 
     retry_chain_node fib(
-      _conf->garbage_collect_timeout,
-      _conf->cloud_storage_initial_backoff,
+      _conf->garbage_collect_timeout(),
+      _conf->cloud_storage_initial_backoff(),
       &_rtcnode);
     const auto delete_result = co_await _remote.delete_objects(
       get_bucket_name(), objects_to_remove, fib);
@@ -2833,7 +2831,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
         collector.collect_segments(
           segment_collector_mode::collect_non_compacted);
         auto candidate = co_await collector.make_upload_candidate(
-          _conf->upload_io_priority, _conf->segment_upload_timeout);
+          _conf->upload_io_priority, _conf->segment_upload_timeout());
 
         using ret_t = std::pair<
           std::optional<ssx::semaphore_units>,
