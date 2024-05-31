@@ -50,16 +50,19 @@ class tls_config {
 public:
     tls_config()
       : _key_cert(std::nullopt)
-      , _truststore_file(std::nullopt) {}
+      , _truststore_file(std::nullopt)
+      , _crl_file(std::nullopt) {}
 
     tls_config(
       bool enabled,
       std::optional<key_cert> key_cert,
       std::optional<ss::sstring> truststore,
+      std::optional<ss::sstring> crl,
       bool require_client_auth)
       : _enabled(enabled)
       , _key_cert(std::move(key_cert))
       , _truststore_file(std::move(truststore))
+      , _crl_file(std::move(crl))
       , _require_client_auth(require_client_auth) {}
 
     bool is_enabled() const { return _enabled; }
@@ -71,6 +74,8 @@ public:
     const std::optional<ss::sstring>& get_truststore_file() const {
         return _truststore_file;
     }
+
+    const std::optional<ss::sstring>& get_crl_file() const { return _crl_file; }
 
     bool get_require_client_auth() const { return _require_client_auth; }
 
@@ -89,6 +94,14 @@ public:
                   auto f = _truststore_file ? builder.set_x509_trust_file(
                              *_truststore_file, ss::tls::x509_crt_format::PEM)
                                             : builder.set_system_trust();
+
+                  if (_crl_file) {
+                      f = f.then([this, &builder] {
+                          return builder.set_x509_crl_file(
+                            *_crl_file, ss::tls::x509_crt_format::PEM);
+                      });
+                  }
+
                   if (_key_cert) {
                       f = f.then([this, &builder] {
                           return builder.set_x509_key_file(
@@ -131,6 +144,7 @@ public:
           << "enabled: " << c.is_enabled() << " "
           << "key/cert files: " << c.get_key_cert_files() << " "
           << "ca file: " << c.get_truststore_file() << " "
+          << "crl file: " << c.get_crl_file() << " "
           << "client_auth_required: " << c.get_require_client_auth() << ""
           << " }";
         return o;
@@ -140,6 +154,7 @@ private:
     bool _enabled{false};
     std::optional<key_cert> _key_cert;
     std::optional<ss::sstring> _truststore_file;
+    std::optional<ss::sstring> _crl_file;
     bool _require_client_auth{false};
 };
 
@@ -200,7 +215,8 @@ struct convert<config::tls_config> {
         }
         auto enabled = node["enabled"] && node["enabled"].as<bool>();
         if (!enabled) {
-            rhs = config::tls_config(false, std::nullopt, std::nullopt, false);
+            rhs = config::tls_config(
+              false, std::nullopt, std::nullopt, std::nullopt, false);
         } else {
             auto key_cert
               = node["key_file"]
@@ -212,6 +228,7 @@ struct convert<config::tls_config> {
               enabled,
               key_cert,
               to_absolute(read_optional(node, "truststore_file")),
+              to_absolute(read_optional(node, "crl_file")),
               node["require_client_auth"]
                 && node["require_client_auth"].as<bool>());
         }

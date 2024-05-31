@@ -60,6 +60,11 @@ void rjson_serialize_impl(
         w.Key("truststore_file");
         w.String((*(v.get_truststore_file())).c_str());
     }
+
+    if (v.get_crl_file()) {
+        w.Key("crl_file");
+        w.String((*(v.get_crl_file())).c_str());
+    }
 }
 
 void rjson_serialize(

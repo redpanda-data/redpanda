@@ -12,12 +12,16 @@ default_ca = local_ca
 
 [ local_ca ]
 dir              = {dir}
+certificate      = $dir/ca.crt
+private_key      = $dir/ca.key # CA private key
 database         = $dir/index.txt
 serial           = $dir/serial.txt
+crlnumber        = $dir/crlnumber.txt
 default_days     = 730
 default_md       = sha256
 copy_extensions  = copy
 unique_subject   = no
+default_crl_days = 365                   # How long before next CRL
 
 # Used to create the CA certificate.
 [ req ]
@@ -291,7 +295,7 @@ subjectKeyIdentifier    = hash
 """
 
 CertificateAuthority = collections.namedtuple("CertificateAuthority",
-                                              ["cfg", "key", "crt"])
+                                              ["cfg", "key", "crt", "crl"])
 Certificate = collections.namedtuple("Certificate",
                                      ["cfg", "key", "crt", "ca"])
 
@@ -320,6 +324,7 @@ class TLSCertManager:
     def _exec(self, cmd):
         self._logger.info(f"Running command: {cmd}")
         retries = 0
+        output = None
         while retries < 3:
             try:
                 output = subprocess.check_output(cmd.split(),
@@ -347,6 +352,7 @@ class TLSCertManager:
         crt = self._with_dir("ca.crt")
         idx = self._with_dir("index.txt")
         srl = self._with_dir("serial.txt")
+        crl_srl = self._with_dir("crlnumber.txt")
 
         with open(f"{cfg}", "w") as f:
             f.write(_ca_config_tmpl.format(dir=self._dir.name))
@@ -361,7 +367,22 @@ class TLSCertManager:
         with open(srl, "w") as f:
             f.writelines(["01"])
 
-        return CertificateAuthority(cfg, key, crt)
+        crl = self._create_crl("ca", cfg, crl_srl)
+
+        return CertificateAuthority(cfg, key, crt, crl)
+
+    def _create_crl(self, ca: str, cfg: str, crl_srl: str) -> str:
+        if os.path.exists(crl_srl): os.remove(crl_srl)
+        with open(crl_srl, 'w') as f:
+            f.writelines(["01"])
+
+        crls = self._with_dir('crl')
+        os.makedirs(crls, exist_ok=True)
+        crl = os.path.join(crls, f"{ca}.crl")
+
+        self._exec(f"openssl ca -gencrl -config {cfg} -out {crl}")
+
+        return crl
 
     @property
     def ca(self):
@@ -372,7 +393,7 @@ class TLSCertManager:
                     *,
                     common_name: typing.Optional[str] = None,
                     name: typing.Optional[str] = None,
-                    faketime: typing.Optional[str] = '-0d'):
+                    faketime: typing.Optional[str] = '-0d') -> Certificate:
         name = name or host
 
         cfg = self._with_dir(f"{name}.conf")
@@ -403,10 +424,20 @@ class TLSCertManager:
         self.certs[name] = cert
         return cert
 
+    # TODO(oren): reasons enum
+    def revoke_cert(self, crt: Certificate, reason: str = "unspecified"):
+        self._exec(
+            f"openssl ca -config {crt.ca.cfg} -revoke {crt.crt} -crl_reason {reason}"
+        )
+        crl_srl = self._with_dir("crlnumber.txt")
+        crl = self._create_crl("ca", crt.ca.cfg, crl_srl)
+        revoked = self._with_dir("revoked.txt")
+        self._exec(
+            f'openssl crl -inform PEM -text -noout -in {crl} -out {revoked}')
+        with open(revoked, 'r') as f:
+            self._logger.debug(f"\n{f.read()}")
 
-# TODO(oren): Might want to add the ability to generate CRLs, though
-# I'm not sure there's an easy  way to transmit those to redpanda
-# without also causing other verification steps to fail.
+
 class TLSChainCACertManager(TLSCertManager):
     """
     Similar to TLSCertManager, but generates a chain of CAs,
@@ -477,6 +508,7 @@ class TLSChainCACertManager(TLSCertManager):
         crt = os.path.join(dir, f"{ca}.crt")
         idx = os.path.join(db, f"{ca}.db")
         srl = os.path.join(db, f"{ca}.crt.srl")
+        crl_srl = os.path.join(db, f"{ca}.crl.srl")
 
         with open(f"{cfg}", "w") as f:
             f.write(tmpl.format(dir=self._dir.name, name=ca))
@@ -498,7 +530,9 @@ class TLSChainCACertManager(TLSCertManager):
             f"openssl ca {'-selfsign' if selfsign else ''} -config {parent_cfg} "
             f"-in {csr} -out {crt} -extensions {ext} -days {days} -batch")
 
-        return CertificateAuthority(cfg, key, crt)
+        crl = self._create_crl(ca, cfg, crl_srl)
+
+        return CertificateAuthority(cfg, key, crt, crl)
 
     def _create_ca_cert_chain(self, files: list[str]) -> CertificateAuthority:
         out = self._with_dir('ca', 'signing-ca-chain.pem')
@@ -511,7 +545,7 @@ class TLSChainCACertManager(TLSCertManager):
         with open(out, 'r') as f:
             self._logger.debug(f"CA chain: {f.read()}")
 
-        return CertificateAuthority(None, None, out)
+        return CertificateAuthority(None, None, out, self._cas[-1].crl)
 
     def create_cert(self,
                     host: str,
