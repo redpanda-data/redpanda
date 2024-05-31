@@ -476,7 +476,7 @@ get_integer_query_param(const ss::http::request& req, std::string_view name) {
 
     const ss::sstring& str_param = req.query_parameters.at(key);
     try {
-        return std::stoi(str_param);
+        return std::stoull(str_param);
     } catch (const std::invalid_argument&) {
         throw ss::httpd::bad_request_exception(
           fmt::format("Parameter {} must be an integer", name));
@@ -4042,7 +4042,7 @@ admin_server::delete_cloud_storage_lifecycle(
     model::initial_revision_id revision;
     try {
         revision = model::initial_revision_id(
-          std::stoi(req->param["revision"]));
+          std::stoll(req->param["revision"]));
     } catch (...) {
         throw ss::httpd::bad_param_exception(fmt::format(
           "Revision id must be an integer: {}", req->param["revision"]));
