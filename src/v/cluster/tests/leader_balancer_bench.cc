@@ -53,7 +53,8 @@ void random_search_eval_bench(bool measure_all) {
       node_count, shards_per_node, groups_per_shard, replicas);
 
     cluster::leader_balancer_types::muted_index mi{{}, {}};
-    cluster::leader_balancer_types::shard_index si(index);
+    cluster::leader_balancer_types::shard_index si(
+      leader_balancer_test_utils::copy_cluster_index(index));
     auto gid_topic = make_gid_to_topic_index(si.shards());
 
     if (measure_all) {
@@ -62,9 +63,8 @@ void random_search_eval_bench(bool measure_all) {
 
     random_t rt{index};
     cluster::leader_balancer_types::even_topic_distributon_constraint tdc(
-      gid_topic, si, mi);
-    cluster::leader_balancer_types::even_shard_load_constraint slc(
-      std::move(si), mi);
+      std::move(gid_topic), si, mi);
+    cluster::leader_balancer_types::even_shard_load_constraint slc(si, mi);
 
     if (!measure_all) {
         perf_tests::start_measuring_time();
@@ -104,7 +104,7 @@ void even_topic_c_bench(bool measure_all) {
     }
 
     cluster::leader_balancer_types::even_topic_distributon_constraint tdc(
-      gid_topic, si, mi);
+      std::move(gid_topic), si, mi);
 
     if (!measure_all) {
         perf_tests::start_measuring_time();
@@ -157,7 +157,7 @@ void balancer_bench(bool measure_all) {
         perf_tests::start_measuring_time();
     }
 
-    auto greed = cluster::greedy_balanced_shards(index, {});
+    auto greed = cluster::greedy_balanced_shards(std::move(index), {});
     vassert(greed.error() == 0, "");
     vassert(greed.error() == 0, "e > 0");
 
