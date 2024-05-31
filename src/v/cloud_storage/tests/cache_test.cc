@@ -621,3 +621,42 @@ FIXTURE_TEST(test_cache_carryover_trim, cache_test_fixture) {
     BOOST_REQUIRE_EQUAL(after_bytes, 0);
     BOOST_REQUIRE_EQUAL(after_objects, 0);
 }
+
+FIXTURE_TEST(test_background_maybe_trim, cache_test_fixture) {
+    std::string write_buf(1_KiB, ' ');
+    random_generators::fill_buffer_randomchars(
+      write_buf.data(), write_buf.size());
+    size_t num_objects = 100;
+    std::vector<std::filesystem::path> object_keys;
+    for (int i = 0; i < num_objects; i++) {
+        object_keys.emplace_back(fmt::format("test_{}.log.1", i));
+        std::ofstream segment{CACHE_DIR / object_keys.back()};
+        segment.write(
+          write_buf.data(), static_cast<std::streamsize>(write_buf.size()));
+        segment.flush();
+    }
+
+    // Account all files in the cache (100 MiB).
+    clean_up_at_start().get();
+    BOOST_REQUIRE_EQUAL(get_object_count(), 100);
+
+    for (const auto& key : object_keys) {
+        // Touch every object so they have access times assigned to them
+        auto item = sharded_cache.local().get(key).get();
+        item->body.close().get();
+    }
+    BOOST_REQUIRE_EQUAL(get_object_count(), 100);
+
+    set_trim_thresholds(100.0, 50.0, 100);
+
+    // Do a put which should trigger a background trim and reduce the
+    // object count to 40, followed by a put that will increase it to 41.
+    auto data_string = create_data_string('a', 1_KiB);
+    put_into_cache(data_string, KEY);
+    wait_for_trim();
+
+    // 41 because we set a trigger of 50. That means that trim is triggered at
+    // 50%, but the low water mark adjusts this by an additional 80%, 50% * 80%
+    // = 40%. +1 for the object we just added.
+    BOOST_REQUIRE_EQUAL(get_object_count(), 41);
+}

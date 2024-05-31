@@ -458,6 +458,8 @@ public:
     friend class mock_property<T>;
     template<typename U>
     friend inline binding<U> mock_binding(U&&);
+    template<typename U>
+    friend inline binding<U> mock_binding(U const&);
 };
 
 /**
@@ -472,6 +474,11 @@ public:
 template<typename T>
 inline binding<T> mock_binding(T&& value) {
     return binding<T>(std::forward<T>(value));
+}
+
+template<typename T>
+inline binding<T> mock_binding(T const& value) {
+    return binding<T>(T(value));
 }
 
 /**

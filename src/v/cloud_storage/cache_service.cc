@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 
@@ -137,10 +138,7 @@ void cache::update_max_bytes() {
       _max_percent());
 
     if (_current_cache_size > _max_bytes) {
-        ssx::spawn_with_gate(_gate, [this]() {
-            return ss::with_semaphore(
-              _cleanup_sm, 1, [this]() { return trim_throttled(); });
-        });
+        ssx::spawn_with_gate(_gate, [this]() { return trim_throttled(); });
     }
 }
 
@@ -266,7 +264,9 @@ std::optional<std::chrono::milliseconds> cache::get_trim_delay() const {
     }
 }
 
-ss::future<> cache::trim_throttled() {
+ss::future<> cache::trim_throttled_unlocked(
+  std::optional<uint64_t> size_limit_override,
+  std::optional<size_t> object_limit_override) {
     // If we trimmed very recently then do not do it immediately:
     // this reduces load and improves chance of currently promoted
     // segments finishing their read work before we demote their
@@ -282,7 +282,15 @@ ss::future<> cache::trim_throttled() {
         co_await ss::sleep_abortable(*trim_delay, _as);
     }
 
-    co_await trim();
+    co_await trim(size_limit_override, object_limit_override);
+}
+
+ss::future<> cache::trim_throttled(
+  std::optional<uint64_t> size_limit_override,
+  std::optional<size_t> object_limit_override) {
+    auto units = co_await ss::get_units(_cleanup_sm, 1);
+    co_await trim_throttled_unlocked(
+      size_limit_override, object_limit_override);
 }
 
 ss::future<> cache::trim_manually(
@@ -1095,10 +1103,7 @@ ss::future<> cache::put(
         // Trim proactively: if many fibers hit this concurrently,
         // they'll contend for cleanup_sm and the losers will skip
         // trim due to throttling.
-        {
-            auto units = co_await ss::get_units(_cleanup_sm, 1);
-            co_await trim_throttled();
-        }
+        co_await trim_throttled();
 
         throw disk_full_error;
     }
@@ -1384,8 +1389,54 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
     co_return result;
 }
 
+void cache::maybe_background_trim() {
+    auto& trim_threshold_pct_objects
+      = config::shard_local_cfg()
+          .cloud_storage_cache_trim_threshold_percent_objects;
+    auto& trim_threshold_pct_size
+      = config::shard_local_cfg()
+          .cloud_storage_cache_trim_threshold_percent_size;
+    if (
+      !trim_threshold_pct_size.value().has_value()
+      && !trim_threshold_pct_objects.value().has_value()) {
+        return;
+    }
+
+    uint64_t target_bytes = uint64_t(
+      _max_bytes * trim_threshold_pct_size.value().value_or(100.0) / 100.0);
+    uint32_t target_objects = uint32_t(
+      _max_objects() * trim_threshold_pct_objects.value().value_or(100.0)
+      / 100.0);
+
+    bool bytes_over_limit = _current_cache_size + _reserved_cache_size
+                            > target_bytes;
+    bool objects_over_limit = _current_cache_objects + _reserved_cache_objects
+                              > target_objects;
+
+    if (bytes_over_limit || objects_over_limit) {
+        auto units = ss::try_get_units(_cleanup_sm, 1);
+        if (units.has_value()) {
+            vlog(cst_log.debug, "Spawning background trim");
+            ssx::spawn_with_gate(
+              _gate,
+              [this,
+               target_bytes,
+               target_objects,
+               u = std::move(units)]() mutable {
+                  return trim_throttled_unlocked(target_bytes, target_objects)
+                    .finally([u = std::move(u)] {});
+              });
+        } else {
+            vlog(
+              cst_log.debug, "Not spawning background trim: already started");
+        }
+    }
+}
+
 ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
     vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
+
+    maybe_background_trim();
 
     if (may_reserve_space(bytes, objects)) {
         // Fast path: space was available.
@@ -1463,7 +1514,8 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
         // We want number of full trims to match number of carryover trims.
         vlog(cst_log.debug, "Spawning background trim_throttled");
         ssx::spawn_with_gate(_gate, [this, u = std::move(units)]() mutable {
-            return trim_throttled().finally([u = std::move(u)] {});
+            return trim_throttled_unlocked(std::nullopt, std::nullopt)
+              .finally([u = std::move(u)] {});
         });
         co_return;
     }
@@ -1496,7 +1548,7 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                 // After taking lock, there still isn't space: means someone
                 // else didn't take it and free space for us already, so we will
                 // do the trim.
-                co_await trim_throttled();
+                co_await trim_throttled_unlocked();
                 did_trim = true;
             }
 
@@ -1644,5 +1696,4 @@ ss::future<> cache::initialize(std::filesystem::path cache_dir) {
         co_await ss::recursive_touch_directory(cache_dir.string());
     }
 }
-
 } // namespace cloud_storage
