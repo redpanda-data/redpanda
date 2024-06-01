@@ -40,7 +40,6 @@ struct walk_accumulator {
       , filter(std::move(collect_filter)) {}
 
     ss::future<> visit(ss::sstring const& target, ss::directory_entry entry) {
-        seen_dentries = true;
         auto entry_path = fmt::format("{}/{}", target, entry.name);
         if (entry.type && entry.type == ss::directory_entry_type::regular) {
             auto file_stats = co_await ss::file_stat(entry_path);
@@ -79,10 +78,7 @@ struct walk_accumulator {
         return r;
     }
 
-    void reset_seen_dentries() { seen_dentries = false; }
-
     const access_time_tracker& tracker;
-    bool seen_dentries{false};
     std::deque<ss::sstring> dirlist;
     std::optional<recursive_directory_walker::filter_type> filter;
     fragmented_vector<file_list_item> files;
@@ -120,15 +116,17 @@ ss::future<walk_result> recursive_directory_walker::walk(
         try {
             ss::file target_dir = co_await open_directory(target);
 
-            state.reset_seen_dentries();
+            bool seen_dentries = false;
             co_await target_dir
-              .list_directory([&state, &target](ss::directory_entry entry) {
-                  return state.visit(target, std::move(entry));
-              })
+              .list_directory(
+                [&state, &target, &seen_dentries](ss::directory_entry entry) {
+                    seen_dentries = true;
+                    return state.visit(target, std::move(entry));
+                })
               .done()
               .finally([target_dir]() mutable { return target_dir.close(); });
 
-            if (unlikely(!state.seen_dentries) && target != start_dir) {
+            if (unlikely(!seen_dentries) && target != start_dir) {
                 empty_dirs.push_back(target);
             }
         } catch (std::filesystem::filesystem_error& e) {
