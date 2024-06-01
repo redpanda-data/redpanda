@@ -10,7 +10,7 @@
 from dataclasses import dataclass
 from ducktape.tests.test import TestContext
 from ducktape.services.service import Service
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import requests
 
@@ -20,6 +20,10 @@ from rptest.services.redpanda import AnyRedpandaService
 class ProducerSwarm(Service):
     EXE = "client-swarm"
     LOG_PATH = "/opt/remote/var/client-swarm.log"
+
+    # client swarm throttles producer startups to one every 33 ms by default,
+    # see client_spawn_wait_ms in client-swarm
+    CLIENT_SPAWN_WAIT_MS = 33
 
     logs = {"repeater_log": {"path": LOG_PATH, "collect_default": True}}
 
@@ -76,6 +80,9 @@ class ProducerSwarm(Service):
             node.account.remove(self.LOG_PATH)
 
     def start_node(self, node, clean=None):
+        assert self._node is None or self._node == node, f'started on more than one node? {self._node} {node}'
+        self._node = node
+
         cmd = f"{self.EXE}"
         cmd += f" --brokers {self._redpanda.brokers()}"
         cmd += f" --metrics-address {self._remote_addr}"
@@ -100,6 +107,9 @@ class ProducerSwarm(Service):
 
         if self._keys is not None:
             cmd += f" --keys={self._keys}"
+        else:
+            # by default use a very large key space so all partitions are written to
+            cmd += " --keys=18446744073709551557"
 
         if self._unique_topics:
             cmd += " --unique-topics"
@@ -107,10 +117,12 @@ class ProducerSwarm(Service):
         if self._messages_per_second_per_producer is not None:
             cmd += f" --messages-per-second {self._messages_per_second_per_producer}"
 
+        cmd += f" --client-spawn-wait-ms={self.CLIENT_SPAWN_WAIT_MS}"
+
         cmd = f"RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} \"{cmd}\""
         node.account.ssh(cmd)
         self._redpanda.wait_until(
-            lambda: self.is_alive(node),
+            self.is_alive,
             timeout_sec=600,
             backoff_sec=1,
             err_msg=
@@ -124,7 +136,30 @@ class ProducerSwarm(Service):
             f"producer_swarm metrics endpoint at {self._remote_url(node, 'metrics/summary')} failed to answer after {30} sec",
         )
 
-        self._node = node
+    def wait_for_all_started(self):
+        """Wait until the requested number of producers have started. Note that if the expected
+        swarm runtime (messages / rate) is short, this may fail as all producers and start and
+        finish before we are able to see this via the metrics endpoint and an exception is thrown."""
+
+        # calculate the theoretical start time based on the spawn rate and then
+        # use 1.5x that + 10 seconds as the timeout
+        timeout_s = 10 + 1.5 * (self._producers * self.CLIENT_SPAWN_WAIT_MS /
+                                1000)
+
+        def started_count():
+            started = self.get_metrics_summary().clients_started
+            self.logger.debug(f'{started} producers started so far')
+            return started
+
+        self.logger.info(
+            f'Waiting up to {timeout_s}s for all {self._producers} to start')
+
+        self._redpanda.wait_until(
+            lambda: started_count() == self._producers,
+            timeout_sec=timeout_s,
+            backoff_sec=1,
+            err_msg=lambda: f"Producers did not start in time: "
+            "{started_count()} started, expected {self._producers}")
 
     def is_metrics_available(self, node):
         path = f"metrics/summary"
@@ -135,16 +170,19 @@ class ProducerSwarm(Service):
         except:
             return False
 
-    def is_alive(self, node):
-        result = node.account.ssh_output(
+    def is_alive(self) -> bool:
+        result = self._node.account.ssh_output(
             f"bash /opt/remote/control/alive.sh {self.EXE}")
         result = result.decode("utf-8")
         return "YES" in result
 
-    def wait_node(self, node, timeout_sec=600):
-        self._redpanda.wait_until(lambda: not self.is_alive(node),
-                                  timeout_sec=timeout_sec,
-                                  backoff_sec=5)
+    def wait_node(self, node, timeout_sec=600) -> bool:
+        try:
+            self._redpanda.wait_until(lambda: not self.is_alive(),
+                                      timeout_sec=timeout_sec,
+                                      backoff_sec=5)
+        except TimeoutError:
+            return False
         return True
 
     def stop_node(self, node):
@@ -167,18 +205,51 @@ class ProducerSwarm(Service):
     @dataclass
     class MetricsSummary:
         p0: int
+        """The p0 (minimum value) for single-interval message rate (msg/s)."""
         p50: int
+        """The p50 (median value) for single-interval message rate (msg/s)."""
         p100: int
+        """The p100 (maximum value) for single-interval message rate (msg/s)."""
+        total_success: int
+        """Number of messages delivered successfully during the entire lifetime of the swarm process."""
+        total_error: int
+        """Number of failed deliveries during the entire lifetime of the swarm process."""
+        clients_started: int
+        """The number of clients that have ever been started (includes ones that have subsequently stopped).
+        To get the number of _currently_ active clients, use clients_alive."""
+        clients_stopped: int
+        """The number of clients that have stopped as they reached their target message count."""
+        @property
+        def clients_alive(self):
+            """The number of clients running as of this snapshot."""
+            return self.clients_started - self.clients_stopped
 
-    def get_metrics_summary(self, seconds=None) -> MetricsSummary:
+        @property
+        def total_attempts(self):
+            """The total number of messages we attempted to send, whether successful or not."""
+            return self.total_success + self.total_error
+
+    def get_metrics_summary(self,
+                            seconds: int | None = None) -> MetricsSummary:
         path = f"metrics/summary"
         if seconds:
             path = f"{path}?seconds={seconds}"
 
         res = self._get(self._node, path)
 
-        return self.MetricsSummary(int(res["min"]), int(res["median"]),
-                                   int(res["max"]))
+        def i(name: str, input: dict[str, Any] = res, type: Any = int):
+            """Get the value with the given key, casted to type"""
+            return type(input[name])
+
+        # response looks like:
+        # {'min': 0, 'max': 10, 'median': 0, 'counts_from_start': {'success_count': 1078, 'error_count': 0}, 'clients_started': 10, 'clients_stopped': 0}
+        cfs = res['counts_from_start']
+        return self.MetricsSummary(i("min", type=float), i("median",
+                                                           type=float),
+                                   i("max", type=float),
+                                   i('success_count', cfs),
+                                   i('error_count', cfs), i('clients_started'),
+                                   i('clients_stopped'))
 
     def await_progress(self, target_msg_rate, timeout_sec, err_msg=None):
         def check():

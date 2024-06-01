@@ -96,7 +96,7 @@ class TopicRecreateTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
 
         def topic_is_healthy():
-            if not swarm.is_alive(swarm.nodes[0]):
+            if not swarm.is_alive():
                 swarm.stop()
                 swarm.start()
             partitions = rpk.describe_topic(spec.name)
@@ -780,7 +780,7 @@ class CreateTopicReplicaDistributionTest(RedpandaTest):
     @cluster(num_nodes=5)
     def test_topic_aware_distribution(self):
         """
-        Test that replicas for newly created topic are distributed evenly, 
+        Test that replicas for newly created topic are distributed evenly,
         even though there is an imbalance in existing replica distribution.
         """
 
