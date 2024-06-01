@@ -66,7 +66,7 @@ struct walk_accumulator {
         } else if (
           entry.type && entry.type == ss::directory_entry_type::directory) {
             vlog(cst_log.debug, "Dir found {}", entry_path);
-            dirlist.push_front(entry_path);
+            dirlist.emplace_front(entry_path);
         }
     }
 
