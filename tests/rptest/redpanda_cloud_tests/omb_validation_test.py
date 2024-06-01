@@ -320,14 +320,17 @@ class OMBValidationTest(RedpandaCloudTest):
                           ProducerSwarm.CLIENT_SPAWN_WAIT_MS // 1000) + 60
         target_runtime_s = 60 * (omb_test_duration +
                                  warmup_duration) + warm_up_time_s
-        # We want the swarm to run "past" the end of the test, so we give a good buffer
-        # of 1.5 the total expected runtime. We don't use infinite because DT cleanup is
+
+        swarm_runtime_multiplier = 2.5
+        swarm_runtime = target_runtime_s * swarm_runtime_multiplier
+        # We want the swarm to run "past" the end of the test, so we use this multiplier
+        # of 2.5 the total expected runtime. We don't use infinite because DT cleanup is
         # often not reliable (e.g., there may be an exception during cleanup which prevents
         # swarm cleanup from running, or the test may be abruptly halted, skipping cleanup),
         # so having some time limit is helpful to avoid runaway swarm processes (though if
         # cleanup does fail it is likely to affect subsequent tests).
         records_per_producer = math.ceil(messages_per_sec_per_producer *
-                                         target_runtime_s * 1.5)
+                                         swarm_runtime)
 
         total_target = omb_connections + swarm_target_connections
 
@@ -343,7 +346,8 @@ class OMBValidationTest(RedpandaCloudTest):
 
         self.logger.warn(
             f"target_runtime: {target_runtime_s / 60:.2f}m, omb test_duration: {omb_test_duration}m, "
-            f"warmup_duration: {warmup_duration}m, {warm_up_time_s / 60:.2f}m")
+            f"OMB warmup: {warmup_duration}m, swarm warmup: {warm_up_time_s / 60:.2f}m"
+        )
 
         self.logger.warn(
             f"Swarm nodes: {SWARM_WORKERS}, producers per node: {producer_per_swarm_node}, messages per producer: "
@@ -395,6 +399,8 @@ class OMBValidationTest(RedpandaCloudTest):
 
         swarm = [make_swarm() for _ in range(SWARM_WORKERS)]
 
+        time_before_swarm = time()
+
         for s in swarm:
             s.start()
 
@@ -437,6 +443,10 @@ class OMBValidationTest(RedpandaCloudTest):
 
         time_before_body = time()
 
+        self.logger.warn(
+            f"swarm startup complete in {time_before_body - time_before_swarm} (expected: {warm_up_time_s})"
+        )
+
         assert_no_rejected()
 
         # run the OMB portion of the benchmark and ensure it succeeded
@@ -450,6 +460,10 @@ class OMBValidationTest(RedpandaCloudTest):
 
         assert body_runtime >= benchmark.benchmark_time(), \
             f"unexpectedly short runtime: {body_runtime} vs {benchmark.benchmark_time()}"
+
+        assert time() - time_before_swarm < swarm_runtime, (
+            f"test ran too long and so swarm will have stopped: "
+            f"{time() - time_before_swarm} >= {swarm_runtime}")
 
         # Get and print all the swarm metrics now so if we fail in check_succeed()
         # we have this info in the log. Specify the lookback window to be the time

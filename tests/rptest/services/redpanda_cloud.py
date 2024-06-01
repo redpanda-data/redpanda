@@ -479,8 +479,8 @@ class CloudCluster():
         for p in products:
             if p['redpandaConfigProfileName'] == config_profile_name:
                 return p['name']
-        self._logger.warning("CloudV2 API returned empty 'product_name' list "
-                             f"for request: '{params}'")
+        self._logger.warning("Could not find product for install pack, "
+                             f"request: '{params}', response:\n{products}")
         return None
 
     def _create_cluster_payload(self):
