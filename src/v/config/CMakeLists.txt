@@ -10,6 +10,7 @@ v_cc_library(
     rjson_serialization.cc
     validators.cc
     throughput_control_group.cc
+    tls_config.cc
   DEPS
     v::json
     v::model
