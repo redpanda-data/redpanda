@@ -18,6 +18,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/sstring.hh>
@@ -138,17 +139,51 @@ ss::future<walk_result> recursive_directory_walker::walk(
 
     fragmented_vector<ss::sstring> empty_dirs;
 
-    while (!state.empty()) {
-        auto target = state.pop();
-        vassert(
-          std::string_view(target).starts_with(start_dir),
-          "Looking at directory {}, which is outside of initial dir "
-          "{}.",
-          target,
-          start_dir);
+    // Listing directories involves blocking I/O which in Seastar is serviced by
+    // a dedicated thread pool and workqueue. When listing directories with
+    // large number of sub-directories this leads to a large queue of work items
+    // for each of which we have to incur the cost of task switching. Even for a
+    // lightly loaded reactor, it can take up to 1ms for a full round-trip. The
+    // round-trip time is ~100x the syscall duration. With 2 level directory
+    // structure, 100K files, 2 getdents64 calls per directory this adds up to
+    // 400K syscalls and 6m of wall time.
+    //
+    // By running the directory listing in parallel we also parallelize the
+    // round-trip overhead. This leads to a significant speedup in the
+    // directory listing phase.
+    //
+    // Limit the number of concurrent directory reads to avoid running out of
+    // file descriptors.
+    //
+    // Empirical testing shows that this value is a good balance between
+    // performance and resource usage.
+    const size_t max_concurrency = 1000;
 
-        co_await walker_process_directory(
-          start_dir, std::move(target), state, empty_dirs);
+    std::vector<ss::sstring> targets;
+    targets.reserve(max_concurrency);
+
+    while (!state.empty()) {
+        targets.clear();
+
+        auto concurrency = std::min(
+          state.dirlist.size(), size_t(max_concurrency));
+
+        for (size_t i = 0; i < concurrency; ++i) {
+            auto target = state.pop();
+            vassert(
+              std::string_view(target).starts_with(start_dir),
+              "Looking at directory {}, which is outside of initial dir "
+              "{}.",
+              target,
+              start_dir);
+            targets.push_back(std::move(target));
+        }
+
+        co_await ss::parallel_for_each(
+          targets, [&start_dir, &state, &empty_dirs](ss::sstring target) {
+              return walker_process_directory(
+                start_dir, std::move(target), state, empty_dirs);
+          });
     }
 
     co_return walk_result{
