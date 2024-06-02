@@ -88,7 +88,7 @@ operator<<(std::ostream& o, const partition_transaction_status& status) {
         o << "ongoing";
         break;
     case partition_transaction_status::initialized:
-        o << "initiating";
+        o << "initialized";
         break;
     }
     return o;
