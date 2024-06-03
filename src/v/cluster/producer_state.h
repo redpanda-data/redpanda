@@ -136,7 +136,13 @@ private:
 };
 
 /// Encapsulates all the state of a producer producing batches to
-/// a single raft group.
+/// a single raft group. The state mainly comprises of the following
+/// - Idempotency state: last 5 requests using this producer
+/// - Transactions: Last inflight/finished transaction using this
+///   producer
+/// A producer is uniquely identified by <producer_id, epoch> pair.
+/// Only idempotent and transactional requests are associated with
+/// a producer id/epoch.
 class producer_state {
 public:
     using clock_type = ss::lowres_system_clock;
@@ -179,11 +185,15 @@ public:
     }
 
     void shutdown_input();
+    // Initiates eviction if there is no inprogress request using this producer
+    // See definition for conditions of eviction.
+    // TODO: rename this to maybe_evict(), this has deeper implications than
+    // just renaming the method definition.
     bool can_evict();
     bool is_evicted() const { return _evicted; }
 
-    /* reset sequences resets the tracking state and skips the sequence
-     * checks.*/
+    // reset sequences resets the tracking state and skips the sequence
+    // checks
     result<request_ptr> try_emplace_request(
       const model::batch_identity&,
       model::term_id current_term,
@@ -267,15 +277,23 @@ private:
     // Used to evict stale producers.
     ss::lowres_system_clock::time_point _last_updated_ts;
 
+    // The transaction may be in progress / finished. Finished transaction
+    // state is tracked until the producer is evicted or it is replaced
+    // by a transaction with a newer sequence number.
     std::unique_ptr<producer_partition_transaction_state> _transaction_state;
 
     // --- in memory only state, not serialized to snapshot ---
     //
-    // serializes all the operations on this producer
+    // serializes all the operations on this producer. The lock is acquired
+    // before running any operations on this producer state (see
+    // run_with_lock()). The lock scope is different for idempotent and
+    // transaction requests, see rm_stm class for details. This producer cannot
+    // be evicted when the lock is held.
     mutex _op_lock{"producer_state::_op_lock"};
     bool _evicted = false;
     ss::noncopyable_function<void()> _post_eviction_hook;
-    // Used to implement force eviction via admin APIs
+    // Used to implement force eviction via admin APIs for forcing an eviction
+    // of this producer.
     bool _force_transaction_expiry{false};
     friend class producer_state_manager;
     friend struct ::test_fixture;

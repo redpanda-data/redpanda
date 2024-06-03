@@ -526,9 +526,8 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
     if (expected_tx_seq) {
         auto origin = get_abort_origin(producer, expected_tx_seq.value());
         if (origin == abort_origin::past) {
-            // todo (bharathv): rephrase this comment
             // An abort request has older tx_seq. It may mean than the request
-            // was dublicated, delayed and retried later.
+            // was duplicated, delayed and retried later.
             //
             // Or it may mean that a tx coordinator
             //   - lost its state
@@ -1624,17 +1623,8 @@ uint8_t rm_stm::active_snapshot_version() {
 }
 
 ss::future<> rm_stm::offload_aborted_txns() {
-    // This method iterates through _log_state.aborted collection
-    // and the loop's body contains sync points (co_await) so w/o
-    // further assumptions it's impossible to guarantee that the
-    // collection isn't updated by another coroutine while the
-    // current coroutine waits.
-
-    // We should prevent it because an update invalidates the ite-
-    // rator and may lead to undefined behavior. In order to avoid
-    // this situation, offload_aborted_txns should be invoked only
-    // under _state_lock's write lock because all the other updators
-    // use the read lock.
+    // Note: this method requires a consistent view of aborted state
+    // make sure to call this under _state_lock.write_lock()
     std::sort(
       std::begin(_aborted_tx_state.aborted),
       std::end(_aborted_tx_state.aborted),

@@ -56,6 +56,73 @@ namespace cluster {
  *   - keeps a list of the aborted transactions
  *   - enforces monotonicity of the sequential numbers
  *   - fences against old epochs
+ *
+ * There are 3 types of producer requests this state machine handles
+ *
+ * 1. Regular produce requests (non idempotent, non transactional) - These are
+ * just delegated to the underlying raft instance.
+ *
+ * 2. Idempotent requests - Provides single session idempotency guarantees. Each
+ * idempotent produce request is associated with a producer_identity
+ * (producer_id + epoch=0). Idempotency is implemented by tracking sequence
+ * numbers of last 5 inflight/processed requests and ensuring that the new
+ * requests maintain the sequence order. Client stamps the record batches with
+ * sequence numbers.
+ *
+ * 3. Transactional requests - Provides EOS semantics across multiple sessions
+ * by implementing fencing as defined in the Kafka protocol. Transactional
+ * requests are also idempotent by design and are associated with a transaction
+ * (application) id in the client config. Transaction id is mapped to a
+ * producer_identity with epoch getting bumped every time a new instance of
+ * transactional client registers. This ensures that only one active
+ * transactional producer is active, the one with the latest epoch.
+ *
+ * Both idempotent and transactional producers are associated with a
+ * producer_state instance and the state machine tracks the list of all active
+ * producer_states producing to this partition.
+ *
+ * Notes on locking in this stm:
+ *
+ * There are two main locks in use here.
+ * The locks are always grabbed in that order.
+ * 1. (stm)_state_lock : This is a state machine wide (global) lock acquired by
+ * all operations like producers and snapshots. Producers acquire it in read
+ * (shared) mode while operations like snapshots that require a consistent view
+ * of the state machine acquire it in write (exclusive) mode.
+ *
+ * 2. producer_state_lock: This is transparently grabbed in the invocations of
+ * run_with_lock method of the producer but the scope of the lock is different
+ * for idempotent and transactional producers.
+
+ * - Idempotent requests hold the lock until the requested cannot be reordered
+ * at the raft layer (so the sequence is not violated in the physical log) and
+ * released soon after to let concurrent idempotent requests make progress.
+ *
+ * - Transactional requests hold the lock for the duration of the request and
+ * until the changes are reflected in the state machine via apply. So the scope
+ * of the lock is larger.
+ *
+ * Notes on producer_state eviction:
+ *
+ * Kafka protocol has no notion of session termination. For example, an
+ * idempotent producer may just stop producing and the broker wouldn't know
+ * whether it is ever going to come back again. This forces the implementation
+ * to have an eviction policy for producers so we do not just accumulate
+ * them forever. This is currently based on a configurable count
+ * (max_concurrent_producer_ids), enforced by the producer_state_manager
+ * at the shard level. While this state machine owns the producer_state
+ * instances, the producer_state_manager manges a shard wide LRU
+ * list of producers and notifies the stm when the limits are breached. See
+ * producer_state class for details on when a producer can be evicted.
+ *
+ * Notes on transaction expiry:
+
+ * This stm periodically checks if there is any pending transaction for
+ * expiration. The expiration kicks in the transaction is not committed/aborted
+ * within the user set transaction timeout. A producer with an active
+ * transaction cannot be evicted, so exipration ensures that with timely
+ * expiration of open transactions, the producer states are candidates for
+ * eviction.
  */
 class rm_stm final : public raft::persisted_stm<> {
 public:
