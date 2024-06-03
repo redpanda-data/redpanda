@@ -17,6 +17,7 @@
 #include "random/generators.h"
 #include "ssx/sformat.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 #include "units.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
@@ -31,6 +32,7 @@
 
 #include <chrono>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 
 using namespace cloud_storage;
@@ -620,4 +622,44 @@ FIXTURE_TEST(test_cache_carryover_trim, cache_test_fixture) {
       after_objects);
     BOOST_REQUIRE_EQUAL(after_bytes, 0);
     BOOST_REQUIRE_EQUAL(after_objects, 0);
+}
+
+FIXTURE_TEST(bucketing_works_with_old_objects, cache_test_fixture) {
+    auto data_string = create_data_string('a', 1_KiB);
+    const std::filesystem::path key1{"80000001/a/b/c/d/file1.txt"};
+    const std::filesystem::path key2{"80000002/a/b/c/d/file2.txt"};
+    const std::filesystem::path key2_rehashed{"2/a/b/c/d/file2.txt"};
+    put_into_cache(data_string, key1);
+
+    scoped_config cfg;
+    cfg.get("cloud_storage_cache_num_buckets").set_value((uint32_t)16);
+    // Now key2 should be mapped to "2/a/b/c/d/file2.txt"
+
+    ss::sleep(1s).get();
+    put_into_cache(data_string, key2);
+
+    BOOST_CHECK(ss::file_exists((CACHE_DIR / key1).native()).get());
+    BOOST_CHECK(!ss::file_exists((CACHE_DIR / key2).native()).get());
+    BOOST_CHECK(ss::file_exists((CACHE_DIR / key2_rehashed).native()).get());
+
+    // check that GET works
+    auto r1 = sharded_cache.local().get(key1).get();
+    auto r2 = sharded_cache.local().get(key2).get();
+    BOOST_CHECK(r1.has_value());
+    BOOST_CHECK(r2.has_value());
+
+    // check is_cached
+    BOOST_CHECK(
+      sharded_cache.local().is_cached(key1).get()
+      == cache_element_status::available);
+    BOOST_CHECK(
+      sharded_cache.local().is_cached(key2).get()
+      == cache_element_status::available);
+
+    // check cache invalidation
+    sharded_cache.local().invalidate(key1).get();
+    sharded_cache.local().invalidate(key2).get();
+    BOOST_CHECK(!ss::file_exists((CACHE_DIR / key1).native()).get());
+    BOOST_CHECK(!ss::file_exists((CACHE_DIR / key2).native()).get());
+    BOOST_CHECK(!ss::file_exists((CACHE_DIR / key2_rehashed).native()).get());
 }
