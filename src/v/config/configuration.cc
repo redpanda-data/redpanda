@@ -1771,6 +1771,13 @@ configuration::configuration()
       {.visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
+  , cloud_storage_crl_file(
+      *this,
+      "cloud_storage_crl_file",
+      "Path to certificate revocation list for cloud_storage_trust_file.",
+      {.visibility = visibility::user},
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_initial_backoff_ms(
       *this,
       "cloud_storage_initial_backoff_ms",
