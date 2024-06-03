@@ -85,6 +85,40 @@ struct walk_accumulator {
     uint64_t current_cache_size{0};
     size_t filtered_out_files{0};
 };
+} // namespace cloud_storage
+
+namespace {
+ss::future<> walker_process_directory(
+  const ss::sstring& start_dir,
+  ss::sstring target,
+  cloud_storage::walk_accumulator& state,
+  fragmented_vector<ss::sstring>& empty_dirs) {
+    try {
+        ss::file target_dir = co_await open_directory(target);
+
+        bool seen_dentries = false;
+        co_await target_dir
+          .list_directory(
+            [&state, &target, &seen_dentries](ss::directory_entry entry) {
+                seen_dentries = true;
+                return state.visit(target, std::move(entry));
+            })
+          .done()
+          .finally([target_dir]() mutable { return target_dir.close(); });
+
+        if (unlikely(!seen_dentries) && target != start_dir) {
+            empty_dirs.push_back(target);
+        }
+    } catch (std::filesystem::filesystem_error& e) {
+        if (e.code() == std::errc::no_such_file_or_directory) {
+            // skip this directory, move to the ext one
+        } else {
+            throw;
+        }
+    }
+}
+} // namespace
+namespace cloud_storage {
 
 ss::future<walk_result> recursive_directory_walker::walk(
   ss::sstring start_dir,
@@ -113,29 +147,8 @@ ss::future<walk_result> recursive_directory_walker::walk(
           target,
           start_dir);
 
-        try {
-            ss::file target_dir = co_await open_directory(target);
-
-            bool seen_dentries = false;
-            co_await target_dir
-              .list_directory(
-                [&state, &target, &seen_dentries](ss::directory_entry entry) {
-                    seen_dentries = true;
-                    return state.visit(target, std::move(entry));
-                })
-              .done()
-              .finally([target_dir]() mutable { return target_dir.close(); });
-
-            if (unlikely(!seen_dentries) && target != start_dir) {
-                empty_dirs.push_back(target);
-            }
-        } catch (std::filesystem::filesystem_error& e) {
-            if (e.code() == std::errc::no_such_file_or_directory) {
-                // skip this directory, move to the ext one
-            } else {
-                throw;
-            }
-        }
+        co_await walker_process_directory(
+          start_dir, std::move(target), state, empty_dirs);
     }
 
     co_return walk_result{
