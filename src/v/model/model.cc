@@ -370,6 +370,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::compaction_placeholder";
     case record_batch_type::role_management_cmd:
         return o << "batch_type::role_management_cmd";
+    case record_batch_type::client_quota:
+        return o << "batch_type::client_quota";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";

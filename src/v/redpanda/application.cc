@@ -2070,6 +2070,8 @@ void application::wire_up_redpanda_services(
         std::ref(controller->get_topics_frontend()),
         std::ref(controller->get_config_frontend()),
         std::ref(controller->get_feature_table()),
+        std::ref(controller->get_quota_frontend()),
+        std::ref(controller->get_quota_store()),
         std::ref(quota_mgr),
         std::ref(snc_quota_mgr),
         std::ref(group_router),

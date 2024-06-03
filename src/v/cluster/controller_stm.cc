@@ -178,7 +178,9 @@ ss::future<> controller_stm::apply_snapshot(
           std::get<plugin_backend&>(_state).apply_snapshot(offset, snapshot),
           std::get<cluster_recovery_manager&>(_state).apply_snapshot(
             offset, snapshot),
-          std::get<security_manager&>(_state).apply_snapshot(offset, snapshot));
+          std::get<security_manager&>(_state).apply_snapshot(offset, snapshot),
+          std::get<client_quota::backend&>(_state).apply_snapshot(
+            offset, snapshot));
 
     } catch (const seastar::abort_requested_exception&) {
     } catch (const seastar::gate_closed_exception&) {

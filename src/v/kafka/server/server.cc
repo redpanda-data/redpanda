@@ -70,6 +70,7 @@
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
@@ -115,6 +116,8 @@ server::server(
   ss::sharded<cluster::topics_frontend>& tf,
   ss::sharded<cluster::config_frontend>& cf,
   ss::sharded<features::feature_table>& ft,
+  ss::sharded<cluster::client_quota::frontend>& quota_frontend,
+  ss::sharded<cluster::client_quota::store>& quota_store,
   ss::sharded<quota_manager>& quota,
   ss::sharded<snc_quota_manager>& snc_quota_mgr,
   ss::sharded<kafka::group_router>& router,
@@ -139,6 +142,8 @@ server::server(
   , _config_frontend(cf)
   , _feature_table(ft)
   , _metadata_cache(meta)
+  , _quota_frontend(quota_frontend)
+  , _quota_store(quota_store)
   , _quota_mgr(quota)
   , _snc_quota_mgr(snc_quota_mgr)
   , _group_router(router)

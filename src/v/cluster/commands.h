@@ -11,6 +11,7 @@
 
 #pragma once
 #include "bytes/iobuf_parser.h"
+#include "cluster/client_quota_serde.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
@@ -142,6 +143,9 @@ static constexpr int8_t transform_remove_cmd_type = 1;
 // cluster recovery commands
 static constexpr int8_t cluster_recovery_init_cmd_type = 0;
 static constexpr int8_t cluster_recovery_update_cmd_type = 1;
+
+// client quota commands
+static constexpr int8_t alter_quotas_delta_cmd_type = 0;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -424,6 +428,12 @@ using cluster_recovery_update_cmd = controller_command<
   cluster_recovery_update_cmd_data,
   cluster_recovery_update_cmd_type,
   model::record_batch_type::cluster_recovery_cmd>;
+
+using alter_quotas_delta_cmd = controller_command<
+  int8_t, // unused
+  client_quota::alter_delta_cmd_data,
+  alter_quotas_delta_cmd_type,
+  model::record_batch_type::client_quota>;
 
 // typelist utils
 template<typename T>

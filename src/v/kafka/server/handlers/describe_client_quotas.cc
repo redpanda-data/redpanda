@@ -32,6 +32,9 @@ ss::future<response_ptr> describe_client_quotas_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
+    // TODO: implement the DescribeClientQuotas API
+    // ctx.quota_store().get_quota(...);
+
     co_return co_await ctx.respond(make_response({
       .error_code = error_code::unsupported_version,
       .error_message = "Unsupported version - not yet implemented",

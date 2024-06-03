@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/client_quota_serde.h"
 #include "cluster/cluster_recovery_state.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
@@ -257,12 +258,24 @@ struct cluster_recovery_t
     auto serde_fields() { return std::tie(recovery_states); }
 };
 
+struct client_quotas_t
+  : public serde::
+      envelope<client_quotas_t, serde::version<0>, serde::compat_version<0>> {
+    absl::node_hash_map<client_quota::entity_key, client_quota::entity_value>
+      quotas;
+
+    friend bool operator==(const client_quotas_t&, const client_quotas_t&)
+      = default;
+
+    auto serde_fields() { return std::tie(quotas); }
+};
+
 } // namespace controller_snapshot_parts
 
 struct controller_snapshot
   : public serde::checksum_envelope<
       controller_snapshot,
-      serde::version<2>,
+      serde::version<3>,
       serde::compat_version<0>> {
     controller_snapshot_parts::bootstrap_t bootstrap;
     controller_snapshot_parts::features_t features;
@@ -273,6 +286,7 @@ struct controller_snapshot
     controller_snapshot_parts::metrics_reporter_t metrics_reporter;
     controller_snapshot_parts::plugins_t plugins;
     controller_snapshot_parts::cluster_recovery_t cluster_recovery;
+    controller_snapshot_parts::client_quotas_t client_quotas;
 
     friend bool
     operator==(const controller_snapshot&, const controller_snapshot&)
