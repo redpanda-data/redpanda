@@ -19,8 +19,8 @@
 
 using namespace kafka;
 
-const ss::sstring client_id = "franz-go";
-const tracker_key client_id_key = k_client_id{client_id};
+const ss::sstring test_client_id = "franz-go";
+const tracker_key test_client_id_key = k_client_id{test_client_id};
 
 constexpr std::string_view raw_basic_produce_config = R"([
   {
@@ -70,8 +70,8 @@ BOOST_AUTO_TEST_CASE(quota_translator_default_test) {
       .partition_mutation_limit = std::nullopt,
     };
     auto [key, limits] = tr.find_quota(
-      {client_quota_type::produce_quota, client_id});
-    BOOST_CHECK_EQUAL(client_id_key, key);
+      {client_quota_type::produce_quota, test_client_id});
+    BOOST_CHECK_EQUAL(test_client_id_key, key);
     BOOST_CHECK_EQUAL(default_limits, limits);
 }
 
@@ -89,8 +89,8 @@ BOOST_AUTO_TEST_CASE(quota_translator_modified_default_test) {
       .partition_mutation_limit = 3333,
     };
     auto [key, limits] = tr.find_quota(
-      {client_quota_type::produce_quota, client_id});
-    BOOST_CHECK_EQUAL(client_id_key, key);
+      {client_quota_type::produce_quota, test_client_id});
+    BOOST_CHECK_EQUAL(test_client_id_key, key);
     BOOST_CHECK_EQUAL(expected_limits, limits);
 }
 
