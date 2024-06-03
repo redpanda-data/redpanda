@@ -1813,7 +1813,7 @@ configuration::configuration()
       "cloud_storage_segment_max_upload_interval_sec",
       "Time that segment can be kept locally without uploading it to the "
       "remote storage (sec)",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1h)
   , cloud_storage_manifest_max_upload_interval_sec(
       *this,

@@ -507,7 +507,8 @@ ss::future<upload_result> remote::upload_controller_snapshot(
       api_activity_type::controller_snapshot_upload,
       [this] { _probe.controller_snapshot_failed_upload(); },
       [this] { _probe.controller_snapshot_successful_upload(); },
-      [this] { _probe.controller_snapshot_upload_backoff(); });
+      [this] { _probe.controller_snapshot_upload_backoff(); },
+      std::nullopt);
 }
 
 template<
@@ -525,7 +526,8 @@ ss::future<upload_result> remote::upload_stream(
   api_activity_type event_type,
   FailedUploadMetricFn failed_upload_metric,
   SuccessfulUploadMetricFn successful_upload_metric,
-  UploadBackoffMetricFn upload_backoff_metric) {
+  UploadBackoffMetricFn upload_backoff_metric,
+  std::optional<size_t> max_retries) {
     auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -537,7 +539,11 @@ ss::future<upload_result> remote::upload_stream(
       segment_path,
       content_length);
     std::optional<upload_result> result;
-    while (!_gate.is_closed() && permit.is_allowed && !result) {
+    while (!_gate.is_closed() && permit.is_allowed && !result
+           && max_retries.value_or(1) > 0) {
+        if (max_retries.has_value()) {
+            max_retries = max_retries.value() - 1;
+        }
         auto lease = co_await _pool.local().acquire(fib.root_abort_source());
         notify_external_subscribers(
           api_activity_notification{
@@ -633,7 +639,8 @@ ss::future<upload_result> remote::upload_segment(
   uint64_t content_length,
   const reset_input_stream& reset_str,
   retry_chain_node& parent,
-  lazy_abort_source& lazy_abort_source) {
+  lazy_abort_source& lazy_abort_source,
+  std::optional<size_t> max_retries) {
     return upload_stream(
       bucket,
       segment_path,
@@ -645,7 +652,8 @@ ss::future<upload_result> remote::upload_segment(
       api_activity_type::segment_upload,
       [this] { _probe.failed_upload(); },
       [this] { _probe.successful_upload(); },
-      [this] { _probe.upload_backoff(); });
+      [this] { _probe.upload_backoff(); },
+      max_retries);
 }
 
 ss::future<download_result> remote::download_stream(
