@@ -15,7 +15,7 @@ import requests
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-from ducktape.mark import ignore, matrix
+from ducktape.mark import ignore, matrix, ok_to_fail_fips
 
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.types import TopicSpec
@@ -956,6 +956,8 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(num_to_upgrade=[0, 2], cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     def test_shadow_indexing(self, num_to_upgrade, cloud_storage_type):
         """
         Test interaction between the shadow indexing and the partition movement.

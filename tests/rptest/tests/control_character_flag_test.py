@@ -9,7 +9,7 @@
 import time
 
 import requests.exceptions
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, ok_to_fail_fips
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -137,6 +137,8 @@ class ControlCharacterNag(ControlCharacterPermittedBase):
     @parametrize(initial_version=(22, 2, 9))
     @parametrize(initial_version=(22, 3, 11))
     @parametrize(initial_version=(23, 1, 1))
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     def test_validate_nag_message(self, initial_version):
         """
         Validates that the nag message is present after upgrading a cluster

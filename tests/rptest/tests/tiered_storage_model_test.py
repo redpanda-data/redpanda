@@ -16,7 +16,7 @@ from threading import Condition
 from collections import defaultdict
 from typing import List
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail_fips
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
@@ -551,6 +551,8 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
         cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
         ),
         test_case=get_tiered_storage_test_cases(fast_run=True))
+    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
+    @ok_to_fail_fips
     def test_tiered_storage(self, cloud_storage_type_and_url_style: List[
         CloudStorageTypeAndUrlStyle], test_case: TestCase):
         """This is a main entry point of the test.

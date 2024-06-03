@@ -29,14 +29,14 @@ import zipfile
 import pathlib
 import shlex
 from enum import Enum, IntEnum
-from typing import Callable, List, Generator, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
+from typing import Callable, List, Generator, Literal, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
 
 import yaml
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
 from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
-from rptest.archival.s3_client import S3Client
+from rptest.archival.s3_client import S3Client, S3AddressingStyle
 from rptest.archival.abs_client import ABSClient
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
@@ -222,7 +222,8 @@ class CloudStorageType(IntEnum):
     ABS = 2
 
 
-CloudStorageTypeAndUrlStyle = Tuple[CloudStorageType, str]
+CloudStorageTypeAndUrlStyle = Tuple[CloudStorageType, Literal['virtual_host',
+                                                              'path']]
 
 
 def prepare_allow_list(allow_list):
@@ -250,6 +251,13 @@ def one_or_many(value):
         return value
 
 
+def get_cloud_provider() -> str:
+    """
+    Returns the cloud provider in use.  If one is not set then return 'docker'
+    """
+    return os.getenv("CLOUD_PROVIDER", "docker")
+
+
 def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
                            | None = None,
                            docker_use_arbitrary=False):
@@ -274,7 +282,7 @@ def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
     if applies_only_on is None:
         applies_only_on = []
 
-    cloud_provider = os.getenv("CLOUD_PROVIDER", "docker")
+    cloud_provider = get_cloud_provider()
     if cloud_provider == "docker":
         if docker_use_arbitrary:
             cloud_storage_type = [CloudStorageType.S3]
@@ -293,8 +301,10 @@ def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
     return cloud_storage_type
 
 
-def get_cloud_storage_url_style(cloud_storage_type: CloudStorageType
-                                | None = None) -> str:
+def get_cloud_storage_url_style(
+    cloud_storage_type: CloudStorageType
+    | None = None
+) -> list[Literal['virtual_host', 'path']]:
     if cloud_storage_type is None:
         return ['virtual_host', 'path']
 
@@ -455,6 +465,8 @@ class SISettings:
     GLOBAL_S3_SECRET_KEY = "s3_secret_key"
     GLOBAL_S3_REGION_KEY = "s3_region"
     GLOBAL_GCP_PROJECT_ID_KEY = "gcp_project_id"
+    GLOBAL_USE_FIPS_S3_ENDPOINT = "use_fips_s3_endpoint"
+    DEFAULT_USE_FIPS_S3_ENDPOINT = "OFF"
 
     GLOBAL_ABS_STORAGE_ACCOUNT = "abs_storage_account"
     GLOBAL_ABS_SHARED_KEY = "abs_shared_key"
@@ -500,12 +512,14 @@ class SISettings:
                  cloud_storage_max_throughput_per_shard: Optional[int] = None,
                  cloud_storage_signature_version: str = "s3v4",
                  before_call_headers: Optional[dict[str, Any]] = None,
-                 skip_end_of_test_scrubbing: bool = False):
+                 skip_end_of_test_scrubbing: bool = False,
+                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
         """
 
+        self._context = test_context
         self.cloud_storage_type = get_cloud_storage_type()[0]
         if hasattr(test_context, 'injected_args') \
         and test_context.injected_args is not None:
@@ -571,6 +585,7 @@ class SISettings:
         self.cloud_storage_max_throughput_per_shard = cloud_storage_max_throughput_per_shard
         self.cloud_storage_signature_version = cloud_storage_signature_version
         self.before_call_headers = before_call_headers
+        self.addressing_style = addressing_style
 
         # Allow disabling end of test scrubbing.
         # It takes a long time with lots of segments i.e. as created in scale
@@ -583,6 +598,32 @@ class SISettings:
             self.cloud_storage_manifest_max_upload_interval_sec = 1
 
         self._expected_damage_types = set()
+
+    def get_use_fips_s3_endpoint(self) -> bool:
+        use_fips_option = self._context.globals.get(
+            self.GLOBAL_USE_FIPS_S3_ENDPOINT,
+            self.DEFAULT_USE_FIPS_S3_ENDPOINT)
+        if use_fips_option == "ON":
+            return True
+        elif use_fips_option == "OFF":
+            return False
+
+        self.logger.warn(
+            f"{self.GLOBAL_USE_FIPS_S3_ENDPOINT} should be 'ON', or 'OFF'")
+        return False
+
+    def use_fips_endpoint(self) -> bool:
+        """
+        Returns whether or not to use the FIPS S3 endpoints.  Only true if:
+        * Cloud provider is AWS, and
+        * Cloud storage type is S3, and
+        * Either
+          * we are in a FIPS environment or,
+          * the global variable 'use_fips_s3_endpoint' is 'ON'
+        """
+        return get_cloud_provider() == "aws" and  \
+            self.cloud_storage_type == CloudStorageType.S3 and \
+                  (self.get_use_fips_s3_endpoint() or in_fips_environment())
 
     def load_context(self, logger, test_context):
         if self.cloud_storage_type == CloudStorageType.S3:
@@ -641,6 +682,9 @@ class SISettings:
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
+            self.cloud_storage_api_endpoint = f's3-fips.{cloud_storage_region}.amazonaws.com' if self.use_fips_endpoint(
+            ) else self.cloud_storage_api_endpoint
+            self.addressing_style = S3AddressingStyle.VIRTUAL
         elif cloud_storage_credentials_source == 'config_file' and cloud_storage_access_key and cloud_storage_secret_key:
             # `config_file`` source allows developers to run ducktape tests from
             # non-AWS hardware but targeting a real S3 backend.
@@ -654,6 +698,9 @@ class SISettings:
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
+            self.cloud_storage_api_endpoint = f's3-fips.{cloud_storage_region}.amazonaws.com' if self.use_fips_endpoint(
+            ) else self.cloud_storage_api_endpoint
+            self.addressing_style = S3AddressingStyle.VIRTUAL
         else:
             logger.info('No AWS credentials supplied, assuming minio defaults')
 
@@ -719,7 +766,7 @@ class SISettings:
         conf[
             'cloud_storage_enable_remote_write'] = self.cloud_storage_enable_remote_write
 
-        if self.endpoint_url is not None:
+        if self.endpoint_url is not None or self.use_fips_endpoint():
             conf[
                 "cloud_storage_api_endpoint"] = self.cloud_storage_api_endpoint
             conf[
@@ -3099,7 +3146,9 @@ class RedpandaService(RedpandaServiceBase):
                 logger=self.logger,
                 signature_version=self.si_settings.
                 cloud_storage_signature_version,
-                before_call_headers=self.si_settings.before_call_headers)
+                before_call_headers=self.si_settings.before_call_headers,
+                use_fips_endpoint=self.si_settings.use_fips_endpoint(),
+                addressing_style=self.si_settings.addressing_style)
 
             self.logger.debug(
                 f"Creating S3 bucket: {self.si_settings.cloud_storage_bucket}")

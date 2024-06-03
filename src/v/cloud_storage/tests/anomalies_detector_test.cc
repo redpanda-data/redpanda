@@ -223,7 +223,7 @@ ss::sstring iobuf_to_string(iobuf buf) {
 
 class bucket_view_fixture : http_imposter_fixture {
 public:
-    static constexpr auto host_name = "127.0.0.1";
+    static constexpr auto host_name = "localhost";
     static constexpr auto port = 4447;
 
     bucket_view_fixture()
@@ -471,7 +471,7 @@ private:
 
         cloud_storage_clients::s3_configuration conf;
         conf.uri = cloud_storage_clients::access_point_uri(host_name);
-        conf.access_key = cloud_roles::public_key_str("acess-key");
+        conf.access_key = cloud_roles::public_key_str("access-key");
         conf.secret_key = cloud_roles::private_key_str("secret-key");
         conf.region = cloud_roles::aws_region_name("us-east-1");
         conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;

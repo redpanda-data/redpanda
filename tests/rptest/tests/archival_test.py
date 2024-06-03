@@ -15,7 +15,7 @@ import traceback
 from collections import namedtuple, defaultdict
 from typing import DefaultDict, List
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail_fips
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -233,6 +233,8 @@ class ArchivalTest(RedpandaTest):
     @matrix(
         cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
         ))
+    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
+    @ok_to_fail_fips
     def test_write(
             self,
             cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]
