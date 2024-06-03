@@ -168,6 +168,8 @@ struct offset_metadata_kv {
 struct group_metadata_kv {
     group_metadata_key key;
     std::optional<group_metadata_value> value;
+
+    group_metadata_kv copy() const;
 };
 
 inline group_metadata_version read_metadata_version(protocol::decoder& reader) {
