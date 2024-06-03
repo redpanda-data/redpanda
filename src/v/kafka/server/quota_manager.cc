@@ -37,13 +37,15 @@ namespace kafka {
 
 using clock = quota_manager::clock;
 
-quota_manager::quota_manager(client_quotas_t& client_quotas)
+quota_manager::quota_manager(
+  client_quotas_t& client_quotas,
+  ss::sharded<cluster::client_quota::store>& client_quota_store)
   : _default_num_windows(config::shard_local_cfg().default_num_windows.bind())
   , _default_window_width(config::shard_local_cfg().default_window_sec.bind())
   , _replenish_threshold(
       config::shard_local_cfg().kafka_throughput_replenish_threshold.bind())
   , _client_quotas{client_quotas}
-  , _translator{}
+  , _translator{client_quota_store}
   , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
   , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
     if (seastar::this_shard_id() == _client_quotas.shard_id()) {

@@ -29,9 +29,11 @@ std::ostream& operator<<(std::ostream& os, const client_quota_limits& l) {
     return os;
 }
 
-client_quota_translator::client_quota_translator()
-  : _default_target_produce_tp_rate(
-    config::shard_local_cfg().target_quota_byte_rate.bind())
+client_quota_translator::client_quota_translator(
+  ss::sharded<cluster::client_quota::store>& quota_store)
+  : _quota_store(quota_store)
+  , _default_target_produce_tp_rate(
+      config::shard_local_cfg().target_quota_byte_rate.bind())
   , _default_target_fetch_tp_rate(
       config::shard_local_cfg().target_fetch_quota_byte_rate.bind())
   , _target_partition_mutation_quota(

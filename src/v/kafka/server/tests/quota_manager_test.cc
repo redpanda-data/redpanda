@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/client_quota_store.h"
 #include "config/configuration.h"
 #include "kafka/server/client_quota_translator.h"
 #include "kafka/server/quota_manager.h"
@@ -27,14 +28,19 @@ const static auto client_id = "franz-go";
 
 struct fixture {
     kafka::quota_manager::client_quotas_t buckets_map;
+    ss::sharded<cluster::client_quota::store> quota_store;
     ss::sharded<kafka::quota_manager> sqm;
 
     ss::future<> start() {
-        co_await sqm.start(std::ref(buckets_map));
+        co_await quota_store.start();
+        co_await sqm.start(std::ref(buckets_map), std::ref(quota_store));
         co_await sqm.invoke_on_all(&kafka::quota_manager::start);
     }
 
-    ss::future<> stop() { co_await sqm.stop(); }
+    ss::future<> stop() {
+        co_await sqm.stop();
+        co_await quota_store.stop();
+    }
 };
 
 template<typename F>
