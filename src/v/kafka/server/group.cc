@@ -170,9 +170,9 @@ bool group::valid_previous_state(group_state s) const {
 
     __builtin_unreachable();
 }
-
+namespace {
 template<typename T>
-static model::record_batch make_tx_batch(
+model::record_batch make_tx_batch(
   model::record_batch_type type,
   int8_t version,
   const model::producer_identity& pid,
@@ -192,7 +192,7 @@ static model::record_batch make_tx_batch(
     return std::move(builder).build();
 }
 
-static model::record_batch make_tx_fence_batch(
+model::record_batch make_tx_fence_batch(
   const model::producer_identity& pid, group_log_fencing cmd) {
     return make_tx_batch(
       model::record_batch_type::tx_fence,
@@ -200,6 +200,7 @@ static model::record_batch make_tx_fence_batch(
       pid,
       std::move(cmd));
 }
+} // namespace
 
 group_state group::set_state(group_state s) {
     vassert(
