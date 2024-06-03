@@ -949,7 +949,85 @@ ss::future<> cache::stop() {
     co_await _gate.close();
 }
 
+static constexpr uint32_t expected_rand_prefix_length = 8;
+
+static std::optional<std::filesystem::path>
+rehash_object_name(const std::filesystem::path& p) {
+    if (p.empty()) {
+        return std::nullopt;
+    }
+    auto num_buckets
+      = config::shard_local_cfg().cloud_storage_cache_num_buckets();
+
+    if (num_buckets == 0) {
+        return std::nullopt;
+    }
+    auto it = p.begin();
+    auto prefix = (*it++).native();
+    if (prefix.size() != expected_rand_prefix_length) {
+        // The name doesn't match the pattern
+        // "8-char-prefix/namespace/topic/...etc" so we shouldn't rehash it.
+        return std::nullopt;
+    }
+    uint64_t hash = 0;
+    try {
+        hash = std::stoull(prefix.c_str(), 0, 16);
+    } catch (std::invalid_argument const&) {
+        // The first component of the name is not a hex integer
+        return std::nullopt;
+    }
+    auto bucket_ix = fmt::format("{}", hash % num_buckets);
+    std::filesystem::path result(bucket_ix);
+    for (; it != p.end(); it++) {
+        result /= *it;
+    }
+    return result;
+}
+
+static std::vector<std::filesystem::path> make_candidate_object_names(
+  const std::filesystem::path& key, const char* operation_name) {
+    std::vector<std::filesystem::path> keys = {key};
+    if (config::shard_local_cfg().cloud_storage_cache_num_buckets() > 0) {
+        // If the config option was enabled and then disabled the objects will
+        // not be found in the cache and eventually be removed by cache
+        // eviction. Note that if the feature was disabled and then enabled the
+        // cache will be able to find both old objects and new objects. But if
+        // the feature was enabled and then disabled the objects in the cache
+        // will be inaccessible. They will be evicted and cache will be
+        // repopulated eventually.
+        auto rehashed = rehash_object_name(key);
+        if (rehashed.has_value()) {
+            vlog(
+              cst_log.debug,
+              "{} object name {} converted to {}",
+              operation_name,
+              key,
+              rehashed.value());
+            keys.emplace_back(std::move(rehashed.value()));
+        }
+    }
+    return keys;
+}
+
 ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
+    std::vector<std::filesystem::path> keys = make_candidate_object_names(
+      key, "get");
+    std::optional<cache_item> result;
+    for (auto k : keys) {
+        result = co_await _get(std::move(k));
+        if (result.has_value()) {
+            break;
+        }
+    }
+    if (result.has_value()) {
+        probe.cached_get();
+    } else {
+        probe.miss_get();
+    }
+    co_return std::move(result);
+}
+
+ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
     auto guard = _gate.hold();
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
     probe.get();
@@ -991,8 +1069,12 @@ ss::future<> cache::put(
   ss::io_priority_class io_priority,
   size_t write_buffer_size,
   unsigned int write_behind) {
-    auto guard = _gate.hold();
     vlog(cst_log.debug, "Trying to put {} to archival cache.", key.native());
+
+    auto keys = make_candidate_object_names(key, "put");
+    key = keys.back();
+
+    auto guard = _gate.hold();
     probe.put();
 
     std::filesystem::path normal_cache_dir = _cache_dir.lexically_normal();
@@ -1117,6 +1199,20 @@ ss::future<> cache::put(
 
 ss::future<cache_element_status>
 cache::is_cached(const std::filesystem::path& key) {
+    std::vector<std::filesystem::path> keys = make_candidate_object_names(
+      key, "is_cached");
+    auto result = cache_element_status::not_available;
+    for (auto k : keys) {
+        result = co_await _is_cached(k);
+        if (result != cache_element_status::not_available) {
+            break;
+        }
+    }
+    co_return result;
+}
+
+ss::future<cache_element_status>
+cache::_is_cached(const std::filesystem::path& key) {
     auto guard = _gate.hold();
     vlog(cst_log.debug, "Checking {} in archival cache.", key.native());
     if (_files_in_progress.contains(key)) {
@@ -1132,6 +1228,17 @@ cache::is_cached(const std::filesystem::path& key) {
 }
 
 ss::future<> cache::invalidate(const std::filesystem::path& key) {
+    std::vector<std::filesystem::path> keys = make_candidate_object_names(
+      key, "invalidate");
+    for (const auto& k : keys) {
+        // We shouldn't stop invalidating if we actually deleted the file
+        // because cache may store two files, one with old-style name and
+        // another one with new-style name.
+        co_await _invalidate(k);
+    }
+}
+
+ss::future<> cache::_invalidate(const std::filesystem::path& key) {
     auto guard = _gate.hold();
     vlog(
       cst_log.debug,
