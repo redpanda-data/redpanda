@@ -72,11 +72,6 @@ public:
     };
 
     void overwrite_metadata(group_metadata_value&&);
-    void remove() {
-        _offsets.clear();
-        _is_loaded = false;
-        _is_removed = true;
-    }
 
     void update_offset(
       const model::topic_partition&, model::offset, offset_metadata_value&&);
