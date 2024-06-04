@@ -3920,6 +3920,22 @@ class RedpandaService(RedpandaServiceBase):
                            sasl_enabled=self.sasl_enabled(),
                            endpoint_authn_method=self.endpoint_authn_method(),
                            auto_auth=self._security.auto_auth)
+        
+        def is_fips_capable(node) -> bool:
+            cur_ver = self._installer.installed_version(node)
+            return cur_ver == RedpandaInstaller.HEAD or cur_ver >= (24, 2, 1)
+
+        if in_fips_environment() and is_fips_capable(node):
+            self.logger.info(
+                "Operating in FIPS environment, enabling FIPS mode for Redpanda"
+            )
+            doc = yaml.full_load(conf)
+            doc["redpanda"].update(
+                dict(fips_mode="enabled",
+                     openssl_config_file=RedpandaService.OPENSSL_CONFIG_FILE,
+                     openssl_module_directory=RedpandaService.
+                     OPENSSL_MODULES_PATH))
+            conf = yaml.dump(doc)
 
         if override_cfg_params or node in self._extra_node_conf:
             doc = yaml.full_load(conf)
@@ -3947,22 +3963,6 @@ class RedpandaService(RedpandaServiceBase):
             ]
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
-            conf = yaml.dump(doc)
-
-        def is_fips_capable(node) -> bool:
-            cur_ver = self._installer.installed_version(node)
-            return cur_ver == RedpandaInstaller.HEAD or cur_ver >= (24, 2, 1)
-
-        if in_fips_environment() and is_fips_capable(node):
-            self.logger.info(
-                "Operating in FIPS environment, enabling FIPS mode for Redpanda"
-            )
-            doc = yaml.full_load(conf)
-            doc["redpanda"].update(
-                dict(fips_mode="enabled",
-                     openssl_config_file=RedpandaService.OPENSSL_CONFIG_FILE,
-                     openssl_module_directory=RedpandaService.
-                     OPENSSL_MODULES_PATH))
             conf = yaml.dump(doc)
 
         self.logger.info("Writing Redpanda node config file: {}".format(
