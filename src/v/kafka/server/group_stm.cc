@@ -1,6 +1,7 @@
 #include "kafka/server/group_stm.h"
 
 #include "cluster/logger.h"
+#include "kafka/server/group_metadata.h"
 #include "kafka/types.h"
 
 namespace kafka {
@@ -23,7 +24,7 @@ void group_stm::update_offset(
 }
 
 void group_stm::update_prepared(
-  model::offset offset, group_log_prepared_tx val) {
+  model::offset offset, group_tx::offsets_metadata val) {
     auto tx = group::prepared_tx{.pid = val.pid, .tx_seq = val.tx_seq};
 
     auto [prepared_it, inserted] = _prepared_txs.try_emplace(

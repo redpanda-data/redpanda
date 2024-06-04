@@ -1,5 +1,13 @@
+// Copyright 2020 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 #pragma once
-#include "base/seastarx.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"
 #include "model/fundamental.h"
@@ -13,51 +21,7 @@
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
-#include <optional>
-#include <vector>
-
 namespace kafka {
-
-struct group_log_prepared_tx_offset {
-    model::topic_partition tp;
-    model::offset offset;
-    int32_t leader_epoch;
-    std::optional<ss::sstring> metadata;
-};
-
-struct group_log_fencing_v0 {
-    kafka::group_id group_id;
-};
-
-struct group_log_fencing_v1 {
-    kafka::group_id group_id;
-    model::tx_seq tx_seq;
-    model::timeout_clock::duration transaction_timeout_ms;
-};
-
-struct group_log_fencing {
-    kafka::group_id group_id;
-    model::tx_seq tx_seq;
-    model::timeout_clock::duration transaction_timeout_ms;
-    model::partition_id tm_partition;
-};
-
-struct group_log_prepared_tx {
-    kafka::group_id group_id;
-    // TODO: get rid of pid, we have it in the headers
-    model::producer_identity pid;
-    model::tx_seq tx_seq;
-    std::vector<group_log_prepared_tx_offset> offsets;
-};
-
-struct group_log_commit_tx {
-    kafka::group_id group_id;
-};
-
-struct group_log_aborted_tx {
-    kafka::group_id group_id;
-    model::tx_seq tx_seq;
-};
 
 class group_stm {
 public:
@@ -76,7 +40,7 @@ public:
     void update_offset(
       const model::topic_partition&, model::offset, offset_metadata_value&&);
     void remove_offset(const model::topic_partition&);
-    void update_prepared(model::offset, group_log_prepared_tx);
+    void update_prepared(model::offset, group_tx::offsets_metadata);
     void commit(model::producer_identity);
     void abort(model::producer_identity, model::tx_seq);
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {

@@ -29,7 +29,6 @@
 #include "kafka/protocol/txn_offset_commit.h"
 #include "kafka/protocol/wire.h"
 #include "kafka/server/group_metadata.h"
-#include "kafka/server/group_stm.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
@@ -193,7 +192,7 @@ model::record_batch make_tx_batch(
 }
 
 model::record_batch make_tx_fence_batch(
-  const model::producer_identity& pid, group_log_fencing cmd) {
+  const model::producer_identity& pid, group_tx::fence_metadata cmd) {
     return make_tx_batch(
       model::record_batch_type::tx_fence,
       group::fence_control_record_version,
@@ -1877,7 +1876,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         co_return cluster::begin_group_tx_reply(_term, cluster::tx_errc::none);
     }
 
-    group_log_fencing fence{
+    group_tx::fence_metadata fence{
       .group_id = id(),
       .tx_seq = r.tx_seq,
       .transaction_timeout_ms = r.timeout,
@@ -2066,13 +2065,13 @@ group::store_txn_offsets(txn_offset_commit_request r) {
     }
     auto tx_seq = txseq_it->second.tx_seq;
 
-    absl::node_hash_map<model::topic_partition, group_log_prepared_tx_offset>
+    absl::node_hash_map<model::topic_partition, group_tx::partition_offset>
       offsets;
 
     auto prepare_it = _prepared_txs.find(pid);
     if (prepare_it != _prepared_txs.end()) {
         for (const auto& [tp, offset] : prepare_it->second.offsets) {
-            group_log_prepared_tx_offset md{
+            group_tx::partition_offset md{
               .tp = tp,
               .offset = offset.offset,
               .leader_epoch = offset.committed_leader_epoch,
@@ -2084,7 +2083,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
     for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
             model::topic_partition tp(t.name, p.partition_index);
-            group_log_prepared_tx_offset md{
+            group_tx::partition_offset md{
               .tp = tp,
               .offset = p.committed_offset,
               .leader_epoch = p.committed_leader_epoch,
@@ -2093,8 +2092,9 @@ group::store_txn_offsets(txn_offset_commit_request r) {
         }
     }
 
-    auto tx_entry = group_log_prepared_tx{
+    auto tx_entry = group_tx::offsets_metadata{
       .group_id = r.data.group_id, .pid = pid, .tx_seq = tx_seq};
+    tx_entry.offsets.reserve(offsets.size());
 
     for (const auto& [tp, offset] : offsets) {
         tx_entry.offsets.push_back(offset);
@@ -2891,11 +2891,7 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
   kafka::group_id group_id,
   model::producer_identity pid,
   model::tx_seq tx_seq) {
-    // preventing prepare and replicate once we
-    // know we're going to abort tx and abandon pid
-    _volatile_txs.erase(pid);
-
-    auto tx = group_log_aborted_tx{.group_id = group_id, .tx_seq = tx_seq};
+    auto tx = group_tx::abort_metadata{.group_id = group_id, .tx_seq = tx_seq};
 
     auto batch = make_tx_batch(
       model::record_batch_type::group_abort_tx,
@@ -2969,7 +2965,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
 
     batches.push_back(std::move(store_offset_builder).build());
 
-    group_log_commit_tx commit_tx;
+    group_tx::commit_metadata commit_tx;
     commit_tx.group_id = group_id;
     auto batch = make_tx_batch(
       model::record_batch_type::group_commit_tx,

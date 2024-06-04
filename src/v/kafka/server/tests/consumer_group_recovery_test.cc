@@ -206,7 +206,7 @@ struct cg_recovery_test_fixture : seastar_test {
     }
 
     model::record_batch make_tx_fence_batch(
-      const model::producer_identity& pid, group_log_fencing cmd) {
+      const model::producer_identity& pid, group_tx::fence_metadata cmd) {
         return make_tx_batch(
           model::record_batch_type::tx_fence,
           group::fence_control_record_version,
@@ -214,9 +214,9 @@ struct cg_recovery_test_fixture : seastar_test {
           std::move(cmd));
     }
 
-    group_log_prepared_tx_offset
+    group_tx::partition_offset
     make_tx_offset(std::string_view topic, int partition, int offset) {
-        return group_log_prepared_tx_offset{
+        return group_tx::partition_offset{
           .tp = model::topic_partition(
             model::topic(topic), model::partition_id(partition)),
           .offset = model::offset(offset),
@@ -370,7 +370,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_happy_path) {
     model::tx_seq tx_seq(3);
     batches.push_back(make_tx_fence_batch(
       pid,
-      group_log_fencing{
+      group_tx::fence_metadata{
         .group_id = gr_1,
         .tx_seq = tx_seq,
         .transaction_timeout_ms = 10s,
@@ -381,11 +381,11 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_happy_path) {
       model::record_batch_type::group_prepare_tx,
       0,
       pid,
-      group_log_prepared_tx{
+      group_tx::offsets_metadata{
         .group_id = gr_1,
         .pid = pid,
         .tx_seq = tx_seq,
-        .offsets = std::vector<group_log_prepared_tx_offset>{
+        .offsets = std::vector<group_tx::partition_offset>{
           make_tx_offset("test-1", 0, 2048),
           make_tx_offset("topic-3", 12, 1)}}));
 
@@ -404,7 +404,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_happy_path) {
       model::record_batch_type::group_commit_tx,
       0,
       pid,
-      group_log_commit_tx{.group_id = gr_1}));
+      group_tx::commit_metadata{.group_id = gr_1}));
 
     state = co_await recover_from_batches(copy_batches(batches));
     EXPECT_TRUE(state.groups[gr_1].prepared_txs().empty());
@@ -424,7 +424,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_happy_path) {
       model::record_batch_type::group_abort_tx,
       0,
       pid,
-      group_log_aborted_tx{.group_id = gr_1, .tx_seq = tx_seq}));
+      group_tx::abort_metadata{.group_id = gr_1, .tx_seq = tx_seq}));
 
     state = co_await recover_from_batches(copy_batches(batches));
     expect_committed_offsets(
@@ -450,7 +450,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
     // set fence
     batches.push_back(make_tx_fence_batch(
       pid,
-      group_log_fencing{
+      group_tx::fence_metadata{
         .group_id = gr_1,
         .tx_seq = tx_seq,
         .transaction_timeout_ms = 10s,
@@ -461,11 +461,11 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
       model::record_batch_type::group_prepare_tx,
       0,
       pid,
-      group_log_prepared_tx{
+      group_tx::offsets_metadata{
         .group_id = gr_1,
         .pid = pid,
         .tx_seq = tx_seq,
-        .offsets = std::vector<group_log_prepared_tx_offset>{
+        .offsets = std::vector<group_tx::partition_offset>{
           make_tx_offset("test-1", 0, 2048),
           make_tx_offset("topic-3", 12, 1)}}));
 
@@ -474,7 +474,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
       model::record_batch_type::group_abort_tx,
       0,
       pid,
-      group_log_aborted_tx{.group_id = gr_1, .tx_seq = tx_seq}));
+      group_tx::abort_metadata{.group_id = gr_1, .tx_seq = tx_seq}));
     auto state = co_await recover_from_batches(copy_batches(batches));
     EXPECT_TRUE(state.groups[gr_1].tx_data().empty());
     EXPECT_TRUE(state.groups[gr_1].prepared_txs().empty());
@@ -488,7 +488,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
       model::record_batch_type::group_commit_tx,
       0,
       pid,
-      group_log_commit_tx{.group_id = gr_1}));
+      group_tx::commit_metadata{.group_id = gr_1}));
 
     EXPECT_TRUE(state.groups[gr_1].tx_data().empty());
     EXPECT_TRUE(state.groups[gr_1].prepared_txs().empty());

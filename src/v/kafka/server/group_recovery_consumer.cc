@@ -12,6 +12,7 @@
 #include "kafka/server/group_recovery_consumer.h"
 
 #include "kafka/protocol/wire.h"
+#include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/logger.h"
 
@@ -84,7 +85,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         co_return ss::stop_iteration::no;
     } else if (
       batch.header().type == model::record_batch_type::group_prepare_tx) {
-        auto val = parse_tx_batch<group_log_prepared_tx>(
+        auto val = parse_tx_batch<group_tx::offsets_metadata>(
                      batch, group::prepared_tx_record_version)
                      .cmd;
 
@@ -94,7 +95,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         co_return ss::stop_iteration::no;
     } else if (
       batch.header().type == model::record_batch_type::group_commit_tx) {
-        auto cmd = parse_tx_batch<group_log_commit_tx>(
+        auto cmd = parse_tx_batch<group_tx::commit_metadata>(
           batch, group::commit_tx_record_version);
 
         auto [group_it, _] = _state.groups.try_emplace(cmd.cmd.group_id);
@@ -103,7 +104,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         co_return ss::stop_iteration::no;
     } else if (
       batch.header().type == model::record_batch_type::group_abort_tx) {
-        auto cmd = parse_tx_batch<group_log_aborted_tx>(
+        auto cmd = parse_tx_batch<group_tx::abort_metadata>(
           batch, group::aborted_tx_record_version);
 
         auto [group_it, _] = _state.groups.try_emplace(cmd.cmd.group_id);
@@ -155,11 +156,13 @@ void group_recovery_consumer::apply_tx_fence(model::record_batch&& batch) {
     auto fence_version = reflection::adl<int8_t>{}.from(val_reader);
 
     if (fence_version == group::fence_control_record_v0_version) {
-        auto cmd = reflection::adl<group_log_fencing_v0>{}.from(val_reader);
+        auto cmd = reflection::adl<group_tx::fence_metadata_v0>{}.from(
+          val_reader);
         auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
         group_it->second.try_set_fence(bid.pid.get_id(), bid.pid.get_epoch());
     } else if (fence_version == group::fence_control_record_v1_version) {
-        auto cmd = reflection::adl<group_log_fencing_v1>{}.from(val_reader);
+        auto cmd = reflection::adl<group_tx::fence_metadata_v1>{}.from(
+          val_reader);
         auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
         group_it->second.try_set_fence(
           bid.pid.get_id(),
@@ -168,7 +171,7 @@ void group_recovery_consumer::apply_tx_fence(model::record_batch&& batch) {
           cmd.transaction_timeout_ms,
           model::partition_id(0));
     } else if (fence_version == group::fence_control_record_version) {
-        auto cmd = reflection::adl<group_log_fencing>{}.from(val_reader);
+        auto cmd = reflection::adl<group_tx::fence_metadata>{}.from(val_reader);
         auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
         group_it->second.try_set_fence(
           bid.pid.get_id(),
