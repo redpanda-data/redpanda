@@ -14,6 +14,7 @@
 #include "config/client_group_byte_rate_quota.h"
 #include "config/property.h"
 #include "kafka/server/atomic_token_bucket.h"
+#include "kafka/server/client_quota_translator.h"
 #include "ssx/sharded_ptr.h"
 #include "ssx/sharded_value.h"
 #include "utils/absl_sstring_hash.h"
@@ -68,11 +69,8 @@ public:
         std::optional<atomic_token_bucket> pm_rate;
     };
 
-    using client_quotas_map_t = absl::node_hash_map<
-      ss::sstring,
-      ss::lw_shared_ptr<client_quota>,
-      sstring_hash,
-      sstring_eq>;
+    using client_quotas_map_t
+      = absl::node_hash_map<tracker_key, ss::lw_shared_ptr<client_quota>>;
     using client_quotas_t = ssx::sharded_ptr<client_quotas_map_t>;
 
     explicit quota_manager(client_quotas_t& client_quotas);
@@ -118,8 +116,7 @@ private:
     using quota_config
       = std::unordered_map<ss::sstring, config::client_group_quota>;
 
-    clock::duration cap_to_max_delay(
-      std::optional<std::string_view> client_id, clock::duration delay);
+    clock::duration cap_to_max_delay(const tracker_key&, clock::duration);
 
     // erase inactive tracked quotas. windows are considered inactive if they
     // have not received any updates in ten window's worth of time.
@@ -127,27 +124,18 @@ private:
     ss::future<> do_gc(clock::time_point expire_threshold);
 
     ss::future<clock::duration> maybe_add_and_retrieve_quota(
-      std::optional<std::string_view> quota_id,
+      tracker_key quota_id,
       clock::time_point now,
       quota_mutation_callback_t cb);
-    ss::future<> add_quota_id(std::string_view quota_id, clock::time_point now);
+    ss::future<> add_quota_id(tracker_key quota_id, clock::time_point now);
     void update_client_quotas();
-    int64_t get_client_target_produce_tp_rate(
-      const std::optional<std::string_view>& quota_id);
-    std::optional<int64_t> get_client_target_fetch_tp_rate(
-      const std::optional<std::string_view>& quota_id);
 
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
     config::binding<std::optional<int64_t>> _replenish_threshold;
 
-    config::binding<uint32_t> _default_target_produce_tp_rate;
-    config::binding<std::optional<uint32_t>> _default_target_fetch_tp_rate;
-    config::binding<std::optional<uint32_t>> _target_partition_mutation_quota;
-    config::binding<quota_config> _target_produce_tp_rate_per_client_group;
-    config::binding<quota_config> _target_fetch_tp_rate_per_client_group;
-
     client_quotas_t& _client_quotas;
+    client_quota_translator _translator;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
