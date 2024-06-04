@@ -230,4 +230,21 @@ validate_audit_excluded_topics(const std::vector<ss::sstring>& vs) {
 
     return std::nullopt;
 }
+
+std::optional<ss::sstring>
+validate_cloud_storage_api_endpoint(const std::optional<ss::sstring>& os) {
+    if (auto non_empty_string_opt = validate_non_empty_string_opt(os);
+        non_empty_string_opt.has_value()) {
+        return non_empty_string_opt;
+    }
+
+    if (
+      os.has_value()
+      && (os.value().starts_with("http://") || os.value().starts_with("https://"))) {
+        return "String starting with URL protocol is not valid";
+    }
+
+    return std::nullopt;
+}
+
 }; // namespace config
