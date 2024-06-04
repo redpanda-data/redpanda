@@ -446,7 +446,7 @@ get_integer_query_param(const ss::http::request& req, std::string_view name) {
 
     const ss::sstring& str_param = req.query_parameters.at(key);
     try {
-        return std::stoi(str_param);
+        return std::stoull(str_param);
     } catch (const std::invalid_argument&) {
         throw ss::httpd::bad_request_exception(
           fmt::format("Parameter {} must be an integer", name));
@@ -4063,7 +4063,7 @@ admin_server::delete_cloud_storage_lifecycle(
     model::initial_revision_id revision;
     try {
         revision = model::initial_revision_id(
-          std::stoi(req->param["revision"]));
+          std::stoll(req->param["revision"]));
     } catch (...) {
         throw ss::httpd::bad_param_exception(fmt::format(
           "Revision id must be an integer: {}", req->param["revision"]));
@@ -4082,13 +4082,13 @@ admin_server::delete_cloud_storage_lifecycle(
 ss::future<ss::json::json_return_type>
 admin_server::post_cloud_storage_cache_trim(
   std::unique_ptr<ss::http::request> req) {
-    auto size_limit = get_integer_query_param(*req, "objects");
-    auto bytes_limit = static_cast<std::optional<size_t>>(
+    auto max_objects = get_integer_query_param(*req, "objects");
+    auto max_bytes = static_cast<std::optional<size_t>>(
       get_integer_query_param(*req, "bytes"));
 
     co_await _cloud_storage_cache.invoke_on(
-      ss::shard_id{0}, [size_limit, bytes_limit](auto& c) {
-          return c.trim_manually(size_limit, bytes_limit);
+      ss::shard_id{0}, [max_objects, max_bytes](auto& c) {
+          return c.trim_manually(max_bytes, max_objects);
       });
 
     co_return ss::json::json_return_type(ss::json::json_void());
