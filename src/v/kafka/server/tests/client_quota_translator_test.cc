@@ -156,16 +156,16 @@ BOOST_AUTO_TEST_CASE(quota_translator_client_group_test) {
     // Check limits for the franz-go groups
     auto franz_go_produce_limits = client_quota_limits{
       .produce_limit = 4096,
-      .fetch_limit = F_DEF,
-      .partition_mutation_limit = PM_DEF,
+      .fetch_limit = {},
+      .partition_mutation_limit = {},
     };
     BOOST_CHECK_EQUAL(
       franz_go_produce_limits,
       tr.find_quota_value(k_group_name{"franz-go-produce-group"}));
     auto franz_go_fetch_limits = client_quota_limits{
-      .produce_limit = P_DEF,
+      .produce_limit = {},
       .fetch_limit = 4097,
-      .partition_mutation_limit = PM_DEF,
+      .partition_mutation_limit = {},
     };
     BOOST_CHECK_EQUAL(
       franz_go_fetch_limits,
@@ -174,16 +174,16 @@ BOOST_AUTO_TEST_CASE(quota_translator_client_group_test) {
     // Check limits for the not-franz-go groups
     auto not_franz_go_produce_limits = client_quota_limits{
       .produce_limit = 2048,
-      .fetch_limit = F_DEF,
-      .partition_mutation_limit = PM_DEF,
+      .fetch_limit = {},
+      .partition_mutation_limit = {},
     };
     BOOST_CHECK_EQUAL(
       not_franz_go_produce_limits,
       tr.find_quota_value(k_group_name{"not-franz-go-produce-group"}));
     auto not_franz_go_fetch_limits = client_quota_limits{
-      .produce_limit = P_DEF,
+      .produce_limit = {},
       .fetch_limit = 2049,
-      .partition_mutation_limit = PM_DEF,
+      .partition_mutation_limit = {},
     };
     BOOST_CHECK_EQUAL(
       not_franz_go_fetch_limits,

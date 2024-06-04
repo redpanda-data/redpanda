@@ -102,9 +102,12 @@ private:
     tracker_key
     get_partition_mutation_key(std::optional<std::string_view> client_id);
 
-    uint64_t get_client_target_produce_tp_rate(const tracker_key& quota_id);
+    std::optional<uint64_t>
+    get_client_target_produce_tp_rate(const tracker_key& quota_id);
     std::optional<uint64_t>
     get_client_target_fetch_tp_rate(const tracker_key& quota_id);
+    std::optional<uint64_t>
+    get_client_target_partition_mutation_rate(const tracker_key& quota_id);
 
     config::binding<uint32_t> _default_target_produce_tp_rate;
     config::binding<std::optional<uint32_t>> _default_target_fetch_tp_rate;

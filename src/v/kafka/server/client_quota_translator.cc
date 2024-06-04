@@ -42,19 +42,20 @@ client_quota_translator::client_quota_translator()
       config::shard_local_cfg()
         .kafka_client_group_fetch_byte_rate_quota.bind()) {}
 
-uint64_t client_quota_translator::get_client_target_produce_tp_rate(
+std::optional<uint64_t>
+client_quota_translator::get_client_target_produce_tp_rate(
   const tracker_key& quota_id) {
     return ss::visit(
       quota_id,
-      [this](const k_client_id&) -> uint64_t {
+      [this](const k_client_id&) -> std::optional<uint64_t> {
           return _default_target_produce_tp_rate();
       },
-      [this](const k_group_name& k) -> uint64_t {
+      [this](const k_group_name& k) -> std::optional<uint64_t> {
           auto group = _target_produce_tp_rate_per_client_group().find(k);
           if (group != _target_produce_tp_rate_per_client_group().end()) {
               return group->second.quota;
           }
-          return _default_target_produce_tp_rate();
+          return {};
       });
 }
 
@@ -71,8 +72,19 @@ client_quota_translator::get_client_target_fetch_tp_rate(
           if (group != _target_fetch_tp_rate_per_client_group().end()) {
               return group->second.quota;
           }
-          return _default_target_fetch_tp_rate();
+          return {};
       });
+}
+
+std::optional<uint64_t>
+client_quota_translator::get_client_target_partition_mutation_rate(
+  const tracker_key& quota_id) {
+    return ss::visit(
+      quota_id,
+      [this](const k_client_id&) -> std::optional<uint64_t> {
+          return _target_partition_mutation_quota();
+      },
+      [](const k_group_name&) -> std::optional<uint64_t> { return {}; });
 }
 
 namespace {
@@ -140,7 +152,8 @@ client_quota_translator::find_quota_value(const tracker_key& key) {
     return client_quota_limits{
       .produce_limit = get_client_target_produce_tp_rate(key),
       .fetch_limit = get_client_target_fetch_tp_rate(key),
-      .partition_mutation_limit = _target_partition_mutation_quota(),
+      .partition_mutation_limit = get_client_target_partition_mutation_rate(
+        key),
     };
 }
 
