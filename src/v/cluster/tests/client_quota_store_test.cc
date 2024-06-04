@@ -35,6 +35,12 @@ const entity_key key2{
     .part = entity_key::part::client_id_match{.value = "consumer-app-1"},
   }},
 };
+const entity_key key3{
+  .parts = {entity_key::part{
+    .part
+    = entity_key::part::client_id_prefix_match{.value = "franz-go-prefix"},
+  }},
+};
 
 const entity_value val0{
   .consumer_byte_rate = 10240,
@@ -45,6 +51,9 @@ const entity_value val1{
 const entity_value val2{
   .producer_byte_rate = 25600,
   .consumer_byte_rate = 20480,
+};
+const entity_value val3{
+  .producer_byte_rate = 12345,
 };
 
 BOOST_AUTO_TEST_CASE(quota_store_set_get_remove) {
@@ -91,6 +100,7 @@ BOOST_AUTO_TEST_CASE(quota_store_range) {
 
     st.set_quota(key1, val1);
     st.set_quota(key2, val2);
+    st.set_quota(key3, val3);
 
     auto default_client_quotas = st.range(
       [](const std::pair<entity_key, entity_value>& kv) -> bool {
@@ -110,6 +120,12 @@ BOOST_AUTO_TEST_CASE(quota_store_range) {
     BOOST_CHECK_EQUAL(specific_client_quota.size(), 1);
     BOOST_CHECK_EQUAL(specific_client_quota[0].first, key1);
     BOOST_CHECK_EQUAL(specific_client_quota[0].second, val1);
+
+    auto group_quotas = st.range(
+      store::prefix_group_filter("franz-go-prefix--and-some-more"));
+    BOOST_CHECK_EQUAL(group_quotas.size(), 1);
+    BOOST_CHECK_EQUAL(group_quotas[0].first, key3);
+    BOOST_CHECK_EQUAL(group_quotas[0].second, val3);
 }
 
 BOOST_AUTO_TEST_CASE(quota_store_snapshot_delta) {
