@@ -111,6 +111,11 @@ private:
     get_client_target_fetch_tp_rate(const tracker_key& quota_id);
     std::optional<uint64_t>
     get_client_target_partition_mutation_rate(const tracker_key& quota_id);
+    std::optional<uint64_t> get_client_quota_value(
+      const tracker_key& quota_id,
+      const std::unordered_map<ss::sstring, config::client_group_quota>&
+        group_quota_config,
+      std::optional<uint64_t> default_value_config);
 
     ss::sharded<cluster::client_quota::store>& _quota_store;
 

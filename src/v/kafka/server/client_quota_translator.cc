@@ -47,46 +47,46 @@ client_quota_translator::client_quota_translator(
 std::optional<uint64_t>
 client_quota_translator::get_client_target_produce_tp_rate(
   const tracker_key& quota_id) {
-    return ss::visit(
+    return get_client_quota_value(
       quota_id,
-      [this](const k_client_id&) -> std::optional<uint64_t> {
-          return _default_target_produce_tp_rate();
-      },
-      [this](const k_group_name& k) -> std::optional<uint64_t> {
-          auto group = _target_produce_tp_rate_per_client_group().find(k);
-          if (group != _target_produce_tp_rate_per_client_group().end()) {
-              return group->second.quota;
-          }
-          return {};
-      });
+      _target_produce_tp_rate_per_client_group(),
+      _default_target_produce_tp_rate());
 }
 
 std::optional<uint64_t>
 client_quota_translator::get_client_target_fetch_tp_rate(
   const tracker_key& quota_id) {
-    return ss::visit(
+    return get_client_quota_value(
       quota_id,
-      [this](const k_client_id&) -> std::optional<uint64_t> {
-          return _default_target_fetch_tp_rate();
-      },
-      [this](const k_group_name& k) -> std::optional<uint64_t> {
-          auto group = _target_fetch_tp_rate_per_client_group().find(k);
-          if (group != _target_fetch_tp_rate_per_client_group().end()) {
-              return group->second.quota;
-          }
-          return {};
-      });
+      _target_fetch_tp_rate_per_client_group(),
+      _default_target_fetch_tp_rate());
 }
 
 std::optional<uint64_t>
 client_quota_translator::get_client_target_partition_mutation_rate(
   const tracker_key& quota_id) {
+    return get_client_quota_value(
+      quota_id, {}, _target_partition_mutation_quota());
+}
+
+std::optional<uint64_t> client_quota_translator::get_client_quota_value(
+  const tracker_key& quota_id,
+  const std::unordered_map<ss::sstring, config::client_group_quota>&
+    group_quota_config,
+  std::optional<uint64_t> default_value_config) {
     return ss::visit(
       quota_id,
-      [this](const k_client_id&) -> std::optional<uint64_t> {
-          return _target_partition_mutation_quota();
+      [&default_value_config](const k_client_id&) -> std::optional<uint64_t> {
+          return default_value_config;
       },
-      [](const k_group_name&) -> std::optional<uint64_t> { return {}; });
+      [&group_quota_config](const k_group_name& k) -> std::optional<uint64_t> {
+          auto group = group_quota_config.find(k);
+          if (group != group_quota_config.end()) {
+              return group->second.quota;
+          }
+
+          return {};
+      });
 }
 
 namespace {
