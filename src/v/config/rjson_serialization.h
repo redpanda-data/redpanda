@@ -16,6 +16,7 @@
 #include "config/endpoint_tls_config.h"
 #include "config/seed_server.h"
 #include "config/tls_config.h"
+#include "config/types.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -114,4 +115,8 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>&, const model::recovery_validation_mode&);
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&, const config::fips_mode_flag& f);
+
 } // namespace json

@@ -9,6 +9,8 @@
 
 #include "config/rjson_serialization.h"
 
+#include "config/types.h"
+
 namespace json {
 
 void rjson_serialize(
@@ -208,6 +210,11 @@ void rjson_serialize(
     w.Key("port");
     w.Uint(ep.address.port());
     w.EndObject();
+}
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const config::fips_mode_flag& f) {
+    stringize(w, f);
 }
 
 } // namespace json
