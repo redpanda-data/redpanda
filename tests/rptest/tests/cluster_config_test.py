@@ -1490,6 +1490,22 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 if s['node_id'] == self.redpanda.idx(controller_node))
             assert local_status['config_version'] == config_version
 
+    @cluster(num_nodes=3)
+    @parametrize(value="http://pandazone", valid=False)
+    @parametrize(value="https://securepandazone", valid=False)
+    @parametrize(value="pandazone", valid=True)
+    def test_validate_cloud_storage_api_endpoint(self, value, valid):
+        try:
+            self.admin.patch_cluster_config(
+                upsert={"cloud_storage_api_endpoint": value})
+        except requests.exceptions.HTTPError as e:
+            #Invalid api endpoint
+            assert not valid
+            assert e.response.status_code == 400
+        else:
+            #Valid api endpoint
+            assert valid
+
 
 """
 PropertyAliasData:
