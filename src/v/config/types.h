@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include "strings/string_switch.h"
+
 #include <ostream>
 
 /*
@@ -38,6 +40,10 @@
  *      - defines a `T from_config(config::s3_url_style)` conversion type used
  *      to convert from the configuration option type to the sub-system type.
  */
+
+#include <seastar/core/sstring.hh>
+
+#include <base/seastarx.h>
 namespace config {
 
 enum class s3_url_style { virtual_host = 0, path };
@@ -49,6 +55,48 @@ inline std::ostream& operator<<(std::ostream& os, const s3_url_style& us) {
     case s3_url_style::path:
         return os << "path";
     }
+}
+
+enum class fips_mode_flag {
+    // FIPS mode disabled
+    disabled = 0,
+    // FIPS mode enabled with strict environment checks
+    enabled,
+    // FIPS mode enabled with permissive environment checks
+    permissive
+};
+
+constexpr std::string_view to_string_view(fips_mode_flag f) {
+    switch (f) {
+    case fips_mode_flag::disabled:
+        return "disabled";
+    case fips_mode_flag::enabled:
+        return "enabled";
+    case fips_mode_flag::permissive:
+        return "permissive";
+    }
+}
+
+inline std::ostream& operator<<(std::ostream& o, fips_mode_flag f) {
+    return o << to_string_view(f);
+}
+
+inline std::istream& operator>>(std::istream& i, fips_mode_flag& f) {
+    ss::sstring s;
+    i >> s;
+    f = string_switch<fips_mode_flag>(s)
+          .match(
+            to_string_view(fips_mode_flag::disabled), fips_mode_flag::disabled)
+          .match(
+            to_string_view(fips_mode_flag::enabled), fips_mode_flag::enabled)
+          .match(
+            to_string_view(fips_mode_flag::permissive),
+            fips_mode_flag::permissive);
+    return i;
+}
+
+inline bool fips_mode_enabled(fips_mode_flag f) {
+    return f != fips_mode_flag::disabled;
 }
 
 } // namespace config
