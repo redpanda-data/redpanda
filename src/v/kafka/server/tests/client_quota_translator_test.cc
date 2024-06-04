@@ -27,12 +27,12 @@ const tracker_key test_client_id_key = k_client_id{test_client_id};
 
 constexpr std::string_view raw_basic_produce_config = R"([
   {
-    "group_name": "not-franz-go-produce-group",
+    "group_name": "not-franz-go",
     "clients_prefix": "not-franz-go",
     "quota": 2048
   },
   {
-    "group_name": "franz-go-produce-group",
+    "group_name": "franz-go",
     "clients_prefix": "franz-go",
     "quota": 4096
   }
@@ -40,12 +40,12 @@ constexpr std::string_view raw_basic_produce_config = R"([
 
 constexpr std::string_view raw_basic_fetch_config = R"([
   {
-    "group_name": "not-franz-go-fetch-group",
+    "group_name": "not-franz-go",
     "clients_prefix": "not-franz-go",
     "quota": 2049
   },
   {
-    "group_name": "franz-go-fetch-group",
+    "group_name": "franz-go",
     "clients_prefix": "franz-go",
     "quota": 4097
   }
@@ -143,21 +143,16 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_client_group_test) {
     };
 
     // Check keys for produce
+    CHECK_VARIANT_EQ(k_group_name{"franz-go"}, get_produce_key("franz-go"));
     CHECK_VARIANT_EQ(
-      k_group_name{"franz-go-produce-group"}, get_produce_key("franz-go"));
-    CHECK_VARIANT_EQ(
-      k_group_name{"franz-go-produce-group"}, get_produce_key("franz-go"));
-    CHECK_VARIANT_EQ(
-      k_group_name{"not-franz-go-produce-group"},
-      get_produce_key("not-franz-go"));
+      k_group_name{"not-franz-go"}, get_produce_key("not-franz-go"));
     CHECK_VARIANT_EQ(k_client_id{"unknown"}, get_produce_key("unknown"));
     CHECK_VARIANT_EQ(k_client_id{""}, get_produce_key(std::nullopt));
 
     // Check keys for fetch
+    CHECK_VARIANT_EQ(k_group_name{"franz-go"}, get_fetch_key("franz-go"));
     CHECK_VARIANT_EQ(
-      k_group_name{"franz-go-fetch-group"}, get_fetch_key("franz-go"));
-    CHECK_VARIANT_EQ(
-      k_group_name{"not-franz-go-fetch-group"}, get_fetch_key("not-franz-go"));
+      k_group_name{"not-franz-go"}, get_fetch_key("not-franz-go"));
     CHECK_VARIANT_EQ(k_client_id{"unknown"}, get_fetch_key("unknown"));
     CHECK_VARIANT_EQ(k_client_id{""}, get_fetch_key(std::nullopt));
 
@@ -171,40 +166,22 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_client_group_test) {
     // Stage 2 - Next verify that the correct quota limits apply to the
     // various tracker_key's being tested
     // Check limits for the franz-go groups
-    auto franz_go_produce_limits = client_quota_limits{
+    auto franz_go_limits = client_quota_limits{
       .produce_limit = 4096,
-      .fetch_limit = {},
-      .partition_mutation_limit = {},
-    };
-    BOOST_CHECK_EQUAL(
-      franz_go_produce_limits,
-      f.tr.find_quota_value(k_group_name{"franz-go-produce-group"}));
-    auto franz_go_fetch_limits = client_quota_limits{
-      .produce_limit = {},
       .fetch_limit = 4097,
       .partition_mutation_limit = {},
     };
     BOOST_CHECK_EQUAL(
-      franz_go_fetch_limits,
-      f.tr.find_quota_value(k_group_name{"franz-go-fetch-group"}));
+      franz_go_limits, f.tr.find_quota_value(k_group_name{"franz-go"}));
 
     // Check limits for the not-franz-go groups
-    auto not_franz_go_produce_limits = client_quota_limits{
+    auto not_franz_go_limits = client_quota_limits{
       .produce_limit = 2048,
-      .fetch_limit = {},
-      .partition_mutation_limit = {},
-    };
-    BOOST_CHECK_EQUAL(
-      not_franz_go_produce_limits,
-      f.tr.find_quota_value(k_group_name{"not-franz-go-produce-group"}));
-    auto not_franz_go_fetch_limits = client_quota_limits{
-      .produce_limit = {},
       .fetch_limit = 2049,
       .partition_mutation_limit = {},
     };
     BOOST_CHECK_EQUAL(
-      not_franz_go_fetch_limits,
-      f.tr.find_quota_value(k_group_name{"not-franz-go-fetch-group"}));
+      not_franz_go_limits, f.tr.find_quota_value(k_group_name{"not-franz-go"}));
 
     // Check limits for the non-client-group keys
     auto default_limits = client_quota_limits{
