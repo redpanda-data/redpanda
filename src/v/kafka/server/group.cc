@@ -1662,7 +1662,6 @@ void group::fail_offset_commit(
 
 void group::reset_tx_state(model::term_id term) {
     _term = term;
-    _volatile_txs.clear();
     _prepared_txs.clear();
     _expiration_info.clear();
     _tx_data.clear();
@@ -3051,9 +3050,7 @@ ss::future<> group::do_abort_old_txes() {
     for (auto& [id, _] : _prepared_txs) {
         pids.push_back(id);
     }
-    for (auto& [id, _] : _volatile_txs) {
-        pids.push_back(id);
-    }
+
     for (auto& [id, _] : _tx_data) {
         auto it = _fence_pid_epoch.find(id);
         if (it != _fence_pid_epoch.end()) {
@@ -3413,7 +3410,7 @@ group::get_expired_offsets(std::chrono::seconds retention_period) {
 
 bool group::has_offsets() const {
     return !_offsets.empty() || !_pending_offset_commits.empty()
-           || !_volatile_txs.empty() || !_tx_data.empty();
+           || !_tx_data.empty();
 }
 
 std::vector<model::topic_partition>

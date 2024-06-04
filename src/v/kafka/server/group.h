@@ -828,15 +828,6 @@ private:
         }
 
         if (std::any_of(
-              _volatile_txs.begin(),
-              _volatile_txs.end(),
-              [&tp](const auto& tp_info) {
-                  return tp_info.second.offsets.contains(tp);
-              })) {
-            return true;
-        }
-
-        if (std::any_of(
               _prepared_txs.begin(),
               _prepared_txs.end(),
               [&tp](const auto& tp_info) {
@@ -934,18 +925,7 @@ private:
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;
-    struct volatile_offset {
-        model::offset offset;
-        kafka::leader_epoch leader_epoch;
-        std::optional<ss::sstring> metadata;
-    };
 
-    struct volatile_tx {
-        model::tx_seq tx_seq;
-        absl::node_hash_map<model::topic_partition, volatile_offset> offsets;
-    };
-
-    absl::node_hash_map<model::producer_identity, volatile_tx> _volatile_txs;
     absl::node_hash_map<model::producer_identity, prepared_tx> _prepared_txs;
 
     struct expiration_info {
