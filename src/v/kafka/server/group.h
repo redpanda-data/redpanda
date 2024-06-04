@@ -191,7 +191,7 @@ public:
         }
     };
 
-    struct prepared_tx {
+    struct ongoing_tx_offsets {
         model::producer_identity pid;
         model::tx_seq tx_seq;
         absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
@@ -591,7 +591,7 @@ public:
         }
     }
 
-    void insert_prepared(prepared_tx);
+    void insert_ongoing_tx_offsets(ongoing_tx_offsets);
 
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
@@ -828,8 +828,8 @@ private:
         }
 
         if (std::any_of(
-              _prepared_txs.begin(),
-              _prepared_txs.end(),
+              _ongoing_tx_offsets.begin(),
+              _ongoing_tx_offsets.end(),
               [&tp](const auto& tp_info) {
                   return tp_info.second.offsets.contains(tp);
               })) {
@@ -926,7 +926,8 @@ private:
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;
 
-    absl::node_hash_map<model::producer_identity, prepared_tx> _prepared_txs;
+    absl::node_hash_map<model::producer_identity, ongoing_tx_offsets>
+      _ongoing_tx_offsets;
 
     struct expiration_info {
         expiration_info(model::timeout_clock::duration timeout)

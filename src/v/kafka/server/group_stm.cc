@@ -25,9 +25,9 @@ void group_stm::update_offset(
 
 void group_stm::update_prepared(
   model::offset offset, group_tx::offsets_metadata val) {
-    auto tx = group::prepared_tx{.pid = val.pid, .tx_seq = val.tx_seq};
+    auto tx = group::ongoing_tx_offsets{.pid = val.pid, .tx_seq = val.tx_seq};
 
-    auto [prepared_it, inserted] = _prepared_txs.try_emplace(
+    auto [prepared_it, inserted] = _ongoing_tx_offsets.try_emplace(
       tx.pid.get_id(), tx);
     if (!inserted && prepared_it->second.pid.epoch > tx.pid.epoch) {
         vlog(
@@ -61,8 +61,8 @@ void group_stm::update_prepared(
 }
 
 void group_stm::commit(model::producer_identity pid) {
-    auto prepared_it = _prepared_txs.find(pid.get_id());
-    if (prepared_it == _prepared_txs.end()) {
+    auto prepared_it = _ongoing_tx_offsets.find(pid.get_id());
+    if (prepared_it == _ongoing_tx_offsets.end()) {
         // missing prepare may happen when the consumer log gets truncated
         vlog(cluster::txlog.trace, "can't find ongoing tx {}", pid);
         return;
@@ -91,20 +91,22 @@ void group_stm::commit(model::producer_identity pid) {
           .log_offset = md.log_offset, .metadata = std::move(val)};
     }
 
-    _prepared_txs.erase(prepared_it);
+    _ongoing_tx_offsets.erase(prepared_it);
     _tx_data.erase(pid);
     _timeouts.erase(pid);
 }
 
 void group_stm::abort(
   model::producer_identity pid, [[maybe_unused]] model::tx_seq tx_seq) {
-    auto prepared_it = _prepared_txs.find(pid.get_id());
-    if (prepared_it == _prepared_txs.end()) { // NOLINT(bugprone-branch-clone)
+    auto prepared_it = _ongoing_tx_offsets.find(pid.get_id());
+    if (
+      prepared_it
+      == _ongoing_tx_offsets.end()) { // NOLINT(bugprone-branch-clone)
         return;
     } else if (prepared_it->second.pid.epoch != pid.epoch) {
         return;
     }
-    _prepared_txs.erase(prepared_it);
+    _ongoing_tx_offsets.erase(prepared_it);
     _tx_data.erase(pid);
     _timeouts.erase(pid);
 }

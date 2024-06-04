@@ -1662,13 +1662,13 @@ void group::fail_offset_commit(
 
 void group::reset_tx_state(model::term_id term) {
     _term = term;
-    _prepared_txs.clear();
+    _ongoing_tx_offsets.clear();
     _expiration_info.clear();
     _tx_data.clear();
     _fence_pid_epoch.clear();
 }
 
-void group::insert_prepared(prepared_tx tx) {
+void group::insert_ongoing_tx_offsets(ongoing_tx_offsets tx) {
     auto pid = tx.pid;
 
     // TODO: warn when legacy support is removed and _tx_data doesn't contain
@@ -1679,14 +1679,14 @@ void group::insert_prepared(prepared_tx tx) {
         if (txseq_it->second.tx_seq != tx.tx_seq) {
             vlog(
               _ctx_txlog.warn,
-              "prepared_tx of pid {} has tx_seq {} while {} expected",
+              "ongoing tx of pid {} has tx_seq {} while {} expected",
               tx.pid,
               tx.tx_seq,
               txseq_it->second.tx_seq);
         }
     }
 
-    _prepared_txs[pid] = std::move(tx);
+    _ongoing_tx_offsets[pid] = std::move(tx);
 }
 
 ss::future<cluster::commit_group_tx_reply>
@@ -1743,15 +1743,15 @@ group::commit_tx(cluster::commit_group_tx_request r) {
         co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    auto prepare_it = _prepared_txs.find(r.pid);
-    if (prepare_it == _prepared_txs.end()) {
+    auto ongoing_it = _ongoing_tx_offsets.find(r.pid);
+    if (ongoing_it == _ongoing_tx_offsets.end()) {
         vlog(
           _ctx_txlog.trace,
           "can't find a tx {}, probably already comitted",
           r.pid);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
     }
-    if (prepare_it->second.tx_seq > r.tx_seq) {
+    if (ongoing_it->second.tx_seq > r.tx_seq) {
         // rare situation:
         //   * tm_stm prepares (tx_seq+1)
         //   * prepare on this group passed but tm_stm failed to write to disk
@@ -1762,10 +1762,10 @@ group::commit_tx(cluster::commit_group_tx_request r) {
           "prepare for pid:{} has higher tx_seq:{} than given: {} => replaying "
           "already comitted commit",
           r.pid,
-          prepare_it->second.tx_seq,
+          ongoing_it->second.tx_seq,
           r.tx_seq);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
-    } else if (prepare_it->second.tx_seq < r.tx_seq) {
+    } else if (ongoing_it->second.tx_seq < r.tx_seq) {
         co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
 
@@ -1862,7 +1862,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
             co_return make_begin_tx_reply(
               cluster::tx_errc::unknown_server_error);
         }
-        if (_prepared_txs.contains(r.pid)) {
+        if (_ongoing_tx_offsets.contains(r.pid)) {
             vlog(
               _ctx_txlog.warn,
               "can't begin a tx {} with tx_seq {}: it was already begun and it "
@@ -2067,9 +2067,9 @@ group::store_txn_offsets(txn_offset_commit_request r) {
     absl::node_hash_map<model::topic_partition, group_tx::partition_offset>
       offsets;
 
-    auto prepare_it = _prepared_txs.find(pid);
-    if (prepare_it != _prepared_txs.end()) {
-        for (const auto& [tp, offset] : prepare_it->second.offsets) {
+    auto ongoing_it = _ongoing_tx_offsets.find(pid);
+    if (ongoing_it != _ongoing_tx_offsets.end()) {
+        for (const auto& [tp, offset] : ongoing_it->second.offsets) {
             group_tx::partition_offset md{
               .tp = tp,
               .offset = offset.offset,
@@ -2122,7 +2122,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
           r, error_code::unknown_server_error);
     }
 
-    prepared_tx ptx;
+    ongoing_tx_offsets ptx;
     ptx.tx_seq = tx_seq;
     ptx.pid = pid;
     const auto now = model::timestamp::now();
@@ -2137,7 +2137,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
         };
         ptx.offsets[tp] = md;
     }
-    _prepared_txs[pid] = ptx;
+    _ongoing_tx_offsets[pid] = ptx;
 
     auto it = _expiration_info.find(pid);
     if (it != _expiration_info.end()) {
@@ -2918,7 +2918,7 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
         co_return make_abort_tx_reply(cluster::tx_errc::timeout);
     }
 
-    _prepared_txs.erase(pid);
+    _ongoing_tx_offsets.erase(pid);
     _tx_data.erase(pid.get_id());
     _expiration_info.erase(pid);
 
@@ -2927,8 +2927,8 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
 
 ss::future<cluster::commit_group_tx_reply>
 group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
-    auto prepare_it = _prepared_txs.find(pid);
-    if (prepare_it == _prepared_txs.end()) {
+    auto ongoing_it = _ongoing_tx_offsets.find(pid);
+    if (ongoing_it == _ongoing_tx_offsets.end()) {
         // Impossible situation
         vlog(_ctx_txlog.error, "Can not find prepared tx for pid: {}", pid);
         co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
@@ -2950,7 +2950,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
 
     cluster::simple_batch_builder store_offset_builder(
       model::record_batch_type::raft_data, model::offset(0));
-    for (const auto& [tp, metadata] : prepare_it->second.offsets) {
+    for (const auto& [tp, metadata] : ongoing_it->second.offsets) {
         update_store_offset_builder(
           store_offset_builder,
           tp.topic,
@@ -2995,8 +2995,8 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
         co_return make_commit_tx_reply(cluster::tx_errc::timeout);
     }
 
-    prepare_it = _prepared_txs.find(pid);
-    if (prepare_it == _prepared_txs.end()) {
+    ongoing_it = _ongoing_tx_offsets.find(pid);
+    if (ongoing_it == _ongoing_tx_offsets.end()) {
         vlog(
           _ctx_txlog.error,
           "can't find already observed prepared tx pid:{}",
@@ -3004,11 +3004,11 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
         co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
     }
 
-    for (const auto& [tp, md] : prepare_it->second.offsets) {
+    for (const auto& [tp, md] : ongoing_it->second.offsets) {
         try_upsert_offset(tp, md);
     }
 
-    _prepared_txs.erase(prepare_it);
+    _ongoing_tx_offsets.erase(ongoing_it);
     _tx_data.erase(pid.get_id());
     _expiration_info.erase(pid);
 
@@ -3047,7 +3047,7 @@ ss::future<> group::do_abort_old_txes() {
     }
 
     std::vector<model::producer_identity> pids;
-    for (auto& [id, _] : _prepared_txs) {
+    for (auto& [id, _] : _ongoing_tx_offsets) {
         pids.push_back(id);
     }
 
@@ -3096,8 +3096,8 @@ ss::future<cluster::tx_errc>
 group::do_try_abort_old_tx(model::producer_identity pid) {
     vlog(_ctx_txlog.trace, "aborting pid:{}", pid);
 
-    auto p_it = _prepared_txs.find(pid);
-    if (p_it != _prepared_txs.end()) {
+    auto p_it = _ongoing_tx_offsets.find(pid);
+    if (p_it != _ongoing_tx_offsets.end()) {
         auto tx_seq = p_it->second.tx_seq;
         auto tx_data = _tx_data.find(pid.get_id());
         model::partition_id tm = model::legacy_tm_ntp.tp.partition;
