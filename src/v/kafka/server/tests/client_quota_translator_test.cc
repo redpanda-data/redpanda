@@ -53,8 +53,16 @@ const auto CHECK_VARIANT_EQ = [](auto expected, auto got) {
     BOOST_CHECK_EQUAL(expected, get<decltype(expected)>(got));
 };
 
+void reset_configs() {
+    config::shard_local_cfg().target_quota_byte_rate.reset();
+    config::shard_local_cfg().target_fetch_quota_byte_rate.reset();
+    config::shard_local_cfg().kafka_admin_topic_api_rate.reset();
+    config::shard_local_cfg().kafka_client_group_byte_rate_quota.reset();
+    config::shard_local_cfg().kafka_client_group_fetch_byte_rate_quota.reset();
+}
+
 BOOST_AUTO_TEST_CASE(quota_translator_default_test) {
-    client_quota_translator tr;
+    reset_configs();
 
     auto default_limits = client_quota_limits{
       .produce_limit = 2147483648,
@@ -68,6 +76,7 @@ BOOST_AUTO_TEST_CASE(quota_translator_default_test) {
 }
 
 BOOST_AUTO_TEST_CASE(quota_translator_modified_default_test) {
+    reset_configs();
     config::shard_local_cfg().target_quota_byte_rate.set_value(1111);
     config::shard_local_cfg().target_fetch_quota_byte_rate.set_value(2222);
     config::shard_local_cfg().kafka_admin_topic_api_rate.set_value(3333);
@@ -86,6 +95,7 @@ BOOST_AUTO_TEST_CASE(quota_translator_modified_default_test) {
 }
 
 BOOST_AUTO_TEST_CASE(quota_translator_client_group_test) {
+    reset_configs();
     constexpr auto P_DEF = 1111;
     constexpr auto F_DEF = 2222;
     constexpr auto PM_DEF = 3333;
