@@ -67,7 +67,7 @@ class TxRpkTest(RedpandaTest):
 
                 txs_info = self._rpk.describe_txn_producers([topic.name],
                                                             [partition])
-                if expected_producers == None:
+                if expected_producers is None:
                     expected_producers = set(
                         map(self.extract_producer, txs_info))
                     assert (len(txs_info) == 2)
@@ -100,7 +100,8 @@ class TxRpkTest(RedpandaTest):
                                                              [partition])
                 self.redpanda.logger.debug(json.dumps(producers))
                 for producer in producers:
-                    assert int(producer["last_sequence"]) > 0
+                    assert isinstance(producer, dict) and \
+                        int(producer["last_sequence"]) > 0
                     # checking that the producer's info was recently updated
                     assert abs(now_ms -
                                int(producer["last_timestamp"])) < 120 * 1000
@@ -123,13 +124,14 @@ class TxRpkTest(RedpandaTest):
 
         txn_partition = self._rpk.describe_txn(tx_id)
         for p in txn_partition:
-            assert p["transaction_id"] == tx_id
-            assert p["timeout"] == 60000
+            assert isinstance(p, dict) and p["transaction_id"] == tx_id
+            assert isinstance(p, dict) and p["timeout"] == 60000
 
         # Check that we describe every topic-partition combination.
         for topic in self.topics:
             tx_filter = [
-                txn for txn in txn_partition if txn['topic'] == topic.name
+                txn for txn in txn_partition
+                if isinstance(txn, dict) and txn['topic'] == topic.name
             ]
             assert len(tx_filter) == topic.partition_count
             for p in range(topic.partition_count):
@@ -168,6 +170,9 @@ class TxRpkTest(RedpandaTest):
         assert len(txn_list) > 0
 
         for txn in txn_list:
+            assert isinstance(txn, dict), \
+                "Abnormal type returned when querying for txns"
             txn_described = self._rpk.describe_txn(txn["transaction_id"])
             for described in txn_described:
-                assert int(described["producer_id"]) == int(txn["producer_id"])
+                assert isinstance(described, dict) and \
+                    int(described["producer_id"]) == int(txn["producer_id"])

@@ -8,7 +8,8 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
-from rptest.services.compacted_verifier import CompactedVerifier, Workload
+from tests.rptest.transactions.verifiers.compacted_verifier \
+    import CompactedVerifier, Workload
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
@@ -37,9 +38,9 @@ class CompactedVerifierTest(RedpandaTest):
 
         verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
                                        self.partition_count)
-        self.logger.info(f"Waiting for 1000 writes")
+        self.logger.info("Waiting for 1000 writes")
         verifier.ensure_progress(1000, 30)
-        self.logger.info(f"Done")
+        self.logger.info("Done")
         verifier.remote_stop_producer()
         verifier.remote_wait_producer()
         verifier.remote_start_consumer()
@@ -57,9 +58,9 @@ class CompactedVerifierTest(RedpandaTest):
 
         verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
                                        self.partition_count)
-        self.logger.info(f"Waiting for 100 writes")
+        self.logger.info("Waiting for 100 writes")
         verifier.ensure_progress(100, self.tx100_timeout_s)
-        self.logger.info(f"Done")
+        self.logger.info("Done")
         verifier.remote_stop_producer()
         verifier.remote_wait_producer()
         verifier.remote_start_consumer()
@@ -73,9 +74,9 @@ class CompactedVerifierTest(RedpandaTest):
 
         verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
                                        self.partition_count)
-        self.logger.info(f"Waiting for 100 writes")
+        self.logger.info("Waiting for 100 writes")
         verifier.ensure_progress(100, self.tx100_timeout_s)
-        self.logger.info(f"Done")
+        self.logger.info("Done")
         verifier.remote_stop_producer()
         verifier.remote_wait_producer()
         verifier.remote_start_consumer()
