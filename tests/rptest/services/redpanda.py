@@ -3959,7 +3959,7 @@ class RedpandaService(RedpandaServiceBase):
             )
             doc = yaml.full_load(conf)
             doc["redpanda"].update(
-                dict(fips_mode=True,
+                dict(fips_mode="enabled",
                      openssl_config_file=RedpandaService.OPENSSL_CONFIG_FILE,
                      openssl_module_directory=RedpandaService.
                      OPENSSL_MODULES_PATH))

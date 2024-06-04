@@ -10,6 +10,7 @@
 #include "node_config.h"
 
 #include "config/configuration.h"
+#include "config/types.h"
 #include "utils/unresolved_address.h"
 
 namespace config {
@@ -193,11 +194,15 @@ node_config::node_config() noexcept
   , fips_mode(
       *this,
       "fips_mode",
-      "Controls whether or not Redpanda starts in FIPS mode.  In the FIPS "
-      "mode of operation, Redpanda first verifies that the operating system "
+      "Controls whether Redpanda starts in FIPS mode.  This property "
+      "allows for three values: 'disabled', 'enabled', and 'permissive'.  With "
+      "'enabled', Redpanda first verifies that the operating "
+      "system "
       "is enabled for FIPS by checking /proc/sys/crypto/fips_enabled.  If the "
       "file does not exist or does not return '1', Redpanda immediately "
-      "exits.  After the check is complete, Redpanda loads the "
+      "exits.  With 'permissive', the same check is performed "
+      "but a WARNING is logged and Redpanda continues to run.  After "
+      "the check is complete, Redpanda loads the "
       "OpenSSL FIPS provider into the OpenSSL library.  After this is "
       "complete, Redpanda is operating in FIPS mode, which means that the "
       "TLS cipher suites available to users are limited to TLSv1.2 "
@@ -205,7 +210,10 @@ node_config::node_config() noexcept
       "cryptographic methods.  For more information about FIPS, refer to "
       "Redpanda documentation.",
       {.visibility = visibility::user},
-      false)
+      fips_mode_flag::disabled,
+      {fips_mode_flag::disabled,
+       fips_mode_flag::enabled,
+       fips_mode_flag::permissive})
   , openssl_config_file(
       *this,
       "openssl_config_file",
