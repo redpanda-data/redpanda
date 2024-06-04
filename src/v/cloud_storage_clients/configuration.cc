@@ -111,8 +111,13 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
         }
     }
 
+    // if overrides.endpoint is not specified, build the default base endpoint.
+    // for fips mode the it uses the `s3-fips` subdomain.
     const auto base_endpoint_uri = overrides.endpoint.value_or(
-      endpoint_url{ssx::sformat("s3.{}.amazonaws.com", region())});
+      endpoint_url{ssx::sformat(
+        "{}.{}.amazonaws.com",
+        node_is_in_fips_mode ? "s3-fips" : "s3",
+        region())});
 
     // if url_style is virtual_host, the complete url for s3 is
     // [bucket].[s3hostname]. s3client will form the complete_endpoint
