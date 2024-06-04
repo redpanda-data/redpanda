@@ -74,8 +74,9 @@ ss::future<clock::duration> quota_manager::maybe_add_and_retrieve_quota(
     auto it = _client_quotas->find(qid);
     if (it == _client_quotas->end()) {
         co_await container().invoke_on(
-          _client_quotas.shard_id(),
-          [qid, now](quota_manager& me) { return me.add_quota_id(qid, now); });
+          _client_quotas.shard_id(), [qid, now](quota_manager& me) mutable {
+              return me.add_quota_id(std::move(qid), now);
+          });
 
         it = _client_quotas->find(qid);
         if (it == _client_quotas->end()) {
