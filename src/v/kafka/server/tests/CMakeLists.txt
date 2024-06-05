@@ -18,6 +18,16 @@ rp_test(
   LABELS kafka
 )
 
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME test_consumer_group_recovery
+  SOURCES
+        consumer_group_recovery_test.cc
+  LIBRARIES v::gtest_main v::kafka
+  LABELS kafka
+)
+
 
 v_cc_library(
   NAME

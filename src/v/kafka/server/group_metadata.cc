@@ -32,6 +32,14 @@
 
 namespace kafka {
 
+group_metadata_kv group_metadata_kv::copy() const {
+    group_metadata_kv cp{.key = key};
+    if (value) {
+        cp.value = value->copy();
+    }
+    return cp;
+}
+
 /**
  * /Kafka
  * Messages stored for the group topic has versions for both the key and value

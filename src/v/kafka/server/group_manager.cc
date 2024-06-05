@@ -973,8 +973,8 @@ ss::future<> group_manager::do_recover_group(
               });
         }
 
-        for (const auto& [_, tx] : group_stm.prepared_txs()) {
-            group->insert_prepared(tx);
+        for (const auto& [_, tx] : group_stm.ongoing_tx_offsets()) {
+            group->insert_ongoing_tx_offsets(tx);
         }
         for (auto& [id, epoch] : group_stm.fences()) {
             group->try_set_fence(id, epoch);
