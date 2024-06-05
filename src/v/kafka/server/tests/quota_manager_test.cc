@@ -31,28 +31,17 @@ struct fixture {
     ss::sharded<cluster::client_quota::store> quota_store;
     ss::sharded<kafka::quota_manager> sqm;
 
-    ss::future<> start() {
-        co_await quota_store.start();
-        co_await sqm.start(std::ref(buckets_map), std::ref(quota_store));
-        co_await sqm.invoke_on_all(&kafka::quota_manager::start);
+    fixture() {
+        quota_store.start().get();
+        sqm.start(std::ref(buckets_map), std::ref(quota_store)).get();
+        sqm.invoke_on_all(&kafka::quota_manager::start).get();
     }
 
-    ss::future<> stop() {
-        co_await sqm.stop();
-        co_await quota_store.stop();
+    ~fixture() {
+        sqm.stop().get();
+        quota_store.stop().get();
     }
 };
-
-template<typename F>
-ss::future<> run_quota_manager_test(F test_core) {
-    fixture f;
-    co_await f.start();
-
-    // Run the core of the test now that everything's set up
-    co_await ss::futurize_invoke(test_core, f.sqm);
-
-    co_await f.stop();
-}
 
 template<typename F>
 ss::future<> set_config(F update) {
@@ -62,80 +51,93 @@ ss::future<> set_config(F update) {
 }
 
 SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_no_throttling) {
-    set_config([](auto& conf) {
-        conf.target_fetch_quota_byte_rate.set_value(std::nullopt);
-    }).get();
+    fixture f;
 
-    run_quota_manager_test(
-      ss::coroutine::lambda(
-        [](ss::sharded<kafka::quota_manager>& sqm) -> ss::future<> {
-            auto& qm = sqm.local();
+    auto& qm = f.sqm.local();
 
-            // Test that if fetch throttling is disabled, we don't throttle
-            co_await qm.record_fetch_tp(client_id, 10000000000000);
-            auto delay = co_await qm.throttle_fetch_tp(client_id);
+    // Test that if fetch throttling is disabled, we don't throttle
+    qm.record_fetch_tp(client_id, 10000000000000).get();
+    auto delay = qm.throttle_fetch_tp(client_id).get();
 
-            BOOST_CHECK_EQUAL(0ms, delay);
-        }))
-      .get();
+    BOOST_CHECK_EQUAL(0ms, delay);
 }
 
 SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_throttling) {
-    set_config([](auto& conf) {
-        conf.target_fetch_quota_byte_rate.set_value(100);
-        conf.max_kafka_throttle_delay_ms.set_value(
-          std::chrono::milliseconds::max());
-    }).get();
+    fixture f;
 
-    run_quota_manager_test(
-      ss::coroutine::lambda(
-        [](ss::sharded<kafka::quota_manager>& sqm) -> ss::future<> {
-            auto& qm = sqm.local();
+    using cluster::client_quota::entity_key;
+    using cluster::client_quota::entity_value;
 
-            // Test that below the fetch quota we don't throttle
-            co_await qm.record_fetch_tp(client_id, 99);
-            auto delay = co_await qm.throttle_fetch_tp(client_id);
+    auto default_key = entity_key{
+      .parts = {entity_key::part{
+        .part = entity_key::part::client_id_default_match{},
+      }},
+    };
+    auto default_values = entity_value{
+      .consumer_byte_rate = 100,
+    };
+    f.quota_store.local().set_quota(default_key, default_values);
 
-            BOOST_CHECK_EQUAL(delay, 0ms);
+    auto& qm = f.sqm.local();
 
-            // Test that above the fetch quota we throttle
-            co_await qm.record_fetch_tp(client_id, 10);
-            delay = co_await qm.throttle_fetch_tp(client_id);
+    // Test that below the fetch quota we don't throttle
+    qm.record_fetch_tp(client_id, 99).get();
+    auto delay = qm.throttle_fetch_tp(client_id).get();
 
-            BOOST_CHECK_GT(delay, 0ms);
+    BOOST_CHECK_EQUAL(delay, 0ms);
 
-            // Test that once we wait out the throttling delay, we don't
-            // throttle again (as long as we stay under the limit)
-            co_await seastar::sleep_abortable(delay + 1s);
-            co_await qm.record_fetch_tp(client_id, 10);
-            delay = co_await qm.throttle_fetch_tp(client_id);
+    // Test that above the fetch quota we throttle
+    qm.record_fetch_tp(client_id, 10).get();
+    delay = qm.throttle_fetch_tp(client_id).get();
 
-            BOOST_CHECK_EQUAL(delay, 0ms);
-        }))
-      .get();
+    BOOST_CHECK_GT(delay, 0ms);
+
+    // Test that once we wait out the throttling delay, we don't
+    // throttle again (as long as we stay under the limit)
+    seastar::sleep_abortable(delay + 1s).get();
+    qm.record_fetch_tp(client_id, 10).get();
+    delay = qm.throttle_fetch_tp(client_id).get();
+
+    BOOST_CHECK_EQUAL(delay, 0ms);
 }
 
 SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_stress_test) {
+    fixture f;
+
     set_config([](config::configuration& conf) {
-        conf.target_fetch_quota_byte_rate.set_value(100);
         conf.max_kafka_throttle_delay_ms.set_value(
           std::chrono::milliseconds::max());
     }).get();
 
-    run_quota_manager_test(
-      ss::coroutine::lambda(
-        [](ss::sharded<kafka::quota_manager>& sqm) -> ss::future<> {
-            // Exercise the quota manager from multiple cores to attempt to
-            // discover segfaults caused by data races/use-after-free
-            co_await sqm.invoke_on_all(ss::coroutine::lambda(
-              [](kafka::quota_manager& qm) -> ss::future<> {
-                  for (size_t i = 0; i < 1000; ++i) {
-                      co_await qm.record_fetch_tp(client_id, 1);
-                      auto delay [[maybe_unused]]
-                      = co_await qm.throttle_fetch_tp(client_id);
-                      co_await ss::maybe_yield();
-                  }
-              }));
+    using cluster::client_quota::entity_key;
+    using cluster::client_quota::entity_value;
+
+    auto default_key = entity_key{
+      .parts = {entity_key::part{
+        .part = entity_key::part::client_id_default_match{},
+      }},
+    };
+    auto default_values = entity_value{
+      .consumer_byte_rate = 100,
+    };
+    f.quota_store
+      .invoke_on_all(
+        [&default_key, &default_values](cluster::client_quota::store& store) {
+            store.set_quota(default_key, default_values);
+        })
+      .get();
+
+    // Exercise the quota manager from multiple cores to attempt to
+    // discover segfaults caused by data races/use-after-free
+    f.sqm
+      .invoke_on_all(
+        ss::coroutine::lambda([](kafka::quota_manager& qm) -> ss::future<> {
+            for (size_t i = 0; i < 1000; ++i) {
+                co_await qm.record_fetch_tp(client_id, 1);
+                auto delay [[maybe_unused]] = co_await qm.throttle_fetch_tp(
+                  client_id);
+                co_await ss::maybe_yield();
+            }
         }))
       .get();
 }
@@ -183,8 +185,6 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
     using k_client_id = kafka::k_client_id;
     using k_group_name = kafka::k_group_name;
     fixture f;
-    f.start().get();
-    auto stop = ss::defer([&] { f.stop().get(); });
 
     set_config(basic_config).get();
 
@@ -239,8 +239,6 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
     using k_group_name = kafka::k_group_name;
     using k_client_id = kafka::k_client_id;
     fixture f;
-    f.start().get();
-    auto stop = ss::defer([&] { f.stop().get(); });
 
     set_config(basic_config).get();
 
