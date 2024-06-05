@@ -81,6 +81,8 @@ using configure_node_id = ss::bool_class<struct configure_node_id_tag>;
 using empty_seed_starts_cluster
   = ss::bool_class<struct empty_seed_starts_cluster_tag>;
 
+using namespace std::chrono_literals;
+
 class redpanda_thread_fixture {
 public:
     static constexpr const char* rack_name = "i-am-rack";
@@ -296,14 +298,15 @@ public:
 
     static archival::configuration get_archival_config() {
         archival::configuration aconf{
+          .cloud_storage_initial_backoff = config::mock_binding(100ms),
+          .segment_upload_timeout = config::mock_binding(1000ms),
           .manifest_upload_timeout = config::mock_binding(1000ms),
-        };
+          .garbage_collect_timeout = config::mock_binding(1000ms),
+          .upload_loop_initial_backoff = config::mock_binding(100ms),
+          .upload_loop_max_backoff = config::mock_binding(5000ms)};
         aconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
         aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
         aconf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
-        aconf.cloud_storage_initial_backoff = 100ms;
-        aconf.segment_upload_timeout = 1s;
-        aconf.garbage_collect_timeout = 1s;
         aconf.time_limit = std::nullopt;
         return aconf;
     }
@@ -400,7 +403,7 @@ public:
                 config.get("cloud_storage_initial_backoff_ms")
                   .set_value(
                     std::chrono::duration_cast<std::chrono::milliseconds>(
-                      local_cfg->cloud_storage_initial_backoff));
+                      local_cfg->cloud_storage_initial_backoff()));
                 config.get("cloud_storage_manifest_upload_timeout_ms")
                   .set_value(
                     std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -408,11 +411,11 @@ public:
                 config.get("cloud_storage_segment_upload_timeout_ms")
                   .set_value(
                     std::chrono::duration_cast<std::chrono::milliseconds>(
-                      local_cfg->segment_upload_timeout));
+                      local_cfg->segment_upload_timeout()));
                 config.get("cloud_storage_garbage_collect_timeout_ms")
                   .set_value(
                     std::chrono::duration_cast<std::chrono::milliseconds>(
-                      local_cfg->garbage_collect_timeout));
+                      local_cfg->garbage_collect_timeout()));
             }
             if (cloud_cfg) {
                 config.get("cloud_storage_enable_remote_read").set_value(true);

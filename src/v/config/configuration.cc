@@ -1735,14 +1735,14 @@ configuration::configuration()
       "cloud_storage_upload_loop_initial_backoff_ms",
       "Initial backoff interval when there is nothing to upload for a "
       "partition (ms)",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100ms)
   , cloud_storage_upload_loop_max_backoff_ms(
       *this,
       "cloud_storage_upload_loop_max_backoff_ms",
       "Max backoff interval when there is nothing to upload for a "
       "partition (ms)",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
   , cloud_storage_max_connections(
       *this,

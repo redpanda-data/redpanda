@@ -42,17 +42,17 @@ struct configuration {
     /// Bucket used to store all archived data
     cloud_storage_clients::bucket_name bucket_name;
     /// Initial backoff for requests to cloud storage
-    ss::lowres_clock::duration cloud_storage_initial_backoff;
+    config::binding<std::chrono::milliseconds> cloud_storage_initial_backoff;
     /// Long upload timeout
-    ss::lowres_clock::duration segment_upload_timeout;
+    config::binding<std::chrono::milliseconds> segment_upload_timeout;
     /// Shor upload timeout
     config::binding<std::chrono::milliseconds> manifest_upload_timeout;
     /// Timeout for running delete operations during the GC phase
-    ss::lowres_clock::duration garbage_collect_timeout;
+    config::binding<std::chrono::milliseconds> garbage_collect_timeout;
     /// Initial backoff for upload loop in case there is nothing to upload
-    ss::lowres_clock::duration upload_loop_initial_backoff;
+    config::binding<std::chrono::milliseconds> upload_loop_initial_backoff;
     /// Max backoff for upload loop in case there is nothing to upload
-    ss::lowres_clock::duration upload_loop_max_backoff;
+    config::binding<std::chrono::milliseconds> upload_loop_max_backoff;
     /// Flag that indicates that service level metrics are disabled
     service_metrics_disabled svc_metrics_disabled;
     /// Flag that indicates that ntp-archiver level metrics are disabled
