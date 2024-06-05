@@ -112,7 +112,7 @@ ss::future<> walker_process_directory(
         }
     } catch (std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
-            // skip this directory, move to the ext one
+            // skip this directory, move to the next one
         } else {
             throw;
         }
