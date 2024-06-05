@@ -124,7 +124,10 @@ namespace cloud_storage {
 ss::future<walk_result> recursive_directory_walker::walk(
   ss::sstring start_dir,
   const access_time_tracker& tracker,
+  uint16_t max_concurrency,
   std::optional<filter_type> collect_filter) {
+    vassert(max_concurrency > 0, "Max concurrency must be greater than 0");
+
     auto guard = _gate.hold();
 
     watchdog wd1m(std::chrono::seconds(60), [] {
@@ -157,8 +160,6 @@ ss::future<walk_result> recursive_directory_walker::walk(
     //
     // Empirical testing shows that this value is a good balance between
     // performance and resource usage.
-    const size_t max_concurrency = 1000;
-
     std::vector<ss::sstring> targets;
     targets.reserve(max_concurrency);
 
