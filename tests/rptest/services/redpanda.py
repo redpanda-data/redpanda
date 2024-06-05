@@ -682,8 +682,6 @@ class SISettings:
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
-            self.cloud_storage_api_endpoint = f's3-fips.{cloud_storage_region}.amazonaws.com' if self.use_fips_endpoint(
-            ) else self.cloud_storage_api_endpoint
             self.addressing_style = S3AddressingStyle.VIRTUAL
         elif cloud_storage_credentials_source == 'config_file' and cloud_storage_access_key and cloud_storage_secret_key:
             # `config_file`` source allows developers to run ducktape tests from
@@ -698,8 +696,6 @@ class SISettings:
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
-            self.cloud_storage_api_endpoint = f's3-fips.{cloud_storage_region}.amazonaws.com' if self.use_fips_endpoint(
-            ) else self.cloud_storage_api_endpoint
             self.addressing_style = S3AddressingStyle.VIRTUAL
         else:
             logger.info('No AWS credentials supplied, assuming minio defaults')
