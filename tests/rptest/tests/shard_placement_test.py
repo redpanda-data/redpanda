@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import random
+
 from ducktape.utils.util import wait_until
 
 from rptest.services.cluster import cluster
@@ -17,6 +19,9 @@ from rptest.clients.rpk import RpkTool
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.util import wait_until_result
+from rptest.utils.mode_checks import skip_debug_mode
+from rptest.services.redpanda import SISettings
+import rptest.services.kgo_verifier_services as kgo
 
 
 class ShardPlacementTest(PreallocNodesTest):
@@ -620,3 +625,113 @@ class ShardPlacementTest(PreallocNodesTest):
             shard_map_after_balance, user_topics=topics, admin=admin)
 
         self.stop_client_load()
+
+
+class TSCrossCoreMovesTest(PreallocNodesTest):
+    def __init__(self, ctx, *args, **kwargs):
+        si_settings = SISettings(test_context=ctx)
+        super().__init__(*args,
+                         test_context=ctx,
+                         num_brokers=6,
+                         node_prealloc_count=1,
+                         si_settings=si_settings,
+                         **kwargs)
+
+    @cluster(num_nodes=7)
+    @skip_debug_mode
+    def test_simple(self):
+        self.logger.warn(f"brokers: {self.redpanda.brokers()}")
+
+        self.redpanda.set_feature_active("node_local_core_assignment",
+                                         active=True)
+
+        topic_name = "foo"
+        n_partitions = 1000
+        msg_size = 4096
+        msg_count = 5_000_000
+
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(topic_name, partitions=n_partitions, replicas=3)
+
+        controller_node = self.redpanda.controller()
+        self.logger.warn(f"controller node: {controller_node.name}")
+
+        # import time
+        # time.sleep(5*60)
+        # return
+
+        # start kafka clients
+
+        self.logger.warn(f"start clients")
+
+        producer = kgo.KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            msg_size,
+            msg_count,
+            #    trace_logs=True,
+            custom_node=self.preallocated_nodes)
+        producer.start(clean=False)
+        self.logger.warn(f"producer nodes: {[n.name for n in producer.nodes]}")
+
+        wait_until(lambda: producer.produce_status.acked > 10,
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        def start_consumer():
+            consumer = kgo.KgoVerifierConsumerGroupConsumer(
+                self.test_context,
+                self.redpanda,
+                topic_name,
+                msg_size,
+                readers=10,
+                nodes=self.preallocated_nodes)
+            consumer.start(clean=False)
+            return consumer
+
+        consumer = start_consumer()
+
+        # move shards while clients are working
+
+        admin = Admin(self.redpanda)
+
+        producer.wait_for_acks(msg_count // 2, timeout_sec=300, backoff_sec=5)
+
+        node = self.redpanda.nodes[0]
+        node_id = self.redpanda.node_id(node)
+        n_cores = self.redpanda.get_node_cpu_count()
+
+        # # randomly move 20% of partitions
+        # partitions = [
+        #     p["partition_id"] for p in admin.get_partitions(node=node)
+        #     if p["topic"] == "foo"
+        # ]
+        # self.logger.warn(
+        #     f"moving {len(partitions)//5} partitions on node {node.name}")
+        # for partition in random.sample(partitions, len(partitions) // 5):
+        #     core = random.randrange(n_cores)
+        #     self.logger.info(f"moving {topic_name}/{partition} to core {core}")
+        #     admin.set_partition_replica_core(topic_name,
+        #                                      partition,
+        #                                      node_id,
+        #                                      core=core)
+        # self.logger.warn("finished moving")
+
+        # validate
+
+        producer.wait(timeout_sec=300)
+        self.logger.warn("finished producing")
+
+        consumer.wait()
+        assert consumer.consumer_status.validator.invalid_reads == 0, \
+            f"Invalid reads in topic: {topic_name}, " \
+            f"invalid reads count: {consumer.consumer_status.validator.invalid_reads}"
+        del consumer
+
+        # # Start a new consumer to read all data written
+        # consumer = start_consumer()
+        # consumer.wait()
+        # assert consumer.consumer_status.validator.invalid_reads == 0, \
+        #     f"Invalid reads in topic: {topic_name}, " \
+        #     f"invalid reads count: {consumer.consumer_status.validator.invalid_reads}"
