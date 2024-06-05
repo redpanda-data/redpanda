@@ -82,7 +82,10 @@ std::optional<uint64_t> client_quota_translator::get_client_quota_value(
               return accessor(*default_quota);
           }
 
-          return get_default_config(qt);
+          auto default_config = get_default_config(qt);
+          return default_config ? std::make_optional<uint64_t>(
+                   *default_config * ss::smp::count)
+                                : std::nullopt;
       },
       [this, qt, &accessor](const k_group_name& k) -> std::optional<uint64_t> {
           const auto& group_quota_config = get_quota_config(qt);
@@ -98,7 +101,7 @@ std::optional<uint64_t> client_quota_translator::get_client_quota_value(
 
           auto group = group_quota_config.find(k);
           if (group != group_quota_config.end()) {
-              return group->second.quota;
+              return group->second.quota * ss::smp::count;
           }
 
           return {};

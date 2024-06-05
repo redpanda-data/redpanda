@@ -11,6 +11,7 @@
 #include "config/configuration.h"
 #include "kafka/server/client_quota_translator.h"
 #include "kafka/server/quota_manager.h"
+#include "kafka/server/tests/client_quota_test_helpers.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -23,6 +24,7 @@
 #include <boost/test/unit_test.hpp>
 
 using namespace std::chrono_literals;
+using kafka::scale_to_smp_count;
 
 const static auto client_id = "franz-go";
 
@@ -199,9 +201,11 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
           k_group_name{client_id + "-group"});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 4096);
+        BOOST_CHECK_EQUAL(
+          it->second->tp_produce_rate->rate(), scale_to_smp_count(4096));
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4097);
+        BOOST_CHECK_EQUAL(
+          it->second->tp_fetch_rate->rate(), scale_to_smp_count(4097));
         BOOST_REQUIRE(!it->second->pm_rate.has_value());
     }
     {
@@ -213,9 +217,11 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
           k_group_name{client_id + "-group"});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 2048);
+        BOOST_CHECK_EQUAL(
+          it->second->tp_produce_rate->rate(), scale_to_smp_count(2048));
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 2049);
+        BOOST_CHECK_EQUAL(
+          it->second->tp_fetch_rate->rate(), scale_to_smp_count(2049));
         BOOST_REQUIRE(!it->second->pm_rate.has_value());
     }
     {
@@ -226,11 +232,14 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
         auto it = f.buckets_map.local()->find(k_client_id{client_id});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 1024);
+        BOOST_CHECK_EQUAL(
+          it->second->tp_produce_rate->rate(), scale_to_smp_count(1024));
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 1025);
+        BOOST_CHECK_EQUAL(
+          it->second->tp_fetch_rate->rate(), scale_to_smp_count(1025));
         BOOST_REQUIRE(it->second->pm_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->pm_rate->rate(), 1026);
+        BOOST_CHECK_EQUAL(
+          it->second->pm_rate->rate(), scale_to_smp_count(1026));
     }
 }
 
@@ -246,9 +255,12 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
     {
         // Update fetch config
         ss::sstring client_id = "franz-go";
-        f.sqm.local().record_fetch_tp(client_id, 8194, now).get();
         f.sqm.local()
-          .record_produce_tp_and_throttle(client_id, 8192, now)
+          .record_fetch_tp(client_id, scale_to_smp_count(8194), now)
+          .get();
+        f.sqm.local()
+          .record_produce_tp_and_throttle(
+            client_id, scale_to_smp_count(8192), now)
           .get();
 
         set_config([](config::configuration& conf) {
@@ -265,7 +277,8 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
           k_group_name{client_id + "-group"});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4098);
+        BOOST_CHECK_EQUAL(
+          it->second->tp_fetch_rate->rate(), scale_to_smp_count(4098));
 
         // Check produce is the same bucket
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
@@ -278,9 +291,12 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
     {
         // Remove produce config
         ss::sstring client_id = "franz-go";
-        f.sqm.local().record_fetch_tp(client_id, 8196, now).get();
         f.sqm.local()
-          .record_produce_tp_and_throttle(client_id, 8192, now)
+          .record_fetch_tp(client_id, scale_to_smp_count(8196), now)
+          .get();
+        f.sqm.local()
+          .record_produce_tp_and_throttle(
+            client_id, scale_to_smp_count(8192), now)
           .get();
 
         set_config([&](config::configuration& conf) {
@@ -310,11 +326,13 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
 
         // Check the new produce rate now applies
         f.sqm.local()
-          .record_produce_tp_and_throttle(client_id, 8192, now)
+          .record_produce_tp_and_throttle(
+            client_id, scale_to_smp_count(8192), now)
           .get();
         auto client_it = f.buckets_map.local()->find(k_client_id{client_id});
         BOOST_REQUIRE(client_it != f.buckets_map.local()->end());
         BOOST_REQUIRE(client_it->second->tp_produce_rate.has_value());
-        BOOST_CHECK_EQUAL(client_it->second->tp_produce_rate->rate(), 1024);
+        BOOST_CHECK_EQUAL(
+          client_it->second->tp_produce_rate->rate(), scale_to_smp_count(1024));
     }
 }
