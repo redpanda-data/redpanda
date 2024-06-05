@@ -9,21 +9,27 @@
  * by the Apache License, Version 2.0
  */
 
+#include "cluster/client_quota_serde.h"
+#include "cluster/client_quota_store.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/alter_client_quotas_request.h"
 #include "kafka/protocol/schemata/alter_client_quotas_response.h"
 #include "kafka/protocol/schemata/describe_client_quotas_request.h"
 #include "kafka/protocol/schemata/describe_client_quotas_response.h"
+#include "kafka/server/errors.h"
 #include "kafka/server/handlers/alter_client_quotas.h"
 #include "kafka/server/handlers/describe_client_quotas.h"
+
+#include <seastar/core/sstring.hh>
+#include <seastar/util/variant_utils.hh>
 
 namespace kafka {
 
 namespace {
 
-describe_client_quotas_response
-make_response(describe_client_quotas_response_data&& resp_data) {
-    return describe_client_quotas_response{.data = std::move(resp_data)};
-}
+using cluster::client_quota::entity_key;
+using cluster::client_quota::entity_value;
+using cluster::client_quota::entity_value_diff;
 
 void make_error_response(
   alter_client_quotas_request& req, alter_client_quotas_response& resp) {
@@ -36,6 +42,63 @@ void make_error_response(
     }
 }
 
+describe_client_quotas_response_entity_data
+get_entity_data(const entity_key::part& p) {
+    using entity_data = describe_client_quotas_response_entity_data;
+    return ss::visit(
+      p.part,
+      [](const entity_key::part::client_id_default_match&) -> entity_data {
+          return {.entity_type = "client-id", .entity_name = std::nullopt};
+      },
+      [](const entity_key::part::client_id_match& m) -> entity_data {
+          return {.entity_type = "client-id", .entity_name = m.value};
+      },
+      [](const entity_key::part::client_id_prefix_match& m) -> entity_data {
+          return {.entity_type = "client-id-prefix", .entity_name = m.value};
+      });
+}
+
+using entities_data
+  = decltype(describe_client_quotas_response_entry_data::entity);
+
+entities_data get_entity_data(const entity_key& k) {
+    entities_data ret;
+    ret.reserve(k.parts.size());
+    for (const auto& p : k.parts) {
+        ret.emplace_back(get_entity_data(p));
+    }
+    return ret;
+}
+
+using values_data
+  = decltype(describe_client_quotas_response_entry_data::values);
+
+values_data get_value_data(const entity_value& val) {
+    values_data ret;
+
+    if (val.producer_byte_rate) {
+        ret.emplace_back(
+          ss::sstring(
+            to_string_view(entity_value_diff::key::producer_byte_rate)),
+          *val.producer_byte_rate);
+    }
+
+    if (val.consumer_byte_rate) {
+        ret.emplace_back(
+          ss::sstring(
+            to_string_view(entity_value_diff::key::consumer_byte_rate)),
+          *val.consumer_byte_rate);
+    }
+
+    if (val.controller_mutation_rate) {
+        ret.emplace_back(
+          ss::sstring(
+            to_string_view(entity_value_diff::key::controller_mutation_rate)),
+          *val.controller_mutation_rate);
+    }
+    return ret;
+}
+
 } // namespace
 
 template<>
@@ -45,13 +108,39 @@ ss::future<response_ptr> describe_client_quotas_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
-    // TODO: implement the DescribeClientQuotas API
-    // ctx.quota_store().get_quota(...);
+    describe_client_quotas_response res{
+      .data = {
+        .error_code = kafka::error_code::none,
+        .entries = decltype(res.data.entries)::value_type{}}};
 
-    co_return co_await ctx.respond(make_response({
-      .error_code = error_code::unsupported_version,
-      .error_message = "Unsupported version - not yet implemented",
-    }));
+    if (!ctx.authorized(
+          security::acl_operation::describe_configs,
+          security::default_cluster_name)) {
+        res.data.error_code = error_code::cluster_authorization_failed;
+        res.data.error_message = ss::sstring{
+          error_code_to_str(error_code::cluster_authorization_failed)};
+        return ctx.respond(std::move(res));
+    }
+
+    if (!ctx.audit()) {
+        res.data.error_code = error_code::broker_not_available;
+        res.data.error_message = "Broker not available - audit system failure";
+        return ctx.respond(std::move(res));
+    }
+
+    auto quotas = ctx.quota_store().range(
+      [](const std::pair<entity_key, entity_value>&) {
+          // TODO: Matching strict && components
+          return true;
+      });
+
+    res.data.entries->reserve(quotas.size());
+    for (const auto& q : quotas) {
+        res.data.entries->emplace_back(
+          get_entity_data(q.first), get_value_data(q.second));
+    }
+
+    return ctx.respond(std::move(res));
 }
 
 template<>
