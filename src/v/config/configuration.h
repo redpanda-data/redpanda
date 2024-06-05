@@ -417,6 +417,7 @@ struct configuration final : public config_store {
     property<uint32_t> cloud_storage_cache_max_objects;
     property<uint32_t> cloud_storage_cache_trim_carryover_bytes;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
+    bounded_property<uint16_t> cloud_storage_cache_trim_walk_concurrency;
     property<std::optional<uint32_t>>
       cloud_storage_max_segment_readers_per_shard;
     property<std::optional<uint32_t>>

@@ -75,7 +75,8 @@ cache::cache(
   config::binding<double> disk_reservation,
   config::binding<uint64_t> max_bytes_cfg,
   config::binding<std::optional<double>> max_percent,
-  config::binding<uint32_t> max_objects) noexcept
+  config::binding<uint32_t> max_objects,
+  config::binding<uint16_t> walk_concurrency) noexcept
   : _cache_dir(std::move(cache_dir))
   , _disk_size(disk_size)
   , _disk_reservation(std::move(disk_reservation))
@@ -83,6 +84,7 @@ cache::cache(
   , _max_percent(std::move(max_percent))
   , _max_bytes(_max_bytes_cfg())
   , _max_objects(std::move(max_objects))
+  , _walk_concurrency(std::move(walk_concurrency))
   , _cnt(0)
   , _total_cleaned(0) {
     if (ss::this_shard_id() == ss::shard_id{0}) {
@@ -191,7 +193,8 @@ uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 ss::future<> cache::clean_up_at_start() {
     auto guard = _gate.hold();
     auto [walked_size, filtered_out_files, candidates_for_deletion, empty_dirs]
-      = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
+      = co_await _walker.walk(
+        _cache_dir.native(), _access_time_tracker, _walk_concurrency());
 
     vassert(
       filtered_out_files == 0,
@@ -306,7 +309,10 @@ ss::future<> cache::trim(
     auto guard = _gate.hold();
     auto [walked_cache_size, filtered_out_files, candidates_for_deletion, _]
       = co_await _walker.walk(
-        _cache_dir.native(), _access_time_tracker, [](std::string_view path) {
+        _cache_dir.native(),
+        _access_time_tracker,
+        _walk_concurrency(),
+        [](std::string_view path) {
             return !(
               std::string_view(path).ends_with(".tx")
               || std::string_view(path).ends_with(".index"));
@@ -724,7 +730,8 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
     // Enumerate ALL files in the cache (as opposed to trim_fast that strips out
     // indices/tx/tmp files)
     auto [walked_cache_size, _filtered_out, candidates, _]
-      = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
+      = co_await _walker.walk(
+        _cache_dir.native(), _access_time_tracker, _walk_concurrency());
 
     vlog(
       cst_log.debug,

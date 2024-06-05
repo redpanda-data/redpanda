@@ -1633,6 +1633,10 @@ void application::wire_up_redpanda_services(
           ss::sharded_parameter([] {
               return config::shard_local_cfg()
                 .cloud_storage_cache_max_objects.bind();
+          }),
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg()
+                .cloud_storage_cache_trim_walk_concurrency.bind();
           }))
           .get();
 
