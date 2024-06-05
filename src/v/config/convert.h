@@ -574,4 +574,31 @@ struct convert<model::recovery_validation_mode> {
     }
 };
 
+template<>
+struct convert<config::fips_mode_flag> {
+    using type = config::fips_mode_flag;
+
+    static constexpr auto acceptable_values = std::to_array(
+      {to_string_view(type::disabled),
+       to_string_view(type::enabled),
+       to_string_view(type::permissive)});
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        if (
+          std::find(acceptable_values.begin(), acceptable_values.end(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<type>(std::string_view{value})
+                .match(to_string_view(type::disabled), type::disabled)
+                .match(to_string_view(type::enabled), type::enabled)
+                .match(to_string_view(type::permissive), type::permissive);
+
+        return true;
+    }
+};
+
 } // namespace YAML

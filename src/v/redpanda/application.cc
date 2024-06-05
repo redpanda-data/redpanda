@@ -76,6 +76,7 @@
 #include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
 #include "config/seed_server.h"
+#include "config/types.h"
 #include "crypto/ossl_context_service.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
@@ -887,21 +888,53 @@ void application::check_environment() {
         }
     }
 
-    if (config::node().fips_mode()) {
+    if (config::fips_mode_enabled(config::node().fips_mode())) {
         if (!ss::file_exists(fips_enabled_file).get()) {
-            throw std::runtime_error(fmt::format(
-              "File '{}' does not exist.  Redpanda cannot start in FIPS mode",
-              fips_enabled_file));
-        }
-
-        auto fd = ss::file_desc::open(fips_enabled_file.data(), O_RDONLY);
-        char buf[1];
-        fd.read(buf, 1);
-        if (buf[0] != '1') {
-            throw std::runtime_error(fmt::format(
-              "File '{}' not reporting '1'.  Redpanda cannot start in FIPS "
-              "mode",
-              fips_enabled_file));
+            if (config::node().fips_mode() == config::fips_mode_flag::enabled) {
+                throw std::runtime_error(fmt::format(
+                  "File '{}' does not exist.  Redpanda cannot start in FIPS "
+                  "mode",
+                  fips_enabled_file));
+            } else if (
+              config::node().fips_mode()
+              == config::fips_mode_flag::permissive) {
+                vlog(
+                  _log.warn,
+                  "File '{}' does not exist.  Redpanda will start in FIPS mode "
+                  "but this is not a support configuration",
+                  fips_enabled_file);
+            } else {
+                vassert(
+                  false,
+                  "Should not be performing environment check for FIPS when "
+                  "fips_mode flag is {}",
+                  config::node().fips_mode());
+            }
+        } else {
+            auto fd = ss::file_desc::open(fips_enabled_file.data(), O_RDONLY);
+            char buf[1];
+            fd.read(buf, 1);
+            if (buf[0] != '1') {
+                auto msg = fmt::format(
+                  "File '{}' not reporting '1'.  Redpanda cannot start in FIPS "
+                  "mode",
+                  fips_enabled_file);
+                if (
+                  config::node().fips_mode()
+                  == config::fips_mode_flag::enabled) {
+                    throw std::runtime_error(msg);
+                } else if (
+                  config::node().fips_mode()
+                  == config::fips_mode_flag::permissive) {
+                    vlog(_log.warn, "{}", msg);
+                } else {
+                    vassert(
+                      false,
+                      "Should not be performing environment check for FIPS "
+                      "when fips_mode flag is {}",
+                      config::node().fips_mode());
+                }
+            }
         }
         syschecks::systemd_message("Starting Redpanda in FIPS mode").get();
     }
@@ -2136,15 +2169,17 @@ void application::wire_up_and_start_crypto_services() {
       std::ref(*thread_worker),
       ss::sstring{config::node().openssl_config_file().value_or("")},
       ss::sstring{config::node().openssl_module_directory().value_or("")},
-      config::node().fips_mode() ? crypto::is_fips_mode::yes
-                                 : crypto::is_fips_mode::no)
+      config::fips_mode_enabled(config::node().fips_mode())
+        ? crypto::is_fips_mode::yes
+        : crypto::is_fips_mode::no)
       .get();
     ossl_context_service.invoke_on_all(&crypto::ossl_context_service::start)
       .get();
     ossl_context_service.map([](auto& s) { return s.fips_mode(); })
       .then([](auto fips_mode_vals) {
-          auto expected = config::node().fips_mode() ? crypto::is_fips_mode::yes
-                                                     : crypto::is_fips_mode::no;
+          auto expected = config::fips_mode_enabled(config::node().fips_mode())
+                            ? crypto::is_fips_mode::yes
+                            : crypto::is_fips_mode::no;
           for (auto fips_mode : fips_mode_vals) {
               vassert(
                 fips_mode == expected,

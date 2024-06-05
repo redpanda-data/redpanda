@@ -88,7 +88,7 @@ public:
       verbose_logging_timeout_sec_max;
 
     // Flag indicating whether or not Redpanda will start in FIPS mode
-    property<bool> fips_mode;
+    enum_property<fips_mode_flag> fips_mode;
 
     // Path to the OpenSSL config file
     property<std::optional<std::filesystem::path>> openssl_config_file;

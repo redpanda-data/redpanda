@@ -1237,6 +1237,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
+    TEMP_OSSL_CONFIG_FILE = "/etc/openssl.cnf"
     DEFAULT_NODE_READY_TIMEOUT_SEC = 20
     NODE_READY_TIMEOUT_MIN_SEC_KEY = "node_ready_timeout_min_sec"
     DEFAULT_CLOUD_STORAGE_SCRUB_TIMEOUT_SEC = 60
@@ -1252,8 +1253,8 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
 
     FAILURE_INJECTION_CONFIG_PATH = "/etc/redpanda/failure_injection_config.json"
 
-    OPENSSL_CONFIG_FILE = "/opt/redpanda/openssl/openssl.cnf"
-    OPENSSL_MODULES_PATH = "/opt/redpanda/lib/ossl-modules/"
+    OPENSSL_CONFIG_FILE_BASE = "openssl/openssl.cnf"
+    OPENSSL_MODULES_PATH_BASE = "lib/ossl-modules/"
 
     # When configuring multiple listeners for testing, a secondary port to use
     # instead of the default.
@@ -3003,6 +3004,8 @@ class RedpandaService(RedpandaServiceBase):
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 
+        self.write_openssl_config_file(node)
+
         if write_config:
             self.write_node_conf_file(
                 node,
@@ -3815,6 +3818,9 @@ class RedpandaService(RedpandaServiceBase):
             node.account.remove(RedpandaService.SYSTEM_TLS_CA_CRT_FILE)
             node.account.ssh(f"update-ca-certificates")
 
+        if node.account.exists(RedpandaService.TEMP_OSSL_CONFIG_FILE):
+            node.account.remove(RedpandaService.TEMP_OSSL_CONFIG_FILE)
+
         if not preserve_current_install or not self._installer._started:
             # Reset the binaries to use the original binaries.
             # NOTE: if the installer hasn't been started, there is no
@@ -3862,6 +3868,38 @@ class RedpandaService(RedpandaServiceBase):
             cmd=f"host {hostname}",
             timeout_sec=10).decode('utf-8').split(' ')[0]
         return fqdn
+
+    def write_openssl_config_file(self, node):
+        conf = self.render("openssl.cnf",
+                           fips_conf_file=os.path.join(
+                               self.rp_install_path(),
+                               "openssl/fipsmodule.cnf"))
+        self.logger.debug(
+            f'Writing {RedpandaService.TEMP_OSSL_CONFIG_FILE} to {node.name}:\n{conf}'
+        )
+        node.account.create_file(RedpandaService.TEMP_OSSL_CONFIG_FILE, conf)
+
+    def get_openssl_config_file_path(self) -> str:
+        path = os.path.join(self.rp_install_path(),
+                            self.OPENSSL_CONFIG_FILE_BASE)
+        if self.rp_install_path() != "/opt/redpanda":
+            # If we aren't using an 'installed' Redpanda instance, the openssl config file
+            # located in the install path will not point to the correct location of the FIPS
+            # module config file.  We generate an openssl config file just for this purpose
+            # see write_openssl_config_file above
+            path = RedpandaService.TEMP_OSSL_CONFIG_FILE
+
+        self.logger.debug(
+            f'OpenSSL Config File Path: {path} ({self.rp_install_path()})')
+        return path
+
+    def get_openssl_modules_directory(self) -> str:
+        path = os.path.join(self.rp_install_path(),
+                            self.OPENSSL_MODULES_PATH_BASE)
+
+        self.logger.debug(
+            f'OpenSSL Modules Directory: {path} ({self.rp_install_path()})')
+        return path
 
     def write_node_conf_file(self,
                              node,
@@ -3917,6 +3955,22 @@ class RedpandaService(RedpandaServiceBase):
                            endpoint_authn_method=self.endpoint_authn_method(),
                            auto_auth=self._security.auto_auth)
 
+        def is_fips_capable(node) -> bool:
+            cur_ver = self._installer.installed_version(node)
+            return cur_ver == RedpandaInstaller.HEAD or cur_ver >= (24, 2, 1)
+
+        if in_fips_environment() and is_fips_capable(node):
+            self.logger.info(
+                "Operating in FIPS environment, enabling FIPS mode for Redpanda"
+            )
+            doc = yaml.full_load(conf)
+            doc["redpanda"].update(
+                dict(fips_mode="enabled",
+                     openssl_config_file=self.get_openssl_config_file_path(),
+                     openssl_module_directory=self.
+                     get_openssl_modules_directory))
+            conf = yaml.dump(doc)
+
         if override_cfg_params or node in self._extra_node_conf:
             doc = yaml.full_load(conf)
             doc["redpanda"].update(self._extra_node_conf[node])
@@ -3943,22 +3997,6 @@ class RedpandaService(RedpandaServiceBase):
             ]
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
-            conf = yaml.dump(doc)
-
-        def is_fips_capable(node) -> bool:
-            cur_ver = self._installer.installed_version(node)
-            return cur_ver == RedpandaInstaller.HEAD or cur_ver >= (24, 2, 1)
-
-        if in_fips_environment() and is_fips_capable(node):
-            self.logger.info(
-                "Operating in FIPS environment, enabling FIPS mode for Redpanda"
-            )
-            doc = yaml.full_load(conf)
-            doc["redpanda"].update(
-                dict(fips_mode=True,
-                     openssl_config_file=RedpandaService.OPENSSL_CONFIG_FILE,
-                     openssl_module_directory=RedpandaService.
-                     OPENSSL_MODULES_PATH))
             conf = yaml.dump(doc)
 
         self.logger.info("Writing Redpanda node config file: {}".format(
