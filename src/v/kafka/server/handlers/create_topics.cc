@@ -130,6 +130,36 @@ static void append_topic_properties(
     };
 }
 
+static void log_topic_status(const std::vector<cluster::topic_result>& c_res) {
+    // Group-by error code, value is list of topic names as strings
+    absl::flat_hash_map<cluster::errc, std::vector<model::topic_namespace_view>>
+      err_map;
+    for (const auto& result : c_res) {
+        auto [itr, _] = err_map.try_emplace(
+          result.ec, std::vector<model::topic_namespace_view>());
+        itr->second.emplace_back(result.tp_ns);
+    }
+
+    // Log success case
+    auto found = err_map.find(cluster::errc::success);
+    if (found != err_map.end()) {
+        vlog(
+          klog.info,
+          "Created topic(s) {{{}}} successfully",
+          fmt::join(found->second, ", "));
+        err_map.erase(found);
+    }
+
+    // Log topics that had not successfully been created at warn level
+    for (const auto& err : err_map) {
+        vlog(
+          klog.warn,
+          "Failed to create topic(s) {{{}}} error_code observed: {}",
+          fmt::join(err.second, ", "),
+          err.first);
+    }
+}
+
 template<>
 ss::future<response_ptr> create_topics_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
@@ -330,6 +360,7 @@ ss::future<response_ptr> create_topics_handler::handle(
         append_topic_configs(ctx, response);
     }
 
+    log_topic_status(c_res);
     co_return co_await ctx.respond(std::move(response));
 }
 
