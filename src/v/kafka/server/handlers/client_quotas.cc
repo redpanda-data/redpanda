@@ -9,9 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
+#include "cluster/client_quota_frontend.h"
 #include "cluster/client_quota_serde.h"
 #include "cluster/client_quota_store.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/exceptions.h"
 #include "kafka/protocol/schemata/alter_client_quotas_request.h"
 #include "kafka/protocol/schemata/alter_client_quotas_response.h"
 #include "kafka/protocol/schemata/describe_client_quotas_request.h"
@@ -37,17 +39,6 @@ namespace {
 using cluster::client_quota::entity_key;
 using cluster::client_quota::entity_value;
 using cluster::client_quota::entity_value_diff;
-
-void make_error_response(
-  alter_client_quotas_request& req, alter_client_quotas_response& resp) {
-    for (const auto& entry [[maybe_unused]] : req.data.entries) {
-        resp.data.entries.push_back(
-          kafka::alter_client_quotas_response_entry_data{
-            .error_code = error_code::unsupported_version,
-            .error_message = "Unsupported version - not yet implemented",
-          });
-    }
-}
 
 describe_client_quotas_response_entity_data
 get_entity_data(const entity_key::part& p) {
@@ -230,6 +221,78 @@ make_filter(const component_data& component) {
     }
 }
 
+bool is_null_or_empty(const std::optional<ss::sstring>& opt_str) {
+    return opt_str.value_or("") == "";
+}
+
+result<entity_key::part, kerror> make_part(const auto& entity) {
+    entity_key::part part;
+    if (entity.entity_type == "client-id") {
+        if (is_null_or_empty(entity.entity_name)) {
+            part.part.emplace<entity_key::part::client_id_default_match>();
+        } else {
+            part.part.emplace<entity_key::part::client_id_match>(
+              entity_key::part::client_id_match{
+                .value = entity.entity_name.value_or("")});
+        }
+    } else if (entity.entity_type == "client-id-prefix") {
+        if (is_null_or_empty(entity.entity_name)) {
+            return {
+              kafka::error_code::invalid_request,
+              "Invalid quota entity type, client-id-prefix entity should not "
+              "be used at the default level (use client-id default instead)."};
+        }
+        part.part.emplace<entity_key::part::client_id_prefix_match>(
+          entity_key::part::client_id_prefix_match{
+            .value = entity.entity_name.value_or("")});
+    } else if (entity.entity_type == "user" || entity.entity_type == "ip") {
+        return {
+          error_code::unsupported_version,
+          fmt::format("Entity type '{}' not yet supported", entity.entity_type),
+        };
+    } else {
+        return {
+          kafka::error_code::invalid_request,
+          fmt::format(
+            "Unhandled client quota entity type: {}", entity.entity_type)};
+    }
+    return part;
+};
+
+using alter_entities = chunked_vector<alter_client_quotas_request_entity_data>;
+result<entity_key, kerror> make_key(const alter_entities& entity) {
+    // TODO: once we support compound user+client keys, we should check that
+    // either there's only a single key part or the key is a user+client
+    // compound key
+    if (entity.size() != 1) {
+        return kerror{
+          error_code::invalid_request,
+          "Invalid client quota entity",
+        };
+    }
+
+    entity_key key;
+    key.parts.reserve(entity.size());
+    for (const auto& entity : entity) {
+        auto part = make_part(entity);
+        if (part.has_error()) {
+            return std::move(part).assume_error();
+        }
+        key.parts.emplace(std::move(part).assume_value());
+    }
+
+    return key;
+}
+
+bool valid_key_combination(const entity_key&, entity_value_diff::key) {
+    // TODO: when we add support for user/ip quotas, we should validate that
+    // only valid entity + configuration combinations are configured:
+    // * client/user -- produce/fetch/controller mutation/request percentage
+    // * ip -- connection rate
+    // For now, all combinations we can parse are valid
+    return true;
+}
+
 } // namespace
 
 template<>
@@ -341,12 +404,86 @@ ss::future<response_ptr> alter_client_quotas_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
-    // TODO: implement the AlterClientQuotas API
-    // ctx.quota_store().get_quota(...);
-    // ctx.quota_frontend().alter_quotas(...);
-
+    cluster::client_quota::alter_delta_cmd_data cmd;
     alter_client_quotas_response response;
-    make_error_response(request, response);
+    response.data.entries.reserve(request.data.entries.size());
+
+    if (!ctx.authorized(
+          security::acl_operation::describe_configs,
+          security::default_cluster_name)) {
+        for (auto& entry : response.data.entries) {
+            entry.error_code = error_code::cluster_authorization_failed;
+            entry.error_message = ss::sstring{
+              error_code_to_str(error_code::cluster_authorization_failed)};
+        }
+        co_return co_await ctx.respond(std::move(response));
+    }
+
+    if (!ctx.audit()) {
+        for (auto& entry : response.data.entries) {
+            entry.error_code = error_code::broker_not_available;
+            entry.error_message = "Broker not available - audit system failure";
+        }
+        co_return co_await ctx.respond(std::move(response));
+    }
+
+    for (const auto& entry : request.data.entries) {
+        auto& entry_res = response.data.entries.emplace_back();
+        auto key_or_err = make_key(entry.entity);
+        if (key_or_err.has_error()) {
+            std::tie(entry_res.error_code, entry_res.error_message)
+              = std::move(key_or_err).assume_error();
+            continue;
+        }
+        entity_key key = std::move(key_or_err).assume_value();
+
+        entity_value_diff diff;
+        for (const auto& op : entry.ops) {
+            auto cqt
+              = cluster::client_quota::from_string_view<entity_value_diff::key>(
+                op.key);
+            if (!cqt || !valid_key_combination(key, *cqt)) {
+                entry_res.error_code = kafka::error_code::invalid_request;
+                entry_res.error_message = fmt::format(
+                  "Invalid configuration key {}", op.key);
+                break;
+            }
+            diff.entries.emplace(
+              op.remove ? entity_value_diff::operation::remove
+                        : entity_value_diff::operation::upsert,
+              *cqt,
+              op.value);
+        }
+        if (entry_res.error_code == error_code::none) {
+            cmd.ops.push_back({.key = std::move(key), .diff = std::move(diff)});
+        }
+    }
+
+    if (request.data.validate_only) {
+        co_return co_await ctx.respond(std::move(response));
+    }
+
+    auto err = co_await ctx.quota_frontend().alter_quotas(
+      cmd, model::timeout_clock::now() + 5s);
+
+    if (err) {
+        // Translate error message
+        auto ec = [](std::error_code err) {
+            if (err.category() == cluster::error_category()) {
+                return map_topic_error_code(
+                  static_cast<cluster::errc>(err.value()));
+            } else {
+                return kafka::error_code::unknown_server_error;
+            }
+        }(err);
+        // Error any response that is not already errored
+        for (auto& entry : response.data.entries) {
+            if (entry.error_code == error_code::none) {
+                entry.error_code = ec;
+                entry.error_message = err.message();
+            }
+        }
+    }
 
     co_return co_await ctx.respond(std::move(response));
 }

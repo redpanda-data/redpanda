@@ -25,12 +25,10 @@ class QuotaManagementTest(RedpandaTest):
         self.kafka_cli = KafkaCliTools(self.redpanda)
 
     @cluster(num_nodes=1)
-    def test_not_supported(self):
-        with expect_kafka_cli_error_msg(
-                "Unsupported version - not yet implemented"):
-            self.kafka_cli.alter_quota_config(
-                "--entity-type clients --entity-name client_1",
-                to_add={"consumer_byte_rate": 10240})
+    def test_alter(self):
+        self.kafka_cli.alter_quota_config(
+            "--entity-type clients --entity-name client_1",
+            to_add={"consumer_byte_rate": 10240})
 
     @cluster(num_nodes=1)
     def test_describe(self):
