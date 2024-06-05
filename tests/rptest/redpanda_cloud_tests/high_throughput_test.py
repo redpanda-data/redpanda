@@ -881,7 +881,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 f"Low throughput while preparing for the test: {_throughput} MB/s"
             ) from None
 
-    @ignore
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_and_add(self):
         """Decommission and add while under load.
@@ -1196,7 +1195,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # kubectl delete pvc shadow-index-cache-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
         self.redpanda.kubectl.cmd(['delete', 'pvc', pvc_name, '-n=redpanda'])
 
-    @ignore
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_add_and_decommission(self):
         """Add a new node and then decommission it while under load.
