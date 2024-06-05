@@ -1,6 +1,7 @@
 azure:
   included:
     - tests
+    - transactions
 
   excluded:
     - tests/librdkafka_test.py # normally disabled

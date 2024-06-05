@@ -2,6 +2,7 @@
 ec2:
   included:
     - tests
+    - transactions
     - scale_tests
 
   excluded:
