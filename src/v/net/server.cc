@@ -220,7 +220,7 @@ ss::future<ss::stop_iteration> server::accept_finish(
             // Connection limit hit, drop this connection.
             _probe->connection_rejected();
             vlog(
-              _log.info,
+              _log.warn,
               "Connection limit reached, rejecting {}",
               ar.remote_address.addr());
             co_return ss::stop_iteration::no;
