@@ -452,6 +452,7 @@ struct configuration final : public config_store {
     enum_property<model::cloud_storage_chunk_eviction_strategy>
       cloud_storage_chunk_eviction_strategy;
     property<uint16_t> cloud_storage_chunk_prefetch;
+    bounded_property<uint32_t> cloud_storage_cache_num_buckets;
 
     one_or_many_property<ss::sstring> superusers;
 
