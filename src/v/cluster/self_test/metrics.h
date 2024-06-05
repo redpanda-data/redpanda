@@ -48,6 +48,13 @@ public:
         }
     }
 
+    void set_start_end_time(
+      ss::lowres_system_clock::time_point start,
+      ss::lowres_system_clock::time_point end) {
+        _start_time = start;
+        _end_time = end;
+    }
+
     void set_total_time(ss::lowres_clock::duration t) { _total_time = t; }
 
     size_t iops() const {
@@ -78,12 +85,28 @@ public:
           .rps = iops(),
           .bps = throughput_bytes_sec(),
           .timeouts = static_cast<uint32_t>(_number_of_timeouts),
+          .start_time = get_start_time_since_epoch(),
+          .end_time = get_end_time_since_epoch(),
           .duration = std::chrono::duration_cast<std::chrono::milliseconds>(
             _total_time)};
     }
 
+    uint64_t get_start_time_since_epoch() const {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+                 _start_time.time_since_epoch())
+          .count();
+    }
+
+    uint64_t get_end_time_since_epoch() const {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+                 _end_time.time_since_epoch())
+          .count();
+    }
+
 private:
     ss::lowres_clock::duration _total_time{};
+    ss::lowres_system_clock::time_point _start_time{};
+    ss::lowres_system_clock::time_point _end_time{};
     size_t _number_of_timeouts{0};
     size_t _bytes_operated{0};
     uint64_t _num_requests{0};
