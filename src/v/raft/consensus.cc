@@ -354,7 +354,7 @@ consensus::success_reply consensus::update_follower_index(
           "Received append entries response node_id doesn't match expected "
           "node_id (received: {}, expected: {})",
           reply.node_id.id(),
-          node);
+          physical_node);
         return success_reply::no;
     }
 
