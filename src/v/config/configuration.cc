@@ -2485,6 +2485,15 @@ configuration::configuration()
       "Number of chunks to prefetch ahead of every downloaded chunk",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0)
+  , cloud_storage_cache_num_buckets(
+      *this,
+      "cloud_storage_cache_num_buckets",
+      "Divide cloud storage cache across specified number of buckets. This "
+      "only works for objects with randomized prefixes. The names will not be "
+      "changed if the value is set to zero.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0,
+      {.min = 0, .max = 1024})
   , superusers(
       *this,
       "superusers",

@@ -216,6 +216,14 @@ private:
         bool trim_missed_tmp_files{false};
     };
 
+    ss::future<std::optional<cache_item>> _get(std::filesystem::path key);
+
+    /// Remove object from cache
+    ss::future<> _invalidate(const std::filesystem::path& key);
+
+    ss::future<cache_element_status>
+    _is_cached(const std::filesystem::path& key);
+
     /// Ordinary trim: prioritze trimming data chunks, only delete indices etc
     /// if all their chunks are dropped.
     ss::future<trim_result> trim_fast(
