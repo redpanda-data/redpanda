@@ -10,8 +10,7 @@
 import os
 
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, in_fips_environment
-
+from rptest.services.redpanda import in_fips_environment, MetricsEndpoint, MetricSamples, RedpandaServiceBase
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -71,3 +70,29 @@ class RedpandaFIPSStartupTest(RedpandaTest):
                 f"Not in FIPS environment and '{fips_enabled_file}' file exists"
             )
             assert self.redpanda.search_log_all(file_not_one_log)
+
+        def check_fips_mode_metric(
+                metrics_name: str, metrics_endpoint: MetricsEndpoint,
+                expected_mode: RedpandaServiceBase.FIPSMode):
+            metrics = self.redpanda.metrics_sample(
+                sample_pattern=metrics_name, metrics_endpoint=metrics_endpoint)
+            assert isinstance(
+                metrics,
+                MetricSamples), f'Failed to get metrics {metrics_name}'
+            for n in self.redpanda.nodes:
+                samples = [
+                    sample for sample in metrics.samples if sample.node == n
+                ]
+                assert len(
+                    samples) == 1, f'Invalid number of samples: {len(samples)}'
+                fips_mode = RedpandaServiceBase.FIPSMode(int(samples[0].value))
+                assert fips_mode == expected_mode, f'Mismatch in mode: {fips_mode} != {expected_mode}'
+
+        check_fips_mode_metric(
+            metrics_name='vectorized_application_fips_mode',
+            metrics_endpoint=MetricsEndpoint.METRICS,
+            expected_mode=RedpandaServiceBase.FIPSMode.permissive)
+        check_fips_mode_metric(
+            metrics_name='redpanda_application_fips_mode',
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+            expected_mode=RedpandaServiceBase.FIPSMode.permissive)

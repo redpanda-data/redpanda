@@ -1299,6 +1299,11 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         }
     }
 
+    class FIPSMode(Enum):
+        disabled = 0
+        permissive = 1
+        enabled = 2
+
     def __init__(self,
                  context: TestContext,
                  num_brokers: int,
