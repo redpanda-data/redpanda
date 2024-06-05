@@ -77,7 +77,7 @@ class SelfTestTest(EndToEndTest):
             assert node['status'] == 'idle'
             assert node.get('results') is not None
             for report in node['results']:
-                if report['test_type'] == 'cloud_storage':
+                if report['test_type'] == 'cloud':
                     if report['info'] in read_tests:
                         if remote_read:
                             assert_pass(report)
@@ -111,9 +111,7 @@ class SelfTestTest(EndToEndTest):
         # Assert properties of the network results hold true
         network_results = [r for r in reports if r['test_type'] == 'network']
 
-        cloud_results = [
-            r for r in reports if r['test_type'] == 'cloud_storage'
-        ]
+        cloud_results = [r for r in reports if r['test_type'] == 'cloud']
 
         num_expected_cloud_storage_read_tests = num_nodes * len(read_tests)
         num_expected_cloud_storage_write_tests = num_nodes * len(write_tests)
