@@ -12,10 +12,12 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "cluster/fwd.h"
 #include "config/client_group_byte_rate_quota.h"
 #include "config/property.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 
 #include <utility>
@@ -75,7 +77,8 @@ class client_quota_translator {
 public:
     using on_change_fn = std::function<void()>;
 
-    client_quota_translator();
+    explicit client_quota_translator(
+      ss::sharded<cluster::client_quota::store>&);
 
     /// Returns the quota tracker key applicable to the given quota context
     /// Note: because the client quotas configured for produce/fetch/pm might be
@@ -102,9 +105,19 @@ private:
     tracker_key
     get_partition_mutation_key(std::optional<std::string_view> client_id);
 
-    uint64_t get_client_target_produce_tp_rate(const tracker_key& quota_id);
+    std::optional<uint64_t>
+    get_client_target_produce_tp_rate(const tracker_key& quota_id);
     std::optional<uint64_t>
     get_client_target_fetch_tp_rate(const tracker_key& quota_id);
+    std::optional<uint64_t>
+    get_client_target_partition_mutation_rate(const tracker_key& quota_id);
+    std::optional<uint64_t> get_client_quota_value(
+      const tracker_key& quota_id,
+      const std::unordered_map<ss::sstring, config::client_group_quota>&
+        group_quota_config,
+      std::optional<uint64_t> default_value_config);
+
+    ss::sharded<cluster::client_quota::store>& _quota_store;
 
     config::binding<uint32_t> _default_target_produce_tp_rate;
     config::binding<std::optional<uint32_t>> _default_target_fetch_tp_rate;

@@ -29,9 +29,11 @@ std::ostream& operator<<(std::ostream& os, const client_quota_limits& l) {
     return os;
 }
 
-client_quota_translator::client_quota_translator()
-  : _default_target_produce_tp_rate(
-    config::shard_local_cfg().target_quota_byte_rate.bind())
+client_quota_translator::client_quota_translator(
+  ss::sharded<cluster::client_quota::store>& quota_store)
+  : _quota_store(quota_store)
+  , _default_target_produce_tp_rate(
+      config::shard_local_cfg().target_quota_byte_rate.bind())
   , _default_target_fetch_tp_rate(
       config::shard_local_cfg().target_fetch_quota_byte_rate.bind())
   , _target_partition_mutation_quota(
@@ -42,36 +44,48 @@ client_quota_translator::client_quota_translator()
       config::shard_local_cfg()
         .kafka_client_group_fetch_byte_rate_quota.bind()) {}
 
-uint64_t client_quota_translator::get_client_target_produce_tp_rate(
+std::optional<uint64_t>
+client_quota_translator::get_client_target_produce_tp_rate(
   const tracker_key& quota_id) {
-    return ss::visit(
+    return get_client_quota_value(
       quota_id,
-      [this](const k_client_id&) -> uint64_t {
-          return _default_target_produce_tp_rate();
-      },
-      [this](const k_group_name& k) -> uint64_t {
-          auto group = _target_produce_tp_rate_per_client_group().find(k);
-          if (group != _target_produce_tp_rate_per_client_group().end()) {
-              return group->second.quota;
-          }
-          return _default_target_produce_tp_rate();
-      });
+      _target_produce_tp_rate_per_client_group(),
+      _default_target_produce_tp_rate());
 }
 
 std::optional<uint64_t>
 client_quota_translator::get_client_target_fetch_tp_rate(
   const tracker_key& quota_id) {
+    return get_client_quota_value(
+      quota_id,
+      _target_fetch_tp_rate_per_client_group(),
+      _default_target_fetch_tp_rate());
+}
+
+std::optional<uint64_t>
+client_quota_translator::get_client_target_partition_mutation_rate(
+  const tracker_key& quota_id) {
+    return get_client_quota_value(
+      quota_id, {}, _target_partition_mutation_quota());
+}
+
+std::optional<uint64_t> client_quota_translator::get_client_quota_value(
+  const tracker_key& quota_id,
+  const std::unordered_map<ss::sstring, config::client_group_quota>&
+    group_quota_config,
+  std::optional<uint64_t> default_value_config) {
     return ss::visit(
       quota_id,
-      [this](const k_client_id&) -> std::optional<uint64_t> {
-          return _default_target_fetch_tp_rate();
+      [&default_value_config](const k_client_id&) -> std::optional<uint64_t> {
+          return default_value_config;
       },
-      [this](const k_group_name& k) -> std::optional<uint64_t> {
-          auto group = _target_fetch_tp_rate_per_client_group().find(k);
-          if (group != _target_fetch_tp_rate_per_client_group().end()) {
+      [&group_quota_config](const k_group_name& k) -> std::optional<uint64_t> {
+          auto group = group_quota_config.find(k);
+          if (group != group_quota_config.end()) {
               return group->second.quota;
           }
-          return _default_target_fetch_tp_rate();
+
+          return {};
       });
 }
 
@@ -140,7 +154,8 @@ client_quota_translator::find_quota_value(const tracker_key& key) {
     return client_quota_limits{
       .produce_limit = get_client_target_produce_tp_rate(key),
       .fetch_limit = get_client_target_fetch_tp_rate(key),
-      .partition_mutation_limit = _target_partition_mutation_quota(),
+      .partition_mutation_limit = get_client_target_partition_mutation_rate(
+        key),
     };
 }
 

@@ -13,7 +13,6 @@ rp_test(
     fetch_unit_test.cc
     config_utils_test.cc
     config_response_utils_test.cc
-    client_quota_translator_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka
   LABELS kafka
@@ -75,6 +74,15 @@ rp_test(
   SOURCES quota_manager_test.cc
   LIBRARIES v::seastar_testing_main v::kafka
   ARGS "-- -c 4"
+  LABELS kafka
+)
+
+rp_test(
+  FIXTURE_TEST
+  BINARY_NAME quota_translator
+  SOURCES client_quota_translator_test.cc
+  LIBRARIES v::seastar_testing_main v::kafka
+  ARGS "-- -c 1"
   LABELS kafka
 )
 

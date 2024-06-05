@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/client_quota_store.h"
 #include "config/configuration.h"
 #include "kafka/server/client_quota_translator.h"
 #include "kafka/server/quota_manager.h"
@@ -27,14 +28,19 @@ const static auto client_id = "franz-go";
 
 struct fixture {
     kafka::quota_manager::client_quotas_t buckets_map;
+    ss::sharded<cluster::client_quota::store> quota_store;
     ss::sharded<kafka::quota_manager> sqm;
 
     ss::future<> start() {
-        co_await sqm.start(std::ref(buckets_map));
+        co_await quota_store.start();
+        co_await sqm.start(std::ref(buckets_map), std::ref(quota_store));
         co_await sqm.invoke_on_all(&kafka::quota_manager::start);
     }
 
-    ss::future<> stop() { co_await sqm.stop(); }
+    ss::future<> stop() {
+        co_await sqm.stop();
+        co_await quota_store.stop();
+    }
 };
 
 template<typename F>
@@ -196,8 +202,7 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
         BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 4096);
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
         BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4097);
-        BOOST_REQUIRE(it->second->pm_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->pm_rate->rate(), 1026);
+        BOOST_REQUIRE(!it->second->pm_rate.has_value());
     }
     {
         ss::sstring client_id = "not-franz-go";
@@ -211,8 +216,7 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
         BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 2048);
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
         BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 2049);
-        BOOST_REQUIRE(it->second->pm_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->pm_rate->rate(), 1026);
+        BOOST_REQUIRE(!it->second->pm_rate.has_value());
     }
     {
         ss::sstring client_id = "unconfigured";
@@ -233,6 +237,7 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
 SEASTAR_THREAD_TEST_CASE(update_test) {
     using clock = kafka::quota_manager::clock;
     using k_group_name = kafka::k_group_name;
+    using k_client_id = kafka::k_client_id;
     fixture f;
     f.start().get();
     auto stop = ss::defer([&] { f.stop().get(); });
@@ -294,16 +299,24 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
             conf.kafka_client_group_byte_rate_quota.set_value(produce_config);
         }).get();
 
-        // Check the rate has been updated
+        // Check the produce rate has been updated on the group
         auto it = f.buckets_map.local()->find(
           k_group_name{client_id + "-group"});
         BOOST_REQUIRE(it != f.buckets_map.local()->end());
-        BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 1024);
+        BOOST_CHECK(!it->second->tp_produce_rate.has_value());
 
         // Check fetch is the same bucket
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
         auto delay = f.sqm.local().throttle_fetch_tp(client_id, now).get();
         BOOST_CHECK_EQUAL(delay / 1ms, 1000);
+
+        // Check the new produce rate now applies
+        f.sqm.local()
+          .record_produce_tp_and_throttle(client_id, 8192, now)
+          .get();
+        auto client_it = f.buckets_map.local()->find(k_client_id{client_id});
+        BOOST_REQUIRE(client_it != f.buckets_map.local()->end());
+        BOOST_REQUIRE(client_it->second->tp_produce_rate.has_value());
+        BOOST_CHECK_EQUAL(client_it->second->tp_produce_rate->rate(), 1024);
     }
 }

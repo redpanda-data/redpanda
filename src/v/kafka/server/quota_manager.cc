@@ -37,13 +37,15 @@ namespace kafka {
 
 using clock = quota_manager::clock;
 
-quota_manager::quota_manager(client_quotas_t& client_quotas)
+quota_manager::quota_manager(
+  client_quotas_t& client_quotas,
+  ss::sharded<cluster::client_quota::store>& client_quota_store)
   : _default_num_windows(config::shard_local_cfg().default_num_windows.bind())
   , _default_window_width(config::shard_local_cfg().default_window_sec.bind())
   , _replenish_threshold(
       config::shard_local_cfg().kafka_throughput_replenish_threshold.bind())
   , _client_quotas{client_quotas}
-  , _translator{}
+  , _translator{client_quota_store}
   , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
   , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
     if (seastar::this_shard_id() == _client_quotas.shard_id()) {
@@ -74,8 +76,9 @@ ss::future<clock::duration> quota_manager::maybe_add_and_retrieve_quota(
     auto it = _client_quotas->find(qid);
     if (it == _client_quotas->end()) {
         co_await container().invoke_on(
-          _client_quotas.shard_id(),
-          [qid, now](quota_manager& me) { return me.add_quota_id(qid, now); });
+          _client_quotas.shard_id(), [qid, now](quota_manager& me) mutable {
+              return me.add_quota_id(std::move(qid), now);
+          });
 
         it = _client_quotas->find(qid);
         if (it == _client_quotas->end()) {

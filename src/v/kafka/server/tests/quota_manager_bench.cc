@@ -8,6 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "cluster/client_quota_store.h"
 #include "config/configuration.h"
 #include "kafka/server/quota_manager.h"
 
@@ -61,9 +62,11 @@ send_requests(kafka::quota_manager& qm, size_t count, bool use_unique) {
 }
 
 ss::future<> test_quota_manager(size_t count, bool use_unique) {
+    ss::sharded<cluster::client_quota::store> quota_store;
     kafka::quota_manager::client_quotas_t buckets_map;
     ss::sharded<kafka::quota_manager> sqm;
-    co_await sqm.start(std::ref(buckets_map));
+    co_await quota_store.start();
+    co_await sqm.start(std::ref(buckets_map), std::ref(quota_store));
     co_await sqm.invoke_on_all(&kafka::quota_manager::start);
 
     perf_tests::start_measuring_time();
@@ -72,6 +75,7 @@ ss::future<> test_quota_manager(size_t count, bool use_unique) {
     });
     perf_tests::stop_measuring_time();
     co_await sqm.stop();
+    co_await quota_store.stop();
 }
 
 struct test_case {

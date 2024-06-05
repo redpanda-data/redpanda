@@ -73,7 +73,9 @@ public:
       = absl::node_hash_map<tracker_key, ss::lw_shared_ptr<client_quota>>;
     using client_quotas_t = ssx::sharded_ptr<client_quotas_map_t>;
 
-    explicit quota_manager(client_quotas_t& client_quotas);
+    quota_manager(
+      client_quotas_t& client_quotas,
+      ss::sharded<cluster::client_quota::store>& client_quota_store);
     quota_manager(const quota_manager&) = delete;
     quota_manager& operator=(const quota_manager&) = delete;
     quota_manager(quota_manager&&) = delete;
