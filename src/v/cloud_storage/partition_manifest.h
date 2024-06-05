@@ -43,10 +43,6 @@ struct partition_manifest_path_components {
     operator<<(std::ostream& s, const partition_manifest_path_components& c);
 };
 
-/// Parse partition manifest path and return components
-std::optional<partition_manifest_path_components>
-get_partition_manifest_path_components(const std::filesystem::path& path);
-
 struct segment_name_components {
     model::offset base_offset;
     model::term_id term;
