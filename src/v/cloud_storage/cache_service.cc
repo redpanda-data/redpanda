@@ -68,7 +68,7 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
     return o;
 }
 
-static constexpr std::string_view tmp_extension{".part"};
+static constexpr auto tracker_sync_period = 3600s * 6;
 
 cache::cache(
   std::filesystem::path cache_dir,
@@ -190,7 +190,8 @@ uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 
 ss::future<> cache::clean_up_at_start() {
     auto guard = _gate.hold();
-    auto [walked_size, filtered_out_files, candidates_for_deletion, empty_dirs]
+    auto
+      [walked_size, filtered_out_files, candidates_for_deletion, empty_dirs, _]
       = co_await _walker.walk(
         _cache_dir.native(), _access_time_tracker, _walk_concurrency());
 
@@ -201,7 +202,21 @@ ss::future<> cache::clean_up_at_start() {
     // The state of the _access_time_tracker and the actual content of the
     // cache directory might diverge over time (if the user removes segment
     // files manually). We need to take this into account.
-    co_await _access_time_tracker.trim(candidates_for_deletion);
+
+    // On startup we perform a bi-directional sync, IE entries found during
+    // directory walk which are not in tracker are added to it. This covers the
+    // following scenarios:
+    // 1. Following an upgrade, the tracker was loaded as empty to discard
+    // previous serialized data. Now we need to rehydrate the tracker and it is
+    // easier to do it now than wait for get requests to do this.
+    // 2. In a previous run the tracker had entries which it was not able to
+    // write to disk due to a crash. A directory walk will bring the tracker to
+    // an up to date state.
+    co_await _access_time_tracker.sync(
+      candidates_for_deletion, access_time_tracker::add_entries_t::yes);
+
+    probe.tracker_sync();
+    probe.set_tracker_size(_access_time_tracker.size());
 
     uint64_t deleted_bytes{0};
     size_t deleted_count{0};
@@ -209,7 +224,8 @@ ss::future<> cache::clean_up_at_start() {
         auto filepath_to_remove = file_item.path;
 
         // delete only tmp files that are left from previous RedPanda run
-        if (std::string_view(filepath_to_remove).ends_with(tmp_extension)) {
+        if (std::string_view(filepath_to_remove)
+              .ends_with(cache_tmp_file_extension)) {
             try {
                 co_await delete_file_and_empty_parents(filepath_to_remove);
                 deleted_bytes += file_item.size;
@@ -384,7 +400,9 @@ ss::future<> cache::trim(
       _reserved_cache_objects,
       _reservations_pending,
       _reservations_pending_objects,
-      tracker_lru_entries.size());
+      tracker_lru_entries.size(),
+      size_to_delete,
+      objects_to_delete);
 
     auto trim_result = co_await do_trim(
       tracker_lru_entries, size_to_delete, objects_to_delete);
@@ -417,7 +435,16 @@ ss::future<> cache::trim(
         co_return;
     }
 
-    auto [walked_cache_size, filtered_out_files, candidates_for_deletion, _]
+    // We are going to do a walk, rearm the periodic tracker sync if it is about
+    // to run soon.
+    _tracker_sync_timer.rearm(ss::lowres_clock::now() + tracker_sync_period);
+
+    auto
+      [walked_cache_size,
+       filtered_out_files,
+       candidates_for_deletion,
+       _,
+       tmp_files_size]
       = co_await _walker.walk(
         _cache_dir.native(),
         _access_time_tracker,
@@ -430,16 +457,10 @@ ss::future<> cache::trim(
 
     // Updating the access time tracker in case if some files were removed
     // from cache directory by the user manually.
-    co_await _access_time_tracker.trim(candidates_for_deletion);
+    co_await _access_time_tracker.sync(candidates_for_deletion);
 
-    // Calculate total space used by tmp files: we will use this later
-    // when updating current_cache_size.
-    uint64_t tmp_files_size{0};
-    for (const auto& i : candidates_for_deletion) {
-        if (std::string_view(i.path).ends_with(tmp_extension)) {
-            tmp_files_size += i.size;
-        }
-    }
+    probe.tracker_sync();
+    probe.set_tracker_size(_access_time_tracker.size());
 
     vlog(
       cst_log.debug,
@@ -711,7 +732,8 @@ ss::future<cache::trim_result> cache::do_trim(
         }
 
         // skip tmp files since someone may be writing to it
-        if (std::string_view(file_stat.path).ends_with(tmp_extension)) {
+        if (std::string_view(file_stat.path)
+              .ends_with(cache_tmp_file_extension)) {
             return true;
         }
 
@@ -785,7 +807,7 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
 
     // Enumerate ALL files in the cache (as opposed to trim_fast that strips out
     // indices/tx/tmp files)
-    auto [walked_cache_size, _filtered_out, candidates, _]
+    auto [walked_cache_size, _filtered_out, candidates, _, tmp_files_size]
       = co_await _walker.walk(
         _cache_dir.native(), _access_time_tracker, _walk_concurrency());
 
@@ -839,7 +861,7 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
             // We are shutting down, stop iterating and propagate
             throw;
         } catch (const std::filesystem::filesystem_error& e) {
-            if (likely(file_stat.path.ends_with(tmp_extension))) {
+            if (likely(file_stat.path.ends_with(cache_tmp_file_extension))) {
                 // In exhaustive scan we might hit a .part file and get ENOENT,
                 // this is expected behavior occasionally.
                 result.trim_missed_tmp_files = true;
@@ -989,15 +1011,30 @@ ss::future<> cache::start() {
             });
         });
         _tracker_timer.arm_periodic(access_timer_period);
+
+        _tracker_sync_timer.set_callback([this] {
+            ssx::spawn_with_gate(_gate, [this]() -> ss::future<> {
+                return sync_access_time_tracker().handle_exception(
+                  [](auto eptr) {
+                      vlog(
+                        cst_log.error,
+                        "failed to sync access time tracker: {}",
+                        eptr);
+                  });
+            });
+        });
+        _tracker_sync_timer.arm(tracker_sync_period);
     }
 }
 
 ss::future<> cache::stop() {
     vlog(cst_log.debug, "Stopping archival cache service");
     _tracker_timer.cancel();
+    _tracker_sync_timer.cancel();
     _as.request_abort();
     _block_puts_cond.broken();
     _cleanup_sm.broken();
+    _tracker_sync_timer_sem.broken();
     if (ss::this_shard_id() == 0) {
         co_await save_access_time_tracker().handle_exception([](auto eptr) {
             // NOTE: see issue/11270 if the exception is "filesystem error:
@@ -1169,11 +1206,12 @@ ss::future<> cache::put(
         probe.put_ended();
     });
     auto filename = normal_key_path.filename();
-    if (std::string_view(filename.native()).ends_with(tmp_extension)) {
+    if (std::string_view(filename.native())
+          .ends_with(cache_tmp_file_extension)) {
         throw std::invalid_argument(fmt::format(
           "Cache file key {} is ending with tmp extension {}.",
           normal_key_path.native(),
-          tmp_extension));
+          cache_tmp_file_extension));
     }
     auto dir_path = normal_key_path.remove_filename();
 
@@ -1187,7 +1225,7 @@ ss::future<> cache::put(
       filename.native(),
       ss::this_shard_id(),
       (++_cnt),
-      tmp_extension));
+      cache_tmp_file_extension));
 
     ss::file tmp_cache_file;
     while (true) {
@@ -1507,7 +1545,8 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
         // Don't hit access time tracker file/tmp
         if (
           is_trim_exempt(file_stat.path)
-          || std::string_view(file_stat.path).ends_with(tmp_extension)) {
+          || std::string_view(file_stat.path)
+               .ends_with(cache_tmp_file_extension)) {
             continue;
         }
         // Both tx and index files are handled as part of the segment
@@ -1865,4 +1904,52 @@ ss::future<> cache::initialize(std::filesystem::path cache_dir) {
         co_await ss::recursive_touch_directory(cache_dir.string());
     }
 }
+
+ss::future<> cache::sync_access_time_tracker(
+  access_time_tracker::add_entries_t add_entries) {
+    if (_cleanup_sm.available_units() <= 0) {
+        vlog(
+          cst_log.debug,
+          "syncing access time tracker postponed, trim is running");
+        _tracker_sync_timer.rearm(
+          ss::lowres_clock::now() + tracker_sync_period);
+        co_return;
+    }
+
+    if (_tracker_sync_timer_sem.try_wait()) {
+        vlog(cst_log.debug, "syncing access time tracker with disk");
+        auto [cache_size, filtered_out, items, empty_dirs, tmp_files_size]
+          = co_await _walker.walk(
+            _cache_dir.native(), _access_time_tracker, _walk_concurrency());
+
+        co_await _access_time_tracker.sync(items, add_entries);
+        vlog(
+          cst_log.debug,
+          "syncing access time tracker with disk complete: cache size {}, "
+          "items: {}",
+          cache_size,
+          items.size());
+
+        const auto tracker_size
+          = (co_await access_time_tracker_size()).value_or(0);
+
+        _current_cache_size = cache_size - tmp_files_size - tracker_size;
+        _current_cache_objects = items.size();
+
+        probe.set_size(_current_cache_size);
+        probe.set_num_files(_current_cache_objects);
+
+        probe.tracker_sync();
+        probe.set_tracker_size(_access_time_tracker.size());
+
+        _tracker_sync_timer.rearm(
+          ss::lowres_clock::now() + tracker_sync_period);
+    } else {
+        vlog(
+          cst_log.debug,
+          "syncing access time tracker with disk skipped, sync is already "
+          "running");
+    }
+}
+
 } // namespace cloud_storage

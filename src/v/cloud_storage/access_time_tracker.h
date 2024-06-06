@@ -62,8 +62,11 @@ public:
     /// to disk.
     bool is_dirty() const;
 
+    using add_entries_t = ss::bool_class<struct trim_additive_tag>;
     /// Remove every key which isn't present in list of input files
-    ss::future<> trim(const fragmented_vector<file_list_item>&);
+    ss::future<> sync(
+      const fragmented_vector<file_list_item>&,
+      add_entries_t add_entries = add_entries_t::no);
 
     size_t size() const { return _table.size(); }
 

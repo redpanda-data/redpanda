@@ -22,6 +22,7 @@
 #include <absl/container/btree_set.h>
 
 #include <exception>
+#include <ranges>
 #include <variant>
 
 namespace absl {
@@ -98,7 +99,9 @@ ss::future<> access_time_tracker::write(
 }
 
 bool access_time_tracker::should_track(std::string_view key) const {
-    if (key.ends_with(".tx") || key.ends_with(".index")) {
+    if (
+      key.ends_with(".tx") || key.ends_with(".index")
+      || key.ends_with(cache_tmp_file_extension)) {
         return false;
     }
 
@@ -231,22 +234,42 @@ void access_time_tracker::remove(std::string_view key) noexcept {
     }
 }
 
-ss::future<>
-access_time_tracker::trim(const fragmented_vector<file_list_item>& existent) {
-    absl::btree_set<ss::sstring> existent_hashes;
+ss::future<> access_time_tracker::sync(
+  const fragmented_vector<file_list_item>& existent,
+  add_entries_t add_entries) {
+    absl::btree_set<ss::sstring> paths;
     for (const auto& i : existent) {
-        existent_hashes.insert(i.path);
+        paths.insert(i.path);
     }
 
     auto lock_guard = co_await ss::get_units(_table_lock, 1);
 
     table_t tmp;
+
     for (const auto& it : _table) {
-        if (existent_hashes.contains(it.first)) {
+        if (paths.contains(it.first)) {
             tmp.insert(it);
         }
         co_await ss::maybe_yield();
     }
+
+    if (add_entries) {
+        auto should_add = [this, &tmp](const auto& e) {
+            return should_track(e.path) && !tmp.contains(e.path);
+        };
+        for (const auto& entry : existent | std::views::filter(should_add)) {
+            _dirty = true;
+            tmp.insert(
+              {entry.path,
+               {static_cast<uint32_t>(
+                  std::chrono::time_point_cast<std::chrono::seconds>(
+                    entry.access_time)
+                    .time_since_epoch()
+                    .count()),
+                entry.size}});
+        }
+    }
+
     if (_table.size() != tmp.size()) {
         // We dropped one or more entries, therefore mutated the table.
         _dirty = true;

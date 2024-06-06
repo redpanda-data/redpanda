@@ -62,6 +62,9 @@ struct walk_accumulator {
               file_size);
 
             current_cache_size += static_cast<uint64_t>(file_size);
+            if (entry_path.ends_with(cache_tmp_file_extension)) {
+                tmp_files_size += file_size;
+            }
 
             if (!filter || filter.value()(entry_path)) {
                 files.push_back(
@@ -92,6 +95,7 @@ struct walk_accumulator {
     fragmented_vector<file_list_item> files;
     uint64_t current_cache_size{0};
     size_t filtered_out_files{0};
+    size_t tmp_files_size{0};
 };
 } // namespace cloud_storage
 
@@ -198,7 +202,8 @@ ss::future<walk_result> recursive_directory_walker::walk(
       .cache_size = state.current_cache_size,
       .filtered_out_files = state.filtered_out_files,
       .regular_files = std::move(state.files),
-      .empty_dirs = std::move(empty_dirs)};
+      .empty_dirs = std::move(empty_dirs),
+      .tmp_files_size = state.tmp_files_size};
 }
 
 ss::future<> recursive_directory_walker::stop() {

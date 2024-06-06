@@ -37,7 +37,6 @@ cache_probe::cache_probe() {
               [this] { return _num_cached_gets; },
               sm::description(
                 "Total number of get requests that are already in cache.")),
-
             sm::make_gauge(
               "size_bytes",
               [this] { return _cur_size_bytes; },
@@ -83,6 +82,18 @@ cache_probe::cache_probe() {
                   [this] { return _hwm_num_files; },
                   sm::description(
                     "High watermark of number of objects in cache."))
+                  .aggregate(aggregate_labels),
+                sm::make_counter(
+                  "tracker_syncs",
+                  [this] { return _tracker_syncs; },
+                  sm::description(
+                    "Number of times the access tracker was updated "
+                    "with cache disk data"))
+                  .aggregate(aggregate_labels),
+                sm::make_gauge(
+                  "tracker_size",
+                  [this] { return _tracker_size; },
+                  sm::description("Number of entries in cache access tracker"))
                   .aggregate(aggregate_labels),
               });
 
