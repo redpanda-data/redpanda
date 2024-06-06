@@ -50,6 +50,13 @@ struct is_std_array_t : std::false_type {};
 template<class T, std::size_t N>
 struct is_std_array_t<std::array<T, N>> : std::true_type {};
 
+template<typename T>
+struct is_duration : std::false_type {};
+template<typename Rep, typename Period>
+struct is_duration<std::chrono::duration<Rep, Period>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_duration_v = is_duration<T>::value;
+
 } // namespace detail
 
 namespace reflection {
