@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/random.h"
+#include "config/tls_config.h"
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "rpc/backoff_policy.h"

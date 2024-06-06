@@ -20,7 +20,6 @@
 #include "config/endpoint_tls_config.h"
 #include "config/property.h"
 #include "config/throughput_control_group.h"
-#include "config/tls_config.h"
 #include "config/types.h"
 #include "model/compression.h"
 #include "model/fundamental.h"

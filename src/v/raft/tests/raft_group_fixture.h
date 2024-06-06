@@ -12,6 +12,7 @@
 #pragma once
 #include "config/configuration.h"
 #include "config/property.h"
+#include "config/tls_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
