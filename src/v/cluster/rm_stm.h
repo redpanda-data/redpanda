@@ -61,7 +61,7 @@ class rm_stm final : public raft::persisted_stm<> {
 public:
     static constexpr std::string_view name = "rm_stm";
 
-    using producers_t = absl::btree_map<model::producer_id, tx::producer_ptr>;
+    using producers_t = chunked_hash_map<model::producer_id, tx::producer_ptr>;
 
     explicit rm_stm(
       ss::logger&,
