@@ -34,8 +34,9 @@ public:
       index_type cores, absl::flat_hash_set<model::node_id> muted_nodes)
       : _mi(std::make_unique<leader_balancer_types::muted_index>(
         std::move(muted_nodes), leader_balancer_types::muted_groups_t{}))
-      , _even_shard_load_c(
-          leader_balancer_types::shard_index{std::move(cores)}, *_mi) {}
+      , _si(std::make_unique<leader_balancer_types::shard_index>(
+          std::move(cores)))
+      , _even_shard_load_c(*_si, *_mi) {}
 
     double error() const final { return _even_shard_load_c.error(); }
 
@@ -62,6 +63,7 @@ public:
 
     void apply_movement(const reassignment& r) final {
         _even_shard_load_c.update_index(r);
+        _si->update_index(r);
     }
 
     std::vector<shard_load> stats() const final {
@@ -70,6 +72,7 @@ public:
 
 private:
     std::unique_ptr<leader_balancer_types::muted_index> _mi;
+    std::unique_ptr<leader_balancer_types::shard_index> _si;
     leader_balancer_types::even_shard_load_constraint _even_shard_load_c;
 };
 
