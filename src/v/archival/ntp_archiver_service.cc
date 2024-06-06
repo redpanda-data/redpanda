@@ -1157,6 +1157,27 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
+    if (config::shard_local_cfg().enable_datalake) {
+        vlog(ctxlog.debug, "Cluster datalake support enabled");
+        auto topic_config = _parent.get_topic_config();
+        bool datalake_topic
+          = topic_config.has_value()
+            && topic_config->get().properties.datalake_topic.value_or(false);
+
+        auto topic_name = model::topic_view(
+          _parent.get_ntp_config().ntp().tp.topic);
+
+        if (datalake_topic) {
+            vlog(ctxlog.debug, "{} is a datalake topic", topic_name);
+        } else {
+            vlog(ctxlog.trace, "{} is not a datalake topic", topic_name);
+        }
+    } else {
+        vlog(ctxlog.trace, "Cluster datalake support disabled");
+    }
+
+    //, _parent);
+
     auto lazy_abort_source = cloud_storage::lazy_abort_source{
       [this]() { return upload_should_abort(); },
     };

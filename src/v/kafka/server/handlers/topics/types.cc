@@ -251,6 +251,9 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.flush_bytes = get_config_value<size_t>(
       config_entries, topic_property_flush_bytes);
 
+    cfg.properties.datalake_topic = get_config_value<bool>(
+      config_entries, topic_property_datalake_topic);
+
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
 

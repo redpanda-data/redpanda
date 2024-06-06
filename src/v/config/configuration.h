@@ -594,6 +594,8 @@ struct configuration final : public config_store {
     // temporary - to be deprecated
     property<bool> unsafe_enable_consumer_offsets_delete_retention;
 
+    property<bool> enable_datalake;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
