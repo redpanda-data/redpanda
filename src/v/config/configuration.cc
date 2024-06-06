@@ -3194,6 +3194,20 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"BASIC"},
       validate_http_authn_mechanisms)
+  , server_require_crl(
+      *this,
+      "server_require_crl",
+      "When enabled, server-side TLS configs must include a CRL file, against "
+      "which all inbound TLS connections will be verified.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , client_require_crl(
+      *this,
+      "client_require_crl",
+      "When enabled, client-side TLS configs must include a CRL file, against "
+      "which all outbound TLS connections will be verified.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , enable_mpx_extensions(
       *this,
       "enable_mpx_extensions",
