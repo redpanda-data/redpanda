@@ -1089,7 +1089,8 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             Example("kafka_qdc_enable", "true", True),
             Example("append_chunk_size", "32768", 32768),
             Example("superusers", "['bob','alice']", ["bob", "alice"]),
-            Example("storage_min_free_bytes", "1234567890", 1234567890)
+            Example("storage_min_free_bytes", "1234567890", 1234567890),
+            Example("kafka_memory_share_for_fetch", "0.6", 0.6)
         ]
 
         def yamlize(input) -> str:
