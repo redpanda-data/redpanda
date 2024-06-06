@@ -228,12 +228,14 @@ using group_metadata_serializer_factory
 namespace group_tx {
 struct fence_metadata_v0 {
     kafka::group_id group_id;
+    friend std::ostream& operator<<(std::ostream&, const fence_metadata_v0&);
 };
 
 struct fence_metadata_v1 {
     kafka::group_id group_id;
     model::tx_seq tx_seq;
     model::timeout_clock::duration transaction_timeout_ms;
+    friend std::ostream& operator<<(std::ostream&, const fence_metadata_v1&);
 };
 /**
  * Fence is set by the transaction manager when consumer adds an offset to
@@ -244,6 +246,7 @@ struct fence_metadata {
     model::tx_seq tx_seq;
     model::timeout_clock::duration transaction_timeout_ms;
     model::partition_id tm_partition;
+    friend std::ostream& operator<<(std::ostream&, const fence_metadata&);
 };
 /**
  * Single partition committed offset
@@ -253,6 +256,7 @@ struct partition_offset {
     model::offset offset;
     int32_t leader_epoch;
     std::optional<ss::sstring> metadata;
+    friend std::ostream& operator<<(std::ostream&, const partition_offset&);
 };
 /**
  * Consumer offsets commited as a part of transaction
@@ -262,6 +266,7 @@ struct offsets_metadata {
     model::producer_identity pid;
     model::tx_seq tx_seq;
     std::vector<partition_offset> offsets;
+    friend std::ostream& operator<<(std::ostream&, const offsets_metadata&);
 };
 
 /**
