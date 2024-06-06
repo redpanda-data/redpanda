@@ -235,6 +235,11 @@ private:
       uint64_t delete_bytes,
       size_t delete_objects);
 
+    ss::future<trim_result> do_trim(
+      const fragmented_vector<file_list_item>& candidates,
+      uint64_t delete_bytes,
+      size_t delete_objects);
+
     /// Exhaustive trim: walk all files including indices, remove whatever is
     /// least recently accessed.
     ss::future<trim_result>

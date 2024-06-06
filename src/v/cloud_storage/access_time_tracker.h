@@ -67,6 +67,8 @@ public:
 
     size_t size() const { return _table.size(); }
 
+    fragmented_vector<file_list_item> lru_entries() const;
+
 private:
     /// Returns true if the key's metadata should be tracked.
     /// We do not wish to track index files and transaction manifests

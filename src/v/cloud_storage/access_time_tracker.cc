@@ -267,6 +267,16 @@ access_time_tracker::get(const std::string& key) const {
 
 bool access_time_tracker::is_dirty() const { return _dirty; }
 
+fragmented_vector<file_list_item> access_time_tracker::lru_entries() const {
+    fragmented_vector<file_list_item> items;
+    items.reserve(_table.size());
+    for (const auto& [path, metadata] : _table) {
+        items.emplace_back(metadata.time_point(), path, metadata.size);
+    }
+    std::ranges::sort(
+      items, {}, [](const auto& item) { return item.access_time; });
+    return items;
+}
 
 std::chrono::system_clock::time_point file_metadata::time_point() const {
     return std::chrono::system_clock::time_point{
