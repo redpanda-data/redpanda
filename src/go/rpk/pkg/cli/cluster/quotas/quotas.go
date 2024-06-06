@@ -36,10 +36,20 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return cmd
 }
 
-var validTypes = map[string]bool{
+// anyValidTypes are the types allowed in --name and --any flags.
+var anyValidTypes = map[string]bool{
 	// Supported by Redpanda.
 	"client-id":        true,
 	"client-id-prefix": true,
+	// Not supported by Redpanda yet.
+	"user": true,
+	"ip":   true,
+}
+
+// defaultValidTypes are the types allowed in --default flag.
+var defaultValidTypes = map[string]bool{
+	// Supported by Redpanda.
+	"client-id": true,
 	// Not supported by Redpanda yet.
 	"user": true,
 	"ip":   true,

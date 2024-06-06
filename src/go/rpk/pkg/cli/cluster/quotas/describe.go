@@ -88,7 +88,7 @@ Describe client quotas for a given client ID prefix 'bar.':
 				}
 				k, v := split[0], split[1]
 				k = strings.ToLower(k)
-				if !validTypes[k] {
+				if !anyValidTypes[k] {
 					out.Die("name type %q is invalid (allowed: client-id, client-id-prefix)", split[0])
 				}
 				reqQuotas = append(reqQuotas, kadm.DescribeClientQuotaComponent{
@@ -99,8 +99,8 @@ Describe client quotas for a given client ID prefix 'bar.':
 			}
 			for _, def := range defaults {
 				k := strings.ToLower(def)
-				if !validTypes[k] {
-					out.Die("default type %q is invalid (allowed: client-id, client-id-prefix)", def)
+				if !defaultValidTypes[k] {
+					out.Die("default type %q is invalid (allowed: client-id)", def)
 				}
 				reqQuotas = append(reqQuotas, kadm.DescribeClientQuotaComponent{
 					Type:      k,
@@ -109,7 +109,7 @@ Describe client quotas for a given client ID prefix 'bar.':
 			}
 			for _, a := range anyFlag {
 				k := strings.ToLower(a)
-				if !validTypes[k] {
+				if !anyValidTypes[k] {
 					out.Die("'any' type %q is invalid (allowed: client-id, client-id-prefix)", a)
 				}
 				reqQuotas = append(reqQuotas, kadm.DescribeClientQuotaComponent{

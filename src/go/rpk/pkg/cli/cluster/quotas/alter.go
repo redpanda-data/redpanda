@@ -96,7 +96,7 @@ Remove quota (producer_byte_rate) from client ID 'foo':
 				}
 				k, v := split[0], split[1]
 				k = strings.ToLower(k)
-				if !validTypes[k] {
+				if !anyValidTypes[k] {
 					out.Die("name type %q is invalid (allowed: client-id, client-id-prefix)", split[0])
 				}
 				nameMap[k] = true
@@ -106,8 +106,8 @@ Remove quota (producer_byte_rate) from client ID 'foo':
 				})
 			}
 			for _, def := range defaults {
-				if !validTypes[def] {
-					out.Die("default type %q is invalid (allowed: client-id, client-id-prefix)", def)
+				if !defaultValidTypes[def] {
+					out.Die("default type %q is invalid (allowed: client-id)", def)
 				}
 				if nameMap[def] {
 					out.Die("default type %q was previously defined in --name, you can only set it once", def)
