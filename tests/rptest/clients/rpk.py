@@ -1849,3 +1849,57 @@ class RpkTool:
         out = self._execute(cmd)
 
         return json.loads(out) if output_format == "json" else out
+
+    def describe_cluster_quotas(self,
+                                any=[],
+                                default=[],
+                                name=[],
+                                strict=False,
+                                output_format="json"):
+        cmd = ["describe"]
+
+        if strict:
+            cmd += ["--strict"]
+        if len(any) > 0:
+            cmd += ["--any", ",".join(any)]
+        if len(default) > 0:
+            cmd += ["--default", ",".join(default)]
+        if len(name) > 0:
+            cmd += ["--name", ",".join(name)]
+
+        return self._run_cluster_quotas(cmd, output_format=output_format)
+
+    def alter_cluster_quotas(self,
+                             add=[],
+                             delete=[],
+                             default=[],
+                             name=[],
+                             dry=False,
+                             output_format="json"):
+        cmd = ["describe"]
+
+        if dry:
+            cmd += ["--dry"]
+        if len(add) > 0:
+            cmd += ["--add", ",".join(add)]
+        if len(delete) > 0:
+            cmd += ["--delete", ",".join(delete)]
+        if len(default) > 0:
+            cmd += ["--default", ",".join(default)]
+        if len(name) > 0:
+            cmd += ["--name", ",".join(name)]
+
+        return self._run_cluster_quotas(cmd, output_format=output_format)
+
+    def _run_cluster_quotas(self, cmd, output_format="json"):
+        cmd = [
+            self._rpk_binary(),
+            "cluster",
+            "quotas",
+            "--format",
+            output_format,
+        ] + self._kafka_conn_settings() + cmd
+
+        out = self._execute(cmd)
+
+        return json.loads(out) if output_format == "json" else out
