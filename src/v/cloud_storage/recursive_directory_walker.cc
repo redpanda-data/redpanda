@@ -74,7 +74,7 @@ struct walk_accumulator {
     bool empty() const { return dirlist.empty(); }
 
     ss::sstring pop() {
-        auto r = dirlist.back();
+        auto r = std::move(dirlist.back());
         dirlist.pop_back();
         return r;
     }
