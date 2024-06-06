@@ -2757,7 +2757,12 @@ class RedpandaService(RedpandaServiceBase):
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
 
-    def write_crl_file(self, node: ClusterNode, ca: tls.CertificateAuthority):
+    def write_crl_file(self, node: ClusterNode,
+                       ca: tls.CertificateAuthority) -> str | None:
+        if ca.crl is None:
+            self.logger.debug("Skipping CRL write (none present)")
+            return None
+
         self.logger.info(
             f"Writing Redpanda node tls ca CRL file: {RedpandaService.TLS_CA_CRL_FILE}"
         )
@@ -2765,6 +2770,7 @@ class RedpandaService(RedpandaServiceBase):
         node.account.mkdirs(os.path.dirname(RedpandaService.TLS_CA_CRL_FILE))
         node.account.copy_to(ca.crl, RedpandaService.TLS_CA_CRL_FILE)
         node.account.ssh(f"chmod 755 {RedpandaService.TLS_CA_CRL_FILE}")
+        return RedpandaService.TLS_CA_CRL_FILE
 
     def write_tls_certs(self):
         if not self._security.tls_provider:
@@ -2799,8 +2805,7 @@ class RedpandaService(RedpandaServiceBase):
             node.account.copy_to(ca.crt, RedpandaService.TLS_CA_CRT_FILE)
             node.account.ssh(f"chmod 755 {RedpandaService.TLS_CA_CRT_FILE}")
 
-            assert ca.crl is not None, "Missing CRL file"
-            self.write_crl_file(node, ca)
+            crl_file = self.write_crl_file(node, ca)
 
             node.account.copy_to(ca.crt,
                                  RedpandaService.SYSTEM_TLS_CA_CRT_FILE)
@@ -2815,7 +2820,7 @@ class RedpandaService(RedpandaServiceBase):
                 self._pandaproxy_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
                 self._pandaproxy_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
                 self._pandaproxy_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
-                self._pandaproxy_config.crl_file = RedpandaService.TLS_CA_CRL_FILE
+                self._pandaproxy_config.crl_file = crl_file
 
             if self._schema_registry_config is not None:
                 self._schema_registry_config.maybe_write_client_certs(
@@ -2825,7 +2830,7 @@ class RedpandaService(RedpandaServiceBase):
                 self._schema_registry_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
                 self._schema_registry_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
                 self._schema_registry_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
-                self._schema_registry_config.crl_file = RedpandaService.TLS_CA_CRL_FILE
+                self._schema_registry_config.crl_file = crl_file
 
             if self._audit_log_config is not None:
                 self._audit_log_config.maybe_write_client_certs(
@@ -2835,7 +2840,7 @@ class RedpandaService(RedpandaServiceBase):
                 self._audit_log_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
                 self._audit_log_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
                 self._audit_log_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
-                self._audit_log_config.crl_file = RedpandaService.TLS_CA_CRL_FILE
+                self._audit_log_config.crl_file = crl_file
 
     def start_redpanda(self, node):
         preamble, res_args = self._resource_settings.to_cli(
@@ -3992,9 +3997,12 @@ class RedpandaService(RedpandaServiceBase):
                     key_file=RedpandaService.TLS_SERVER_KEY_FILE,
                     cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
                     truststore_file=RedpandaService.TLS_CA_CRT_FILE,
-                    crl_file=RedpandaService.TLS_CA_CRL_FILE,
                 ) for n in ["dnslistener", "iplistener"]
             ]
+            if self._security.tls_provider.ca.crl is not None:
+                for c in tls_config:
+                    c['crl_file'] = RedpandaService.TLS_CA_CRL_FILE
+
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
             conf = yaml.dump(doc)
