@@ -16,6 +16,7 @@
 #include "features/feature_table.h"
 #include "kafka/latency_probe.h"
 #include "kafka/protocol/types.h"
+#include "kafka/read_distribution_probe.h"
 #include "kafka/sasl_probe.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_metadata_cache.hh"
@@ -174,6 +175,8 @@ public:
 
     sasl_probe& sasl_probe() { return *_sasl_probe; }
 
+    read_distribution_probe& read_probe() { return *_read_dist_probe; }
+
     ssx::singleton_thread_worker& thread_worker() { return _thread_worker; }
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
@@ -243,6 +246,7 @@ private:
     metrics::internal_metric_groups _metrics;
     std::unique_ptr<class latency_probe> _probe;
     std::unique_ptr<class sasl_probe> _sasl_probe;
+    std::unique_ptr<read_distribution_probe> _read_dist_probe;
     ssx::singleton_thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;
