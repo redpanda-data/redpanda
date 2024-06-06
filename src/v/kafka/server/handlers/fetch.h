@@ -264,11 +264,13 @@ struct read_result {
       model::offset start_offset,
       model::offset hw,
       model::offset lso,
+      std::optional<std::chrono::milliseconds> delta,
       std::vector<cluster::tx::tx_range> aborted_transactions)
       : data(std::move(data))
       , start_offset(start_offset)
       , high_watermark(hw)
       , last_stable_offset(lso)
+      , delta_from_tip_ms(delta)
       , error(error_code::none)
       , aborted_transactions(std::move(aborted_transactions)) {}
 
@@ -322,6 +324,7 @@ struct read_result {
     model::offset start_offset;
     model::offset high_watermark;
     model::offset last_stable_offset;
+    std::optional<std::chrono::milliseconds> delta_from_tip_ms;
     std::optional<model::node_id> preferred_replica;
     error_code error;
     model::partition_id partition;
