@@ -114,7 +114,7 @@ class CompactedVerifier(Service):
 
     ### Service overrides
 
-    def start_node(self, node, timeout_sec=10):
+    def start_node(self, node, timeout_sec=20):
         node.account.ssh(
             f"bash /opt/remote/control/start.sh rw \"java -cp /opt/verifiers/verifiers.jar io.vectorized.compaction.App\""
         )
@@ -157,6 +157,7 @@ class CompactedVerifier(Service):
         ip = self._node.account.hostname
         r = requests.get(f"http://{ip}:8080/ping")
         if r.status_code != 200:
+            self.logger.debug(f"Ping {ip} failed: {r}: {r.status_code}")
             raise Exception(f"unexpected status code: {r.status_code}")
 
     def remote_start_producer(self,
