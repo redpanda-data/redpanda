@@ -310,11 +310,16 @@ class TLSCertManager:
     it is common for clients to take paths to these files, it is best to keep
     the instance alive for as long as the files are in use.
     """
-    def __init__(self, logger, ca_end_date=None, cert_expiry_days=1):
+    def __init__(self,
+                 logger,
+                 ca_end_date: int | None = None,
+                 cert_expiry_days: int = 1,
+                 with_crl: bool = True):
         self._logger = logger
         self._dir = tempfile.TemporaryDirectory()
         self._ca_end_date = ca_end_date
         self._cert_expiry_days = cert_expiry_days
+        self._with_crl = with_crl
         self._ca = self._create_ca()
         self.certs = {}
 
@@ -371,7 +376,10 @@ class TLSCertManager:
 
         return CertificateAuthority(cfg, key, crt, crl)
 
-    def _create_crl(self, ca: str, cfg: str, crl_srl: str) -> str:
+    def _create_crl(self, ca: str, cfg: str, crl_srl: str) -> str | None:
+        if not self._with_crl:
+            return None
+
         if os.path.exists(crl_srl): os.remove(crl_srl)
         with open(crl_srl, 'w') as f:
             f.writelines(["01"])
@@ -453,15 +461,17 @@ class TLSChainCACertManager(TLSCertManager):
 
     def __init__(self,
                  logger,
-                 chain_len=2,
-                 cert_expiry_days=1,
-                 ca_expiry_days=7):
+                 chain_len: int = 2,
+                 cert_expiry_days: int = 1,
+                 ca_expiry_days: int = 7,
+                 with_crl: bool = True):
         assert chain_len > 0
         self._logger = logger
         self._dir = tempfile.TemporaryDirectory()
         self.cert_expiry_days = cert_expiry_days
         self.ca_expiry_days = ca_expiry_days
         self._cas = []
+        self._with_crl = with_crl
         self._cas.append(
             self._create_ca(
                 'root-ca',
