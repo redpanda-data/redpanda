@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "reflection/type_traits.h"
+
 #include <seastar/core/metrics_types.hh>
 #include <seastar/core/shared_ptr.hh>
 
@@ -154,6 +156,14 @@ public:
           0,
           static_cast<int>(_counts.size() - 1));
         _counts[i]++;
+    }
+
+    template<
+      typename dur_t,
+      typename = std::enable_if_t<detail::is_duration_v<dur_t>, dur_t>>
+    void record(dur_t dur) {
+        record(static_cast<uint64_t>(
+          std::chrono::duration_cast<duration_t>(dur).count()));
     }
 
     template<int64_t _scale, uint64_t _first_bucket_bound, int _bucket_count>
