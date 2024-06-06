@@ -387,10 +387,6 @@ class KubectlTool:
         try:
             self._local_cmd(cmd)
         except subprocess.CalledProcessError as e:
-            self._redpanda.logger.error(
-                f'Command failed (rc={e.returncode}).\n' +
-                f'--------- stdout -----------\n{e.stdout.decode()}' +
-                f'--------- stderr -----------\n{e.stderr.decode()}')
             self._redpanda.logger.debug(
                 f"Contents of {self.TELEPORT_DATA_DIR}:")
             subprocess.call(['ls', '-la', self.TELEPORT_DATA_DIR])
