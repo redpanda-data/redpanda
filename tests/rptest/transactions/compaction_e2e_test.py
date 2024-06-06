@@ -20,7 +20,7 @@ from rptest.utils.mode_checks import skip_debug_mode
 from time import sleep
 from rptest.services.redpanda import RedpandaService
 
-from tests.rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
+from rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.services.metrics_check import MetricCheck
 

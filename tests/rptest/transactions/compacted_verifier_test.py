@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
-from tests.rptest.transactions.verifiers.compacted_verifier \
+from rptest.transactions.verifiers.compacted_verifier \
     import CompactedVerifier, Workload
 
 from rptest.tests.redpanda_test import RedpandaTest
