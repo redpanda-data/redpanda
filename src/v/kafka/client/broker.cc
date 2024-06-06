@@ -10,6 +10,7 @@
 #include "kafka/client/broker.h"
 
 #include "cluster/cluster_utils.h"
+#include "config/configuration.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/sasl_client.h"
 #include "net/connection.h"
@@ -25,7 +26,8 @@ ss::future<shared_broker_t> make_broker(
   net::unresolved_address addr,
   const configuration& config) {
     return rpc::maybe_build_reloadable_certificate_credentials(
-             config.broker_tls())
+             config.broker_tls(),
+             config::shard_local_cfg().client_require_crl())
       .then([addr, client_id = config.client_identifier()](
               ss::shared_ptr<ss::tls::certificate_credentials> creds) mutable {
           return ss::make_lw_shared<transport>(

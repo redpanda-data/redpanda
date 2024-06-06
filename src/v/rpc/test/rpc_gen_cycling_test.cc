@@ -307,7 +307,7 @@ FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {
                            "root_certificate_authority.crt",
                            std::nullopt, /* CRL */
                            false)
-                           .get_credentials_builder()
+                           .get_credentials_builder(false /*require CRL*/)
                            .get0();
 
     configure_server(creds_builder);
@@ -377,29 +377,29 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
     auto client_crt = tmp.copy_file("redpanda.crt", "client.crt");
     auto client_ca = tmp.copy_file(
       "root_certificate_authority.crt", "ca_client.pem");
-    auto client_creds_builder = config::tls_config(
-                                  true,
-                                  config::key_cert{
-                                    client_key.native(), client_crt.native()},
-                                  client_ca.native(),
-                                  std::nullopt, /* CRL */
-                                  true)
-                                  .get_credentials_builder()
-                                  .get0();
+    auto client_creds_builder
+      = config::tls_config(
+          true,
+          config::key_cert{client_key.native(), client_crt.native()},
+          client_ca.native(),
+          std::nullopt, /* CRL */
+          true)
+          .get_credentials_builder(false /*require CRL*/)
+          .get0();
     // server credentials
     auto server_key = tmp.copy_file("redpanda.other.key", "server.key");
     auto server_crt = tmp.copy_file("redpanda.other.crt", "server.crt");
     auto server_ca = tmp.copy_file(
       "root_certificate_authority.other.crt", "ca_server.pem");
-    auto server_creds_builder = config::tls_config(
-                                  true,
-                                  config::key_cert{
-                                    server_key.native(), server_crt.native()},
-                                  server_ca.native(),
-                                  std::nullopt, /* CRL */
-                                  true)
-                                  .get_credentials_builder()
-                                  .get0();
+    auto server_creds_builder
+      = config::tls_config(
+          true,
+          config::key_cert{server_key.native(), server_crt.native()},
+          server_ca.native(),
+          std::nullopt, /* CRL */
+          true)
+          .get_credentials_builder(false /*require CRL*/)
+          .get0();
 
     configure_server(
       server_creds_builder,

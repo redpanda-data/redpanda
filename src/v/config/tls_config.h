@@ -80,11 +80,11 @@ public:
     bool get_require_client_auth() const { return _require_client_auth; }
 
     ss::future<std::optional<ss::tls::credentials_builder>>
-    get_credentials_builder() const& {
+    get_credentials_builder(bool require_crl) const& {
         if (_enabled) {
             return ss::do_with(
               ss::tls::credentials_builder{},
-              [this](ss::tls::credentials_builder& builder) {
+              [this, require_crl](ss::tls::credentials_builder& builder) {
                   builder.set_priority_string("PERFORMANCE:%SERVER_PRECEDENCE");
                   builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
                   if (_require_client_auth) {
@@ -94,6 +94,13 @@ public:
                   auto f = _truststore_file ? builder.set_x509_trust_file(
                              *_truststore_file, ss::tls::x509_crt_format::PEM)
                                             : builder.set_system_trust();
+
+                  if (require_crl || _crl_file) {
+                      // TODO: enable CRL verification
+                      // f = f.then([this, &builder] {
+                      //     return builder.set_x509_enable_crl_verification();
+                      // });
+                  }
 
                   if (_crl_file) {
                       f = f.then([this, &builder] {
@@ -122,9 +129,9 @@ public:
     }
 
     ss::future<std::optional<ss::tls::credentials_builder>>
-    get_credentials_builder() && {
+    get_credentials_builder(bool require_crl) && {
         auto ptr = ss::make_lw_shared(std::move(*this));
-        return ptr->get_credentials_builder().finally([ptr] {});
+        return ptr->get_credentials_builder(require_crl).finally([ptr] {});
     }
 
     static std::optional<ss::sstring> validate(const tls_config& c) {

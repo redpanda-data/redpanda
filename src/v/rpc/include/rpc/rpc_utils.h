@@ -31,9 +31,10 @@ void log_certificate_reload_event(
   const std::exception_ptr& eptr);
 
 inline ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
-maybe_build_reloadable_certificate_credentials(config::tls_config tls_config) {
+maybe_build_reloadable_certificate_credentials(
+  config::tls_config tls_config, bool require_crl) {
     return std::move(tls_config)
-      .get_credentials_builder()
+      .get_credentials_builder(require_crl)
       .then([](std::optional<ss::tls::credentials_builder> credentials) {
           if (credentials) {
               return credentials->build_reloadable_certificate_credentials(

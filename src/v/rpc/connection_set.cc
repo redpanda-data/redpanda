@@ -32,7 +32,7 @@ ss::future<> connection_set::try_add_or_update(
     }
 
     auto cert_creds = co_await maybe_build_reloadable_certificate_credentials(
-      std::move(tls_config));
+      std::move(tls_config), config::shard_local_cfg().client_require_crl());
     auto config = rpc::transport_configuration{
       .server_addr = std::move(rpc_address),
       .credentials = std::move(cert_creds),

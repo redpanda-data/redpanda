@@ -220,7 +220,8 @@ build_reloadable_server_credentials_with_probe(
   ss::sstring service,
   ss::sstring listener_name,
   ss::tls::reload_callback cb) {
-    auto builder = co_await config.get_credentials_builder();
+    auto builder = co_await config.get_credentials_builder(
+      config::shard_local_cfg().server_require_crl());
     if (!builder) {
         co_return nullptr;
     }

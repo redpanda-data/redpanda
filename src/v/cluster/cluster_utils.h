@@ -15,6 +15,7 @@
 #include "cluster/fwd.h"
 #include "cluster/members_table.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "config/node_config.h"
 #include "config/tls_config.h"
 #include "rpc/connection_cache.h"
@@ -133,7 +134,8 @@ auto do_with_client_one_shot(
   rpc::transport_version v,
   Func&& f) {
     return rpc::maybe_build_reloadable_certificate_credentials(
-             std::move(tls_config))
+             std::move(tls_config),
+             config::shard_local_cfg().client_require_crl())
       .then([v,
              f = std::forward<Func>(f),
              connection_timeout,
