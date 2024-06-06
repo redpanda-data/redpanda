@@ -30,7 +30,7 @@ from ducktape.mark import matrix
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService, make_redpanda_service, SISettings
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService, SISettings
 from rptest.utils.node_operations import NodeDecommissionWaiter
 
 
@@ -419,6 +419,67 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self._wait_for_node_removed(to_decommission)
         # stop decommissioned node
         self.redpanda.stop_node(self.redpanda.get_node_by_id(to_decommission))
+
+        self.verify()
+
+    @skip_debug_mode
+    @cluster(num_nodes=6)
+    def test_learner_gap_metrics(self):
+        self.start_redpanda()
+        # set small segment size to calculate the gap correctly
+        self.redpanda.set_cluster_config({"log_segment_size": 1024 * 1024})
+        self._create_topics()
+
+        self.start_producer()
+        self.start_consumer()
+        # set recovery rate to small value to stop moves
+        self._set_recovery_rate(1)
+
+        def calculate_total_learners_gap() -> int | None:
+            gap = self.redpanda.metrics_sample("learners_gap_bytes")
+            if gap is None:
+                return None
+            return sum(g.value for g in gap.samples)
+
+        assert calculate_total_learners_gap(
+        ) == 0, "when there are no pending partition movements the reported gap should be equal to 0"
+
+        to_decommission = random.choice(self.redpanda.nodes)
+        to_decommission_id = self.redpanda.node_id(to_decommission)
+
+        self.logger.info(f"decommissioning node: {to_decommission_id}", )
+        self._decommission(to_decommission_id)
+
+        def learner_gap_reported(decommissioned_node_id: int):
+            total_gap = calculate_total_learners_gap()
+            p_size = self.redpanda.metrics_sample("partition_size")
+            if not total_gap or not p_size:
+                return False
+            total_size = sum(
+                ps.value for ps in p_size.samples
+                if self.redpanda.node_id(ps.node) == decommissioned_node_id)
+
+            self.logger.info(
+                f"decommissioned node total size: {total_size}, total_gap: {total_gap}"
+            )
+            assert total_gap < total_size, "gap can not be larger than the size of partitions"
+            # assume that the total gap is equal to the total size of
+            # decommissioned node with the tolerance of 5%
+            return (total_size - total_gap) < total_size * 0.05
+
+        wait_until(lambda: learner_gap_reported(to_decommission_id),
+                   timeout_sec=60,
+                   backoff_sec=1)
+        self._set_recovery_rate(100 * 1024 * 1024)
+        # wait for decommissioned node to be removed
+        self._wait_for_node_removed(to_decommission_id)
+
+        # Stop the decommissioned node, because redpanda internally does not
+        # fence it, it is the responsibility of external orchestrator to
+        # stop the node they intend to remove.
+        # This can be removed when we change redpanda to prevent decommissioned nodes
+        # from responding to client Kafka requests.
+        self.redpanda.stop_node(to_decommission)
 
         self.verify()
 
