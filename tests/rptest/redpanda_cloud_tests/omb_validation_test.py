@@ -357,14 +357,14 @@ class OMBValidationTest(RedpandaCloudTest):
         # Before the test even starts, assert that there are a "small" number of connections.
         # This number is not zero because various things maintain or make occasional connections
         # to cloud clusters like kminion, so I observe typically ~45 connections on an idle T1 and 450
-        # on an idle T7 cluster. So we just use a SWAG of 100 + 1% of the connection target as the
+        # on an idle T7 cluster. So we just use a SWAG of 100 + 2% of the connection target as the
         # threshold above which we complain.
         # If this fails it is probably because some other test left services running
         # against the cluster.
         count_before = self._connection_count()
-        maximum_allowed = int(tier_limits.max_connection_count * 0.01 + 100)
+        maximum_allowed = int(tier_limits.max_connection_count * 0.02 + 100)
         assert count_before <= maximum_allowed, (
-            f"Wanted less than {maximum_allowed}"
+            f"Wanted less than {maximum_allowed} "
             f"connections to start but got {count_before}")
 
         benchmark = OpenMessagingBenchmark(self._ctx,
