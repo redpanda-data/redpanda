@@ -25,6 +25,7 @@
 #include "redpanda/admin/api-doc/debug.json.hh"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
+#include "resource_mgmt/cpu_profiler.h"
 #include "serde/rw/rw.h"
 #include "storage/kvstore.h"
 #include "utils/lw_shared_container.h"
@@ -504,23 +505,23 @@ admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
 
     auto profiles = co_await _cpu_profiler.local().results(shard_id);
 
-    std::vector<ss::httpd::debug_json::cpu_profile_shard_samples> response{
-      profiles.size()};
-    for (size_t i = 0; i < profiles.size(); i++) {
-        response[i].shard_id = profiles[i].shard;
-        response[i].dropped_samples = profiles[i].dropped_samples;
-
-        for (auto& sample : profiles[i].samples) {
-            ss::httpd::debug_json::cpu_profile_sample s;
-            s.occurrences = sample.occurrences;
-            s.user_backtrace = sample.user_backtrace;
-
-            response[i].samples.push(s);
-        }
-    }
-
     co_return co_await ss::make_ready_future<ss::json::json_return_type>(
-      std::move(response));
+      ss::json::stream_range_as_array(
+        lw_shared_container(std::move(profiles)),
+        [](const resources::cpu_profiler::shard_samples& profile) {
+            ss::httpd::debug_json::cpu_profile_shard_samples ret;
+            ret.shard_id = profile.shard;
+            ret.dropped_samples = profile.dropped_samples;
+
+            for (auto& sample : profile.samples) {
+                ss::httpd::debug_json::cpu_profile_sample s;
+                s.occurrences = sample.occurrences;
+                s.user_backtrace = sample.user_backtrace;
+
+                ret.samples.push(s);
+            }
+            return ret;
+        }));
 }
 
 ss::future<ss::json::json_return_type>
