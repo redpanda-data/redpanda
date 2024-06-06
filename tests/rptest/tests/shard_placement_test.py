@@ -15,6 +15,7 @@ from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.util import wait_until_result
 
 
 class ShardPlacementTest(RedpandaTest):
@@ -295,3 +296,63 @@ class ShardPlacementTest(RedpandaTest):
         assert map_after_restart == shard_map
 
         # TODO: core count decrease (not supported yet)
+
+    @cluster(num_nodes=5)
+    def test_node_join(self):
+        self.redpanda.add_extra_rp_conf({
+            "core_balancing_continuous": True,
+        })
+        seed_nodes = self.redpanda.nodes[0:3]
+        joiner_nodes = self.redpanda.nodes[3:]
+        self.redpanda.start(nodes=seed_nodes)
+
+        admin = Admin(self.redpanda, default_node=seed_nodes[0])
+        rpk = RpkTool(self.redpanda)
+
+        n_partitions = 10
+
+        topics = ["foo", "bar", "quux"]
+        for topic in topics:
+            rpk.create_topic(topic, partitions=n_partitions, replicas=3)
+
+        self.logger.info(f"created topics: {topics}")
+        initial_shard_map = self.wait_shard_map_stationary(seed_nodes, admin)
+        self.print_shard_stats(initial_shard_map)
+
+        self.redpanda.start(nodes=joiner_nodes)
+
+        def node_rebalance_finished():
+            in_progress = admin.list_reconfigurations(node=seed_nodes[0])
+            if len(in_progress) > 0:
+                return False
+
+            for n in joiner_nodes:
+                num_partitions = len(admin.get_partitions(node=n))
+                if num_partitions < 5:
+                    return False
+
+            return True
+
+        wait_until(node_rebalance_finished, timeout_sec=60, backoff_sec=2)
+        self.logger.info("node rebalance finished")
+
+        def shard_rebalance_finished():
+            nodes = self.redpanda.nodes
+            shard_map = self.get_replica_shard_map(nodes, admin)
+            self.print_shard_stats(shard_map)
+            for n in nodes:
+                node_id = self.redpanda.node_id(n)
+                shard_counts = self.get_shard_counts_by_topic(
+                    shard_map, node_id)
+                for topic in topics:
+                    topic_counts = shard_counts[topic]
+                    if max(topic_counts) - min(topic_counts) > 1:
+                        return False
+
+            return (True, shard_map)
+
+        shard_map_after_balance = wait_until_result(shard_rebalance_finished,
+                                                    timeout_sec=60,
+                                                    backoff_sec=2)
+        self.logger.info("shard rebalance finished")
+        self.print_shard_stats(shard_map_after_balance)
