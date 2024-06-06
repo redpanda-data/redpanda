@@ -43,24 +43,31 @@ struct walk_accumulator {
     ss::future<> visit(ss::sstring const& target, ss::directory_entry entry) {
         auto entry_path = fmt::format("{}/{}", target, entry.name);
         if (entry.type && entry.type == ss::directory_entry_type::regular) {
-            auto file_stats = co_await ss::file_stat(entry_path);
+            size_t file_size{0};
+            std::chrono::system_clock::time_point atime;
+            if (const auto tracker_entry = tracker.get(entry_path);
+                tracker_entry.has_value()) {
+                file_size = tracker_entry->size;
+                atime = tracker_entry->time_point();
+            } else {
+                auto file_stats = co_await ss::file_stat(entry_path);
+                file_size = file_stats.size;
+                atime = file_stats.time_accessed;
+            }
 
             vlog(
               cst_log.debug,
               "Regular file found {} ({})",
               entry_path,
-              file_stats.size);
+              file_size);
 
-            auto last_access_timepoint = tracker.estimate_timestamp(entry_path)
-                                           .value_or(file_stats.time_accessed);
-
-            current_cache_size += static_cast<uint64_t>(file_stats.size);
+            current_cache_size += static_cast<uint64_t>(file_size);
 
             if (!filter || filter.value()(entry_path)) {
                 files.push_back(
-                  {last_access_timepoint,
+                  {atime,
                    (std::filesystem::path(target) / entry.name.data()).native(),
-                   static_cast<uint64_t>(file_stats.size)});
+                   static_cast<uint64_t>(file_size)});
             } else if (filter) {
                 ++filtered_out_files;
             }
