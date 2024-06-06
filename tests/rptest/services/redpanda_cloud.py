@@ -29,8 +29,13 @@ CLOUD_TYPE_FMC = 'FMC'
 CLOUD_TYPE_BYOC = 'BYOC'
 PROVIDER_AWS = 'AWS'
 PROVIDER_GCP = 'GCP'
+PROVIDER_AZURE = 'AZURE'
 
-TIER_DEFAULTS = {PROVIDER_AWS: "tier-1-aws", PROVIDER_GCP: "tier-1-gcp"}
+TIER_DEFAULTS = {
+    PROVIDER_AWS: "tier-1-aws",
+    PROVIDER_GCP: "tier-1-gcp",
+    PROVIDER_AZURE: "tier-1-azure-v1-x86"
+}
 
 
 def get_config_profile_name(config: None | dict[str, Any]) -> str:
@@ -82,6 +87,15 @@ class CloudTierName(Enum):
     GCP_5_P5 = 'tco-p5-tier-5-gcp'
     GCP_6_P5 = 'tco-p5-tier-6-gcp'
     GCP_7_P5 = 'tco-p5-tier-7-gcp'
+    AZURE_1 = 'tier-1-azure-v1-x86'
+    AZURE_2 = 'tier-2-azure-v1-x86'
+    AZURE_3 = 'tier-3-azure-v1-x86'
+    AZURE_4 = 'tier-4-azure-v1-x86'
+    AZURE_5 = 'tier-5-azure-v1-x86'
+    AZURE_6 = 'tier-6-azure-v1-x86'
+    AZURE_7 = 'tier-7-azure-v1-x86'
+    AZURE_8 = 'tier-8-azure-v1-x86'
+    AZURE_9 = 'tier-9-azure-v1-x86'
 
     @classmethod
     def list(cls):
@@ -157,6 +171,8 @@ class LiveClusterParams:
     # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
     zones: list[str] = field(default_factory=list)
     aws_vpc_peering: dict[str, Any] = field(default_factory=dict)
+    # TODO Azure vpc peering was not yet tested since Azure cluster creation on cloud with Tiers is blocked. This part might change
+    azure_vpc_peering: dict[str, Any] = field(default_factory=dict)
 
     @property
     def network_endpoint(self):
@@ -226,7 +242,9 @@ class CloudCluster():
         # init live cluster params
         self.current = LiveClusterParams()
         # Provider specific actions
-        if self.config.provider not in [PROVIDER_AWS, PROVIDER_GCP]:
+        if self.config.provider not in [
+                PROVIDER_AWS, PROVIDER_GCP, PROVIDER_AZURE
+        ]:
             raise RuntimeError(f"Provider '{self.config.provider}' "
                                "is not yet supported by CloudV2")
 
@@ -236,6 +254,10 @@ class CloudCluster():
         elif self.config.provider == PROVIDER_GCP:
             self.provider_key = self.config.gcp_keyfile
             self.provider_secret = None
+        elif self.config.provider == PROVIDER_AZURE:
+            self.provider_key = provider_config['azure_provider_key']
+            self.provider_secret = provider_config['azure_provider_secret']
+            self.client_id = provider_config['azure_client_id']
         # Create client for the provider
         self.provider_cli = make_provider_client(self.config.provider, logger,
                                                  self.config.region,
@@ -260,6 +282,12 @@ class CloudCluster():
                     prefix="")
                 self.current.peer_vpc_id = _net[self.provider_cli.VPC_ID_LABEL]
                 self.current.peer_owner_id = self.provider_cli.project_id
+            elif self.config.provider == PROVIDER_AZURE:
+                # For Azure, retrieve VNet and Subscription ID
+                self.current.peer_vpc_id = self._ducktape_meta[
+                    'network-interfaces-0-vnet-id']
+                self.current.peer_owner_id = self._ducktape_meta[
+                    'subscription-id']
 
             # Currently we need provider client only for VCP in private networking
             # Raise exception is client in not implemented yet
@@ -800,13 +828,20 @@ class CloudCluster():
         # Check topic count
         self._logger.info("Checking cluster topics")
         _topics = self._query_panda_proxy("/topics")
-        _critical = [
-            "_schemas", "__redpanda.connectors_logs",
-            "_internal_connectors_status", "_internal_connectors_configs",
-            "_redpanda_e2e_probe", "_internal_connectors_offsets"
-        ]
+        # For Azure, connect is in development
+        if self.config.provider == PROVIDER_AZURE:
+            _critical = ["_schemas", "_redpanda_e2e_probe"]
+            required_critical_topic_count = 2
+        else:
+            _critical = [
+                "_schemas", "__redpanda.connectors_logs",
+                "_internal_connectors_status", "_internal_connectors_configs",
+                "_redpanda_e2e_probe", "_internal_connectors_offsets"
+            ]
+            required_critical_topic_count = 6
+
         _intersect = list(set(_topics) & set(_critical))
-        if len(_intersect) < 6:
+        if len(_intersect) < required_critical_topic_count:
             return warn_and_return("Cluster missing critical topics")
         else:
             _t = ', '.join(_intersect)
@@ -1095,6 +1130,23 @@ class CloudCluster():
             "namespaceUuid": self.current.namespace_uuid
         }
 
+    def _create_network_peering_payload_azure(self):
+        return {
+            "networkPeering": {
+                "displayName": f'peer-{self.current.name}',
+                "spec": {
+                    "provider": "AZURE",
+                    "cloudProvider": {
+                        "azure": {
+                            "peerSubscriptionId": self.current.peer_owner_id,
+                            "peerVirtualNetworkId": self.current.peer_vpc_id
+                        }
+                    }
+                }
+            },
+            "namespaceUuid": self.current.namespace_uuid
+        }
+
     def _prepare_fmc_network_vpc_info(self):
         """
         Calls CloudV2 API to get cidr_block, vpc_id
@@ -1307,6 +1359,58 @@ class CloudCluster():
             # that was created already above
             self.current.vpc_peering_id = self.provider_cli.create_vpc_peering(
                 self.current, facing_vpcs=False)
+        elif self.config.provider == PROVIDER_AZURE:
+            # TODO This part was not yet tested. Azure cloud cluster creation for Tier testing is blocked. Added this section based on AWS, but might need to update it
+            # Azure specific VPC peering process
+            _body = self._create_network_peering_payload_azure()
+            self._logger.debug(f"body: '{_body}'")
+
+            # Create peering
+            resp = self.cloudv2._http_post(
+                endpoint=self.current.network_endpoint, json=_body)
+            if resp is None:
+                # Check if such peering exists
+                if "network peering already exists" in self.cloudv2.lasterror:
+                    self.vpc_peering = self.cloudv2._http_get(
+                        endpoint=self.current.network_endpoint)[0]
+                    self._logger.warning(
+                        "Found Cloud VPC peering connection "
+                        f"'{self.vpc_peering['displayName']}', "
+                        f"state '{self.vpc_peering['state']}'")
+                    self.current.vpc_peering_id = \
+                        self.provider_cli.find_vpc_peering_connection(
+                            "active", self.current)
+                    if self.current.vpc_peering_id is None:
+                        raise RuntimeError("Azure VPC Peering connection "
+                                           f"not found: {self.current}")
+                    else:
+                        self.current.azure_vpc_peering = \
+                            self.provider_cli.get_vpc_peering_connection(
+                                self.current.vpc_peering_id)
+                else:
+                    raise RuntimeError(self.cloudv2.lasterror)
+            else:
+                self._logger.debug(f"Created VPC peering: '{resp}'")
+                self.vpc_peering = resp
+
+                # 3. Wait for "pending acceptance"
+                self._wait_peering_status_cluster("pending acceptance")
+
+                # Find id of the correct peering VPC
+                self.current.vpc_peering_id = self.provider_cli.find_vpc_peering_connection(
+                    "pending-acceptance", self.current)
+
+                # 4. Accept it on Azure
+                self.current.azure_vpc_peering = self.provider_cli.accept_vpc_peering(
+                    self.current.vpc_peering_id)
+
+            # 5.
+            self._create_routes_to_ducktape()
+            self._create_routes_to_cluster()
+
+            # 6.
+            self._wait_peering_status_provider("active")
+            self._wait_peering_status_cluster("ready")
 
         return
 
