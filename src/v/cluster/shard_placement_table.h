@@ -261,6 +261,7 @@ enum class shard_placement_kvstore_key_type {
     persistence_enabled = 0,
     assignment = 1,
     current_state = 2,
+    balancer_state = 3,
 };
 
 } // namespace cluster

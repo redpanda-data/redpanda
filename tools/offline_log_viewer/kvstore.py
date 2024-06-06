@@ -273,6 +273,8 @@ def decode_shard_placement_key(k):
     elif ret['type'] == 2:
         ret['name'] = "current_state"
         ret['group'] = rdr.read_int64()
+    elif ret['type'] == 3:
+        ret['name'] = "balancer_state"
     else:
         ret['name'] = "unknown"
     return ret

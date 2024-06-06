@@ -36,6 +36,7 @@ public:
     shard_balancer(
       ss::sharded<shard_placement_table>&,
       ss::sharded<features::feature_table>&,
+      ss::sharded<storage::api>&,
       ss::sharded<topic_table>&,
       ss::sharded<controller_backend>&,
       config::binding<bool> balancing_on_core_count_change,
@@ -59,8 +60,12 @@ private:
     ss::future<> assign_fiber();
     ss::future<> do_assign_ntps(mutex::units& lock);
 
+    ss::future<> balance_on_core_count_change(mutex::units& lock);
+    ss::future<> do_balance(mutex::units& lock);
+
     void maybe_assign(
       const model::ntp&,
+      bool can_reassign,
       chunked_hash_map<model::ntp, std::optional<shard_placement_target>>&);
 
     ss::future<> set_target(
@@ -91,6 +96,7 @@ private:
 private:
     shard_placement_table& _shard_placement;
     features::feature_table& _features;
+    storage::kvstore& _kvstore;
     ss::sharded<topic_table>& _topics;
     ss::sharded<controller_backend>& _controller_backend;
     model::node_id _self;

@@ -19,9 +19,32 @@
 
 namespace cluster {
 
+namespace {
+
+const bytes& state_kvstore_key() {
+    static thread_local bytes key = []() {
+        iobuf buf;
+        serde::write(buf, shard_placement_kvstore_key_type::balancer_state);
+        return iobuf_to_bytes(buf);
+    }();
+    return key;
+}
+
+struct persisted_state
+  : serde::
+      envelope<persisted_state, serde::version<0>, serde::compat_version<0>> {
+    uint32_t last_rebalance_core_count = 0;
+
+    bool operator==(const persisted_state&) const = default;
+    auto serde_fields() { return std::tie(last_rebalance_core_count); }
+};
+
+} // namespace
+
 shard_balancer::shard_balancer(
   ss::sharded<shard_placement_table>& spt,
   ss::sharded<features::feature_table>& features,
+  ss::sharded<storage::api>& storage,
   ss::sharded<topic_table>& topics,
   ss::sharded<controller_backend>& cb,
   config::binding<bool> balancing_on_core_count_change,
@@ -29,6 +52,7 @@ shard_balancer::shard_balancer(
   config::binding<std::chrono::milliseconds> debounce_timeout)
   : _shard_placement(spt.local())
   , _features(features.local())
+  , _kvstore(storage.local().kvs())
   , _topics(topics)
   , _controller_backend(cb)
   , _self(*config::node().node_id())
@@ -131,7 +155,14 @@ ss::future<> shard_balancer::start() {
               _to_assign.insert(ntp);
           }
       });
+
     co_await do_assign_ntps(lock);
+
+    if (
+      _balancing_on_core_count_change()
+      && _features.is_active(features::feature::node_local_core_assignment)) {
+        co_await balance_on_core_count_change(lock);
+    }
 
     vassert(
       tt_version == _topics.local().topics_map_revision(),
@@ -249,7 +280,7 @@ ss::future<> shard_balancer::do_assign_ntps(mutex::units& lock) {
     auto to_assign = std::exchange(_to_assign, {});
     co_await ssx::async_for_each(
       to_assign.begin(), to_assign.end(), [&](const model::ntp& ntp) {
-          maybe_assign(ntp, new_targets);
+          maybe_assign(ntp, /*can_reassign=*/false, new_targets);
       });
 
     co_await ss::max_concurrent_for_each(
@@ -266,7 +297,7 @@ ss::future<> shard_balancer::do_assign_ntps(mutex::units& lock) {
 }
 
 void shard_balancer::maybe_assign(
-  const model::ntp& ntp, ntp2target_t& new_targets) {
+  const model::ntp& ntp, bool can_reassign, ntp2target_t& new_targets) {
     std::optional<shard_placement_target> prev_target
       = _shard_placement.get_target(ntp);
 
@@ -292,15 +323,23 @@ void shard_balancer::maybe_assign(
               _shard_placement.is_persistence_enabled(),
               "expected persistence to be enabled");
 
+            std::optional<ss::shard_id> prev_shard;
             if (prev_target && prev_target->log_revision == log_revision) {
+                prev_shard = prev_target->shard;
+            }
+
+            if (prev_shard && !can_reassign) {
                 // partition already assigned, keep current shard.
                 return;
             }
 
+            auto new_shard = choose_shard(ntp, topic_data, prev_shard);
+            if (new_shard == prev_shard) {
+                return;
+            }
+
             target.emplace(
-              replicas_view->assignment.group,
-              log_revision.value(),
-              choose_shard(ntp, topic_data, std::nullopt));
+              replicas_view->assignment.group, log_revision.value(), new_shard);
         } else {
             // node-local shard placement not enabled yet, get target from
             // topic_table.
@@ -319,6 +358,66 @@ void shard_balancer::maybe_assign(
 
     update_counts(ntp, topic_data, prev_target, target);
     new_targets.emplace(ntp, target);
+}
+
+ss::future<> shard_balancer::balance_on_core_count_change(mutex::units& lock) {
+    uint32_t last_rebalance_core_count = 0;
+    auto state_buf = _kvstore.get(
+      storage::kvstore::key_space::shard_placement, state_kvstore_key());
+    if (state_buf) {
+        last_rebalance_core_count = serde::from_iobuf<persisted_state>(
+                                      std::move(*state_buf))
+                                      .last_rebalance_core_count;
+    }
+
+    // If there is no state in kvstore, this means that we are restarting with
+    // shard balancing enabled for the first time, and this is a good time to
+    // rebalance as well.
+
+    if (last_rebalance_core_count == ss::smp::count) {
+        co_return;
+    }
+
+    vlog(
+      clusterlog.info, "detected core count change, triggering rebalance...");
+    co_await do_balance(lock);
+}
+
+ss::future<> shard_balancer::do_balance(mutex::units& lock) {
+    // Go over all node-local ntps in random order and try to find a more
+    // optimal core for them.
+    chunked_vector<model::ntp> ntps;
+    co_await _shard_placement.for_each_ntp(
+      [&](const model::ntp& ntp, const shard_placement_target&) {
+          ntps.push_back(ntp);
+      });
+    std::shuffle(ntps.begin(), ntps.end(), random_generators::internal::gen);
+
+    ntp2target_t new_targets;
+    co_await ssx::async_for_each(
+      ntps.begin(), ntps.end(), [&](const model::ntp& ntp) {
+          maybe_assign(ntp, /*can_reassign=*/true, new_targets);
+      });
+
+    vlog(
+      clusterlog.info,
+      "after balancing {} ntps were reassigned",
+      new_targets.size());
+
+    co_await ss::max_concurrent_for_each(
+      new_targets,
+      128,
+      [this, &lock](const decltype(new_targets)::value_type& kv) {
+          const auto& [ntp, target] = kv;
+          return set_target(ntp, target, lock);
+      });
+
+    co_await _kvstore.put(
+      storage::kvstore::key_space::shard_placement,
+      state_kvstore_key(),
+      serde::to_iobuf(persisted_state{
+        .last_rebalance_core_count = ss::smp::count,
+      }));
 }
 
 ss::future<> shard_balancer::set_target(

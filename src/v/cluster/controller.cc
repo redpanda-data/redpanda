@@ -465,6 +465,7 @@ ss::future<> controller::start(
           return _shard_balancer.start_single(
             std::ref(_shard_placement),
             std::ref(_feature_table),
+            std::ref(_storage),
             std::ref(_tp_state),
             std::ref(_backend),
             config::shard_local_cfg()
