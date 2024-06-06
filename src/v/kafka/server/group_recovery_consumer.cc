@@ -76,6 +76,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         co_return ss::stop_iteration::yes;
     }
     _state.last_read_offset = batch.last_offset();
+
     if (batch.header().type == model::record_batch_type::raft_data) {
         _batch_base_offset = batch.base_offset();
         co_await model::for_each_record(batch, [this](model::record& r) {
@@ -90,6 +91,11 @@ group_recovery_consumer::operator()(model::record_batch batch) {
                      .cmd;
 
         auto [group_it, _] = _state.groups.try_emplace(val.group_id);
+        vlog(
+          klog.trace,
+          "[group: {}] recovered update tx offsets: {}",
+          val.group_id,
+          val);
         group_it->second.update_prepared(batch.last_offset(), val);
 
         co_return ss::stop_iteration::no;
@@ -97,7 +103,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
       batch.header().type == model::record_batch_type::group_commit_tx) {
         auto cmd = parse_tx_batch<group_tx::commit_metadata>(
           batch, group::commit_tx_record_version);
-
+        vlog(klog.trace, "[group: {}] recovered commit tx", cmd.cmd.group_id);
         auto [group_it, _] = _state.groups.try_emplace(cmd.cmd.group_id);
         group_it->second.commit(cmd.pid);
 
@@ -106,6 +112,11 @@ group_recovery_consumer::operator()(model::record_batch batch) {
       batch.header().type == model::record_batch_type::group_abort_tx) {
         auto cmd = parse_tx_batch<group_tx::abort_metadata>(
           batch, group::aborted_tx_record_version);
+        vlog(
+          klog.trace,
+          "[group: {}] recovered abort tx_seq: {}",
+          cmd.cmd.group_id,
+          cmd.cmd.tx_seq);
 
         auto [group_it, _] = _state.groups.try_emplace(cmd.cmd.group_id);
         group_it->second.abort(cmd.pid, cmd.cmd.tx_seq);
@@ -117,6 +128,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
     } else if (batch.header().type == model::record_batch_type::version_fence) {
         auto fence = features::feature_table::decode_version_fence(
           std::move(batch));
+        vlog(klog.trace, "recovered version fence");
         if (fence.active_version >= cluster::cluster_version{9}) {
             _state.has_offset_retention_feature_fence = true;
         }
@@ -159,10 +171,23 @@ void group_recovery_consumer::apply_tx_fence(model::record_batch&& batch) {
         auto cmd = reflection::adl<group_tx::fence_metadata_v0>{}.from(
           val_reader);
         auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
+        vlog(
+          klog.trace,
+          "[group: {}] recovered tx fence version: {} for producer: {}",
+          cmd.group_id,
+          fence_version,
+          bid.pid);
         group_it->second.try_set_fence(bid.pid.get_id(), bid.pid.get_epoch());
     } else if (fence_version == group::fence_control_record_v1_version) {
         auto cmd = reflection::adl<group_tx::fence_metadata_v1>{}.from(
           val_reader);
+        vlog(
+          klog.trace,
+          "[group: {}] recovered tx fence version: {} for producer: {} - {}",
+          cmd.group_id,
+          fence_version,
+          bid.pid,
+          cmd);
         auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
         group_it->second.try_set_fence(
           bid.pid.get_id(),
@@ -172,6 +197,13 @@ void group_recovery_consumer::apply_tx_fence(model::record_batch&& batch) {
           model::partition_id(0));
     } else if (fence_version == group::fence_control_record_version) {
         auto cmd = reflection::adl<group_tx::fence_metadata>{}.from(val_reader);
+        vlog(
+          klog.trace,
+          "[group: {}] recovered tx fence version: {} for producer: {} - {}",
+          cmd.group_id,
+          fence_version,
+          bid.pid,
+          cmd);
         auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
         group_it->second.try_set_fence(
           bid.pid.get_id(),
@@ -214,7 +246,7 @@ void group_recovery_consumer::handle_record(model::record r) {
 }
 
 void group_recovery_consumer::handle_group_metadata(group_metadata_kv md) {
-    vlog(klog.trace, "Recovering group metadata {}", md.key.group_id);
+    vlog(klog.trace, "[group: {}] recovered group metadata", md.key.group_id);
 
     if (md.value) {
         // until we switch over to a compacted topic or use raft snapshots,
@@ -234,7 +266,8 @@ void group_recovery_consumer::handle_offset_metadata(offset_metadata_kv md) {
     if (md.value) {
         vlog(
           klog.trace,
-          "Recovering offset {}/{} with metadata {}",
+          "[group: {}] recovered {}/{} committed offset: {}",
+          md.key.group_id,
           md.key.topic,
           md.key.partition,
           *md.value);
@@ -248,6 +281,12 @@ void group_recovery_consumer::handle_offset_metadata(offset_metadata_kv md) {
         group_it->second.update_offset(
           tp, _batch_base_offset, std::move(*md.value));
     } else {
+        vlog(
+          klog.trace,
+          "[group: {}] recovered {}/{} committed offset tombstone",
+          md.key.group_id,
+          md.key.topic,
+          md.key.partition);
         // tombstone
         auto group_it = _state.groups.find(md.key.group_id);
         if (group_it != _state.groups.end()) {
