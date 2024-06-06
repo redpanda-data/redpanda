@@ -74,16 +74,17 @@ information about the members.
 // columns if any member in the group has an instance id / error.
 
 type describeRow struct {
-	topic         string
-	partition     int32
-	currentOffset string
-	logEndOffset  int64
-	lag           string
-	memberID      string
-	instanceID    *string
-	clientID      string
-	host          string
-	err           string
+	topic          string
+	partition      int32
+	currentOffset  string
+	logStartOffset int64
+	logEndOffset   int64
+	lag            string
+	memberID       string
+	instanceID     *string
+	clientID       string
+	host           string
+	err            string
 }
 
 func printDescribed(commitsOnly bool, lags kadm.DescribedGroupLags) {
@@ -95,9 +96,10 @@ func printDescribed(commitsOnly bool, lags kadm.DescribedGroupLags) {
 				topic:     l.Topic,
 				partition: l.Partition,
 
-				currentOffset: strconv.FormatInt(l.Commit.At, 10),
-				logEndOffset:  l.End.Offset,
-				lag:           strconv.FormatInt(l.Lag, 10),
+				currentOffset:  strconv.FormatInt(l.Commit.At, 10),
+				logStartOffset: l.Start.Offset,
+				logEndOffset:   l.End.Offset,
+				lag:            strconv.FormatInt(l.Lag, 10),
 			}
 			if l.Err != nil {
 				row.err = l.Err.Error()
@@ -174,6 +176,7 @@ func printDescribedGroup(
 		"TOPIC",
 		"PARTITION",
 		"CURRENT-OFFSET",
+		"LOG-START-OFFSET",
 		"LOG-END-OFFSET",
 		"LAG",
 		"MEMBER-ID",
@@ -183,6 +186,7 @@ func printDescribedGroup(
 			r.topic,
 			r.partition,
 			r.currentOffset,
+			r.logStartOffset,
 			r.logEndOffset,
 			r.lag,
 			r.memberID,

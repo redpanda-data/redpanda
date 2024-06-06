@@ -105,6 +105,7 @@ class RpkGroupPartition(typing.NamedTuple):
     topic: str
     partition: int
     current_offset: Optional[int]
+    log_start_offset: Optional[int]
     log_end_offset: Optional[int]
     lag: Optional[int]
     member_id: str
@@ -840,8 +841,8 @@ class RpkTool:
 
                 received_columns = set(c.name for c in table.columns)
                 required_columns = set([
-                    "TOPIC", "PARTITION", "CURRENT-OFFSET", "LOG-END-OFFSET",
-                    "LAG", "MEMBER-ID", "CLIENT-ID", "HOST"
+                    "TOPIC", "PARTITION", "CURRENT-OFFSET", "LOG-START-OFFSET",
+                    "LOG-END-OFFSET", "LAG", "MEMBER-ID", "CLIENT-ID", "HOST"
                 ])
                 optional_columns = set(["INSTANCE-ID", "ERROR"])
 
@@ -885,6 +886,8 @@ class RpkTool:
                         topic=obj["TOPIC"],
                         partition=int(obj["PARTITION"]),
                         current_offset=maybe_parse_int(obj["CURRENT-OFFSET"]),
+                        log_start_offset=maybe_parse_int(
+                            obj["LOG-START-OFFSET"]),
                         log_end_offset=maybe_parse_int(obj["LOG-END-OFFSET"]),
                         lag=maybe_parse_int(obj["LAG"]),
                         member_id=obj["MEMBER-ID"],
