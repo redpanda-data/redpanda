@@ -719,3 +719,52 @@ FIXTURE_TEST(test_background_maybe_trim, cache_test_fixture) {
     // = 40%. +1 for the object we just added.
     BOOST_REQUIRE_EQUAL(get_object_count(), 41);
 }
+
+FIXTURE_TEST(test_tracker_sync_only_remove, cache_test_fixture) {
+    put_into_cache(create_data_string('a', 1_KiB), KEY);
+    auto& cache = sharded_cache.local();
+    cache.get(KEY).get();
+
+    const auto full_key_path = CACHE_DIR / KEY;
+
+    const auto& t = tracker();
+    BOOST_REQUIRE_EQUAL(t.size(), 1);
+
+    {
+        const auto entry = t.get(full_key_path.native());
+        BOOST_REQUIRE(entry.has_value());
+        BOOST_REQUIRE_EQUAL(entry->size, 1_KiB);
+        BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 1_KiB);
+        BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 1);
+    }
+
+    ss::remove_file(full_key_path.native()).get();
+
+    {
+        const auto entry = t.get(full_key_path.native());
+        BOOST_REQUIRE(entry.has_value());
+        BOOST_REQUIRE_EQUAL(entry->size, 1_KiB);
+        BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 1_KiB);
+        BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 1);
+    }
+
+    sync_tracker();
+
+    BOOST_REQUIRE_EQUAL(t.size(), 0);
+    BOOST_REQUIRE(!t.get(full_key_path.native()).has_value());
+    BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 0);
+    BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 0);
+}
+
+FIXTURE_TEST(test_tracker_sync_add_remove, cache_test_fixture) {
+    put_into_cache(create_data_string('a', 1_KiB), KEY);
+    auto& cache = sharded_cache.local();
+    const auto full_key_path = CACHE_DIR / KEY;
+    const auto& t = tracker();
+    BOOST_REQUIRE_EQUAL(t.size(), 0);
+    sync_tracker(access_time_tracker::add_entries_t::yes);
+    BOOST_REQUIRE_EQUAL(t.size(), 1);
+    BOOST_REQUIRE(t.get(full_key_path.native()).has_value());
+    BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 1024);
+    BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 1);
+}

@@ -12,6 +12,7 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/cache_service.h"
 #include "config/property.h"
 #include "test_utils/scoped_config.h"
@@ -168,6 +169,16 @@ public:
     }
 
     scoped_config cfg;
+
+    void sync_tracker(
+      access_time_tracker::add_entries_t add_entries
+      = access_time_tracker::add_entries_t::no) {
+        sharded_cache.local().sync_access_time_tracker(add_entries).get();
+    }
+
+    const access_time_tracker& tracker() const {
+        return sharded_cache.local()._access_time_tracker;
+    }
 };
 
 } // namespace cloud_storage
