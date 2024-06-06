@@ -164,6 +164,11 @@ func makeReportTable(report adminapi.SelfTestNodeReport) [][]string {
 			table = append(table, []string{""})
 			continue
 		}
+		if sr.TestType == adminapi.CloudcheckTagIdentifier {
+			// Cloudcheck does not have any IOPS, THROUGHPUT, or LATENCY results.
+			table = append(table, []string{""})
+			continue
+		}
 		table = append(table, []string{"IOPS", fmt.Sprintf("%d req/sec", *sr.RequestsPerSec)})
 		var throughput string
 		if sr.TestType == adminapi.NetcheckTagIdentifier {

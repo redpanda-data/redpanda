@@ -228,7 +228,7 @@ ss::future<self_test_result> cloudcheck::verify_upload(
   cloud_storage_clients::object_key key,
   const std::optional<iobuf>& payload) {
     auto result = self_test_result{
-      .name = _opts.name, .info = "Put", .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "Put", .test_type = "cloud"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
@@ -276,7 +276,7 @@ cloudcheck::verify_list(
   std::optional<cloud_storage_clients::object_key> prefix,
   size_t max_keys) {
     auto result = self_test_result{
-      .name = _opts.name, .info = "List", .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "List", .test_type = "cloud"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
@@ -317,7 +317,7 @@ ss::future<self_test_result> cloudcheck::verify_head(
   cloud_storage_clients::bucket_name bucket,
   std::optional<cloud_storage_clients::object_key> key) {
     auto result = self_test_result{
-      .name = _opts.name, .info = "Head", .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "Head", .test_type = "cloud"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
@@ -372,7 +372,7 @@ cloudcheck::verify_download(
   cloud_storage_clients::bucket_name bucket,
   std::optional<cloud_storage_clients::object_key> key) {
     auto result = self_test_result{
-      .name = _opts.name, .info = "Get", .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "Get", .test_type = "cloud"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
@@ -430,7 +430,7 @@ ss::future<self_test_result> cloudcheck::verify_delete(
   cloud_storage_clients::bucket_name bucket,
   cloud_storage_clients::object_key key) {
     auto result = self_test_result{
-      .name = _opts.name, .info = "Delete", .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "Delete", .test_type = "cloud"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
@@ -472,9 +472,7 @@ ss::future<self_test_result> cloudcheck::verify_delete(
 ss::future<self_test_result> cloudcheck::verify_deletes(
   cloud_storage_clients::bucket_name bucket, size_t num_objects) {
     auto result = self_test_result{
-      .name = _opts.name,
-      .info = "Plural Delete",
-      .test_type = "cloud_storage"};
+      .name = _opts.name, .info = "Plural Delete", .test_type = "cloud"};
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
