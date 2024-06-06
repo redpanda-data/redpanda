@@ -626,7 +626,7 @@ cache::remove_segment_full(const file_list_item& file_stat) {
 
         // Remove key if possible to make sure there is no resource
         // leak
-        _access_time_tracker.remove_timestamp(std::string_view(file_stat.path));
+        _access_time_tracker.remove(file_stat.path);
 
         vlog(
           cst_log.trace,
@@ -772,8 +772,7 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
         // exhaustive trim because they are occupying too much space.
         try {
             co_await delete_file_and_empty_parents(file_stat.path);
-            _access_time_tracker.remove_timestamp(
-              std::string_view(file_stat.path));
+            _access_time_tracker.remove(file_stat.path);
 
             _current_cache_size -= std::min(
               file_stat.size, _current_cache_size);
@@ -1052,19 +1051,22 @@ ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
     probe.get();
     ss::file cache_file;
+
+    size_t data_size{0};
     try {
         auto source = (_cache_dir / key).native();
         cache_file = co_await ss::open_file_dma(source, ss::open_flags::ro);
+        data_size = co_await cache_file.size();
 
         // Bump access time of the file
         if (ss::this_shard_id() == 0) {
-            _access_time_tracker.add_timestamp(
-              source, std::chrono::system_clock::now());
+            _access_time_tracker.add(
+              source, std::chrono::system_clock::now(), data_size);
         } else {
-            ssx::spawn_with_gate(_gate, [this, source] {
-                return container().invoke_on(0, [source](cache& c) {
-                    c._access_time_tracker.add_timestamp(
-                      source, std::chrono::system_clock::now());
+            ssx::spawn_with_gate(_gate, [this, source, data_size] {
+                return container().invoke_on(0, [source, data_size](cache& c) {
+                    c._access_time_tracker.add(
+                      source, std::chrono::system_clock::now(), data_size);
                 });
             });
         }
@@ -1077,7 +1079,6 @@ ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
         }
     }
 
-    auto data_size = co_await cache_file.size();
     probe.cached_get();
     co_return std::optional(cache_item{std::move(cache_file), data_size});
 }
@@ -1264,7 +1265,7 @@ ss::future<> cache::_invalidate(const std::filesystem::path& key) {
     try {
         auto path = (_cache_dir / key).native();
         auto stat = co_await ss::file_stat(path);
-        _access_time_tracker.remove_timestamp(key.native());
+        _access_time_tracker.remove(key.native());
         co_await delete_file_and_empty_parents(path);
         _current_cache_size -= stat.size;
         _current_cache_objects -= 1;
@@ -1472,15 +1473,16 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
         auto rel_path = _cache_dir
                         / std::filesystem::relative(
                           std::filesystem::path(file_stat.path), _cache_dir);
-        auto estimate = _access_time_tracker.estimate_timestamp(
-          rel_path.native());
-        if (estimate != file_stat.access_time) {
+
+        if (auto estimate = _access_time_tracker.get(rel_path.native());
+            estimate.has_value()
+            && estimate->time_point() != file_stat.access_time) {
             vlog(
               cst_log.trace,
               "carryover file {} was accessed ({}) since the last trim ({}), "
               "ignoring",
               rel_path.native(),
-              estimate->time_since_epoch().count(),
+              estimate->atime_sec,
               file_stat.access_time.time_since_epoch().count());
             // The file was accessed since we get the stats
             continue;
