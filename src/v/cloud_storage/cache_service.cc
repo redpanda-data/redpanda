@@ -315,20 +315,6 @@ ss::future<> cache::trim(
   std::optional<size_t> object_limit_override) {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     auto guard = _gate.hold();
-    auto [walked_cache_size, filtered_out_files, candidates_for_deletion, _]
-      = co_await _walker.walk(
-        _cache_dir.native(),
-        _access_time_tracker,
-        _walk_concurrency(),
-        [](std::string_view path) {
-            return !(
-              std::string_view(path).ends_with(".tx")
-              || std::string_view(path).ends_with(".index"));
-        });
-
-    // Updating the access time tracker in case if some files were removed
-    // from cache directory by the user manually.
-    co_await _access_time_tracker.trim(candidates_for_deletion);
 
     auto size_limit = size_limit_override.value_or(_max_bytes);
     auto object_limit = object_limit_override.value_or(_max_objects());
@@ -368,6 +354,83 @@ ss::future<> cache::trim(
           target_size);
     }
 
+    if (
+      _current_cache_size + _reserved_cache_size < target_size
+      && _current_cache_objects + _reserved_cache_objects < target_objects) {
+        // Exit early if we are already within the target
+        co_return;
+    }
+
+    // Calculate how much to delete
+    auto size_to_delete
+      = (_current_cache_size + _reserved_cache_size)
+        - std::min(target_size, _current_cache_size + _reserved_cache_size);
+    auto objects_to_delete
+      = _current_cache_objects + _reserved_cache_objects
+        - std::min(
+          target_objects, _current_cache_objects + _reserved_cache_objects);
+
+    auto tracker_lru_entries = _access_time_tracker.lru_entries();
+    vlog(
+      cst_log.debug,
+      "in-memory trim: set target_size {}/{}, size {}/{}, reserved {}/{}, "
+      "pending {}/{}), candidates for deletion: {}, size to delete: {}, "
+      "objects to delete: {}",
+      target_size,
+      target_objects,
+      _current_cache_size,
+      _current_cache_objects,
+      _reserved_cache_size,
+      _reserved_cache_objects,
+      _reservations_pending,
+      _reservations_pending_objects,
+      tracker_lru_entries.size());
+
+    auto trim_result = co_await do_trim(
+      tracker_lru_entries, size_to_delete, objects_to_delete);
+
+    vlog(
+      cst_log.debug,
+      "in-memory trim result: deleted size: {}, deleted count: {}",
+      trim_result.deleted_size,
+      trim_result.deleted_count);
+
+    _total_cleaned += trim_result.deleted_size;
+    probe.set_size(_current_cache_size);
+    probe.set_num_files(_current_cache_objects);
+
+    size_to_delete -= std::min(trim_result.deleted_size, size_to_delete);
+    objects_to_delete -= std::min(trim_result.deleted_count, objects_to_delete);
+
+    // Subsequent calculations require knowledge of how much data cannot
+    // possibly be deleted (because all trims skip it) in order to decide
+    // whether the trim worked properly.
+    static constexpr size_t undeletable_objects = 1;
+    auto undeletable_bytes = (co_await access_time_tracker_size()).value_or(0);
+
+    if (
+      size_to_delete < undeletable_bytes
+      && objects_to_delete < undeletable_objects) {
+        _last_clean_up = ss::lowres_clock::now();
+        _last_trim_failed = false;
+        co_return;
+    }
+
+    auto [walked_cache_size, filtered_out_files, candidates_for_deletion, _]
+      = co_await _walker.walk(
+        _cache_dir.native(),
+        _access_time_tracker,
+        _walk_concurrency(),
+        [](std::string_view path) {
+            return !(
+              std::string_view(path).ends_with(".tx")
+              || std::string_view(path).ends_with(".index"));
+        });
+
+    // Updating the access time tracker in case if some files were removed
+    // from cache directory by the user manually.
+    co_await _access_time_tracker.trim(candidates_for_deletion);
+
     // Calculate total space used by tmp files: we will use this later
     // when updating current_cache_size.
     uint64_t tmp_files_size{0};
@@ -396,27 +459,11 @@ ss::future<> cache::trim(
       candidates_for_deletion.size(),
       filtered_out_files);
 
-    if (
-      _current_cache_size + _reserved_cache_size < target_size
-      && _current_cache_objects + _reserved_cache_objects < target_objects) {
-        // Exit early if we are already within the target
-        co_return;
-    }
-
     // Sort by atime for the subsequent LRU trimming loop
     std::sort(
       candidates_for_deletion.begin(),
       candidates_for_deletion.end(),
       [](auto& a, auto& b) { return a.access_time < b.access_time; });
-
-    // Calculate how much to delete
-    auto size_to_delete
-      = (_current_cache_size + _reserved_cache_size)
-        - std::min(target_size, _current_cache_size + _reserved_cache_size);
-    auto objects_to_delete
-      = _current_cache_objects + _reserved_cache_objects
-        - std::min(
-          target_objects, _current_cache_objects + _reserved_cache_objects);
 
     vlog(
       cst_log.debug,
@@ -432,14 +479,8 @@ ss::future<> cache::trim(
       tmp_files_size);
 
     // Execute the ordinary trim, prioritize removing
-    auto fast_result = co_await trim_fast(
+    trim_result = co_await trim_fast(
       candidates_for_deletion, size_to_delete, objects_to_delete);
-
-    // Subsequent calculations require knowledge of how much data cannot
-    // possibly be deleted (because all trims skip it) in order to decide
-    // whether the trim worked properly.
-    static constexpr size_t undeletable_objects = 1;
-    auto undeletable_bytes = (co_await access_time_tracker_size()).value_or(0);
 
     // We aim to keep current_cache_size continuously up to date, but
     // in case of housekeeping issues, correct it if it apepars to have
@@ -448,7 +489,7 @@ ss::future<> cache::trim(
     // by the amount of data currently in tmp files, because they may be
     // updated while the walk is happening.
     uint64_t cache_size_lower_bound = walked_cache_size
-                                      - fast_result.deleted_size
+                                      - trim_result.deleted_size
                                       - tmp_files_size - undeletable_bytes;
     if (_current_cache_size < cache_size_lower_bound) {
         vlog(
@@ -459,7 +500,7 @@ ss::future<> cache::trim(
         _current_cache_size = cache_size_lower_bound;
         _current_cache_objects = filtered_out_files
                                  + candidates_for_deletion.size()
-                                 - fast_result.deleted_count;
+                                 - trim_result.deleted_count;
     }
 
     const auto cache_entries_before_trim = candidates_for_deletion.size()
@@ -468,29 +509,29 @@ ss::future<> cache::trim(
     vlog(
       cst_log.debug,
       "trim: deleted {}/{} files of total size {}.  Undeletable size {}.",
-      fast_result.deleted_count,
+      trim_result.deleted_count,
       cache_entries_before_trim,
-      fast_result.deleted_size,
+      trim_result.deleted_size,
       undeletable_bytes);
 
-    _total_cleaned += fast_result.deleted_size;
+    _total_cleaned += trim_result.deleted_size;
     probe.set_size(_current_cache_size);
-    probe.set_num_files(cache_entries_before_trim - fast_result.deleted_count);
+    probe.set_num_files(cache_entries_before_trim - trim_result.deleted_count);
 
-    size_to_delete -= std::min(fast_result.deleted_size, size_to_delete);
-    objects_to_delete -= std::min(fast_result.deleted_count, objects_to_delete);
+    size_to_delete -= std::min(trim_result.deleted_size, size_to_delete);
+    objects_to_delete -= std::min(trim_result.deleted_count, objects_to_delete);
 
     // Before we (maybe) proceed to do an exhaustive trim, make sure we're not
     // trying to trim more data than was physically seen while walking the
     // cache.
     size_to_delete = std::min(
-      walked_cache_size - fast_result.deleted_size, size_to_delete);
+      walked_cache_size - trim_result.deleted_size, size_to_delete);
 
     // If we were not able to delete enough files and there are some filtered
     // out files, force an exhaustive trim. This ensures that if the cache is
     // dominated by filtered out files, we do not skip trimming them by reducing
     // the objects_to_delete counter next.
-    bool force_exhaustive_trim = fast_result.deleted_count < objects_to_delete
+    bool force_exhaustive_trim = trim_result.deleted_count < objects_to_delete
                                  && filtered_out_files > 0;
 
     // In the situation where all files in cache are filtered out,
@@ -500,7 +541,7 @@ ss::future<> cache::trim(
     // force_exhaustive_trim avoids this.
     if (!force_exhaustive_trim) {
         objects_to_delete = std::min(
-          candidates_for_deletion.size() - fast_result.deleted_count,
+          candidates_for_deletion.size() - trim_result.deleted_count,
           objects_to_delete);
     }
 
@@ -651,7 +692,13 @@ ss::future<cache::trim_result> cache::trim_fast(
   uint64_t size_to_delete,
   size_t objects_to_delete) {
     probe.fast_trim();
+    co_return co_await do_trim(candidates, size_to_delete, objects_to_delete);
+}
 
+ss::future<cache::trim_result> cache::do_trim(
+  const fragmented_vector<file_list_item>& candidates,
+  uint64_t size_to_delete,
+  size_t objects_to_delete) {
     trim_result result;
 
     // Reset carryover list
