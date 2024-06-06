@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from dataclasses import dataclass
+from math import ceil
 from ducktape.tests.test import TestContext
 from ducktape.services.service import Service
 from typing import Any, Callable, Optional
@@ -141,10 +142,21 @@ class ProducerSwarm(Service):
         swarm runtime (messages / rate) is short, this may fail as all producers and start and
         finish before we are able to see this via the metrics endpoint and an exception is thrown."""
 
-        # calculate the theoretical start time based on the spawn rate and then
-        # use 1.5x that + 10 seconds as the timeout
-        timeout_s = 10 + 1.5 * (self._producers * self.CLIENT_SPAWN_WAIT_MS /
-                                1000)
+        # Calculate the theoretical start time based on the spawn rate and then
+        # use 3x that + 30 seconds as the timeout. In addition to the sources of random
+        # variation, producer swarm is subject to additional variance:
+        #
+        #   - The CLIENT_SPAWN_WAIT_MS is a sleep time in between spawns, not the
+        # actual inter-spawn time, since the spawn itself takes non-zero time and also the
+        # sleep may take longer that specified. So the actual inter-spawn times are longer
+        # than the configured value and under heavy load may be substantially longer.
+        #
+        #   - A client is not considered started util is successfully sends a message to
+        # the cluster. Since we have often just created the topic, this could be delayed
+        # due to leadership transfers which occur in a burst some time between 0 and 5
+        # minutes after the topic is created.
+        timeout_s = 30 + 3 * ceil(
+            self._producers * self.CLIENT_SPAWN_WAIT_MS / 1000)
 
         def started_count():
             started = self.get_metrics_summary().clients_started
@@ -158,8 +170,8 @@ class ProducerSwarm(Service):
             lambda: started_count() == self._producers,
             timeout_sec=timeout_s,
             backoff_sec=1,
-            err_msg=lambda: f"Producers did not start in time: "
-            "{started_count()} started, expected {self._producers}")
+            err_msg=lambda: f"{self} did not start after {timeout_s}: "
+            f"{started_count()} started, expected {self._producers}")
 
     def is_metrics_available(self, node):
         path = f"metrics/summary"
