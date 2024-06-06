@@ -161,6 +161,16 @@ class CertificateRevocationTestBase(RedpandaTest):
             timeout=10,
         )
 
+    def _enable_rpc_tls(self):
+        for n in self.redpanda.nodes:
+            n.account.ssh("sysctl fs.inotify.max_user_instances=512")
+        self.redpanda.stop()
+        self.redpanda.start(
+            node_config_overrides={
+                n: dict(rpc_server_tls=self.RPC_TLS_CONFIG)
+                for n in self.redpanda.nodes
+            })
+
 
 class CertificateRevocationTest(CertificateRevocationTestBase):
     # TODO(oren): check for this somehow:
@@ -244,12 +254,7 @@ class CertificateRevocationTest(CertificateRevocationTestBase):
         ch = self.admin.get_cluster_health_overview(node)
         assert ch['is_healthy'], f"Cluster not healthy: {json.dumps(ch)}"
 
-        self.redpanda.stop()
-        self.redpanda.start(
-            node_config_overrides={
-                n: dict(rpc_server_tls=self.RPC_TLS_CONFIG)
-                for n in self.redpanda.nodes
-            })
+        self._enable_rpc_tls()
 
         wait_until(lambda: self._cluster_health(node),
                    timeout_sec=10,
@@ -302,3 +307,119 @@ class CertificateRevocationTest(CertificateRevocationTestBase):
             self.rpk.list_schemas()
         except:
             pass
+
+
+class RequireCRLTestMethods(CertificateRevocationTestBase):
+    def __init__(self, context, **kwargs):
+        super(RequireCRLTestMethods, self).__init__(context, **kwargs)
+
+
+class RequireCRLTest(RequireCRLTestMethods):
+    """
+    Test that the CRL requirement is enforced, subject to the corresponding cluster config.
+
+    TODO(oren, mikeB): CRL presence is NOT (and cannot be) enforced by gnutls, where CRL checks
+    are enabled by default but ONLY when a CRL is provided and loaded. When we migrate to
+    openssl, we expect to have more control over whether a CRL file is strictly required.
+    So, for now, we (perhaps counterintuitively) include tests that assert that the CRL is
+    NOT required, identical to `NoRequireCRLTest`.
+    When we migrate to openssl THESE TESTS WILL FAIL (hopefully), but they can be easily
+    adapted to reflect correct assertions when the time comes.
+
+    """
+    def __init__(self, context):
+        super(RequireCRLTest, self).__init__(context,
+                                             with_crl=False,
+                                             server_require_crl=True,
+                                             client_require_crl=True)
+
+    @cluster(num_nodes=3)
+    def test_kafka(self):
+        TOPIC_NAME = "foo"
+        self.rpk.create_topic(TOPIC_NAME)
+        topics = [t for t in self.rpk.list_topics()]
+        assert TOPIC_NAME in topics, f"Missing topic '{TOPIC_NAME}': {topics}"
+
+    @cluster(num_nodes=3)
+    def test_sr_client(self):
+
+        schema = {"type": "record", "name": "foo", "fields": []}
+
+        self._create_schema(
+            'foo',
+            json.dumps(schema),
+        )
+
+    @cluster(num_nodes=3)
+    def test_pp_api(self):
+        node = self.redpanda.nodes[0]
+        with self._pp_get_topics(node) as res:
+            assert res.status_code == 200, f"Bad status: {res.status_code}"
+
+    @cluster(num_nodes=3)
+    def test_rpc(self):
+        node = self.redpanda.nodes[0]
+
+        self.logger.debug(
+            "Everything should work w/ or w/o TLS on internal RPC")
+
+        ch = self.admin.get_cluster_health_overview(node)
+        assert ch['is_healthy'], f"Cluster not healthy: {json.dumps(ch)}"
+
+        self._enable_rpc_tls()
+
+        wait_until(lambda: self._cluster_health(node),
+                   timeout_sec=10,
+                   backoff_sec=0.2,
+                   err_msg="Cluster did not become healthy")
+
+
+class NoRequireCRLTest(RequireCRLTestMethods):
+    """
+    Test that the CRL requirement is NOT enforced, subject to the corresponding cluster config.
+    """
+    def __init__(self, context):
+        super(NoRequireCRLTest, self).__init__(context,
+                                               with_crl=False,
+                                               server_require_crl=False,
+                                               client_require_crl=False)
+
+    @cluster(num_nodes=3)
+    def test_kafka(self):
+        TOPIC_NAME = "foo"
+        self.rpk.create_topic(TOPIC_NAME)
+        topics = [t for t in self.rpk.list_topics()]
+        assert TOPIC_NAME in topics, f"Missing topic '{TOPIC_NAME}': {topics}"
+
+    @cluster(num_nodes=3)
+    def test_sr_client(self):
+
+        schema = {"type": "record", "name": "foo", "fields": []}
+
+        self._create_schema(
+            'foo',
+            json.dumps(schema),
+        )
+
+    @cluster(num_nodes=3)
+    def test_pp_api(self):
+        node = self.redpanda.nodes[0]
+        with self._pp_get_topics(node) as res:
+            assert res.status_code == 200, f"Bad status: {res.status_code}"
+
+    @cluster(num_nodes=3)
+    def test_rpc(self):
+        node = self.redpanda.nodes[0]
+
+        self.logger.debug(
+            "Everything should work w/ or w/o TLS on internal RPC")
+
+        ch = self.admin.get_cluster_health_overview(node)
+        assert ch['is_healthy'], f"Cluster not healthy: {json.dumps(ch)}"
+
+        self._enable_rpc_tls()
+
+        wait_until(lambda: self._cluster_health(node),
+                   timeout_sec=10,
+                   backoff_sec=0.2,
+                   err_msg="Cluster did not become healthy")
