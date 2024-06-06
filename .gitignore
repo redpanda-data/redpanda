@@ -262,3 +262,6 @@ vbuild/
 
 #asdf tool version file
 .tool-versions
+
+# bazel
+user.bazelrc

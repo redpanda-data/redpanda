@@ -1,0 +1,67 @@
+# use a compiler name that doesn't symlink to ccache
+build --action_env=CC=clang-16 --host_action_env=CC=clang-16
+build --action_env=CXX=clang++-16 --host_action_env=CXX=clang++-16
+build --action_env=BAZEL_COMPILER=clang
+build --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
+build --linkopt -fuse-ld=lld
+
+# https://github.com/bazelbuild/rules_foreign_cc/issues/1065
+# https://github.com/bazelbuild/rules_foreign_cc/issues/1186#issuecomment-2053550487
+build --host_action_env=CXXFLAGS=-Wno-int-conversion
+build --action_env=CXXFLAGS=-Wno-int-conversion
+build --host_action_env=CFLAGS=-Wno-int-conversion
+build --action_env=CFLAGS=-Wno-int-conversion
+
+# https://github.com/bazelbuild/bazel/issues/19915
+# https://github.com/bazelbuild/bazel/issues/20886
+build --noincompatible_sandbox_hermetic_tmp
+
+common --registry=https://bcr.bazel.build
+
+# =================================
+# Sanitizer
+# =================================
+build:sanitizer --copt -fsanitize=address,undefined,vptr,function
+build:sanitizer --linkopt -fsanitize=address,undefined,vptr,function
+build:sanitizer --linkopt --rtlib=compiler-rt
+build:sanitizer --linkopt -fsanitize-link-c++-runtime
+build:sanitizer --copt -O1
+
+# =================================
+# Security
+# =================================
+build:cfi --copt -fsanitize=cfi
+build:cfi --copt -fvisibility=hidden
+build:cfi --copt -flto
+
+# fortify source requires a high optimization level. when using this feature add
+# `--copt -O2` or combine with a compilation mode like `-c opt`. the default
+# bazel toolchain adds _FORTIFY_SOURCE=1 in `-c opt`, so first clear the
+# definition to avoid -Wmacro-redefined warnings.
+build:fortify-source --copt -U_FORTIFY_SOURCE
+build:fortify-source --copt -D_FORTIFY_SOURCE=2
+
+build:safe-stack --copt -fsanitize=safe-stack
+build:stack-clash --copt -fstack-clash-protection
+build:stack-protector --copt -fstack-protector-strong
+build:relro --copt -fno-plt
+build:relro --linkopt -Wl,-z,relro,-z,now
+
+# Use `--config=secure` for all supported security settings
+build:secure --config=fortify-source
+build:secure --config=stack-clash
+build:secure --config=stack-protector
+build:secure --config=relro
+# Cannot enable until all external deps support
+#build:secure --config=cfi
+#build:secure --config=safe-stack
+
+# =================================
+# Release
+# =================================
+build:release --compilation_mode opt
+build:release --config=secure
+build:release --copt -mllvm
+build:release --copt -inline-threshold=2500
+
+try-import %workspace%/user.bazelrc

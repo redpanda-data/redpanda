@@ -1,0 +1,13 @@
+diff --git a/configure.ac b/configure.ac
+index c8862f3..4911756 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -922,7 +922,7 @@ if test x$enable_assembler = xyes ; then
+ 	fi],
+       [AC_MSG_WARN([test program with a single global could not be compiled!?])])])
+   if test x$nettle_cv_asm_underscore = xyes ; then
+-    ASM_SYMBOL_PREFIX='_'
++    ASM_SYMBOL_PREFIX=''
+   fi
+ 
+   AC_CACHE_CHECK([for ELF-style .type,%function pseudo-ops],
