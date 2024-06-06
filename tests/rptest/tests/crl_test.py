@@ -51,15 +51,15 @@ class CachingTLSProvider(TLSProvider):
         return self.service_client_certs[-1]
 
 
-class CertificateRevocationTest(RedpandaTest):
-    # TODO(oren): check for this somehow:
-    VERIFY_EXC = "seastar::tls::verification_error"
-    VERIFY_ERROR = f'''
-{VERIFY_EXC} (The certificate is NOT trusted. The certificate chain is revoked. (Issuer=[O=Redpanda,CN=Redpanda Test CA], Subject=[O=Redpanda,CN={{common_name}}]))">
-        '''
-    VERIFICATION_ERROR_LOG = [VERIFY_EXC]
-
-    def __init__(self, *args, **kwargs):
+class CertificateRevocationTestBase(RedpandaTest):
+    def __init__(
+        self,
+        *args,
+        with_crl: bool = True,
+        server_require_crl: bool = True,
+        client_require_crl: bool = True,
+        **kwargs,
+    ):
         super().__init__(*args,
                          num_brokers=3,
                          skip_if_no_redpanda_log=True,
@@ -67,8 +67,21 @@ class CertificateRevocationTest(RedpandaTest):
 
         self.user, self.password, self.algorithm = self.redpanda.SUPERUSER_CREDENTIALS
         self.admin = Admin(self.redpanda)
+        self.with_crl = with_crl
 
-        self.tls = tls.TLSCertManager(self.logger)
+        self.crl_file = RedpandaService.TLS_CA_CRL_FILE if self.with_crl else None
+
+        self.RPC_TLS_CONFIG = dict(
+            enabled=True,
+            require_client_auth=True,
+            key_file=RedpandaService.TLS_SERVER_KEY_FILE,
+            cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
+            truststore_file=RedpandaService.TLS_CA_CRT_FILE,
+        )
+        if self.crl_file is not None:
+            self.RPC_TLS_CONFIG['crl_file'] = self.crl_file
+
+        self.tls = tls.TLSCertManager(self.logger, with_crl=self.with_crl)
         self.provider = CachingTLSProvider(self.tls)
         self.user_cert = self.tls.create_cert(socket.gethostname(),
                                               common_name="walterP",
@@ -100,10 +113,14 @@ class CertificateRevocationTest(RedpandaTest):
         self.redpanda.set_schema_registry_settings(self.schema_registry_config)
         self.redpanda.set_pandaproxy_settings(self.pandaproxy_config)
 
-        self.redpanda.add_extra_rp_conf({
-            'kafka_mtls_principal_mapping_rules':
-            [self.security.principal_mapping_rules]
-        })
+        self.redpanda.add_extra_rp_conf(
+            dict(
+                kafka_mtls_principal_mapping_rules=[
+                    self.security.principal_mapping_rules
+                ],
+                server_require_crl=server_require_crl,
+                client_require_crl=client_require_crl,
+            ))
 
     def setUp(self):
         super().setUp()
@@ -113,7 +130,50 @@ class CertificateRevocationTest(RedpandaTest):
             tls_cert=self.user_cert,
         )
 
-        self.no_auth_rpk = RpkTool(self.redpanda)
+    def _cluster_health(self,
+                        node: ClusterNode,
+                        healthy: bool = True,
+                        noisy: bool = False,
+                        reasons: list[str] = []):
+        assert not (healthy and len(reasons)
+                    > 0), "Reasons apply only to unhealthy clusters"
+        ch = self.admin.get_cluster_health_overview(node)
+        if noisy:
+            self.logger.warning(f"health overview: {json.dumps(ch)}")
+        return ch['is_healthy'] is healthy and all(r in ch['unhealthy_reasons']
+                                                   for r in reasons)
+
+    def _create_schema(self, subject: str, schema: str):
+        with tempfile.NamedTemporaryFile(suffix='.avro') as tf:
+            tf.write(bytes(schema, 'UTF-8'))
+            tf.seek(0)
+            self.rpk.create_schema(subject, tf.name)
+
+    def _pp_get_topics(self, node: ClusterNode):
+        return requests.get(
+            f"https://{node.account.hostname}:8082/topics",
+            headers={
+                "Accept": "application/vnd.kafka.v2+json",
+                "Content-Type": "application/vnd.kafka.v2+json"
+            },
+            verify=self.user_cert.ca.crt,
+            cert=(self.user_cert.crt, self.user_cert.key),
+            timeout=10,
+        )
+
+
+class CertificateRevocationTest(CertificateRevocationTestBase):
+    # TODO(oren): check for this somehow:
+    VERIFY_EXC = "seastar::tls::verification_error"
+    VERIFY_ERROR = f'''
+{VERIFY_EXC} (The certificate is NOT trusted. The certificate chain is revoked. (Issuer=[O=Redpanda,CN=Redpanda Test CA], Subject=[O=Redpanda,CN={{common_name}}]))">
+        '''
+    VERIFICATION_ERROR_LOG = [VERIFY_EXC]
+
+    def __init__(self, context, **kwargs):
+        super(CertificateRevocationTest, self).__init__(context,
+                                                        with_crl=True,
+                                                        **kwargs)
 
     @cluster(num_nodes=3, log_allow_list=VERIFICATION_ERROR_LOG)
     def test_kafka(self):
@@ -133,15 +193,9 @@ class CertificateRevocationTest(RedpandaTest):
 
     @cluster(num_nodes=3, log_allow_list=VERIFICATION_ERROR_LOG)
     def test_sr_client(self):
-        def create_schema(subject, schema):
-            with tempfile.NamedTemporaryFile(suffix='.avro') as tf:
-                tf.write(bytes(schema, 'UTF-8'))
-                tf.seek(0)
-                self.rpk.create_schema(subject, tf.name)
-
         schema = {"type": "record", "name": "foo", "fields": []}
 
-        create_schema(
+        self._create_schema(
             'foo',
             json.dumps(schema),
         )
@@ -165,21 +219,9 @@ class CertificateRevocationTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_pp_api(self):
-        def get_topics(node: ClusterNode):
-            return requests.get(
-                f"https://{node.account.hostname}:8082/topics",
-                headers={
-                    "Accept": "application/vnd.kafka.v2+json",
-                    "Content-Type": "application/vnd.kafka.v2+json"
-                },
-                verify=self.user_cert.ca.crt,
-                cert=(self.user_cert.crt, self.user_cert.key),
-                timeout=10,
-            )
-
         node = self.redpanda.nodes[0]
 
-        with get_topics(node) as res:
+        with self._pp_get_topics(node) as res:
             assert res.status_code == 200, f"Bad status: {res.status_code}"
 
         self.tls.revoke_cert(self.user_cert)
@@ -187,12 +229,12 @@ class CertificateRevocationTest(RedpandaTest):
 
         with expect_exception(requests.exceptions.ConnectionError,
                               lambda e: "Connection aborted" in str(e)):
-            get_topics(node)
+            self._pp_get_topics(node)
 
-        with get_topics(self.redpanda.nodes[1]) as res:
+        with self._pp_get_topics(self.redpanda.nodes[1]) as res:
             assert res.status_code == 200, f"Bad status: {res.status_code}"
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=VERIFICATION_ERROR_LOG)
     def test_rpc(self):
         node = self.redpanda.nodes[0]
 
@@ -202,34 +244,14 @@ class CertificateRevocationTest(RedpandaTest):
         ch = self.admin.get_cluster_health_overview(node)
         assert ch['is_healthy'], f"Cluster not healthy: {json.dumps(ch)}"
 
-        RPC_TLS_CONFIG = dict(
-            enabled=True,
-            require_client_auth=True,
-            key_file=RedpandaService.TLS_SERVER_KEY_FILE,
-            cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
-            truststore_file=RedpandaService.TLS_CA_CRT_FILE,
-            crl_file=RedpandaService.TLS_CA_CRL_FILE,
-        )
-
         self.redpanda.stop()
-        self.redpanda.start(node_config_overrides={
-            n: dict(rpc_server_tls=RPC_TLS_CONFIG)
-            for n in self.redpanda.nodes
-        })
+        self.redpanda.start(
+            node_config_overrides={
+                n: dict(rpc_server_tls=self.RPC_TLS_CONFIG)
+                for n in self.redpanda.nodes
+            })
 
-        def cluster_health(node: ClusterNode,
-                           healthy: bool = True,
-                           noisy: bool = False,
-                           reasons: list[str] = []):
-            assert not (healthy and len(reasons)
-                        > 0), "Reasons apply only to unhealthy clusters"
-            ch = self.admin.get_cluster_health_overview(node)
-            if noisy:
-                self.logger.debug(f"health overview: {json.dumps(ch)}")
-            return ch['is_healthy'] is healthy and all(
-                r in ch['unhealthy_reasons'] for r in reasons)
-
-        wait_until(lambda: cluster_health(node),
+        wait_until(lambda: self._cluster_health(node),
                    timeout_sec=10,
                    backoff_sec=0.2,
                    err_msg="Cluster did not become healthy")
@@ -242,16 +264,20 @@ class CertificateRevocationTest(RedpandaTest):
         assert node.account.hostname in broker_cert.crt, f"Cert order mismatch: {broker_cert.crt}"
 
         self.tls.revoke_cert(broker_cert)
-        self.redpanda.write_crl_file(node, self.tls.ca)
 
-        self.redpanda.restart_nodes([node])
+        for n in self.redpanda.nodes[1:]:
+            self.redpanda.write_crl_file(n, self.tls.ca)
+            self.redpanda.restart_nodes(
+                [n],
+                override_cfg_params=dict(rpc_server_tls=self.RPC_TLS_CONFIG))
+
         other_node = self.redpanda.nodes[1]
 
         self.logger.debug(
             f"{node.account.hostname} should appear 'down' to the rest of the cluster"
         )
 
-        wait_until(lambda: cluster_health(
+        wait_until(lambda: self._cluster_health(
             other_node, healthy=False, noisy=True, reasons=['nodes_down']),
                    timeout_sec=10,
                    backoff_sec=0.2,
@@ -259,7 +285,6 @@ class CertificateRevocationTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_noncogent(self):
-        node = self.redpanda.nodes[0]
         self.rpk.list_schemas()
 
         other_tls = tls.TLSCertManager(self.logger)
