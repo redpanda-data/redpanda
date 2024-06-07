@@ -94,7 +94,8 @@ class ShadowIndexingTxTest(RedpandaTest):
                                           self.topic,
                                           msg_size,
                                           loop=False,
-                                          nodes=[traffic_node])
+                                          nodes=[traffic_node],
+                                          use_transactions=True)
         consumer.start(clean=False)
         consumer.wait()
         status = consumer.consumer_status

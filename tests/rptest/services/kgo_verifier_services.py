@@ -716,7 +716,8 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
             producer: Optional[KgoVerifierProducer] = None,
             username: Optional[str] = None,
             password: Optional[str] = None,
-            enable_tls: Optional[bool] = False):
+            enable_tls: Optional[bool] = False,
+            use_transactions: Optional[bool] = False):
         super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
                          trace_logs, username, password, enable_tls)
         self._max_msgs = max_msgs
@@ -725,6 +726,7 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
         self._continuous = continuous
         self._tolerate_data_loss = tolerate_data_loss
         self._producer = producer
+        self._use_transactions = use_transactions
 
     def start_node(self, node, clean=False):
         if clean:
@@ -746,6 +748,8 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
             cmd += " --continuous"
         if self._tolerate_data_loss:
             cmd += " --tolerate-data-loss"
+        if self._use_transactions:
+            cmd += " --use-transactions"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
@@ -795,11 +799,13 @@ class KgoVerifierRandomConsumer(AbstractConsumer):
                  trace_logs=False,
                  username=None,
                  password=None,
-                 enable_tls=False):
+                 enable_tls=False,
+                 use_transactions: Optional[bool] = False):
         super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
                          trace_logs, username, password, enable_tls)
         self._rand_read_msgs = rand_read_msgs
         self._parallel = parallel
+        self._use_transactions = use_transactions
 
     def start_node(self, node, clean=False):
         if clean:
@@ -812,6 +818,8 @@ class KgoVerifierRandomConsumer(AbstractConsumer):
             cmd = cmd + f' --password {self._password}'
         if self._enable_tls:
             cmd = cmd + f' --enable-tls'
+        if self._use_transactions:
+            cmd += " --use-transactions"
 
         self.spawn(cmd, node)
 
@@ -840,7 +848,8 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
                  enable_tls=False,
                  continuous=False,
                  tolerate_data_loss=False,
-                 group_name=None):
+                 group_name=None,
+                 use_transactions=False):
         super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
                          trace_logs, username, password, enable_tls)
 
@@ -851,6 +860,7 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
         self._group_name = group_name
         self._continuous = continuous
         self._tolerate_data_loss = tolerate_data_loss
+        self._use_transactions = use_transactions
 
     def start_node(self, node, clean=False):
         if clean:
@@ -875,6 +885,8 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
             cmd += " --tolerate-data-loss"
         if self._group_name is not None:
             cmd += f" --consumer_group_name {self._group_name}"
+        if self._use_transactions:
+            cmd += " --use-transactions"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
