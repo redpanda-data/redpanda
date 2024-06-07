@@ -41,6 +41,7 @@ FIXTURE_TEST(test_happy_path_create, topic_table_fixture) {
     BOOST_REQUIRE_EQUAL(
       md.find(make_tp_ns("test_tp_3"))->second.get_assignments().size(), 8);
 
+    validate_group_ntp_map();
     validate_delta(deltas, 21, 0);
 }
 
@@ -71,6 +72,7 @@ FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
     BOOST_REQUIRE_EQUAL(
       md.find(make_tp_ns("test_tp_1"))->second.get_assignments().size(), 1);
 
+    validate_group_ntp_map();
     validate_delta(deltas, 0, 20);
 }
 
@@ -95,6 +97,7 @@ FIXTURE_TEST(test_conflicts, topic_table_fixture) {
                    .get0();
     BOOST_REQUIRE_EQUAL(res_2, cluster::errc::topic_already_exists);
     BOOST_REQUIRE_EQUAL(deltas.size(), 0);
+    validate_group_ntp_map();
 }
 
 FIXTURE_TEST(get_getting_config, topic_table_fixture) {
@@ -162,6 +165,7 @@ FIXTURE_TEST(test_adding_partition, topic_table_fixture) {
     BOOST_REQUIRE_EQUAL(md->get_assignments().size(), 15);
     // require 3 partition additions
     validate_delta(deltas, 3, 0);
+    validate_group_ntp_map();
 }
 
 void validate_brokers_revisions(

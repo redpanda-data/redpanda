@@ -24,6 +24,9 @@
 
 #include <type_traits>
 
+// Forward declaration for test class that we will befriend
+struct topic_table_fixture;
+
 namespace cluster {
 /**
  * ## Overview
@@ -627,6 +630,7 @@ public:
 
 private:
     friend topic_table_probe;
+    friend topic_table_fixture;
 
     struct waiter {
         explicit waiter(uint64_t id)

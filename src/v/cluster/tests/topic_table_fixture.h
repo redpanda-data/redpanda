@@ -168,6 +168,22 @@ struct topic_table_fixture {
         return total;
     }
 
+    void validate_group_ntp_map() {
+        size_t counter = 0;
+        for (const auto& nt : table.local().all_topics()) {
+            const auto assignments = table.local().get_topic_assignments(nt);
+            if (assignments) {
+                for (const auto& ass : *assignments) {
+                    model::ntp expected{nt.ns, nt.tp, ass.id};
+                    auto found = table.local().get_ntp_by_group(ass.group);
+                    BOOST_REQUIRE_EQUAL(expected, found);
+                    ++counter;
+                }
+            }
+        }
+        BOOST_REQUIRE_EQUAL(table.local()._group_ntp_map.size(), counter);
+    }
+
     ss::sharded<cluster::members_table> members;
     ss::sharded<cluster::partition_allocator> allocator;
     ss::sharded<cluster::topic_table> table;

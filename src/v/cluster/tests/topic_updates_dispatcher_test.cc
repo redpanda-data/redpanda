@@ -94,6 +94,8 @@ FIXTURE_TEST(
       md.find(make_tp_ns("test_tp_2"))->second.get_assignments().size(), 12);
     BOOST_REQUIRE_EQUAL(
       md.find(make_tp_ns("test_tp_3"))->second.get_assignments().size(), 8);
+    validate_group_ntp_map();
+
     // Initial capacity
     // (cpus * max_allocations_per_core) - core0_extra_weight;
     // node 1, 8 cores
@@ -131,6 +133,8 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(md.contains(make_tp_ns("test_tp_1")), true);
     BOOST_REQUIRE_EQUAL(
       md.find(make_tp_ns("test_tp_1"))->second.get_assignments().size(), 1);
+
+    validate_group_ntp_map();
 
     BOOST_REQUIRE_EQUAL(
       current_cluster_capacity(allocator.local().state().allocation_nodes()),
