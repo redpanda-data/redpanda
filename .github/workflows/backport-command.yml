@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Get type of backport (issue or PR)
         env:
@@ -62,7 +62,7 @@ jobs:
       BACKPORT_BRANCH: ${{ needs.backport-type.outputs.backport_branch }}
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Get user
         env:
@@ -117,7 +117,7 @@ jobs:
           backport_commits=$(gh api "repos/$TARGET_FULL_REPO/pulls/$BACKPORT_PR_NUMBER/commits" --jq .[].sha | paste -s -d ' ' -)
           echo "backport_commits=$backport_commits" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         if: needs.backport-type.outputs.commented_on == 'pr'
         with:
           repository: ${{ steps.user.outputs.username }}/${{ steps.user.outputs.repo }}
