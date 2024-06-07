@@ -247,6 +247,7 @@ public:
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
 
+    using group_ntp_map_t = chunked_hash_map<raft::group_id, model::ntp>;
     using lifecycle_markers_t = absl::node_hash_map<
       nt_revision,
       nt_lifecycle_marker,
@@ -414,6 +415,12 @@ public:
     /// If topic does not exists it returns an empty optional
     std::optional<assignments_set>
       get_topic_assignments(model::topic_namespace_view) const;
+
+    ///\brief Returns partition ntp for raft group id.
+    ///
+    /// If group does not exists or is not a partition raft group returns
+    /// std::nullopt
+    std::optional<model::ntp> get_ntp_by_group(raft::group_id) const;
 
     ///\brief Returns topics timestamp type
     ///
@@ -657,6 +664,7 @@ private:
       const ntp_with_majority_loss&) const;
 
     underlying_t _topics;
+    group_ntp_map_t _group_ntp_map;
     lifecycle_markers_t _lifecycle_markers;
     disabled_partitions_t _disabled_partitions;
     size_t _partition_count{0};

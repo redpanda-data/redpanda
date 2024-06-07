@@ -69,6 +69,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           partition_meta{
             .replicas_revisions = replica_revisions,
             .last_update_finished_revision = rev_id});
+        _group_ntp_map.emplace(pas.group, ntp);
         _pending_deltas.emplace_back(
           std::move(ntp),
           pas.group,
@@ -102,6 +103,7 @@ topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
         for (auto& p_as : tp->second.get_assignments()) {
             _partition_count--;
             auto ntp = model::ntp(nt.ns, nt.tp, p_as.id);
+            _group_ntp_map.erase(p_as.group);
             _updates_in_progress.erase(ntp);
             on_partition_deletion(ntp);
             _pending_deltas.emplace_back(
@@ -202,8 +204,9 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
         _partition_count++;
         p_as.id += model::partition_id(prev_partition_count);
         tp->second.get_assignments().emplace(p_as);
-        // propagate deltas
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
+        _group_ntp_map.emplace(p_as.group, ntp);
+        // propagate deltas
         replicas_revision_map replicas_revisions;
         for (auto& bs : p_as.replicas) {
             replicas_revisions[bs.node_id] = rev_id;
@@ -1000,6 +1003,7 @@ class topic_table::snapshot_applier {
     disabled_partitions_t& _disabled_partitions;
     fragmented_vector<delta>& _pending_deltas;
     topic_table_probe& _probe;
+    topic_table::group_ntp_map_t& _group_ntp_map;
     model::revision_id& _topics_map_revision;
     model::revision_id _snap_revision;
 
@@ -1009,6 +1013,7 @@ public:
       , _disabled_partitions(parent._disabled_partitions)
       , _pending_deltas(parent._pending_deltas)
       , _probe(parent._probe)
+      , _group_ntp_map(parent._group_ntp_map)
       , _topics_map_revision(parent._topics_map_revision)
       , _snap_revision(snap_revision) {}
 
@@ -1020,6 +1025,8 @@ public:
         if (_updates_in_progress.erase(ntp)) {
             _topics_map_revision++;
         };
+
+        _group_ntp_map.erase(p_as.group);
 
         _pending_deltas.emplace_back(
           std::move(ntp),
@@ -1071,6 +1078,7 @@ public:
         if (auto as_it = md_item.get_assignments().find(p_id);
             as_it != md_item.get_assignments().end()) {
             prev_assignment = std::move(*as_it);
+            _group_ntp_map.erase(as_it->group);
             md_item.get_assignments().erase(as_it);
 
             auto p_it = md_item.partitions.find(p_id);
@@ -1101,6 +1109,7 @@ public:
           = *md_item.get_assignments()
                .emplace(partition.group, p_id, partition.replicas)
                .first;
+        _group_ntp_map.emplace(partition.group, ntp);
 
         md_item.partitions[p_id] = partition_meta{
           .replicas_revisions = partition.replicas_revisions,
@@ -1280,6 +1289,7 @@ ss::future<> topic_table::apply_snapshot(
                       partition,
                       md_item,
                       must_update_properties);
+                    _group_ntp_map.emplace(partition.group, ntp);
 
                     const bool new_is_disabled
                       = topic_snapshot.disabled_set
@@ -1426,6 +1436,15 @@ std::optional<assignments_set>
 topic_table::get_topic_assignments(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
         return it->second.get_assignments();
+    }
+    return std::nullopt;
+}
+
+std::optional<model::ntp>
+topic_table::get_ntp_by_group(raft::group_id group) const {
+    auto it = std::as_const(_group_ntp_map).find(group);
+    if (it != _group_ntp_map.end()) {
+        return it->second;
     }
     return std::nullopt;
 }
