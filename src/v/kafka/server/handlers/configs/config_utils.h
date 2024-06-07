@@ -257,6 +257,36 @@ ss::future<chunked_vector<R>> do_alter_topics_configuration(
           .resource_name = res.tp_ns.tp(),
         });
     }
+
+    // Group-by error code, value is list of topic names as strings
+    absl::flat_hash_map<cluster::errc, std::vector<model::topic_namespace_view>>
+      err_map;
+    for (const auto& result : update_results) {
+        auto [itr, _] = err_map.try_emplace(
+          result.ec, std::vector<model::topic_namespace_view>());
+        itr->second.emplace_back(result.tp_ns);
+    }
+
+    // Log success case
+    auto found = err_map.find(cluster::errc::success);
+    if (found != err_map.end()) {
+        vlog(
+          klog.info,
+          "Altered topic properties of topic(s) {{{}}} successfully",
+          fmt::join(found->second, ", "));
+        err_map.erase(found);
+    }
+
+    // Log topics that had not successfully been created at warn level
+    for (const auto& err : err_map) {
+        vlog(
+          klog.warn,
+          "Failed to alter topic properties of topic(s) {{{}}} error_code "
+          "observed: {}",
+          fmt::join(err.second, ", "),
+          err.first);
+    }
+
     co_return responses;
 }
 
