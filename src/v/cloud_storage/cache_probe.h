@@ -41,6 +41,7 @@ public:
     void exhaustive_trim() { ++_exhaustive_trims; }
     void carryover_trim() { ++_carryover_trims; }
     void failed_trim() { ++_failed_trims; }
+    void in_mem_trim() { ++_in_mem_trims; }
 
 private:
     uint64_t _num_puts = 0;
@@ -58,6 +59,7 @@ private:
     int64_t _exhaustive_trims{0};
     int64_t _carryover_trims{0};
     int64_t _failed_trims{0};
+    int64_t _in_mem_trims{0};
 
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
