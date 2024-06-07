@@ -472,12 +472,6 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
     current_assignment_it->replicas
       = in_progress_it->second.get_target_replicas();
 
-    partition_assignment delta_assignment{
-      current_assignment_it->group,
-      current_assignment_it->id,
-      current_assignment_it->replicas,
-    };
-
     // update partition_meta object:
     // the cancellation was reverted and update went through, we must
     // update replicas_revisions.
