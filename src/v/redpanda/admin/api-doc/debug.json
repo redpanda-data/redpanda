@@ -831,6 +831,14 @@
                     "type": "string",
                     "description": "Type of self test, one of either disk/network/cloud"
                 },
+                "start_time": {
+                    "type": "long",
+                    "description": "Start time of the test run"
+                },
+                "end_time": {
+                    "type": "long",
+                    "description": "End time of the test run"
+                },
                 "duration": {
                     "type": "long",
                     "description": "Length of time the test took to complete"

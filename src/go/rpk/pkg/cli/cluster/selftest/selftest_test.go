@@ -152,6 +152,8 @@ func TestSelfTestResults(t *testing.T) {
                      "name": "unittesting",
                      "info": "golang unit tests",
                      "test_type": "disk",
+                     "start_time": 1717615532,
+                     "end_time": 1717615693,
                      "duration": 50000,
                      "warning": "Mild transient issue detected"
                    }
@@ -167,6 +169,8 @@ func TestSelfTestResults(t *testing.T) {
                      "name": "unittesting",
                      "info": "golang unit tests",
                      "test_type": "disk",
+                     "start_time": 1717615532,
+                     "end_time": 1717615693,
                      "duration": 50000,
                      "error": "Unexpected exception detected"
                    }
@@ -182,6 +186,8 @@ func TestSelfTestResults(t *testing.T) {
                      "name": "unittesting",
                      "info": "golang unit tests",
                      "test_type": "disk",
+                     "start_time": 1717615532,
+                     "end_time": 1717615693,
                      "duration": 50000,
                      "error": "Unexpected exception detected"
                    }
@@ -200,7 +206,9 @@ func TestSelfTestResults(t *testing.T) {
 					{"TYPE", "disk"},
 					{"TEST ID", "8272-3843-38c8-381f"},
 					{"TIMEOUTS", "1"},
-					{"DURATION", "50000ms"},
+					{"START TIME", "Wed Jun  5 19:25:32 UTC 2024"},
+					{"END TIME", "Wed Jun  5 19:28:13 UTC 2024"},
+					{"AVG DURATION", "50000ms"},
 					{"IOPS", "2222 req/sec"},
 					{"THROUGHPUT", "907.5KiB/sec"},
 					{"WARNING", "Mild transient issue detected"},
@@ -214,7 +222,9 @@ func TestSelfTestResults(t *testing.T) {
 					[]string{"TYPE", "disk"},
 					[]string{"TEST ID", "8272-3843-38c8-381f"},
 					[]string{"TIMEOUTS", "55"},
-					[]string{"DURATION", "50000ms"},
+					[]string{"START TIME", "Wed Jun  5 19:25:32 UTC 2024"},
+					[]string{"END TIME", "Wed Jun  5 19:28:13 UTC 2024"},
+					[]string{"AVG DURATION", "50000ms"},
 					[]string{"ERROR", "Unexpected exception detected"},
 					[]string{""},
 				},
@@ -224,7 +234,9 @@ func TestSelfTestResults(t *testing.T) {
 					[]string{"TYPE", "disk"},
 					[]string{"TEST ID", "8272-3843-38c8-381f"},
 					[]string{"TIMEOUTS", "78"},
-					[]string{"DURATION", "50000ms"},
+					[]string{"START TIME", "Wed Jun  5 19:25:32 UTC 2024"},
+					[]string{"END TIME", "Wed Jun  5 19:28:13 UTC 2024"},
+					[]string{"AVG DURATION", "50000ms"},
 					[]string{"ERROR", "Unexpected exception detected"},
 					[]string{""},
 				},
