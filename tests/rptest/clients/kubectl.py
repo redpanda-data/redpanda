@@ -13,7 +13,7 @@ import os
 import subprocess
 from typing import Any, Union, Generator
 
-SUPPORTED_PROVIDERS = ['aws', 'gcp']
+SUPPORTED_PROVIDERS = ['aws', 'gcp', 'azure']
 
 
 def is_redpanda_pod(pod_obj: dict[str, Any], cluster_id: str) -> bool:
@@ -121,6 +121,10 @@ class KubectlTool:
         if not self._kubectl_installed and self._remote_uri is not None:
             self._ssh_cmd(['./breakglass-tools.sh'])
 
+            # Determine the appropriate command for the cloud provider
+            self._redpanda.logger.info(
+                f"Setting up kubectl config for provider: {self._provider}")
+
             config_cmd = {
                 'aws': [
                     'awscli2', 'eks', 'update-kubeconfig', '--name',
@@ -129,9 +133,22 @@ class KubectlTool:
                 'gcp': [
                     'gcloud', 'container', 'clusters', 'get-credentials',
                     f'redpanda-{self._cluster_id}', '--region', self._region
+                ],
+                'azure': [
+                    'bash', '-c',
+                    ("'if ! command -v az &> /dev/null; then "
+                     "echo \"Azure CLI not found. Installing Azure CLI.\" >&2; "
+                     "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash; "
+                     "echo \"Azure CLI installed.\" >&2; "
+                     "fi && "
+                     'az login --identity --allow-no-subscriptions && '
+                     f"az aks get-credentials --resource-group rg-rpcloud-{self._cluster_id} --name aks-rpcloud-{self._cluster_id}'"
+                     )
                 ]
             }[self._provider]
 
+            # Log the full command to be executed
+            self._redpanda.logger.debug(f"Config command: {config_cmd}")
             self._ssh_cmd(config_cmd)
             self._kubectl_installed = True
 
@@ -351,7 +368,10 @@ class KubectlTool:
         _method = "iam"
         if self._provider == 'gcp':
             _method = "gcp"
+        elif self._provider == 'azure':
+            _method = "azure"
         self._redpanda.logger.info('cleaning teleport data dir')
+        self._redpanda.logger.info(f"Selected join method: {_method}")
         subprocess.check_output(['rm', '-f', '-r', self.TELEPORT_DATA_DIR])
         self._redpanda.logger.info('starting tbot to generate identity')
         cmd = [
@@ -361,7 +381,19 @@ class KubectlTool:
             f'--token={self._tp_token}', '--certificate-ttl=6h',
             '--renewal-interval=6h', '--oneshot'
         ]
-        self._local_cmd(cmd)
+        # Log the full command to be executed
+        self._redpanda.logger.debug(f"Running tbot command: {cmd}")
+
+        try:
+            self._local_cmd(cmd)
+        except subprocess.CalledProcessError as e:
+            self._redpanda.logger.debug(
+                f"Contents of {self.TELEPORT_DATA_DIR}:")
+            subprocess.call(['ls', '-la', self.TELEPORT_DATA_DIR])
+            self._redpanda.logger.debug(
+                f"Contents of {self.TELEPORT_DEST_DIR}:")
+            subprocess.call(['ls', '-la', self.TELEPORT_DEST_DIR])
+            raise
 
     def _setup_privileged_pod(self):
         if not self._privileged_pod_installed and self._remote_uri is not None:
