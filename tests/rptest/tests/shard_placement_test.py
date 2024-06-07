@@ -10,6 +10,7 @@
 from ducktape.utils.util import wait_until
 
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import ResourceSettings
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
@@ -216,9 +217,14 @@ class ShardPlacementTest(RedpandaTest):
         assert sum(quux_shard_counts) == quux_shard_counts[0]
 
         # Restart and check that the shard map remains stable
+        # (if we turn off rebalancing on startup)
+
+        self.redpanda.set_cluster_config(
+            {"core_balancing_on_core_count_change": False})
 
         map_before_restart = self.get_replica_shard_map(
             self.redpanda.nodes, admin)
+        self.print_shard_stats(map_before_restart)
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self.redpanda.wait_for_membership(first_start=False)
@@ -228,3 +234,64 @@ class ShardPlacementTest(RedpandaTest):
                                                        admin)
         self.print_shard_stats(map_after_restart)
         assert map_after_restart == map_before_restart
+
+    @cluster(num_nodes=5)
+    def test_core_count_change(self):
+        self.redpanda.set_resource_settings(ResourceSettings(num_cpus=1))
+        self.redpanda.start()
+
+        admin = Admin(self.redpanda)
+        rpk = RpkTool(self.redpanda)
+
+        n_partitions = 10
+
+        for topic in ["foo", "bar"]:
+            # create topics with rf=5 for ease of accounting
+            rpk.create_topic(topic, partitions=n_partitions, replicas=5)
+
+        # increase cpu count on one node, restart it and
+        # check that new shards are in use.
+        self.logger.info("increasing cpu count and restarting...")
+
+        node = self.redpanda.nodes[0]
+        node_id = self.redpanda.node_id(node)
+        self.redpanda.stop_node(node)
+        self.redpanda.set_resource_settings(ResourceSettings(num_cpus=2))
+        self.redpanda.start_node(node)
+        self.redpanda.wait_for_membership(first_start=False)
+
+        # check that the node moved partitions to the new core
+        shard_map = self.get_replica_shard_map([node], admin)
+        self.print_shard_stats(shard_map)
+        counts_by_topic = self.get_shard_counts_by_topic(shard_map, node_id)
+        assert len(counts_by_topic) > 0
+        for topic, shard_counts in counts_by_topic.items():
+            assert max(shard_counts) - min(shard_counts) <= 1
+
+        # do some manual moves and check that their effects remain
+        # if the core count doesn't change.
+        self.logger.info("doing some manual moves...")
+
+        foo_partitions_on_node = [
+            p for p, rs in shard_map["foo"].items()
+            if any(n == node_id for n, _ in rs)
+        ]
+        for p in foo_partitions_on_node:
+            admin.set_partition_replica_core(topic="foo",
+                                             partition=p,
+                                             replica=node_id,
+                                             core=0)
+        shard_map = self.wait_shard_map_stationary([node], admin)
+        self.print_shard_stats(shard_map)
+
+        self.logger.info(
+            "restarting and checking manual assignments are still there...")
+
+        self.redpanda.restart_nodes([node])
+        self.redpanda.wait_for_membership(first_start=False)
+
+        map_after_restart = self.get_replica_shard_map([node], admin)
+        self.print_shard_stats(map_after_restart)
+        assert map_after_restart == shard_map
+
+        # TODO: core count decrease (not supported yet)
