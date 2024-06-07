@@ -571,9 +571,10 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_little_data) {
 }
 
 static void run_test_fallocate_size(size_t fallocate_size) {
-    auto f = open_file("test_segment_appender.log");
+    auto filename = "test_segment_appender.log";
+    auto f = open_file(filename);
     storage::storage_resources resources(
-      config::mock_binding<size_t>(std::move(fallocate_size)));
+      config::mock_binding<size_t>(fallocate_size));
     auto appender = make_segment_appender(f, resources);
     auto close = ss::defer([&appender] { appender.close().get(); });
 
@@ -602,6 +603,9 @@ static void run_test_fallocate_size(size_t fallocate_size) {
         BOOST_CHECK_EQUAL(original, result);
         in.close().get();
     }
+
+    // test that logical file size got updated as well (truncate called)
+    BOOST_CHECK_EQUAL(ss::file_size(filename).get() % fallocate_size, 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_fallocate_size) {

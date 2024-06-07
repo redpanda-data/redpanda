@@ -176,6 +176,8 @@ class SegmentSummary(NamedTuple):
     size_bytes: int
 
 
+# NB: SegmentReader is duplicated compute_storage.py for deployment reasons. If
+# making changes please adapt both.
 class SegmentReader:
     HDR_FMT_RP = "<IiqbIhiqqqhii"
     HEADER_SIZE = struct.calcsize(HDR_FMT_RP)
