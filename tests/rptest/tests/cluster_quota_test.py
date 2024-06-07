@@ -11,10 +11,11 @@ import json
 import time
 import random
 import string
+from typing import NamedTuple, Optional
 
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import ResourceSettings, LoggingConfig
+from rptest.services.redpanda import MetricSample, MetricSamples, MetricsEndpoint, ResourceSettings, LoggingConfig
 from kafka import KafkaProducer, KafkaConsumer, TopicPartition
 from rptest.clients.kcl import RawKCL, KclCreateTopicsRequestTopic, \
     KclCreatePartitionsRequestTopic
@@ -23,6 +24,27 @@ from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 
 GB = 1_000_000_000
+
+
+class ExpectedMetric(NamedTuple):
+    labels: dict[str, str]
+    value: int
+
+
+class ExpectedMetrics(NamedTuple):
+    metrics: list[ExpectedMetric]
+
+    def find_matching(self, labels: dict[str, str]) -> int:
+        """
+        Finds the expected metric with the given labels and returns the 
+        expected value. Returns 0 if there is no match.
+        """
+        matches = list(
+            filter(lambda expected: expected.labels == labels, self.metrics))
+        assert len(matches) in {0, 1}, \
+            f"Too many matches found: {matches}"
+
+        return matches[0].value if matches else 0
 
 
 class ClusterQuotaPartitionMutationTest(RedpandaTest):
@@ -501,3 +523,96 @@ class ClusterRateQuotaTest(RedpandaTest):
             timeout_sec=10,
             err_msg="Subsequent messages should be throttled broker-side",
         )
+
+    def get_metrics(self, metric: str) -> list[MetricSample]:
+        metrics = self.redpanda.metrics_sample(
+            metric, metrics_endpoint=MetricsEndpoint.METRICS)
+
+        assert metrics, f"Metric is missing: {metric}"
+        self.logger.debug(f"Samples for {metric}: {metrics.samples}")
+        return metrics.samples
+
+    @cluster(num_nodes=1)
+    def test_client_quota_metrics(self):
+        self.init_test_data()
+        self.redpanda.set_cluster_config({
+            "kafka_client_group_byte_rate_quota": {
+                "group_name": "producer_with_group",
+                "clients_prefix": "producer_with_group",
+                "quota": self.target_group_quota_byte_rate,
+            },
+            "kafka_client_group_fetch_byte_rate_quota": {
+                "group_name": "consumer_with_group",
+                "clients_prefix": "consumer_with_group",
+                "quota": self.target_group_quota_byte_rate,
+            },
+            "target_quota_byte_rate":
+            self.target_default_quota_byte_rate,
+            "target_fetch_quota_byte_rate":
+            self.target_default_quota_byte_rate,
+        })
+
+        self.produce(self.make_producer("producer_with_group"), 1)
+        self.fetch(self.make_consumer("consumer_with_group"), 1)
+        self.produce(self.make_producer("unknown_producer"), 1)
+        self.fetch(self.make_consumer("unknown_consumer"), 1)
+
+        # Allow some time for the metrics to update in the background
+        time.sleep(5)
+
+        class ExpectedMetric(NamedTuple):
+            labels: dict[str, str]
+            value: int
+
+        expected_limit_metrics = ExpectedMetrics([
+            ExpectedMetric(
+                labels={
+                    'quota_rule': 'cluster_client_prefix',
+                    'quota_type': 'produce_quota',
+                    'shard': '0'
+                },
+                value=self.target_group_quota_byte_rate,
+            ),
+            ExpectedMetric(
+                labels={
+                    'quota_rule': 'cluster_client_prefix',
+                    'quota_type': 'fetch_quota',
+                    'shard': '0'
+                },
+                value=self.target_group_quota_byte_rate,
+            ),
+            ExpectedMetric(
+                labels={
+                    'quota_rule': 'cluster_client_default',
+                    'quota_type': 'produce_quota',
+                    'shard': '0'
+                },
+                value=self.target_default_quota_byte_rate,
+            ),
+            ExpectedMetric(
+                labels={
+                    'quota_rule': 'cluster_client_default',
+                    'quota_type': 'fetch_quota',
+                    'shard': '0'
+                },
+                value=self.target_default_quota_byte_rate,
+            ),
+        ])
+
+        # Assert that the limit metrics are as expected
+        for sample in self.get_metrics("client_quota_limit"):
+            expected_limit = expected_limit_metrics.find_matching(
+                sample.labels)
+            assert sample.value == expected_limit, \
+                f"Unexpected metric value for sample: {sample}. Expected: {expected_limit}"
+
+        # Assert that the remaining metrics are as expected
+        for sample in self.get_metrics("client_quota_remaining"):
+            expected_limit = expected_limit_metrics.find_matching(
+                sample.labels)
+            if expected_limit > 0:
+                assert 0 < sample.value and sample.value <= expected_limit, \
+                f"For a positive limit the sample value should be in (0, {expected_limit}]. Sample: {sample}."
+            else:
+                assert sample.value == 0, \
+                f"For a 0 limit the sample value should be 0. Sample: {sample}."
