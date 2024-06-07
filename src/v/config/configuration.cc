@@ -515,6 +515,12 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt,
       {.min = 1})
+  , kafka_client_quota_probe_update_period(
+      *this,
+      "kafka_client_quota_probe_update_period",
+      "Quota manager metric update frequency.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      std::chrono::seconds{1})
   , cluster_id(
       *this,
       "cluster_id",
