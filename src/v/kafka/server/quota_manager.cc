@@ -16,10 +16,14 @@
 #include "kafka/server/atomic_token_bucket.h"
 #include "kafka/server/client_quota_translator.h"
 #include "kafka/server/logger.h"
+#include "metrics/metrics.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "ssx/future-util.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/map_reduce.hh>
+#include <seastar/core/metrics.hh>
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
@@ -27,6 +31,7 @@
 #include <fmt/chrono.h>
 
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <string_view>
 #include <variant>
@@ -34,6 +39,114 @@
 using namespace std::chrono_literals;
 
 namespace kafka {
+
+template<typename clock>
+class client_quotas_probe {
+public:
+    client_quotas_probe() = default;
+    client_quotas_probe(const client_quotas_probe&) = delete;
+    client_quotas_probe& operator=(const client_quotas_probe&) = delete;
+    client_quotas_probe(client_quotas_probe&&) = delete;
+    client_quotas_probe& operator=(client_quotas_probe&&) = delete;
+    ~client_quotas_probe() noexcept = default;
+
+    void setup_metrics() {
+        namespace sm = ss::metrics;
+
+        auto metric_defs = std::vector<ss::metrics::metric_definition>{};
+        metric_defs.reserve(
+          all_client_quota_types.size() * all_client_quota_rules.size() * 2);
+
+        auto rule_label = metrics::make_namespaced_label("quota_rule");
+        auto quota_type_label = metrics::make_namespaced_label("quota_type");
+
+        for (auto quota_type : all_client_quota_types) {
+            for (auto rule : all_client_quota_rules) {
+                metric_defs.emplace_back(
+                  sm::make_histogram(
+                    "client_quota_throttle_time",
+                    [this, rule, quota_type] {
+                        return get_throttle_time(rule, quota_type);
+                    },
+                    sm::description(
+                      "Client quota throttling delay per rule and "
+                      "quota type (in seconds)"),
+                    {rule_label(rule), quota_type_label(quota_type)})
+                    .aggregate({sm::shard_label}));
+                metric_defs.emplace_back(
+                  sm::make_histogram(
+                    "client_quota_throughput",
+                    [this, rule, quota_type] {
+                        return get_throughput(rule, quota_type);
+                    },
+                    sm::description(
+                      "Client quota throughput per rule and quota type"),
+                    {rule_label(rule), quota_type_label(quota_type)})
+                    .aggregate({sm::shard_label}));
+            }
+        }
+
+        auto group_name = prometheus_sanitize::metrics_name("kafka:quotas");
+        if (!config::shard_local_cfg().disable_metrics()) {
+            _internal_metrics.add_group(group_name, metric_defs);
+        }
+        if (!config::shard_local_cfg().disable_public_metrics()) {
+            _public_metrics.add_group(group_name, metric_defs);
+        }
+    }
+
+    void record_throttle_time(
+      client_quota_rule rule, client_quota_type qt, clock::duration t) {
+        auto& gm = (*this)(rule, qt);
+        // The Kafka response field `ThrottleTimeMs` is in milliseconds, so
+        // round the metric to milliseconds as well.
+        auto t_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t);
+        gm.throttle_time.record(t_ms);
+    }
+    void record_throughput(
+      client_quota_rule rule, client_quota_type qt, uint64_t count) {
+        auto& gm = (*this)(rule, qt);
+        gm.throughput.record(count);
+    }
+
+private:
+    ss::metrics::histogram
+    get_throttle_time(client_quota_rule rule, client_quota_type qt) const {
+        auto& gm = (*this)(rule, qt);
+        return gm.throttle_time.client_quota_histogram_logform();
+    }
+    ss::metrics::histogram
+    get_throughput(client_quota_rule rule, client_quota_type qt) const {
+        auto& gm = (*this)(rule, qt);
+        return gm.throughput.internal_histogram_logform();
+    }
+
+    struct granular_metrics {
+        log_hist_client_quota throttle_time;
+        log_hist_internal throughput;
+    };
+
+    granular_metrics&
+    operator()(client_quota_rule rule, client_quota_type type) {
+        return _metrics[static_cast<size_t>(rule)][static_cast<size_t>(type)];
+    }
+
+    const granular_metrics&
+    operator()(client_quota_rule rule, client_quota_type type) const {
+        return _metrics[static_cast<size_t>(rule)][static_cast<size_t>(type)];
+    }
+
+    // Assume the enums values are in sequence: [0, all_*.size())
+    static_assert(static_cast<size_t>(all_client_quota_rules[0]) == 0);
+    static_assert(static_cast<size_t>(all_client_quota_types[0]) == 0);
+    using metrics_container_t = std::array<
+      std::array<granular_metrics, all_client_quota_types.size()>,
+      all_client_quota_rules.size()>;
+
+    metrics::internal_metric_groups _internal_metrics;
+    metrics::public_metric_groups _public_metrics;
+    metrics_container_t _metrics{};
+};
 
 using clock = quota_manager::clock;
 
@@ -60,9 +173,12 @@ quota_manager::~quota_manager() { _gc_timer.cancel(); }
 ss::future<> quota_manager::stop() {
     _gc_timer.cancel();
     co_await _gate.close();
+    _probe.reset();
 }
 
 ss::future<> quota_manager::start() {
+    _probe = std::make_unique<client_quotas_probe<clock>>();
+    _probe->setup_metrics();
     if (ss::this_shard_id() == _client_quotas.shard_id()) {
         co_await _client_quotas.reset(client_quotas_map_t{});
         _gc_timer.arm_periodic(_gc_freq);
@@ -207,7 +323,9 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
       .client_id = client_id,
     };
     auto [key, value] = _translator.find_quota(ctx);
+    _probe->record_throughput(value.rule, ctx.q_type, mutations);
     if (!value.limit) {
+        _probe->record_throttle_time(value.rule, ctx.q_type, 0ms);
         vlog(
           client_quota_log.trace,
           "request: ctx:{}, key:{}, value:{}, mutations: {}, delay:{}"
@@ -235,6 +353,7 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
       });
 
     auto capped_delay = cap_to_max_delay(key, delay);
+    _probe->record_throttle_time(value.rule, ctx.q_type, capped_delay);
     vlog(
       client_quota_log.trace,
       "request: ctx:{}, key:{}, value:{}, mutations: {}, delay:{}"
@@ -275,7 +394,9 @@ ss::future<clock::duration> quota_manager::record_produce_tp_and_throttle(
       .client_id = client_id,
     };
     auto [key, value] = _translator.find_quota(ctx);
+    _probe->record_throughput(value.rule, ctx.q_type, bytes);
     if (!value.limit) {
+        _probe->record_throttle_time(value.rule, ctx.q_type, 0ms);
         vlog(
           client_quota_log.trace,
           "request: ctx:{}, key:{}, value:{}, bytes: {}, delay:{}, "
@@ -299,6 +420,7 @@ ss::future<clock::duration> quota_manager::record_produce_tp_and_throttle(
       });
 
     auto capped_delay = cap_to_max_delay(key, delay);
+    _probe->record_throttle_time(value.rule, ctx.q_type, capped_delay);
     vlog(
       client_quota_log.trace,
       "request: ctx:{}, key:{}, value:{}, bytes: {}, delay:{}, "
@@ -321,6 +443,7 @@ ss::future<> quota_manager::record_fetch_tp(
       .client_id = client_id,
     };
     auto [key, value] = _translator.find_quota(ctx);
+    _probe->record_throughput(value.rule, ctx.q_type, bytes);
     vlog(
       client_quota_log.trace,
       "record request: ctx:{}, key:{}, value:{}, bytes:{}",
@@ -350,6 +473,7 @@ ss::future<clock::duration> quota_manager::throttle_fetch_tp(
     };
     auto [key, value] = _translator.find_quota(ctx);
     if (!value.limit) {
+        _probe->record_throttle_time(value.rule, ctx.q_type, 0ms);
         vlog(
           client_quota_log.trace,
           "throttle request: ctx:{}, key:{}, value:{}, delay:{}, "
@@ -372,6 +496,7 @@ ss::future<clock::duration> quota_manager::throttle_fetch_tp(
       });
 
     auto capped_delay = cap_to_max_delay(key, delay);
+    _probe->record_throttle_time(value.rule, ctx.q_type, capped_delay);
     vlog(
       client_quota_log.trace,
       "throttle request: ctx:{}, key:{}, value:{}, delay:{}, "
