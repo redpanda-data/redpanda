@@ -206,8 +206,8 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
       .q_type = client_quota_type::partition_mutation_quota,
       .client_id = client_id,
     };
-    auto [key, limits] = _translator.find_quota(ctx);
-    if (!limits.partition_mutation_limit) {
+    auto [key, value] = _translator.find_quota(ctx);
+    if (!value.limit) {
         co_return 0ms;
     }
 
@@ -254,8 +254,8 @@ ss::future<clock::duration> quota_manager::record_produce_tp_and_throttle(
       .q_type = client_quota_type::produce_quota,
       .client_id = client_id,
     };
-    auto [key, limits] = _translator.find_quota(ctx);
-    if (!limits.produce_limit) {
+    auto [key, value] = _translator.find_quota(ctx);
+    if (!value.limit) {
         co_return clock::duration::zero();
     }
     auto delay = co_await maybe_add_and_retrieve_quota(
@@ -279,8 +279,8 @@ ss::future<> quota_manager::record_fetch_tp(
       .q_type = client_quota_type::fetch_quota,
       .client_id = client_id,
     };
-    auto [key, limits] = _translator.find_quota(ctx);
-    if (!limits.fetch_limit) {
+    auto [key, value] = _translator.find_quota(ctx);
+    if (!value.limit) {
         co_return;
     }
     auto delay [[maybe_unused]] = co_await maybe_add_and_retrieve_quota(
@@ -300,8 +300,8 @@ ss::future<clock::duration> quota_manager::throttle_fetch_tp(
       .q_type = client_quota_type::fetch_quota,
       .client_id = client_id,
     };
-    auto [key, limits] = _translator.find_quota(ctx);
-    if (!limits.fetch_limit) {
+    auto [key, value] = _translator.find_quota(ctx);
+    if (!value.limit) {
         co_return clock::duration::zero();
     }
 
