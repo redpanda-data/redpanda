@@ -1763,7 +1763,7 @@ class RpkTool:
 
         return self._run_txn(cmd)
 
-    def describe_txn(self, txn_id, print_partitions=False):
+    def describe_txn(self, txn_id, print_partitions=False) -> dict | str:
         cmd = ["describe", txn_id]
 
         if print_partitions:
@@ -1774,7 +1774,11 @@ class RpkTool:
     def list_txn(self):
         return self._run_txn(["list"])
 
-    def _run_txn(self, cmd, stdin=None, timeout=None, output_format="json"):
+    def _run_txn(self,
+                 cmd,
+                 stdin=None,
+                 timeout=None,
+                 output_format="json") -> dict | str:
         cmd = [
             self._rpk_binary(),
             "cluster",
