@@ -112,3 +112,22 @@ BOOST_AUTO_TEST_CASE(test_atomic_token_bucket_burst) {
     bucket.record(100);
     BOOST_CHECK_EQUAL(0ms, bucket.calculate_delay<milliseconds>());
 }
+
+BOOST_AUTO_TEST_CASE(test_atomic_token_bucket_remaining) {
+    auto now = ss::lowres_clock::now();
+    atomic_token_bucket bucket{10, 10, 1, true};
+
+    for (int i = 0; i < 3; i++) {
+        BOOST_CHECK_EQUAL(10, bucket.remaining());
+
+        bucket.record(8);
+        BOOST_CHECK_EQUAL(2, bucket.remaining());
+
+        bucket.record(4);
+        BOOST_CHECK_EQUAL(-2, bucket.remaining());
+
+        // Replenishing effectively resets the remaining counter
+        now += 10s;
+        bucket.replenish(now);
+    }
+}

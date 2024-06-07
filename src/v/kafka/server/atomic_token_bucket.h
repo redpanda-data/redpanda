@@ -17,6 +17,7 @@
 #include <seastar/util/shared_token_bucket.hh>
 
 #include <chrono>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -77,6 +78,23 @@ public:
     /// Returns the configured fixed rate at which the token bucket is
     /// replenished
     uint64_t rate() const { return _bucket.rate(); }
+
+    /// Returns the number of tokens remaining in the bucket
+    int64_t remaining() {
+        // Head is not readily available from the bucket, so we need to do some
+        // arithmetic to expose it
+        // remaining = head - tail = max - (max - head) - tail
+        uint64_t m = std::numeric_limits<int64_t>::max();
+        uint64_t max_minus_head = _bucket.deficiency(m);
+        uint64_t tail = _bucket.grab(0);
+        uint64_t head = m - max_minus_head;
+
+        // The token bucket can go negative
+        int64_t remaining = head >= tail
+                              ? static_cast<int64_t>(head - tail)
+                              : -1 * static_cast<int64_t>(tail - head);
+        return std::min<int64_t>(remaining, static_cast<int64_t>(rate()));
+    }
 
 private:
     template<typename delay_t>
