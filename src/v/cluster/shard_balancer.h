@@ -37,7 +37,10 @@ public:
       ss::sharded<shard_placement_table>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<topic_table>&,
-      ss::sharded<controller_backend>&);
+      ss::sharded<controller_backend>&,
+      config::binding<bool> balancing_on_core_count_change,
+      config::binding<bool> balancing_continuous,
+      config::binding<std::chrono::milliseconds> debounce_timeout);
 
     ss::future<> start();
     ss::future<> stop();
@@ -91,6 +94,10 @@ private:
     ss::sharded<topic_table>& _topics;
     ss::sharded<controller_backend>& _controller_backend;
     model::node_id _self;
+
+    config::binding<bool> _balancing_on_core_count_change;
+    config::binding<bool> _balancing_continuous;
+    config::binding<std::chrono::milliseconds> _debounce_timeout;
 
     cluster::notification_id_type _topic_table_notify_handle;
     ssx::event _wakeup_event{"shard_balancer"};

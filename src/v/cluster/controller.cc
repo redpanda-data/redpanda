@@ -466,7 +466,11 @@ ss::future<> controller::start(
             std::ref(_shard_placement),
             std::ref(_feature_table),
             std::ref(_tp_state),
-            std::ref(_backend));
+            std::ref(_backend),
+            config::shard_local_cfg()
+              .core_balancing_on_core_count_change.bind(),
+            config::shard_local_cfg().core_balancing_continuous.bind(),
+            config::shard_local_cfg().core_balancing_debounce_timeout.bind());
       })
       .then(
         [this] { return _drain_manager.invoke_on_all(&drain_manager::start); })

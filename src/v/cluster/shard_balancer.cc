@@ -23,12 +23,18 @@ shard_balancer::shard_balancer(
   ss::sharded<shard_placement_table>& spt,
   ss::sharded<features::feature_table>& features,
   ss::sharded<topic_table>& topics,
-  ss::sharded<controller_backend>& cb)
+  ss::sharded<controller_backend>& cb,
+  config::binding<bool> balancing_on_core_count_change,
+  config::binding<bool> balancing_continuous,
+  config::binding<std::chrono::milliseconds> debounce_timeout)
   : _shard_placement(spt.local())
   , _features(features.local())
   , _topics(topics)
   , _controller_backend(cb)
   , _self(*config::node().node_id())
+  , _balancing_on_core_count_change(std::move(balancing_on_core_count_change))
+  , _balancing_continuous(std::move(balancing_continuous))
+  , _debounce_timeout(std::move(debounce_timeout))
   , _total_counts(ss::smp::count, 0) {
     _total_counts.at(0) += 1; // controller partition
 }
