@@ -59,8 +59,15 @@ shard_balancer::shard_balancer(
   , _balancing_on_core_count_change(std::move(balancing_on_core_count_change))
   , _balancing_continuous(std::move(balancing_continuous))
   , _debounce_timeout(std::move(debounce_timeout))
+  , _debounce_jitter(_debounce_timeout())
+  , _balance_timer([this] { balance_timer_callback(); })
   , _total_counts(ss::smp::count, 0) {
     _total_counts.at(0) += 1; // controller partition
+
+    _debounce_timeout.watch([this] {
+        _debounce_jitter = simple_time_jitter<ss::lowres_clock>(
+          _debounce_timeout());
+    });
 }
 
 ss::future<> shard_balancer::start() {
@@ -198,6 +205,7 @@ ss::future<> shard_balancer::stop() {
       shard_id);
 
     _topics.local().unregister_delta_notification(_topic_table_notify_handle);
+    _balance_timer.cancel();
     _wakeup_event.set();
     return _gate.close();
 }
@@ -345,6 +353,22 @@ void shard_balancer::maybe_assign(
             // topic_table.
             target = placement_target_on_node(replicas_view.value(), _self);
         }
+    } else {
+        // partition is removed from this node, this will likely disrupt the
+        // counts balance, so we set up the balancing timer.
+
+        if (
+          _features.is_active(features::feature::node_local_core_assignment)
+          && _balancing_continuous() && !_balance_timer.armed()) {
+            // Add jitter so that different nodes don't move replicas of the
+            // same partition in unison.
+            auto debounce_interval = _debounce_jitter.next_duration();
+            vlog(
+              clusterlog.info,
+              "scheduling balancing in {}s.",
+              debounce_interval / 1s);
+            _balance_timer.arm(debounce_interval);
+        }
     }
 
     vlog(
@@ -381,6 +405,32 @@ ss::future<> shard_balancer::balance_on_core_count_change(mutex::units& lock) {
     vlog(
       clusterlog.info, "detected core count change, triggering rebalance...");
     co_await do_balance(lock);
+}
+
+void shard_balancer::balance_timer_callback() {
+    ssx::spawn_with_gate(_gate, [this] {
+        return _mtx.get_units()
+          .then([this](mutex::units lock) {
+              return ss::do_with(std::move(lock), [this](mutex::units& lock) {
+                  return do_balance(lock);
+              });
+          })
+          .handle_exception([this](const std::exception_ptr& e) {
+              if (ssx::is_shutdown_exception(e)) {
+                  return;
+              }
+
+              // Retry balancing after some time.
+              if (!_balance_timer.armed()) {
+                  _balance_timer.arm(_debounce_jitter.next_duration());
+              }
+              vlog(
+                clusterlog.warn,
+                "failed to balance: {}, retrying after {}s.",
+                e,
+                (_balance_timer.get_timeout() - ss::lowres_clock::now()) / 1s);
+          });
+    });
 }
 
 ss::future<> shard_balancer::do_balance(mutex::units& lock) {

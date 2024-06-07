@@ -14,6 +14,7 @@
 #include "cluster/controller_backend.h"
 #include "cluster/shard_placement_table.h"
 #include "container/chunked_hash_map.h"
+#include "random/simple_time_jitter.h"
 #include "ssx/event.h"
 #include "utils/mutex.h"
 
@@ -61,6 +62,7 @@ private:
     ss::future<> do_assign_ntps(mutex::units& lock);
 
     ss::future<> balance_on_core_count_change(mutex::units& lock);
+    void balance_timer_callback();
     ss::future<> do_balance(mutex::units& lock);
 
     void maybe_assign(
@@ -104,8 +106,10 @@ private:
     config::binding<bool> _balancing_on_core_count_change;
     config::binding<bool> _balancing_continuous;
     config::binding<std::chrono::milliseconds> _debounce_timeout;
+    simple_time_jitter<ss::lowres_clock> _debounce_jitter;
 
     cluster::notification_id_type _topic_table_notify_handle;
+    ss::timer<ss::lowres_clock> _balance_timer;
     ssx::event _wakeup_event{"shard_balancer"};
     mutex _mtx{"shard_balancer"};
     ss::gate _gate;
