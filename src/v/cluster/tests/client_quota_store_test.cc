@@ -20,27 +20,10 @@
 
 namespace cluster::client_quota {
 
-const entity_key key0{
-  .parts = {entity_key::part{
-    .part = entity_key::part::client_id_default_match{},
-  }},
-};
-const entity_key key1{
-  .parts = {entity_key::part{
-    .part = entity_key::part::client_id_match{.value = "producer-app-1"},
-  }},
-};
-const entity_key key2{
-  .parts = {entity_key::part{
-    .part = entity_key::part::client_id_match{.value = "consumer-app-1"},
-  }},
-};
-const entity_key key3{
-  .parts = {entity_key::part{
-    .part
-    = entity_key::part::client_id_prefix_match{.value = "franz-go-prefix"},
-  }},
-};
+const entity_key key0{entity_key::client_id_default_match{}};
+const entity_key key1{entity_key::client_id_match{"producer-app-1"}};
+const entity_key key2{entity_key::client_id_match{"consumer-app-1"}};
+const entity_key key3{entity_key::client_id_prefix_match{"franz-go-prefix"}};
 
 const entity_value val0{
   .consumer_byte_rate = 10240,

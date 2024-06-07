@@ -60,11 +60,7 @@ std::optional<uint64_t> client_quota_translator::get_client_quota_value(
     return ss::visit(
       quota_id,
       [this, qt, &accessor](const k_client_id& k) -> std::optional<uint64_t> {
-          auto exact_match_key = entity_key{
-            .parts = {entity_key::part{
-              .part = entity_key::part::client_id_match{.value = k},
-            }},
-          };
+          auto exact_match_key = entity_key{entity_key::client_id_match{k}};
           auto exact_match_quota = _quota_store.local().get_quota(
             exact_match_key);
           if (exact_match_quota && accessor(*exact_match_quota)) {
@@ -72,10 +68,7 @@ std::optional<uint64_t> client_quota_translator::get_client_quota_value(
           }
 
           const static auto default_client_key = entity_key{
-            .parts = {entity_key::part{
-              .part = entity_key::part::client_id_default_match{},
-            }},
-          };
+            entity_key::client_id_default_match{}};
           auto default_quota = _quota_store.local().get_quota(
             default_client_key);
           if (default_quota && accessor(*default_quota)) {
@@ -86,11 +79,7 @@ std::optional<uint64_t> client_quota_translator::get_client_quota_value(
       },
       [this, qt, &accessor](const k_group_name& k) -> std::optional<uint64_t> {
           const auto& group_quota_config = get_quota_config(qt);
-          auto group_key = entity_key{
-            .parts = {entity_key::part{
-              .part = entity_key::part::client_id_prefix_match{.value = k},
-            }},
-          };
+          auto group_key = entity_key{entity_key::client_id_prefix_match{k}};
           auto group_quota = _quota_store.local().get_quota(group_key);
           if (group_quota && accessor(*group_quota)) {
               return accessor(*group_quota);
@@ -132,12 +121,7 @@ tracker_key client_quota_translator::find_quota_key(
     }
 
     // Exact match quotas
-    auto exact_match_key = entity_key{
-      .parts = {entity_key::part{
-        .part
-        = entity_key::part::client_id_match{.value = ss::sstring{*client_id}},
-      }},
-    };
+    auto exact_match_key = entity_key{entity_key::client_id_match{*client_id}};
     auto exact_match_quota = quota_store.get_quota(exact_match_key);
     if (exact_match_quota && checker(*exact_match_quota)) {
         return tracker_key{std::in_place_type<k_client_id>, *client_id};
