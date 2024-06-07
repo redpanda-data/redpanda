@@ -177,6 +177,7 @@ server::server(
       "kafka/server-mem-fetch")
   , _probe(std::make_unique<class latency_probe>())
   , _sasl_probe(std::make_unique<class sasl_probe>())
+  , _read_dist_probe(std::make_unique<read_distribution_probe>())
   , _thread_worker(tw)
   , _replica_selector(
       std::make_unique<rack_aware_replica_selector>(_metadata_cache.local()))
@@ -193,6 +194,7 @@ server::server(
     _probe->setup_public_metrics();
 
     _sasl_probe->setup_metrics(cfg->local().name);
+    _read_dist_probe->setup_metrics();
 }
 
 void server::setup_metrics() {

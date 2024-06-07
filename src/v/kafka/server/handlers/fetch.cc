@@ -19,6 +19,7 @@
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/read_distribution_probe.h"
 #include "kafka/server/fetch_session.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
@@ -110,6 +111,7 @@ static ss::future<read_result> read_from_partition(
     std::exception_ptr e;
     std::unique_ptr<iobuf> data;
     std::vector<cluster::tx::tx_range> aborted_transactions;
+    std::optional<std::chrono::milliseconds> delta_from_tip_ms;
     try {
         auto result = co_await rdr.reader.consume(
           kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
@@ -118,6 +120,14 @@ static ss::future<read_result> read_from_partition(
         part.probe().add_bytes_fetched(data->size_bytes());
         if (!part.is_leader() && config.read_from_follower) {
             part.probe().add_bytes_fetched_from_follower(data->size_bytes());
+        }
+
+        if (data->size_bytes() > 0) {
+            auto curr_timestamp = model::timestamp::now();
+            if (curr_timestamp >= result.first_timestamp) {
+                delta_from_tip_ms = std::chrono::milliseconds{
+                  curr_timestamp() - result.first_timestamp()};
+            }
         }
 
         if (result.first_tx_batch_offset && result.record_count > 0) {
@@ -157,6 +167,7 @@ static ss::future<read_result> read_from_partition(
           start_o,
           hw,
           lso.value(),
+          delta_from_tip_ms,
           std::move(aborted_transactions));
     }
 
@@ -165,6 +176,7 @@ static ss::future<read_result> read_from_partition(
       start_o,
       hw,
       lso.value(),
+      delta_from_tip_ms,
       std::move(aborted_transactions));
 }
 
@@ -535,6 +547,7 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   cluster::partition_manager& cluster_pm,
   const replica_selector& replica_selector,
   std::vector<ntp_fetch_config> ntp_fetch_configs,
+  read_distribution_probe& read_probe,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline,
   const size_t bytes_left,
@@ -592,6 +605,10 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
     size_t total_size = 0;
     for (const auto& r : results) {
         total_size += r.data_size_bytes();
+        if (r.delta_from_tip_ms.has_value()) {
+            read_probe.add_read_event_delta_from_tip(
+              r.delta_from_tip_ms.value());
+        }
     }
     vlog(
       klog.trace,
@@ -647,6 +664,7 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
               mgr,
               octx.rctx.server().local().get_replica_selector(),
               std::move(configs),
+              octx.rctx.server().local().read_probe(),
               foreign_read,
               octx.deadline,
               octx.bytes_left,
@@ -803,6 +821,7 @@ private:
           _ctx.mgr,
           _ctx.srv.get_replica_selector(),
           std::move(requests),
+          _ctx.srv.read_probe(),
           _ctx.foreign_read,
           _ctx.deadline,
           _ctx.bytes_left,

@@ -92,7 +92,21 @@ log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
     return seastar_histogram_logform<internal_hist_config>();
 }
 
+template<
+  typename duration_t,
+  int number_of_buckets,
+  uint64_t first_bucket_upper_bound>
+seastar::metrics::histogram
+log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+  read_dist_histogram_logform() const {
+    using read_distribution_config = logform_config<1l, 4ul, 16>;
+
+    return seastar_histogram_logform<read_distribution_config>();
+}
+
 // Explicit instantiation for log_hist_public
 template class log_hist<std::chrono::microseconds, 18, 256ul>;
 // Explicit instantiation for log_hist_internal
 template class log_hist<std::chrono::microseconds, 26, 8ul>;
+// Explicit instantiation for log_hist_read_dist
+template class log_hist<std::chrono::minutes, 16, 4ul>;
