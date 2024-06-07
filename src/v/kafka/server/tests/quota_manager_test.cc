@@ -82,23 +82,25 @@ SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_throttling) {
 
     auto& qm = f.sqm.local();
 
+    auto now = kafka::quota_manager::clock::now();
+
     // Test that below the fetch quota we don't throttle
-    qm.record_fetch_tp(client_id, 99).get();
-    auto delay = qm.throttle_fetch_tp(client_id).get();
+    qm.record_fetch_tp(client_id, 99, now).get();
+    auto delay = qm.throttle_fetch_tp(client_id, now).get();
 
     BOOST_CHECK_EQUAL(delay, 0ms);
 
     // Test that above the fetch quota we throttle
-    qm.record_fetch_tp(client_id, 10).get();
-    delay = qm.throttle_fetch_tp(client_id).get();
+    qm.record_fetch_tp(client_id, 10, now).get();
+    delay = qm.throttle_fetch_tp(client_id, now).get();
 
     BOOST_CHECK_GT(delay, 0ms);
 
     // Test that once we wait out the throttling delay, we don't
     // throttle again (as long as we stay under the limit)
-    seastar::sleep_abortable(delay + 1s).get();
-    qm.record_fetch_tp(client_id, 10).get();
-    delay = qm.throttle_fetch_tp(client_id).get();
+    now += 1s;
+    qm.record_fetch_tp(client_id, 10, now).get();
+    delay = qm.throttle_fetch_tp(client_id, now).get();
 
     BOOST_CHECK_EQUAL(delay, 0ms);
 }
