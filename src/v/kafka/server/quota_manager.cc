@@ -16,14 +16,17 @@
 #include "kafka/server/atomic_token_bucket.h"
 #include "kafka/server/client_quota_translator.h"
 #include "kafka/server/logger.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/map_reduce.hh>
+#include <seastar/core/metrics.hh>
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <fmt/chrono.h>
 
 #include <chrono>
@@ -46,12 +49,16 @@ quota_manager::quota_manager(
       config::shard_local_cfg().kafka_throughput_replenish_threshold.bind())
   , _client_quotas{client_quotas}
   , _translator{client_quota_store}
+  , _probe{*this}
   , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
   , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
     if (seastar::this_shard_id() == _client_quotas.shard_id()) {
         _gc_timer.set_callback([this]() { gc(); });
         auto update_quotas = [this]() { update_client_quotas(); };
         _translator.watch(update_quotas);
+
+        _probe_timer.set_callback([this]() { update_metrics(); });
+        _probe.setup_metrics();
     }
 }
 
@@ -59,6 +66,7 @@ quota_manager::~quota_manager() { _gc_timer.cancel(); }
 
 ss::future<> quota_manager::stop() {
     _gc_timer.cancel();
+    _probe_timer.cancel();
     co_await _gate.close();
 }
 
@@ -66,6 +74,8 @@ ss::future<> quota_manager::start() {
     if (ss::this_shard_id() == _client_quotas.shard_id()) {
         co_await _client_quotas.reset(client_quotas_map_t{});
         _gc_timer.arm_periodic(_gc_freq);
+        _probe_timer.arm_periodic(
+          config::shard_local_cfg().kafka_client_quota_probe_update_period());
     }
 }
 
@@ -411,6 +421,87 @@ ss::future<> quota_manager::do_gc(clock::time_point expire_threshold) {
           }
           return new_map;
       });
+}
+
+void quota_manager::update_metrics() {
+    vassert(
+      ss::this_shard_id() == _client_quotas.shard_id(),
+      "update_metrics should only be performed on the owner shard");
+    ssx::background
+      = ssx::spawn_with_gate_then(_gate, [this]() {
+            auto new_quota_remaining
+              = client_quotas_probe::metrics_container_t{};
+            auto new_quota_limits = client_quotas_probe::metrics_container_t{};
+
+            const auto update_for_bucket =
+              [this, &new_quota_remaining, &new_quota_limits](
+                const tracker_key& key,
+                std::optional<atomic_token_bucket>& bucket,
+                client_quota_type qt) {
+                  if (!bucket) {
+                      return;
+                  }
+                  auto rule = _translator.find_quota_rule(key, qt);
+                  new_quota_remaining[rule][qt].add(bucket->remaining());
+                  new_quota_limits[rule][qt].add(bucket->rate());
+              };
+
+            const auto& quotas = _client_quotas.local().get();
+            for (const auto& [k, v] : *quotas) {
+                update_for_bucket(
+                  k, v->tp_produce_rate, client_quota_type::produce_quota);
+                update_for_bucket(
+                  k, v->tp_fetch_rate, client_quota_type::fetch_quota);
+                update_for_bucket(
+                  k, v->pm_rate, client_quota_type::partition_mutation_quota);
+            }
+
+            _probe.set_bucket_remaining(std::move(new_quota_remaining));
+            _probe.set_bucket_limits(std::move(new_quota_limits));
+        }).handle_exception([](const std::exception_ptr& e) {
+            vlog(klog.warn, "Error in metric update fibre - {}", e);
+        });
+}
+
+void client_quotas_probe::setup_metrics() {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    auto metric_defs = std::vector<ss::metrics::impl::metric_definition_impl>{};
+    static const auto rule_label = ss::metrics::label("quota_rule");
+    static const auto quota_type_label = ss::metrics::label("quota_type");
+
+    for (auto rule : all_client_quota_rules) {
+        for (auto quota_type : all_client_quota_types) {
+            metric_defs.emplace_back(sm::make_gauge(
+              "client_quota_remaining",
+              [this, rule, quota_type] {
+                  return get_bucket_remaining(rule, quota_type);
+              },
+              sm::description(
+                "The sum of all token bucket levels configured at the "
+                "given quota rule."),
+              {rule_label(rule), quota_type_label(quota_type)}));
+            metric_defs.emplace_back(sm::make_gauge(
+              "client_quota_limit",
+              [this, rule, quota_type] {
+                  return get_bucket_limit(rule, quota_type);
+              },
+              sm::description(
+                "The sum of all token bucket limits configured at the "
+                "given quota rule."),
+              {rule_label(rule), quota_type_label(quota_type)}));
+        }
+    }
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("kafka:quotas"),
+      metric_defs,
+      {},
+      {sm::shard_label});
 }
 
 } // namespace kafka

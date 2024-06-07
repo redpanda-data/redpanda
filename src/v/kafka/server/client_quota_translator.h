@@ -63,6 +63,13 @@ enum class client_quota_type {
     partition_mutation_quota
 };
 
+constexpr static auto all_client_quota_types = std::array<client_quota_type, 3>{
+  client_quota_type::produce_quota,
+  client_quota_type::fetch_quota,
+  client_quota_type::partition_mutation_quota};
+
+std::ostream& operator<<(std::ostream&, client_quota_type);
+
 struct client_quota_request_ctx {
     client_quota_type q_type;
     std::optional<std::string_view> client_id;
@@ -77,6 +84,15 @@ enum class client_quota_rule {
     cluster_client_prefix,
     kafka_client_id
 };
+
+constexpr static auto all_client_quota_rules = std::array<client_quota_rule, 5>{
+  client_quota_rule::kafka_client_default,
+  client_quota_rule::cluster_client_default,
+  client_quota_rule::kafka_client_prefix,
+  client_quota_rule::cluster_client_prefix,
+  client_quota_rule::kafka_client_id};
+
+std::ostream& operator<<(std::ostream&, client_quota_rule);
 
 /// client_quota_translator is responsible for providing quota_manager with a
 /// simplified interface to the quota configurations

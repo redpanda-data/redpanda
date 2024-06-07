@@ -32,6 +32,17 @@ const auto entity_value_accessor = [](client_quota_type qt) {
     };
 };
 
+std::ostream& operator<<(std::ostream& os, client_quota_type quota_type) {
+    switch (quota_type) {
+    case client_quota_type::produce_quota:
+        return os << "produce_quota";
+    case client_quota_type::fetch_quota:
+        return os << "fetch_quota";
+    case client_quota_type::partition_mutation_quota:
+        return os << "partition_mutation_quota";
+    }
+}
+
 std::ostream& operator<<(std::ostream& os, const client_quota_limits& l) {
     fmt::print(
       os,
@@ -41,6 +52,21 @@ std::ostream& operator<<(std::ostream& os, const client_quota_limits& l) {
       l.fetch_limit,
       l.partition_mutation_limit);
     return os;
+}
+
+std::ostream& operator<<(std::ostream& os, client_quota_rule r) {
+    switch (r) {
+    case client_quota_rule::cluster_client_default:
+        return os << "cluster_client_default";
+    case client_quota_rule::kafka_client_default:
+        return os << "kafka_client_default";
+    case client_quota_rule::cluster_client_prefix:
+        return os << "cluster_client_prefix";
+    case client_quota_rule::kafka_client_prefix:
+        return os << "kafka_client_prefix";
+    case client_quota_rule::kafka_client_id:
+        return os << "kafka_client_id";
+    }
 }
 
 client_quota_translator::client_quota_translator(

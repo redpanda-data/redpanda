@@ -15,6 +15,7 @@
 #include "config/property.h"
 #include "kafka/server/atomic_token_bucket.h"
 #include "kafka/server/client_quota_translator.h"
+#include "metrics/metrics.h"
 #include "ssx/sharded_ptr.h"
 #include "ssx/sharded_value.h"
 #include "utils/absl_sstring_hash.h"
@@ -28,6 +29,7 @@
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/shared_token_bucket.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
 #include <chrono>
@@ -35,6 +37,78 @@
 #include <string_view>
 
 namespace kafka {
+
+class client_quotas_probe {
+public:
+    /// average is a helper to average over multiple token bucket values
+    struct average {
+        // Using a double to keep track of the average as the values summed
+        // might overflow an int64_t
+        double sum;
+        uint32_t count;
+
+        void add(double value) {
+            sum += value;
+            count++;
+        }
+
+        double avg() const { return sum / count; }
+    };
+
+    using metrics_container_t = absl::flat_hash_map<
+      client_quota_rule,
+      absl::flat_hash_map<client_quota_type, average>>;
+
+    explicit client_quotas_probe(class quota_manager& qm)
+      : _qm(qm) {}
+    client_quotas_probe(const client_quotas_probe&) = delete;
+    client_quotas_probe& operator=(const client_quotas_probe&) = delete;
+    client_quotas_probe(client_quotas_probe&&) = delete;
+    client_quotas_probe& operator=(client_quotas_probe&&) = delete;
+    ~client_quotas_probe() noexcept = default;
+
+    void setup_metrics();
+
+    auto set_bucket_remaining(metrics_container_t new_bucket_remaining) {
+        return _bucket_remaining = std::move(new_bucket_remaining);
+    }
+
+    auto set_bucket_limits(metrics_container_t new_bucket_limits) {
+        return _bucket_limits = std::move(new_bucket_limits);
+    }
+
+    double get_value(
+      const metrics_container_t& container,
+      client_quota_rule rule,
+      client_quota_type quota_type) const {
+        auto inner_map = container.find(rule);
+        if (inner_map == container.end()) {
+            return 0.0;
+        }
+        auto value = inner_map->second.find(quota_type);
+        if (value == inner_map->second.end()) {
+            return 0.0;
+        }
+        return value->second.avg();
+    }
+
+    auto get_bucket_remaining(
+      client_quota_rule rule, client_quota_type quota_type) const {
+        return get_value(_bucket_remaining, rule, quota_type);
+    }
+
+    auto get_bucket_limit(
+      client_quota_rule rule, client_quota_type quota_type) const {
+        return get_value(_bucket_limits, rule, quota_type);
+    }
+
+private:
+    class quota_manager& _qm;
+    metrics::internal_metric_groups _metrics;
+
+    metrics_container_t _bucket_remaining;
+    metrics_container_t _bucket_limits;
+};
 
 // quota_manager tracks quota usage
 //
@@ -131,6 +205,7 @@ private:
       quota_mutation_callback_t cb);
     ss::future<> add_quota_id(tracker_key quota_id, clock::time_point now);
     void update_client_quotas();
+    void update_metrics();
 
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
@@ -138,7 +213,9 @@ private:
 
     client_quotas_t& _client_quotas;
     client_quota_translator _translator;
+    client_quotas_probe _probe;
 
+    ss::timer<> _probe_timer;
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
     config::binding<std::chrono::milliseconds> _max_delay;
