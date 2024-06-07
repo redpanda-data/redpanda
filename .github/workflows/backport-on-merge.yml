@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Find the PR associated with this push, if there is one.
       - uses: jwalton/gh-find-current-pr@v1
