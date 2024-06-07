@@ -68,6 +68,16 @@ struct client_quota_request_ctx {
     std::optional<std::string_view> client_id;
 };
 
+/// client_quota_rule is used for reporting metrics to show which type of rule
+/// is being used for limiting clients
+enum class client_quota_rule {
+    kafka_client_default,
+    cluster_client_default,
+    kafka_client_prefix,
+    cluster_client_prefix,
+    kafka_client_id
+};
+
 /// client_quota_translator is responsible for providing quota_manager with a
 /// simplified interface to the quota configurations
 ///  * It is responsible for translating the quota-specific request context (for
@@ -92,6 +102,11 @@ public:
     /// quota context
     std::pair<tracker_key, client_quota_limits>
     find_quota(const client_quota_request_ctx& ctx) const;
+
+    /// Returns the quota rule type that applies to the given tracker key and
+    /// quota type
+    client_quota_rule
+    find_quota_rule(const tracker_key&, client_quota_type) const;
 
     /// `watch` can be used to register for quota changes
     void watch(on_change_fn&& fn);

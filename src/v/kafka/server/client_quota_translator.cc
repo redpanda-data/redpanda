@@ -19,6 +19,19 @@ namespace kafka {
 using cluster::client_quota::entity_key;
 using cluster::client_quota::entity_value;
 
+const auto entity_value_accessor = [](client_quota_type qt) {
+    return [qt](const cluster::client_quota::entity_value& ev) {
+        switch (qt) {
+        case client_quota_type::produce_quota:
+            return ev.producer_byte_rate;
+        case client_quota_type::fetch_quota:
+            return ev.consumer_byte_rate;
+        case client_quota_type::partition_mutation_quota:
+            return ev.controller_mutation_rate;
+        }
+    };
+};
+
 std::ostream& operator<<(std::ostream& os, const client_quota_limits& l) {
     fmt::print(
       os,
@@ -47,16 +60,7 @@ client_quota_translator::client_quota_translator(
 
 std::optional<uint64_t> client_quota_translator::get_client_quota_value(
   const tracker_key& quota_id, client_quota_type qt) const {
-    const auto accessor = [qt](const cluster::client_quota::entity_value& ev) {
-        switch (qt) {
-        case client_quota_type::produce_quota:
-            return ev.producer_byte_rate;
-        case client_quota_type::fetch_quota:
-            return ev.consumer_byte_rate;
-        case client_quota_type::partition_mutation_quota:
-            return ev.controller_mutation_rate;
-        }
-    };
+    const auto accessor = entity_value_accessor(qt);
     return ss::visit(
       quota_id,
       [this, qt, &accessor](const k_client_id& k) -> std::optional<uint64_t> {
@@ -226,6 +230,57 @@ client_quota_translator::get_default_config(client_quota_type qt) const {
     case kafka::client_quota_type::partition_mutation_quota:
         return _target_partition_mutation_quota();
     }
+}
+
+client_quota_rule client_quota_translator::find_quota_rule(
+  const tracker_key& quota_id, client_quota_type qt) const {
+    const auto accessor = entity_value_accessor(qt);
+    return ss::visit(
+      quota_id,
+      [this, &accessor](const k_client_id& k) -> client_quota_rule {
+          auto exact_match_key = entity_key{
+            .parts = {entity_key::part{
+              .part = entity_key::part::client_id_match{.value = k},
+            }},
+          };
+          auto exact_match_quota = _quota_store.local().get_quota(
+            exact_match_key);
+          if (exact_match_quota && accessor(*exact_match_quota)) {
+              return client_quota_rule::kafka_client_id;
+          }
+
+          const static auto default_client_key = entity_key{
+            .parts = {entity_key::part{
+              .part = entity_key::part::client_id_default_match{},
+            }},
+          };
+          auto default_quota = _quota_store.local().get_quota(
+            default_client_key);
+          if (default_quota && accessor(*default_quota)) {
+              return client_quota_rule::kafka_client_default;
+          }
+
+          return client_quota_rule::cluster_client_default;
+      },
+      [this, &accessor, qt](const k_group_name& k) -> client_quota_rule {
+          const auto& group_quota_config = get_quota_config(qt);
+          auto group_key = entity_key{
+            .parts = {entity_key::part{
+              .part = entity_key::part::client_id_prefix_match{.value = k},
+            }},
+          };
+          auto group_quota = _quota_store.local().get_quota(group_key);
+          if (group_quota && accessor(*group_quota)) {
+              return client_quota_rule::kafka_client_prefix;
+          }
+
+          auto group = group_quota_config.find(k);
+          if (group != group_quota_config.end()) {
+              return client_quota_rule::cluster_client_prefix;
+          }
+
+          return {};
+      });
 }
 
 } // namespace kafka
