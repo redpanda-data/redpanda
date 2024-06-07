@@ -16,7 +16,7 @@ jobs:
   run-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with: 
           repository: redpanda-data/sparse-checkout 
           token: ${{ secrets.ACTIONS_BOT_TOKEN }}
