@@ -498,6 +498,11 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;
     property<std::chrono::milliseconds> leader_balancer_node_mute_timeout;
     bounded_property<size_t> leader_balancer_transfer_limit_per_shard;
+
+    property<bool> core_balancing_on_core_count_change;
+    property<bool> core_balancing_continuous;
+    property<std::chrono::milliseconds> core_balancing_debounce_timeout;
+
     property<int> internal_topic_replication_factor;
     property<std::chrono::milliseconds> health_manager_tick_interval;
 
