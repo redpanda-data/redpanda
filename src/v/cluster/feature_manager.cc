@@ -237,8 +237,8 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
           cfg.audit_enabled || cfg.cloud_storage_enabled
           || cfg.partition_autobalancing_mode
                == model::partition_autobalancing_mode::continuous
-          || has_gssapi() || has_oidc() || has_schma_id_validation()
-          || has_non_default_roles) {
+          || cfg.core_balancing_continuous() || has_gssapi() || has_oidc()
+          || has_schma_id_validation() || has_non_default_roles) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
