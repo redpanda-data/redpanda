@@ -389,6 +389,7 @@ ss::future<> cache::trim(
     auto trim_result = co_await do_trim(
       tracker_lru_entries, size_to_delete, objects_to_delete);
 
+    probe.in_mem_trim();
     vlog(
       cst_log.debug,
       "in-memory trim result: deleted size: {}, deleted count: {}",

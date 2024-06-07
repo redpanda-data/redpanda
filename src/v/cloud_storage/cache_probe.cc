@@ -114,6 +114,12 @@ cache_probe::cache_probe() {
                     "Number of times could not free the expected amount of "
                     "space, indicating possible bug or configuration issue."))
                   .aggregate(aggregate_labels),
+                sm::make_counter(
+                  "in_mem_trims",
+                  [this] { return _in_mem_trims; },
+                  sm::description("Number of times we trimmed the cache using "
+                                  "the in-memory access tracker."))
+                  .aggregate(aggregate_labels),
               });
         }
 
