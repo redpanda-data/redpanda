@@ -86,6 +86,7 @@
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
+#include "kafka/server/group_tx_tracker_stm.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/rm_group_frontend.h"
@@ -2685,6 +2686,7 @@ void application::start_runtime_services(
             config::shard_local_cfg().cloud_storage_enabled(),
             cloud_storage_api,
             feature_table);
+          pm.register_factory<kafka::group_tx_tracker_stm_factory>();
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
