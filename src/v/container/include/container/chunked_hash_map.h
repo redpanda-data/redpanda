@@ -10,9 +10,10 @@
  */
 #pragma once
 
+#include "container/fragmented_vector.h"
+
 #include <absl/hash/hash.h>
 #include <ankerl/unordered_dense.h>
-#include <container/fragmented_vector.h>
 
 #include <type_traits>
 
