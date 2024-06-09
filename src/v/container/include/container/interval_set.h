@@ -34,7 +34,8 @@ class interval_set {
         T start;
 
         // Exclusive.
-        T end;
+        // It's important that this not be used in any comparisons.
+        mutable T end;
     };
     struct compare {
         using is_transparent = void;
