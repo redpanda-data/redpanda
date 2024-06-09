@@ -377,6 +377,10 @@ private:
 
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
 
+    // Used in `sync_kafka_start_offset_override` to avoid having to re-sync the
+    // `archival_meta_stm`.
+    bool _has_synced_archival_for_start_override{false};
+
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };
 } // namespace cluster
