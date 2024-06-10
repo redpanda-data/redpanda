@@ -229,6 +229,19 @@ struct s3_imposter_fixture::content_handler {
           request.content_length,
           request._method);
 
+        if (auto maybe_resp = fixture.should_fail_request(ri);
+            maybe_resp.has_value()) {
+            vlog(
+              fixt_log.debug,
+              "S3 imposter request {} - {} - {} marked as failed, response {}",
+              request._url,
+              request.content_length,
+              request._method,
+              maybe_resp->status);
+            repl.set_status(maybe_resp->status);
+            return maybe_resp->body;
+        }
+
         auto expect_iter = expectations.find(request._url);
         if (expect_iter != expectations.end() && expect_iter->second.slowdown) {
             repl.set_status(reply::status_type::service_unavailable);
@@ -468,6 +481,23 @@ void s3_imposter_fixture::set_routes(
       },
       "txt");
     r.add_default_handler(_handler.get());
+}
+
+void s3_imposter_fixture::fail_request_if(
+  req_pred_t pred, http_test_utils::response response) {
+    _fail_request_if.push_back(std::move(pred));
+    _failure_response.push_back(std::move(response));
+}
+
+std::optional<http_test_utils::response>
+s3_imposter_fixture::should_fail_request(
+  const http_test_utils::request_info& ri) {
+    for (size_t i = 0; i < _fail_request_if.size(); ++i) {
+        if (_fail_request_if[i](ri)) {
+            return _failure_response[i];
+        }
+    }
+    return std::nullopt;
 }
 
 enable_cloud_storage_fixture::enable_cloud_storage_fixture() {

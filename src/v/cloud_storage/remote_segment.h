@@ -125,7 +125,7 @@ public:
     /// Hydrate a part of a segment, identified by the given range. The range
     /// can contain data for multiple contiguous chunks, in which case multiple
     /// files are written to cache.
-    ss::future<> hydrate_chunk(segment_chunk_range range);
+    ss::future<> hydrate_chunk(chunk_start_offset_t start_offset);
 
     /// Loads the segment chunk file from cache into an open file handle. If the
     /// file is not present in cache, the returned file handle is unopened.
@@ -178,8 +178,9 @@ public:
     // granularity, otherwise the size is chunk granularity.
     std::pair<size_t, bool> min_cache_cost() const;
 
-    ss::future<ss::file>
-    download_chunk(chunk_start_offset_t chunk_start, uint16_t prefetch);
+    ss::future<ss::file> download_chunk(chunk_start_offset_t chunk_start);
+
+    size_t concurrency() { return _api.concurrency(); }
 
 private:
     /// get a file offset for the corresponding kafka offset
@@ -259,15 +260,8 @@ private:
     /// materialized.
     bool is_state_materialized() const;
 
-    /// Download all pending chunk requests, waiting until all chunks are
-    /// materialized. Any chunks which are downloaded successfully but fail to
-    /// materialize are added back to the waiter list.
-    ss::future<> service_chunk_requests();
-
-    using start_and_prefetch_t = std::pair<chunk_start_offset_t, uint16_t>;
-
     ss::future<ss::file>
-    hydrate_and_materialize_chunk(start_and_prefetch_t start_and_prefetch);
+    hydrate_and_materialize_chunk(chunk_start_offset_t start_offset);
 
     ss::gate _gate;
     remote& _api;
@@ -325,16 +319,20 @@ private:
     partition_probe& _probe;
     ts_read_path_probe& _ts_probe;
 
-    friend class split_segment_into_chunk_range_consumer;
-
     /// Pending chunk download request. The start offset and prefetch are
     /// supplied by the caller. The promise is created before adding a request
     /// to the queue and the associated future is returned to the caller.
     struct chunk_request {
         chunk_start_offset_t start;
-        uint16_t prefetch;
         ss::promise<ss::file> promise;
     };
+
+    /// Download all pending chunk requests, waiting until all chunks are
+    /// materialized. Collects requests where the chunk was downloaded but
+    /// failed to materialize (possibly due to cache eviction), and returns the
+    /// collected set of such failed requests. These should then be requeued by
+    /// the caller.
+    ss::future<fragmented_vector<chunk_request>> service_chunk_requests();
 
     /// Waiters pending chunk downloads. Only the first hydration request for a
     /// given chunk ends up here. All following requests for that chunk are
@@ -342,6 +340,8 @@ private:
     /// file handle is created for a given chunk, and the chunk API distributes
     /// shared ptrs to that handle to consumers.
     fragmented_vector<chunk_request> _chunk_waiters;
+
+    friend class remote_segment_test_helper;
 };
 
 class remote_segment_batch_consumer;

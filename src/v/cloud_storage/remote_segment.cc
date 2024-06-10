@@ -75,42 +75,6 @@ private:
 
 namespace cloud_storage {
 
-class split_segment_into_chunk_range_consumer {
-public:
-    split_segment_into_chunk_range_consumer(
-      cloud_storage::remote_segment& remote_segment,
-      cloud_storage::segment_chunk_range range)
-      : _segment{remote_segment}
-      , _range{std::move(range)} {}
-
-    ss::future<uint64_t>
-    operator()(uint64_t size, ss::input_stream<char> stream) {
-        for (const auto [start, end] : _range) {
-            const auto bytes_to_read = end.value_or(_segment._size - 1) - start
-                                       + 1;
-            auto reservation = co_await _segment._cache.reserve_space(
-              bytes_to_read, 1);
-            vlog(
-              cst_log.trace,
-              "making stream from byte offset {} for {} bytes",
-              start,
-              bytes_to_read);
-            auto dsi = std::make_unique<bounded_stream>(stream, bytes_to_read);
-            auto stream_upto = ss::input_stream<char>{
-              ss::data_source{std::move(dsi)}};
-            _segment._probe.chunk_size(bytes_to_read);
-            co_await _segment.put_chunk_in_cache(
-              reservation, std::move(stream_upto), start);
-        }
-        co_await stream.close();
-        co_return size;
-    }
-
-private:
-    cloud_storage::remote_segment& _segment;
-    cloud_storage::segment_chunk_range _range;
-};
-
 std::filesystem::path
 generate_index_path(const cloud_storage::remote_segment_path& p) {
     return fmt::format("{}.index", p().native());
@@ -894,7 +858,10 @@ ss::future<> remote_segment::run_hydrate_bg() {
                   _ctxlog.debug,
                   "Processing {} chunk download request(s)",
                   _chunk_waiters.size());
-                co_await service_chunk_requests();
+                auto failed_requests = co_await service_chunk_requests();
+                for (auto& r : failed_requests) {
+                    _chunk_waiters.emplace_back(std::move(r));
+                }
             }
         } catch (...) {
             const auto err = std::current_exception();
@@ -909,10 +876,25 @@ ss::future<> remote_segment::run_hydrate_bg() {
         }
     }
 
+    // If any new download requests got queued up while we were downloading
+    // chunks before the gate closed, cancel them so that the gate close does
+    // not get stuck during segment stop.
+    if (!_chunk_waiters.empty() && _gate.is_closed()) {
+        vlog(
+          _ctxlog.debug,
+          "Cancelling {} pending chunk downloads during segment stop",
+          _chunk_waiters.size());
+        for (auto& w : _chunk_waiters) {
+            w.promise.set_exception(ss::gate_closed_exception{});
+        }
+    }
+
     _hydration_loop_running = false;
 }
 
-ss::future<> remote_segment::service_chunk_requests() {
+ss::future<fragmented_vector<remote_segment::chunk_request>>
+remote_segment::service_chunk_requests() {
+    auto g = _gate.hold();
     fragmented_vector<ss::future<ss::file>> chunk_op_results;
     chunk_op_results.reserve(_chunk_waiters.size());
 
@@ -923,18 +905,14 @@ ss::future<> remote_segment::service_chunk_requests() {
       requests,
       std::back_inserter(chunk_op_results),
       [this](const auto& request) {
-          vlog(
-            _ctxlog.debug,
-            "Downloading chunk {} with prefetch {}",
-            request.start,
-            request.prefetch);
-          return hydrate_and_materialize_chunk(
-            {request.start, request.prefetch});
+          vlog(_ctxlog.debug, "Downloading chunk {}", request.start);
+          return hydrate_and_materialize_chunk(request.start);
       });
 
     auto results = co_await ss::when_all(
       chunk_op_results.begin(), chunk_op_results.end());
 
+    fragmented_vector<chunk_request> failed;
     for (size_t i = 0; i < results.size(); ++i) {
         auto request = std::move(requests[i]);
         auto current_result = std::move(results[i]);
@@ -957,7 +935,7 @@ ss::future<> remote_segment::service_chunk_requests() {
               _ctxlog.debug,
               "Failed to materialize chunk start {}, retrying",
               request.start);
-            _chunk_waiters.emplace_back(std::move(request));
+            failed.emplace_back(std::move(request));
             continue;
         }
 
@@ -967,24 +945,26 @@ ss::future<> remote_segment::service_chunk_requests() {
             request.promise.set_value(materialized_handle);
         }
     }
+    co_return failed;
 }
 
 ss::future<ss::file> remote_segment::hydrate_and_materialize_chunk(
-  start_and_prefetch_t start_and_prefetch) {
-    auto [chunk_start, prefetch] = start_and_prefetch;
-    vlog(_ctxlog.debug, "Hydrating chunk {}", chunk_start);
-    co_await hydrate_chunk({_chunks_api->chunk_map(), prefetch, chunk_start});
-    vlog(_ctxlog.debug, "Materializing chunk {}", chunk_start);
-    co_return co_await materialize_chunk(chunk_start);
+  chunk_start_offset_t start_offset) {
+    auto g = _gate.hold();
+    vlog(_ctxlog.debug, "Hydrating chunk {}", start_offset);
+    co_await hydrate_chunk(start_offset);
+    vlog(_ctxlog.debug, "Materializing chunk {}", start_offset);
+    co_return co_await materialize_chunk(start_offset);
 }
 
-ss::future<ss::file> remote_segment::download_chunk(
-  chunk_start_offset_t chunk_start, uint16_t prefetch) {
+ss::future<ss::file>
+remote_segment::download_chunk(chunk_start_offset_t chunk_start) {
+    auto g = _gate.hold();
     ss::promise<ss::file> p;
     auto fut = p.get_future();
-    _chunk_waiters.push_back({chunk_start, prefetch, std::move(p)});
+    _chunk_waiters.push_back({chunk_start, std::move(p)});
     _bg_cvar.signal();
-    return fut;
+    co_return co_await std::move(fut);
 }
 
 namespace {
@@ -1081,19 +1061,8 @@ ss::future<> remote_segment::hydrate(storage::opt_abort_source_t as) {
       .finally([holder = std::move(g)] {});
 }
 
-ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
-    const auto start = range.first_offset();
-    const auto path_to_start = get_path_to_chunk(start);
-
-    // It is possible that the chunk has already been downloaded during a
-    // prefetch operation. In this case we skip hydration and try to materialize
-    // the chunk. This also skips the prefetch of the successive chunks. So
-    // given a series of chunks A, B, C, D, E and a prefetch of 2, when A is
-    // fetched B,C are also fetched. Then hydration of B,C are no-ops and no
-    // prefetch is done during those no-ops. When D is fetched, hydration
-    // makes an HTTP GET call and E is also prefetched. So a total of two calls
-    // are made for the five chunks (ignoring any cache evictions during the
-    // process).
+ss::future<> remote_segment::hydrate_chunk(chunk_start_offset_t start_offset) {
+    const auto path_to_start = get_path_to_chunk(start_offset);
     if (const auto status = co_await _cache.is_cached(path_to_start);
         status == cache_element_status::available) {
         vlog(
@@ -1107,23 +1076,33 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
     retry_chain_node rtc{
       cache_hydration_timeout, cache_hydration_backoff, &_rtc};
 
-    const auto chunk_count = range.chunk_count();
+    auto byte_range = _chunks_api->get_byte_range_for_chunk(
+      start_offset, _size - 1);
 
-    const auto end = range.last_offset().value_or(_size - 1);
-    auto consumer = split_segment_into_chunk_range_consumer{
-      *this, std::move(range)};
+    const auto space_required = byte_range.second - byte_range.first + 1;
+    auto reserved = co_await _cache.reserve_space(space_required, 1);
 
     auto measurement = _ts_probe.chunk_hydration_latency();
     track_hydration t{_ts_probe};
 
     auto res = co_await _api.download_segment(
-      _bucket, _path, std::move(consumer), rtc, std::make_pair(start, end));
+      _bucket,
+      _path,
+      [this, start_offset, &reserved](
+        auto size, auto stream) -> ss::future<unsigned long> {
+          return put_chunk_in_cache(reserved, std::move(stream), start_offset)
+            .then([size] { return size; });
+      },
+      rtc,
+      std::move(byte_range));
+
     if (res != download_result::success) {
         measurement->cancel();
         throw download_exception{res, _path};
     }
 
-    _ts_probe.on_chunks_hydration(chunk_count);
+    _probe.chunk_size(space_required);
+    _ts_probe.on_chunks_hydration(1);
 }
 
 ss::future<ss::file>
