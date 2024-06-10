@@ -428,7 +428,8 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.start_redpanda()
         # set small segment size to calculate the gap correctly
         self.redpanda.set_cluster_config({"log_segment_size": 1024 * 1024})
-        self._create_topics()
+        self._topic = TopicSpec(name="gap-test-topic", partition_count=10)
+        self.client().create_topic(self._topic)
 
         self.start_producer()
         self.start_consumer()
@@ -449,6 +450,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
         self.logger.info(f"decommissioning node: {to_decommission_id}", )
         self._decommission(to_decommission_id)
+        self.producer.wait()
 
         def learner_gap_reported(decommissioned_node_id: int):
             total_gap = calculate_total_learners_gap()
