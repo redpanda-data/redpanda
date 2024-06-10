@@ -943,13 +943,16 @@ func sliceControllerDir(cFiles []fileSize, logLimitBytes int64) (slice []fileSiz
 
 func saveControllerLogDir(ps *stepParams, y *config.RedpandaYaml, logLimitBytes int) step {
 	return func() error {
+		if y.Redpanda.Directory == "" {
+			return fmt.Errorf("failed to save controller logs: 'redpanda.data_directory' is empty on the provided configuration file")
+		}
 		controllerDir := filepath.Join(y.Redpanda.Directory, "redpanda", "controller", "0_0")
 
 		// We don't need the .base_index files to parse out the messages.
 		exclude := regexp.MustCompile(`^*.base_index$`)
 		cFiles, size, err := walkSizeDir(controllerDir, exclude)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to save controller logs: %v", err)
 		}
 
 		if int(size) < logLimitBytes {
@@ -969,11 +972,11 @@ func saveControllerLogDir(ps *stepParams, y *config.RedpandaYaml, logLimitBytes 
 		for _, cLog := range slice {
 			file, err := os.ReadFile(cLog.path)
 			if err != nil {
-				return err
+				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
 			err = writeFileToZip(ps, filepath.Join("controller", filepath.Base(cLog.path)), file)
 			if err != nil {
-				return err
+				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
 		}
 		return nil
