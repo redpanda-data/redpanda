@@ -816,4 +816,12 @@ service::delete_topics(delete_topics_request req, rpc::streaming_context&) {
     co_return delete_topics_reply{.results = std::move(result)};
 }
 
+ss::future<set_partition_shard_reply> service::set_partition_shard(
+  set_partition_shard_request req, rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    auto ec = co_await _topics_frontend.local().set_local_partition_shard(
+      req.ntp, req.shard);
+    co_return set_partition_shard_reply{.ec = ec};
+}
+
 } // namespace cluster

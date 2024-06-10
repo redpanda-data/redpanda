@@ -141,6 +141,7 @@ ss::future<> controller::wire_up() {
       .then([this] {
           return _partition_allocator.start_single(
             std::ref(_members_table),
+            std::ref(_feature_table),
             config::shard_local_cfg().topic_memory_per_partition.bind(),
             config::shard_local_cfg().topic_fds_per_partition.bind(),
             config::shard_local_cfg().topic_partitions_per_shard.bind(),
@@ -378,6 +379,7 @@ ss::future<> controller::start(
             std::ref(_members_table),
             std::ref(_partition_manager),
             std::ref(_shard_table),
+            std::ref(_shard_balancer),
             ss::sharded_parameter(
               [this] { return std::ref(_plugin_table.local()); }),
             ss::sharded_parameter(

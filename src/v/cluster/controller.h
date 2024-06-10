@@ -131,6 +131,10 @@ public:
         return _partition_balancer;
     }
 
+    ss::sharded<shard_balancer>& get_shard_balancer() {
+        return _shard_balancer;
+    }
+
     ss::sharded<ss::abort_source>& get_abort_source() { return _as; }
 
     ss::sharded<storage::api>& get_storage() { return _storage; }

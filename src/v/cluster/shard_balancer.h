@@ -15,6 +15,7 @@
 #include "cluster/shard_placement_table.h"
 #include "container/chunked_hash_map.h"
 #include "ssx/event.h"
+#include "utils/mutex.h"
 
 namespace cluster {
 
@@ -23,8 +24,10 @@ namespace cluster {
 /// shard_placement_table and notifying controller_backend of these modification
 /// so that it can perform necessary reconciling actions.
 ///
-/// Currently shard_balancer simply uses assignments from topic_table, but in
-/// the future it will calculate them on its own.
+/// If node-local core assignment is enabled, shard_balancer is responsible for
+/// assigning partitions to shards and it will do it using topic-aware counts
+/// balancing heuristic. In legacy mode it will use shard assignments from
+/// topic_table.
 class shard_balancer {
 public:
     // single instance
@@ -39,12 +42,48 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    /// Persist current shard_placement_table contents to kvstore. Executed once
+    /// when enabling the node_local_core_assignment feature (assumes that it is
+    /// in the "preparing" state).
+    ss::future<> enable_persistence();
+
+    /// Manually set shard placement for an ntp that has a replica on this node.
+    ss::future<errc> reassign_shard(model::ntp, ss::shard_id);
+
 private:
     void process_delta(const topic_table::delta&);
 
     ss::future<> assign_fiber();
-    ss::future<> do_assign_ntps();
-    ss::future<> assign_ntp(const model::ntp&);
+    ss::future<> do_assign_ntps(mutex::units& lock);
+
+    void maybe_assign(
+      const model::ntp&,
+      chunked_hash_map<model::ntp, std::optional<shard_placement_target>>&);
+
+    ss::future<> set_target(
+      const model::ntp&,
+      const std::optional<shard_placement_target>&,
+      mutex::units& lock);
+
+    using shard2count_t = std::vector<int32_t>;
+    struct topic_data_t {
+        explicit topic_data_t()
+          : shard2count(ss::smp::count, 0) {}
+
+        int32_t total_count = 0;
+        shard2count_t shard2count;
+    };
+
+    ss::shard_id choose_shard(
+      const model::ntp&,
+      const topic_data_t&,
+      std::optional<ss::shard_id> prev) const;
+
+    void update_counts(
+      const model::ntp&,
+      topic_data_t&,
+      const std::optional<shard_placement_target>& prev,
+      const std::optional<shard_placement_target>& next);
 
 private:
     shard_placement_table& _shard_placement;
@@ -54,10 +93,19 @@ private:
     model::node_id _self;
 
     cluster::notification_id_type _topic_table_notify_handle;
+    ssx::event _wakeup_event{"shard_balancer"};
+    mutex _mtx{"shard_balancer"};
+    ss::gate _gate;
 
     chunked_hash_set<model::ntp> _to_assign;
-    ssx::event _wakeup_event{"shard_balancer"};
-    ss::gate _gate;
+
+    chunked_hash_map<
+      model::topic_namespace,
+      topic_data_t,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>
+      _topic2data;
+    shard2count_t _total_counts;
 };
 
 } // namespace cluster

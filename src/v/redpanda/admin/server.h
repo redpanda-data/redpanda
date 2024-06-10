@@ -528,6 +528,9 @@ private:
     ss::future<ss::json::json_return_type>
       force_set_partition_replicas_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
+      set_partition_replica_core_handler(std::unique_ptr<ss::http::request>);
+
+    ss::future<ss::json::json_return_type>
       trigger_on_demand_rebalance_handler(std::unique_ptr<ss::http::request>);
 
     ss::future<ss::json::json_return_type>

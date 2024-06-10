@@ -13,6 +13,7 @@
 
 #include "base/oncore.h"
 #include "cluster/scheduling/allocation_node.h"
+#include "features/fwd.h"
 #include "model/metadata.h"
 
 #include <seastar/core/weak_ptr.hh>
@@ -29,10 +30,12 @@ public:
     using underlying_t = absl::btree_map<model::node_id, node_ptr>;
 
     allocation_state(
+      features::feature_table& feature_table,
       config::binding<uint32_t> partitions_per_shard,
       config::binding<uint32_t> partitions_reserve_shard0,
       config::binding<std::vector<ss::sstring>> internal_kafka_topics)
-      : _partitions_per_shard(std::move(partitions_per_shard))
+      : _feature_table(feature_table)
+      , _partitions_per_shard(std::move(partitions_per_shard))
       , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
       , _internal_kafka_topics(std::move(internal_kafka_topics)) {}
 
@@ -49,6 +52,8 @@ public:
     bool contains_node(model::node_id n) const { return _nodes.contains(n); }
     const underlying_t& allocation_nodes() const { return _nodes; }
     int16_t available_nodes() const;
+
+    bool node_local_core_assignment_enabled() const;
 
     // Choose a shard for a replica and add the corresponding allocation.
     // node_id is required to belong to an existing node.
@@ -80,6 +85,7 @@ private:
      */
     void verify_shard() const;
 
+    features::feature_table& _feature_table;
     config::binding<uint32_t> _partitions_per_shard;
     config::binding<uint32_t> _partitions_reserve_shard0;
     config::binding<std::vector<ss::sstring>> _internal_kafka_topics;

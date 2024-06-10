@@ -3314,20 +3314,25 @@ class RedpandaService(RedpandaServiceBase):
 
     def set_feature_active(self, feature_name: str, active: bool, *,
                            timeout_sec: int):
-        self._admin.put_feature(feature_name,
-                                {"state": "active" if active else "disabled"})
-        self.await_feature(feature_name, active, timeout_sec=timeout_sec)
+        state = 'active' if active else 'disabled'
+        self._admin.put_feature(feature_name, {"state": state})
+        self.await_feature(feature_name, state, timeout_sec=timeout_sec)
 
-    def await_feature(self, feature_name: str, active: bool, *,
-                      timeout_sec: int):
+    def await_feature(self,
+                      feature_name: str,
+                      await_state: str,
+                      *,
+                      timeout_sec: int,
+                      nodes: list[ClusterNode] | None = None):
         """
         For use during upgrade tests, when after upgrade yo uwould like to block
         until a particular feature's active status updates (e.g. if it does migrations)
         """
-        await_state = 'active' if active else 'disabled'
+        if nodes is None:
+            nodes = self.nodes
 
         def is_awaited_state():
-            for n in self.nodes:
+            for n in nodes:
                 f = self._admin.get_features(node=n)
                 by_name = dict((f['name'], f) for f in f['features'])
                 try:

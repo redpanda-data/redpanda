@@ -160,6 +160,11 @@
             "name": "delete_topics",
             "input_type": "delete_topics_request",
             "output_type": "delete_topics_reply"
+        },
+        {
+            "name": "set_partition_shard",
+            "input_type": "set_partition_shard_request",
+            "output_type": "set_partition_shard_reply"
         }
     ]
 }

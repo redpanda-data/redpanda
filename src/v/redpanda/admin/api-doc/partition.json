@@ -140,6 +140,62 @@
             ]
         },
         {
+            "path": "/v1/partitions/{namespace}/{topic}/{partition}/replicas/{node}",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Update partition replica core",
+                    "type": "void",
+                    "nickname": "set_partition_replica_core",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "node",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "core",
+                            "in": "body",
+                            "required": "true",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "core": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "core"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "path": "/v1/partitions/{namespace}/{topic}/{partition}/transfer_leadership",
             "operations": [
                 {
@@ -719,7 +775,7 @@
                     },
                     "description": "Replica assignments"
                 },
-                "dead_nodes" : {
+                "dead_nodes": {
                     "type": "array",
                     "items": {
                         "type": "int"

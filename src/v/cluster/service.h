@@ -136,6 +136,9 @@ public:
     ss::future<delete_topics_reply>
     delete_topics(delete_topics_request, rpc::streaming_context&) final;
 
+    ss::future<set_partition_shard_reply> set_partition_shard(
+      set_partition_shard_request, rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::pair<std::vector<model::topic_metadata>, topic_configuration_vector>
