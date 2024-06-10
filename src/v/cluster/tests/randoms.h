@@ -171,7 +171,7 @@ inline cluster::tx::prepare_marker random_prepare_marker() {
 }
 
 inline cluster::tx::abort_index random_abort_index() {
-    return {model::random_offset(), model::random_offset()};
+    return tx::abort_index{model::random_offset(), model::random_offset()};
 }
 
 inline cluster::tx::deprecated_seq_entry::deprecated_seq_cache_entry

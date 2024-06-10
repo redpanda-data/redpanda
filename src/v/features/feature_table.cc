@@ -103,6 +103,8 @@ std::string_view to_string_view(feature f) {
         return "cluster_topic_manifest_format_v2";
     case feature::node_local_core_assignment:
         return "node_local_core_assignment";
+    case feature::unified_tx_state:
+        return "unified_tx_state";
 
     /*
      * testing features

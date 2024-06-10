@@ -565,10 +565,20 @@ struct producer_identity
 /// This structure is a part of rm_stm snapshot.
 /// Any change has to be reconciled with the
 /// snapshot (de)serialization logic.
-struct tx_range {
+struct tx_range
+  : serde::envelope<tx_range, serde::version<0>, serde::compat_version<0>> {
+    tx_range() = default;
+
+    tx_range(model::producer_identity pid, model::offset f, model::offset l)
+      : pid(pid)
+      , first(f)
+      , last(l) {}
+
     model::producer_identity pid;
     model::offset first;
     model::offset last;
+
+    auto serde_fields() { return std::tie(pid, first, last); }
 
     auto operator<=>(const tx_range&) const = default;
     friend std::ostream& operator<<(std::ostream&, const tx_range&);

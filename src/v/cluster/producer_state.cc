@@ -13,7 +13,6 @@
 
 #include "base/vassert.h"
 #include "cluster/logger.h"
-#include "cluster/rm_stm_types.h"
 
 namespace cluster::tx {
 
@@ -205,16 +204,21 @@ producer_state::producer_state(
   ss::noncopyable_function<void()> post_eviction_hook,
   producer_state_snapshot snapshot) noexcept
   : _logger(logger)
-  , _id(snapshot._id)
-  , _group(snapshot._group)
+  , _id(snapshot.id)
+  , _group(snapshot.group)
   , _post_eviction_hook(std::move(post_eviction_hook)) {
+    if (snapshot.transaction_state) {
+        _transaction_state
+          = std::make_unique<producer_partition_transaction_state>(
+            snapshot.transaction_state.value());
+    }
     // Hydrate from snapshot.
-    for (auto& req : snapshot._finished_requests) {
+    for (auto& req : snapshot.finished_requests) {
         result_promise_t ready{};
-        ready.set_value(kafka_result{req._last_offset});
+        ready.set_value(kafka_result{req.last_offset});
         _requests._finished_requests.push_back(ss::make_lw_shared<request>(
-          req._first_sequence,
-          req._last_sequence,
+          req.first_sequence,
+          req.last_sequence,
           model::term_id{-1},
           std::move(ready)));
     }
@@ -222,7 +226,8 @@ producer_state::producer_state(
 
 bool producer_state::operator==(const producer_state& other) const {
     return _id == other._id && _group == other._group
-           && _requests == other._requests;
+           && _requests == other._requests
+           && _transaction_state == other._transaction_state;
 }
 
 std::ostream& operator<<(std::ostream& o, const requests& requests) {
@@ -238,11 +243,13 @@ std::ostream& operator<<(std::ostream& o, const producer_state& state) {
     fmt::print(
       o,
       "{{ id: {}, group: {}, requests: {}, "
-      "ms_since_last_update: {} }}",
+      "ms_since_last_update: {}, transaction_state: {}, evicted: {} }}",
       state._id,
       state._group,
       state._requests,
-      state.ms_since_last_update());
+      state.ms_since_last_update(),
+      state._transaction_state,
+      state._evicted);
     return o;
 }
 
@@ -252,19 +259,18 @@ void producer_state::shutdown_input() {
 }
 
 bool producer_state::can_evict() {
-    // oplock is taken, do not allow producer state to be evicted
-    if (!_op_lock.ready() || _evicted) {
+    if (
+      // Check if already evicted
+      _evicted
+      // Check if an operation is in progress using this producer
+      || !_op_lock.ready()
+      // Check if there are operations pending state machine sync
+      || !_requests._inflight_requests.empty()
+      //  Check if there are any open transactions on this producer.
+      || has_transaction_in_progress()) {
+        vlog(_logger.debug, "[{}] cannot evict producer.", *this);
         return false;
     }
-
-    if (!_requests._inflight_requests.empty()) {
-        vlog(
-          _logger.debug,
-          "[{}] cannot evict because of pending inflight requests",
-          *this);
-        return false;
-    }
-
     vlog(_logger.debug, "[{}] evicting producer", *this);
     _evicted = true;
     shutdown_input();
@@ -303,17 +309,93 @@ result<request_ptr> producer_state::try_emplace_request(
 }
 
 void producer_state::apply_data(
-  const model::batch_identity& bid, model::term_id term, kafka::offset offset) {
-    if (_evicted) {
+  const model::record_batch_header& header, kafka::offset offset) {
+    auto bid = model::batch_identity::from(header);
+    if (!bid.is_idempotent() || _evicted) {
         return;
     }
-    _requests.stm_apply(bid, term, offset);
+    _requests.stm_apply(bid, header.ctx.term, offset);
+    if (bid.is_transactional) {
+        if (!_transaction_state) {
+            // possible if begin batch got truncated.
+            _transaction_state
+              = std::make_unique<producer_partition_transaction_state>(
+                producer_partition_transaction_state{
+                  .first = header.base_offset,
+                  .last = header.last_offset(),
+                  .sequence = model::tx_seq{-1},
+                  .timeout = std::nullopt,
+                  .coordinator_partition = model::partition_id{-1},
+                  .status = partition_transaction_status::ongoing});
+        } else {
+            _transaction_state->last = header.last_offset();
+            _transaction_state->status = partition_transaction_status::ongoing;
+        }
+    }
     vlog(
       _logger.trace,
       "[{}] applied stm update, batch meta: {}, term: {}",
       *this,
       bid,
-      term);
+      header.ctx.term);
+}
+
+void producer_state::apply_transaction_begin(
+  const model::record_batch_header& header,
+  const fence_batch_data& parsed_batch) {
+    vassert(
+      !has_transaction_in_progress() && !_active_transaction_hook.is_linked(),
+      "Transaction already in progress {} for producer {}, hook {}",
+      _transaction_state,
+      *this,
+      _active_transaction_hook.is_linked());
+    // update pid incase the producer got fenced.
+    const auto& pid = parsed_batch.bid.pid;
+    vassert(
+      pid.epoch >= _id.epoch,
+      "[{}] Invalid fencing using a pid with lower epoch: {}",
+      *this,
+      header);
+    _id = pid;
+    _transaction_state = std::make_unique<producer_partition_transaction_state>(
+      producer_partition_transaction_state{
+        .first = header.base_offset,
+        .last = header.last_offset(),
+        .sequence = parsed_batch.tx_seq.value_or(model::tx_seq{0}),
+        .timeout = parsed_batch.transaction_timeout_ms,
+        .coordinator_partition = parsed_batch.tm,
+        .status = partition_transaction_status::initialized,
+      });
+}
+
+std::optional<model::tx_range>
+producer_state::apply_transaction_end(model::control_record_type crt) {
+    if (
+      crt != model::control_record_type::tx_abort
+      && crt != model::control_record_type::tx_commit) {
+        return std::nullopt;
+    }
+
+    if (!_transaction_state) {
+        vlog(
+          _logger.debug,
+          "[{}] Ignoring end transaction: {} as there is no "
+          "transaction in progress, log may have been truncated?",
+          *this,
+          crt);
+        return std::nullopt;
+    }
+
+    vlog(_logger.trace, "[{}] Applying transaction end batch: {}", *this, crt);
+    if (crt == model::control_record_type::tx_commit) {
+        _transaction_state->status = partition_transaction_status::committed;
+    } else if (crt == model::control_record_type::tx_abort) {
+        _transaction_state->status = partition_transaction_status::aborted;
+    } else {
+        vassert(false, "Invalid control batch type: {}", crt);
+    }
+    return model::tx_range{
+      id(), _transaction_state->first, _transaction_state->last};
 }
 
 std::optional<seq_t> producer_state::last_sequence_number() const {
@@ -324,13 +406,26 @@ std::optional<seq_t> producer_state::last_sequence_number() const {
     return maybe_ptr.value()->_last_sequence;
 }
 
+bool producer_state::has_transaction_in_progress() const {
+    return _transaction_state ? _transaction_state->is_in_progress() : false;
+}
+
+bool producer_state::has_transaction_expired() const {
+    if (!has_transaction_in_progress()) {
+        // nothing to expire.
+        return false;
+    }
+    return _force_transaction_expiry
+           || ms_since_last_update() > _transaction_state->timeout_ms();
+}
+
 producer_state_snapshot
 producer_state::snapshot(kafka::offset log_start_offset) const {
     producer_state_snapshot snapshot;
-    snapshot._id = _id;
-    snapshot._group = _group;
-    snapshot._ms_since_last_update = ms_since_last_update();
-    snapshot._finished_requests.reserve(_requests._finished_requests.size());
+    snapshot.id = _id;
+    snapshot.group = _group;
+    snapshot.ms_since_last_update = ms_since_last_update();
+    snapshot.finished_requests.reserve(_requests._finished_requests.size());
     for (auto& req : _requests._finished_requests) {
         vassert(
           req->has_completed(),
@@ -342,14 +437,43 @@ producer_state::snapshot(kafka::offset log_start_offset) const {
           = req->_result.get_shared_future().get().value().last_offset;
         // offsets older than log start are no longer interesting.
         if (kafka_offset >= log_start_offset) {
-            snapshot._finished_requests.push_back(
-              producer_state_snapshot::finished_request{
-                ._first_sequence = req->_first_sequence,
-                ._last_sequence = req->_last_sequence,
-                ._last_offset = kafka_offset});
+            snapshot.finished_requests.emplace_back(
+              req->_first_sequence, req->_last_sequence, kafka_offset);
         }
     }
+    if (_transaction_state) {
+        snapshot.transaction_state = *_transaction_state;
+    }
     return snapshot;
+}
+
+std::optional<model::tx_seq> producer_state::get_transaction_sequence() const {
+    if (has_transaction_in_progress()) {
+        return _transaction_state->sequence;
+    }
+    return std::nullopt;
+}
+
+std::optional<model::offset>
+producer_state::get_current_tx_start_offset() const {
+    if (has_transaction_in_progress()) {
+        return _transaction_state->first;
+    }
+    return std::nullopt;
+}
+
+std::optional<expiration_info> producer_state::get_expiration_info() const {
+    if (!has_transaction_in_progress()) {
+        return std::nullopt;
+    }
+    auto duration = std::chrono::duration_cast<clock_type::duration>(
+      ms_since_last_update());
+    auto timeout = std::chrono::duration_cast<clock_type::duration>(
+      _transaction_state->timeout_ms());
+    return expiration_info{
+      .timeout = timeout,
+      .last_update = tx::clock_type::now() - duration,
+      .is_expiration_requested = has_transaction_expired()};
 }
 
 } // namespace cluster::tx

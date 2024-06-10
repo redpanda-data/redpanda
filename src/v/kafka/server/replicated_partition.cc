@@ -220,10 +220,10 @@ replicated_partition::aborted_transactions_local(
     std::vector<cluster::tx::tx_range> target;
     target.reserve(source.size());
     for (const auto& range : source) {
-        target.push_back(cluster::tx::tx_range{
-          .pid = range.pid,
-          .first = ot_state->from_log_offset(std::max(trim_at, range.first)),
-          .last = ot_state->from_log_offset(range.last)});
+        target.emplace_back(
+          range.pid,
+          ot_state->from_log_offset(std::max(trim_at, range.first)),
+          ot_state->from_log_offset(range.last));
     }
 
     co_return target;
@@ -237,11 +237,10 @@ replicated_partition::aborted_transactions_remote(
     std::vector<cluster::tx::tx_range> target;
     target.reserve(source.size());
     for (const auto& range : source) {
-        target.push_back(cluster::tx::tx_range{
-          .pid = range.pid,
-          .first = ot_state->from_log_offset(
-            std::max(offsets.begin_rp, range.first)),
-          .last = ot_state->from_log_offset(range.last)});
+        target.emplace_back(
+          range.pid,
+          ot_state->from_log_offset(std::max(offsets.begin_rp, range.first)),
+          ot_state->from_log_offset(range.last));
     }
     co_return target;
 }

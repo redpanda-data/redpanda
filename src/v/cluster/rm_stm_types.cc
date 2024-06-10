@@ -30,20 +30,20 @@ bool deprecated_seq_entry::operator==(const deprecated_seq_entry& other) const {
 deprecated_seq_entry deprecated_seq_entry::from_producer_state_snapshot(
   producer_state_snapshot& state) {
     deprecated_seq_entry entry;
-    entry.pid = state._id;
-    if (!state._finished_requests.empty()) {
-        const auto& last = state._finished_requests.back();
-        entry.seq = last._last_sequence;
-        entry.last_offset = last._last_offset;
-        for (const auto& req : state._finished_requests) {
-            entry.seq_cache.emplace_back(req._last_sequence, req._last_offset);
+    entry.pid = state.id;
+    if (!state.finished_requests.empty()) {
+        const auto& last = state.finished_requests.back();
+        entry.seq = last.last_sequence;
+        entry.last_offset = last.last_offset;
+        for (const auto& req : state.finished_requests) {
+            entry.seq_cache.emplace_back(req.last_sequence, req.last_offset);
         }
         entry.last_write_timestamp = model::timestamp::now().value();
     }
     return entry;
 }
 
-tx_snapshot::tx_snapshot(tx_snapshot_v4 snap_v4, raft::group_id group)
+tx_snapshot_v5::tx_snapshot_v5(tx_snapshot_v4 snap_v4, raft::group_id group)
   : offset(snap_v4.offset)
   , fenced(std::move(snap_v4.fenced))
   , ongoing(std::move(snap_v4.ongoing))
@@ -53,14 +53,14 @@ tx_snapshot::tx_snapshot(tx_snapshot_v4 snap_v4, raft::group_id group)
   , tx_data(std::move(snap_v4.tx_data))
   , expiration(std::move(snap_v4.expiration)) {
     for (auto& entry : snap_v4.seqs) {
-        producer_state_snapshot snapshot;
-        snapshot._id = entry.pid;
-        snapshot._group = group;
+        producer_state_snapshot_deprecated snapshot;
+        snapshot.id = entry.pid;
+        snapshot.group = group;
         auto duration = model::timestamp_clock::duration{
           (model::timestamp::now()
            - model::timestamp{entry.last_write_timestamp})
             .value()};
-        snapshot._ms_since_last_update
+        snapshot.ms_since_last_update
           = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
         // there is an incompatibility with old version of snapshot here.
         // older version only saved last_seq for each sequence range, but
@@ -70,15 +70,20 @@ tx_snapshot::tx_snapshot(tx_snapshot_v4 snap_v4, raft::group_id group)
         // upgrades.
         auto prev_last = -1;
         for (auto& req : entry.seq_cache) {
-            producer_state_snapshot::finished_request request;
-            request._first_sequence = prev_last + 1;
-            request._last_sequence = req.seq;
-            request._last_offset = req.offset;
-            snapshot._finished_requests.push_back(std::move(request));
+            producer_state_snapshot_deprecated::finished_request request;
+            request.first_sequence = prev_last + 1;
+            request.last_sequence = req.seq;
+            request.last_offset = req.offset;
+            snapshot.finished_requests.push_back(std::move(request));
             prev_last = req.seq;
         }
         producers.push_back(std::move(snapshot));
     }
+}
+
+bool producer_partition_transaction_state::is_in_progress() const {
+    return status == partition_transaction_status::ongoing
+           || status == partition_transaction_status::initialized;
 }
 
 std::ostream&
@@ -88,7 +93,13 @@ operator<<(std::ostream& o, const partition_transaction_status& status) {
         o << "ongoing";
         break;
     case partition_transaction_status::initialized:
-        o << "initiating";
+        o << "initialized";
+        break;
+    case partition_transaction_status::committed:
+        o << "committed";
+        break;
+    case partition_transaction_status::aborted:
+        o << "aborted";
         break;
     }
     return o;
@@ -126,6 +137,21 @@ std::ostream& operator<<(std::ostream& o, const abort_snapshot& as) {
       as.first,
       as.last,
       as.aborted.size());
+    return o;
+}
+
+std::ostream& operator<<(
+  std::ostream& o, const producer_partition_transaction_state& tx_state) {
+    fmt::print(
+      o,
+      "{{first: {}, last: {}, sequence: {}, timeout: {}, coordinator "
+      "partition: {}, status: {} }}",
+      tx_state.first,
+      tx_state.last,
+      tx_state.sequence,
+      tx_state.timeout,
+      tx_state.coordinator_partition,
+      tx_state.status);
     return o;
 }
 
@@ -248,6 +274,124 @@ model::record_batch make_tx_control_batch(
     return std::move(builder).build();
 }
 
+tx_snapshot_v6::tx_snapshot_v6(tx_snapshot_v5 snap_v5, raft::group_id group)
+  : aborted(std::move(snap_v5.aborted))
+  , abort_indexes(std::move(snap_v5.abort_indexes))
+  , highest_producer_id(snap_v5.highest_producer_id) {
+    // Reorganize the snapshot to make lookups faster
+    // This only happens while the upgrade is in progress.
+    absl::btree_set<model::producer_identity> fenced;
+    for (auto& entry : snap_v5.fenced) {
+        fenced.emplace(entry);
+    }
+    snap_v5.fenced.clear();
+
+    absl::btree_map<model::producer_identity, tx_range> ongoing;
+    for (auto& entry : snap_v5.ongoing) {
+        ongoing.emplace(entry.pid, entry);
+    }
+    snap_v5.ongoing.clear();
+
+    absl::btree_map<model::producer_identity, expiration_snapshot> expiration;
+    for (auto& entry : snap_v5.expiration) {
+        expiration.emplace(entry.pid, entry);
+    }
+    snap_v5.expiration.clear();
+
+    absl::btree_map<model::producer_identity, tx_data_snapshot> tx_data;
+    for (auto& entry : snap_v5.tx_data) {
+        tx_data.emplace(entry.pid, entry);
+    }
+    snap_v5.tx_data.clear();
+    // Populate all idempotent producer state.
+    absl::btree_map<model::producer_id, producer_state_snapshot>
+      producer_states;
+    for (auto& producer : snap_v5.producers) {
+        producer_state_snapshot v6;
+        v6.id = producer.id;
+        v6.group = producer.group;
+        v6.ms_since_last_update = producer.ms_since_last_update;
+        for (auto& request : producer.finished_requests) {
+            v6.finished_requests.emplace_back(
+              request.first_sequence,
+              request.last_sequence,
+              request.last_offset);
+        }
+        producer_states.emplace(v6.id.get_id(), std::move(v6));
+    }
+    snap_v5.producers.clear();
+    // Populate all transaction state.
+    for (auto& [pid, data] : ongoing) {
+        auto& state = producer_states[pid.get_id()];
+        state.id = pid;
+        state.group = group;
+        state.transaction_state = {};
+        state.transaction_state->first = data.first;
+        state.transaction_state->last = data.last;
+        state.transaction_state->sequence = model::tx_seq{-1};
+        auto it = tx_data.find(pid);
+        if (it != tx_data.end()) {
+            state.transaction_state->sequence = it->second.tx_seq;
+            state.transaction_state->coordinator_partition = it->second.tm;
+        }
+        auto ex_it = expiration.find(pid);
+        if (ex_it != expiration.end()) {
+            state.transaction_state->timeout
+              = std::chrono::duration_cast<std::chrono::milliseconds>(
+                ex_it->second.timeout);
+        }
+    }
+    for (auto& [_, state] : producer_states) {
+        producers.push_back(std::move(state));
+    }
+}
+
+tx_snapshot_v5 tx_snapshot_v6::downgrade_to_v5() && {
+    tx_snapshot_v5 result;
+    result.aborted = std::move(aborted);
+    result.abort_indexes = std::move(abort_indexes);
+    result.highest_producer_id = highest_producer_id;
+    for (auto& producer : producers) {
+        producer_state_snapshot_deprecated temp;
+        temp.id = producer.id;
+        temp.group = producer.group;
+        temp.ms_since_last_update = producer.ms_since_last_update;
+        for (auto& req : producer.finished_requests) {
+            temp.finished_requests.emplace_back(
+              req.first_sequence, req.last_sequence, req.last_offset);
+        }
+        result.producers.push_back(std::move(temp));
+        // populate the transaction state.
+        if (producer.transaction_state) {
+            const auto& state = producer.transaction_state.value();
+            result.fenced.push_back(producer.id);
+            result.ongoing.push_back({producer.id, state.first, state.last});
+            result.tx_data.push_back({
+              .pid = producer.id,
+              .tx_seq = state.sequence,
+              .tm = state.coordinator_partition,
+            });
+            result.expiration.push_back(
+              {.pid = producer.id,
+               .timeout = state.timeout.value_or(
+                 std::chrono::milliseconds::max())});
+        }
+    }
+    return result;
+}
+
+std::ostream& operator<<(std::ostream& o, const tx_snapshot_v6& snapshot) {
+    fmt::print(
+      o,
+      "{{ version: {}, producers: {}, aborted transactions: {}, abort indexes: "
+      "{} }}",
+      tx_snapshot_v6::version,
+      snapshot.producers.size(),
+      snapshot.aborted.size(),
+      snapshot.abort_indexes.size());
+    return o;
+}
+
 }; // namespace cluster::tx
 
 namespace reflection {
@@ -308,10 +452,10 @@ ss::future<tx_snapshot_v4> async_adl<tx_snapshot_v4>::from(iobuf_parser& in) {
       .expiration = std::move(expiration)};
 }
 
-ss::future<> async_adl<tx_snapshot>::to(iobuf& out, tx_snapshot snap) {
+ss::future<> async_adl<tx_snapshot_v5>::to(iobuf& out, tx_snapshot_v5 snap) {
     reflection::serialize(out, snap.offset);
-    co_await detail::async_adl_list<fvec<producer_state_snapshot>>{}.to(
-      out, std::move(snap.producers));
+    co_await detail::async_adl_list<fvec<producer_state_snapshot_deprecated>>{}
+      .to(out, std::move(snap.producers));
     co_await detail::async_adl_list<
       fragmented_vector<model::producer_identity>>{}
       .to(out, std::move(snap.fenced));
@@ -330,12 +474,12 @@ ss::future<> async_adl<tx_snapshot>::to(iobuf& out, tx_snapshot snap) {
     reflection::serialize(out, snap.highest_producer_id);
 }
 
-ss::future<tx_snapshot> async_adl<tx_snapshot>::from(iobuf_parser& in) {
-    tx_snapshot result;
+ss::future<tx_snapshot_v5> async_adl<tx_snapshot_v5>::from(iobuf_parser& in) {
+    tx_snapshot_v5 result;
     result.offset = reflection::adl<model::offset>{}.from(in);
-    result.producers
-      = co_await detail::async_adl_list<fvec<producer_state_snapshot>>{}.from(
-        in);
+    result.producers = co_await detail::async_adl_list<
+                         fvec<producer_state_snapshot_deprecated>>{}
+                         .from(in);
     result.fenced
       = co_await detail::async_adl_list<fvec<model::producer_identity>>{}.from(
         in);
@@ -351,6 +495,39 @@ ss::future<tx_snapshot> async_adl<tx_snapshot>::from(iobuf_parser& in) {
       = co_await detail::async_adl_list<fvec<expiration_snapshot>>{}.from(in);
     result.highest_producer_id = reflection::adl<model::producer_id>{}.from(in);
     co_return result;
+}
+
+ss::future<> async_adl<abort_index>::to(iobuf& out, abort_index t) {
+    reflection::serialize(out, t.first, t.last);
+    co_return;
+}
+
+ss::future<abort_index> async_adl<abort_index>::from(iobuf_parser& in) {
+    abort_index result;
+    result.first = adl<model::offset>{}.from(in);
+    result.last = adl<model::offset>{}.from(in);
+    co_return result;
+}
+
+void adl<model::tx_range>::to(iobuf& out, model::tx_range t) {
+    reflection::serialize(out, t.pid, t.first, t.last);
+}
+
+model::tx_range adl<model::tx_range>::from(iobuf_parser& in) {
+    model::tx_range result;
+    result.pid = adl<model::producer_identity>{}.from(in);
+    result.first = adl<model::offset>{}.from(in);
+    result.last = adl<model::offset>{}.from(in);
+    return result;
+}
+
+ss::future<> async_adl<model::tx_range>::to(iobuf& out, model::tx_range t) {
+    adl<model::tx_range>{}.to(out, t);
+    co_return;
+}
+
+ss::future<model::tx_range> async_adl<model::tx_range>::from(iobuf_parser& in) {
+    co_return adl<model::tx_range>{}.from(in);
 }
 
 }; // namespace reflection
