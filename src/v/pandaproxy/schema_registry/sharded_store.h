@@ -24,7 +24,7 @@ class store;
 /// subject or schema_id
 class sharded_store {
 public:
-    ss::future<> start(ss::smp_service_group sg);
+    ss::future<> start(is_mutable mut, ss::smp_service_group sg);
     ss::future<> stop();
 
     ///\brief Make the canonical form of the schema
@@ -87,6 +87,9 @@ public:
     ///\brief Return a list of subjects.
     ss::future<chunked_vector<subject>> get_subjects(include_deleted inc_del);
 
+    ///\brief Return whether there are any subjects.
+    ss::future<bool> has_subjects(include_deleted inc_del);
+
     ///\brief Return a list of versions and associated schema_id.
     ss::future<std::vector<schema_version>>
     get_versions(subject sub, include_deleted inc_del);
@@ -115,6 +118,11 @@ public:
     ss::future<std::vector<seq_marker>>
     get_subject_config_written_at(subject sub);
 
+    ///\brief Get sequence number history of subject mode. Subject need
+    /// not be soft-deleted first
+    ss::future<std::vector<seq_marker>>
+    get_subject_mode_written_at(subject sub);
+
     ///\brief Get sequence number history (errors out if not soft-deleted)
     ss::future<std::vector<seq_marker>>
     get_subject_version_written_at(subject sub, schema_version version);
@@ -123,6 +131,24 @@ public:
     /// \param force Override checks for soft-delete first.
     ss::future<bool> delete_subject_version(
       subject sub, schema_version version, force f = force::no);
+
+    ///\brief Get the global mode.
+    ss::future<mode> get_mode();
+
+    ///\brief Get the mode for a subject, or fallback to global.
+    ss::future<mode> get_mode(subject sub, default_to_global fallback);
+
+    ///\brief Set the global mode.
+    /// \param force Override checks, always apply action
+    ss::future<bool> set_mode(mode m, force f);
+
+    ///\brief Set the mode for a subject.
+    /// \param force Override checks, always apply action
+    ss::future<bool> set_mode(seq_marker marker, subject sub, mode m, force f);
+
+    ///\brief Clear the mode for a subject.
+    /// \param force Override checks, always apply action
+    ss::future<bool> clear_mode(seq_marker marker, subject sub, force f);
 
     ///\brief Get the global compatibility level.
     ss::future<compatibility_level> get_compatibility();
@@ -150,6 +176,9 @@ public:
     is_compatible(schema_version version, canonical_schema new_schema);
 
     ss::future<bool> has_version(const subject&, schema_id, include_deleted);
+
+    //// \brief Throw if the store is not mutable
+    void check_mode_mutability(force f) const;
 
 private:
     ss::future<bool>

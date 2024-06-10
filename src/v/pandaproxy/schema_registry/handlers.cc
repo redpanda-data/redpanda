@@ -20,6 +20,7 @@
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id.h"
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id_versions.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
+#include "pandaproxy/schema_registry/requests/mode.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -185,6 +186,7 @@ delete_config_subject(server::request_t rq, server::reply_t rp) {
 
     // ensure we see latest writes
     co_await rq.service().writer().read_sync();
+    co_await rq.service().writer().check_mutable(sub);
 
     compatibility_level lvl{};
     try {
@@ -209,9 +211,95 @@ ss::future<server::reply_t> get_mode(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     rq.req.reset();
 
-    rp.rep->write_body("json", ss::sstring{R"({
-  "mode": "READWRITE"
-})"});
+    // Ensure we see latest writes
+    co_await rq.service().writer().read_sync();
+
+    auto res = co_await rq.service().schema_store().get_mode();
+
+    auto json_rslt = ppj::rjson_serialize(mode_req_rep{.mode = res});
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t> put_mode(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
+    parse_accept_header(rq, rp);
+    auto frc = parse::query_param<std::optional<force>>(*rq.req, "force")
+                 .value_or(force::no);
+    auto res = ppj::rjson_parse(rq.req->content.data(), mode_handler<>{});
+    rq.req.reset();
+
+    co_await rq.service().writer().write_mode(std::nullopt, res.mode, frc);
+
+    auto json_rslt = ppj::rjson_serialize(res);
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
+get_mode_subject(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto fallback = parse::query_param<std::optional<default_to_global>>(
+                      *rq.req, "defaultToGlobal")
+                      .value_or(default_to_global::no);
+    rq.req.reset();
+
+    // Ensure we see latest writes
+    co_await rq.service().writer().read_sync();
+
+    auto res = co_await rq.service().schema_store().get_mode(sub, fallback);
+
+    auto json_rslt = ppj::rjson_serialize(mode_req_rep{.mode = res});
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
+put_mode_subject(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
+    parse_accept_header(rq, rp);
+    auto frc = parse::query_param<std::optional<force>>(*rq.req, "force")
+                 .value_or(force::no);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto res = ppj::rjson_parse(rq.req->content.data(), mode_handler<>{});
+    rq.req.reset();
+
+    // Ensure we see latest writes
+    co_await rq.service().writer().read_sync();
+    co_await rq.service().writer().write_mode(sub, res.mode, frc);
+
+    auto json_rslt = ppj::rjson_serialize(res);
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
+delete_mode_subject(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+
+    rq.req.reset();
+
+    // ensure we see latest writes
+    co_await rq.service().writer().read_sync();
+
+    mode m{};
+    try {
+        m = co_await rq.service().schema_store().get_mode(
+          sub, default_to_global::no);
+    } catch (const exception& e) {
+        if (e.code() == error_code::mode_not_found) {
+            // Upstream compatibility: return 40401 instead of 40409
+            throw as_exception(not_found(sub));
+        }
+        throw;
+    }
+
+    co_await rq.service().writer().delete_mode(sub);
+
+    auto json_rslt = ppj::rjson_serialize(mode_req_rep{.mode = m});
+    rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
 

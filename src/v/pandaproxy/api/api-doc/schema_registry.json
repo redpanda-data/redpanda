@@ -185,17 +185,210 @@
           "application/json"
         ],
         "parameters": [],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "mode": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/mode"
+            }
+          },
+          "500": {
+            "description": "Internal Server error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the global mode.",
+        "operationId": "put_mode",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/mode"
+            }
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/mode"
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/mode/{subject}": {
+      "get": {
+        "summary": "Get the mode for a subject.",
+        "operationId": "get_mode_subject",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "description": "The subject to get the mode for.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "defaultToGlobal",
+            "description": "If true, return the global mode if the subject doesn't have a mode set.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/mode"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the mode for a subject.",
+        "operationId": "put_mode_subject",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "description": "The subject to set the mode for.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "mode",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/mode"
+            }
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/mode"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete the mode for a subject.",
+        "operationId": "delete_mode_subject",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "description": "The subject to delete the mode for.",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/mode"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
             }
           },
           "500": {

@@ -37,6 +37,18 @@ ss::future<ctx_server<service>::reply_t> delete_config_subject(
 ss::future<ctx_server<service>::reply_t>
 get_mode(ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
+ss::future<ctx_server<service>::reply_t>
+put_mode(ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+
+ss::future<ctx_server<service>::reply_t> get_mode_subject(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+
+ss::future<ctx_server<service>::reply_t> put_mode_subject(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+
+ss::future<ctx_server<service>::reply_t> delete_mode_subject(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+
 ss::future<ctx_server<service>::reply_t> get_schemas_types(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 

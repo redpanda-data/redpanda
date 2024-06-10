@@ -40,6 +40,9 @@ public:
 
     ss::future<> read_sync();
 
+    // Throws 42205 if the subject cannot be modified
+    ss::future<> check_mutable(std::optional<subject> const& sub);
+
     // API for readers: notify us when they have read and applied an offset
     ss::future<> advance_offset(model::offset offset);
 
@@ -49,6 +52,10 @@ public:
     write_config(std::optional<subject> sub, compatibility_level compat);
 
     ss::future<bool> delete_config(subject sub);
+
+    ss::future<bool> write_mode(std::optional<subject> sub, mode m, force f);
+
+    ss::future<bool> delete_mode(subject sub);
 
     ss::future<bool>
     delete_subject_version(subject sub, schema_version version);
@@ -78,6 +85,12 @@ private:
       model::offset write_at);
 
     ss::future<std::optional<bool>> do_delete_config(subject sub);
+
+    ss::future<std::optional<bool>> do_write_mode(
+      std::optional<subject> sub, mode m, force f, model::offset write_at);
+
+    ss::future<std::optional<bool>>
+    do_delete_mode(subject sub, model::offset write_at);
 
     ss::future<std::optional<bool>> do_delete_subject_version(
       subject sub, schema_version version, model::offset write_at);

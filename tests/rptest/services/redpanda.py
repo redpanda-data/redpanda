@@ -810,6 +810,8 @@ class SchemaRegistryConfig(TlsConfig):
     SR_TLS_CLIENT_KEY_FILE = "/etc/redpanda/sr_client.key"
     SR_TLS_CLIENT_CRT_FILE = "/etc/redpanda/sr_client.crt"
 
+    mode_mutability = False
+
     def __init__(self):
         super(SchemaRegistryConfig, self).__init__()
 
