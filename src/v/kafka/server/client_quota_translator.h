@@ -83,15 +83,15 @@ public:
     /// Returns the quota tracker key applicable to the given quota context
     /// Note: because the client quotas configured for produce/fetch/pm might be
     /// different, the tracker_key for produce/fetch/pm might be different
-    tracker_key find_quota_key(const client_quota_request_ctx& ctx);
+    tracker_key find_quota_key(const client_quota_request_ctx& ctx) const;
 
     /// Finds the limits applicable to the given quota tracker key
-    client_quota_limits find_quota_value(const tracker_key&);
+    client_quota_limits find_quota_value(const tracker_key&) const;
 
     /// Returns the quota tracker key and quota limit applicable to the given
     /// quota context
     std::pair<tracker_key, client_quota_limits>
-    find_quota(const client_quota_request_ctx& ctx);
+    find_quota(const client_quota_request_ctx& ctx) const;
 
     /// `watch` can be used to register for quota changes
     void watch(on_change_fn&& fn);
@@ -100,22 +100,11 @@ private:
     using quota_config
       = std::unordered_map<ss::sstring, config::client_group_quota>;
 
-    tracker_key get_produce_key(std::optional<std::string_view> client_id);
-    tracker_key get_fetch_key(std::optional<std::string_view> client_id);
-    tracker_key
-    get_partition_mutation_key(std::optional<std::string_view> client_id);
+    const quota_config& get_quota_config(client_quota_type qt) const;
+    std::optional<uint64_t> get_default_config(client_quota_type qt) const;
 
-    std::optional<uint64_t>
-    get_client_target_produce_tp_rate(const tracker_key& quota_id);
-    std::optional<uint64_t>
-    get_client_target_fetch_tp_rate(const tracker_key& quota_id);
-    std::optional<uint64_t>
-    get_client_target_partition_mutation_rate(const tracker_key& quota_id);
     std::optional<uint64_t> get_client_quota_value(
-      const tracker_key& quota_id,
-      const std::unordered_map<ss::sstring, config::client_group_quota>&
-        group_quota_config,
-      std::optional<uint64_t> default_value_config);
+      const tracker_key& quota_id, client_quota_type qt) const;
 
     ss::sharded<cluster::client_quota::store>& _quota_store;
 
