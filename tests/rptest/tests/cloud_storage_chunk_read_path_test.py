@@ -183,7 +183,10 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         num_nodes=4,
         log_allow_list=[
             # Ignore trim related errors caused by deleting chunk files manually.
-            "failed to free sufficient space in exhaustive trim"
+            "failed to free sufficient space in exhaustive trim",
+            # With tracker based trim and the manual deletes in this test, sometimes
+            # the cache tries to trim chunks which have already been removed externally.
+            "filesystem error: remove failed: No such file or directory"
         ])
     def test_read_chunks(self):
         self.default_chunk_size = 1048576
