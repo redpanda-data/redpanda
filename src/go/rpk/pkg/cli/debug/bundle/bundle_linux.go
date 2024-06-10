@@ -557,6 +557,9 @@ func saveSlabInfo(ps *stepParams) step {
 	return func() error {
 		bs, err := afero.ReadFile(ps.fs, "/proc/slabinfo")
 		if err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				return fmt.Errorf("%v: you may need to run the command as root to read this file", err)
+			}
 			return err
 		}
 		return writeFileToZip(ps, "proc/slabinfo", bs)
