@@ -16,6 +16,7 @@
 
 #include <absl/container/flat_hash_set.h>
 
+#include <concepts>
 #include <iosfwd>
 #include <vector>
 
@@ -28,6 +29,17 @@ namespace cluster::client_quota {
 /// id and user principal based quotas, the entity key can contain two parts.
 struct entity_key
   : serde::envelope<entity_key, serde::version<0>, serde::compat_version<0>> {
+private:
+    template<typename T>
+    struct constructor : public T {
+        constructor() = default;
+        template<typename U>
+        requires std::constructible_from<ss::sstring, U>
+        explicit constructor(U&& u)
+          : T{.value{std::forward<U>(u)}} {}
+    };
+
+public:
     struct part
       : serde::envelope<part, serde::version<0>, serde::compat_version<0>> {
         friend bool operator==(const part&, const part&) = default;
@@ -114,6 +126,14 @@ struct entity_key
           client_id_prefix_match>
           part;
     };
+
+    using client_id_default_match = constructor<part::client_id_default_match>;
+    using client_id_match = constructor<part::client_id_match>;
+    using client_id_prefix_match = constructor<part::client_id_prefix_match>;
+
+    template<typename... T>
+    explicit entity_key(T&&... t)
+      : parts{{.part{std::forward<T>(t)}}...} {}
 
     auto serde_fields() { return std::tie(parts); }
 

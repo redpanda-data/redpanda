@@ -209,11 +209,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_store_client_group_test) {
     using cluster::client_quota::entity_key;
     using cluster::client_quota::entity_value;
 
-    auto default_key = entity_key{
-      .parts = {entity_key::part{
-        .part = entity_key::part::client_id_default_match{},
-      }},
-    };
+    auto default_key = entity_key{entity_key::client_id_default_match{}};
     auto default_values = entity_value{
       .producer_byte_rate = P_DEF,
       .consumer_byte_rate = F_DEF,
@@ -221,21 +217,14 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_store_client_group_test) {
     };
 
     auto franz_go_key = entity_key{
-      .parts = {entity_key::part{
-        .part = entity_key::part::client_id_prefix_match{.value = "franz-go"},
-      }},
-    };
+      entity_key::client_id_prefix_match{"franz-go"}};
     auto franz_go_values = entity_value{
       .producer_byte_rate = 4096,
       .consumer_byte_rate = 4097,
     };
 
     auto not_franz_go_key = entity_key{
-      .parts = {entity_key::part{
-        .part
-        = entity_key::part::client_id_prefix_match{.value = "not-franz-go"},
-      }},
-    };
+      entity_key::client_id_prefix_match{"not-franz-go"}};
     auto not_franz_go_values = entity_value{
       .producer_byte_rate = 2048,
       .consumer_byte_rate = 2049,
@@ -296,11 +285,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
     check_pm("franz-go", k_client_id{"franz-go"}, 13);
 
     // 2. Next: default client quota
-    auto default_key = entity_key{
-      .parts = {entity_key::part{
-        .part = entity_key::part::client_id_default_match{},
-      }},
-    };
+    auto default_key = entity_key{entity_key::client_id_default_match{}};
     auto default_values = entity_value{
       .producer_byte_rate = 21,
       .consumer_byte_rate = 22,
@@ -340,10 +325,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
 
     // 4. Next: client id prefix quota store
     auto franz_go_prefix_key = entity_key{
-      .parts = {entity_key::part{
-        .part = entity_key::part::client_id_prefix_match{.value = "franz-go"},
-      }},
-    };
+      entity_key::client_id_prefix_match{"franz-go"}};
     auto franz_go_prefix_values = entity_value{
       .producer_byte_rate = 41,
       .consumer_byte_rate = 42,
@@ -358,10 +340,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
 
     // 5. Finally: client id exact match quota store
     auto franz_go_exact_key = entity_key{
-      .parts = {entity_key::part{
-        .part = entity_key::part::client_id_match{.value = "franz-go"},
-      }},
-    };
+      entity_key::client_id_match{"franz-go"}};
     auto franz_go_exact_values = entity_value{
       .producer_byte_rate = 51,
       .consumer_byte_rate = 52,
