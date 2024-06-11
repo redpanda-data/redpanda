@@ -82,6 +82,7 @@ rp_test(
     remote_path_provider_test.cc
     remote_test.cc
     s3_imposter.cc
+    topic_manifest_downloader_test.cc
     util.cc
   LIBRARIES
     v::gtest_main
