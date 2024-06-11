@@ -264,6 +264,9 @@ public:
     // manifest, or 0 if the memory is not being tracked.
     size_t segments_metadata_bytes() const;
 
+    // Return very rough estimate of the size of the serialized manifest
+    size_t estimate_serialized_size() const;
+
     /// Return map that contains spillover manifests.
     /// It stores 'segment_meta' objects but the meaning of fields are
     /// different.
