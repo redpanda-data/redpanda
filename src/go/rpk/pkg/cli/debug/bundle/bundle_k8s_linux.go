@@ -86,7 +86,14 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		zap.L().Sugar().Debugf("unable to get admin API addresses from the k8s API: %v", err)
 	}
 	if len(adminAddresses) == 0 {
-		adminAddresses = []string{fmt.Sprintf("127.0.0.1:%v", config.DefaultAdminPort)}
+		if len(bp.p.AdminAPI.Addresses) > 0 {
+			zap.L().Sugar().Debugf("using admin API addresses from profile: %v", bp.p.AdminAPI.Addresses)
+			adminAddresses = bp.p.AdminAPI.Addresses
+		} else {
+			defaultAddress := fmt.Sprintf("127.0.0.1:%v", config.DefaultAdminPort)
+			zap.L().Sugar().Debugf("profile empty, using %v for the Admin API address", defaultAddress)
+			adminAddresses = []string{defaultAddress}
+		}
 	}
 	steps = append(steps, []step{
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions),
