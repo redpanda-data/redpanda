@@ -129,4 +129,10 @@ void tx_range_manifest::serialize(std::ostream& out) const {
     w.EndArray();
     w.EndObject();
 }
+
+size_t tx_range_manifest::estimate_serialized_size() const {
+    constexpr auto total_keys_size_per_range = 36;
+    constexpr auto avg_value_bytes = 40;
+    return _ranges.size() * (total_keys_size_per_range + avg_value_bytes);
+}
 } // namespace cloud_storage
