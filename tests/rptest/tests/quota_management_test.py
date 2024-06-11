@@ -17,6 +17,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 from ducktape.mark import parametrize, ignore
 from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.kcl import RawKCL
 
 
 def expect_kafka_cli_error_msg(error_msg: str):
@@ -133,6 +134,7 @@ class QuotaManagementTest(RedpandaTest):
 
         self.rpk = RpkTool(self.redpanda)
         self.kafka_cli = KafkaCliTools(self.redpanda)
+        self.kcl = RawKCL(self.redpanda)
 
     # TODO: write a small test suite against kafka-configs.sh
     @ignore
@@ -362,3 +364,103 @@ class QuotaManagementTest(RedpandaTest):
         # got = self.describe(any=["user"], strict=strict)
         # expected = QuotaOutput() if strict else compound_output
         # self._assert_equal(got, expected)
+
+    @cluster(num_nodes=1)
+    def test_error_handling(self):
+        # rpk has client-side validation for the supported types,
+        # so use other clients to exercise unsupported types
+        self.redpanda.logger.debug(
+            "Verify the error message of user quotas (not yet supported)")
+        with expect_kafka_cli_error_msg(
+                "Entity type 'user' not yet supported"):
+            self.kafka_cli.describe_quota_config("--user-defaults")
+
+        self.redpanda.logger.debug(
+            "Verify that the default for client-id-prefix is not supported with alter"
+        )
+        alter_body = {
+            "Entries": [{
+                "Entity": [{
+                    "Type": "client-id-prefix",
+                }],
+                "Ops": [{
+                    "Key": "producer_byte_rate",
+                    "Value": 10.0,
+                }],
+            }],
+        }
+        res = self.kcl.raw_alter_quotas(alter_body)
+        assert len(res['Entries']) == 1, f"Unexpected entries: {res}"
+        entry = res['Entries'][0]
+        assert entry['ErrorCode'] == 42, \
+            f"Unexpected entry: {entry}"
+        assert entry['ErrorMessage'] == "Invalid quota entity type, client-id-prefix entity should not be used at the default level (use client-id default instead).", \
+            f"Unexpected entry: {entry}"
+
+        self.redpanda.logger.debug(
+            "Verify that the default for client-id-prefix is not supported with describe"
+        )
+        describe_body = {
+            "Components": [{
+                "EntityType": "client-id-prefix",
+                "MatchType": 1,  # default
+            }],
+        }
+        res = self.kcl.raw_describe_quotas(describe_body)
+        assert res['ErrorCode'] == 42, \
+            f"Unexpected response: {res}"
+        assert res['ErrorMessage'] == "Invalid quota entity type, client-id-prefix entity should not be used at the default level (use client-id default instead).", \
+            f"Unexpected response: {res}"
+
+        self.redpanda.logger.debug(
+            "Verify that Exact match without a match field results in an error"
+        )
+        describe_body = {
+            "Components": [{
+                "EntityType": "client-id",
+                "MatchType": 0,  # exact match
+                # "Match": "missing"
+            }],
+        }
+        res = self.kcl.raw_describe_quotas(describe_body)
+        assert res['ErrorCode'] == 42, \
+            f"Unexpected response: {res}"
+        assert res['ErrorMessage'] == "Unspecified match field for exact_name match type", \
+            f"Unexpected response: {res}"
+
+        self.redpanda.logger.debug(
+            "Verify that it is possible for alter to partially succeed")
+        alter_body = {
+            "Entries": [
+                {
+                    "Entity": [{
+                        "Type": "client-id",
+                    }],
+                    "Ops": [{
+                        "Key": "producer_byte_rate",
+                        "Value": 10.0,
+                    }],
+                },
+                {
+                    "Entity": [{
+                        "Type": "user",  # Not yet supported
+                    }],
+                    "Ops": [{
+                        "Key": "producer_byte_rate",
+                        "Value": 10.0,
+                    }],
+                },
+            ],
+        }
+        res = self.kcl.raw_alter_quotas(alter_body)
+        assert len(res['Entries']) == 2, f"Unexpected entries: {res}"
+        assert res['Entries'][0]['ErrorCode'] == 0, \
+            f"Unexpected response: {res}"
+        assert res['Entries'][1]['ErrorCode'] == 35, \
+            f"Unexpected response: {res}"
+        got = self.describe(default=["client-id"])
+        expected = QuotaOutput([
+            Quota(entity=QuotaEntity.client_id_default(),
+                  values=[QuotaValue.producer_byte_rate("10")])
+        ])
+        self._assert_equal(got, expected)
