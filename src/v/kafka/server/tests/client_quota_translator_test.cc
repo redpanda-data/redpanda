@@ -12,6 +12,7 @@
 #include "cluster/client_quota_store.h"
 #include "config/configuration.h"
 #include "kafka/server/client_quota_translator.h"
+#include "kafka/server/tests/client_quota_test_helpers.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -86,7 +87,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_default_test) {
     fixture f;
 
     auto default_limits = client_quota_limits{
-      .produce_limit = 2147483648,
+      .produce_limit = scale_to_smp_count(2147483648),
       .fetch_limit = std::nullopt,
       .partition_mutation_limit = std::nullopt,
     };
@@ -105,9 +106,9 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_modified_default_test) {
     fixture f;
 
     auto expected_limits = client_quota_limits{
-      .produce_limit = 1111,
-      .fetch_limit = 2222,
-      .partition_mutation_limit = 3333,
+      .produce_limit = scale_to_smp_count(1111),
+      .fetch_limit = scale_to_smp_count(2222),
+      .partition_mutation_limit = scale_to_smp_count(3333),
     };
     auto [key, limits] = f.tr.find_quota(
       {client_quota_type::produce_quota, test_client_id});
@@ -155,8 +156,8 @@ void run_quota_translator_client_group_test(fixture& f) {
     // various tracker_key's being tested
     // Check limits for the franz-go groups
     auto franz_go_limits = client_quota_limits{
-      .produce_limit = 4096,
-      .fetch_limit = 4097,
+      .produce_limit = scale_to_smp_count(4096),
+      .fetch_limit = scale_to_smp_count(4097),
       .partition_mutation_limit = {},
     };
     BOOST_CHECK_EQUAL(
@@ -164,8 +165,8 @@ void run_quota_translator_client_group_test(fixture& f) {
 
     // Check limits for the not-franz-go groups
     auto not_franz_go_limits = client_quota_limits{
-      .produce_limit = 2048,
-      .fetch_limit = 2049,
+      .produce_limit = scale_to_smp_count(2048),
+      .fetch_limit = scale_to_smp_count(2049),
       .partition_mutation_limit = {},
     };
     BOOST_CHECK_EQUAL(
@@ -173,9 +174,9 @@ void run_quota_translator_client_group_test(fixture& f) {
 
     // Check limits for the non-client-group keys
     auto default_limits = client_quota_limits{
-      .produce_limit = P_DEF,
-      .fetch_limit = F_DEF,
-      .partition_mutation_limit = PM_DEF,
+      .produce_limit = scale_to_smp_count(P_DEF),
+      .fetch_limit = scale_to_smp_count(F_DEF),
+      .partition_mutation_limit = scale_to_smp_count(PM_DEF),
     };
     BOOST_CHECK_EQUAL(
       default_limits, f.tr.find_quota_value(k_client_id{"unknown"}));
@@ -211,23 +212,23 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_store_client_group_test) {
 
     auto default_key = entity_key{entity_key::client_id_default_match{}};
     auto default_values = entity_value{
-      .producer_byte_rate = P_DEF,
-      .consumer_byte_rate = F_DEF,
-      .controller_mutation_rate = PM_DEF,
+      .producer_byte_rate = scale_to_smp_count(P_DEF),
+      .consumer_byte_rate = scale_to_smp_count(F_DEF),
+      .controller_mutation_rate = scale_to_smp_count(PM_DEF),
     };
 
     auto franz_go_key = entity_key{
       entity_key::client_id_prefix_match{"franz-go"}};
     auto franz_go_values = entity_value{
-      .producer_byte_rate = 4096,
-      .consumer_byte_rate = 4097,
+      .producer_byte_rate = scale_to_smp_count(4096),
+      .consumer_byte_rate = scale_to_smp_count(4097),
     };
 
     auto not_franz_go_key = entity_key{
       entity_key::client_id_prefix_match{"not-franz-go"}};
     auto not_franz_go_values = entity_value{
-      .producer_byte_rate = 2048,
-      .consumer_byte_rate = 2049,
+      .producer_byte_rate = scale_to_smp_count(2048),
+      .consumer_byte_rate = scale_to_smp_count(2049),
     };
 
     f.quota_store.local().set_quota(default_key, default_values);
@@ -280,9 +281,9 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
     config::shard_local_cfg().target_fetch_quota_byte_rate.set_value(12);
     config::shard_local_cfg().kafka_admin_topic_api_rate.set_value(13);
 
-    check_produce("franz-go", k_client_id{"franz-go"}, 11);
-    check_fetch("franz-go", k_client_id{"franz-go"}, 12);
-    check_pm("franz-go", k_client_id{"franz-go"}, 13);
+    check_produce("franz-go", k_client_id{"franz-go"}, scale_to_smp_count(11));
+    check_fetch("franz-go", k_client_id{"franz-go"}, scale_to_smp_count(12));
+    check_pm("franz-go", k_client_id{"franz-go"}, scale_to_smp_count(13));
 
     // 2. Next: default client quota
     auto default_key = entity_key{entity_key::client_id_default_match{}};
@@ -317,8 +318,8 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
     config::shard_local_cfg()
       .kafka_client_group_fetch_byte_rate_quota.set_value(fetch_prefix_config);
 
-    check_produce("franz-go", k_group_name{"franz-go"}, 31);
-    check_fetch("franz-go", k_group_name{"franz-go"}, 32);
+    check_produce("franz-go", k_group_name{"franz-go"}, scale_to_smp_count(31));
+    check_fetch("franz-go", k_group_name{"franz-go"}, scale_to_smp_count(32));
     // there's no cluster config for partition mutation quotas based on client
     // prefix, so this fall backs to the previous priority level
     check_pm("franz-go", k_client_id{"franz-go"}, 23);

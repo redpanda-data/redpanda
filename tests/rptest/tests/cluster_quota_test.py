@@ -35,6 +35,13 @@ class ClusterQuotaPartitionMutationTest(RedpandaTest):
                          num_brokers=3,
                          extra_rp_conf=additional_options,
                          **kwargs)
+        # Cluster configs used to be per-shard and for backwards compatibility, when we made them node-wide,
+        # we started acting on the cluster configs at the "core count" * "per-shard cluster config" value to
+        # be backwards compatible with the existing configurations.
+        # To keep the tests simple, run the tests with 1 core / broker to have the per-shard cluster configs
+        # be the same as the node-wide limit after upscaling by the core count.
+        self.redpanda.set_resource_settings(ResourceSettings(num_cpus=1))
+
         # Use kcl so the throttle_time_ms value in the response can be examined
         self.kcl = RawKCL(self.redpanda)
 
@@ -143,6 +150,12 @@ class ClusterRateQuotaTest(RedpandaTest):
                              'info', logger_levels={'kafka': 'trace'}),
                          resource_settings=ResourceSettings(num_cpus=1),
                          **kwargs)
+        # Cluster configs used to be per-shard and for backwards compatibility, when we made them node-wide,
+        # we started acting on the cluster configs at the "core count" * "per-shard cluster config" value to
+        # be backwards compatible with the existing configurations.
+        # To keep the tests simple, run the tests with 1 core / broker to have the per-shard cluster configs
+        # be the same as the node-wide limit after upscaling by the core count.
+        self.redpanda.set_resource_settings(ResourceSettings(num_cpus=1))
         self.rpk = RpkTool(self.redpanda)
 
     def init_test_data(self):
