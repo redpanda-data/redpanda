@@ -23,6 +23,13 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/algorithm/container.h>
+#include <boost/outcome/success_failure.hpp>
+
+#include <optional>
+#include <utility>
+#include <variant>
+
 namespace kafka {
 
 namespace {
@@ -99,6 +106,130 @@ values_data get_value_data(const entity_value& val) {
     return ret;
 }
 
+using kerror = std::pair<kafka::error_code, ss::sstring>;
+
+result<entity_key::part, kerror>
+exact_match_key(const component_data& component) {
+    return string_switch<result<entity_key::part, kerror>>(
+             component.entity_type)
+      .match(
+        "client-id",
+        entity_key::part{.part = entity_key::client_id_match{*component.match}})
+      .match(
+        "client-id-prefix",
+        entity_key::part{
+          .part = entity_key::client_id_prefix_match{*component.match}})
+      .match_all(
+        "user",
+        "ip",
+        {
+          error_code::unsupported_version,
+          fmt::format(
+            "Entity type '{}' not yet supported", component.entity_type),
+        })
+      .default_match({
+        error_code::unsupported_version,
+        fmt::format(
+          "Custom entity type '{}' not supported", component.entity_type),
+      });
+}
+
+result<entity_key::part, kerror>
+default_match_key(const component_data& component) {
+    return string_switch<result<entity_key::part, kerror>>(
+             component.entity_type)
+      .match(
+        "client-id",
+        entity_key::part{.part = entity_key::client_id_default_match{}})
+      .match(
+        "client-id-prefix",
+        {kafka::error_code::invalid_request,
+         "Invalid quota entity type, client-id-prefix entity should not "
+         "be used at the default level (use client-id default instead)."})
+      .match_all(
+        "user",
+        "ip",
+        {
+          error_code::unsupported_version,
+          fmt::format(
+            "Entity type '{}' not yet supported", component.entity_type),
+        })
+      .default_match({
+        error_code::unsupported_version,
+        fmt::format(
+          "Custom entity type '{}' not supported", component.entity_type),
+      });
+}
+
+using key_part_predicate = std::function<bool(const entity_key::part&)>;
+
+template<typename... Args>
+key_part_predicate make_any_filter() {
+    return [](const entity_key::part& p) {
+        return (std::holds_alternative<Args>(p.part) || ...);
+    };
+}
+
+result<key_part_predicate, kerror>
+any_match_filter(const component_data& component) {
+    return string_switch<result<key_part_predicate, kerror>>(
+             component.entity_type)
+      .match(
+        "client-id",
+        make_any_filter<
+          entity_key::part::client_id_default_match,
+          entity_key::part::client_id_match>())
+      .match(
+        "client-id-prefix",
+        make_any_filter<entity_key::part::client_id_prefix_match>())
+      .match_all(
+        "user",
+        "ip",
+        {
+          error_code::unsupported_version,
+          fmt::format(
+            "Entity type '{}' not yet supported", component.entity_type),
+        })
+      .default_match({
+        error_code::unsupported_version,
+        fmt::format(
+          "Custom entity type '{}' not supported", component.entity_type),
+      });
+}
+
+result<key_part_predicate, kerror>
+make_filter(const component_data& component) {
+    switch (component.match_type) {
+    case describe_client_quotas_match_type::exact_name: {
+        if (!component.match) {
+            return kerror{
+              error_code::invalid_request,
+              "Unspecified match field for exact_name match type",
+            };
+        }
+
+        auto key_or_err = exact_match_key(component);
+        if (key_or_err.has_error()) {
+            return std::move(key_or_err).assume_error();
+        }
+
+        return [key = std::move(key_or_err).assume_value()](
+                 const entity_key::part& p) { return p == key; };
+    }
+    case describe_client_quotas_match_type::default_name: {
+        auto key_or_err = default_match_key(component);
+        if (key_or_err.has_error()) {
+            return std::move(key_or_err).assume_error();
+        }
+        return [key = std::move(key_or_err).assume_value()](
+                 const entity_key::part& p) { return p == key; };
+    }
+    case describe_client_quotas_match_type::any_specified_name: {
+        return any_match_filter(component);
+    }
+    }
+}
+
 } // namespace
 
 template<>
@@ -128,10 +259,70 @@ ss::future<response_ptr> describe_client_quotas_handler::handle(
         return ctx.respond(std::move(res));
     }
 
+    std::optional<key_part_predicate> client_predicate;
+    // std::optional<key_part_predicate> user_predicate;
+    // std::optional<key_part_predicate> ip_predicate;
+
+    for (const auto& component : request.data.components) {
+        auto filter_or_err = make_filter(component);
+
+        if (filter_or_err.has_error()) {
+            std::tie(res.data.error_code, res.data.error_message)
+              = std::move(filter_or_err).assume_error();
+            return ctx.respond(std::move(res));
+        }
+
+        auto& predicate = [&]() mutable -> auto& {
+            return client_predicate;
+            // TODO: later add support for user/ip quotas
+            // if (component.entity_type == "client-id" ||
+            // component.entity_type == "client-id-prefix") {
+            //     return client_predicate;
+            // } else if (component.entity_type == "user") {
+            //     return user_predicate;
+            // } else if (component.entity_type == "ip") {
+            //     return ip_predicate;
+            // } else {
+            //     // ERROR: unknown
+            // }
+        }();
+
+        if (predicate.has_value()) {
+            res.data.error_code = error_code::invalid_request;
+            res.data.error_message = fmt::format(
+              "Duplicate filter component for entity type '{}'",
+              component.entity_type);
+            return ctx.respond(std::move(res));
+        }
+
+        predicate = std::move(filter_or_err).assume_value();
+    }
+
     auto quotas = ctx.quota_store().range(
-      [](const std::pair<entity_key, entity_value>&) {
-          // TODO: Matching strict && components
-          return true;
+      [&client_predicate, strict = request.data.strict](
+        const std::pair<entity_key, entity_value>& kv) {
+          // Each predicate in the request needs to have at least one key part
+          // that matches it (regardless of strict mode)
+          const auto& key = kv.first;
+          auto each_predicate_has_a_match = !client_predicate
+                                            || absl::c_any_of(
+                                              key.parts, *client_predicate);
+          // && (!user_predicate || absl::c_any_of(key.parts, *user_predicate))
+          // && (!ip_predicate || absl::c_any_of(key.parts, *ip_predicate));
+
+          if (!each_predicate_has_a_match) {
+              return false;
+          }
+
+          // In strict mode, also require that each key part has a matching
+          // predicate
+          auto reverse_predicate =
+            [&client_predicate](const entity_key::part& part) {
+                return client_predicate && (*client_predicate)(part);
+                //  || (user_predicate && (*user_predicate)(part))
+                //  || (ip_predicate && (*ip_predicate)(part));
+            };
+          return !strict || absl::c_all_of(key.parts, reverse_predicate);
       });
 
     res.data.entries->reserve(quotas.size());
