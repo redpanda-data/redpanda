@@ -96,7 +96,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
           "[group: {}] recovered update tx offsets: {}",
           val.group_id,
           val);
-        group_it->second.update_prepared(batch.last_offset(), val);
+        group_it->second.update_tx_offset(batch.last_offset(), val);
 
         co_return ss::stop_iteration::no;
     } else if (

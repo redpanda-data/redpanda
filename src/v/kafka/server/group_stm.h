@@ -30,9 +30,12 @@ public:
         offset_metadata_value metadata;
     };
 
-    struct tx_info {
+    struct ongoing_tx {
         model::tx_seq tx_seq;
         model::partition_id tm_partition;
+        model::timeout_clock::duration timeout;
+        absl::node_hash_map<model::topic_partition, group::offset_metadata>
+          offsets;
     };
 
     void overwrite_metadata(group_metadata_value&&);
@@ -40,37 +43,25 @@ public:
     void update_offset(
       const model::topic_partition&, model::offset, offset_metadata_value&&);
     void remove_offset(const model::topic_partition&);
-    void update_prepared(model::offset, group_tx::offsets_metadata);
+    void update_tx_offset(model::offset, group_tx::offsets_metadata);
     void commit(model::producer_identity);
     void abort(model::producer_identity, model::tx_seq);
-    void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
-        auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
-        if (fence_it->second < epoch) {
-            fence_it->second = epoch;
-        }
-    }
+    void try_set_fence(model::producer_id id, model::producer_epoch epoch);
     void try_set_fence(
       model::producer_id id,
       model::producer_epoch epoch,
       model::tx_seq txseq,
       model::timeout_clock::duration transaction_timeout_ms,
-      model::partition_id tm_partition) {
-        auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
-        if (fence_it->second <= epoch) {
-            fence_it->second = epoch;
-            model::producer_identity pid(id(), epoch());
-            _tx_data[pid] = tx_info{txseq, tm_partition};
-            _timeouts[pid] = transaction_timeout_ms;
-        }
-    }
+      model::partition_id tm_partition);
+
     bool has_data() const {
         return !_is_removed && (_is_loaded || _offsets.size() > 0);
     }
     bool is_removed() const { return _is_removed; }
 
-    const absl::node_hash_map<model::producer_id, group::ongoing_tx_offsets>&
-    ongoing_tx_offsets() const {
-        return _ongoing_tx_offsets;
+    const absl::node_hash_map<model::producer_identity, ongoing_tx>&
+    ongoing_transactions() const {
+        return _ongoing_txs;
     }
 
     const absl::node_hash_map<model::topic_partition, logged_metadata>&
@@ -83,31 +74,16 @@ public:
         return _fence_pid_epoch;
     }
 
-    const absl::node_hash_map<model::producer_identity, tx_info>&
-    tx_data() const {
-        return _tx_data;
-    }
-
-    const absl::
-      node_hash_map<model::producer_identity, model::timeout_clock::duration>&
-      timeouts() const {
-        return _timeouts;
-    }
-
     group_metadata_value& get_metadata() { return _metadata; }
 
     const group_metadata_value& get_metadata() const { return _metadata; }
 
 private:
     absl::node_hash_map<model::topic_partition, logged_metadata> _offsets;
-    absl::node_hash_map<model::producer_id, group::ongoing_tx_offsets>
-      _ongoing_tx_offsets;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
-    absl::node_hash_map<model::producer_identity, tx_info> _tx_data;
-    absl::
-      node_hash_map<model::producer_identity, model::timeout_clock::duration>
-        _timeouts;
+    absl::node_hash_map<model::producer_identity, ongoing_tx> _ongoing_txs;
+
     group_metadata_value _metadata;
     bool _is_loaded{false};
     bool _is_removed{false};

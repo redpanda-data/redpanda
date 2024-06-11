@@ -15,6 +15,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tx_protocol_types.h"
 #include "cluster/tx_utils.h"
+#include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "kafka/group_probe.h"
@@ -149,10 +150,44 @@ public:
     using offset_commit_stages = stages<offset_commit_response>;
     using join_group_stages = stages<join_group_response>;
     using sync_group_stages = stages<sync_group_response>;
+    /**
+     * represents an offset that is to be stored as a part of transaction
+     */
+    struct pending_tx_offset {
+        group_tx::partition_offset offset_metadata;
+        model::offset log_offset;
+    };
+    /**
+     * In memory representation of active transaction. The transaction is added
+     * when a state machine executes begin transaction request. The transaction
+     * is removed when the state machine executes commit or abort transaction
+     * request. The transaction holds all pending offset commits.
+     */
+    struct ongoing_transaction {
+        ongoing_transaction(
+          model::tx_seq, model::partition_id, model::timeout_clock::duration);
 
-    struct tx_data {
         model::tx_seq tx_seq;
-        model::partition_id tm_partition;
+        model::partition_id coordinator_partition;
+
+        model::timeout_clock::duration timeout;
+        model::timeout_clock::time_point last_update;
+
+        bool is_expiration_requested{false};
+
+        model::timeout_clock::time_point deadline() const {
+            return last_update + timeout;
+        }
+
+        bool is_expired() const {
+            return is_expiration_requested || deadline() <= clock_type::now();
+        }
+
+        void update_last_update_time() {
+            last_update = model::timeout_clock::now();
+        }
+
+        chunked_hash_map<model::topic_partition, pending_tx_offset> offsets;
     };
 
     struct offset_metadata {
@@ -591,48 +626,13 @@ public:
         }
     }
 
-    void insert_ongoing_tx_offsets(ongoing_tx_offsets);
+    void
+    insert_ongoing_tx(model::producer_identity pid, ongoing_transaction tx);
 
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
         if (fence_it->second <= epoch) {
             fence_it->second = epoch;
-        }
-    }
-
-    void try_set_tx_data(
-      model::producer_identity id,
-      model::tx_seq txseq,
-      model::partition_id tm_partition) {
-        auto fence_it = _fence_pid_epoch.find(id.get_id());
-        if (fence_it == _fence_pid_epoch.end()) {
-            return;
-        }
-        if (fence_it->second != id.get_epoch()) {
-            return;
-        }
-        auto [ongoing_it, _] = _tx_data.try_emplace(
-          id.get_id(), tx_data{txseq, tm_partition});
-        if (ongoing_it->second.tx_seq <= txseq) {
-            ongoing_it->second.tx_seq = txseq;
-            ongoing_it->second.tm_partition = tm_partition;
-        }
-    }
-
-    void try_set_timeout(
-      model::producer_identity id,
-      model::timeout_clock::duration transaction_timeout_ms) {
-        auto fence_it = _fence_pid_epoch.find(id.get_id());
-        if (fence_it == _fence_pid_epoch.end()) {
-            return;
-        }
-        if (fence_it->second != id.get_epoch()) {
-            return;
-        }
-        auto [info_it, inserted] = _expiration_info.try_emplace(
-          id, expiration_info(transaction_timeout_ms));
-        if (inserted) {
-            try_arm(info_it->second.deadline());
         }
     }
 
@@ -814,9 +814,6 @@ private:
     error_code
     validate_expected_group(const txn_offset_commit_request& r) const;
 
-    cluster::abort_origin
-    get_abort_origin(const model::producer_identity&, model::tx_seq) const;
-
     bool has_offsets() const;
 
     bool has_pending_transaction(const model::topic_partition& tp) {
@@ -828,8 +825,8 @@ private:
         }
 
         if (std::any_of(
-              _ongoing_tx_offsets.begin(),
-              _ongoing_tx_offsets.end(),
+              _transactions.begin(),
+              _transactions.end(),
               [&tp](const auto& tp_info) {
                   return tp_info.second.offsets.contains(tp);
               })) {
@@ -921,38 +918,11 @@ private:
     model::term_id _term;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
-    absl::node_hash_map<model::producer_id, tx_data> _tx_data;
+    chunked_hash_map<model::producer_identity, ongoing_transaction>
+      _transactions;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;
-
-    absl::node_hash_map<model::producer_identity, ongoing_tx_offsets>
-      _ongoing_tx_offsets;
-
-    struct expiration_info {
-        expiration_info(model::timeout_clock::duration timeout)
-          : timeout(timeout)
-          , last_update(model::timeout_clock::now()) {}
-
-        model::timeout_clock::duration timeout;
-        model::timeout_clock::time_point last_update;
-        bool is_expiration_requested{false};
-
-        model::timeout_clock::time_point deadline() const {
-            return last_update + timeout;
-        }
-
-        bool is_expired() const {
-            return is_expiration_requested || deadline() <= clock_type::now();
-        }
-
-        void update_last_update_time() {
-            last_update = model::timeout_clock::now();
-        }
-    };
-
-    absl::node_hash_map<model::producer_identity, expiration_info>
-      _expiration_info;
 
     ss::gate _gate;
     ss::timer<clock_type> _auto_abort_timer;
