@@ -1762,7 +1762,7 @@ class TopicRecoveryTest(RedpandaTest):
                                        num_topics=5,
                                        num_partitions_per_topic=20,
                                        check_mode=check_mode)
-        self.do_run(test_case)
+        self.do_run(test_case, upload_delay_sec=120)
 
     @cluster(num_nodes=4,
              log_allow_list=TRANSIENT_ERRORS +
