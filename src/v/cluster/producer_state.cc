@@ -243,13 +243,18 @@ std::ostream& operator<<(std::ostream& o, const producer_state& state) {
     fmt::print(
       o,
       "{{ id: {}, group: {}, requests: {}, "
-      "ms_since_last_update: {}, transaction_state: {}, evicted: {} }}",
+      "ms_since_last_update: {}, evicted: {}, ",
       state._id,
       state._group,
       state._requests,
       state.ms_since_last_update(),
-      state._transaction_state,
       state._evicted);
+    if (state._transaction_state) {
+        fmt::print(o, "transaction_state: {}", *state._transaction_state);
+    } else {
+        fmt::print(o, "transaction_state: {{ null }}");
+    }
+    fmt::print(o, "}}");
     return o;
 }
 
