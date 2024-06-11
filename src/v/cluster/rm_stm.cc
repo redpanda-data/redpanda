@@ -1199,7 +1199,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
     auto expiration_it = _log_state.expiration.find(bid.pid);
     if (expiration_it == _log_state.expiration.end()) {
         vlog(_ctx_log.warn, "Can not find expiration info for pid:{}", bid.pid);
-        req_ptr->set_value(errc::generic_tx_error);
+        req_ptr->set_error(errc::generic_tx_error);
         co_return errc::generic_tx_error;
     }
     expiration_it->second.last_update = clock_type::now();
@@ -1219,7 +1219,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
             // an error during replication, preventin tx from progress
             _mem_state.expected.erase(bid.pid);
         }
-        req_ptr->set_value(r.error());
+        req_ptr->set_error(r.error());
         co_return r.error();
     }
     if (!co_await wait_no_throw(
@@ -1229,7 +1229,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           _ctx_log.warn,
           "application of the replicated tx batch has timed out pid:{}",
           bid.pid);
-        req_ptr->set_value(errc::timeout);
+        req_ptr->set_error(errc::timeout);
         co_return tx_errc::timeout;
     }
     _mem_state.estimated.erase(bid.pid);
@@ -1315,7 +1315,6 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued,
   ssx::semaphore_units& units) {
-    using ret_t = result<kafka_result>;
     auto request = producer->try_emplace_request(bid, synced_term);
     if (!request) {
         co_return request.error();
@@ -1335,7 +1334,7 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
           _ctx_log.warn,
           "replication failed, request enqueue returned error: {}",
           req_enqueued.get_exception());
-        req_ptr->set_value<ret_t>(errc::replication_error);
+        req_ptr->set_error(errc::replication_error);
         co_return errc::replication_error;
     }
     units.return_all();
@@ -1345,13 +1344,13 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
     if (replicated.failed()) {
         vlog(
           _ctx_log.warn, "replication failed: {}", replicated.get_exception());
-        req_ptr->set_value<ret_t>(errc::replication_error);
+        req_ptr->set_error(errc::replication_error);
         co_return errc::replication_error;
     }
     auto result = replicated.get0();
     if (result.has_error()) {
         vlog(_ctx_log.warn, "replication failed: {}", result.error());
-        req_ptr->set_value<ret_t>(result.error());
+        req_ptr->set_error(result.error());
         co_return result.error();
     }
     // translate to kafka offset.
