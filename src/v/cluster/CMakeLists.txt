@@ -108,6 +108,8 @@ v_cc_library(
     metadata_dissemination_handler.cc
     metadata_dissemination_service.cc
     types.cc
+    remote_topic_properties.cc
+    topic_properties.cc
     notification_latch.cc
     topic_table.cc
     topic_table_probe.cc
