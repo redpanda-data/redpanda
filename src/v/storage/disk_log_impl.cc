@@ -1932,7 +1932,11 @@ ss::future<>
 disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
     return ss::do_until(
       [this, cfg] {
+          // base_offset check is for the case of an empty segment
+          // (where dirty = base - 1). We don't want to remove it because
+          // batches may be concurrently appended to it and we should keep them.
           return _segs.empty()
+                 || _segs.front()->offsets().base_offset >= cfg.start_offset
                  || _segs.front()->offsets().dirty_offset >= cfg.start_offset;
       },
       [this] {
