@@ -17,6 +17,17 @@
 
 namespace cluster {
 
+std::ostream& operator<<(std::ostream& os, request_state state) {
+    switch (state) {
+    case request_state::initialized:
+        return os << "initialized";
+    case request_state::in_progress:
+        return os << "in_progress";
+    case request_state::completed:
+        return os << "completed";
+    }
+}
+
 result_promise_t::future_type request::result() const {
     return _result.get_shared_future();
 }
@@ -235,6 +246,18 @@ producer_state::producer_state(
 bool producer_state::operator==(const producer_state& other) const {
     return _id == other._id && _group == other._group
            && _evicted == other._evicted && _requests == other._requests;
+}
+
+std::ostream& operator<<(std::ostream& o, const request& request) {
+    fmt::print(
+      o,
+      "{{ first: {}, last: {}, term: {}, result_available: {}, state: {} }}",
+      request._first_sequence,
+      request._last_sequence,
+      request._term,
+      request._result.available(),
+      request._state);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const requests& requests) {
