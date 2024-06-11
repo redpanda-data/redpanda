@@ -29,6 +29,7 @@
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
@@ -129,8 +130,12 @@ static ss::future<read_result> read_from_partition(
                   curr_timestamp() - result.first_timestamp()};
             }
         }
-
-        if (result.first_tx_batch_offset && result.record_count > 0) {
+        // Only return aborted transactions range if consumer is using
+        // read_committed isolation level and there are tx batches in the
+        // response
+        if (
+          config.isolation_level == model::isolation_level::read_committed
+          && result.first_tx_batch_offset && result.record_count > 0) {
             // Reader should live at least until this point to hold on to the
             // segment locks so that prefix truncation doesn't happen.
             aborted_transactions = co_await part.aborted_transactions(
