@@ -3,6 +3,9 @@ v_cc_library(
     bytes
   SRCS
     iobuf.cc
+    bytes.cc
+    iostream.cc
+    scattered_message.cc
   DEPS
     absl::hash
     Seastar::seastar
