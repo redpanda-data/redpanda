@@ -309,8 +309,21 @@ result<request_ptr> producer_state::try_emplace_request(
       current_term,
       reset,
       _requests);
-    return _requests.try_emplace(
+
+    auto result = _requests.try_emplace(
       bid.first_seq, bid.last_seq, current_term, reset);
+
+    if (unlikely(result.has_error())) {
+        vlog(
+          clusterlog.warn,
+          "[{}] error {} processing request {}, term: {}, reset: {}",
+          *this,
+          result.error(),
+          bid,
+          current_term,
+          reset);
+    }
+    return result;
 }
 
 bool producer_state::update(
