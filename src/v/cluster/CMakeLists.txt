@@ -84,6 +84,18 @@ rpcgen(
 )
 
 v_cc_library(
+  NAME cluster_topic_properties
+  SRCS
+    remote_topic_properties.cc
+    topic_configuration.cc
+    topic_properties.cc
+  DEPS
+    v::model
+    v::reflection
+    v::serde
+  )
+
+v_cc_library(
   NAME cluster
   HDRS
     topic_recovery_validator.h
@@ -108,9 +120,6 @@ v_cc_library(
     metadata_dissemination_handler.cc
     metadata_dissemination_service.cc
     types.cc
-    remote_topic_properties.cc
-    topic_configuration.cc
-    topic_properties.cc
     notification_latch.cc
     topic_table.cc
     topic_table_probe.cc
@@ -218,9 +227,6 @@ v_cc_library(
     shard_placement_table.cc
     shard_balancer.cc
     topic_recovery_validator.cc
-    ../cloud_storage/topic_manifest.cc
-  HDRS
-    ../cloud_storage/topic_manifest.h
   DEPS
     Seastar::seastar
     bootstrap_rpc
@@ -241,6 +247,7 @@ v_cc_library(
     v::security
     v::model
     v::cloud_storage
+    v::cluster_topic_properties
     v::features
     v::version
   )

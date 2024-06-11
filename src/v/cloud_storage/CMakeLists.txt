@@ -38,6 +38,7 @@ v_cc_library(
     segment_chunk.cc
     segment_chunk_api.cc
     segment_chunk_data_source.cc
+    topic_manifest.cc
     async_manifest_view.cc
     materialized_manifest_cache.cc
     anomalies_detector.cc
@@ -48,6 +49,7 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::http
+    v::cluster_topic_properties
     v::cloud_storage_clients
     v::json
     v::model
