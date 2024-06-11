@@ -70,11 +70,7 @@ SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_throttling) {
     using cluster::client_quota::entity_key;
     using cluster::client_quota::entity_value;
 
-    auto default_key = entity_key{
-      .parts = {entity_key::part{
-        .part = entity_key::part::client_id_default_match{},
-      }},
-    };
+    auto default_key = entity_key(entity_key::client_id_default_match{});
     auto default_values = entity_value{
       .consumer_byte_rate = 100,
     };
@@ -116,11 +112,7 @@ SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_stress_test) {
     using cluster::client_quota::entity_key;
     using cluster::client_quota::entity_value;
 
-    auto default_key = entity_key{
-      .parts = {entity_key::part{
-        .part = entity_key::part::client_id_default_match{},
-      }},
-    };
+    auto default_key = entity_key(entity_key::client_id_default_match{});
     auto default_values = entity_value{
       .consumer_byte_rate = 100,
     };
