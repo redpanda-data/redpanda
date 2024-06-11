@@ -50,6 +50,8 @@ enum class request_state : uint8_t {
     completed = 2
 };
 
+std::ostream& operator<<(std::ostream&, request_state);
+
 /// A request for a given sequence range, both inclusive.
 /// The sequence numbers are stamped by the client and are a part
 /// of batch header. A request can either be in progress or completed
@@ -71,10 +73,8 @@ public:
     void set_value(ValueType&& value) {
         vassert(
           _state <= request_state::in_progress && !_result.available(),
-          "unexpected request state during set: state: {}, result available: "
-          "{}",
-          static_cast<std::underlying_type_t<request_state>>(_state),
-          _result.available());
+          "unexpected request state during result set: {}",
+          *this);
         _result.set_value(std::forward<ValueType>(value));
         _state = request_state::completed;
     }
@@ -83,6 +83,8 @@ public:
     result_promise_t::future_type result() const;
 
     bool operator==(const request&) const;
+
+    friend std::ostream& operator<<(std::ostream&, const request&);
 
 private:
     request_state _state{request_state::initialized};
