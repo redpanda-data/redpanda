@@ -31,6 +31,29 @@ result_promise_t::future_type request::result() const {
     return _result.get_shared_future();
 }
 
+void request::set_value(request_result_t::value_type value) {
+    vassert(
+      _state <= request_state::in_progress && !_result.available(),
+      "unexpected request state during result set: {}",
+      *this);
+    _result.set_value(value);
+    _state = request_state::completed;
+}
+
+void request::set_error(request_result_t::error_type error) {
+    // This is idempotent as different fibers can mark the result error
+    // at different times in some edge cases.
+    if (_state != request_state::completed) {
+        _result.set_value(error);
+        _state = request_state::completed;
+        return;
+    }
+    vassert(
+      _result.available() && result().get0().has_error(),
+      "Invalid result state, expected to be available and errored out: {}",
+      *this);
+}
+
 bool request::operator==(const request& other) const {
     bool compare = _first_sequence == other._first_sequence
                    && _last_sequence == other._last_sequence
@@ -119,7 +142,7 @@ result<request_ptr> requests::try_emplace(
         // checks for sequence tracking.
         while (!_inflight_requests.empty()) {
             if (!_inflight_requests.front()->has_completed()) {
-                _inflight_requests.front()->set_value(errc::timeout);
+                _inflight_requests.front()->set_error(errc::timeout);
             }
             _inflight_requests.pop_front();
         }
@@ -194,7 +217,7 @@ void requests::gc_requests_from_older_terms(model::term_id current_term) {
         if (!_inflight_requests.front()->has_completed()) {
             // Here we know for sure the term change, these in flight
             // requests are going to fail anyway, mark them so.
-            _inflight_requests.front()->set_value(errc::timeout);
+            _inflight_requests.front()->set_error(errc::timeout);
         }
         _inflight_requests.pop_front();
     }
