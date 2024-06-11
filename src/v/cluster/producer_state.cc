@@ -325,7 +325,7 @@ result<request_ptr> producer_state::try_emplace_request(
 
     if (unlikely(result.has_error())) {
         vlog(
-          _logger.debug,
+          _logger.warn,
           "[{}] error {} processing request {}, term: {}, reset: {}",
           *this,
           result.error(),
