@@ -310,7 +310,7 @@ func writeCommandOutputToZipLimit(
 	err = cmd.Wait()
 	if err != nil {
 		if !strings.Contains(err.Error(), "broken pipe") {
-			return fmt.Errorf("couldn't save '%s': %w", filename, err)
+			return fmt.Errorf("couldn't save '%s': %w; %[1]v contains the full error message", filename, err)
 		}
 		zap.L().Sugar().Debugf(
 			"Got '%v' while running '%s'. This is probably due to the"+
