@@ -13,7 +13,6 @@
 #include "container/fragmented_vector.h"
 #include "container/tests/bench_utils.h"
 #include "random/generators.h"
-#include "utils/functional.h"
 
 #include <seastar/testing/perf_tests.hh>
 

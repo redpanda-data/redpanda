@@ -11,7 +11,6 @@
 #include "test_utils/gtest_utils.h"
 
 #include "base/vassert.h"
-#include "random/generators.h"
 
 #include <seastar/core/lowres_clock.hh>
 

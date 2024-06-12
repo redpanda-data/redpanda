@@ -17,6 +17,7 @@
 #include "test_utils/gtest_utils.h"
 
 #include <seastar/core/seastar.hh>
+#include <seastar/util/defer.hh>
 
 #include <gtest/gtest.h>
 

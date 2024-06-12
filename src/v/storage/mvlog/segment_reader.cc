@@ -26,6 +26,16 @@ segment_reader::segment_reader(
 }
 segment_reader::~segment_reader() { --segment_->num_readers_; }
 
+namespace {
+auto to_start(interval_set<size_t>::const_iterator it) {
+    return interval_set<size_t>::to_start(it);
+}
+
+auto to_end(interval_set<size_t>::const_iterator it) {
+    return interval_set<size_t>::to_end(it);
+}
+} // namespace
+
 skipping_data_source::read_list_t
 segment_reader::make_read_intervals(size_t start_pos, size_t length) const {
     auto gap_it = gaps_.begin();
@@ -37,22 +47,22 @@ segment_reader::make_read_intervals(size_t start_pos, size_t length) const {
     // intervals to read, and skipping any that are entirely below the start
     // position.
     while (gap_it != gaps_.end() && cur_iter_pos <= max_pos) {
-        const auto next_gap_max = gap_it->end - 1;
+        const auto next_gap_max = to_end(gap_it) - 1;
         if (cur_iter_pos > next_gap_max) {
             // We are ahead of the next gap. Drop it from the list to consider.
             ++gap_it;
             continue;
         }
-        if (cur_iter_pos >= gap_it->start) {
+        if (cur_iter_pos >= to_start(gap_it)) {
             // We are in the middle of a gap. Skip to just past the end.
             // NOTE: the gap end is exclusive.
-            cur_iter_pos = gap_it->end;
+            cur_iter_pos = to_end(gap_it);
             ++gap_it;
             continue;
         }
         // The next gap is ahead of us. Read up to the start of it and skip
         // over the gap.
-        const auto read_max_pos = std::min(max_pos, gap_it->start - 1);
+        const auto read_max_pos = std::min(max_pos, to_start(gap_it) - 1);
         const auto read_length = read_max_pos - cur_iter_pos + 1;
         read_intervals.emplace_back(cur_iter_pos, read_length);
         vlog(
@@ -62,7 +72,7 @@ segment_reader::make_read_intervals(size_t start_pos, size_t length) const {
           read_max_pos + 1,
           start_pos,
           max_pos + 1);
-        cur_iter_pos = gap_it->end;
+        cur_iter_pos = to_end(gap_it);
         ++gap_it;
     }
     // No more gaps, read the rest of the range.
