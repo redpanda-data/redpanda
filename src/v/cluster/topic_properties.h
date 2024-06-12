@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "cloud_storage/remote_label.h"
 #include "cluster/remote_topic_properties.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -27,7 +28,7 @@ namespace cluster {
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<8>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<9>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -151,6 +152,19 @@ struct topic_properties
     std::optional<std::chrono::milliseconds> flush_ms;
     std::optional<size_t> flush_bytes;
 
+    // Label to be used when generating paths of remote objects (manifests,
+    // segments, etc) of this topic.
+    //
+    // The topic's data is associated with exactly one label: as a topic is
+    // removed and recovered across different clusters, its label will be the
+    // same, even though the clusters' UUIDs hosting it will be different. This
+    // allows recovered topics and read replica topics to download with just
+    // one label in mind.
+    //
+    // std::nullopt indicates this topic was created before labels were
+    // supported, in which case objects will use a legacy naming scheme.
+    std::optional<cloud_storage::remote_label> remote_label;
+
     bool is_compacted() const;
     bool has_overrides() const;
     bool requires_remote_erase() const;
@@ -190,7 +204,8 @@ struct topic_properties
           mpx_virtual_cluster_id,
           write_caching,
           flush_ms,
-          flush_bytes);
+          flush_bytes,
+          remote_label);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
