@@ -239,6 +239,42 @@ private:
     canonical_schema_definition::references _refs;
 };
 
+class json_schema_definition {
+public:
+    struct impl;
+    using pimpl = ss::shared_ptr<const impl>;
+
+    explicit json_schema_definition(
+      pimpl p, canonical_schema_definition::references refs)
+      : _impl{std::move(p)}
+      , _refs(std::move(refs)) {}
+
+    canonical_schema_definition::raw_string raw() const;
+    canonical_schema_definition::references const& refs() const {
+        return _refs;
+    };
+
+    const impl& operator()() const { return *_impl; }
+
+    friend bool operator==(
+      const json_schema_definition& lhs, const json_schema_definition& rhs);
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const json_schema_definition& rhs);
+
+    constexpr schema_type type() const { return schema_type::json; }
+
+    explicit operator canonical_schema_definition() const {
+        return {raw(), type(), refs()};
+    }
+
+    ss::sstring name() const;
+
+private:
+    pimpl _impl;
+    canonical_schema_definition::references _refs;
+};
+
 ///\brief A schema that has been validated.
 class valid_schema {
     using impl
