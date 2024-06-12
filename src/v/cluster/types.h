@@ -14,6 +14,9 @@
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/remote_topic_properties.h"
+#include "cluster/topic_configuration.h"
+#include "cluster/topic_properties.h"
 #include "cluster/tx_hash_ranges.h"
 #include "cluster/version.h"
 #include "model/adl_serde.h"
@@ -1436,205 +1439,6 @@ struct partition_assignment
       = default;
 };
 
-struct remote_topic_properties
-  : serde::envelope<
-      remote_topic_properties,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    remote_topic_properties() = default;
-    remote_topic_properties(
-      model::initial_revision_id remote_revision,
-      int32_t remote_partition_count)
-      : remote_revision(remote_revision)
-      , remote_partition_count(remote_partition_count) {}
-
-    model::initial_revision_id remote_revision;
-    int32_t remote_partition_count;
-
-    auto serde_fields() {
-        return std::tie(remote_revision, remote_partition_count);
-    }
-
-    friend bool
-    operator==(const remote_topic_properties&, const remote_topic_properties&)
-      = default;
-
-    friend std::ostream&
-    operator<<(std::ostream&, const remote_topic_properties&);
-};
-
-/**
- * Structure holding topic properties overrides, empty values will be replaced
- * with defaults
- */
-struct topic_properties
-  : serde::
-      envelope<topic_properties, serde::version<8>, serde::compat_version<0>> {
-    topic_properties() noexcept = default;
-    topic_properties(
-      std::optional<model::compression> compression,
-      std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags,
-      std::optional<model::compaction_strategy> compaction_strategy,
-      std::optional<model::timestamp_type> timestamp_type,
-      std::optional<size_t> segment_size,
-      tristate<size_t> retention_bytes,
-      tristate<std::chrono::milliseconds> retention_duration,
-      std::optional<bool> recovery,
-      std::optional<model::shadow_indexing_mode> shadow_indexing,
-      std::optional<bool> read_replica,
-      std::optional<ss::sstring> read_replica_bucket,
-      std::optional<remote_topic_properties> remote_topic_properties,
-      std::optional<uint32_t> batch_max_bytes,
-      tristate<size_t> retention_local_target_bytes,
-      tristate<std::chrono::milliseconds> retention_local_target_ms,
-      bool remote_delete,
-      tristate<std::chrono::milliseconds> segment_ms,
-      std::optional<bool> record_key_schema_id_validation,
-      std::optional<bool> record_key_schema_id_validation_compat,
-      std::optional<pandaproxy::schema_registry::subject_name_strategy>
-        record_key_subject_name_strategy,
-      std::optional<pandaproxy::schema_registry::subject_name_strategy>
-        record_key_subject_name_strategy_compat,
-      std::optional<bool> record_value_schema_id_validation,
-      std::optional<bool> record_value_schema_id_validation_compat,
-      std::optional<pandaproxy::schema_registry::subject_name_strategy>
-        record_value_subject_name_strategy,
-      std::optional<pandaproxy::schema_registry::subject_name_strategy>
-        record_value_subject_name_strategy_compat,
-      tristate<size_t> initial_retention_local_target_bytes,
-      tristate<std::chrono::milliseconds> initial_retention_local_target_ms,
-      std::optional<model::vcluster_id> mpx_virtual_cluster_id,
-      std::optional<model::write_caching_mode> write_caching,
-      std::optional<std::chrono::milliseconds> flush_ms,
-      std::optional<size_t> flush_bytes)
-      : compression(compression)
-      , cleanup_policy_bitflags(cleanup_policy_bitflags)
-      , compaction_strategy(compaction_strategy)
-      , timestamp_type(timestamp_type)
-      , segment_size(segment_size)
-      , retention_bytes(retention_bytes)
-      , retention_duration(retention_duration)
-      , recovery(recovery)
-      , shadow_indexing(shadow_indexing)
-      , read_replica(read_replica)
-      , read_replica_bucket(std::move(read_replica_bucket))
-      , remote_topic_properties(remote_topic_properties)
-      , batch_max_bytes(batch_max_bytes)
-      , retention_local_target_bytes(retention_local_target_bytes)
-      , retention_local_target_ms(retention_local_target_ms)
-      , remote_delete(remote_delete)
-      , segment_ms(segment_ms)
-      , record_key_schema_id_validation(record_key_schema_id_validation)
-      , record_key_schema_id_validation_compat(
-          record_key_schema_id_validation_compat)
-      , record_key_subject_name_strategy(record_key_subject_name_strategy)
-      , record_key_subject_name_strategy_compat(
-          record_key_subject_name_strategy_compat)
-      , record_value_schema_id_validation(record_value_schema_id_validation)
-      , record_value_schema_id_validation_compat(
-          record_value_schema_id_validation_compat)
-      , record_value_subject_name_strategy(record_value_subject_name_strategy)
-      , record_value_subject_name_strategy_compat(
-          record_value_subject_name_strategy_compat)
-      , initial_retention_local_target_bytes(
-          initial_retention_local_target_bytes)
-      , initial_retention_local_target_ms(initial_retention_local_target_ms)
-      , mpx_virtual_cluster_id(mpx_virtual_cluster_id)
-      , write_caching(write_caching)
-      , flush_ms(flush_ms)
-      , flush_bytes(flush_bytes) {}
-
-    std::optional<model::compression> compression;
-    std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
-    std::optional<model::compaction_strategy> compaction_strategy;
-    std::optional<model::timestamp_type> timestamp_type;
-    std::optional<size_t> segment_size;
-    tristate<size_t> retention_bytes{std::nullopt};
-    tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
-    std::optional<bool> recovery;
-    std::optional<model::shadow_indexing_mode> shadow_indexing;
-    std::optional<bool> read_replica;
-    std::optional<ss::sstring> read_replica_bucket;
-    std::optional<remote_topic_properties> remote_topic_properties;
-    std::optional<uint32_t> batch_max_bytes;
-    tristate<size_t> retention_local_target_bytes{std::nullopt};
-    tristate<std::chrono::milliseconds> retention_local_target_ms{std::nullopt};
-
-    // Remote deletes are enabled by default in new tiered storage topics,
-    // disabled by default in legacy topics during upgrade.
-    // This is intentionally not an optional: all topics have a concrete value
-    // one way or another.  There is no "use the cluster default".
-    bool remote_delete{storage::ntp_config::default_remote_delete};
-
-    tristate<std::chrono::milliseconds> segment_ms{std::nullopt};
-
-    std::optional<bool> record_key_schema_id_validation;
-    std::optional<bool> record_key_schema_id_validation_compat;
-    std::optional<pandaproxy::schema_registry::subject_name_strategy>
-      record_key_subject_name_strategy;
-    std::optional<pandaproxy::schema_registry::subject_name_strategy>
-      record_key_subject_name_strategy_compat;
-    std::optional<bool> record_value_schema_id_validation;
-    std::optional<bool> record_value_schema_id_validation_compat;
-    std::optional<pandaproxy::schema_registry::subject_name_strategy>
-      record_value_subject_name_strategy;
-    std::optional<pandaproxy::schema_registry::subject_name_strategy>
-      record_value_subject_name_strategy_compat;
-
-    tristate<size_t> initial_retention_local_target_bytes{std::nullopt};
-    tristate<std::chrono::milliseconds> initial_retention_local_target_ms{
-      std::nullopt};
-    std::optional<model::vcluster_id> mpx_virtual_cluster_id;
-    std::optional<model::write_caching_mode> write_caching;
-    std::optional<std::chrono::milliseconds> flush_ms;
-    std::optional<size_t> flush_bytes;
-
-    bool is_compacted() const;
-    bool has_overrides() const;
-    bool requires_remote_erase() const;
-
-    storage::ntp_config::default_overrides get_ntp_cfg_overrides() const;
-
-    friend std::ostream& operator<<(std::ostream&, const topic_properties&);
-    auto serde_fields() {
-        return std::tie(
-          compression,
-          cleanup_policy_bitflags,
-          compaction_strategy,
-          timestamp_type,
-          segment_size,
-          retention_bytes,
-          retention_duration,
-          recovery,
-          shadow_indexing,
-          read_replica,
-          read_replica_bucket,
-          remote_topic_properties,
-          batch_max_bytes,
-          retention_local_target_bytes,
-          retention_local_target_ms,
-          remote_delete,
-          segment_ms,
-          record_key_schema_id_validation,
-          record_key_schema_id_validation_compat,
-          record_key_subject_name_strategy,
-          record_key_subject_name_strategy_compat,
-          record_value_schema_id_validation,
-          record_value_schema_id_validation_compat,
-          record_value_subject_name_strategy,
-          record_value_subject_name_strategy_compat,
-          initial_retention_local_target_bytes,
-          initial_retention_local_target_ms,
-          mpx_virtual_cluster_id,
-          write_caching,
-          flush_ms,
-          flush_bytes);
-    }
-
-    friend bool operator==(const topic_properties&, const topic_properties&)
-      = default;
-};
-
 enum incremental_update_operation : int8_t { none, set, remove };
 
 inline std::string_view
@@ -1890,78 +1694,6 @@ struct topic_properties_update
 };
 
 using topic_properties_update_vector = chunked_vector<topic_properties_update>;
-
-// Structure holding topic configuration, optionals will be replaced by broker
-// defaults
-struct topic_configuration
-  : serde::envelope<
-      topic_configuration,
-      serde::version<1>,
-      serde::compat_version<0>> {
-    topic_configuration(
-      model::ns ns,
-      model::topic topic,
-      int32_t partition_count,
-      int16_t replication_factor)
-      : tp_ns(std::move(ns), std::move(topic))
-      , partition_count(partition_count)
-      , replication_factor(replication_factor) {}
-
-    topic_configuration() = default;
-
-    storage::ntp_config make_ntp_config(
-      const ss::sstring&,
-      model::partition_id,
-      model::revision_id,
-      model::initial_revision_id) const;
-
-    bool is_internal() const {
-        return tp_ns.ns == model::kafka_internal_namespace
-               || tp_ns == model::kafka_consumer_offsets_nt;
-    }
-    bool is_read_replica() const {
-        return properties.read_replica && properties.read_replica.value();
-    }
-    bool is_recovery_enabled() const {
-        return properties.recovery && properties.recovery.value();
-    }
-
-    model::topic_namespace tp_ns;
-    // using signed integer because Kafka protocol defines it as signed int
-    int32_t partition_count;
-    // using signed integer because Kafka protocol defines it as signed int
-    int16_t replication_factor;
-
-    topic_properties properties;
-
-    auto serde_fields() {
-        return std::tie(tp_ns, partition_count, replication_factor, properties);
-    }
-
-    void serde_read(iobuf_parser& in, const serde::header& h) {
-        using serde::read_nested;
-
-        tp_ns = read_nested<model::topic_namespace>(in, h._bytes_left_limit);
-        partition_count = read_nested<int32_t>(in, h._bytes_left_limit);
-        replication_factor = read_nested<int16_t>(in, h._bytes_left_limit);
-        properties = read_nested<topic_properties>(in, h._bytes_left_limit);
-
-        if (h._version < 1) {
-            // Legacy tiered storage topics do not delete data on
-            // topic deletion.
-            properties.remote_delete
-              = storage::ntp_config::legacy_remote_delete;
-        }
-    }
-
-    friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
-
-    friend bool
-    operator==(const topic_configuration&, const topic_configuration&)
-      = default;
-};
-
-using topic_configuration_vector = chunked_vector<topic_configuration>;
 
 struct custom_partition_assignment {
     model::partition_id id;
@@ -4695,12 +4427,6 @@ struct is_error_code_enum<cluster::tx_errc> : true_type {};
 namespace reflection {
 
 template<>
-struct adl<cluster::topic_configuration> {
-    void to(iobuf&, cluster::topic_configuration&&);
-    cluster::topic_configuration from(iobuf_parser&);
-};
-
-template<>
 struct adl<cluster::topic_result> {
     void to(iobuf&, cluster::topic_result&&);
     cluster::topic_result from(iobuf_parser&);
@@ -4806,18 +4532,6 @@ template<>
 struct adl<cluster::partition_assignment> {
     void to(iobuf&, cluster::partition_assignment&&);
     cluster::partition_assignment from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::remote_topic_properties> {
-    void to(iobuf&, cluster::remote_topic_properties&&);
-    cluster::remote_topic_properties from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::topic_properties> {
-    void to(iobuf&, cluster::topic_properties&&);
-    cluster::topic_properties from(iobuf_parser&);
 };
 
 template<typename T>
