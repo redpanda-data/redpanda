@@ -518,6 +518,10 @@ public:
 
     inline void maybe_update_leader(vnode request_node);
 
+    bool has_configuration_override() const {
+        return _configuration_manager.has_configuration_override();
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
