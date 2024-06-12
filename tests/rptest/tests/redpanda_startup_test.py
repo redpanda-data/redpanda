@@ -8,7 +8,11 @@
 # by the Apache License, Version 2.0
 
 import os
+from time import sleep
 
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.utils.util import wait_until
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import in_fips_environment, MetricsEndpoint, MetricSamples, RedpandaServiceBase
 from rptest.tests.redpanda_test import RedpandaTest
@@ -96,3 +100,111 @@ class RedpandaFIPSStartupTest(RedpandaTest):
             metrics_name='redpanda_application_fips_mode',
             metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
             expected_mode=RedpandaServiceBase.FIPSMode.permissive)
+
+    @cluster(num_nodes=3)
+    def test_non_homogenous(self):
+        """
+        This test will validate that the non homogenous FIPS
+        metric responds appropriately
+
+        1. Find the lader
+        2. On a non-leader node, set to 'disabled'
+        3. Restart that node
+        4. Wait for count to go to 1
+        5. On same node, set back to permissive
+        6. Restart node
+        7. Wait for count to go back to 0
+        """
+        admin = Admin(self.redpanda)
+        leader = self.redpanda.controller()
+        non_leader_nodes = list(set(self.redpanda.nodes).difference({leader}))
+        assert len(non_leader_nodes) > 0, "Could not find any non-leader nodes"
+        target_node = non_leader_nodes[0]
+        self.logger.debug(f'Leader: {leader}')
+        self.logger.debug(f'Non-leader: {target_node}')
+        NON_FIPS_CONFIG = dict(fips_mode="disabled",
+                               openssl_config_file=None,
+                               openssl_module_directory=None)
+        FIPS_CONFIG = dict(
+            fips_mode="permissive",
+            openssl_config_file=self.redpanda.get_openssl_config_file_path(),
+            openssl_module_directory=self.redpanda.
+            get_openssl_modules_directory())
+
+        def get_metrics_value(metrics_name: str,
+                              metrics_endpoint: MetricsEndpoint,
+                              leader_node: ClusterNode) -> int:
+            metrics = self.redpanda.metrics_sample(
+                sample_pattern=metrics_name, metrics_endpoint=metrics_endpoint)
+            assert isinstance(
+                metrics,
+                MetricSamples), f'Failed to get metrics for {metrics_name}'
+
+            samples = [
+                sample for sample in metrics.samples
+                if sample.node == leader_node
+            ]
+            assert len(
+                samples) == 1, f'Invalid number of samples: {len(samples)}'
+            return int(samples[0].value)
+
+        def target_node_reports_fips_mode(admin: Admin, node: ClusterNode,
+                                          fips_mode: str) -> bool:
+            node_id = self.redpanda.node_id(node)
+            brokers = admin.get_brokers(node)
+            return all([
+                b['in_fips_mode'] == fips_mode for b in brokers
+                if b['node_id'] == node_id
+            ])
+
+        wait_until(
+            lambda: get_metrics_value(
+                metrics_name='redpanda_cluster_non_homogenous_fips_mode',
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                leader_node=leader) == 0,
+            timeout_sec=5,
+            backoff_sec=0.2,
+            err_msg="Metrics endpoint never returned 0 for initial check")
+
+        self.logger.debug(f'Restarting node {target_node} in non-FIPS mode')
+
+        self.redpanda.restart_nodes([target_node],
+                                    override_cfg_params=NON_FIPS_CONFIG)
+
+        wait_until(lambda: target_node_reports_fips_mode(
+            admin, target_node, "disabled"),
+                   timeout_sec=5,
+                   backoff_sec=0.2,
+                   err_msg="Node never reported disabled")
+
+        wait_until(
+            lambda: get_metrics_value(
+                metrics_name='redpanda_cluster_non_homogenous_fips_mode',
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                leader_node=leader) == 1,
+            timeout_sec=5,
+            backoff_sec=0.2,
+            err_msg=
+            f"Metrics endpoint never returned 1 after bringing up {target_node} in non-FIPS mode"
+        )
+
+        self.logger.debug(f'Restarting node {target_node} in FIPS mode')
+
+        self.redpanda.restart_nodes([target_node],
+                                    override_cfg_params=FIPS_CONFIG)
+        wait_until(lambda: target_node_reports_fips_mode(
+            admin, target_node, "permissive"),
+                   timeout_sec=5,
+                   backoff_sec=0.2,
+                   err_msg="Target node never reported permissive")
+
+        wait_until(
+            lambda: get_metrics_value(
+                metrics_name='redpanda_cluster_non_homogenous_fips_mode',
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                leader_node=leader) == 0,
+            timeout_sec=20,
+            backoff_sec=0.2,
+            err_msg=
+            f"Metrics endpoint never returned 0 after restarting {target_node} in FIPS mode"
+        )
