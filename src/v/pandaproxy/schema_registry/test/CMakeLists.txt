@@ -22,6 +22,7 @@ rp_test(
     compatibility_3rdparty.cc
     compatibility_avro.cc
     compatibility_protobuf.cc
+    test_json_schema.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v_pandaproxy_schema_registry
   ARGS "-- -c 1"
