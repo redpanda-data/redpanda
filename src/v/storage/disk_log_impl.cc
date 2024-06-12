@@ -2161,7 +2161,7 @@ disk_log_impl::offset_range_size(
     size_t current_size = 0;
     // Last offset included to the result, default value means that we didn't
     // find anything
-    model::offset last_included_offset;
+    model::offset last_included_offset = {};
     size_t num_segments = 0;
     auto it = _segs.lower_bound(first);
     for (; it < _segs.end(); it++) {
