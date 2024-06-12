@@ -43,6 +43,13 @@ struct node_disk_space {
     double peak_used_ratio() const { return double(used + assigned) / total; }
 
     double final_used_ratio() const {
+        // it sometimes may happen  that the partition replica size on one node
+        // is out of date with the total used size reported by a node space
+        // manager. This may lead to an overflow of final used ratio.
+        if (released >= used + assigned) {
+            return 0.0;
+        }
+
         return double(used + assigned - released) / total;
     }
 
