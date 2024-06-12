@@ -101,6 +101,7 @@
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/api.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/group_manager.h"
 #include "raft/service.h"
@@ -654,6 +655,15 @@ void application::setup_public_metrics() {
                  [] { return 1; },
                  sm::description("Redpanda build information"),
                  build_labels)
+                 .aggregate({sm::shard_label}),
+               sm::make_gauge(
+                 "fips_mode",
+                 [] {
+                     return static_cast<unsigned int>(
+                       config::node().fips_mode());
+                 },
+                 sm::description("Identifies whether or not Redpanda is "
+                                 "running in FIPS mode."))
                  .aggregate({sm::shard_label})});
         })
       .get();
@@ -693,22 +703,26 @@ void application::setup_internal_metrics() {
 
     _metrics.add_group(
       "application",
-      {
-        sm::make_gauge(
-          "uptime",
-          [] {
-              return std::chrono::duration_cast<std::chrono::milliseconds>(
-                       ss::engine().uptime())
-                .count();
-          },
-          sm::description("Redpanda uptime in milliseconds")),
+      {sm::make_gauge(
+         "uptime",
+         [] {
+             return std::chrono::duration_cast<std::chrono::milliseconds>(
+                      ss::engine().uptime())
+               .count();
+         },
+         sm::description("Redpanda uptime in milliseconds")),
 
-        sm::make_gauge(
-          "build",
-          [] { return 1; },
-          sm::description("Redpanda build information"),
-          build_labels),
-      });
+       sm::make_gauge(
+         "build",
+         [] { return 1; },
+         sm::description("Redpanda build information"),
+         build_labels),
+
+       sm::make_gauge(
+         "fips_mode",
+         [] { return static_cast<unsigned int>(config::node().fips_mode()); },
+         sm::description(
+           "Identifies whether or not Redpanda is running in FIPS mode."))});
 }
 
 void application::validate_arguments(const po::variables_map& cfg) {
