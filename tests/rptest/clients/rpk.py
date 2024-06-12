@@ -1883,7 +1883,7 @@ class RpkTool:
                              name=[],
                              dry=False,
                              output_format="json"):
-        cmd = ["describe"]
+        cmd = ["alter"]
 
         if dry:
             cmd += ["--dry"]
