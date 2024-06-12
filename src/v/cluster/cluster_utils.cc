@@ -83,7 +83,7 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
         .available_memory_gb = total_mem_gb,
         .available_disk_gb = disk_gb,
         .available_memory_bytes = total_mem,
-        .in_fips_mode = config::fips_mode_enabled(node_cfg.fips_mode())});
+        .in_fips_mode = model::from_config(node_cfg.fips_mode())});
 }
 
 bool are_replica_sets_equal(

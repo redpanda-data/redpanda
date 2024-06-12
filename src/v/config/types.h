@@ -57,13 +57,13 @@ inline std::ostream& operator<<(std::ostream& os, const s3_url_style& us) {
     }
 }
 
-enum class fips_mode_flag {
+enum class fips_mode_flag : uint8_t {
     // FIPS mode disabled
     disabled = 0,
-    // FIPS mode enabled with strict environment checks
-    enabled,
     // FIPS mode enabled with permissive environment checks
-    permissive
+    permissive = 1,
+    // FIPS mode enabled with strict environment checks
+    enabled = 2,
 };
 
 constexpr std::string_view to_string_view(fips_mode_flag f) {
