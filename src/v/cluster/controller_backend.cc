@@ -54,6 +54,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <optional>
 #include <variant>
 
 /// on every core, sharded
@@ -323,6 +324,9 @@ controller_backend::controller_backend(
   config::binding<std::optional<size_t>> initial_retention_local_target_bytes,
   config::binding<std::optional<std::chrono::milliseconds>>
     initial_retention_local_target_ms,
+  config::binding<std::optional<size_t>> retention_local_target_bytes_default,
+  config::binding<std::chrono::milliseconds> retention_local_target_ms_default,
+  config::binding<bool> retention_local_strict,
   ss::sharded<ss::abort_source>& as)
   : _topics(tp_state)
   , _shard_placement(shard_placement.local())
@@ -341,6 +345,11 @@ controller_backend::controller_backend(
       std::move(initial_retention_local_target_bytes))
   , _initial_retention_local_target_ms(
       std::move(initial_retention_local_target_ms))
+  , _retention_local_target_bytes_default(
+      std::move(retention_local_target_bytes_default))
+  , _retention_local_target_ms_default(
+      std::move(retention_local_target_ms_default))
+  , _retention_local_strict(std::move(retention_local_strict))
   , _as(as) {
     _housekeeping_interval.watch([this] {
         _housekeeping_jitter = simple_time_jitter<ss::lowres_clock>(
@@ -568,7 +577,7 @@ std::optional<T> get_topic_property(
 
 std::optional<model::offset>
 controller_backend::calculate_learner_initial_offset(
-  const ss::lw_shared_ptr<partition>& p) const {
+  reconfiguration_policy policy, const ss::lw_shared_ptr<partition>& p) const {
     /**
      * Initial learner start offset only makes sense for partitions with cloud
      * storage data
@@ -582,24 +591,68 @@ controller_backend::calculate_learner_initial_offset(
     /**
      * Calculate retention targets based on cluster and topic configuration
      */
-    const auto initial_retention_bytes = get_topic_property(
+    auto initial_retention_bytes = get_topic_property(
       _initial_retention_local_target_bytes(),
       log->config().has_overrides()
         ? log->config().get_overrides().initial_retention_local_target_bytes
         : tristate<size_t>{std::nullopt});
 
-    const auto initial_retention_ms = get_topic_property(
+    auto initial_retention_ms = get_topic_property(
       _initial_retention_local_target_ms(),
       log->config().has_overrides()
         ? log->config().get_overrides().initial_retention_local_target_ms
         : tristate<std::chrono::milliseconds>{std::nullopt});
+
     /**
-     * Initial target retention disabled
+     * There are two possibilities for learner start offset calculation:
+     *
+     * >>> fast partition movement <<<
+     * - the reconfiguration policy is set to use target_initial_retention and
+     *   initial retention is configured, in this case the initial learner
+     *   offset will be calculated based on the initial target retention
+     *   settings
+     *
+     * >>> full local retention move <<<
+     * - with non strict local retention the storage manager may allow
+     *   partitions to grow beyond their configured local retention target. In
+     *   this case the controller backend will use the local retention target
+     *   properties and will schedule move delivering only the data that would
+     *   be retained if local retention was working in strict mode regardless of
+     *   initial retention settings and configured move policy.
      */
-    if (
-      !initial_retention_bytes.has_value()
-      && !initial_retention_ms.has_value()) {
-        return std::nullopt;
+    const bool no_initial_retention_settings = !(
+      initial_retention_bytes.has_value()
+      || initial_retention_bytes.has_value());
+
+    bool full_move = policy == reconfiguration_policy::full_local_retention
+                     || no_initial_retention_settings;
+    // full local retention move
+    if (full_move) {
+        // strict local retention, no need to override learner start
+        if (_retention_local_strict()) {
+            return std::nullopt;
+        }
+
+        // use default target local retention settings
+        initial_retention_bytes = get_topic_property(
+          _retention_local_target_bytes_default(),
+          log->config().has_overrides()
+            ? log->config().get_overrides().retention_local_target_bytes
+            : tristate<size_t>{std::nullopt});
+
+        initial_retention_ms = get_topic_property(
+          {_retention_local_target_ms_default()},
+          log->config().has_overrides()
+            ? log->config().get_overrides().retention_local_target_ms
+            : tristate<std::chrono::milliseconds>{std::nullopt});
+
+        vlog(
+          clusterlog.trace,
+          "[{}] full partition move requested. Using default target local "
+          "retention settings for the topic - target bytes: {}, target ms: {}",
+          p->ntp(),
+          initial_retention_bytes,
+          initial_retention_ms->count());
     }
 
     model::timestamp retention_timestamp_threshold(0);
@@ -623,7 +676,7 @@ controller_backend::calculate_learner_initial_offset(
      * uploaded to Cloud Storage.
      */
     vlog(
-      clusterlog.trace,
+      clusterlog.info,
       "[{}] calculated retention offset: {}, last uploaded to cloud: {}, "
       "manifest clean offset: {}, max_collectible_offset: {}",
       p->ntp(),
@@ -1616,10 +1669,8 @@ controller_backend::update_partition_replica_set(
            * We want to keep full local retention on the learner, do not return
            * initial offset override
            */
-          std::optional<model::offset> learner_initial_offset;
-          if (policy == reconfiguration_policy::target_initial_retention) {
-              learner_initial_offset = calculate_learner_initial_offset(p);
-          }
+          auto learner_initial_offset = calculate_learner_initial_offset(
+            policy, p);
 
           return do_update_replica_set(
             std::move(p),
