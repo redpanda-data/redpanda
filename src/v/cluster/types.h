@@ -15,6 +15,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/remote_topic_properties.h"
+#include "cluster/topic_configuration.h"
 #include "cluster/topic_properties.h"
 #include "cluster/tx_hash_ranges.h"
 #include "cluster/version.h"
@@ -1693,78 +1694,6 @@ struct topic_properties_update
 };
 
 using topic_properties_update_vector = chunked_vector<topic_properties_update>;
-
-// Structure holding topic configuration, optionals will be replaced by broker
-// defaults
-struct topic_configuration
-  : serde::envelope<
-      topic_configuration,
-      serde::version<1>,
-      serde::compat_version<0>> {
-    topic_configuration(
-      model::ns ns,
-      model::topic topic,
-      int32_t partition_count,
-      int16_t replication_factor)
-      : tp_ns(std::move(ns), std::move(topic))
-      , partition_count(partition_count)
-      , replication_factor(replication_factor) {}
-
-    topic_configuration() = default;
-
-    storage::ntp_config make_ntp_config(
-      const ss::sstring&,
-      model::partition_id,
-      model::revision_id,
-      model::initial_revision_id) const;
-
-    bool is_internal() const {
-        return tp_ns.ns == model::kafka_internal_namespace
-               || tp_ns == model::kafka_consumer_offsets_nt;
-    }
-    bool is_read_replica() const {
-        return properties.read_replica && properties.read_replica.value();
-    }
-    bool is_recovery_enabled() const {
-        return properties.recovery && properties.recovery.value();
-    }
-
-    model::topic_namespace tp_ns;
-    // using signed integer because Kafka protocol defines it as signed int
-    int32_t partition_count;
-    // using signed integer because Kafka protocol defines it as signed int
-    int16_t replication_factor;
-
-    topic_properties properties;
-
-    auto serde_fields() {
-        return std::tie(tp_ns, partition_count, replication_factor, properties);
-    }
-
-    void serde_read(iobuf_parser& in, const serde::header& h) {
-        using serde::read_nested;
-
-        tp_ns = read_nested<model::topic_namespace>(in, h._bytes_left_limit);
-        partition_count = read_nested<int32_t>(in, h._bytes_left_limit);
-        replication_factor = read_nested<int16_t>(in, h._bytes_left_limit);
-        properties = read_nested<topic_properties>(in, h._bytes_left_limit);
-
-        if (h._version < 1) {
-            // Legacy tiered storage topics do not delete data on
-            // topic deletion.
-            properties.remote_delete
-              = storage::ntp_config::legacy_remote_delete;
-        }
-    }
-
-    friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
-
-    friend bool
-    operator==(const topic_configuration&, const topic_configuration&)
-      = default;
-};
-
-using topic_configuration_vector = chunked_vector<topic_configuration>;
 
 struct custom_partition_assignment {
     model::partition_id id;
@@ -4496,12 +4425,6 @@ struct is_error_code_enum<cluster::tx_errc> : true_type {};
 } // namespace std
 
 namespace reflection {
-
-template<>
-struct adl<cluster::topic_configuration> {
-    void to(iobuf&, cluster::topic_configuration&&);
-    cluster::topic_configuration from(iobuf_parser&);
-};
 
 template<>
 struct adl<cluster::topic_result> {
