@@ -126,8 +126,27 @@ BOOST_AUTO_TEST_CASE(quota_store_snapshot_delta) {
     BOOST_CHECK(!st.get_quota(key2).has_value());
 
     auto delta = alter_delta_cmd_data{
-      .upsert = {{.key = key2, .value = val2}},
-      .remove = {{.key = key1}},
+        .ops = {
+        alter_delta_cmd_data::op{
+            .key = key2,
+            .diff = {
+              .entries = {
+                entity_value_diff::entry(
+                  entity_value_diff::key::producer_byte_rate, 25600),
+                entity_value_diff::entry(
+                  entity_value_diff::key::consumer_byte_rate, 20480),
+                },
+              },
+            },
+        alter_delta_cmd_data::op{
+            .key = key1,
+            .diff = {
+              .entries = {
+                entity_value_diff::entry(entity_value_diff::remove, entity_value_diff::key::producer_byte_rate, 0),
+              },
+            },
+          },
+        },
     };
     st.apply_delta(delta);
 

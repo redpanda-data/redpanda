@@ -13,10 +13,12 @@
 #include "seastar/core/sstring.hh"
 #include "serde/envelope.h"
 #include "serde/rw/variant.h"
+#include "strings/string_switch.h"
 
 #include <absl/container/flat_hash_set.h>
 
 #include <concepts>
+#include <cstdint>
 #include <iosfwd>
 #include <vector>
 
@@ -164,32 +166,118 @@ struct entity_value
     std::optional<uint64_t> controller_mutation_rate;
 };
 
+/// entity_value_diff describes the quotas diff for an entity_key
+struct entity_value_diff
+  : serde::
+      envelope<entity_value_diff, serde::version<0>, serde::compat_version<0>> {
+    enum key : int8_t {
+        producer_byte_rate = 0,
+        consumer_byte_rate,
+        controller_mutation_rate,
+    };
+
+    enum operation : int8_t {
+        upsert = 0,
+        remove,
+    };
+
+    struct entry
+      : serde::envelope<entry, serde::version<0>, serde::compat_version<0>> {
+        constexpr entry() noexcept = default;
+        constexpr entry(operation op, key type, uint64_t value) noexcept
+          : op(op)
+          , type(type)
+          , value(value) {}
+        constexpr entry(key type, uint64_t value) noexcept
+          : entry(operation::upsert, type, value) {}
+
+        // Custom equality to match the hash function
+        friend bool operator==(const entry&, const entry&);
+        friend std::ostream& operator<<(std::ostream&, const entry&);
+
+        constexpr auto serde_fields() { return std::tie(op, type, value); }
+
+        template<typename H>
+        constexpr friend H AbslHashValue(H h, const entry& e) {
+            switch (e.op) {
+            case entity_value_diff::operation::upsert:
+                return H::combine(std::move(h), e.op, e.type, e.value);
+            case entity_value_diff::operation::remove:
+                return H::combine(std::move(h), e.op, e.type);
+            }
+        }
+
+        operation op{};
+        key type{};
+        uint64_t value{};
+    };
+
+    friend bool operator==(const entity_value_diff&, const entity_value_diff&)
+      = default;
+    friend std::ostream& operator<<(std::ostream&, const entity_value_diff&);
+
+    auto serde_fields() { return std::tie(entries); }
+
+    absl::flat_hash_set<entry> entries;
+};
+
 struct alter_delta_cmd_data
   : serde::envelope<
       alter_delta_cmd_data,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    struct upsert_op
-      : serde::
-          envelope<upsert_op, serde::version<0>, serde::compat_version<0>> {
+      serde::version<1>,
+      serde::compat_version<1>> {
+    struct op
+      : serde::envelope<op, serde::version<0>, serde::compat_version<0>> {
         client_quota::entity_key key;
-        client_quota::entity_value value;
-        auto serde_fields() { return std::tie(key, value); }
+        client_quota::entity_value_diff diff;
+        auto serde_fields() { return std::tie(key, diff); }
     };
 
-    struct remove_op
-      : serde::
-          envelope<remove_op, serde::version<0>, serde::compat_version<0>> {
-        client_quota::entity_key key;
-        auto serde_fields() { return std::tie(key); }
-    };
-
-    std::vector<upsert_op> upsert;
-    std::vector<remove_op> remove;
+    std::vector<op> ops;
 
     friend bool
     operator==(const alter_delta_cmd_data&, const alter_delta_cmd_data&)
       = default;
 };
+
+constexpr std::string_view
+to_string_view(cluster::client_quota::entity_value_diff::key e) {
+    /// Note: the string values of these enums need to match the values used in
+    /// the kafka client quota handlers
+    switch (e) {
+    case cluster::client_quota::entity_value_diff::key::producer_byte_rate:
+        return "producer_byte_rate";
+    case cluster::client_quota::entity_value_diff::key::consumer_byte_rate:
+        return "consumer_byte_rate";
+    case cluster::client_quota::entity_value_diff::key::
+      controller_mutation_rate:
+        return "controller_mutation_rate";
+    }
+}
+
+template<typename E>
+std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
+  from_string_view(std::string_view);
+
+template<>
+constexpr std::optional<cluster::client_quota::entity_value_diff::key>
+from_string_view<cluster::client_quota::entity_value_diff::key>(
+  std::string_view v) {
+    return string_switch<
+             std::optional<cluster::client_quota::entity_value_diff::key>>(v)
+      .match(
+        to_string_view(
+          cluster::client_quota::entity_value_diff::key::producer_byte_rate),
+        cluster::client_quota::entity_value_diff::key::producer_byte_rate)
+      .match(
+        to_string_view(
+          cluster::client_quota::entity_value_diff::key::consumer_byte_rate),
+        cluster::client_quota::entity_value_diff::key::consumer_byte_rate)
+      .match(
+        to_string_view(cluster::client_quota::entity_value_diff::key::
+                         controller_mutation_rate),
+        cluster::client_quota::entity_value_diff::key::controller_mutation_rate)
+      .default_match(std::nullopt);
+}
 
 } // namespace cluster::client_quota
