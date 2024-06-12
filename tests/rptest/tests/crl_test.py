@@ -20,7 +20,7 @@ from rptest.services.cluster import cluster
 
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RedpandaService
-from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.redpanda import (SecurityConfig, TLSProvider,
                                       SchemaRegistryConfig, PandaproxyConfig)
 from rptest.services import tls
@@ -185,14 +185,19 @@ class CertificateRevocationTest(RedpandaTest):
         self.tls.revoke_cert(self.user_cert)
         self.redpanda.write_crl_file(node, self.tls.ca)
 
-        with expect_exception(requests.exceptions.ConnectionError,
-                              lambda e: "Connection aborted" in str(e)):
+        with expect_exception((requests.exceptions.SSLError,
+                               requests.exceptions.ConnectionError),
+                              lambda e: "certificate revoked" in str(
+                                  e) or "Connection aborted" in str(e)):
             get_topics(node)
 
         with get_topics(self.redpanda.nodes[1]) as res:
             assert res.status_code == 200, f"Bad status: {res.status_code}"
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3,
+             log_allow_list=[
+                 "certificate revoked", "The certificate is NOT trusted"
+             ])
     def test_rpc(self):
         node = self.redpanda.nodes[0]
 
@@ -242,9 +247,12 @@ class CertificateRevocationTest(RedpandaTest):
         assert node.account.hostname in broker_cert.crt, f"Cert order mismatch: {broker_cert.crt}"
 
         self.tls.revoke_cert(broker_cert)
-        self.redpanda.write_crl_file(node, self.tls.ca)
 
-        self.redpanda.restart_nodes([node])
+        self.redpanda.write_crl_file(self.redpanda.nodes[1], self.tls.ca)
+        self.redpanda.write_crl_file(self.redpanda.nodes[2], self.tls.ca)
+
+        self.redpanda.restart_nodes(
+            [node], override_cfg_params={"rpc_server_tls": RPC_TLS_CONFIG})
         other_node = self.redpanda.nodes[1]
 
         self.logger.debug(

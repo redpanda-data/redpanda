@@ -42,7 +42,7 @@ organizationName = Redpanda
 commonName       = Redpanda Test CA
 
 [ extensions ]
-keyUsage         = critical,digitalSignature,nonRepudiation,keyEncipherment,keyCertSign
+keyUsage         = critical,digitalSignature,nonRepudiation,keyEncipherment,keyCertSign,cRLSign
 basicConstraints = critical,CA:true,pathlen:1
 
 # Common policy for nodes and users.
@@ -52,12 +52,12 @@ commonName       = optional
 
 # Used to sign node certificates.
 [ signing_node_req ]
-keyUsage         = critical,digitalSignature,keyEncipherment
+keyUsage         = critical,digitalSignature,keyEncipherment,cRLSign
 extendedKeyUsage = serverAuth,clientAuth
 
 # Used to sign client certificates.
 [ signing_client_req ]
-keyUsage         = critical,digitalSignature,keyEncipherment
+keyUsage         = critical,digitalSignature,keyEncipherment,cRLSign
 extendedKeyUsage = clientAuth
 """
 

@@ -11,6 +11,8 @@
 
 #include "rpc/rpc_utils.h"
 
+#include "base/vlog.h"
+
 namespace rpc {
 
 void log_certificate_reload_event(
