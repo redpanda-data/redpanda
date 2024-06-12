@@ -1,23 +1,27 @@
 area/k8s:
-- src/go/k8s/**/*
+- changed-files:
+  - any-glob-to-any-file: ['src/go/k8s/**/*']
 
 k8s/tests:
-- src/go/k8s/**/*
+- changed-files:
+  - any-glob-to-any-file: ['src/go/k8s/**/*']
 
 area/build:
-- cmake/**/*
-- .github/**/*
+- changed-files:
+  - any-glob-to-any-file: ['cmake/**/*', '.github/**/*']
 
 area/docs:
-- docs/**/*
+- changed-files:
+  - any-glob-to-any-file: ['docs/**/*']
 
 area/rpk:
-- src/go/rpk/**/*
+- changed-files:
+  - any-glob-to-any-file: ['src/go/rpk/**/*']
 
 area/redpanda:
-- src/v/**/*
+- changed-files:
+  - any-glob-to-any-file: ['src/v/**/*']
 
 area/wasm:
-- src/transform-sdk/**/*
-- src/v/transform/**/*
-- src/v/wasm/**/*
+- changed-files:
+  - any-glob-to-any-file: ['src/transform-sdk/**/*', 'src/v/transform/**/*', 'src/v/wasm/**/*']
