@@ -30,4 +30,15 @@ using GenericSchemaValidator = rapidjson::
 
 using SchemaValidator = GenericSchemaValidator<SchemaDocument>;
 
+template<
+  typename InputStream,
+  unsigned parseFlags = rapidjson::kParseDefaultFlags,
+  typename SourceEncoding = UTF8<>>
+using SchemaValidatingReader = rapidjson::SchemaValidatingReader<
+  parseFlags,
+  InputStream,
+  SourceEncoding,
+  SchemaDocument,
+  json::throwing_allocator>;
+
 } // namespace json
