@@ -110,7 +110,8 @@ constexpr std::string_view json_draft_4_metaschema = R"json(
             "type": "string"
         },
         "$schema": {
-            "type": "string"
+            "type": "string",
+            "enum": ["http://json-schema.org/draft-04/schema#"]
         },
         "title": {
             "type": "string"

@@ -66,6 +66,12 @@ static const auto error_test_cases = std::to_array({
       pps::error_code::schema_invalid,
       "Invalid json schema: '#/type', invalid metaschema: '#/properties/type', "
       "invalid keyword: 'anyOf'"}},
+  error_test_case{
+    R"({"$schema": "unsupported_dialect"})",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "Invalid json schema: '#/%24schema', invalid metaschema: "
+      "'#/properties/%24schema', invalid keyword: 'enum'"}},
 });
 SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {
@@ -102,6 +108,8 @@ static constexpr auto valid_test_cases = std::to_array<std::string_view>({
   // atoms
   R"({})",
   R"({"the json schema is an open model": "it means this object is is equivalent to a empty one"})",
+  // schemas
+  R"({"$schema": "http://json-schema.org/draft-04/schema#"})",
 });
 SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
     for (const auto& data : valid_test_cases) {
