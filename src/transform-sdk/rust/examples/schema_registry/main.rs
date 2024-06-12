@@ -31,7 +31,7 @@ fn main() {
     let mut client = SchemaRegistryClient::new();
     let s: apache_avro::Schema = Example::get_schema();
     match client.create_schema(
-        "demo-topic-value",
+        "avro-value",
         Schema::new_avro(s.canonical_form(), Vec::new()),
     ) {
         Ok(_) => {}
