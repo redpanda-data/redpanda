@@ -58,4 +58,35 @@ std::ostream& operator<<(std::ostream& os, const entity_value& value) {
     return os;
 }
 
+std::ostream&
+operator<<(std::ostream& os, const entity_value_diff::entry& entry) {
+    switch (entry.op) {
+    case entity_value_diff::operation::upsert:
+        fmt::print(
+          os, "upsert: {}={}", to_string_view(entry.type), entry.value);
+        return os;
+    case entity_value_diff::operation::remove:
+        fmt::print(os, "remove: {}", to_string_view(entry.type));
+        return os;
+    }
+}
+
+std::ostream& operator<<(std::ostream& os, const entity_value_diff& value) {
+    fmt::print(os, "{}", value.entries);
+    return os;
+}
+
+bool operator==(
+  const entity_value_diff::entry& lhs, const entity_value_diff::entry& rhs) {
+    if (lhs.op != rhs.op) {
+        return false;
+    }
+    switch (lhs.op) {
+    case entity_value_diff::operation::upsert:
+        return lhs.type == rhs.type && lhs.value == rhs.value;
+    case entity_value_diff::operation::remove:
+        return lhs.type == rhs.type;
+    }
+}
+
 } // namespace cluster::client_quota
