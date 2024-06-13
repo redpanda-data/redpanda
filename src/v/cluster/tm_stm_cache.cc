@@ -54,7 +54,7 @@ std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
 }
 
 std::optional<tm_transaction>
-tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
+tm_stm_cache::find(model::term_id term, const kafka::transactional_id& tx_id) {
     vlog(txlog.trace, "[tx_id={}] looking for tx with term: {}", tx_id, term);
     if (_mem_term && _mem_term.value() == term) {
         // when a node fetches a tx withing a term it means that it was
@@ -118,7 +118,7 @@ tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
 }
 
 std::optional<tm_transaction>
-tm_stm_cache::find_mem(kafka::transactional_id tx_id) {
+tm_stm_cache::find_mem(const kafka::transactional_id& tx_id) {
     if (_mem_term == std::nullopt) {
         return std::nullopt;
     }
@@ -136,7 +136,7 @@ tm_stm_cache::find_mem(kafka::transactional_id tx_id) {
 }
 
 std::optional<tm_transaction>
-tm_stm_cache::find_log(kafka::transactional_id tx_id) {
+tm_stm_cache::find_log(const kafka::transactional_id& tx_id) {
     auto tx_it = _log_txes.find(tx_id);
     if (tx_it == _log_txes.end()) {
         return std::nullopt;
@@ -170,7 +170,7 @@ void tm_stm_cache::set_log(tm_transaction tx) {
     }
 }
 
-void tm_stm_cache::erase_log(kafka::transactional_id tx_id) {
+void tm_stm_cache::erase_log(const kafka::transactional_id& tx_id) {
     auto tx_it = _log_txes.find(tx_id);
     if (tx_it == _log_txes.end()) {
         return;
@@ -228,7 +228,7 @@ void tm_stm_cache::clear_log() {
     _log_txes.clear();
 }
 
-void tm_stm_cache::erase_mem(kafka::transactional_id tx_id) {
+void tm_stm_cache::erase_mem(const kafka::transactional_id& tx_id) {
     if (!_mem_term) {
         return;
     }

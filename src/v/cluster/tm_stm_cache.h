@@ -184,23 +184,26 @@ public:
 
     void clear_log();
 
-    std::optional<tm_transaction> find(model::term_id, kafka::transactional_id);
+    std::optional<tm_transaction>
+    find(model::term_id, const kafka::transactional_id&);
 
-    std::optional<tm_transaction> find_mem(kafka::transactional_id tx_id);
+    std::optional<tm_transaction>
+    find_mem(const kafka::transactional_id& tx_id);
 
-    std::optional<tm_transaction> find_log(kafka::transactional_id tx_id);
+    std::optional<tm_transaction>
+    find_log(const kafka::transactional_id& tx_id);
 
     void set_log(tm_transaction);
     // It is important that we unlink entries from _log_txes before
     // destroying the entries themselves so that the safe link does not
     // assert.
-    void erase_log(kafka::transactional_id);
+    void erase_log(const kafka::transactional_id&);
 
     fragmented_vector<tm_transaction> get_log_transactions();
 
     void set_mem(model::term_id, kafka::transactional_id, tm_transaction);
 
-    void erase_mem(kafka::transactional_id);
+    void erase_mem(const kafka::transactional_id&);
 
     template<typename Func>
     absl::btree_set<kafka::transactional_id>

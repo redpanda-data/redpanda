@@ -129,7 +129,8 @@ ss::future<> tm_stm::start() {
 
 uint8_t tm_stm::active_snapshot_version() { return tm_snapshot::version; }
 
-std::optional<tm_transaction> tm_stm::find_tx(kafka::transactional_id tx_id) {
+std::optional<tm_transaction>
+tm_stm::find_tx(const kafka::transactional_id& tx_id) {
     auto tx_opt = _cache->find_mem(tx_id);
     if (tx_opt) {
         return tx_opt;
