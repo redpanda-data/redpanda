@@ -80,10 +80,57 @@ impl Default for SchemaRegistryClient {
     }
 }
 
+#[deprecated(
+    since = "1.0.3",
+    note = "Prefer decode_schema_id to receive both the extracted ID and a byte slice to the rest of the buffer"
+)]
 pub fn extract_id(buf: &[u8]) -> Result<SchemaId> {
     static MAGIC_BYTES: [u8; 1] = [0x00];
     if !buf.starts_with(&MAGIC_BYTES) || buf.len() < 5 {
         return Err(SchemaRegistryError::BadHeader);
     }
     Ok(SchemaId(i32::from_be_bytes(buf[1..5].try_into().unwrap())))
+}
+
+pub fn decode_schema_id(buf: &[u8]) -> Result<(SchemaId, &[u8])> {
+    static MAGIC_BYTES: [u8; 1] = [0x00];
+    if !buf.starts_with(&MAGIC_BYTES) || buf.len() < 5 {
+        return Err(SchemaRegistryError::BadHeader);
+    }
+    Ok((
+        SchemaId(i32::from_be_bytes(buf[1..5].try_into().unwrap())),
+        &buf[5..],
+    ))
+}
+
+pub fn encode_schema_id(id: SchemaId, buf: &[u8]) -> Vec<u8> {
+    static MAGIC_BYTES: [u8; 1] = [0x00];
+    let id_bytes = id.0.to_be_bytes();
+    [&MAGIC_BYTES, &id_bytes[..], buf].concat().to_vec()
+}
+
+#[cfg(test)]
+#[allow(deprecated)]
+mod tests {
+    use super::{decode_schema_id, encode_schema_id, extract_id, SchemaId};
+
+    use quickcheck::quickcheck;
+
+    quickcheck! {
+        fn roundtrip(n: i32) -> bool {
+            let id = SchemaId(n);
+            let buf = Vec::<u8>::new();
+            let (r, _) = decode_schema_id(&encode_schema_id(id, &buf)).unwrap();
+            r == id
+        }
+    }
+
+    quickcheck! {
+        fn old_style_roundtrip(n: i32) -> bool {
+            let id = SchemaId(n);
+            let buf = Vec::<u8>::new();
+            let r = extract_id(&encode_schema_id(id, &buf)).unwrap();
+            r == id
+        }
+    }
 }

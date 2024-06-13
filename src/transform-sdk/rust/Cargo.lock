@@ -601,6 +601,7 @@ dependencies = [
 name = "redpanda-transform-sdk-sr"
 version = "0.0.0-dev"
 dependencies = [
+ "quickcheck",
  "redpanda-transform-sdk-sr-sys",
  "redpanda-transform-sdk-sr-types",
 ]
