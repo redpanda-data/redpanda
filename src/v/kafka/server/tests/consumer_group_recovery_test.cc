@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "container/chunked_hash_map.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
@@ -170,9 +171,9 @@ struct cg_recovery_test_fixture : seastar_test {
      */
     template<typename... Args>
     void expect_committed_offsets(
-      const absl::node_hash_map<
+      const chunked_hash_map<
         model::topic_partition,
-        group_stm::logged_metadata> metadata,
+        group_stm::logged_metadata>& metadata,
       Args... offset_desc) {
         absl::node_hash_map<model::topic_partition, model::offset> expected_set;
         (expected_set.emplace(parse_offset(offset_desc)), ...);

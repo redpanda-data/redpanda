@@ -18,7 +18,6 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/log.hh>
 
-#include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
 namespace kafka {
@@ -34,7 +33,7 @@ public:
         model::tx_seq tx_seq;
         model::partition_id tm_partition;
         model::timeout_clock::duration timeout;
-        absl::node_hash_map<model::topic_partition, group::offset_metadata>
+        chunked_hash_map<model::topic_partition, group::offset_metadata>
           offsets;
     };
 
@@ -59,17 +58,17 @@ public:
     }
     bool is_removed() const { return _is_removed; }
 
-    const absl::node_hash_map<model::producer_identity, ongoing_tx>&
+    const chunked_hash_map<model::producer_identity, ongoing_tx>&
     ongoing_transactions() const {
         return _ongoing_txs;
     }
 
-    const absl::node_hash_map<model::topic_partition, logged_metadata>&
+    const chunked_hash_map<model::topic_partition, logged_metadata>&
     offsets() const {
         return _offsets;
     }
 
-    const absl::node_hash_map<model::producer_id, model::producer_epoch>&
+    const chunked_hash_map<model::producer_id, model::producer_epoch>&
     fences() const {
         return _fence_pid_epoch;
     }
@@ -79,10 +78,10 @@ public:
     const group_metadata_value& get_metadata() const { return _metadata; }
 
 private:
-    absl::node_hash_map<model::topic_partition, logged_metadata> _offsets;
-    absl::node_hash_map<model::producer_id, model::producer_epoch>
+    chunked_hash_map<model::topic_partition, logged_metadata> _offsets;
+    chunked_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
-    absl::node_hash_map<model::producer_identity, ongoing_tx> _ongoing_txs;
+    chunked_hash_map<model::producer_identity, ongoing_tx> _ongoing_txs;
 
     group_metadata_value _metadata;
     bool _is_loaded{false};

@@ -2598,7 +2598,7 @@ ss::future<> group::remove_topic_partitions(
         _pending_offset_commits.erase(tp);
         if (auto offset = _offsets.extract(tp); offset) {
             removed.emplace_back(
-              std::move(offset.key()), std::move(offset.mapped()->metadata));
+              std::move(offset->first), std::move(offset->second->metadata));
         }
     }
 

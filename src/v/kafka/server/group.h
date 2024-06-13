@@ -883,7 +883,7 @@ private:
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
     member_map _members;
-    absl::node_hash_map<group_instance_id, member_id> _static_members;
+    chunked_hash_map<group_instance_id, member_id> _static_members;
     int _num_members_joining;
     absl::node_hash_map<kafka::member_id, ss::timer<clock_type>>
       _pending_members;
@@ -895,7 +895,7 @@ private:
     config::configuration& _conf;
     ss::lw_shared_ptr<ssx::rwlock> _catchup_lock;
     ss::lw_shared_ptr<cluster::partition> _partition;
-    absl::node_hash_map<
+    chunked_hash_map<
       model::topic_partition,
       std::unique_ptr<offset_metadata_with_probe>>
       _offsets;
@@ -916,11 +916,11 @@ private:
 
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     model::term_id _term;
-    absl::node_hash_map<model::producer_id, model::producer_epoch>
+    chunked_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
     chunked_hash_map<model::producer_identity, ongoing_transaction>
       _transactions;
-    absl::node_hash_map<model::topic_partition, offset_metadata>
+    chunked_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;
 
