@@ -436,14 +436,6 @@ remote_segment_path partition_manifest::generate_remote_segment_path(
       ntp, val.ntp_revision, name, val.archiver_term);
 }
 
-local_segment_path partition_manifest::generate_local_segment_path(
-  const model::ntp& ntp, const partition_manifest::value& val) {
-    auto name = cloud_storage::generate_local_segment_name(
-      val.base_offset, val.segment_term);
-    return local_segment_path(
-      fmt::format("{}_{}/{}", ntp.path(), val.ntp_revision, name()));
-}
-
 partition_manifest::const_iterator
 partition_manifest::first_addressable_segment() const {
     if (_start_offset == model::offset{}) {

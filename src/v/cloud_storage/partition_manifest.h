@@ -119,9 +119,6 @@ public:
     /// Generate segment path to use in the cloud
     static remote_segment_path
     generate_remote_segment_path(const model::ntp& ntp, const value& val);
-    /// Generate segment path to use locally
-    static local_segment_path
-    generate_local_segment_path(const model::ntp& ntp, const value& val);
 
     /// Create empty manifest that supposed to be updated later
     partition_manifest();
