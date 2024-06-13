@@ -954,8 +954,13 @@ func saveControllerLogDir(ps *stepParams, y *config.RedpandaYaml, logLimitBytes 
 			return fmt.Errorf("unable to save controller logs: %v", err)
 		}
 
+		// Our decoding tools look for the base of the data directory, and it
+		// searches for the expected directory: redpanda/controller/0_0. If we
+		// use this folder structure, we will make the life easier to the users
+		// who wish to decode the controller logs using our tools.
+		baseDestDir := filepath.Join("controller-logs", "redpanda", "controller", "0_0")
 		if int(size) < logLimitBytes {
-			return writeDirToZip(ps, controllerDir, "controller", exclude)
+			return writeDirToZip(ps, controllerDir, baseDestDir, exclude)
 		}
 
 		fmt.Printf("WARNING: controller logs directory size is too big (%v). Saving a slice of the logs; you can adjust the limit by changing --controller-logs-size-limit flag\n", units.HumanSize(float64(size)))
@@ -973,7 +978,7 @@ func saveControllerLogDir(ps *stepParams, y *config.RedpandaYaml, logLimitBytes 
 			if err != nil {
 				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
-			err = writeFileToZip(ps, filepath.Join("controller", filepath.Base(cLog.path)), file)
+			err = writeFileToZip(ps, filepath.Join(baseDestDir, filepath.Base(cLog.path)), file)
 			if err != nil {
 				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
