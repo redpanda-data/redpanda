@@ -27,68 +27,6 @@
 
 namespace cluster {
 
-namespace {
-
-transaction_metadata_v1::tx_status downgrade_status(tx_status status) {
-    switch (status) {
-    case tx_status::ongoing:
-        return transaction_metadata_v1::tx_status::ongoing;
-    case tx_status::preparing:
-        return transaction_metadata_v1::tx_status::preparing;
-    case tx_status::prepared:
-        return transaction_metadata_v1::tx_status::prepared;
-    case tx_status::aborting:
-        return transaction_metadata_v1::tx_status::aborting;
-    case tx_status::killed:
-        return transaction_metadata_v1::tx_status::killed;
-    case tx_status::ready:
-        return transaction_metadata_v1::tx_status::ready;
-    case tx_status::tombstone:
-        return transaction_metadata_v1::tx_status::tombstone;
-    }
-    vassert(false, "unknown status: {}", status);
-}
-
-transaction_metadata_v1 downgrade_tx(const tx_metadata& tx) {
-    transaction_metadata_v1 result;
-    result.id = tx.id;
-    result.pid = tx.pid;
-    result.tx_seq = tx.tx_seq;
-    result.etag = tx.etag;
-    result.status = downgrade_status(tx.status);
-    result.timeout_ms = tx.timeout_ms;
-    result.last_update_ts = tx.last_update_ts;
-    for (auto& partition : tx.partitions) {
-        result.partitions.push_back(transaction_metadata_v1::tx_partition{
-          .ntp = partition.ntp, .etag = partition.etag});
-    }
-    for (auto& group : tx.groups) {
-        result.groups.push_back(transaction_metadata_v1::tx_group{
-          .group_id = group.group_id, .etag = group.etag});
-    }
-    return result;
-}
-
-template<typename T>
-model::record_batch do_serialize_tx(T tx) {
-    iobuf key;
-    reflection::serialize(key, model::record_batch_type::tm_update);
-    auto pid_id = tx.pid.id;
-    auto tx_id = tx.id;
-    reflection::serialize(key, pid_id, tx_id);
-
-    iobuf value;
-    reflection::serialize(value, T::version);
-    reflection::serialize(value, std::move(tx));
-
-    storage::record_batch_builder b(
-      model::record_batch_type::tm_update, model::offset(0));
-    b.add_raw_kv(std::move(key), std::move(value));
-    return std::move(b).build();
-}
-
-} // namespace
-
 ss::future<result<raft::replicate_result>>
 tm_stm::replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
     auto opts = raft::replicate_options{raft::consistency_level::quorum_ack};
@@ -98,11 +36,20 @@ tm_stm::replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
 }
 
 model::record_batch tm_stm::serialize_tx(tx_metadata tx) {
-    if (use_new_tx_version()) {
-        return do_serialize_tx(tx);
-    }
-    auto old_tx = downgrade_tx(tx);
-    return do_serialize_tx(old_tx);
+    iobuf key;
+    reflection::serialize(key, model::record_batch_type::tm_update);
+    auto pid_id = tx.pid.id;
+    auto tx_id = tx.id;
+    reflection::serialize(key, pid_id, tx_id);
+
+    iobuf value;
+    reflection::serialize(value, tx_metadata::version);
+    reflection::serialize(value, std::move(tx));
+
+    storage::record_batch_builder b(
+      model::record_batch_type::tm_update, model::offset(0));
+    b.add_raw_kv(std::move(key), std::move(value));
+    return std::move(b).build();
 }
 
 tm_stm::tm_stm(
@@ -218,10 +165,6 @@ tm_stm::quorum_write_empty_batch(model::timeout_clock::time_point timeout) {
 }
 
 ss::future<> tm_stm::checkpoint_ongoing_txs() {
-    if (!use_new_tx_version()) {
-        co_return;
-    }
-
     auto txes_to_checkpoint = _cache->checkpoint();
     size_t checkpointed_txes = 0;
     for (auto& tx : txes_to_checkpoint) {
@@ -399,9 +342,7 @@ ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::mark_tx_prepared(
     }
     auto tx = tx_opt.value();
 
-    auto check_status = is_transaction_ga() ? tx_status::ongoing
-                                            : tx_status::preparing;
-    if (tx.status != check_status) {
+    if (tx.status != tx_status::ongoing) {
         vlog(
           _ctx_log.warn,
           "[tx_id={}] error marking transaction {} as prepared. Incorrect "
@@ -409,7 +350,7 @@ ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::mark_tx_prepared(
           tx_id,
           tx,
           tx.status,
-          check_status);
+          tx_status::ongoing);
         co_return tm_stm::op_status::conflict;
     }
     tx.status = cluster::tx_status::prepared;
@@ -656,24 +597,6 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
         co_return tm_stm::op_status::unknown;
     }
 
-    if (!is_transaction_ga()) {
-        bool just_started = tx.partitions.size() == 0 && tx.groups.size() == 0;
-
-        if (just_started) {
-            for (auto& partition : partitions) {
-                tx.partitions.push_back(partition);
-            }
-            tx.last_update_ts = clock_type::now();
-            auto r = co_await update_tx(tx, tx.etag);
-
-            if (!r.has_value()) {
-                co_return tm_stm::op_status::unknown;
-            }
-            _cache->set_mem(tx.etag, tx_id, tx);
-            co_return tm_stm::op_status::success;
-        }
-    }
-
     for (auto& partition : partitions) {
         tx.partitions.push_back(partition);
     }
@@ -719,23 +642,6 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
           tx,
           expected_term);
         co_return tm_stm::op_status::unknown;
-    }
-
-    if (!is_transaction_ga()) {
-        bool just_started = tx.partitions.size() == 0 && tx.groups.size() == 0;
-
-        if (just_started) {
-            tx.groups.push_back(
-              tx_metadata::tx_group{.group_id = group_id, .etag = etag});
-            tx.last_update_ts = clock_type::now();
-            auto r = co_await update_tx(tx, tx.etag);
-
-            if (!r.has_value()) {
-                co_return tm_stm::op_status::unknown;
-            }
-            _cache->set_mem(tx.etag, tx_id, tx);
-            co_return tm_stm::op_status::success;
-        }
     }
 
     tx.groups.push_back(

@@ -36,9 +36,6 @@
 
 namespace cluster {
 
-using use_tx_version_with_last_pid_bool
-  = ss::bool_class<struct use_tx_version_with_last_pid_tag>;
-
 class tm_stm;
 
 class txlock_unit {
@@ -401,16 +398,6 @@ private:
 
     ss::future<result<raft::replicate_result>>
     replicate_quorum_ack(model::term_id term, model::record_batch&& batch);
-
-    bool is_transaction_ga() {
-        return _feature_table.local().is_active(
-          features::feature::transaction_ga);
-    }
-
-    use_tx_version_with_last_pid_bool use_new_tx_version() {
-        return is_transaction_ga() ? use_tx_version_with_last_pid_bool::yes
-                                   : use_tx_version_with_last_pid_bool::no;
-    }
 
     model::record_batch serialize_tx(tx_metadata tx);
 };
