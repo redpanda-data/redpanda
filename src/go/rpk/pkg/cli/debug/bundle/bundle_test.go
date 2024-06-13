@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 )
@@ -87,14 +88,18 @@ func TestDetermineFilepath(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		filepath string
+		rpcAddr  *config.SocketAddress
 		exp      string
 		expErr   bool
 	}{
-		{"empty filepath", "", "-bundle.zip", false},
-		{"correct filepath", "/tmp/customDebugName.zip", "/tmp/customDebugName.zip", false},
-		{"filepath with no extension", "/tmp/file", "/tmp/file.zip", false},
-		{"filepath is a directory", "/tmp", "", true},
-		{"unsupported extension", "customDebugName.tar.gz", "", true},
+		{"empty filepath", "", nil, ".*-bundle.zip", false},
+		{"correct filepath", "/tmp/customDebugName.zip", nil, "/tmp/customDebugName.zip", false},
+		{"filepath with no extension", "/tmp/file", nil, "/tmp/file.zip", false},
+		{"rpc + filepath", "/tmp/file", &config.SocketAddress{Address: "127.0.0.1"}, "/tmp/file.zip", false}, // It should NOT use the rpc
+		{"rpc + empty filepath", "", &config.SocketAddress{Address: "127.0.0.1"}, "(127.0.0.1-).*(-bundle.zip)", false},
+		{"sanitized rpc + empty filepath", "", &config.SocketAddress{Address: "my.awesome.address:1994"}, "(my.awesome.address-1994-).*(-bundle.zip)", false},
+		{"filepath is a directory", "/tmp", nil, "", true},
+		{"unsupported extension", "customDebugName.tar.gz", nil, "", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
@@ -102,7 +107,8 @@ func TestDetermineFilepath(t *testing.T) {
 			err := fs.Mkdir("/tmp", 0o755)
 			require.NoError(t, err)
 
-			filepath, err := determineFilepath(fs, test.filepath, false)
+			rp := &config.RedpandaYaml{Redpanda: config.RedpandaNodeConfig{AdvertisedRPCAPI: test.rpcAddr}}
+			filepath, err := determineFilepath(fs, rp, test.filepath, false)
 			if test.expErr {
 				require.Error(t, err)
 				return
@@ -112,7 +118,7 @@ func TestDetermineFilepath(t *testing.T) {
 				require.Equal(t, test.exp, filepath)
 				return
 			}
-			require.Contains(t, filepath, test.exp)
+			require.Regexp(t, test.exp, filepath)
 		})
 	}
 }
