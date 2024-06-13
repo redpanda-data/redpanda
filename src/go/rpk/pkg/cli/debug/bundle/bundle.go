@@ -160,7 +160,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	f.StringVarP(&outFile, outputFlag, "o", "", "The file path where the debug file will be written (default ./<timestamp>-bundle.zip)")
 	f.DurationVar(&timeout, "timeout", 31*time.Second, "How long to wait for child commands to execute (e.g. 30s, 1.5m)")
 	f.DurationVar(&metricsInterval, "metrics-interval", 10*time.Second, "Interval between metrics snapshots (e.g. 30s, 1.5m)")
-	f.StringVar(&logsSince, "logs-since", "", "Include log entries on or newer than the specified date (journalctl date format, e.g. YYYY-MM-DD")
+	f.StringVar(&logsSince, "logs-since", "yesterday", "Include log entries on or newer than the specified date (journalctl date format, e.g. YYYY-MM-DD")
 	f.StringVar(&logsUntil, "logs-until", "", "Include log entries on or older than the specified date (journalctl date format, e.g. YYYY-MM-DD")
 	f.StringVar(&logsSizeLimit, "logs-size-limit", "100MiB", "Read the logs until the given size is reached (e.g. 3MB, 1GiB)")
 	f.StringVar(&controllerLogsSizeLimit, "controller-logs-size-limit", "20MB", "The size limit of the controller logs that can be stored in the bundle (e.g. 3MB, 1GiB)")
@@ -268,9 +268,9 @@ BARE-METAL
 
  - Disk usage: The disk usage for the data directory, as output by 'du'.
 
- - redpanda logs: The node's redpanda logs written to journald. If --logs-since 
-   or --logs-until are passed, then only the logs within the resulting time frame
-   will be included.
+ - redpanda logs: The node's redpanda logs written to journald since yesterday. 
+   If --logs-since or --logs-until are passed, then only the logs within the
+   resulting time frame will be included.
 
  - Socket info: The active sockets data output by 'ss'.
 
