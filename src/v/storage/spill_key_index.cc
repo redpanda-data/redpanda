@@ -108,47 +108,54 @@ ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
     if (
       (take_result.checkpoint_hint && expected_size > min_index_size)
       || expected_size >= _max_mem) {
-        f = ss::do_until(
-          [this, entry_size, min_index_size] {
-              size_t total_mem = idx_mem_usage() + _keys_mem_usage + entry_size;
+        auto stop_cond = [this, entry_size, min_index_size] {
+            size_t total_mem = idx_mem_usage() + _keys_mem_usage + entry_size;
 
-              // Instance-local capacity check
-              bool local_ok = total_mem < _max_mem;
+            // Instance-local capacity check
+            bool local_ok = total_mem < _max_mem;
 
-              // Shard-wide capacity check
-              bool global_ok = _resources.compaction_index_bytes_available()
-                               || total_mem < min_index_size;
+            // Shard-wide capacity check
+            bool global_ok = _resources.compaction_index_bytes_available()
+                             || total_mem < min_index_size;
 
-              // Stop condition: none of our size thresholds must be violated
-              return _midx.empty() || (local_ok && global_ok);
-          },
-          [this] {
-              /**
-               * Evict first entry, we use hash function that guarante good
-               * randomness so evicting first entry is actually evicting a
-               * pseudo random elemnent
-               */
-              auto node = _midx.extract(_midx.begin());
+            // Stop condition: none of our size thresholds must be violated
+            return _midx.empty() || (local_ok && global_ok);
+        };
 
-              return ss::do_with(
-                node.key(),
-                node.mapped(),
-                [this](const bytes& k, value_type o) {
-                    release_entry_memory(k);
-                    return spill(compacted_index::entry_type::key, k, o);
-                });
-          });
+        auto iter = _midx.begin();
+        while (!stop_cond()) {
+            /**
+             * Evict first entry, we use hash function that guarante good
+             * randomness so evicting first entry is actually evicting a
+             * pseudo random elemnent
+             */
+            auto to_extract = iter;
+            iter++;
+            auto node = _midx.extract(to_extract);
+            auto capacity_before = _midx.capacity();
+
+            release_entry_memory(node.key());
+            co_await spill(
+              compacted_index::entry_type::key, node.key(), node.mapped());
+
+            if (capacity_before < _midx.capacity()) {
+                // Iterators into _midx only ever get invalidated by the insert
+                // below if a resize and rehash happens (from concurrent
+                // coroutines). Hence we can use capacity to check whether we
+                // suspended and the iterator got invalidated and we need to
+                // requery.
+                iter = _midx.begin();
+            }
+        }
     }
 
-    return f.then([this, entry_size, b = std::move(b), v]() mutable {
-        // convert iobuf to key
-        _keys_mem_usage += entry_size;
+    // convert iobuf to key
+    _keys_mem_usage += entry_size;
 
-        // No update to _mem_units here: we already took units at top
-        // of add_key before starting the write.
+    // No update to _mem_units here: we already took units at top
+    // of add_key before starting the write.
 
-        _midx.insert({std::move(b), v});
-    });
+    _midx.insert({std::move(b), v});
 }
 
 ss::future<> spill_key_index::index(
