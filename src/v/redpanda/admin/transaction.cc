@@ -84,7 +84,7 @@ admin_server::get_all_transactions_handler(
     ans.reserve(res.value().size());
 
     for (auto& tx : res.value()) {
-        if (tx.status == cluster::tm_transaction::tx_status::tombstone) {
+        if (tx.status == cluster::tx_status::tombstone) {
             continue;
         }
 
@@ -103,8 +103,8 @@ admin_server::get_all_transactions_handler(
         // The motivation behind mapping killed to aborting is to make
         // user not to think about the subtle differences between both
         // statuses
-        if (tx.status == cluster::tm_transaction::tx_status::killed) {
-            tx.status = cluster::tm_transaction::tx_status::aborting;
+        if (tx.status == cluster::tx_status::killed) {
+            tx.status = cluster::tx_status::aborting;
         }
         new_tx.status = ss::sstring(tx.get_status());
 
@@ -198,7 +198,7 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
           fmt::format("Invalid etag {}", etag));
     }
 
-    cluster::tm_transaction::tx_partition partition_for_delete{
+    cluster::tx_metadata::tx_partition partition_for_delete{
       .ntp = ntp, .etag = model::term_id(etag)};
 
     vlog(

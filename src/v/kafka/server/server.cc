@@ -1973,7 +1973,7 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
 
     auto filter_tx = [](
                        const list_transactions_request& req,
-                       const cluster::tm_transaction& tx) -> bool {
+                       const cluster::tx_metadata& tx) -> bool {
         if (!req.data.producer_id_filters.empty()) {
             if (std::none_of(
                   req.data.producer_id_filters.begin(),

@@ -219,14 +219,14 @@ public:
         static constexpr uint8_t version = 0;
 
         model::offset offset;
-        fragmented_vector<tm_transaction> transactions;
+        fragmented_vector<tx_metadata> transactions;
     };
 
     struct tm_snapshot {
         static constexpr uint8_t version = 1;
 
         model::offset offset;
-        fragmented_vector<tm_transaction> transactions;
+        fragmented_vector<tx_metadata> transactions;
         locally_hosted_txs hash_ranges;
     };
 
@@ -257,14 +257,14 @@ public:
 
     ss::future<> start() override;
 
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
       get_tx(kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
       mark_tx_ongoing(model::term_id, kafka::transactional_id);
     ss::future<tm_stm::op_status> add_partitions(
       model::term_id,
       kafka::transactional_id,
-      std::vector<tm_transaction::tx_partition>);
+      std::vector<tx_metadata::tx_partition>);
     ss::future<tm_stm::op_status> add_group(
       model::term_id, kafka::transactional_id, kafka::group_id, model::term_id);
     bool is_actual_term(model::term_id term) { return _insync_term == term; }
@@ -294,13 +294,13 @@ public:
 
     ss::future<ss::basic_rwlock<>::holder> prepare_transfer_leadership();
 
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
       reset_transferring(model::term_id, kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
       mark_tx_aborting(model::term_id, kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
       mark_tx_prepared(model::term_id, kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
       mark_tx_killed(model::term_id, kafka::transactional_id);
     // todo: cleanup last_pid and rolled_pid. It seems like they are doing
     // the same thing but in practice they are not. last_pid is not updated
@@ -321,7 +321,7 @@ public:
     ss::future<tm_stm::op_status>
       expire_tx(model::term_id, kafka::transactional_id);
 
-    bool is_expired(const tm_transaction&);
+    bool is_expired(const tx_metadata&);
 
     // before calling a tm_stm modifying operation a caller should
     // take get_tx_lock mutex
@@ -335,17 +335,17 @@ public:
     absl::btree_set<kafka::transactional_id> get_expired_txs();
 
     using get_txs_result
-      = checked<fragmented_vector<tm_transaction>, tm_stm::op_status>;
+      = checked<fragmented_vector<tx_metadata>, tm_stm::op_status>;
     ss::future<get_txs_result> get_all_transactions();
 
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
     delete_partition_from_tx(
       model::term_id term,
       kafka::transactional_id tid,
-      tm_transaction::tx_partition ntp);
+      tx_metadata::tx_partition ntp);
 
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      update_tx(tm_transaction, model::term_id);
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
+      update_tx(tx_metadata, model::term_id);
 
     model::partition_id get_partition() const {
         return _raft->ntp().tp.partition;
@@ -355,14 +355,14 @@ public:
 
     size_t tx_cache_size() const;
 
-    std::optional<tm_transaction> oldest_tx() const;
+    std::optional<tx_metadata> oldest_tx() const;
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
 protected:
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
 private:
-    std::optional<tm_transaction> find_tx(const kafka::transactional_id&);
+    std::optional<tx_metadata> find_tx(const kafka::transactional_id&);
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
     ss::future<raft::stm_snapshot> take_local_snapshot() override;
@@ -387,8 +387,8 @@ private:
     ss::future<checked<model::term_id, tm_stm::op_status>> do_barrier();
     ss::future<checked<model::term_id, tm_stm::op_status>>
       do_sync(model::timeout_clock::duration);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      do_update_tx(tm_transaction, model::term_id);
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
+      do_update_tx(tx_metadata, model::term_id);
 
     ss::future<tm_stm::op_status> do_register_new_producer(
       model::term_id,
@@ -412,7 +412,7 @@ private:
                                    : use_tx_version_with_last_pid_bool::no;
     }
 
-    model::record_batch serialize_tx(tm_transaction tx);
+    model::record_batch serialize_tx(tx_metadata tx);
 };
 
 inline txlock_unit::~txlock_unit() noexcept {
