@@ -532,11 +532,13 @@ using tx_seq = named_type<int64_t, struct tm_tx_seq>;
 using producer_id = named_type<int64_t, struct producer_identity_id>;
 using producer_epoch = named_type<int16_t, struct producer_identity_epoch>;
 
+static constexpr producer_epoch no_producer_epoch{-1};
+static constexpr producer_id no_producer_id{-1};
 struct producer_identity
   : serde::
       envelope<producer_identity, serde::version<0>, serde::compat_version<0>> {
-    int64_t id{-1};
-    int16_t epoch{0};
+    producer_id id{no_producer_id};
+    producer_epoch epoch{0};
 
     producer_identity() noexcept = default;
 
@@ -549,6 +551,13 @@ struct producer_identity
     model::producer_epoch get_epoch() const {
         return model::producer_epoch(epoch);
     }
+
+    static model::producer_identity
+    with_next_epoch(const model::producer_identity pid) {
+        return {pid.id, pid.epoch + producer_epoch(1)};
+    }
+
+    bool has_exhausted_epoch() const { return epoch == producer_epoch::max(); }
 
     auto operator<=>(const producer_identity&) const = default;
 
@@ -591,7 +600,7 @@ struct tx_range_cmp {
     }
 };
 
-static constexpr producer_identity unknown_pid{-1, -1};
+static constexpr producer_identity no_pid{no_producer_id, no_producer_epoch};
 
 struct batch_identity {
     static int32_t increment_sequence(int32_t sequence, int32_t increment) {
@@ -620,7 +629,7 @@ struct batch_identity {
     timestamp max_timestamp;
     bool is_transactional{false};
 
-    bool is_idempotent() const { return pid.id >= 0; }
+    bool is_idempotent() const { return pid.id > no_producer_id; }
 
     friend std::ostream& operator<<(std::ostream&, const batch_identity&);
 };

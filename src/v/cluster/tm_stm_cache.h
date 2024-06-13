@@ -340,7 +340,7 @@ struct tm_transaction_v1 {
         tm_transaction result;
         result.id = id;
         result.pid = pid;
-        result.last_pid = model::unknown_pid;
+        result.last_pid = model::no_pid;
         result.tx_seq = tx_seq;
         result.etag = etag;
         result.status = upcast(status);
@@ -412,7 +412,7 @@ struct tm_transaction_v0 {
         tm_transaction result;
         result.id = id;
         result.pid = pid;
-        result.last_pid = model::unknown_pid;
+        result.last_pid = model::no_pid;
         result.tx_seq = tx_seq;
         result.etag = etag;
         result.status = upcast(status);

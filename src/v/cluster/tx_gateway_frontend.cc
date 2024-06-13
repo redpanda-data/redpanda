@@ -1111,7 +1111,7 @@ bool is_max_epoch(int16_t epoch) {
 // matches with last producer_id from log record
 bool is_valid_producer(
   const tm_transaction& tx, const model::producer_identity& expected_pid) {
-    if (expected_pid == model::unknown_pid) {
+    if (expected_pid == model::no_pid) {
         return true;
     }
 
@@ -1318,17 +1318,16 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     // cases, hence a separate rolled_pid was added. This is definitely not
     // ideal, probably needs a closer look.
     model::producer_identity rolled_pid = tx.pid;
-    model::producer_identity last_pid = model::unknown_pid;
+    model::producer_identity last_pid = model::no_pid;
 
-    if (expected_pid == model::unknown_pid) {
+    if (expected_pid == model::no_pid) {
         if (is_max_epoch(tx.pid.epoch)) {
             vlog(txlog.trace, "[tx_id={}] allocating new producer id", tx_id);
             allocate_id_reply pid_reply
               = co_await _id_allocator_frontend.local().allocate_id(timeout);
             reply.pid = model::producer_identity{pid_reply.id, 0};
         } else {
-            reply.pid = model::producer_identity{
-              tx.pid.id, static_cast<int16_t>(tx.pid.epoch + 1)};
+            reply.pid = model::producer_identity::with_next_epoch(tx.pid);
         }
     } else {
         if (tx.last_pid == expected_pid) {
@@ -1340,8 +1339,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
                     timeout);
                 reply.pid = model::producer_identity{pid_reply.id, 0};
             } else {
-                reply.pid = model::producer_identity{
-                  tx.pid.id, static_cast<int16_t>(tx.pid.epoch + 1)};
+                reply.pid = model::producer_identity::with_next_epoch(tx.pid);
             }
             last_pid = tx.pid;
         } else {
