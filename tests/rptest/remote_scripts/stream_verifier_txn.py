@@ -63,6 +63,32 @@ def setup_logger(name: str = "", level: int = logging.DEBUG) -> logging.Logger:
         logger.setLevel(level)
         return logger
 
+
+def write_json(ioclass: IO, data: dict) -> None:
+    ioclass.write(json.dumps(data))
+    ioclass.write('\n')
+    ioclass.flush()
+
+
+def validate_keys(imcoming: list[str], local: list[str],
+                  forbidden: list[str]) -> list[str]:
+    error_msgs = []
+    # Validate incoming keys
+    for k in imcoming:
+        if k in forbidden:
+            error_msgs += [f"Key '{k}' can't be updated"]
+        elif k not in local:
+            error_msgs += [f"Unknown key '{k}'"]
+    return error_msgs
+
+
+class Updateable(object):
+    def update(self, new: dict):
+        for key, value in new.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
+
 @dataclass(kw_only=True)
 class AppCfg(Updateable):
     """Holds configuration for the app along with
@@ -160,6 +186,274 @@ class AppCfg(Updateable):
 
 # singleton for app_config
 app_config = AppCfg()
+
+
+@dataclass(kw_only=True)
+class TopicsConfig:
+    """Holds data for topic operations: Produce/Consume.
+    Can generate list of topic names based on config
+    """
+    topic_group_id: str
+    topic_prefix: str
+    topic_count: int
+    consume_timeout: int
+    partitions: int = 0
+    replicas: int = 0
+
+    @property
+    def names(self):
+        # <topic_prefix>-<sequence_number>
+        return [
+            f"{self.topic_prefix}-{idx}" for idx in range(self.topic_count)
+        ]
+
+
+@dataclass(kw_only=True)
+class TopicStatus(Updateable):
+    """Holds single live topic status
+
+    Returns:
+        _type_: _description_
+    """
+    # Reserved for future use in case of name will not be usable
+    id: int
+    # topic name
+    name: str
+    # how many messages to process in single transaction
+    msgs_per_transaction: int
+    # Total messages to be processed for this topic
+    total_messages: int
+    # Current topic index or how much messages already produced/consumed
+    index: int
+    # timestamp for last message
+    last_message_ts: float
+    # how much ms should pass between messages to be sent
+    msgs_rate_ms: float
+    # how much time to wait when consuming next message
+    consume_timeout: int
+    # Precreated Producer class.
+    producer: ck.Producer
+    # All data needed to create consumer class.
+    # As opposed to Producer, Consumer must be created/used in the same thread
+    consumer_config: dict
+    # Termination signalling flag
+    # It is simpler that threading event and faster
+    terminate: bool
+
+    @property
+    def transaction_id(self):
+        return f"{self.id}-{self.name}-{self.last_message_ts}"
+
+
+class MessageGenerator:
+    """Various Generator functions to use in Producer
+    """
+    @staticmethod
+    def gen_indexed_messages(start_index: int,
+                             message_count: int) -> Generator:
+        """Generates indexed messages:
+        'key_0'/'0000', 'key_1'/'0001', ...
+
+        Args:
+            start_index (int): message index to start from
+            message_count (int): number of messages to generate
+
+        Yields:
+            Generator: message_key: int, message_value: int
+        """
+        for idx in range(start_index, start_index + message_count):
+            key = f"key_{idx}"
+            value = f"{idx:04}"
+            yield key, value
+
+
+
+class StreamVerifierProduce(StreamVerifier):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.wlogger = setup_logger(LOGGER_WEB_PRODUCE)
+        super().__init__(cfg.brokers,
+                         cfg.topics_config,
+                         cfg.worker_threads,
+                         rate=cfg.msg_rate,
+                         total_messages=cfg.msg_total)
+
+    def on_get(self, req: falcon.Request, resp: falcon.Response):
+        """Handles GET requests"""
+        self.wlogger.debug("Processing produce get request")
+        resp.status = falcon.HTTP_200  # This is the default status
+        resp.content_type = falcon.MEDIA_JSON  # Default is JSON, so override
+        resp.media = self.status()
+
+    def on_post(self, req: falcon.Request, resp: falcon.Response):
+        self.wlogger.debug("Processing produce post request")
+
+        if req.content_type != falcon.MEDIA_JSON:
+            resp.status = falcon.HTTP_400
+            resp.content_type = falcon.MEDIA_JSON
+            resp.media = {"errors": ["Invalid request media type"]}
+            return
+
+        # Check active producing event
+        if self.produce_thread is not None:
+            if self.produce_thread.is_alive():
+                resp.status = falcon.HTTP_400
+                resp.content_type = falcon.MEDIA_JSON
+                resp.media = {"errors": ["Active produce job not finished"]}
+                return
+
+        # update topic config
+        topics_cfg_keys = list(vars(self.topics_config).keys())
+        topics_cfg_keys += ["msg_rate", "msg_total"]
+        error_msgs = validate_keys(req.media, topics_cfg_keys, [])
+        if len(error_msgs) > 0:
+            msg = f"Incoming request invalid: {', '.join(error_msgs)}"
+            self.wlogger.error(msg)
+            resp.status = falcon.HTTP_400
+            resp.content_type = falcon.MEDIA_JSON
+            resp.media = {"errors": msg}
+        else:
+            # Update topic configs
+            self.message_rate = req.media['msg_rate'] \
+                if 'msg_rate' in req.media else app_config.msg_rate
+            self.total_messages = req.media['msg_total'] \
+                if 'msg_total' in req.media else app_config.msg_total
+            if 'topic_prefix' in req.media:
+                self.topics_config.topic_prefix = req.media['topic_prefix']
+            if 'topic_count' in req.media:
+                self.topics_config.topic_count = req.media['topic_count']
+            # start producers
+            self.init_producers()
+            self.produce(wait=False)
+
+            resp.status = falcon.HTTP_200
+            resp.content_type = falcon.MEDIA_TEXT
+            resp.text = "OK"
+
+    def on_delete(self, req: falcon.Request, resp: falcon.Response):
+        self.terminate()
+
+        resp.status = falcon.HTTP_200  # This is the default status
+        resp.content_type = falcon.MEDIA_JSON  # Default is JSON, so override
+        resp.media = self.status()
+
+    def terminate(self):
+        self.wlogger.debug("Terminating web produce class")
+        for t in self.topics.values():
+            t.terminate = True
+            t.producer.flush()
+        return
+
+
+class StreamVerifierConsume(StreamVerifier):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.wlogger = setup_logger(LOGGER_WEB_CONSUME)
+        super().__init__(cfg.brokers,
+                         cfg.topics_config,
+                         cfg.worker_threads,
+                         rate=cfg.msg_rate,
+                         total_messages=cfg.msg_total)
+
+    def on_get(self, req: falcon.Request, resp: falcon.Response):
+        """Handles GET requests"""
+        self.wlogger.debug("Processing consume get request")
+        resp.status = falcon.HTTP_200  # This is the default status
+        resp.content_type = falcon.MEDIA_JSON  # Default is JSON, so override
+        resp.media = self.status()
+
+    def on_post(self, req: falcon.Request, resp: falcon.Response):
+        self.wlogger.debug("Processing consume post request")
+        # Validate request
+        if req.content_type != falcon.MEDIA_JSON:
+            resp.status = falcon.HTTP_400
+            resp.content_type = falcon.MEDIA_JSON
+            resp.media = {"errors": ["Invalid request media type"]}
+            return
+
+        # Check active consuming event
+        if self.consume_thread is not None and \
+                self.consume_thread.is_alive():
+            resp.status = falcon.HTTP_400
+            resp.content_type = falcon.MEDIA_JSON
+            resp.media = {"errors": ["Active produce job not finished"]}
+            return
+
+        # update topic config
+        topics_cfg_keys = ["topic_prefix", "topic_count"]
+        forbidden = ["msg_rate", "msg_total"]
+        error_msgs = validate_keys(req.media, topics_cfg_keys, forbidden)
+        if len(error_msgs) > 0:
+            msg = f"Incoming request invalid: {', '.join(error_msgs)}\n" \
+                f"Valid keys are: {', '.join(topics_cfg_keys)}"
+            self.wlogger.error(msg)
+            resp.status = falcon.HTTP_400
+            resp.content_type = falcon.MEDIA_JSON
+            resp.media = {"errors": msg}
+        else:
+            # Update topic configs
+            if 'topic_prefix' in req.media:
+                self.topics_config.topic_prefix = req.media['topic_prefix']
+            if 'topic_count' in req.media:
+                self.topics_config.topic_count = req.media['topic_count']
+            # start consumers
+            self.init_consumers()
+            self.consume(wait=False)
+
+            resp.status = falcon.HTTP_200
+            resp.content_type = falcon.MEDIA_TEXT
+            resp.text = "OK"
+
+    def terminate(self):
+        self.wlogger.debug("Terminating web consume class")
+        for t in self.topics.values():
+            t.terminate = True
+        return
+
+
+def start_webserver():
+    def terminate_handler(signum, frame):
+        """SIGTERM handler
+
+        Args:
+            signum (_type_): _description_
+            frame (_type_): _description_
+        """
+        signame = signal.Signals(signum).name
+        logger.info(f"{signame} ({signum}) received, terminating threads")
+        producer.terminate()
+        consumer.terminate()
+
+    def add_route(route: str, handler: AppCfg | StreamVerifier):
+        logger.debug(f"Registering handler for '/' as {type(handler)}")
+        app.add_route(route, handler)
+
+    global app_config
+    app = falcon.App()
+    logger = setup_logger(LOGGER_STARTUP)
+
+    # Add subpages
+    logger.debug("Initializing producer class")
+    producer = StreamVerifierProduce(app_config)
+    logger.debug("Initializing consumer class")
+    consumer = StreamVerifierConsume(app_config)
+    add_route("/", app_config)
+    add_route("/produce", producer)
+    add_route("/consume", consumer)
+
+    # Create and run service
+    with make_server('', app_config.web_port, app) as httpd:
+        # Serve until process is killed, SGTERM received or Keyboard interrupt
+        try:
+            logger.debug("Registering SIGTERM")
+            signal.signal(signal.SIGTERM, terminate_handler)
+            logger.info(f'Serving on port {app_config.web_port}...')
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            logger.info("Got keyboard interupt, exiting")
+            producer.terminate()
+            consumer.terminate()
+
 
 COMMAND_PRODUCE = 'produce'
 COMMAND_CONSUME = 'consume'
@@ -314,6 +608,5 @@ if __name__ == '__main__':
                                 default=8090,
                                 type=int,
                                 help="Webservice port to bind to")
-
 
     main(parser.parse_args())
