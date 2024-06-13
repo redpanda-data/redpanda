@@ -312,12 +312,7 @@ func writeCommandOutputToZipLimit(
 		if !strings.Contains(err.Error(), "broken pipe") {
 			return fmt.Errorf("couldn't save '%s': %w; %[1]v contains the full error message", filename, err)
 		}
-		zap.L().Sugar().Debugf(
-			"Got '%v' while running '%s'. This is probably due to the"+
-				" command's output exceeding its limit in bytes.",
-			err,
-			cmd,
-		)
+		zap.L().Sugar().Warnf("%v: got '%v' while running '%s'. This is probably due to the command's output exceeding its limit in bytes.", filename, err, cmd)
 	}
 	return nil
 }
