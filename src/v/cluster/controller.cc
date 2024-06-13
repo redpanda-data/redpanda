@@ -448,6 +448,17 @@ ss::future<> controller::start(
                 return config::shard_local_cfg()
                   .initial_retention_local_target_ms_default.bind();
             }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .retention_local_target_bytes_default.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .retention_local_target_ms_default.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg().retention_local_strict.bind();
+            }),
             std::ref(_as));
       })
       .then([this] {
