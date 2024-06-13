@@ -57,6 +57,7 @@ struct tm_transaction {
         model::revision_id topic_revision;
 
         bool operator==(const tx_partition& other) const = default;
+        friend std::ostream& operator<<(std::ostream&, const tx_partition&);
     };
 
     struct tx_group {

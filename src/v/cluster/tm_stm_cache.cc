@@ -28,12 +28,29 @@
 
 namespace cluster {
 
+std::ostream&
+operator<<(std::ostream& o, const tm_transaction::tx_partition& tp) {
+    fmt::print(
+      o,
+      "{{ntp: {}, etag: {}, revision: {}}}",
+      tp.ntp,
+      tp.etag,
+      tp.topic_revision);
+    return o;
+}
 std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
-    return o << "{tm_transaction: id=" << tx.id << ", status=" << tx.status
-             << ", pid=" << tx.pid << ", last_pid=" << tx.last_pid
-             << ", etag=" << tx.etag
-             << ", size(partitions)=" << tx.partitions.size()
-             << ", tx_seq=" << tx.tx_seq << "}";
+    fmt::print(
+      o,
+      "{{id: {}, state: {}, pid: {}, last_pid: {}, etag: {}, seq: {}, "
+      "partitions: {}}}",
+      tx.id,
+      tx.status,
+      tx.pid,
+      tx.last_pid,
+      tx.etag,
+      tx.tx_seq,
+      fmt::join(tx.partitions, ", "));
+    return o;
 }
 
 std::optional<tm_transaction>
