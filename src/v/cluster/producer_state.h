@@ -40,7 +40,8 @@ concept AcceptsUnits = requires(Func f, ssx::semaphore_units units) {
 };
 
 using producer_ptr = ss::lw_shared_ptr<producer_state>;
-using result_promise_t = ss::shared_promise<result<kafka_result>>;
+using request_result_t = result<kafka_result>;
+using result_promise_t = ss::shared_promise<request_result_t>;
 using request_ptr = ss::lw_shared_ptr<request>;
 using seq_t = int32_t;
 
@@ -49,6 +50,8 @@ enum class request_state : uint8_t {
     in_progress = 1,
     completed = 2
 };
+
+std::ostream& operator<<(std::ostream&, request_state);
 
 /// A request for a given sequence range, both inclusive.
 /// The sequence numbers are stamped by the client and are a part
@@ -67,22 +70,15 @@ public:
         }
     }
 
-    template<class ValueType>
-    void set_value(ValueType&& value) {
-        vassert(
-          _state <= request_state::in_progress && !_result.available(),
-          "unexpected request state during set: state: {}, result available: "
-          "{}",
-          static_cast<std::underlying_type_t<request_state>>(_state),
-          _result.available());
-        _result.set_value(std::forward<ValueType>(value));
-        _state = request_state::completed;
-    }
+    void set_value(request_result_t::value_type);
+    void set_error(request_result_t::error_type);
     void mark_request_in_progress() { _state = request_state::in_progress; }
     request_state state() const { return _state; }
     result_promise_t::future_type result() const;
 
     bool operator==(const request&) const;
+
+    friend std::ostream& operator<<(std::ostream&, const request&);
 
 private:
     request_state _state{request_state::initialized};

@@ -16,8 +16,42 @@
 
 namespace cluster::tx {
 
+std::ostream& operator<<(std::ostream& os, request_state state) {
+    switch (state) {
+    case request_state::initialized:
+        return os << "initialized";
+    case request_state::in_progress:
+        return os << "in_progress";
+    case request_state::completed:
+        return os << "completed";
+    }
+}
+
 result_promise_t::future_type request::result() const {
     return _result.get_shared_future();
+}
+
+void request::set_value(request_result_t::value_type value) {
+    vassert(
+      _state <= request_state::in_progress && !_result.available(),
+      "unexpected request state during result set: {}",
+      *this);
+    _result.set_value(value);
+    _state = request_state::completed;
+}
+
+void request::set_error(request_result_t::error_type error) {
+    // This is idempotent as different fibers can mark the result error
+    // at different times in some edge cases.
+    if (_state != request_state::completed) {
+        _result.set_value(error);
+        _state = request_state::completed;
+        return;
+    }
+    vassert(
+      _result.available() && result().get0().has_error(),
+      "Invalid result state, expected to be available and errored out: {}",
+      *this);
 }
 
 bool request::operator==(const request& other) const {
@@ -108,7 +142,7 @@ result<request_ptr> requests::try_emplace(
         // checks for sequence tracking.
         while (!_inflight_requests.empty()) {
             if (!_inflight_requests.front()->has_completed()) {
-                _inflight_requests.front()->set_value(errc::timeout);
+                _inflight_requests.front()->set_error(errc::timeout);
             }
             _inflight_requests.pop_front();
         }
@@ -183,7 +217,7 @@ void requests::gc_requests_from_older_terms(model::term_id current_term) {
         if (!_inflight_requests.front()->has_completed()) {
             // Here we know for sure the term change, these in flight
             // requests are going to fail anyway, mark them so.
-            _inflight_requests.front()->set_value(errc::timeout);
+            _inflight_requests.front()->set_error(errc::timeout);
         }
         _inflight_requests.pop_front();
     }
@@ -230,6 +264,18 @@ bool producer_state::operator==(const producer_state& other) const {
            && _transaction_state == other._transaction_state;
 }
 
+std::ostream& operator<<(std::ostream& o, const request& request) {
+    fmt::print(
+      o,
+      "{{ first: {}, last: {}, term: {}, result_available: {}, state: {} }}",
+      request._first_sequence,
+      request._last_sequence,
+      request._term,
+      request._result.available(),
+      request._state);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const requests& requests) {
     fmt::print(
       o,
@@ -243,13 +289,18 @@ std::ostream& operator<<(std::ostream& o, const producer_state& state) {
     fmt::print(
       o,
       "{{ id: {}, group: {}, requests: {}, "
-      "ms_since_last_update: {}, transaction_state: {}, evicted: {} }}",
+      "ms_since_last_update: {}, evicted: {}, ",
       state._id,
       state._group,
       state._requests,
       state.ms_since_last_update(),
-      state._transaction_state,
       state._evicted);
+    if (state._transaction_state) {
+        fmt::print(o, "transaction_state: {}", *state._transaction_state);
+    } else {
+        fmt::print(o, "transaction_state: {{ null }}");
+    }
+    fmt::print(o, "}}");
     return o;
 }
 
@@ -297,7 +348,7 @@ result<request_ptr> producer_state::try_emplace_request(
 
     if (unlikely(result.has_error())) {
         vlog(
-          _logger.debug,
+          _logger.warn,
           "[{}] error {} processing request {}, term: {}, reset: {}",
           *this,
           result.error(),

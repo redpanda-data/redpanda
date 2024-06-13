@@ -800,7 +800,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           "got {} on replicating tx data batch for pid:{}",
           r.error(),
           bid.pid);
-        req_ptr->set_value(r.error());
+        req_ptr->set_error(r.error());
         co_return r.error();
     }
     if (!co_await wait_no_throw(
@@ -810,7 +810,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           _ctx_log.warn,
           "application of the replicated tx batch has timed out pid:{}",
           bid.pid);
-        req_ptr->set_value(errc::timeout);
+        req_ptr->set_error(errc::timeout);
         co_return tx_errc::timeout;
     }
     auto result = kafka_result{
@@ -900,7 +900,6 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued,
   ssx::semaphore_units& units) {
-    using ret_t = result<kafka_result>;
     auto request = producer->try_emplace_request(bid, synced_term);
     if (!request) {
         co_return request.error();
@@ -920,7 +919,7 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
           _ctx_log.warn,
           "replication failed, request enqueue returned error: {}",
           req_enqueued.get_exception());
-        req_ptr->set_value<ret_t>(errc::replication_error);
+        req_ptr->set_error(errc::replication_error);
         co_return errc::replication_error;
     }
     units.return_all();
@@ -930,13 +929,13 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
     if (replicated.failed()) {
         vlog(
           _ctx_log.warn, "replication failed: {}", replicated.get_exception());
-        req_ptr->set_value<ret_t>(errc::replication_error);
+        req_ptr->set_error(errc::replication_error);
         co_return errc::replication_error;
     }
     auto result = replicated.get0();
     if (result.has_error()) {
         vlog(_ctx_log.warn, "replication failed: {}", result.error());
-        req_ptr->set_value<ret_t>(result.error());
+        req_ptr->set_error(result.error());
         co_return result.error();
     }
     // translate to kafka offset.
