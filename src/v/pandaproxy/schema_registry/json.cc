@@ -12,6 +12,7 @@
 #include "pandaproxy/schema_registry/json.h"
 
 #include "json/document.h"
+#include "json/schema.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/error.h"
@@ -73,18 +74,228 @@ ss::sstring json_schema_definition::name() const { return {_impl->name}; };
 
 namespace {
 
+// from https://json-schema.org/draft-04/schema, this is used to meta-validate a
+// jsonschema
+constexpr std::string_view json_draft_4_metaschema = R"json(
+{
+    "id": "http://json-schema.org/draft-04/schema#",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "description": "Core schema meta-schema",
+    "definitions": {
+        "schemaArray": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#" }
+        },
+        "positiveInteger": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "positiveIntegerDefault0": {
+            "allOf": [ { "$ref": "#/definitions/positiveInteger" }, { "default": 0 } ]
+        },
+        "simpleTypes": {
+            "enum": [ "array", "boolean", "integer", "null", "number", "object", "string" ]
+        },
+        "stringArray": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "uniqueItems": true
+        }
+    },
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string"
+        },
+        "$schema": {
+            "type": "string",
+            "enum": ["http://json-schema.org/draft-04/schema#"]
+        },
+        "title": {
+            "type": "string"
+        },
+        "description": {
+            "type": "string"
+        },
+        "default": {},
+        "multipleOf": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true
+        },
+        "maximum": {
+            "type": "number"
+        },
+        "exclusiveMaximum": {
+            "type": "boolean",
+            "default": false
+        },
+        "minimum": {
+            "type": "number"
+        },
+        "exclusiveMinimum": {
+            "type": "boolean",
+            "default": false
+        },
+        "maxLength": { "$ref": "#/definitions/positiveInteger" },
+        "minLength": { "$ref": "#/definitions/positiveIntegerDefault0" },
+        "pattern": {
+            "type": "string",
+            "format": "regex"
+        },
+        "additionalItems": {
+            "anyOf": [
+                { "type": "boolean" },
+                { "$ref": "#" }
+            ],
+            "default": {}
+        },
+        "items": {
+            "anyOf": [
+                { "$ref": "#" },
+                { "$ref": "#/definitions/schemaArray" }
+            ],
+            "default": {}
+        },
+        "maxItems": { "$ref": "#/definitions/positiveInteger" },
+        "minItems": { "$ref": "#/definitions/positiveIntegerDefault0" },
+        "uniqueItems": {
+            "type": "boolean",
+            "default": false
+        },
+        "maxProperties": { "$ref": "#/definitions/positiveInteger" },
+        "minProperties": { "$ref": "#/definitions/positiveIntegerDefault0" },
+        "required": { "$ref": "#/definitions/stringArray" },
+        "additionalProperties": {
+            "anyOf": [
+                { "type": "boolean" },
+                { "$ref": "#" }
+            ],
+            "default": {}
+        },
+        "definitions": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#" },
+            "default": {}
+        },
+        "properties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#" },
+            "default": {}
+        },
+        "patternProperties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#" },
+            "default": {}
+        },
+        "dependencies": {
+            "type": "object",
+            "additionalProperties": {
+                "anyOf": [
+                    { "$ref": "#" },
+                    { "$ref": "#/definitions/stringArray" }
+                ]
+            }
+        },
+        "enum": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true
+        },
+        "type": {
+            "anyOf": [
+                { "$ref": "#/definitions/simpleTypes" },
+                {
+                    "type": "array",
+                    "items": { "$ref": "#/definitions/simpleTypes" },
+                    "minItems": 1,
+                    "uniqueItems": true
+                }
+            ]
+        },
+        "format": { "type": "string" },
+        "allOf": { "$ref": "#/definitions/schemaArray" },
+        "anyOf": { "$ref": "#/definitions/schemaArray" },
+        "oneOf": { "$ref": "#/definitions/schemaArray" },
+        "not": { "$ref": "#" }
+    },
+    "dependencies": {
+        "exclusiveMaximum": [ "maximum" ],
+        "exclusiveMinimum": [ "minimum" ]
+    },
+    "default": {}
+}
+)json";
+
 result<json::Document> parse_json(std::string_view v) {
-    json::Document doc;
-    doc.Parse(v.data(), v.size());
-    if (doc.HasParseError()) {
-        return error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "Invalid schema: {} at offset {}",
-            rapidjson::GetParseError_En(doc.GetParseError()),
-            doc.GetErrorOffset())};
+    // validation pre-step: compile metaschema for json draft
+    static const auto metaschema_doc = [] {
+        auto metaschema_json = json::Document{};
+        metaschema_json.Parse(
+          json_draft_4_metaschema.data(), json_draft_4_metaschema.size());
+        vassert(
+          !metaschema_json.HasParseError(), "Malformed metaschema document");
+
+        return json::SchemaDocument{metaschema_json};
+    }();
+
+    // validation of schema: validate it against metaschema
+    // first construct a reader that validates the schema against the metaschema
+    // while parsing it
+    auto schema_stream = rapidjson::MemoryStream{v.data(), v.size()};
+    auto validating_reader
+      = json::SchemaValidatingReader<rapidjson::MemoryStream>{
+        schema_stream, metaschema_doc};
+
+    // then parse schema to json
+    auto schema_json = json::Document{};
+    schema_json.Populate(validating_reader);
+
+    if (auto parse_res = validating_reader.GetParseResult();
+        parse_res.IsError()) {
+        // schema_json is either not a json document
+        // or it's not a valid json according to metaschema
+
+        // Check the validation result
+        if (!validating_reader.IsValid()) {
+            // not a valid schema draft4 according to metaschema. retrieve some
+            // info and return error
+            auto error_loc_metaschema = json::StringBuffer{};
+            auto error_loc_schema = json::StringBuffer{};
+            validating_reader.GetInvalidSchemaPointer().StringifyUriFragment(
+              error_loc_metaschema);
+            validating_reader.GetInvalidDocumentPointer().StringifyUriFragment(
+              error_loc_schema);
+            auto invalid_keyword = validating_reader.GetInvalidSchemaKeyword();
+
+            return error_info{
+              error_code::schema_invalid,
+              fmt::format(
+                "Invalid json schema: '{}', invalid metaschema: '{}', invalid "
+                "keyword: '{}'",
+                std::string_view{
+                  error_loc_schema.GetString(), error_loc_schema.GetLength()},
+                std::string_view{
+                  error_loc_metaschema.GetString(),
+                  error_loc_metaschema.GetLength()},
+                invalid_keyword)};
+        } else {
+            // not a valid json document, return error
+            return error_info{
+              error_code::schema_invalid,
+              fmt::format(
+                "Malformed json schema: {} at offset {}",
+                rapidjson::GetParseError_En(parse_res.Code()),
+                parse_res.Offset())};
+        }
     }
-    return {std::move(doc)};
+
+    // schema_json is a valid json and a syntactically valid json schema draft4.
+    // TODO AB cross validate "$ref" fields, this is not done automatically
+
+    return {std::move(schema_json)};
 }
 
 } // namespace
