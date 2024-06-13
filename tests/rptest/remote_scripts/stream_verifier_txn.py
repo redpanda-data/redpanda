@@ -267,6 +267,368 @@ class MessageGenerator:
             yield key, value
 
 
+class StreamVerifier():
+    """Main class to process messages
+    """
+    def __init__(self,
+                 brokers,
+                 topics_config: dict,
+                 worker_threads: int,
+                 rate=0,
+                 total_messages=100):
+        # Remove quotes if any
+        self.logger = setup_logger('core')
+        # Remove quotes from broker config value if an
+        self.brokers = brokers.strip('\"').strip("'")
+        # Create main topics config
+        self.topics_config = TopicsConfig(**topics_config)
+        self.message_rate = rate
+        # It is reasonable to assume that single message will not be sent
+        # faster than 1 ms in case of no rate limitations
+        self.msgs_rate_ms = 1000 / self.message_rate if rate > 0 else 0
+        # total messages to process in all topics
+        self.total_messages = total_messages
+        self.workers = worker_threads
+        # Annoucement of dynamic vars
+        self.topics_status = {}
+        self.topics = {}
+        self.id_index = 0
+        self.produce_thread = None
+        self.consume_thread = None
+        self.delivery_reports = {}
+
+    def init_producers(self):
+        """Precreates topic status lists and initializes Producers.
+        One producer per topic.
+        """
+        self.logger.info("Initializing producers")
+        # Calculate messages per topic and announce changes
+        msgs_per_topic = int(self.total_messages /
+                             self.topics_config.topic_count)
+        new_total_messages = msgs_per_topic * self.topics_config.topic_count
+        if new_total_messages != self.total_messages:
+            self.logger.warning("Messages per topic rounded to "
+                                f"{msgs_per_topic} with the new "
+                                f"total of {new_total_messages}")
+            self.total_messages = new_total_messages
+        else:
+            self.logger.info(f"Messages per topic is {msgs_per_topic} "
+                             f"with the total of {self.total_messages}")
+        for name in self.topics_config.names:
+            topic_config = {
+                "id": self.id_index,
+                "name": name,
+                "msgs_per_transaction": app_config.msg_per_txn,
+                "total_messages": msgs_per_topic,
+                "index": 0,
+                "last_message_ts": datetime.now().timestamp(),
+                "msgs_rate_ms": self.msgs_rate_ms,
+                "consume_timeout": app_config.consume_timeout,
+                "producer": None,
+                "consumer_config": {},
+                "terminate": False
+            }
+            t = TopicStatus(**topic_config)
+            t.producer = ck.Producer({
+                'bootstrap.servers': self.brokers,
+                'transactional.id': t.transaction_id
+            })
+            t.producer.init_transactions()
+            self.topics[t.name] = t
+
+    def _send_transaction(self, logger: logging.Logger,
+                          topic: TopicStatus) -> int:
+        """
+            Transactional message sent. Uses simple indexed generator
+        """
+        sent_count = 0
+
+        def acked(err: ck.KafkaError, msg: ck.Message):
+            """
+                Unsafe callback that fills up delivery reports
+                Can be modified to send reports externally
+
+                err: error class from Kafka
+                msg: message that was sent
+            """
+            t = msg.topic()
+            pt = msg.partition()
+            pt = pt if pt else 'N'
+            k = msg.key().decode()
+            v = msg.value().decode()
+
+            if err is not None:
+                # log delivery error locally
+                logger.error(f"[{t}({pt}):{k}/{v}] {err.str()}")
+                # update delivery report
+                self.delivery_reports[f"{t}-{k}"] = {
+                    "latency": msg.latency(),
+                    "outcome": err.str()
+                }
+
+            else:
+                # Saving all delivery reports turned off for now
+                # self.delivery_reports[f"{t}-{k}"] = {
+                #     "partition": pt,
+                #     "latency": msg.latency(),
+                #     "offset": msg.offset(),
+                #     "outcome": "OK"
+                # }
+                pass
+            return
+
+        def time_since_last_msg() -> int:
+            diff_ms = datetime.now().timestamp() - topic.last_message_ts
+            return int(diff_ms * 1000)
+
+        msg_gen = MessageGenerator()
+        for key, value in msg_gen.gen_indexed_messages(
+                topic.index, topic.msgs_per_transaction):
+            # Handle message rate
+            if topic.msgs_rate_ms > 0:
+                _time_since = time_since_last_msg()
+                if _time_since < topic.msgs_rate_ms:
+                    wait_time = (topic.msgs_rate_ms - _time_since) / 1000
+                    logger.debug(f"...waiting {wait_time}s "
+                                 "before sending message")
+                    sleep(wait_time)
+
+            # Async message sending
+            topic.producer.begin_transaction()
+            try:
+                topic.producer.produce(topic.name,
+                                       key=key,
+                                       value=value,
+                                       callback=acked)
+                # Commit transaction or abort it
+                topic.producer.commit_transaction()
+                topic.index += 1
+                sent_count += 1
+                if topic.index % CONSUMER_LOGGING_THRESHOLD == 0:
+                    logger.debug(f"..sent {topic.index} to {topic.name}")
+            except ck.KafkaException:
+                # In case of any exception, abort it
+
+                # TODO: handle retry message logic
+
+                topic.producer.abort_transaction()
+                logger.warning(f"Transaction {topic.transaction_id} aborted")
+
+            # save time for this message
+            topic.last_message_ts = datetime.now().timestamp()
+
+            # exit if terminate flag is set
+            if topic.terminate:
+                logger.warning("Got terminate signal. Exiting")
+                break
+        # Return stats
+        return sent_count
+
+    @staticmethod
+    def _worker_thread(func, workers: int, topics: dict, total_messages: int,
+                       logger: logging.Logger):
+        pool = ThreadPoolExecutor(workers, "stream_worker")
+        msgs_processed = 0
+        # Sending loop
+        while msgs_processed < total_messages:
+            # Get processed message count from worker threads
+            for msg_count in pool.map(func, repeat(logger),
+                                      list(topics.values())):
+                msgs_processed += msg_count
+            # Log pretty name of underlying func
+            logger.info(f"{func.__qualname__}, "
+                        f"processed so far {msgs_processed}")
+            # Check termination flag in all topics before the next chunk
+            if any([t.terminate for t in topics.values()]):
+                logger.warning("Got terminate signal, "
+                               "exiting from message processing")
+        logger.info("End of processing messages.")
+
+    def produce(self, wait=True):
+        """Starts produce messages thread
+
+        Args:
+            wait (bool, optional): Wait for produce thread to finish or not.
+            Defaults to True.
+        """
+        self.logger.info("Start of sending messages")
+        thread = threading.Thread(name="stream_produce_thread",
+                                  target=self._worker_thread,
+                                  args=(self._send_transaction, self.workers,
+                                        self.topics, self.total_messages,
+                                        self.logger))
+        thread.start()
+        self.produce_thread = thread
+        if wait:
+            thread.join()
+        return
+
+    def init_consumers(self):
+        """Precreates topic status lists for Cosuming thread.
+        One Consumer per worker thread.
+        """
+        self.logger.info("Initializing consumers")
+        for name in self.topics_config.names:
+            topic_config = {
+                "id": self.id_index,
+                "name": name,
+                # 0 means consume all messages
+                "total_messages": 0,
+                # consumed messages so far
+                "index": 0,
+                # time when last message consumed
+                "last_message_ts": datetime.now().timestamp(),
+                # max time between consuming messages
+                "consume_timeout": app_config.consume_timeout,
+                # consumer config
+                "consumer_config": {
+                    'bootstrap.servers': self.brokers,
+                    'group.id': self.topics_config.topic_group_id,
+                    'auto.offset.reset': 'earliest',
+                    'enable.auto.commit': False,
+                    'enable.partition.eof': True,
+                },
+                # termination flag
+                "terminate": False,
+                # not used, but needs to be filled
+                "msgs_per_transaction": 1,
+                "producer": None,
+                "msgs_rate_ms": self.msgs_rate_ms
+            }
+            t = TopicStatus(**topic_config)
+            self.topics[t.name] = t
+        return
+
+    def consume(self, wait=True):
+        """Starts consume messages thread
+
+        Args:
+            wait (bool, optional): Wait for consume thread to finish or not.
+            Defaults to True.
+        """
+        self.logger.info("Start of consuming messages")
+        thread = threading.Thread(name="stream_consume_thread",
+                                  target=self._worker_thread,
+                                  args=(self._consume_from_topic, self.workers,
+                                        self.topics, self.total_messages,
+                                        self.logger))
+        thread.start()
+        self.consume_thread = thread
+        if wait:
+            thread.join()
+        return
+
+    @staticmethod
+    def _consume_from_topic(logger: logging.Logger, topic: TopicStatus):
+        """Consumes all messages from topic
+
+        Args:
+            logger (logging.Logger): logger class
+            topic (TopicStatus): current live topic status class to work with
+
+        Raises:
+            ck.KafkaException: on any error occured while consuming
+
+        Returns:
+            int: number of consumed messages
+        """
+        def time_since_last_msg() -> int:
+            diff_ms = datetime.now().timestamp() - topic.last_message_ts
+            return int(diff_ms * 1000)
+
+        topic.last_message_ts = datetime.now().timestamp()
+
+        # Message consuming loop
+        consumer = ck.Consumer(topic.consumer_config)
+        try:
+            # Recent changes offers use of subscribe
+            # regardless of transactions and partitions
+            consumer.subscribe([topic.name])
+            while True:
+                # calculate elapsed time
+                _since_last_msg_ms = time_since_last_msg()
+
+                # Exit on timeout
+                if _since_last_msg_ms > topic.consume_timeout:
+                    logger.error("Timeout consuming messages "
+                                 f"from {topic.name}")
+                    break
+
+                # Poll for the message
+                msg = consumer.poll(timeout=1.0)
+                if msg is None:
+                    # no messages
+                    continue
+                # On error, check for the EOF
+                if msg.error():
+                    if msg.error().code() == ck.KafkaError._PARTITION_EOF:
+                        # End of partition event
+                        logger.info(f"Consumer of '{msg.topic()}' "
+                                    f"[{msg.partition()}] reached "
+                                    f"end at offset {msg.offset()}")
+                        break
+                    # If not EOF, raise the error
+                    elif msg.error():
+                        raise ck.KafkaException(msg.error())
+                else:
+                    topic.last_message_ts = datetime.now().timestamp()
+                    # Save index
+                    topic.index += 1
+                    # log only milestones to eliminate IO stress
+                    if topic.index % CONSUMER_LOGGING_THRESHOLD == 0:
+                        logger.debug(f"...consumed {topic.index} messages "
+                                     f"from {topic.name}")
+
+                # exit if terminate flag is set
+                if topic.terminate:
+                    logger.warning("Got terminate signal. Exiting")
+                    break
+        finally:
+            # Close down consumer
+            consumer.close()
+
+        logger.info(f"Consumed {topic.index} messages")
+        return topic.index
+
+    def _calculate_totals(self) -> Tuple:
+        msg_total = 0
+        indices = []
+        for t in self.topics.values():
+            if t.producer is not None:
+                msg_total += t.total_messages
+            elif t.consumer_config:
+                msg_total += t.index
+            indices += [t.index]
+        return msg_total, indices
+
+    def status(self, name: str = ""):
+        """Provides current processing status
+
+        Args:
+            name (str, optional): topic name. Defaults to "".
+
+        Returns:
+            dict: Dict with status
+        """
+
+        response = {"topics": {}}
+        if len(name) > 0:
+            # include topic as asked
+            response['topics'][name] = vars(self.topics_status[name])
+
+        msg_total, indices = self._calculate_totals()
+        response['stats'] = {"total_messages": msg_total, "indices": indices}
+        response['delivery_errors'] = self.delivery_reports
+        return response
+
+    def terminate(self):
+        """Sets terminate flag for all topics and flushes producers
+        """
+        for t in self.topics.values():
+            t.terminate = True
+            if t.producer is not None:
+                t.producer.flush()
+
 
 class StreamVerifierProduce(StreamVerifier):
     def __init__(self, cfg):
