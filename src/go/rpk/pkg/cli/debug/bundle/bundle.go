@@ -84,8 +84,6 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if cpuProfilerWait < 15*time.Second {
 				out.Die("--cpu-profiler-wait must be higher than 15 seconds")
 			}
-			path, err := determineFilepath(fs, outFile, cmd.Flags().Changed(outputFlag))
-			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
 
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
@@ -100,6 +98,9 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if !ok {
 				yActual = y
 			}
+
+			path, err := determineFilepath(fs, yActual, outFile, cmd.Flags().Changed(outputFlag))
+			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
 
 			partitions, err := parsePartitionFlag(partitionFlag)
 			out.MaybeDie(err, "unable to parse partition flag %v: %v", partitionFlag, err)

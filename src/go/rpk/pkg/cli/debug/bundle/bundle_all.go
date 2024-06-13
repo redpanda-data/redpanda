@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 )
 
@@ -26,6 +27,6 @@ func executeK8SBundle(context.Context, bundleParams) error {
 	return errors.New("rpk debug bundle is unsupported on your operating system")
 }
 
-func determineFilepath(afero.Fs, string, bool) (string, error) {
+func determineFilepath(afero.Fs, *config.RedpandaYaml, string, bool) (string, error) {
 	return "", errors.New("rpk debug bundle is not supported on your operating system")
 }

@@ -56,11 +56,15 @@ const linuxUtilsRoot = "utils"
 //   - File Extension: if no extension is provided we default to .zip
 //   - File Location: we check for write permissions in the pwd (for backcompat);
 //     if permission is denied we default to $HOME unless isFlag is true.
-func determineFilepath(fs afero.Fs, path string, isFlag bool) (finalPath string, err error) {
+func determineFilepath(fs afero.Fs, rp *config.RedpandaYaml, path string, isFlag bool) (finalPath string, err error) {
 	// if it's empty, use ./<timestamp>-bundle.zip
 	if path == "" {
 		timestamp := time.Now().Unix()
-		path = fmt.Sprintf("%d-bundle.zip", timestamp)
+		if rp.Redpanda.AdvertisedRPCAPI != nil {
+			path = fmt.Sprintf("%v-%d-bundle.zip", sanitizeName(rp.Redpanda.AdvertisedRPCAPI.Address), timestamp)
+		} else {
+			path = fmt.Sprintf("%d-bundle.zip", timestamp)
+		}
 	} else if isDir, _ := afero.IsDir(fs, path); isDir {
 		return "", fmt.Errorf("output file path is a directory, please specify the name of the file")
 	}
