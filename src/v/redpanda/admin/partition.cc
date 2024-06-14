@@ -807,6 +807,12 @@ void admin_server::register_partition_routes() {
           return trigger_on_demand_rebalance_handler(std::move(req));
       });
 
+    register_route<superuser>(
+      ss::httpd::partition_json::trigger_partitions_shard_rebalance,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return trigger_shard_rebalance_handler(std::move(req));
+      });
+
     register_route<user>(
       ss::httpd::partition_json::get_partition_reconfigurations,
       [this](std::unique_ptr<ss::http::request> req) {
@@ -1322,5 +1328,16 @@ admin_server::trigger_on_demand_rebalance_handler(
       });
 
     co_await throw_on_error(*req, ec, model::controller_ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::trigger_shard_rebalance_handler(
+  std::unique_ptr<ss::http::request> req) {
+    auto ec = co_await _controller->get_topics_frontend()
+                .local()
+                .trigger_local_partition_shard_rebalance();
+
+    co_await throw_on_error(*req, ec, model::ntp{});
     co_return ss::json::json_return_type(ss::json::json_void());
 }
