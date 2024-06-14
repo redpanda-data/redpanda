@@ -319,7 +319,7 @@ ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::mark_tx_aborting(
     if (tx.status != tx_status::ongoing) {
         co_return tm_stm::op_status::conflict;
     }
-    tx.status = cluster::tx_status::aborting;
+    tx.status = cluster::tx_status::preparing_abort;
     tx.last_update_ts = clock_type::now();
     co_return co_await update_tx(std::move(tx), expected_term);
 }
@@ -353,7 +353,7 @@ ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::mark_tx_prepared(
           tx_status::ongoing);
         co_return tm_stm::op_status::conflict;
     }
-    tx.status = cluster::tx_status::prepared;
+    tx.status = cluster::tx_status::completed_commit;
     tx.last_update_ts = clock_type::now();
     co_return co_await update_tx(std::move(tx), expected_term);
 }
@@ -370,10 +370,12 @@ ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::mark_tx_killed(
         co_return tx_opt;
     }
     auto tx = tx_opt.value();
-    if (tx.status != tx_status::ongoing && tx.status != tx_status::preparing) {
+    if (
+      tx.status != tx_status::ongoing
+      && tx.status != tx_status::preparing_commit) {
         co_return tm_stm::op_status::conflict;
     }
-    tx.status = cluster::tx_status::killed;
+    tx.status = cluster::tx_status::expired;
     tx.last_update_ts = clock_type::now();
     co_return co_await update_tx(std::move(tx), expected_term);
 }
@@ -474,7 +476,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
         co_return tx_opt.error();
     }
     tx_metadata tx = tx_opt.value();
-    tx.status = tx_status::ready;
+    tx.status = tx_status::empty;
     tx.pid = pid;
     tx.last_pid = last_pid;
     tx.tx_seq += 1;
@@ -530,7 +532,7 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
       .last_pid = model::no_pid,
       .tx_seq = model::tx_seq(0),
       .etag = expected_term,
-      .status = tx_status::ready,
+      .status = tx_status::empty,
       .timeout_ms = transaction_timeout_ms,
       .last_update_ts = clock_type::now()};
     auto batch = serialize_tx(tx);

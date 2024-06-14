@@ -14,17 +14,109 @@
 #include "model/record.h"
 namespace cluster {
 
+/*
+ *                    +---------------+
+ *                    |               |
+ *     +--------------+     empty     +---+
+ *     |              |               |   |
+ *     |              +-------+-------+   |
+ *     |                      |           |
+ *     |                      |           |
+ *     |                      |         abort
+ *  commit                   add          |
+ *     |              partition/offset    |
+ *     |                      |           |
+ *     |                      |           |
+ *     |              +-------v-------+   |
+ *     |              |               |   |
+ *     |    +---------+    ongoing    +---+------------+
+ *     |    |         |               |   |            |
+ *     |    |         +-------+-------+   |            |
+ *     |    |                 |           |         producer
+ *     |  commit            abort   +-----+          fenced
+ *     |    |                 |     |                  |
+ *     |    |                 |     |                  |
+ *  +--v----v-------+ +-------v-----v-+ +--------------v---------------+
+ *  |               | |               | |                              |
+ *  |prepare_commit | | prepare_abort | |    prepare_internal_abort    |
+ *  |               | |               | |                              |
+ *  +-------+-------+ +------+--------+ +------------+-----------------+
+ *          |                |                       |
+ *    done committing   done aborting            done aborting
+ *          |                |                       |
+ * +--------v--------+       |  +----------------+   |
+ * |                 |       |  |                |   |
+ * | complete_commit |       +->| complete_abort |<--+
+ * |                 |          |                |
+ * +--------+--------+          +--------+-------+
+ *          |                            |
+ *      expired                       expired
+ *          |                            |
+ *          |      +---------------+     |
+ *          |      |               |     |
+ *          +----->|   tombstone   |<----+
+ *                 |               |
+ *                 +---------------+
+ */
 enum tx_status : int32_t {
-    ongoing,
-    preparing,
-    prepared,
-    aborting, // abort is initiated by a client
-    killed,   // abort is initiated by a timeout
-    ready,
-    tombstone,
+    /**
+     * When transactional id to producer id mapping is added to coordinator it
+     * starts in this state
+     */
+    empty = 5,
+    /**
+     * Transaction is ongoing as soon as partition or offset is added to it
+     */
+    ongoing = 0,
+    /**
+     * Transaction is marked as preparing_commit when it is requested to be
+     * committed by the client but before committing transaction on data and
+     * offset partitions (mapped from earlier prepared state)
+     */
+    preparing_commit = 2,
+    /**
+     * Transaction is completed commit when its participants committed the
+     * transaction.
+     */
+    completed_commit = 7,
+    /**
+     * Transaction is marked as preparing_abort when it is requested to be
+     * aborted by the client but before aborting transaction on data and
+     * offset partitions
+     */
+    preparing_abort = 3,
+    /**
+     * The same as the preparing_abort but when transaction is aborted by
+     * internals of Redpanda f.e. timeout or transactional id limit overflow
+     */
+    preparing_internal_abort = 4,
+    /**
+     * Transaction is completed abort when its participants aborted the
+     * transaction. This state is not replicated as aborting data on
+     * participants is idempotent and can be retried by the new leader.
+     */
+    completed_abort = 8,
+    /**
+     * Transaction is about to be removed. The tombstone is used when
+     * transaction and all related state is forgotten. The tombstones are
+     * replicated when transaction state is expired.
+     */
+    tombstone = 6,
 };
 
 std::ostream& operator<<(std::ostream&, tx_status);
+/**
+ * Simple tuple representing state transition error.
+ */
+struct state_transition_error {
+    state_transition_error(tx_status, tx_status);
+
+    tx_status from;
+    tx_status to;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const state_transition_error&);
+};
 
 struct tx_metadata {
     static constexpr uint8_t version = 2;
@@ -92,7 +184,14 @@ struct tx_metadata {
     std::chrono::milliseconds get_timeout() const { return timeout_ms; }
 
     bool delete_partition(const tx_partition& part);
+    /**
+     * Validates and updates the transaction metadata status if transition is
+     * allowed by transaction FSM.
+     */
+    std::optional<state_transition_error> try_update_status(tx_status);
 
     friend std::ostream& operator<<(std::ostream&, const tx_metadata&);
 };
+
+bool is_state_transition_valid(const tx_metadata&, tx_status);
 } // namespace cluster

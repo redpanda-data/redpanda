@@ -186,15 +186,15 @@ struct transaction_metadata_v1 {
         case tx_status::ongoing:
             return cluster::tx_status::ongoing;
         case tx_status::preparing:
-            return cluster::tx_status::preparing;
+            return cluster::tx_status::preparing_commit;
         case tx_status::prepared:
-            return cluster::tx_status::prepared;
+            return cluster::tx_status::completed_commit;
         case tx_status::aborting:
-            return cluster::tx_status::aborting;
+            return cluster::tx_status::preparing_abort;
         case tx_status::killed:
-            return cluster::tx_status::killed;
+            return cluster::tx_status::expired;
         case tx_status::ready:
-            return cluster::tx_status::ready;
+            return cluster::tx_status::empty;
         case tx_status::tombstone:
             return cluster::tx_status::tombstone;
         }
@@ -259,15 +259,15 @@ struct transaction_metadata_v0 {
         case tx_status::ongoing:
             return cluster::tx_status::ongoing;
         case tx_status::preparing:
-            return cluster::tx_status::preparing;
+            return cluster::tx_status::preparing_commit;
         case tx_status::prepared:
-            return cluster::tx_status::prepared;
+            return cluster::tx_status::completed_commit;
         case tx_status::aborting:
-            return cluster::tx_status::aborting;
+            return cluster::tx_status::preparing_abort;
         case tx_status::killed:
-            return cluster::tx_status::killed;
+            return cluster::tx_status::expired;
         case tx_status::ready:
-            return cluster::tx_status::ready;
+            return cluster::tx_status::empty;
         }
         vassert(false, "unknown status: {}", status);
     };

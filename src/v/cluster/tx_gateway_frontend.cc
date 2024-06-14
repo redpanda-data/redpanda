@@ -99,19 +99,19 @@ static tx_metadata as_tx(
         tx.status = tx_status::ongoing;
         break;
     case fetch_tx_reply::tx_status::preparing:
-        tx.status = tx_status::preparing;
+        tx.status = tx_status::preparing_commit;
         break;
     case fetch_tx_reply::tx_status::prepared:
-        tx.status = tx_status::prepared;
+        tx.status = tx_status::completed_commit;
         break;
     case fetch_tx_reply::tx_status::aborting:
-        tx.status = tx_status::aborting;
+        tx.status = tx_status::preparing_abort;
         break;
     case fetch_tx_reply::tx_status::killed:
-        tx.status = tx_status::killed;
+        tx.status = tx_status::expired;
         break;
     case fetch_tx_reply::tx_status::ready:
-        tx.status = tx_status::ready;
+        tx.status = tx_status::empty;
         break;
     case fetch_tx_reply::tx_status::tombstone:
         tx.status = tx_status::tombstone;
@@ -493,20 +493,23 @@ ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
     case tx_status::ongoing:
         reply.status = fetch_tx_reply::tx_status::ongoing;
         break;
-    case tx_status::preparing:
+    case tx_status::preparing_commit:
         reply.status = fetch_tx_reply::tx_status::preparing;
         break;
-    case tx_status::prepared:
+    case tx_status::completed_commit:
         reply.status = fetch_tx_reply::tx_status::prepared;
         break;
-    case tx_status::aborting:
+    case tx_status::preparing_abort:
         reply.status = fetch_tx_reply::tx_status::aborting;
         break;
-    case tx_status::killed:
+    case tx_status::expired:
         reply.status = fetch_tx_reply::tx_status::killed;
         break;
-    case tx_status::ready:
+    case tx_status::empty:
         reply.status = fetch_tx_reply::tx_status::ready;
+        break;    
+    case tx_status::completed_abort:
+        reply.status = fetch_tx_reply::tx_status::aborting;
         break;
     case tx_status::tombstone:
         reply.status = fetch_tx_reply::tx_status::tombstone;
@@ -851,7 +854,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         co_return try_abort_reply::make_aborted();
     }
 
-    if (tx.status == tx_status::prepared) {
+    if (tx.status == tx_status::completed_commit) {
         vlog(
           txlog.trace,
           "[tx_id={}] pid: {} tx_seq: {} is prepared => considering it "
@@ -861,8 +864,8 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
           tx.tx_seq);
         co_return try_abort_reply::make_committed();
     } else if (
-      tx.status == tx_status::aborting || tx.status == tx_status::killed
-      || tx.status == tx_status::ready) {
+      tx.status == tx_status::preparing_abort || tx.status == tx_status::expired
+      || tx.status == tx_status::empty) {
         vlog(
           txlog.trace,
           "[tx_id={}] pid: {} tx_seq: {} has status: {} => considering it "
@@ -875,7 +878,8 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         // so can't be comitted and it's save to aborted
         co_return try_abort_reply::make_aborted();
     } else if (
-      tx.status == tx_status::preparing || tx.status == tx_status::ongoing) {
+      tx.status == tx_status::preparing_commit
+      || tx.status == tx_status::ongoing) {
         vlog(
           txlog.trace,
           "[tx_id={}] pid: {} tx_seq: {} is ongoing => forcing it to be "
@@ -1290,7 +1294,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     if (tx.status == tx_status::ongoing) {
         vlog(txlog.info, "[tx_id={}] tx is ongoing, aborting", tx_id);
         r = co_await do_abort_tm_tx(term, stm, tx, timeout);
-    } else if (tx.status == tx_status::preparing) {
+    } else if (tx.status == tx_status::preparing_commit) {
         vlog(txlog.info, "[tx_id={}] tx is preparing, aborting", tx_id);
         // preparing is obsolete, also it isn't acked until
         // it's prepared si it's safe to abort it
@@ -1421,17 +1425,17 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
       _ssg,
       [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
         tx_gateway_frontend& self) mutable
-      -> ss::future<add_paritions_tx_reply> {
+      -> ss::future<add_partitions_tx_reply> {
           return ss::with_gate(
             self._gate,
             [request = std::move(request), timeout, tm, &self]()
-              -> ss::future<add_paritions_tx_reply> {
+              -> ss::future<add_partitions_tx_reply> {
                 return self.with_stm(
                   tm,
                   [request = std::move(request), timeout, &self](
                     checked<ss::shared_ptr<tm_stm>, tx::errc> r) {
                       if (!r) {
-                          return ss::make_ready_future<add_paritions_tx_reply>(
+                          return ss::make_ready_future<add_partitions_tx_reply>(
                             make_add_partitions_error_response(
                               request, r.error()));
                       }
@@ -1613,7 +1617,7 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
           response.results.end(),
           [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
 
-        add_paritions_tx_reply::partition_result res_partition;
+        add_partitions_tx_reply::partition_result res_partition;
         res_partition.partition_index = br.ntp.tp.partition;
         if (has_added && br.ec == tx::errc::none) {
             res_partition.error_code = tx::errc::none;
@@ -2004,7 +2008,7 @@ tx_gateway_frontend::do_end_txn(
 
     checked<cluster::tx_metadata, tx::errc> r(tx::errc::unknown_server_error);
     if (request.committed) {
-        if (tx.status == tx_status::killed) {
+        if (tx.status == tx_status::expired) {
             vlog(
               txlog.warn,
               "[tx_id={}] can't commit an expired transaction pid: {} etag: {} "
@@ -2018,7 +2022,7 @@ tx_gateway_frontend::do_end_txn(
             co_return tx::errc::fenced;
         }
         bool is_status_ok = tx.status == tx_status::ongoing
-                            || tx.status == tx_status::prepared;
+                            || tx.status == tx_status::completed_commit;
         if (is_status_ok) {
             try {
                 r = co_await do_commit_tm_tx(term, stm, tx, timeout, outcome);
@@ -2052,7 +2056,7 @@ tx_gateway_frontend::do_end_txn(
             co_return tx::errc::invalid_txn_state;
         }
     } else {
-        if (tx.status == tx_status::killed) {
+        if (tx.status == tx_status::expired) {
             vlog(
               txlog.warn,
               "[tx_id={}] can't abort an expired transaction pid: {} etag: {} "
@@ -2171,12 +2175,14 @@ tx_gateway_frontend::do_abort_tm_tx(
         co_return tx::errc::not_coordinator;
     }
 
-    if (tx.status == tx_status::aborting) {
+    if (tx.status == tx_status::preparing_abort) {
         // retry of the abort
         co_return co_await reabort_tm_tx(stm, expected_term, tx, timeout);
     }
 
-    if (tx.status != tx_status::ongoing && tx.status != tx_status::preparing) {
+    if (
+      tx.status != tx_status::ongoing
+      && tx.status != tx_status::preparing_commit) {
         vlog(
           txlog.warn,
           "[tx_id={}] abort encountered a transaction with unexpected status: "
@@ -2232,7 +2238,7 @@ tx_gateway_frontend::do_commit_tm_tx(
         co_return tx::errc::not_coordinator;
     }
 
-    if (tx.status == tx_status::prepared) {
+    if (tx.status == tx_status::completed_commit) {
         outcome->set_value(tx::errc::none);
         co_return co_await recommit_tm_tx(stm, expected_term, tx, timeout);
     }
@@ -2553,10 +2559,11 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::bump_etag(
   cluster::tx_metadata tx,
   model::timeout_clock::duration timeout) {
     checked<tx_metadata, tx::errc> r1(tx::errc::unknown_server_error);
-    if (tx.status == tx_status::prepared) {
+    if (tx.status == tx_status::completed_commit) {
         r1 = co_await recommit_tm_tx(stm, term, tx, timeout);
     } else if (
-      tx.status == tx_status::aborting || tx.status == tx_status::killed) {
+      tx.status == tx_status::preparing_abort
+      || tx.status == tx_status::expired) {
         r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
     } else {
         r1 = tx;
@@ -2602,9 +2609,9 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::forget_tx(
   cluster::tx_metadata tx,
   model::timeout_clock::duration timeout) {
     checked<tx_metadata, tx::errc> r1(tx::errc::unknown_server_error);
-    if (tx.status == tx_status::prepared) {
+    if (tx.status == tx_status::completed_commit) {
         r1 = co_await recommit_tm_tx(stm, term, tx, timeout);
-    } else if (tx.status == tx_status::aborting) {
+    } else if (tx.status == tx_status::preparing_abort) {
         r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
     } else {
         r1 = tx;
@@ -2686,8 +2693,9 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_tx(
     // tombstone & killed are terminal tx states
     // preparing isn't supported since ga
     if (
-      tx.status == tx_status::tombstone || tx.status == tx_status::preparing
-      || tx.status == tx_status::killed) {
+      tx.status == tx_status::tombstone
+      || tx.status == tx_status::preparing_commit
+      || tx.status == tx_status::expired) {
         // tombstone & killed are terminal so we know that we're
         // we have the most up-to-date info => reject can't happen
         co_return co_await bump_etag(term, stm, tx, timeout);
@@ -2695,11 +2703,11 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_tx(
 
     if (!is_fetch_tx_supported()) {
         checked<tx_metadata, tx::errc> r1(tx);
-        if (tx.status == tx_status::prepared) {
+        if (tx.status == tx_status::completed_commit) {
             r1 = co_await recommit_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tx_status::aborting) {
+        } else if (tx.status == tx_status::preparing_abort) {
             r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tx_status::killed) {
+        } else if (tx.status == tx_status::expired) {
             r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
         }
         if (!r1.has_value()) {
@@ -2730,7 +2738,7 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_tx(
 
     auto old_tx = r1.value();
 
-    if (tx.status == tx_status::ready) {
+    if (tx.status == tx_status::empty) {
         if (old_tx.tx_seq < tx.tx_seq) {
             // previous leader attempted to write ready;
             // the write erred but passed; tx is the freshest
@@ -2824,7 +2832,7 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_tx(
         co_return co_await forget_tx(term, stm, tx, timeout);
     }
 
-    if (tx.status == tx_status::aborting) {
+    if (tx.status == tx_status::preparing_abort) {
         if (old_tx.tx_seq < tx.tx_seq) {
             // previous leader attempted to write abort;
             // the write erred but passed; tx is the freshest
@@ -2858,7 +2866,7 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_tx(
                 // is ongoing) or it passed (same txseq, status is aborting)
                 if (
                   old_tx.status != tx_status::ongoing
-                  && old_tx.status != tx_status::aborting) {
+                  && old_tx.status != tx_status::preparing_abort) {
                     vlog(
                       txlog.warn,
                       "[tx_id={}] A cached tx (tx: {} pid: {} etag: {} tx_seq: "
@@ -2884,7 +2892,7 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_tx(
         co_return co_await bump_etag(term, stm, old_tx, timeout);
     }
 
-    if (tx.status == tx_status::prepared) {
+    if (tx.status == tx_status::completed_commit) {
         if (old_tx.tx_seq < tx.tx_seq) {
             // previous leader attempted to write prepared;
             // the write erred but passed; tx is the freshest
@@ -2918,7 +2926,7 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_tx(
                 // is ongoing) or it passed (same txseq, status is prepared)
                 if (
                   old_tx.status != tx_status::ongoing
-                  && old_tx.status != tx_status::prepared) {
+                  && old_tx.status != tx_status::completed_commit) {
                     vlog(
                       txlog.warn,
                       "[tx_id={}] A cached tx (tx: {} pid: {} etag: {} tx_seq: "
@@ -3059,7 +3067,7 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_ongoing_tx(
 
     if (tx.status == tx_status::ongoing) {
         co_return tx;
-    } else if (tx.status == tx_status::preparing) {
+    } else if (tx.status == tx_status::preparing_commit) {
         // a producer can see a transaction with the same pid and in a
         // preparing state only if it attempted a commit, the commit
         // failed and then the producer ignored it and tried to start
@@ -3068,7 +3076,7 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_ongoing_tx(
         // it violates the docs, the producer is expected to call abort
         // https://kafka.apache.org/23/javadoc/org/apache/kafka/clients/producer/KafkaProducer.html
         co_return tx::errc::invalid_txn_state;
-    } else if (tx.status == tx_status::killed) {
+    } else if (tx.status == tx_status::expired) {
         // a tx was timed out, can't treat it as ::aborting because
         // from the client perspective it will look like a tx wasn't
         // failed at all but in fact the second part of the tx will
@@ -3085,15 +3093,15 @@ ss::future<checked<tx_metadata, tx::errc>> tx_gateway_frontend::get_ongoing_tx(
         co_return tx::errc::fenced;
     } else {
         if (
-          tx.status == tx_status::prepared
-          || tx.status == tx_status::aborting) {
+          tx.status == tx_status::completed_commit
+          || tx.status == tx_status::preparing_abort) {
             // previous commit was acked to the client
             // the the commit / abort failed on recommit or the node crushed
             // client retries new implicit tx on the new leader
             // and encounters half committed / aborted tx
             // get_tx is correcting so it was already rolled forward
             // we just need to implicitly start new ongoing tx
-        } else if (tx.status != tx_status::ready) {
+        } else if (tx.status != tx_status::empty) {
             vassert(false, "unexpected tx status {}", tx.status);
         }
         auto ongoing_tx = co_await stm->mark_tx_ongoing(term, tx.id);
@@ -3241,7 +3249,7 @@ ss::future<tx::errc> tx_gateway_frontend::do_expire_old_tx(
 
     if (tx.status == tx_status::ongoing) {
         r = co_await do_abort_tm_tx(term, stm, tx, timeout);
-    } else if (tx.status == tx_status::preparing) {
+    } else if (tx.status == tx_status::preparing_commit) {
         r = co_await do_abort_tm_tx(term, stm, tx, timeout);
     }
     if (!r.has_value()) {

@@ -262,7 +262,7 @@ std::deque<tx_metadata> tm_stm_cache::checkpoint() {
 
     auto can_transfer = [](const tx_metadata& tx) {
         return !tx.transferring
-               && (tx.status == tx_status::ready || tx.status == tx_status::ongoing);
+               && (tx.status == tx_status::empty || tx.status == tx_status::ongoing);
     };
     // Loop through all ongoing/pending txns in memory and checkpoint.
 

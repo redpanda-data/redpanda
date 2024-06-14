@@ -164,7 +164,7 @@ TEST_F_CORO(tm_stm_test_fixture, test_tm_stm_new_tx) {
 
     auto tx1 = co_await get_tx(tx_id);
     ASSERT_EQ_CORO(tx1.pid, pid);
-    ASSERT_EQ_CORO(tx1.status, tx_status::ready);
+    ASSERT_EQ_CORO(tx1.status, tx_status::empty);
     ASSERT_EQ_CORO(tx1.partitions.size(), 0);
     co_await mark_tx_ongoing(tx_id);
 
@@ -185,7 +185,7 @@ TEST_F_CORO(tm_stm_test_fixture, test_tm_stm_new_tx) {
 
     auto tx4 = co_await mark_tx_prepared(tx_id);
     ASSERT_EQ_CORO(tx4.pid, pid);
-    ASSERT_EQ_CORO(tx4.status, tx_status::prepared);
+    ASSERT_EQ_CORO(tx4.status, tx_status::completed_commit);
     ASSERT_EQ_CORO(tx4.tx_seq, tx4.tx_seq);
     ASSERT_EQ_CORO(tx4.partitions.size(), 2);
 
@@ -251,7 +251,7 @@ TEST_F_CORO(tm_stm_test_fixture, test_tm_stm_re_tx) {
     }).then(assert_success);
     auto tx7 = co_await get_tx(tx_id);
     ASSERT_EQ_CORO(tx7.pid, pid2);
-    ASSERT_EQ_CORO(tx7.status, tx_status::ready);
+    ASSERT_EQ_CORO(tx7.status, tx_status::empty);
     ASSERT_EQ_CORO(tx7.partitions.size(), 0);
 }
 } // namespace
