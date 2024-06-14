@@ -24,7 +24,7 @@
 #include <seastar/coroutine/exception.hh>
 #include <seastar/util/defer.hh>
 
-#include <absl/container/flat_hash_set.h>
+#include <absl/container/inlined_vector.h>
 #include <boost/outcome/std_result.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/core.h>
@@ -32,8 +32,8 @@
 #include <fmt/ranges.h>
 #include <rapidjson/error/en.h>
 
+#include <numeric>
 #include <string_view>
-
 namespace pandaproxy::schema_registry {
 
 struct json_schema_definition::impl {
@@ -298,6 +298,96 @@ result<json::Document> parse_json(std::string_view v) {
     return {std::move(schema_json)};
 }
 
+/// is_superset section
+
+// close the implementation in a namespace to keep it contained
+namespace is_superset_impl {
+
+enum class json_type : uint8_t {
+    string = 0,
+    integer = 1,
+    number = 2,
+    object = 3,
+    array = 4,
+    boolean = 5,
+    null = 6
+};
+// enough inlined space to hold all the values of json_type
+using json_type_list = absl::InlinedVector<json_type, 7>;
+
+constexpr std::string_view to_string_view(json_type t) {
+    switch (t) {
+    case json_type::string:
+        return "string";
+    case json_type::integer:
+        return "integer";
+    case json_type::number:
+        return "number";
+    case json_type::object:
+        return "object";
+    case json_type::array:
+        return "array";
+    case json_type::boolean:
+        return "boolean";
+    case json_type::null:
+        return "null";
+    }
+}
+
+constexpr std::optional<json_type> from_string_view(std::string_view v) {
+    return string_switch<std::optional<json_type>>(v)
+      .match(to_string_view(json_type::string), json_type::string)
+      .match(to_string_view(json_type::integer), json_type::integer)
+      .match(to_string_view(json_type::number), json_type::number)
+      .match(to_string_view(json_type::object), json_type::object)
+      .match(to_string_view(json_type::array), json_type::array)
+      .match(to_string_view(json_type::boolean), json_type::boolean)
+      .match(to_string_view(json_type::null), json_type::null)
+      .default_match(std::nullopt);
+}
+
+constexpr auto parse_json_type(json::Value const& v) {
+    std::string_view sv{v.GetString(), v.GetStringLength()};
+    auto type = from_string_view(sv);
+    if (!type) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format("Invalid JSON Schema type: '{}'", sv)});
+    }
+    return *type;
+}
+
+// parse None | schema_type | array[schema_type] into a set of types.
+// the return type is implemented as a inlined_vector<json_type> with sorted set
+// semantics
+json_type_list normalized_type(json::Value const& v) {
+    auto type_it = v.FindMember("type");
+    auto ret = json_type_list{};
+    if (type_it == v.MemberEnd()) {
+        // omit keyword is like accepting all the types
+        ret = {
+          json_type::string,
+          json_type::integer,
+          json_type::number,
+          json_type::object,
+          json_type::array,
+          json_type::boolean,
+          json_type::null};
+    } else if (type_it->value.IsArray()) {
+        // schema ensures that all the values are unique
+        for (auto& v : type_it->value.GetArray()) {
+            ret.push_back(parse_json_type(v));
+        }
+    } else {
+        ret.push_back(parse_json_type(type_it->value));
+    }
+
+    // to support set difference operations, sort the elements
+    std::ranges::sort(ret);
+    return ret;
+}
+
+} // namespace is_superset_impl
 } // namespace
 
 ss::future<json_schema_definition>
