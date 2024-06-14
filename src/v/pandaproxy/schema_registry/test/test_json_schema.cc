@@ -124,3 +124,68 @@ SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
         }
     };
 }
+
+struct compatibility_test_case {
+    std::string_view reader_schema;
+    std::string_view writer_schema;
+    bool reader_is_compatible_with_writer;
+};
+
+static constexpr auto compatibility_test_cases
+  = std::to_array<compatibility_test_case>({
+    //***** not compatible section *****
+    // not allowed promotion
+    {
+      .reader_schema = R"({"type": "integer"})",
+      .writer_schema = R"({"type": "number"})",
+      .reader_is_compatible_with_writer = false,
+    },
+    {
+      .reader_schema = R"({"type": ["integer", "string"]})",
+      .writer_schema = R"({"type": ["number", "string"]})",
+      .reader_is_compatible_with_writer = false,
+    },
+    // not allowed new types
+    {
+      .reader_schema = R"({"type": "integer"})",
+      .writer_schema = R"({})",
+      .reader_is_compatible_with_writer = false,
+    },
+    {
+      .reader_schema = R"({"type": "boolean"})",
+      .writer_schema = R"({"type": ["boolean", "null"]})",
+      .reader_is_compatible_with_writer = false,
+    },
+  });
+SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
+    store_fixture f;
+    auto make_json_schema = [&](std::string_view schema) {
+        return pps::make_json_schema_definition(
+                 f.store,
+                 pps::make_canonical_json_schema(
+                   f.store,
+                   {pps::subject{"test"}, {schema, pps::schema_type::json}})
+                   .get())
+          .get();
+    };
+    for (const auto& data : compatibility_test_cases) {
+        BOOST_TEST_CONTEXT(fmt::format(
+          "reader: {}, writer: {}, is compatible: {}",
+          data.reader_schema,
+          data.writer_schema,
+          data.reader_is_compatible_with_writer)) {
+            try {
+                BOOST_CHECK_EQUAL(
+                  data.reader_is_compatible_with_writer,
+                  pps::check_compatible(
+                    make_json_schema(data.reader_schema),
+                    make_json_schema(data.writer_schema)));
+            } catch (...) {
+                BOOST_CHECK_MESSAGE(
+                  false,
+                  fmt::format(
+                    "terminated with exception {}", std::current_exception()));
+            }
+        }
+    };
+}

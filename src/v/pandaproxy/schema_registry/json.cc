@@ -459,4 +459,11 @@ make_canonical_json_schema(sharded_store&, unparsed_schema def) {
       def.sub(), canonical_schema_definition{def.def().raw(), def.type()}};
 }
 
+bool check_compatible(
+  const json_schema_definition& reader, const json_schema_definition& writer) {
+    // reader is a superset of writer iff every schema that is valid for writer
+    // is also valid for reader
+    return is_superset(reader().doc, writer().doc);
+}
+
 } // namespace pandaproxy::schema_registry
