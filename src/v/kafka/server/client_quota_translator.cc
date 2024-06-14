@@ -14,10 +14,35 @@
 #include "cluster/client_quota_store.h"
 #include "config/configuration.h"
 
+#include <seastar/util/variant_utils.hh>
+
 namespace kafka {
 
 using cluster::client_quota::entity_key;
 using cluster::client_quota::entity_value;
+
+std::ostream& operator<<(std::ostream& os, const tracker_key& k) {
+    ss::visit(
+      k,
+      [&os](const k_client_id& c) mutable {
+          fmt::print(os, "k_client_id{{{}}}", c());
+      },
+      [&os](const k_group_name& g) mutable {
+          fmt::print(os, "k_group_name{{{}}}", g());
+      });
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, client_quota_type quota_type) {
+    switch (quota_type) {
+    case client_quota_type::produce_quota:
+        return os << "produce_quota";
+    case client_quota_type::fetch_quota:
+        return os << "fetch_quota";
+    case client_quota_type::partition_mutation_quota:
+        return os << "partition_mutation_quota";
+    }
+}
 
 std::ostream& operator<<(std::ostream& os, const client_quota_limits& l) {
     fmt::print(
@@ -27,6 +52,13 @@ std::ostream& operator<<(std::ostream& os, const client_quota_limits& l) {
       l.produce_limit,
       l.fetch_limit,
       l.partition_mutation_limit);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const client_quota_request_ctx& ctx) {
+    fmt::print(
+      os, "{{quota_type: {}, client_id: {}}}", ctx.q_type, ctx.client_id);
     return os;
 }
 
@@ -45,6 +77,11 @@ std::ostream& operator<<(std::ostream& os, client_quota_rule r) {
     case client_quota_rule::kafka_client_id:
         return os << "kafka_client_id";
     }
+}
+
+std::ostream& operator<<(std::ostream& os, client_quota_value value) {
+    fmt::print(os, "{{limit: {}, rule: {}}}", value.limit, value.rule);
+    return os;
 }
 
 client_quota_translator::client_quota_translator(

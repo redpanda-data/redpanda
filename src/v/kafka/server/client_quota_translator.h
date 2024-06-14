@@ -44,6 +44,8 @@ using k_group_name = named_type<ss::sstring, struct k_group_name_tag>;
 /// the same shared quota limit
 using tracker_key = std::variant<k_client_id, k_group_name>;
 
+std::ostream& operator<<(std::ostream&, const tracker_key&);
+
 /// client_quota_limits describes the limits applicable to a tracker_key
 struct client_quota_limits {
     std::optional<uint64_t> produce_limit;
@@ -63,10 +65,14 @@ enum class client_quota_type {
     partition_mutation_quota
 };
 
+std::ostream& operator<<(std::ostream&, client_quota_type);
+
 struct client_quota_request_ctx {
     client_quota_type q_type;
     std::optional<std::string_view> client_id;
 };
+
+std::ostream& operator<<(std::ostream&, const client_quota_request_ctx&);
 
 /// client_quota_rule is used for reporting metrics to show which type of rule
 /// is being used for limiting clients
@@ -85,6 +91,8 @@ struct client_quota_value {
     std::optional<uint64_t> limit;
     client_quota_rule rule;
 };
+
+std::ostream& operator<<(std::ostream&, client_quota_value);
 
 /// client_quota_translator is responsible for providing quota_manager with a
 /// simplified interface to the quota configurations
