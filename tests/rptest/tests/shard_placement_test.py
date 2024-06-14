@@ -237,6 +237,57 @@ class ShardPlacementTest(RedpandaTest):
         assert map_after_restart == map_before_restart
 
     @cluster(num_nodes=5)
+    def test_manual_rebalance(self):
+        self.redpanda.start()
+
+        admin = Admin(self.redpanda)
+        rpk = RpkTool(self.redpanda)
+
+        n_partitions = 10
+
+        for topic in ["foo", "bar"]:
+            rpk.create_topic(topic, partitions=n_partitions, replicas=5)
+
+        # Manually move some partitions to create artificial imbalance
+
+        node = self.redpanda.nodes[0]
+        moved_replica_id = self.redpanda.node_id(node)
+
+        core_count = self.redpanda.get_node_cpu_count()
+        for p in range(n_partitions):
+            admin.set_partition_replica_core(topic="foo",
+                                             partition=p,
+                                             replica=moved_replica_id,
+                                             core=0)
+            admin.set_partition_replica_core(topic="bar",
+                                             partition=p,
+                                             replica=moved_replica_id,
+                                             core=core_count - 1)
+
+        self.logger.info(
+            f"manually moved some replicas on node {moved_replica_id}, "
+            "checking shard map...")
+        shard_map = self.wait_shard_map_stationary(self.redpanda.nodes, admin)
+        self.print_shard_stats(shard_map)
+        counts_by_topic = self.get_shard_counts_by_topic(
+            shard_map, moved_replica_id)
+        assert counts_by_topic["foo"][0] == n_partitions
+        assert sum(counts_by_topic["foo"]) == n_partitions
+        assert counts_by_topic["bar"][core_count - 1] == n_partitions
+        assert sum(counts_by_topic["bar"]) == n_partitions
+
+        admin.trigger_cores_rebalance(node)
+        self.logger.info(
+            f"trigger manual shard rebalance on node {node.name} (id: {moved_replica_id})"
+            ", checking shard map...")
+        shard_map = self.wait_shard_map_stationary(self.redpanda.nodes, admin)
+        self.print_shard_stats(shard_map)
+        counts_by_topic = self.get_shard_counts_by_topic(
+            shard_map, moved_replica_id)
+        for topic, shard_counts in counts_by_topic.items():
+            assert max(shard_counts) - min(shard_counts) <= 1
+
+    @cluster(num_nodes=5)
     def test_core_count_change(self):
         self.redpanda.set_resource_settings(ResourceSettings(num_cpus=1))
         self.redpanda.start()
