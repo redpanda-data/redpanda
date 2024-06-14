@@ -163,7 +163,7 @@ private:
     // Reset the bit-map tracking unwritten batch types in the `_head` chunk.
     void reset_batch_types_to_write() { _batch_types_to_write = 0; }
 
-    uint32_t batch_types_to_write() const { return _batch_types_to_write; }
+    uint64_t batch_types_to_write() const { return _batch_types_to_write; }
 
     // called to assert that no writes are currently in progress, dying if
     // there are
@@ -300,8 +300,8 @@ private:
 
     // Bit-map tracking the types of batches in the `_head` chunk that have
     // not been written to disk yet.
-    static_assert(static_cast<uint8_t>(model::record_batch_type::MAX) <= 32);
-    uint32_t _batch_types_to_write{0};
+    static_assert(static_cast<uint8_t>(model::record_batch_type::MAX) <= 63);
+    uint64_t _batch_types_to_write{0};
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
     friend class file_io_sanitizer;
