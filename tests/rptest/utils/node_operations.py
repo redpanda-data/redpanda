@@ -307,7 +307,7 @@ class NodeOpsExecutor():
         )
         return node_removed_cnt >= majority
 
-    # just confirm if node removal was propagated to the the majority of nodes
+    # just confirm if node removal was propagated to the majority of nodes
     def wait_for_removed(self, node_id: int):
         self.logger.info(
             f"executor - waiting for node {node_id} to be removed")

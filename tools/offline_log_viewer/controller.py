@@ -829,6 +829,49 @@ def decode_user_and_credential(rdr: Reader):
         })
 
 
+def decode_unresolved_address_serde(rdr: Reader, version: int):
+    decoded = {
+        'host': rdr.read_string(),
+        'port': rdr.read_uint16(),
+        'family': rdr.read_optional(Reader.read_uint16)
+    }
+    return decoded
+
+
+def decode_broker_properties_serde(rdr: Reader, version: int):
+    decoded = {
+        'cores': rdr.read_uint32(),
+        'available_memory_gb': rdr.read_uint32(),
+        'available_disk_gb': rdr.read_uint32(),
+        'mount_paths': rdr.read_serde_vector(Reader.read_string),
+        'etc_props': rdr.read_serde_map(Reader.read_string,
+                                        Reader.read_string),
+    }
+    if version >= 1:
+        decoded |= {'available_memory_bytes': rdr.read_uint64()}
+    return decoded
+
+
+def decode_broker_serde(rdr: Reader, version: int):
+    decoded = {
+        'id':
+        rdr.read_int32(),
+        'kafka_advertised_listeners':
+        rdr.read_serde_vector(lambda rdr: rdr.read_envelope(
+            lambda rdr, _: {
+                'name': rdr.read_string(),
+                'address': rdr.read_envelope(decode_unresolved_address_serde),
+            })),
+        'rpc_address':
+        rdr.read_envelope(decode_unresolved_address_serde),
+        'rack':
+        rdr.read_optional(Reader.read_string),
+        'properties':
+        rdr.read_envelope(decode_broker_properties_serde, max_version=1),
+    }
+    return decoded
+
+
 def decode_bootstrap_cluster_cmd_data(rdr: Reader, version):
     decoded = {
         'cluster_uuid': rdr.read_uuid(),
@@ -839,6 +882,40 @@ def decode_bootstrap_cluster_cmd_data(rdr: Reader, version):
     if version >= 1:
         decoded |= {'founding_version': rdr.read_int64()}
 
+    if version >= 2:
+        decoded |= {
+            'initial_nodes':
+            rdr.read_serde_vector(
+                lambda rdr: rdr.read_envelope(decode_broker_serde, 0))
+        }
+
+    if version >= 3:
+        decoded |= {
+            'recovery_state':
+            rdr.read_optional(lambda rdr: rdr.read_envelope(
+                lambda rdr, _: {
+                    'manifest':
+                    rdr.read_envelope(
+                        lambda rdr, _: {
+                            'upload_time_since_epoch_ns':
+                            rdr.read_int64(),
+                            'cluster_uuid':
+                            rdr.read_uuid(),
+                            'metadata_id':
+                            rdr.read_int64(),
+                            'controller_snapshot_offset':
+                            rdr.read_int64(),
+                            'controller_snapshot_path':
+                            rdr.read_string(),
+                            'offsets_snapshots_by_partition':
+                            rdr.read_serde_vector(lambda rdr: rdr.
+                                                  read_serde_vector(
+                                                      Reader.read_string)),
+                        }),
+                    'bucket':
+                    rdr.read_string(),
+                }))
+        }
     return decoded
 
 
@@ -850,7 +927,7 @@ def decode_cluster_bootstrap_command(k_rdr, rdr):
     if cmd['type'] == 0:
         cmd['type_name'] = 'bootstrap_cluster'
         cmd |= rdr.read_envelope(decode_bootstrap_cluster_cmd_data,
-                                 max_version=1)
+                                 max_version=3)
 
     return cmd
 
