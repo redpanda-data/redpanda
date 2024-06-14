@@ -399,6 +399,17 @@ class ScalingUpTest(PreallocNodesTest):
 
         return usage_per_node
 
+    def _partition_sizes(self, topic, nodes):
+        sizes = defaultdict(int)
+        metrics = self.redpanda.metrics_sample("partition_size", nodes=nodes)
+        if not metrics:
+            return {}
+
+        for s in metrics.samples:
+            if s.labels['topic'] == topic:
+                sizes[self.redpanda.node_id(s.node)] += s.value
+        return sizes
+
     @skip_debug_mode
     @cluster(num_nodes=7)
     def test_fast_node_addition(self):
@@ -563,22 +574,22 @@ class ScalingUpTest(PreallocNodesTest):
         def print_disk_usage(usage):
             for n, b in usage.items():
                 self.logger.info(
-                    f"node: {n} total partitions size: {b/(1024*1024)} Mb")
+                    f"node: {n} total partitions size: {b/(1024*1024):02} Mb")
 
         def verify_node_disk_usage(nodes, node_id):
-            usage_per_node = self._kafka_usage(nodes=nodes)
-            print_disk_usage(usage_per_node)
+            size_per_node = self._partition_sizes(topic.name, nodes)
+            print_disk_usage(size_per_node)
             replicas_per_node = self._topic_replicas_per_node()
             node_replicas = replicas_per_node[topic.name][node_id]
 
             target_size = node_replicas * requested_local_retention
 
-            current_usage = usage_per_node[node_id]
+            current_usage = size_per_node[node_id]
             tolerance = 0.1
             max = target_size * (1.0 + tolerance)
             min = target_size * (1.0 - tolerance)
             self.logger.info(
-                f"node {node_id} target size: {target_size}, current size: {usage_per_node[node_id]}, expected range ({min}, {max})"
+                f"node {node_id} target size: {target_size}, current size: {size_per_node[node_id]}, expected range ({min}, {max})"
             )
             assert current_usage > min and current_usage < max, \
                 f"node {node_id} disk usage should be withing the range ({min}, {max}). Current value: {current_usage} "
@@ -592,8 +603,6 @@ class ScalingUpTest(PreallocNodesTest):
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
                                             timeout_sec=self.rebalance_timeout)
 
-        usage = self._kafka_usage(self.redpanda.nodes)
-        print_disk_usage(usage)
         next_new_id = self.redpanda.node_id(self.redpanda.nodes[5])
         verify_node_disk_usage(self.redpanda.nodes, next_new_id)
         # verify that data can be read
