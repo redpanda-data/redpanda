@@ -2,7 +2,7 @@
     "namespace": "cluster",
     "service_name": "tx_gateway",
     "includes": [
-        "cluster/types.h"
+        "cluster/tx_protocol_types.h"
     ],
     "methods": [
         {

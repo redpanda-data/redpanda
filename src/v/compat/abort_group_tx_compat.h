@@ -10,7 +10,7 @@
  */
 #pragma once
 
-#include "cluster/types.h"
+#include "cluster/tx_protocol_types.h"
 #include "compat/abort_group_tx_generator.h"
 #include "compat/check.h"
 #include "compat/json.h"

@@ -12,12 +12,11 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "cluster/fwd.h"
 #include "cluster/rm_group_proxy.h"
-#include "cluster/types.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/fwd.h"
 #include "kafka/types.h"
-#include "model/metadata.h"
 #include "rpc/fwd.h"
 
 #include <seastar/core/sharded.hh>

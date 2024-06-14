@@ -15,6 +15,7 @@
 #include "cluster/tests/randoms.h"
 #include "cluster/tests/topic_properties_generator.h"
 #include "cluster/tests/utils.h"
+#include "cluster/tx_protocol_types.h"
 #include "cluster/types.h"
 #include "compat/check.h"
 #include "container/fragmented_vector.h"

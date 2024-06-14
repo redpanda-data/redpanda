@@ -14,11 +14,10 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
-#include "cluster/types.h"
+#include "cluster/tx_protocol_types.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "utils/available_promise.h"
 
