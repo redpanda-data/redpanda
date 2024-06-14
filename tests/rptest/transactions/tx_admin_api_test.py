@@ -20,11 +20,11 @@ from ducktape.utils.util import wait_until
 
 NON_EXISTENT_TID_LOG_ALLOW_LIST = [
     re.compile(
-        r".*Unexpected tx_error error: {tx_errc::unknown_server_error}.*")
+        r".*Unexpected tx_error error: {tx::errc::unknown_server_error}.*")
 ]
 
 TIMEOUT_ALLOW_LIST = [
-    re.compile(r".*Unexpected tx_error error: {tx_errc::timeout}.*")
+    re.compile(r".*Unexpected tx_error error: {tx::errc::timeout}.*")
 ]
 
 
@@ -303,7 +303,7 @@ class TxAdminTest(RedpandaTest):
                         error_tx_id, partition["ns"], partition["topic"],
                         partition["partition_id"], partition["etag"])
                 except requests.exceptions.HTTPError as e:
-                    assert e.response.text == '{"message": "Unexpected tx_error error: {tx_errc::unknown_server_error}", "code": 500}'
+                    assert e.response.text == '{"message": "Unexpected tx_error error: {tx::errc::unknown_server_error}", "code": 500}'
 
         producer.commit_transaction()
 

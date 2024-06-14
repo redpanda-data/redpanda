@@ -228,6 +228,7 @@ v_cc_library(
     shard_balancer.cc
     topic_recovery_validator.cc
     tm_stm_types.cc
+    tx_errc.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc

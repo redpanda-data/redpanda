@@ -17,6 +17,7 @@
 #include "cluster/remote_topic_properties.h"
 #include "cluster/topic_configuration.h"
 #include "cluster/topic_properties.h"
+#include "cluster/tx_errc.h"
 #include "cluster/tx_hash_ranges.h"
 #include "cluster/version.h"
 #include "model/adl_serde.h"
@@ -164,55 +165,6 @@ struct reset_id_allocator_reply
     auto serde_fields() { return std::tie(ec); }
 };
 
-enum class tx_errc {
-    none = 0,
-    leader_not_found,
-    shard_not_found,
-    partition_not_found,
-    stm_not_found,
-    partition_not_exists,
-    pid_not_found,
-    // when a request times out a client should not do any assumptions about its
-    // effect. the request may time out before reaching the server, the request
-    // may be successuly processed or may fail and the reply times out
-    timeout,
-    conflict,
-    fenced,
-    stale,
-    not_coordinator,
-    coordinator_not_available,
-    preparing_rebalance,
-    rebalance_in_progress,
-    coordinator_load_in_progress,
-    // an unspecified error happened, the effect of the request is unknown
-    // the error code is very similar to timeout
-    unknown_server_error,
-    // an unspecified error happened, a client may assume it had zero effect on
-    // the target node
-    request_rejected,
-    invalid_producer_id_mapping,
-    invalid_txn_state,
-    invalid_producer_epoch,
-    tx_not_found,
-    tx_id_not_found,
-    partition_disabled,
-};
-
-std::ostream& operator<<(std::ostream&, const tx_errc&);
-
-struct tx_errc_category final : public std::error_category {
-    const char* name() const noexcept final { return "cluster::tx_errc"; }
-
-    std::string message(int) const final;
-};
-inline const std::error_category& tx_error_category() noexcept {
-    static tx_errc_category e;
-    return e;
-}
-inline std::error_code make_error_code(tx_errc e) noexcept {
-    return std::error_code(static_cast<int>(e), tx_error_category());
-}
-
 struct kafka_result {
     kafka::offset last_offset;
 };
@@ -251,16 +203,16 @@ struct try_abort_reply
 
     committed_type commited;
     aborted_type aborted;
-    tx_errc ec;
+    tx::errc ec;
 
     try_abort_reply() noexcept = default;
 
-    try_abort_reply(committed_type committed, aborted_type aborted, tx_errc ec)
+    try_abort_reply(committed_type committed, aborted_type aborted, tx::errc ec)
       : commited(committed)
       , aborted(aborted)
       , ec(ec) {}
 
-    explicit try_abort_reply(tx_errc ec)
+    explicit try_abort_reply(tx::errc ec)
       : ec(ec) {}
 
     friend bool operator==(const try_abort_reply&, const try_abort_reply&)
@@ -269,11 +221,11 @@ struct try_abort_reply
     friend std::ostream& operator<<(std::ostream& o, const try_abort_reply& r);
 
     static try_abort_reply make_aborted() {
-        return {committed_type::no, aborted_type::yes, tx_errc::none};
+        return {committed_type::no, aborted_type::yes, tx::errc::none};
     }
 
     static try_abort_reply make_committed() {
-        return {committed_type::yes, aborted_type::no, tx_errc::none};
+        return {committed_type::yes, aborted_type::no, tx::errc::none};
     }
 
     auto serde_fields() { return std::tie(commited, aborted, ec); }
@@ -351,11 +303,11 @@ struct init_tm_tx_reply
 
     // partition_not_exists, not_leader, topic_not_exists
     model::producer_identity pid;
-    tx_errc ec;
+    tx::errc ec;
 
     init_tm_tx_reply() noexcept = default;
 
-    init_tm_tx_reply(model::producer_identity pid, tx_errc ec)
+    init_tm_tx_reply(model::producer_identity pid, tx::errc ec)
       : pid(pid)
       , ec(ec) {}
 
@@ -364,7 +316,7 @@ struct init_tm_tx_reply
 
     friend std::ostream& operator<<(std::ostream& o, const init_tm_tx_reply& r);
 
-    explicit init_tm_tx_reply(tx_errc ec)
+    explicit init_tm_tx_reply(tx::errc ec)
       : ec(ec) {}
 
     auto serde_fields() { return std::tie(pid, ec); }
@@ -384,7 +336,7 @@ struct add_paritions_tx_request {
 struct add_paritions_tx_reply {
     struct partition_result {
         model::partition_id partition_index{};
-        tx_errc error_code{};
+        tx::errc error_code{};
     };
     struct topic_result {
         model::topic name{};
@@ -399,7 +351,7 @@ struct add_offsets_tx_request {
     kafka::group_id group_id{};
 };
 struct add_offsets_tx_reply {
-    tx_errc error_code{};
+    tx::errc error_code{};
 };
 struct end_tx_request {
     kafka::transactional_id transactional_id{};
@@ -408,7 +360,7 @@ struct end_tx_request {
     bool committed{};
 };
 struct end_tx_reply {
-    tx_errc error_code{};
+    tx::errc error_code{};
 };
 struct fetch_tx_request
   : serde::
@@ -499,7 +451,7 @@ struct fetch_tx_reply
         auto serde_fields() { return std::tie(group_id, etag); }
     };
 
-    tx_errc ec{};
+    tx::errc ec{};
     model::producer_identity pid{};
     model::producer_identity last_pid{};
     model::tx_seq tx_seq{};
@@ -510,11 +462,11 @@ struct fetch_tx_reply
 
     fetch_tx_reply() noexcept = default;
 
-    fetch_tx_reply(tx_errc ec)
+    fetch_tx_reply(tx::errc ec)
       : ec(ec) {}
 
     fetch_tx_reply(
-      tx_errc ec,
+      tx::errc ec,
       model::producer_identity pid,
       model::producer_identity last_pid,
       model::tx_seq tx_seq,
@@ -582,7 +534,7 @@ struct begin_tx_reply
     using rpc_adl_exempt = std::true_type;
     model::ntp ntp;
     model::term_id etag;
-    tx_errc ec;
+    tx::errc ec;
     model::revision_id topic_revision = model::revision_id(-1);
 
     begin_tx_reply() noexcept = default;
@@ -590,19 +542,19 @@ struct begin_tx_reply
     begin_tx_reply(
       model::ntp ntp,
       model::term_id etag,
-      tx_errc ec,
+      tx::errc ec,
       model::revision_id topic_revision)
       : ntp(std::move(ntp))
       , etag(etag)
       , ec(ec)
       , topic_revision(topic_revision) {}
 
-    begin_tx_reply(model::ntp ntp, model::term_id etag, tx_errc ec)
+    begin_tx_reply(model::ntp ntp, model::term_id etag, tx::errc ec)
       : ntp(std::move(ntp))
       , etag(etag)
       , ec(ec) {}
 
-    begin_tx_reply(model::ntp ntp, tx_errc ec)
+    begin_tx_reply(model::ntp ntp, tx::errc ec)
       : ntp(std::move(ntp))
       , ec(ec) {}
 
@@ -660,11 +612,11 @@ struct prepare_tx_reply
       envelope<prepare_tx_reply, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    tx_errc ec{};
+    tx::errc ec{};
 
     prepare_tx_reply() noexcept = default;
 
-    explicit prepare_tx_reply(tx_errc ec)
+    explicit prepare_tx_reply(tx::errc ec)
       : ec(ec) {}
 
     friend bool operator==(const prepare_tx_reply&, const prepare_tx_reply&)
@@ -711,11 +663,11 @@ struct commit_tx_reply
       envelope<commit_tx_reply, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    tx_errc ec{};
+    tx::errc ec{};
 
     commit_tx_reply() noexcept = default;
 
-    explicit commit_tx_reply(tx_errc ec)
+    explicit commit_tx_reply(tx::errc ec)
       : ec(ec) {}
 
     friend bool operator==(const commit_tx_reply&, const commit_tx_reply&)
@@ -761,11 +713,11 @@ struct abort_tx_reply
       envelope<abort_tx_reply, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    tx_errc ec{};
+    tx::errc ec{};
 
     abort_tx_reply() noexcept = default;
 
-    explicit abort_tx_reply(tx_errc ec)
+    explicit abort_tx_reply(tx::errc ec)
       : ec(ec) {}
 
     friend bool operator==(const abort_tx_reply&, const abort_tx_reply&)
@@ -839,14 +791,14 @@ struct begin_group_tx_reply
     using rpc_adl_exempt = std::true_type;
 
     model::term_id etag;
-    tx_errc ec{};
+    tx::errc ec{};
 
     begin_group_tx_reply() noexcept = default;
 
-    explicit begin_group_tx_reply(tx_errc ec)
+    explicit begin_group_tx_reply(tx::errc ec)
       : ec(ec) {}
 
-    begin_group_tx_reply(model::term_id etag, tx_errc ec)
+    begin_group_tx_reply(model::term_id etag, tx::errc ec)
       : etag(etag)
       , ec(ec) {}
 
@@ -922,11 +874,11 @@ struct prepare_group_tx_reply
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    tx_errc ec{};
+    tx::errc ec{};
 
     prepare_group_tx_reply() noexcept = default;
 
-    explicit prepare_group_tx_reply(tx_errc ec)
+    explicit prepare_group_tx_reply(tx::errc ec)
       : ec(ec) {}
 
     friend bool
@@ -996,11 +948,11 @@ struct commit_group_tx_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    tx_errc ec{};
+    tx::errc ec{};
 
     commit_group_tx_reply() noexcept = default;
 
-    explicit commit_group_tx_reply(tx_errc ec)
+    explicit commit_group_tx_reply(tx::errc ec)
       : ec(ec) {}
 
     friend bool
@@ -1069,11 +1021,11 @@ struct abort_group_tx_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    tx_errc ec{};
+    tx::errc ec{};
 
     abort_group_tx_reply() noexcept = default;
 
-    explicit abort_group_tx_reply(tx_errc ec)
+    explicit abort_group_tx_reply(tx::errc ec)
       : ec(ec) {}
 
     friend bool
@@ -1095,17 +1047,17 @@ struct find_coordinator_reply
 
     std::optional<model::node_id> coordinator{std::nullopt};
     std::optional<model::ntp> ntp{std::nullopt};
-    errc ec{errc::generic_tx_error}; // this should have been tx_errc
+    errc ec{errc::generic_tx_error}; // this should have been tx::errc
 
     find_coordinator_reply() noexcept = default;
 
     // this is a hack to blend find_coordinator_reply into do_route_locally
-    find_coordinator_reply(tx_errc tx_ec)
+    find_coordinator_reply(tx::errc tx_ec)
       : coordinator(std::nullopt)
       , ntp(std::nullopt) {
-        if (tx_ec == tx_errc::none) {
+        if (tx_ec == tx::errc::none) {
             ec = errc::success;
-        } else if (tx_ec == tx_errc::shard_not_found) {
+        } else if (tx_ec == tx::errc::shard_not_found) {
             ec = errc::not_leader;
         } else {
             ec = errc::generic_tx_error;
@@ -4419,10 +4371,6 @@ struct set_partition_shard_reply
 };
 
 } // namespace cluster
-namespace std {
-template<>
-struct is_error_code_enum<cluster::tx_errc> : true_type {};
-} // namespace std
 
 namespace reflection {
 

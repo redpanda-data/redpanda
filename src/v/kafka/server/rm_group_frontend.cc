@@ -133,14 +133,14 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
               "can't create consumer group topic",
               group_id);
             co_return cluster::begin_group_tx_reply{
-              cluster::tx_errc::partition_not_exists};
+              cluster::tx::errc::partition_not_exists};
         }
     }
 
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     std::optional<model::node_id> leader_opt;
-    cluster::tx_errc ec;
+    cluster::tx::errc ec;
     while (!leader_opt && 0 < retries--) {
         ntp_opt = _group_router.local().coordinator_mapper().local().ntp_for(
           group_id);
@@ -149,7 +149,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
               cluster::txlog.trace,
               "can't find ntp for {}, retrying",
               group_id);
-            ec = cluster::tx_errc::partition_not_exists;
+            ec = cluster::tx::errc::partition_not_exists;
             co_await ss::sleep(delay_ms);
             continue;
         }
@@ -161,7 +161,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
               cluster::txlog.trace,
               "can't find meta info for {}, retrying",
               ntp);
-            ec = cluster::tx_errc::partition_not_exists;
+            ec = cluster::tx::errc::partition_not_exists;
             co_await ss::sleep(delay_ms);
             continue;
         }
@@ -169,7 +169,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
         leader_opt = _leaders.local().get_leader(ntp);
         if (!leader_opt) {
             vlog(cluster::txlog.trace, "can't find a leader for {}", ntp);
-            ec = cluster::tx_errc::leader_not_found;
+            ec = cluster::tx::errc::leader_not_found;
             co_await ss::sleep(delay_ms);
         }
     }
@@ -238,7 +238,7 @@ rm_group_frontend::dispatch_begin_group_tx(
                 cluster::txlog.warn,
                 "got error {} on remote begin group tx",
                 r.error());
-              return cluster::begin_group_tx_reply{cluster::tx_errc::timeout};
+              return cluster::begin_group_tx_reply{cluster::tx::errc::timeout};
           }
 
           return r.value();
@@ -278,7 +278,7 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
     if (!ntp_opt) {
         vlog(cluster::txlog.warn, "can't find ntp for {}", group_id);
         co_return cluster::commit_group_tx_reply{
-          cluster::tx_errc::partition_not_exists};
+          cluster::tx::errc::partition_not_exists};
     }
 
     auto ntp = std::move(ntp_opt.value());
@@ -287,14 +287,14 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
     if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
         vlog(cluster::txlog.warn, "can' find meta info for {}", ntp);
         co_return cluster::commit_group_tx_reply{
-          cluster::tx_errc::partition_not_exists};
+          cluster::tx::errc::partition_not_exists};
     }
 
     auto leader_opt = _leaders.local().get_leader(ntp);
     if (!leader_opt) {
         vlog(cluster::txlog.warn, "can't find a leader for {}", ntp);
         co_return cluster::commit_group_tx_reply{
-          cluster::tx_errc::leader_not_found};
+          cluster::tx::errc::leader_not_found};
     }
     auto leader = leader_opt.value();
     auto _self = _controller->self();
@@ -354,7 +354,7 @@ rm_group_frontend::dispatch_commit_group_tx(
                 cluster::txlog.warn,
                 "got error {} on remote commit tx",
                 r.error());
-              return cluster::commit_group_tx_reply{cluster::tx_errc::timeout};
+              return cluster::commit_group_tx_reply{cluster::tx::errc::timeout};
           }
 
           return r.value();
@@ -391,7 +391,7 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
     if (!ntp_opt) {
         vlog(cluster::txlog.warn, "can't find ntp for {} ", group_id);
         co_return cluster::abort_group_tx_reply{
-          cluster::tx_errc::partition_not_exists};
+          cluster::tx::errc::partition_not_exists};
     }
     auto ntp = std::move(ntp_opt.value());
 
@@ -399,14 +399,14 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
     if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
         vlog(cluster::txlog.warn, "can't find meta info for {}", ntp);
         co_return cluster::abort_group_tx_reply{
-          cluster::tx_errc::partition_not_exists};
+          cluster::tx::errc::partition_not_exists};
     }
 
     auto leader_opt = _leaders.local().get_leader(ntp);
     if (!leader_opt) {
         vlog(cluster::txlog.warn, "can't find a leader for {}", ntp);
         co_return cluster::abort_group_tx_reply{
-          cluster::tx_errc::leader_not_found};
+          cluster::tx::errc::leader_not_found};
     }
     auto leader = leader_opt.value();
     auto _self = _controller->self();
@@ -471,7 +471,7 @@ rm_group_frontend::dispatch_abort_group_tx(
                 cluster::txlog.warn,
                 "got error {} on remote abort group tx",
                 r.error());
-              return cluster::abort_group_tx_reply{cluster::tx_errc::timeout};
+              return cluster::abort_group_tx_reply{cluster::tx::errc::timeout};
           }
 
           return r.value();

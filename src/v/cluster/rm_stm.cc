@@ -172,7 +172,7 @@ ss::future<> rm_stm::reset_producers() {
     _producers.clear();
 }
 
-ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
+ss::future<checked<model::term_id, tx::errc>> rm_stm::begin_tx(
   model::producer_identity new_pid,
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms,
@@ -187,7 +187,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
           tx_seq,
           transaction_timeout_ms,
           tm);
-        co_return tx_errc::stale;
+        co_return tx::errc::stale;
     }
     auto synced_term = _insync_term;
     auto producer = maybe_create_producer(new_pid);
@@ -210,7 +210,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
       });
 }
 
-ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
+ss::future<checked<model::term_id, tx::errc>> rm_stm::do_begin_tx(
   model::term_id synced_term,
   model::producer_identity pid,
   producer_ptr producer,
@@ -218,7 +218,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
   std::chrono::milliseconds transaction_timeout_ms,
   model::partition_id tm) {
     if (!check_tx_permitted()) {
-        co_return tx_errc::request_rejected;
+        co_return tx::errc::request_rejected;
     }
 
     if (!_raft->is_leader()) {
@@ -231,7 +231,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           tx_seq,
           transaction_timeout_ms,
           tm);
-        co_return tx_errc::leader_not_found;
+        co_return tx::errc::leader_not_found;
     }
 
     vlog(
@@ -248,20 +248,20 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     auto current_pid = producer->id();
     if (pid.epoch < current_pid.epoch) {
         // request from an older instance of the producer
-        co_return tx_errc::fenced;
+        co_return tx::errc::fenced;
     }
     if (pid.epoch > current_pid.epoch) {
         // abort any transactions from the older instance of the producer.
         auto ar = co_await do_abort_tx(
           synced_term, producer, std::nullopt, _sync_timeout);
-        if (ar != tx_errc::none) {
+        if (ar != tx::errc::none) {
             vlog(
               _ctx_log.trace,
               "can't begin tx {} because abort of a prev tx {} failed with {}",
               pid,
               current_pid,
               ar);
-            co_return tx_errc::stale;
+            co_return tx::errc::stale;
         }
     } else if (producer->has_transaction_in_progress()) {
         // check for duplicate request
@@ -281,7 +281,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           "duplicate begin request with producer after the transaction already "
           "began: {}",
           *producer);
-        co_return tx_errc::unknown_server_error;
+        co_return tx::errc::unknown_server_error;
     }
     // By now any in progresss transactions are aborted and the resulting
     // state and the resulting changes are reflected in the producer state.
@@ -308,7 +308,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
             co_await _raft->step_down("begin_tx replication error");
         }
         // begin is idempotent so it's ok to return a retryable error
-        co_return tx_errc::timeout;
+        co_return tx::errc::timeout;
     }
 
     if (!co_await wait_no_throw(
@@ -323,7 +323,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         if (_raft->is_leader() && _raft->term() == synced_term) {
             co_await _raft->step_down("begin_tx apply error");
         }
-        co_return tx_errc::timeout;
+        co_return tx::errc::timeout;
     }
 
     if (_raft->term() != synced_term) {
@@ -334,7 +334,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           _raft->term(),
           pid,
           tx_seq);
-        co_return tx_errc::leader_not_found;
+        co_return tx::errc::leader_not_found;
     }
 
     const auto& tx_state = producer->transaction_state();
@@ -348,18 +348,18 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     co_return synced_term;
 }
 
-ss::future<tx_errc> rm_stm::commit_tx(
+ss::future<tx::errc> rm_stm::commit_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     auto state_lock_holder = co_await _state_lock.hold_read_lock();
     if (!co_await sync(timeout)) {
-        co_return tx_errc::stale;
+        co_return tx::errc::stale;
     }
     auto synced_term = _insync_term;
     auto producer = maybe_create_producer(pid);
     if (pid != producer->id()) {
-        co_return tx_errc::fenced;
+        co_return tx::errc::fenced;
     }
     co_return co_await producer->run_with_lock(
       [this, synced_term, tx_seq, timeout, producer](
@@ -369,7 +369,7 @@ ss::future<tx_errc> rm_stm::commit_tx(
       });
 }
 
-ss::future<tx_errc> rm_stm::do_commit_tx(
+ss::future<tx::errc> rm_stm::do_commit_tx(
   model::term_id synced_term,
   tx::producer_ptr producer,
   model::tx_seq expected_tx_seq,
@@ -381,7 +381,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
       pid,
       expected_tx_seq);
     if (!check_tx_permitted()) {
-        co_return tx_errc::request_rejected;
+        co_return tx::errc::request_rejected;
     }
 
     if (!producer->has_transaction_in_progress()) {
@@ -392,7 +392,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           && tx_state->status == tx::partition_transaction_status::committed
           && tx_state->sequence == expected_tx_seq) {
             // Already committed request
-            co_return tx_errc::none;
+            co_return tx::errc::none;
         }
         vlog(
           _ctx_log.warn,
@@ -400,7 +400,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           "sequence: {}",
           *producer,
           expected_tx_seq);
-        co_return tx_errc::invalid_txn_state;
+        co_return tx::errc::invalid_txn_state;
     }
     auto transaction_sequence = producer->transaction_state()->sequence;
     if (transaction_sequence > expected_tx_seq) {
@@ -411,7 +411,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           *producer,
           expected_tx_seq,
           transaction_sequence);
-        co_return tx_errc::none;
+        co_return tx::errc::none;
     } else if (transaction_sequence != expected_tx_seq) {
         vlog(
           _ctx_log.trace,
@@ -419,7 +419,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           *producer,
           expected_tx_seq,
           transaction_sequence);
-        co_return tx_errc::request_rejected;
+        co_return tx::errc::request_rejected;
     }
 
     auto batch = make_tx_control_batch(
@@ -437,17 +437,17 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         if (_raft->is_leader() && _raft->term() == synced_term) {
             co_await _raft->step_down("do_commit_tx replication error");
         }
-        co_return tx_errc::timeout;
+        co_return tx::errc::timeout;
     }
     if (!co_await wait_no_throw(
           r.value().last_offset, model::timeout_clock::now() + timeout)) {
         if (_raft->is_leader() && _raft->term() == synced_term) {
             co_await _raft->step_down("do_commit_tx wait error");
         }
-        co_return tx_errc::timeout;
+        co_return tx::errc::timeout;
     }
 
-    co_return tx_errc::none;
+    co_return tx::errc::none;
 }
 
 abort_origin rm_stm::get_abort_origin(
@@ -466,7 +466,7 @@ abort_origin rm_stm::get_abort_origin(
     return abort_origin::present;
 }
 
-ss::future<tx_errc> rm_stm::abort_tx(
+ss::future<tx::errc> rm_stm::abort_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
@@ -477,12 +477,12 @@ ss::future<tx_errc> rm_stm::abort_tx(
           "processing name:abort_tx pid:{} tx_seq:{} => stale leader",
           pid,
           tx_seq);
-        co_return tx_errc::stale;
+        co_return tx::errc::stale;
     }
     auto synced_term = _insync_term;
     auto producer = maybe_create_producer(pid);
     if (pid != producer->id()) {
-        co_return errc::invalid_producer_epoch;
+        co_return cluster::errc::invalid_producer_epoch;
     }
     co_return co_await producer->run_with_lock(
       [this, synced_term, tx_seq, timeout, producer](
@@ -496,13 +496,13 @@ ss::future<tx_errc> rm_stm::abort_tx(
 // the purpose of abort is to put tx_range into the list of aborted txes
 // and to fence off the old epoch.
 // we need to check tx_seq to filter out stale requests
-ss::future<tx_errc> rm_stm::do_abort_tx(
+ss::future<tx::errc> rm_stm::do_abort_tx(
   model::term_id synced_term,
   producer_ptr producer,
   std::optional<model::tx_seq> expected_tx_seq,
   model::timeout_clock::duration timeout) {
     if (!check_tx_permitted()) {
-        co_return tx_errc::request_rejected;
+        co_return tx::errc::request_rejected;
     }
 
     auto pid = producer->id();
@@ -520,7 +520,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
           "seq: {}",
           *producer,
           expected_tx_seq);
-        co_return tx_errc::none;
+        co_return tx::errc::none;
     }
 
     if (expected_tx_seq) {
@@ -552,7 +552,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
               "rejecting",
               *producer,
               expected_tx_seq.value_or(model::tx_seq(-1)));
-            co_return tx_errc::request_rejected;
+            co_return tx::errc::request_rejected;
         }
         if (origin == abort_origin::future) {
             // impossible situation: before transactional coordinator may issue
@@ -564,7 +564,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
               "consistent with the current ongoing transaction",
               pid,
               expected_tx_seq.value());
-            co_return tx_errc::request_rejected;
+            co_return tx::errc::request_rejected;
         }
     }
 
@@ -584,7 +584,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
         if (_raft->is_leader() && _raft->term() == synced_term) {
             co_await _raft->step_down("abort_tx replication error");
         }
-        co_return tx_errc::timeout;
+        co_return tx::errc::timeout;
     }
 
     if (!co_await wait_no_throw(
@@ -598,10 +598,10 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
         if (_raft->is_leader() && _raft->term() == synced_term) {
             co_await _raft->step_down("abort_tx apply error");
         }
-        co_return tx_errc::timeout;
+        co_return tx::errc::timeout;
     }
 
-    co_return tx_errc::none;
+    co_return tx::errc::none;
 }
 
 kafka_stages rm_stm::replicate_in_stages(
@@ -676,7 +676,7 @@ rm_stm::get_seq_number(model::producer_identity pid) const {
 
 ss::future<result<partition_transactions>> rm_stm::get_transactions() {
     if (!co_await sync(_sync_timeout)) {
-        co_return errc::not_leader;
+        co_return cluster::errc::not_leader;
     }
     partition_transactions ans;
     for (auto& producer : _active_tx_producers) {
@@ -697,21 +697,21 @@ ss::future<result<partition_transactions>> rm_stm::get_transactions() {
 
 ss::future<std::error_code> rm_stm::mark_expired(model::producer_identity pid) {
     if (!co_await sync(_sync_timeout)) {
-        co_return std::error_code(tx_errc::leader_not_found);
+        co_return std::error_code(tx::errc::leader_not_found);
     }
     auto holder = co_await _state_lock.hold_read_lock();
     auto producer_it = _producers.find(pid.get_id());
     if (
       producer_it == _producers.end()
       || !producer_it->second->has_transaction_in_progress()) {
-        co_return std::error_code{tx_errc::none};
+        co_return std::error_code{tx::errc::none};
     }
     auto producer = producer_it->second;
     co_return co_await producer->run_with_lock(
       [this, producer](ssx::semaphore_units units) {
           producer->force_transaction_expiry();
           return do_try_abort_old_tx(producer)
-            .then([](tx_errc result) { return std::error_code(result); })
+            .then([](tx::errc result) { return std::error_code(result); })
             .finally([units = std::move(units)] {});
       });
 }
@@ -731,10 +731,10 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
           bid.pid,
           bid.first_seq,
           bid.last_seq);
-        if (result.error() == errc::sequence_out_of_order) {
+        if (result.error() == cluster::errc::sequence_out_of_order) {
             auto barrier = co_await _raft->linearizable_barrier();
             if (!barrier) {
-                co_return errc::not_leader;
+                co_return cluster::errc::not_leader;
             }
         } else if (_raft->is_leader() && _raft->term() == synced_term) {
             co_await _raft->step_down(
@@ -756,7 +756,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           "producer {} by newer instance: {}, failed replication",
           bid.pid,
           *producer);
-        co_return errc::invalid_producer_epoch;
+        co_return cluster::errc::invalid_producer_epoch;
     }
     if (!producer->has_transaction_in_progress()) {
         vlog(
@@ -764,7 +764,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           "No transaction found for producer: {}, request: {}",
           *producer,
           bid);
-        co_return errc::invalid_producer_epoch;
+        co_return cluster::errc::invalid_producer_epoch;
     }
 
     vlog(
@@ -810,8 +810,8 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           _ctx_log.warn,
           "application of the replicated tx batch has timed out pid:{}",
           bid.pid);
-        req_ptr->set_error(errc::timeout);
-        co_return tx_errc::timeout;
+        req_ptr->set_error(cluster::errc::timeout);
+        co_return tx::errc::timeout;
     }
     auto result = kafka_result{
       .last_offset = from_log_offset(r.value().last_offset)};
@@ -822,14 +822,14 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
 ss::future<result<kafka_result>> rm_stm::transactional_replicate(
   model::batch_identity bid, model::record_batch_reader rdr) {
     if (!check_tx_permitted()) {
-        co_return errc::generic_tx_error;
+        co_return cluster::errc::generic_tx_error;
     }
     if (!co_await sync(_sync_timeout)) {
         vlog(
           _ctx_log.trace,
           "processing name:replicate_tx pid:{} => stale leader",
           bid.pid);
-        co_return errc::not_leader;
+        co_return cluster::errc::not_leader;
     }
     auto synced_term = _insync_term;
     auto producer = maybe_create_producer(bid.pid);
@@ -866,7 +866,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
           bid.pid,
           bid.first_seq,
           bid.last_seq);
-        if (result.error() == errc::sequence_out_of_order) {
+        if (result.error() == cluster::errc::sequence_out_of_order) {
             // release the lock so it is not held for the duration of the
             // barrier, other requests can make progress if they are
             // in the right sequence.
@@ -876,7 +876,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
             // a retryable error code to the client.
             auto barrier = co_await _raft->linearizable_barrier();
             if (!barrier) {
-                co_return errc::not_leader;
+                co_return cluster::errc::not_leader;
             }
         } else {
             // if the request enqueue failed, its important to step down
@@ -919,8 +919,8 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
           _ctx_log.warn,
           "replication failed, request enqueue returned error: {}",
           req_enqueued.get_exception());
-        req_ptr->set_error(errc::replication_error);
-        co_return errc::replication_error;
+        req_ptr->set_error(cluster::errc::replication_error);
+        co_return cluster::errc::replication_error;
     }
     units.return_all();
     enqueued->set_value();
@@ -929,8 +929,8 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
     if (replicated.failed()) {
         vlog(
           _ctx_log.warn, "replication failed: {}", replicated.get_exception());
-        req_ptr->set_error(errc::replication_error);
-        co_return errc::replication_error;
+        req_ptr->set_error(cluster::errc::replication_error);
+        co_return cluster::errc::replication_error;
     }
     auto result = replicated.get0();
     if (result.has_error()) {
@@ -953,7 +953,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
     if (!co_await sync(_sync_timeout)) {
         // it's ok not to set enqueued on early return because
         // the safety check in replicate_in_stages sets it automatically
-        co_return errc::not_leader;
+        co_return cluster::errc::not_leader;
     }
     try {
         auto synced_term = _insync_term;
@@ -977,7 +977,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
           _vcluster_id,
           e.what());
         enqueued->set_value();
-        co_return errc::producer_ids_vcluster_limit_exceeded;
+        co_return cluster::errc::producer_ids_vcluster_limit_exceeded;
     }
 }
 
@@ -988,7 +988,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_msg(
     using ret_t = result<kafka_result>;
 
     if (!co_await sync(_sync_timeout)) {
-        co_return errc::not_leader;
+        co_return cluster::errc::not_leader;
     }
 
     auto ss = _raft->replicate_in_stages(_insync_term, std::move(br), opts);
@@ -1219,16 +1219,16 @@ ss::future<> rm_stm::try_abort_old_tx(producer_ptr producer) {
       });
 }
 
-ss::future<tx_errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
+ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
     if (!co_await sync(_sync_timeout)) {
-        co_return tx_errc::leader_not_found;
+        co_return tx::errc::leader_not_found;
     }
     auto synced_term = _insync_term;
 
     const auto& tx_state = producer->transaction_state();
 
     if (!tx_state || !producer->has_transaction_expired()) {
-        co_return tx_errc::stale;
+        co_return tx::errc::stale;
     }
 
     auto pid = producer->id();
@@ -1238,7 +1238,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
         auto r = co_await _tx_gateway_frontend.local().route_globally(
           cluster::try_abort_request(
             tx_state->coordinator_partition, pid, tx_seq, _sync_timeout));
-        if (r.ec == tx_errc::none) {
+        if (r.ec == tx::errc::none) {
             if (r.commited) {
                 vlog(
                   _ctx_log.trace, "pid:{} tx_seq:{} is committed", pid, tx_seq);
@@ -1260,7 +1260,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
                         co_await _raft->step_down(
                           "try_abort(commit) replication error");
                     }
-                    co_return tx_errc::unknown_server_error;
+                    co_return tx::errc::unknown_server_error;
                 }
 
                 if (!co_await wait_no_throw(
@@ -1276,9 +1276,9 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
                         co_await _raft->step_down(
                           "try_abort(commit) apply error");
                     }
-                    co_return tx_errc::timeout;
+                    co_return tx::errc::timeout;
                 }
-                co_return tx_errc::none;
+                co_return tx::errc::none;
             } else if (r.aborted) {
                 vlog(
                   _ctx_log.trace, "pid:{} tx_seq:{} is aborted", pid, tx_seq);
@@ -1301,7 +1301,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
                         co_await _raft->step_down(
                           "try_abort(abort) replication error");
                     }
-                    co_return tx_errc::unknown_server_error;
+                    co_return tx::errc::unknown_server_error;
                 }
 
                 if (!co_await wait_no_throw(
@@ -1316,11 +1316,11 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
                         co_await _raft->step_down(
                           "try_abort(abort) apply error");
                     }
-                    co_return tx_errc::timeout;
+                    co_return tx::errc::timeout;
                 }
-                co_return tx_errc::none;
+                co_return tx::errc::none;
             } else {
-                co_return tx_errc::timeout;
+                co_return tx::errc::timeout;
             }
         } else {
             vlog(
@@ -1328,7 +1328,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
               "state of transaction {} is unknown:{}",
               *producer,
               r.ec);
-            co_return tx_errc::timeout;
+            co_return tx::errc::timeout;
         }
     } else {
         vlog(
@@ -1351,7 +1351,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
             if (_raft->is_leader() && _raft->term() == synced_term) {
                 co_await _raft->step_down("try_abort(abort) replication error");
             }
-            co_return tx_errc::unknown_server_error;
+            co_return tx::errc::unknown_server_error;
         }
 
         if (!co_await wait_no_throw(
@@ -1366,9 +1366,9 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
             if (_raft->is_leader() && _raft->term() == synced_term) {
                 co_await _raft->step_down("try_abort_old_tx apply error");
             }
-            co_return tx_errc::timeout;
+            co_return tx::errc::timeout;
         }
-        co_return tx_errc::none;
+        co_return tx::errc::none;
     }
 }
 

@@ -174,7 +174,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& v, cluster::tx_errc& obj) {
+inline void read_value(json::Value const& v, cluster::tx::errc& obj) {
     obj = {v.GetInt()};
 }
 
