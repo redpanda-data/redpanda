@@ -18,6 +18,7 @@ v_cc_library(
     cache_probe.cc
     download_exception.cc
     partition_manifest.cc
+    partition_path_utils.cc
     recursive_directory_walker.cc
     remote.cc
     remote_file.cc
