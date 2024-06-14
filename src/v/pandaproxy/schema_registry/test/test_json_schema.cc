@@ -156,6 +156,24 @@ static constexpr auto compatibility_test_cases
       .writer_schema = R"({"type": ["boolean", "null"]})",
       .reader_is_compatible_with_writer = false,
     },
+    //***** compatible section *****
+    // same type
+    {
+      .reader_schema = R"({"type": "boolean"})",
+      .writer_schema = R"({"type": "boolean"})",
+      .reader_is_compatible_with_writer = true,
+    },
+    {
+      .reader_schema = R"({"type": "null"})",
+      .writer_schema = R"({"type": "null"})",
+      .reader_is_compatible_with_writer = true,
+    },
+    // restrict types
+    {
+      .reader_schema = R"({"type": ["null", "boolean"]})",
+      .writer_schema = R"({"type": "null"})",
+      .reader_is_compatible_with_writer = true,
+    },
   });
 SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
     store_fixture f;

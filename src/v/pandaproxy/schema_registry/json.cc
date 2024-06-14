@@ -404,6 +404,43 @@ json_type_list normalized_type(json::Value const& v) {
     return ret;
 }
 
+bool is_string_superset(
+  [[maybe_unused]] json::Value const& older,
+  [[maybe_unused]] json::Value const& newer) {
+    throw as_exception(invalid_schema(fmt::format(
+      "{} not implemented. input: older: '{}', newer: '{}'",
+      __FUNCTION__,
+      pj{older},
+      pj{newer})));
+}
+bool is_numeric_superset(
+  [[maybe_unused]] json::Value const& older,
+  [[maybe_unused]] json::Value const& newer) {
+    throw as_exception(invalid_schema(fmt::format(
+      "{} not implemented. input: older: '{}', newer: '{}'",
+      __FUNCTION__,
+      pj{older},
+      pj{newer})));
+}
+bool is_array_superset(
+  [[maybe_unused]] json::Value const& older,
+  [[maybe_unused]] json::Value const& newer) {
+    throw as_exception(invalid_schema(fmt::format(
+      "{} not implemented. input: older: '{}', newer: '{}'",
+      __FUNCTION__,
+      pj{older},
+      pj{newer})));
+}
+bool is_object_superset(
+  [[maybe_unused]] json::Value const& older,
+  [[maybe_unused]] json::Value const& newer) {
+    throw as_exception(invalid_schema(fmt::format(
+      "{} not implemented. input: older: '{}', newer: '{}'",
+      __FUNCTION__,
+      pj{older},
+      pj{newer})));
+}
+
 } // namespace is_superset_impl
 
 using namespace is_superset_impl;
@@ -432,11 +469,94 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
         return false;
     }
 
-    throw std::runtime_error{fmt::format(
-      "{} not fully implemented yet. input: older: '{}', newer: '{}'",
-      __FUNCTION__,
-      pj{older},
-      pj{newer})};
+    // newer accepts less (or equal) types. for each type, try to find a less
+    // strict check
+    for (auto t : newer_types) {
+        // TODO this will perform a depth first search, but it might be better
+        // to do a breadth first search to find a counterexample
+        switch (t) {
+        case json_type::string:
+            if (!is_string_superset(older, newer)) {
+                return false;
+            }
+            break;
+        case json_type::integer:
+            [[fallthrough]];
+        case json_type::number:
+            if (!is_numeric_superset(older, newer)) {
+                return false;
+            }
+            break;
+        case json_type::object:
+            if (!is_object_superset(older, newer)) {
+                return false;
+            }
+            break;
+        case json_type::array:
+            if (!is_array_superset(older, newer)) {
+                return false;
+            }
+            break;
+        case json_type::boolean:
+            // no check needed for boolean;
+            break;
+        case json_type::null:
+            // no check needed for null;
+            break;
+        }
+    }
+
+    for (auto not_yet_handled_keyword : {
+           "id",
+           "$schema",
+           "title",
+           "description",
+           "default",
+           "multipleOf",
+           "maximum",
+           "exclusiveMaximum",
+           "minimum",
+           "exclusiveMinimum",
+           "maxLength",
+           "minLength",
+           "pattern",
+           "additionalItems",
+           "items",
+           "maxItems",
+           "minItems",
+           "uniqueItems",
+           "maxProperties",
+           "minProperties",
+           "required",
+           "additionalProperties",
+           "definitions",
+           "properties",
+           "patternProperties",
+           "dependencies",
+           "enum",
+           "format",
+           "allOf",
+           "anyOf",
+           "oneOf",
+           "not",
+         }) {
+        if (
+          newer.HasMember(not_yet_handled_keyword)
+          || older.HasMember(not_yet_handled_keyword)) {
+            // these keyword are not yet handled, their presence might change
+            // the result of this function
+            throw as_exception(invalid_schema(fmt::format(
+              "{} not fully implemented yet. unsupported keyword: {}, input: "
+              "older: '{}', newer: '{}'",
+              __FUNCTION__,
+              not_yet_handled_keyword,
+              pj{older},
+              pj{newer})));
+        }
+    }
+
+    // no rule in newer is less strict than older, older is superset of newer
+    return true;
 }
 
 } // namespace
