@@ -44,6 +44,10 @@ class ShardPlacementTest(RedpandaTest):
                 # sort replicas for the ease of comparison
                 replicas.sort()
 
+        for topic, partitions in sorted(topic2partition2shard.items()):
+            for p, replicas in sorted(partitions.items()):
+                self.logger.debug(f"ntp: {topic}/{p} replicas: {replicas}")
+
         return topic2partition2shard
 
     def get_shard_counts_by_topic(self, shard_map, node_id):
@@ -58,27 +62,23 @@ class ShardPlacementTest(RedpandaTest):
                             list(0 for _ in range(core_count)))[core] += 1
         return topic2shard2count
 
-    def debug_print_shard_map(self, shard_map, with_counts=True):
+    def print_shard_stats(self, shard_map):
         node_ids = set()
-        for topic, partitions in sorted(shard_map.items()):
-            for p, replicas in sorted(partitions.items()):
-                self.logger.debug(f"ntp: {topic}/{p} replicas: {replicas}")
+        for partitions in shard_map.values():
+            for replicas in partitions.values():
                 for n_id, _ in replicas:
                     node_ids.add(n_id)
-
-        if not with_counts:
-            return
 
         core_count = self.redpanda.get_node_cpu_count()
         for node_id in sorted(node_ids):
             shard_counts = self.get_shard_counts_by_topic(shard_map, node_id)
             total_counts = list(0 for _ in range(core_count))
-            self.logger.debug(f"shard replica counts on node {node_id}:")
+            self.logger.info(f"shard replica counts on node {node_id}:")
             for t, counts in sorted(shard_counts.items()):
-                self.logger.debug(f"topic {t}: {counts}")
+                self.logger.info(f"topic {t}: {counts}")
                 for i, c in enumerate(counts):
                     total_counts[i] += c
-            self.logger.debug(f"total: {total_counts}")
+            self.logger.info(f"total: {total_counts}")
 
     def wait_shard_map_stationary(self,
                                   nodes,
@@ -90,7 +90,6 @@ class ShardPlacementTest(RedpandaTest):
         def is_stationary():
             nonlocal shard_map
             new_map = self.get_replica_shard_map(nodes, admin)
-            self.debug_print_shard_map(new_map, with_counts=False)
             if new_map == shard_map:
                 return True
             else:
@@ -128,7 +127,7 @@ class ShardPlacementTest(RedpandaTest):
 
         self.logger.info("created cluster and topics.")
         initial_map = self.get_replica_shard_map(seed_nodes, admin)
-        self.debug_print_shard_map(initial_map)
+        self.print_shard_stats(initial_map)
 
         # Upgrade the cluster and enable the feature.
 
@@ -149,7 +148,7 @@ class ShardPlacementTest(RedpandaTest):
         self.logger.info(
             "feature enabled, checking that shard map is stable...")
         map_after_upgrade = self.get_replica_shard_map(seed_nodes, admin)
-        self.debug_print_shard_map(map_after_upgrade)
+        self.print_shard_stats(map_after_upgrade)
         assert map_after_upgrade == initial_map
 
         # Manually move replicas of one topic on one node to shard 0
@@ -168,7 +167,7 @@ class ShardPlacementTest(RedpandaTest):
             "checking shard map...")
         map_after_manual_move = self.wait_shard_map_stationary(
             seed_nodes, admin)
-        self.debug_print_shard_map(map_after_manual_move)
+        self.print_shard_stats(map_after_manual_move)
         foo_shard_counts = self.get_shard_counts_by_topic(
             map_after_manual_move, moved_replica_id)["foo"]
         assert foo_shard_counts[0] == n_partitions
@@ -184,7 +183,7 @@ class ShardPlacementTest(RedpandaTest):
         # check that shard counts are balanced
         self.logger.info(f"added 2 nodes and a topic, checking shard map...")
         map_after_join = self.get_replica_shard_map(joiner_nodes, admin)
-        self.debug_print_shard_map(map_after_join)
+        self.print_shard_stats(map_after_join)
         for joiner in joiner_nodes:
             joiner_id = self.redpanda.node_id(joiner)
             shard_counts = self.get_shard_counts_by_topic(
@@ -210,7 +209,7 @@ class ShardPlacementTest(RedpandaTest):
                          "checking shard map...")
         map_after_manual_move2 = self.wait_shard_map_stationary(
             joiner_nodes, admin)
-        self.debug_print_shard_map(map_after_manual_move2)
+        self.print_shard_stats(map_after_manual_move2)
         quux_shard_counts = self.get_shard_counts_by_topic(
             map_after_manual_move2, joiner_id)["quux"]
         assert quux_shard_counts[0] > 0
@@ -227,5 +226,5 @@ class ShardPlacementTest(RedpandaTest):
         self.logger.info("restarted cluster, checking shard map...")
         map_after_restart = self.get_replica_shard_map(self.redpanda.nodes,
                                                        admin)
-        self.debug_print_shard_map(map_after_restart)
+        self.print_shard_stats(map_after_restart)
         assert map_after_restart == map_before_restart
