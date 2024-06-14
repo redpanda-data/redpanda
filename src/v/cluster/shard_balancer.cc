@@ -263,6 +263,20 @@ shard_balancer::reassign_shard(model::ntp ntp, ss::shard_id shard) {
     co_return errc::success;
 }
 
+errc shard_balancer::trigger_rebalance() {
+    if (_gate.is_closed()) {
+        return errc::shutting_down;
+    }
+
+    if (!_features.is_active(features::feature::node_local_core_assignment)) {
+        return errc::feature_disabled;
+    }
+
+    vlog(clusterlog.info, "triggering manual rebalancing");
+    _balance_timer.rearm(ss::lowres_clock::now());
+    return errc::success;
+}
+
 ss::future<> shard_balancer::assign_fiber() {
     if (_gate.is_closed()) {
         co_return;

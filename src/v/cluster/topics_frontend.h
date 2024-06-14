@@ -220,6 +220,9 @@ public:
     /// shard.
     ss::future<errc> set_local_partition_shard(model::ntp, ss::shard_id);
 
+    /// Trigger shard placement rebalancing for partitions in this node.
+    ss::future<errc> trigger_local_partition_shard_rebalance();
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 

@@ -55,6 +55,10 @@ public:
     /// Manually set shard placement for an ntp that has a replica on this node.
     ss::future<errc> reassign_shard(model::ntp, ss::shard_id);
 
+    /// Manually trigger shard placement rebalancing for partitions in this
+    /// node.
+    errc trigger_rebalance();
+
 private:
     void process_delta(const topic_table::delta&);
 
