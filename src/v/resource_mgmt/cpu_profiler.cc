@@ -36,6 +36,14 @@ cpu_profiler::cpu_profiler(
   , _sample_period(std::move(sample_period)) {
     _enabled.watch([this] { on_enabled_change(); });
     _sample_period.watch([this] { on_sample_period_change(); });
+
+    for (size_t i = 0; i < number_of_results_buffers; i++) {
+        _results_buffers.emplace_back(
+          0,
+          std::vector<ss::cpu_profiler_trace>{},
+          ss::lowres_clock::time_point::min());
+        _results_buffers.back().samples.reserve(ss::max_number_of_traces);
+    }
 }
 
 ss::future<> cpu_profiler::start() {
