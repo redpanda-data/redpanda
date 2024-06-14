@@ -17,6 +17,7 @@
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "model/timestamp.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
@@ -26,8 +27,8 @@
 namespace kafka {
 class group_offset_probe {
 public:
-    explicit group_offset_probe(model::offset& offset) noexcept
-      : _offset(offset) {}
+    explicit group_offset_probe(model::offset& offset, model::timestamp& commit_timestamp) noexcept
+      : _offset(offset), _commit_timestamp(commit_timestamp) {}
     group_offset_probe(const group_offset_probe&) = delete;
     group_offset_probe& operator=(const group_offset_probe&) = delete;
     group_offset_probe(group_offset_probe&&) = delete;
@@ -82,10 +83,31 @@ public:
              sm::description("Consumer group committed offset"),
              labels)
              .aggregate({sm::shard_label})});
+
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("kafka:consumer:group"),
+          {sm::make_gauge(
+             "committed_offset_timestamp_seconds",
+             [this] { return _commit_timestamp.value()/1000; },
+             sm::description("Consumer group commit offset timestamp"),
+             labels)
+             .aggregate({sm::shard_label})});
+
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("kafka:consumer:group"),
+          {sm::make_gauge(
+             "committed_offset_age_seconds",
+             [this] {
+               return (long)(model::timestamp::now().value() - _commit_timestamp.value())/1000;
+             },
+             sm::description("Consumer group consumer offset age"),
+             labels)
+             .aggregate({sm::shard_label})});
     }
 
 private:
     model::offset& _offset;
+    model::timestamp& _commit_timestamp;
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
 };

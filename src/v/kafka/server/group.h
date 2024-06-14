@@ -183,7 +183,7 @@ public:
           const model::topic_partition& tp,
           enable_group_metrics enable_metrics)
           : metadata(std::move(_metadata))
-          , probe(metadata.offset) {
+          , probe(metadata.offset, metadata.commit_timestamp) {
             if (enable_metrics) {
                 probe.setup_metrics(group_id, tp);
                 probe.setup_public_metrics(group_id, tp);
