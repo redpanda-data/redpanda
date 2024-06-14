@@ -36,8 +36,9 @@ LOGGER_WEB_CONSUME = "web_consume"
 CONSUMER_LOGGING_THRESHOLD = 1000
 
 
-def setup_logger(name: str = "", level: int = logging.DEBUG) -> logging.Logger:
-    """Create main loggeer or its child based on naming
+def setup_logger(child_logger_name: str = "",
+                 level: int = logging.DEBUG) -> logging.Logger:
+    """Create main logger or its child based on naming
 
     Args:
         name (str, optional): name of the logger. Defaults to "stream_verifier"
@@ -51,14 +52,12 @@ def setup_logger(name: str = "", level: int = logging.DEBUG) -> logging.Logger:
         logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     handler.setLevel(level)
-    _name = "stream_verifier"
-    if name is not None:
-        # Just simpel hierachy, no special handler
-        _name = f"{_name}.{name}"
-        logger = logging.getLogger(_name)
-        return logger
+    logger_name = "stream_verifier"
+    if len(child_logger_name) > 0:
+        # Just simple hierachy, no special handler
+        return logging.getLogger(f"{logger_name}.{child_logger_name}")
     else:
-        logger = logging.getLogger(_name)
+        logger = logging.getLogger(logger_name)
         logger.addHandler(handler)
         logger.setLevel(level)
         return logger
@@ -70,11 +69,11 @@ def write_json(ioclass: IO, data: dict) -> None:
     ioclass.flush()
 
 
-def validate_keys(imcoming: list[str], local: list[str],
+def validate_keys(incoming: list[str], local: list[str],
                   forbidden: list[str]) -> list[str]:
     error_msgs = []
     # Validate incoming keys
-    for k in imcoming:
+    for k in incoming:
         if k in forbidden:
             error_msgs += [f"Key '{k}' can't be updated"]
         elif k not in local:
@@ -96,15 +95,19 @@ class AppCfg(Updateable):
     """
     app_name: str = app_name
     brokers: str = "localhost:9092"
+    # topic group id for Consumer configuration
     topic_group_id: str = "group-stream-verifier-tx"
+    # Topic prefix, full topic name will be
+    # <topic_prefix>-<range(topic_count)>
+    # I.e. "stream-verifier-topic-1", "stream-verifier-topic-2", etc
     topic_prefix: str = "stream-verifier-topic"
     topic_count: int = 16
     # 0 - no rate limiting
-    msg_rate: int = 0
+    msg_rate_limit: int = 0
     msg_per_txn: int = 1
     # per-topic = msg_total / topic_count
     msg_total: int = 256
-    # time between two consumed messages
+    # how much time to wait in a loop for next message, sec
     consume_timeout: int = 60
     # how often to log sent message event
     # On higher scale it could be >10000 to eliminate log IO overhead
@@ -115,11 +118,11 @@ class AppCfg(Updateable):
     web_port: int = 8090
 
     @property
-    def topics_config(self):
-        """Generates topic config for TopicsConfig class
+    def workload_config(self):
+        """Generates topic config for WorkloadConfig class
 
         Returns:
-            dict: config that can be used for TopicsConfig(**topic_config)
+            dict: config that can be used for WorkloadConfig(**workload_config)
         """
         return {
             "topic_group_id": self.topic_group_id,
@@ -139,13 +142,27 @@ class AppCfg(Updateable):
         Args:
             req (falcon.Request): request coming in
             resp (falcon.Response): response to be filled
+
+        Returns JSON on GET, same one can be used to update via POST:
+        {
+            "brokers": "'localhost:19092'",
+            "topic_group_id": "group-stream-verifier-tx",
+            "topic_prefix": "topic-stream-verifier-tx",
+            "topic_count": 16,
+            "msg_rate_limit": 0,
+            "msg_per_txn": 1,
+            "msg_total": 256,
+            "consume_timeout": 60,
+            "consumer_logging_threshold": 1000,
+            "worker_threads": 4
+        }
         """
         resp.status = falcon.HTTP_200
         resp.content_type = falcon.MEDIA_JSON
         # need to copy here otherwise, Class gets broken
         _conf = deepcopy(vars(self))
         # remove forbidden keys
-        for k in _conf.keys():
+        for k in self.forbidden_keys:
             _conf.pop(k)
         # dump it without prettify
         resp.media = json.dumps(_conf)
@@ -167,7 +184,7 @@ class AppCfg(Updateable):
         keys_req = list(req.media.keys())
         # Validation
         error_msgs = validate_keys(keys_req, keys_list, self.forbidden_keys)
-        if len(error_msgs) > 0:
+        if error_msgs:
             # Just dump errors as list
             msg = f"Incoming request invalid: {', '.join(error_msgs)}"
             logger.error(msg)
@@ -176,8 +193,7 @@ class AppCfg(Updateable):
             resp.media = {"errors": msg}
         else:
             # since validation is passed, no more stric checking needed
-            for k in req.media.keys():
-                setattr(self, k, req.media[k])
+            self.update(req.media)
             logger.debug(f"...updated app config: {vars(self)}")
             resp.status = falcon.HTTP_200
             resp.content_type = falcon.MEDIA_JSON
@@ -188,17 +204,20 @@ class AppCfg(Updateable):
 app_config = AppCfg()
 
 
+# Following classes hold future topic configuration
 @dataclass(kw_only=True)
-class TopicsConfig:
+class WorkloadConfig:
     """Holds data for topic operations: Produce/Consume.
     Can generate list of topic names based on config
+
+    I.e. 'WorkloadConfig' holds initialization data for
+    Producers And Consumers alike
     """
     topic_group_id: str
     topic_prefix: str
     topic_count: int
+    # how much time to wait in a loop for the next message
     consume_timeout: int
-    partitions: int = 0
-    replicas: int = 0
 
     @property
     def names(self):
@@ -211,6 +230,13 @@ class TopicsConfig:
 @dataclass(kw_only=True)
 class TopicStatus(Updateable):
     """Holds single live topic status
+
+    'TopicStatus' holds data for live topic in action
+    and is recreated for each initialized produce/consume
+    action. It is chosen not to divide them into
+    'TopicProduceStatus' and 'TopicConsumeStatus' as
+    parameters are almost the same. Also, for slightly
+    less memory consumption
 
     Returns:
         _type_: _description_
@@ -229,7 +255,7 @@ class TopicStatus(Updateable):
     last_message_ts: float
     # how much ms should pass between messages to be sent
     msgs_rate_ms: float
-    # how much time to wait when consuming next message
+    # how much time to wait when waiting for the next message
     consume_timeout: int
     # Precreated Producer class.
     producer: ck.Producer
@@ -272,7 +298,7 @@ class StreamVerifier():
     """
     def __init__(self,
                  brokers,
-                 topics_config: dict,
+                 workload_config: dict,
                  worker_threads: int,
                  rate=0,
                  total_messages=100):
@@ -281,11 +307,11 @@ class StreamVerifier():
         # Remove quotes from broker config value if an
         self.brokers = brokers.strip('\"').strip("'")
         # Create main topics config
-        self.topics_config = TopicsConfig(**topics_config)
-        self.message_rate = rate
+        self.workload_config = WorkloadConfig(**workload_config)
+        self.message_rate_limit = rate
         # It is reasonable to assume that single message will not be sent
         # faster than 1 ms in case of no rate limitations
-        self.msgs_rate_ms = 1000 / self.message_rate if rate > 0 else 0
+        self.msgs_rate_ms = 1000 / self.message_rate_limit if rate > 0 else 0
         # total messages to process in all topics
         self.total_messages = total_messages
         self.workers = worker_threads
@@ -304,8 +330,8 @@ class StreamVerifier():
         self.logger.info("Initializing producers")
         # Calculate messages per topic and announce changes
         msgs_per_topic = int(self.total_messages /
-                             self.topics_config.topic_count)
-        new_total_messages = msgs_per_topic * self.topics_config.topic_count
+                             self.workload_config.topic_count)
+        new_total_messages = msgs_per_topic * self.workload_config.topic_count
         if new_total_messages != self.total_messages:
             self.logger.warning("Messages per topic rounded to "
                                 f"{msgs_per_topic} with the new "
@@ -314,7 +340,7 @@ class StreamVerifier():
         else:
             self.logger.info(f"Messages per topic is {msgs_per_topic} "
                              f"with the total of {self.total_messages}")
-        for name in self.topics_config.names:
+        for name in self.workload_config.names:
             topic_config = {
                 "id": self.id_index,
                 "name": name,
@@ -468,7 +494,7 @@ class StreamVerifier():
         One Consumer per worker thread.
         """
         self.logger.info("Initializing consumers")
-        for name in self.topics_config.names:
+        for name in self.workload_config.names:
             topic_config = {
                 "id": self.id_index,
                 "name": name,
@@ -483,7 +509,7 @@ class StreamVerifier():
                 # consumer config
                 "consumer_config": {
                     'bootstrap.servers': self.brokers,
-                    'group.id': self.topics_config.topic_group_id,
+                    'group.id': self.workload_config.topic_group_id,
                     'auto.offset.reset': 'earliest',
                     'enable.auto.commit': False,
                     'enable.partition.eof': True,
@@ -611,11 +637,20 @@ class StreamVerifier():
             dict: Dict with status
         """
 
-        response = {"topics": {}}
+        response = {"topics": {}, "workload_config": {}}
+        # specific topic if requested
         if len(name) > 0:
             # include topic as asked
             response['topics'][name] = vars(self.topics_status[name])
-
+        # topics configuration to use in POST command
+        topics_cfg = vars(self.workload_config)
+        topics_cfg.update({
+            "msg_rate_limit": self.message_rate_limit,
+            "msg_total": self.total_messages
+        })
+        response['workload_config'] = topics_cfg
+        # Total stats and delivery errors
+        # 'indices' is a list of current indexes in each topic
         msg_total, indices = self._calculate_totals()
         response['stats'] = {"total_messages": msg_total, "indices": indices}
         response['delivery_errors'] = self.delivery_reports
@@ -631,13 +666,53 @@ class StreamVerifier():
 
 
 class StreamVerifierProduce(StreamVerifier):
+    """Handled host:port/produce requests
+
+    On GET returns current status JSON
+    {
+        "topics": {},
+        "workload_config": {
+            "topic_group_id": "group-stream-verifier-tx",
+            "topic_prefix": "topic-stream-verifier-tx",
+            "topic_count": 16,
+            "consume_timeout": 60,
+            "msg_rate_limit": 0,
+            "msg_total": 256
+        },
+        "stats": {
+            "total_messages": 0,
+            "indices": []
+        },
+        "delivery_errors": {}
+    }
+
+    On POST runs produce command, can use cfg from status JSON.
+    {
+        "topic_group_id": "group-stream-verifier-tx",
+        "topic_prefix": "topic-stream-verifier-tx",
+        "topic_count": 16,
+        "consume_timeout": 60,
+        "msg_rate_limit": 0,
+        "msg_total": 256
+    }
+
+    If Produce is active, returns error JSON
+    Validation errors are returned in the same way
+    {
+        "errors": [
+            "Active produce job not finished"
+        ]
+    }
+
+    On DELETE terminates current produce command 
+    """
     def __init__(self, cfg):
         self.cfg = cfg
         self.wlogger = setup_logger(LOGGER_WEB_PRODUCE)
         super().__init__(cfg.brokers,
-                         cfg.topics_config,
+                         cfg.workload_config,
                          cfg.worker_threads,
-                         rate=cfg.msg_rate,
+                         rate=cfg.msg_rate_limit,
                          total_messages=cfg.msg_total)
 
     def on_get(self, req: falcon.Request, resp: falcon.Response):
@@ -665,10 +740,10 @@ class StreamVerifierProduce(StreamVerifier):
                 return
 
         # update topic config
-        topics_cfg_keys = list(vars(self.topics_config).keys())
-        topics_cfg_keys += ["msg_rate", "msg_total"]
+        topics_cfg_keys = list(vars(self.workload_config).keys())
+        topics_cfg_keys += ["msg_rate_limit", "msg_total"]
         error_msgs = validate_keys(req.media, topics_cfg_keys, [])
-        if len(error_msgs) > 0:
+        if error_msgs:
             msg = f"Incoming request invalid: {', '.join(error_msgs)}"
             self.wlogger.error(msg)
             resp.status = falcon.HTTP_400
@@ -676,14 +751,14 @@ class StreamVerifierProduce(StreamVerifier):
             resp.media = {"errors": msg}
         else:
             # Update topic configs
-            self.message_rate = req.media['msg_rate'] \
-                if 'msg_rate' in req.media else app_config.msg_rate
+            self.message_rate = req.media['msg_rate_limit'] \
+                if 'msg_rate_limit' in req.media else app_config.msg_rate_limit
             self.total_messages = req.media['msg_total'] \
                 if 'msg_total' in req.media else app_config.msg_total
             if 'topic_prefix' in req.media:
-                self.topics_config.topic_prefix = req.media['topic_prefix']
+                self.workload_config.topic_prefix = req.media['topic_prefix']
             if 'topic_count' in req.media:
-                self.topics_config.topic_count = req.media['topic_count']
+                self.workload_config.topic_count = req.media['topic_count']
             # start producers
             self.init_producers()
             self.produce(wait=False)
@@ -708,13 +783,53 @@ class StreamVerifierProduce(StreamVerifier):
 
 
 class StreamVerifierConsume(StreamVerifier):
+    """Handled host:port/consume requests
+
+    On GET returns current status JSON
+    {
+        "topics": {},
+        "workload_config": {
+            "topic_group_id": "group-stream-verifier-tx",
+            "topic_prefix": "topic-stream-verifier-tx",
+            "topic_count": 16,
+            "consume_timeout": 60,
+            "msg_rate_limit": 0,
+            "msg_total": 256
+        },
+        "stats": {
+            "total_messages": 0,
+            "indices": []
+        },
+        "delivery_errors": {}
+    }
+
+    On POST runs consume command, can use cfg from status JSON.
+    {
+        "topic_group_id": "group-stream-verifier-tx",
+        "topic_prefix": "topic-stream-verifier-tx",
+        "topic_count": 16,
+        "consume_timeout": 60,
+        "msg_rate_limit": 0,
+        "msg_total": 256
+    }
+
+    If Consume is active, returns error JSON
+    Validation errors are returned in the same way
+    {
+        "errors": [
+            "Active consume job not finished"
+        ]
+    }
+
+    On DELETE terminates current consume command
+    """
     def __init__(self, cfg):
         self.cfg = cfg
         self.wlogger = setup_logger(LOGGER_WEB_CONSUME)
         super().__init__(cfg.brokers,
-                         cfg.topics_config,
+                         cfg.workload_config,
                          cfg.worker_threads,
-                         rate=cfg.msg_rate,
+                         rate=cfg.msg_rate_limit,
                          total_messages=cfg.msg_total)
 
     def on_get(self, req: falcon.Request, resp: falcon.Response):
@@ -738,14 +853,14 @@ class StreamVerifierConsume(StreamVerifier):
                 self.consume_thread.is_alive():
             resp.status = falcon.HTTP_400
             resp.content_type = falcon.MEDIA_JSON
-            resp.media = {"errors": ["Active produce job not finished"]}
+            resp.media = {"errors": ["Active consume job not finished"]}
             return
 
         # update topic config
         topics_cfg_keys = ["topic_prefix", "topic_count"]
-        forbidden = ["msg_rate", "msg_total"]
+        forbidden = ["msg_rate_limit", "msg_total"]
         error_msgs = validate_keys(req.media, topics_cfg_keys, forbidden)
-        if len(error_msgs) > 0:
+        if error_msgs:
             msg = f"Incoming request invalid: {', '.join(error_msgs)}\n" \
                 f"Valid keys are: {', '.join(topics_cfg_keys)}"
             self.wlogger.error(msg)
@@ -755,9 +870,9 @@ class StreamVerifierConsume(StreamVerifier):
         else:
             # Update topic configs
             if 'topic_prefix' in req.media:
-                self.topics_config.topic_prefix = req.media['topic_prefix']
+                self.workload_config.topic_prefix = req.media['topic_prefix']
             if 'topic_count' in req.media:
-                self.topics_config.topic_count = req.media['topic_count']
+                self.workload_config.topic_count = req.media['topic_count']
             # start consumers
             self.init_consumers()
             self.consume(wait=False)
@@ -827,16 +942,16 @@ def process_command(command, cfg, ioclass):
     try:
         logger = setup_logger('cli_command')
         verifier = StreamVerifier(cfg.brokers,
-                                  cfg.topics_config,
+                                  cfg.workload_config,
                                   cfg.worker_threads,
-                                  rate=cfg.msg_rate,
+                                  rate=cfg.msg_rate_limit,
                                   total_messages=cfg.msg_total)
         if command == COMMAND_PRODUCE:
             logger.info("Init Produce command")
             verifier.init_producers()
             _rate = "no rate limiting"
-            if cfg.msg_rate > 0:
-                _rate = f"{cfg.msg_rate}/sec"
+            if cfg.msg_rate_limit > 0:
+                _rate = f"{cfg.msg_rate_limit}/sec"
             logger.info(f"Starting to produce {cfg.msg_total} messages "
                         f"to {cfg.topic_count} topics, {_rate}")
             verifier.produce()
@@ -926,13 +1041,12 @@ if __name__ == '__main__':
                         default=4,
                         help="Number of threads to process messages")
 
-    parser.add_argument(
-        "-f",
-        "--topic-prefix",
-        dest="topic_prefix",
-        default="topic-stream-verifier-tx",
-        help="Topic prefix to use when creating. "
-        "Formats: '<prefix>-p<partitions>-r<replicas>-<sequence_number>")
+    parser.add_argument("-f",
+                        "--topic-prefix",
+                        dest="topic_prefix",
+                        default="topic-stream-verifier-tx",
+                        help="Topic prefix to use when creating. "
+                        "Formats: '<prefix>-<sequence_number>")
 
     parser.add_argument("-g",
                         "--group-id",
@@ -951,7 +1065,7 @@ if __name__ == '__main__':
     parser_produce = subparsers.add_parser(COMMAND_PRODUCE)
 
     parser_produce.add_argument('--rps',
-                                dest='msg_rate',
+                                dest='msg_rate_limit',
                                 default=0,
                                 type=int,
                                 help="Producer's message rate per sec")
