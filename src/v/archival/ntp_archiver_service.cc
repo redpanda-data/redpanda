@@ -22,6 +22,7 @@
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/spillover_manifest.h"
@@ -505,10 +506,14 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
         cfg_copy.replication_factor = replication_factor;
         cloud_storage::topic_manifest tm(
           cfg_copy, _rev, _feature_table.local());
-        auto key = tm.get_manifest_path();
+        const auto& topic = cfg_copy.tp_ns;
+        auto key = remote_path_provider().topic_manifest_path(topic, _rev);
         vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
         auto res = co_await _remote.upload_manifest(
-          _conf->bucket_name, tm, fib);
+          _conf->bucket_name,
+          tm,
+          cloud_storage::remote_manifest_path{key},
+          fib);
         if (res != cloud_storage::upload_result::success) {
             vlog(ctxlog.warn, "Topic manifest upload failed: {}", key);
         } else {
