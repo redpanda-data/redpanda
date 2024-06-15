@@ -21,6 +21,7 @@ v_cc_library(
     recursive_directory_walker.cc
     remote.cc
     remote_file.cc
+    remote_path_provider.cc
     offset_translation_layer.cc
     remote_probe.cc
     read_path_probes.cc
