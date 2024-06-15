@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/inventory/report_parser.h"
 #include "cloud_storage/remote.h"
 
 #include <gmock/gmock.h>
@@ -48,5 +49,12 @@ public:
        existence_check_type),
       (override));
 };
+
+ss::input_stream<char> make_report_stream(
+  ss::sstring s, is_gzip_compressed compress = is_gzip_compressed::no);
+
+ss::input_stream<char> make_report_stream(
+  std::vector<ss::sstring> rows,
+  is_gzip_compressed compress = is_gzip_compressed::no);
 
 } // namespace cloud_storage::inventory
