@@ -291,6 +291,12 @@ public:
       const base_manifest& manifest,
       retry_chain_node& parent);
 
+    ss::future<upload_result> upload_manifest(
+      const cloud_storage_clients::bucket_name& bucket,
+      const base_manifest& manifest,
+      const remote_manifest_path& key,
+      retry_chain_node& parent);
+
     /// \brief Upload segment to S3
     ///
     /// The method uploads the segment while tolerating some errors. It can

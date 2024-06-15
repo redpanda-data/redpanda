@@ -366,10 +366,18 @@ ss::future<upload_result> remote::upload_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const base_manifest& manifest,
   retry_chain_node& parent) {
+    auto key = manifest.get_manifest_path();
+    co_return co_await upload_manifest(bucket, manifest, key, parent);
+}
+
+ss::future<upload_result> remote::upload_manifest(
+  const cloud_storage_clients::bucket_name& bucket,
+  const base_manifest& manifest,
+  const remote_manifest_path& key,
+  retry_chain_node& parent) {
     auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto key = manifest.get_manifest_path();
     auto path = cloud_storage_clients::object_key(key());
     auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
