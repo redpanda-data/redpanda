@@ -50,6 +50,7 @@ v_cc_library(
     inventory/aws_ops.cc
     inventory/types.cc
     inventory/report_parser.cc
+    inventory/inv_consumer.cc
   DEPS
     Seastar::seastar
     v::bytes

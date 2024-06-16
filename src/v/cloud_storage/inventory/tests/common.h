@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/inventory/inv_consumer.h"
 #include "cloud_storage/inventory/report_parser.h"
 #include "cloud_storage/remote.h"
 
