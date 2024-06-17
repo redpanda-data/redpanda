@@ -20,4 +20,5 @@
 namespace kafka {
 extern ss::logger klog;
 extern truncating_logger kwire;
+extern ss::logger client_quota_log;
 } // namespace kafka

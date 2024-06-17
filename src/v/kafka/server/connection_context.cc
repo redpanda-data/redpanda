@@ -592,7 +592,7 @@ connection_context::record_tp_and_calculate_throttle(
       delay_enforce != clock::duration::zero()
       || delay_request != clock::duration::zero()) {
         vlog(
-          klog.trace,
+          client_quota_log.trace,
           "[{}:{}] throttle request:{{snc:{}, client:{}}}, "
           "enforce:{{snc:{}, client:{}}}, key:{}, request_size:{}",
           _client_addr,

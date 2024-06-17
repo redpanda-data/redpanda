@@ -91,8 +91,9 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_default_test) {
       .fetch_limit = std::nullopt,
       .partition_mutation_limit = std::nullopt,
     };
-    auto [key, limits] = f.tr.find_quota(
+    auto key = f.tr.find_quota_key(
       {client_quota_type::produce_quota, test_client_id});
+    auto limits = f.tr.find_quota_value(key);
     BOOST_CHECK_EQUAL(test_client_id_key, key);
     BOOST_CHECK_EQUAL(default_limits, limits);
 }
@@ -110,8 +111,9 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_modified_default_test) {
       .fetch_limit = scale_to_smp_count(2222),
       .partition_mutation_limit = scale_to_smp_count(3333),
     };
-    auto [key, limits] = f.tr.find_quota(
+    auto key = f.tr.find_quota_key(
       {client_quota_type::produce_quota, test_client_id});
+    auto limits = f.tr.find_quota_value(key);
     BOOST_CHECK_EQUAL(test_client_id_key, key);
     BOOST_CHECK_EQUAL(expected_limits, limits);
 }
@@ -245,29 +247,41 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
     using cluster::client_quota::entity_key;
     using cluster::client_quota::entity_value;
 
-    auto check_produce =
-      [&f](auto client_id, auto expected_key, auto expected_value) {
-          auto [k, v] = f.tr.find_quota(
-            {.q_type = kafka::client_quota_type::produce_quota,
-             .client_id = client_id});
-          CHECK_VARIANT_EQ(expected_key, k);
-          BOOST_CHECK_EQUAL(expected_value, v.produce_limit);
-      };
-    auto check_fetch =
-      [&f](auto client_id, auto expected_key, auto expected_value) {
-          auto [k, v] = f.tr.find_quota(
-            {.q_type = kafka::client_quota_type::fetch_quota,
-             .client_id = client_id});
-          CHECK_VARIANT_EQ(expected_key, k);
-          BOOST_CHECK_EQUAL(expected_value, v.fetch_limit);
-      };
+    auto check_produce = [&f](
+                           auto client_id,
+                           auto expected_key,
+                           auto expected_value,
+                           auto expected_rule) {
+        auto [k, value] = f.tr.find_quota(
+          {.q_type = kafka::client_quota_type::produce_quota,
+           .client_id = client_id});
+        CHECK_VARIANT_EQ(expected_key, k);
+        BOOST_CHECK_EQUAL(expected_value, value.limit);
+        BOOST_CHECK_EQUAL(expected_rule, value.rule);
+    };
+    auto check_fetch = [&f](
+                         auto client_id,
+                         auto expected_key,
+                         auto expected_value,
+                         auto expected_rule) {
+        auto [k, value] = f.tr.find_quota(
+          {.q_type = kafka::client_quota_type::fetch_quota,
+           .client_id = client_id});
+        CHECK_VARIANT_EQ(expected_key, k);
+        BOOST_CHECK_EQUAL(expected_value, value.limit);
+        BOOST_CHECK_EQUAL(expected_rule, value.rule);
+    };
     auto check_pm = [&f](
-                      auto client_id, auto expected_key, auto expected_value) {
-        auto [k, v] = f.tr.find_quota(
+                      auto client_id,
+                      auto expected_key,
+                      auto expected_value,
+                      auto expected_rule) {
+        auto [k, value] = f.tr.find_quota(
           {.q_type = kafka::client_quota_type::partition_mutation_quota,
            .client_id = client_id});
         CHECK_VARIANT_EQ(expected_key, k);
-        BOOST_CHECK_EQUAL(expected_value, v.partition_mutation_limit);
+        BOOST_CHECK_EQUAL(expected_value, value.limit);
+        BOOST_CHECK_EQUAL(expected_rule, value.rule);
     };
 
     // This test walks through the priority levels of the various ways of
@@ -281,9 +295,21 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
     config::shard_local_cfg().target_fetch_quota_byte_rate.set_value(12);
     config::shard_local_cfg().kafka_admin_topic_api_rate.set_value(13);
 
-    check_produce("franz-go", k_client_id{"franz-go"}, scale_to_smp_count(11));
-    check_fetch("franz-go", k_client_id{"franz-go"}, scale_to_smp_count(12));
-    check_pm("franz-go", k_client_id{"franz-go"}, scale_to_smp_count(13));
+    check_produce(
+      "franz-go",
+      k_client_id{"franz-go"},
+      scale_to_smp_count(11),
+      client_quota_rule::cluster_client_default);
+    check_fetch(
+      "franz-go",
+      k_client_id{"franz-go"},
+      scale_to_smp_count(12),
+      client_quota_rule::cluster_client_default);
+    check_pm(
+      "franz-go",
+      k_client_id{"franz-go"},
+      scale_to_smp_count(13),
+      client_quota_rule::cluster_client_default);
 
     // 2. Next: default client quota
     auto default_key = entity_key{entity_key::client_id_default_match{}};
@@ -294,9 +320,21 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
     };
     f.quota_store.local().set_quota(default_key, default_values);
 
-    check_produce("franz-go", k_client_id{"franz-go"}, 21);
-    check_fetch("franz-go", k_client_id{"franz-go"}, 22);
-    check_pm("franz-go", k_client_id{"franz-go"}, 23);
+    check_produce(
+      "franz-go",
+      k_client_id{"franz-go"},
+      21,
+      client_quota_rule::kafka_client_default);
+    check_fetch(
+      "franz-go",
+      k_client_id{"franz-go"},
+      22,
+      client_quota_rule::kafka_client_default);
+    check_pm(
+      "franz-go",
+      k_client_id{"franz-go"},
+      23,
+      client_quota_rule::kafka_client_default);
 
     // 3. Next: client id prefix cluster configs
     const auto produce_prefix_config = YAML::Load(std::string(R"([
@@ -318,11 +356,23 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
     config::shard_local_cfg()
       .kafka_client_group_fetch_byte_rate_quota.set_value(fetch_prefix_config);
 
-    check_produce("franz-go", k_group_name{"franz-go"}, scale_to_smp_count(31));
-    check_fetch("franz-go", k_group_name{"franz-go"}, scale_to_smp_count(32));
+    check_produce(
+      "franz-go",
+      k_group_name{"franz-go"},
+      scale_to_smp_count(31),
+      client_quota_rule::cluster_client_prefix);
+    check_fetch(
+      "franz-go",
+      k_group_name{"franz-go"},
+      scale_to_smp_count(32),
+      client_quota_rule::cluster_client_prefix);
     // there's no cluster config for partition mutation quotas based on client
     // prefix, so this fall backs to the previous priority level
-    check_pm("franz-go", k_client_id{"franz-go"}, 23);
+    check_pm(
+      "franz-go",
+      k_client_id{"franz-go"},
+      23,
+      client_quota_rule::kafka_client_default);
 
     // 4. Next: client id prefix quota store
     auto franz_go_prefix_key = entity_key{
@@ -335,9 +385,21 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
     f.quota_store.local().set_quota(
       franz_go_prefix_key, franz_go_prefix_values);
 
-    check_produce("franz-go", k_group_name{"franz-go"}, 41);
-    check_fetch("franz-go", k_group_name{"franz-go"}, 42);
-    check_pm("franz-go", k_group_name{"franz-go"}, 43);
+    check_produce(
+      "franz-go",
+      k_group_name{"franz-go"},
+      41,
+      client_quota_rule::kafka_client_prefix);
+    check_fetch(
+      "franz-go",
+      k_group_name{"franz-go"},
+      42,
+      client_quota_rule::kafka_client_prefix);
+    check_pm(
+      "franz-go",
+      k_group_name{"franz-go"},
+      43,
+      client_quota_rule::kafka_client_prefix);
 
     // 5. Finally: client id exact match quota store
     auto franz_go_exact_key = entity_key{
@@ -349,7 +411,19 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
     };
     f.quota_store.local().set_quota(franz_go_exact_key, franz_go_exact_values);
 
-    check_produce("franz-go", k_client_id{"franz-go"}, 51);
-    check_fetch("franz-go", k_client_id{"franz-go"}, 52);
-    check_pm("franz-go", k_client_id{"franz-go"}, 53);
+    check_produce(
+      "franz-go",
+      k_client_id{"franz-go"},
+      51,
+      client_quota_rule::kafka_client_id);
+    check_fetch(
+      "franz-go",
+      k_client_id{"franz-go"},
+      52,
+      client_quota_rule::kafka_client_id);
+    check_pm(
+      "franz-go",
+      k_client_id{"franz-go"},
+      53,
+      client_quota_rule::kafka_client_id);
 }

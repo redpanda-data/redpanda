@@ -44,6 +44,8 @@ using k_group_name = named_type<ss::sstring, struct k_group_name_tag>;
 /// the same shared quota limit
 using tracker_key = std::variant<k_client_id, k_group_name>;
 
+std::ostream& operator<<(std::ostream&, const tracker_key&);
+
 /// client_quota_limits describes the limits applicable to a tracker_key
 struct client_quota_limits {
     std::optional<uint64_t> produce_limit;
@@ -63,10 +65,34 @@ enum class client_quota_type {
     partition_mutation_quota
 };
 
+std::ostream& operator<<(std::ostream&, client_quota_type);
+
 struct client_quota_request_ctx {
     client_quota_type q_type;
     std::optional<std::string_view> client_id;
 };
+
+std::ostream& operator<<(std::ostream&, const client_quota_request_ctx&);
+
+/// client_quota_rule is used for reporting metrics to show which type of rule
+/// is being used for limiting clients
+enum class client_quota_rule {
+    not_applicable,
+    kafka_client_default,
+    cluster_client_default,
+    kafka_client_prefix,
+    cluster_client_prefix,
+    kafka_client_id
+};
+
+std::ostream& operator<<(std::ostream&, client_quota_rule);
+
+struct client_quota_value {
+    std::optional<uint64_t> limit;
+    client_quota_rule rule;
+};
+
+std::ostream& operator<<(std::ostream&, client_quota_value);
 
 /// client_quota_translator is responsible for providing quota_manager with a
 /// simplified interface to the quota configurations
@@ -88,10 +114,16 @@ public:
     /// Finds the limits applicable to the given quota tracker key
     client_quota_limits find_quota_value(const tracker_key&) const;
 
-    /// Returns the quota tracker key and quota limit applicable to the given
-    /// quota context
-    std::pair<tracker_key, client_quota_limits>
+    /// Returns the quota tracker key and value. If no quota applies to the
+    /// given context, the value may have an empty limit with the rule
+    /// not_applicable
+    std::pair<tracker_key, client_quota_value>
     find_quota(const client_quota_request_ctx& ctx) const;
+
+    /// Returns the quota rule type that applies to the given tracker key and
+    /// quota type
+    client_quota_rule
+    find_quota_rule(const tracker_key&, client_quota_type) const;
 
     /// `watch` can be used to register for quota changes
     void watch(on_change_fn&& fn);
@@ -103,7 +135,7 @@ private:
     const quota_config& get_quota_config(client_quota_type qt) const;
     std::optional<uint64_t> get_default_config(client_quota_type qt) const;
 
-    std::optional<uint64_t> get_client_quota_value(
+    client_quota_value get_client_quota_value(
       const tracker_key& quota_id, client_quota_type qt) const;
 
     ss::sharded<cluster::client_quota::store>& _quota_store;

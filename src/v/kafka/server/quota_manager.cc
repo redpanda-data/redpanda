@@ -206,8 +206,18 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
       .q_type = client_quota_type::partition_mutation_quota,
       .client_id = client_id,
     };
-    auto [key, limits] = _translator.find_quota(ctx);
-    if (!limits.partition_mutation_limit) {
+    auto [key, value] = _translator.find_quota(ctx);
+    if (!value.limit) {
+        vlog(
+          client_quota_log.trace,
+          "request: ctx:{}, key:{}, value:{}, mutations: {}, delay:{}"
+          "capped_delay:{}",
+          ctx,
+          key,
+          value,
+          mutations,
+          0ms,
+          0ms);
         co_return 0ms;
     }
 
@@ -224,8 +234,18 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
           return result;
       });
 
-    co_return duration_cast<std::chrono::milliseconds>(
-      cap_to_max_delay(key, delay));
+    auto capped_delay = cap_to_max_delay(key, delay);
+    vlog(
+      client_quota_log.trace,
+      "request: ctx:{}, key:{}, value:{}, mutations: {}, delay:{}"
+      "capped_delay:{}",
+      ctx,
+      key,
+      value,
+      mutations,
+      delay,
+      capped_delay);
+    co_return duration_cast<std::chrono::milliseconds>(capped_delay);
 }
 
 clock::duration quota_manager::cap_to_max_delay(
@@ -254,8 +274,18 @@ ss::future<clock::duration> quota_manager::record_produce_tp_and_throttle(
       .q_type = client_quota_type::produce_quota,
       .client_id = client_id,
     };
-    auto [key, limits] = _translator.find_quota(ctx);
-    if (!limits.produce_limit) {
+    auto [key, value] = _translator.find_quota(ctx);
+    if (!value.limit) {
+        vlog(
+          client_quota_log.trace,
+          "request: ctx:{}, key:{}, value:{}, bytes: {}, delay:{}, "
+          "capped_delay:{}",
+          ctx,
+          key,
+          value,
+          bytes,
+          0ms,
+          0ms);
         co_return clock::duration::zero();
     }
     auto delay = co_await maybe_add_and_retrieve_quota(
@@ -268,7 +298,18 @@ ss::future<clock::duration> quota_manager::record_produce_tp_and_throttle(
             now, bytes);
       });
 
-    co_return cap_to_max_delay(key, delay);
+    auto capped_delay = cap_to_max_delay(key, delay);
+    vlog(
+      client_quota_log.trace,
+      "request: ctx:{}, key:{}, value:{}, bytes: {}, delay:{}, "
+      "capped_delay:{}",
+      ctx,
+      key,
+      value,
+      bytes,
+      delay,
+      capped_delay);
+    co_return capped_delay;
 }
 
 ss::future<> quota_manager::record_fetch_tp(
@@ -279,8 +320,15 @@ ss::future<> quota_manager::record_fetch_tp(
       .q_type = client_quota_type::fetch_quota,
       .client_id = client_id,
     };
-    auto [key, limits] = _translator.find_quota(ctx);
-    if (!limits.fetch_limit) {
+    auto [key, value] = _translator.find_quota(ctx);
+    vlog(
+      client_quota_log.trace,
+      "record request: ctx:{}, key:{}, value:{}, bytes:{}",
+      ctx,
+      key,
+      value,
+      bytes);
+    if (!value.limit) {
         co_return;
     }
     auto delay [[maybe_unused]] = co_await maybe_add_and_retrieve_quota(
@@ -300,8 +348,17 @@ ss::future<clock::duration> quota_manager::throttle_fetch_tp(
       .q_type = client_quota_type::fetch_quota,
       .client_id = client_id,
     };
-    auto [key, limits] = _translator.find_quota(ctx);
-    if (!limits.fetch_limit) {
+    auto [key, value] = _translator.find_quota(ctx);
+    if (!value.limit) {
+        vlog(
+          client_quota_log.trace,
+          "throttle request: ctx:{}, key:{}, value:{}, delay:{}, "
+          "capped_delay:{}",
+          ctx,
+          key,
+          value,
+          0ms,
+          0ms);
         co_return clock::duration::zero();
     }
 
@@ -314,7 +371,17 @@ ss::future<clock::duration> quota_manager::throttle_fetch_tp(
           return fetch_tracker.update_and_calculate_delay<clock::duration>(now);
       });
 
-    co_return cap_to_max_delay(key, delay);
+    auto capped_delay = cap_to_max_delay(key, delay);
+    vlog(
+      client_quota_log.trace,
+      "throttle request: ctx:{}, key:{}, value:{}, delay:{}, "
+      "capped_delay:{}",
+      ctx,
+      key,
+      value,
+      delay,
+      capped_delay);
+    co_return capped_delay;
 }
 
 // erase inactive tracked quotas. windows are considered inactive if
