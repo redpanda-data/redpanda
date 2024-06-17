@@ -173,6 +173,19 @@ static constexpr auto compatibility_test_cases
       .writer_schema = R"({"type": "number", "multipleOf": 21})",
       .reader_is_compatible_with_writer = false,
     },
+    // string checks
+    {
+      .reader_schema = R"({"type": "string", "minLength": 2})",
+      .writer_schema = R"({"type": "string", "minLength": 1})",
+      .reader_is_compatible_with_writer = false,
+    },
+    // string + pattern check: reader regex is a superset of writer regex, but
+    // the rules specify to reject this
+    {
+      .reader_schema = R"({"type": "string", "pattern": "^test +"})",
+      .writer_schema = R"({"type": "string", "pattern": "^test  +"})",
+      .reader_is_compatible_with_writer = false,
+    },
     //***** compatible section *****
     // same type
     {
@@ -216,6 +229,22 @@ static constexpr auto compatibility_test_cases
     {
       .reader_schema = R"({"type": "number", "multipleOf": 10})",
       .writer_schema = R"({"type": "number", "multipleOf": 20})",
+      .reader_is_compatible_with_writer = true,
+    },
+    // string checks
+    {
+      .reader_schema = R"({"type": "string"})",
+      .writer_schema = R"({"type": "string", "minLength": 1, "maxLength": 10})",
+      .reader_is_compatible_with_writer = true,
+    },
+    {
+      .reader_schema = R"({"type": "string", "minLength": 1})",
+      .writer_schema = R"({"type": "string", "minLength": 2})",
+      .reader_is_compatible_with_writer = true,
+    },
+    {
+      .reader_schema = R"({"type": "string", "pattern": "^test"})",
+      .writer_schema = R"({"type": "string", "pattern": "^test"})",
       .reader_is_compatible_with_writer = true,
     },
   });

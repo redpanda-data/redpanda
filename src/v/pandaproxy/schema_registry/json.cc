@@ -483,14 +483,32 @@ bool is_numeric_property_value_superset(
              std::forward<VPred>(value_predicate), older_value, newer_value);
 }
 
-bool is_string_superset(
-  [[maybe_unused]] json::Value const& older,
-  [[maybe_unused]] json::Value const& newer) {
-    throw as_exception(invalid_schema(fmt::format(
-      "{} not implemented. input: older: '{}', newer: '{}'",
-      __FUNCTION__,
-      pj{older},
-      pj{newer})));
+bool is_string_superset(json::Value const& older, json::Value const& newer) {
+    // note: "format" is not part of the checks
+    if (!is_numeric_property_value_superset(
+          older, newer, "minLength", std::less_equal<>{})) {
+        // older is less strict
+        return false;
+    }
+    if (!is_numeric_property_value_superset(
+          older, newer, "maxLength", std::greater_equal<>{})) {
+        // older is less strict
+        return false;
+    }
+
+    auto [maybe_gate_value, older_val_p, newer_val_p]
+      = extract_property_and_gate_check(older, newer, "pattern");
+    if (maybe_gate_value.has_value()) {
+        return maybe_gate_value.value();
+    }
+
+    // both have "pattern". check if they are the same, the only
+    // possible_value_accepted
+    auto older_pattern = std::string_view{
+      older_val_p->GetString(), older_val_p->GetStringLength()};
+    auto newer_pattern = std::string_view{
+      newer_val_p->GetString(), newer_val_p->GetStringLength()};
+    return older_pattern == newer_pattern;
 }
 
 bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
@@ -683,9 +701,6 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "title",
            "description",
            "default",
-           "maxLength",
-           "minLength",
-           "pattern",
            "additionalItems",
            "items",
            "maxItems",
@@ -700,7 +715,6 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "patternProperties",
            "dependencies",
            "enum",
-           "format",
            "allOf",
            "anyOf",
            "oneOf",
