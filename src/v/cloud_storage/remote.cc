@@ -231,33 +231,6 @@ ss::future<download_result> remote::maybe_download_manifest(
     co_return co_await do_download_manifest(bucket, fk, manifest, parent, true);
 }
 
-ss::future<std::pair<download_result, manifest_format>>
-remote::try_download_partition_manifest(
-  const cloud_storage_clients::bucket_name& bucket,
-  partition_manifest& manifest,
-  retry_chain_node& parent,
-  bool expect_missing) {
-    vassert(
-      manifest.get_ntp() != model::ntp{}
-        && manifest.get_revision_id() != model::initial_revision_id{},
-      "partition manifest must have ntp");
-
-    // first try to download the serde format
-    auto format_path = manifest.get_manifest_format_and_path();
-    auto serde_result = co_await do_download_manifest(
-      bucket, format_path, manifest, parent, expect_missing);
-    if (serde_result != download_result::notfound) {
-        // propagate success, timedout and failed to caller
-        co_return std::pair{serde_result, manifest_format::serde};
-    }
-    // fallback to json format
-    format_path = manifest.get_legacy_manifest_format_and_path();
-    co_return std::pair{
-      co_await do_download_manifest(
-        bucket, format_path, manifest, parent, expect_missing),
-      manifest_format::json};
-}
-
 ss::future<download_result> remote::do_download_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const std::pair<manifest_format, remote_manifest_path>& format_key,
