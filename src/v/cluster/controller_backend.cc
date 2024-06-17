@@ -12,6 +12,7 @@
 #include "archival/archival_metadata_stm.h"
 #include "base/outcome.h"
 #include "base/vassert.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -36,6 +37,7 @@
 #include "ssx/event.h"
 #include "ssx/future-util.h"
 #include "storage/offset_translator.h"
+#include "types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -1391,7 +1393,10 @@ ss::future<std::error_code> controller_backend::create_partition(
               group_id,
               std::move(initial_brokers),
               cfg->properties.remote_topic_properties,
-              read_replica_bucket);
+              read_replica_bucket,
+              raft::with_learner_recovery_throttle::yes,
+              raft::keep_snapshotted_log::no,
+              cfg->properties.remote_label);
 
             co_await add_to_shard_table(
               ntp, group_id, ss::this_shard_id(), log_revision);
