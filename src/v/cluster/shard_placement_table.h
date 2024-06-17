@@ -254,4 +254,13 @@ private:
 
 std::ostream& operator<<(std::ostream&, shard_placement_table::hosted_status);
 
+/// Enum with all key types in the shard_placement key space. All keys in this
+/// key space must be prefixed with the serialized type. Enum type is
+/// irrelevant, as serde will serialize to 32 bit anyway.
+enum class shard_placement_kvstore_key_type {
+    persistence_enabled = 0,
+    assignment = 1,
+    current_state = 2,
+};
+
 } // namespace cluster

@@ -101,12 +101,7 @@ namespace {
 static constexpr auto kvstore_key_space
   = storage::kvstore::key_space::shard_placement;
 
-// enum type is irrelevant, serde will serialize to 32 bit anyway
-enum class kvstore_key_type {
-    persistence_enabled = 0,
-    assignment = 1,
-    current_state = 2,
-};
+using kvstore_key_type = shard_placement_kvstore_key_type;
 
 bytes persistence_enabled_kvstore_key() {
     iobuf buf;
