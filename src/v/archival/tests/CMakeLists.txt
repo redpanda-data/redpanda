@@ -18,6 +18,7 @@ else()
       LIBRARIES
         v::seastar_testing_main
         v::application
+        v::s3_imposter
         Boost::unit_test_framework
         v::cluster
         v::storage_test_utils
