@@ -26,6 +26,21 @@ public:
 
     group_tx_tracker_stm(ss::logger&, raft::consensus*);
 
+    storage::stm_type type() override {
+        return storage::stm_type::consumer_offsets_transactional;
+    }
+
+    ss::future<fragmented_vector<model::tx_range>>
+    aborted_tx_ranges(model::offset, model::offset) override {
+        // Instead of tracking aborted transactions, group partitions rely on a
+        // different approach. When a group transaction is committed, the data
+        // to be committed is converted into regular offset data batches. This
+        // conversion happens atomically along with writing a commit marker.
+        // This eliminates the need to track completed transactional batches and
+        // they are unconditionally omitted in the compaction pass.
+        return ss::make_ready_future<fragmented_vector<model::tx_range>>();
+    }
+
     ss::future<> apply(const model::record_batch&) override;
 
     model::offset max_collectible_offset() override;

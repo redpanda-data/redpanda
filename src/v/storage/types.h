@@ -81,6 +81,7 @@ struct disk
 enum class stm_type : int8_t {
     user_topic_transactional = 0,
     non_transactional = 1,
+    consumer_offsets_transactional = 2
 };
 
 class snapshotable_stm {
@@ -142,7 +143,9 @@ public:
 class stm_manager {
 public:
     void add_stm(ss::shared_ptr<snapshotable_stm> stm) {
-        if (stm->type() == stm_type::user_topic_transactional) {
+        if (
+          stm->type() == stm_type::user_topic_transactional
+          || stm->type() == stm_type::consumer_offsets_transactional) {
             vassert(!_tx_stm, "Multiple transactional stms not allowed.");
             _tx_stm = stm;
         }
@@ -188,7 +191,16 @@ public:
         return _stms;
     }
 
-    bool has_tx_stm() { return _tx_stm.get(); }
+    std::optional<storage::stm_type> transactional_stm_type() const {
+        if (_tx_stm) {
+            return _tx_stm->type();
+        }
+        return std::nullopt;
+    }
+
+    const ss::shared_ptr<snapshotable_stm> transactional_stm() const {
+        return _tx_stm;
+    }
 
 private:
     ss::shared_ptr<snapshotable_stm> _tx_stm;

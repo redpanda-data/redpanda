@@ -390,6 +390,9 @@ void tx_reducer::refresh_ongoing_aborted_txs(const model::record_batch& b) {
 }
 
 bool tx_reducer::can_discard_tx_data_batch(const model::record_batch& b) {
+    if (_transactional_stm_type != stm_type::user_topic_transactional) {
+        return false;
+    }
     auto is_tx = b.header().attrs.is_transactional();
     auto is_data = b.header().type == model::record_batch_type::raft_data;
     auto is_control = b.header().attrs.is_control();
@@ -399,19 +402,30 @@ bool tx_reducer::can_discard_tx_data_batch(const model::record_batch& b) {
            && _ongoing_aborted_txs.contains(pid);
 }
 
-ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
-    if (unlikely(_non_transactional)) {
-        co_return co_await _delegate(std::move(b));
+bool tx_reducer::can_discard_consumer_offsets_batch(
+  const model::record_batch& b) {
+    if (_transactional_stm_type != stm_type::consumer_offsets_transactional) {
+        return false;
     }
-    _stats.batches_processed++;
-    refresh_ongoing_aborted_txs(b);
-    if (can_discard_tx_data_batch(b)) {
-        vlog(
-          stlog.trace,
-          "discarded aborted data batch during compaction: {}",
-          b.header());
-        _stats.batches_discarded++;
-        co_return ss::stop_iteration::no;
+    // Remove all transaction related batches (including data) because the
+    // committed data has already been rewritten as separate raft_data batches,
+    // so no need to retain originally written group_prepare_tx batches while
+    // the transaction is in progress.
+    return is_compactible_control_batch(b.header().type);
+}
+
+ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
+    if (_transactional_stm_type) {
+        _stats.batches_processed++;
+        refresh_ongoing_aborted_txs(b);
+        if (
+          can_discard_tx_data_batch(b)
+          || can_discard_consumer_offsets_batch(b)) {
+            vlog(
+              stlog.trace, "discarded batch during compaction: {}", b.header());
+            _stats.batches_discarded++;
+            co_return ss::stop_iteration::no;
+        }
     }
     co_return co_await _delegate(std::move(b));
 }
