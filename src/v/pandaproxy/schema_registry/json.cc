@@ -404,6 +404,85 @@ json_type_list normalized_type(json::Value const& v) {
     return ret;
 }
 
+// extract the Values pointed from older[prop_name] and newer[prop_name].
+// returns a tuple of 3 value. the first is an optional<bool> that if has value
+// can be used to short circuit later value checks. the other two values are
+// pointers to the values.
+// short circuit can happen if:
+// 1. older has no value, then newer can either have it or not, but the result
+// is always compatible
+// 2. older has a value and newer does not have. then the result is always not
+// compatible if no short circuit can happen, then the pointers are valid and
+// can be dereferenced.
+std::tuple<std::optional<bool>, json::Value const*, json::Value const*>
+extract_property_and_gate_check(
+  json::Value const& older,
+  json::Value const& newer,
+  std::string_view prop_name) {
+    auto older_it = older.FindMember(
+      json::Value{prop_name.data(), rapidjson::SizeType(prop_name.size())});
+    auto newer_it = newer.FindMember(
+      json::Value{prop_name.data(), rapidjson::SizeType(prop_name.size())});
+    if (older_it == older.MemberEnd()) {
+        // nothing in older, max freedom for newer (can be nothing too)
+        return {true, nullptr, nullptr};
+    }
+    // older has value
+
+    if (newer_it == newer.MemberEnd()) {
+        // newer has no value, but older has it so they are not compatible
+        return {false, nullptr, nullptr};
+    }
+    // both are value, need further checks
+
+    return {std::nullopt, &older_it->value, &newer_it->value};
+}
+
+// helper for numeric property that fits into a double:
+//  older  |  newer  | is_superset
+// ------- | ------- | -----------
+// nothing | nothing |    yes
+// nothing |   __    |    yes
+//  value  | nothing |    no
+//  value  |  value  | is_same or predicate
+template<typename VPred>
+requires std::is_invocable_r_v<bool, VPred, double, double>
+bool is_numeric_property_value_superset(
+  json::Value const& older,
+  json::Value const& newer,
+  std::string_view prop_name,
+  VPred&& value_predicate) {
+    auto [maybe_is_compatible, older_val_p, newer_val_p]
+      = extract_property_and_gate_check(older, newer, prop_name);
+    if (maybe_is_compatible.has_value()) {
+        return maybe_is_compatible.value();
+    }
+
+    // Gate on values that can't be represented with doubles.
+    // rapidjson can serialize a uint64_t even thought it's not a widely
+    // supported type, so deserializing that would trigger this. note also that
+    // 0.1 is a valid json literal, but does not have an exact double
+    // representation. this cannot be caught with this, and it would require
+    // some sort of decimal type
+    if (!older_val_p->IsLosslessDouble() || !newer_val_p->IsLosslessDouble()) {
+        // both have value but they can't be decoded as T
+        throw as_exception(invalid_schema(fmt::format(
+          R"({}-{} not implemented for types [{},{}]. input: older: '{}', newer: '{}')",
+          __FUNCTION__,
+          prop_name,
+          older_val_p->GetType(),
+          newer_val_p->GetType(),
+          pj{older},
+          pj{newer})));
+    }
+
+    auto older_value = older_val_p->GetDouble();
+    auto newer_value = newer_val_p->GetDouble();
+    return older_value == newer_value
+           || std::invoke(
+             std::forward<VPred>(value_predicate), older_value, newer_value);
+}
+
 bool is_string_superset(
   [[maybe_unused]] json::Value const& older,
   [[maybe_unused]] json::Value const& newer) {
