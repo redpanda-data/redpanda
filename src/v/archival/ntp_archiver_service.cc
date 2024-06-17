@@ -21,6 +21,7 @@
 #include "base/vlog.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
@@ -955,14 +956,20 @@ ntp_archiver::download_manifest() {
       &_rtcnode);
     cloud_storage::partition_manifest tmp(_ntp, _rev);
     vlog(_rtclog.debug, "Downloading manifest");
-    auto [result, _] = co_await _remote.try_download_partition_manifest(
-      get_bucket_name(), tmp, fib);
+    cloud_storage::partition_manifest_downloader dl(
+      get_bucket_name(), remote_path_provider(), _ntp, _rev, _remote);
+    auto result = co_await dl.download_manifest(fib, &tmp);
+    if (result.has_error()) {
+        co_return std::make_pair(
+          std::move(tmp), cloud_storage::download_result::failed);
+    }
 
     // It's OK if the manifest is not found for a newly created topic. The
     // condition in if statement is not guaranteed to cover all cases for new
     // topics, so false positives may happen for this warn.
     if (
-      result == cloud_storage::download_result::notfound
+      result.value()
+        == cloud_storage::find_partition_manifest_outcome::no_matching_manifest
       && _parent.high_watermark() != model::offset(0)
       && _parent.term() != model::term_id(1)) {
         vlog(
@@ -972,9 +979,11 @@ ntp_archiver::download_manifest() {
           _ntp,
           _parent.high_watermark(),
           _parent.term());
+        co_return std::make_pair(
+          std::move(tmp), cloud_storage::download_result::notfound);
     }
-
-    co_return std::make_pair(std::move(tmp), result);
+    co_return std::make_pair(
+      std::move(tmp), cloud_storage::download_result::success);
 }
 
 /**
