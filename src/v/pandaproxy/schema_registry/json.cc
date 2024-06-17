@@ -492,15 +492,107 @@ bool is_string_superset(
       pj{older},
       pj{newer})));
 }
-bool is_numeric_superset(
-  [[maybe_unused]] json::Value const& older,
-  [[maybe_unused]] json::Value const& newer) {
-    throw as_exception(invalid_schema(fmt::format(
-      "{} not implemented. input: older: '{}', newer: '{}'",
-      __FUNCTION__,
-      pj{older},
-      pj{newer})));
+
+bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
+    // preconditions:
+    // newer["type"]=="number" implies older["type"]=="number"
+    // older["type"]=="integer" implies newer["type"]=="integer"
+    // if older["type"]=="number", then newer can be either "number" or
+    // "integer"
+
+    // note: in draft4, "exclusiveMinimum"/"exclusiveMaximum" are bool
+    // indicating if "minimum"/"maximum" form an inclusive (default) or
+    // exclusive range. in later drafts this was reworked and are now numeric
+    // values so that "minimum" is always the inclusive limit and
+    // "exclusiveMinimum" is always the exclusive range. in this check we
+    // require for them to be the same datatype
+
+    if (!is_numeric_property_value_superset(
+          older, newer, "minimum", std::less_equal<>{})) {
+        // older["minimum"] is not superset of newer["minimum"] because newer is
+        // less strict
+        return false;
+    }
+    if (!is_numeric_property_value_superset(
+          older, newer, "maximum", std::greater_equal<>{})) {
+        // older["maximum"] is not superset of newer["maximum"] because newer
+        // is less strict
+        return false;
+    }
+
+    // TODO handle double with a big decimal lib. older["multipleOf"]: 1.1,
+    // newer["multipleOf"]: 2.2 would throw but they valid values that are
+    // compatible
+    if (
+      !is_numeric_property_value_superset(
+        older, newer, "multipleOf", [](double older, double newer) {
+            auto older_trunc = std::trunc(older);
+            auto newer_trunc = std::trunc(newer);
+
+            if (older_trunc != older || newer_trunc != newer) {
+                throw as_exception(invalid_schema(fmt::format(
+                  R"({}-multipleOf not implemented for non-integers. input: older: '{}', newer: '{}')",
+                  __FUNCTION__,
+                  older,
+                  newer)));
+            }
+            // the caller function restricts the range of values so that this
+            // cast to uint64 is safe
+            return std::gcd(uint64_t(older_trunc), uint64_t(newer_trunc))
+                   == uint64_t(older_trunc);
+        })) {
+        return false;
+    }
+
+    // exclusiveMinimum/exclusiveMaximum checks are mostly the same logic,
+    // implemented in this helper
+    auto exclusive_limit_check = [](
+                                   json::Value const& older,
+                                   json::Value const& newer,
+                                   std::string_view prop_name) {
+        auto [maybe_gate_value, older_it, newer_it]
+          = extract_property_and_gate_check(older, newer, prop_name);
+        if (maybe_gate_value.has_value()) {
+            return maybe_gate_value.value();
+        }
+        // need to perform checks on actual values
+        if (older_it->IsBool() && newer_it->IsBool()) {
+            // both have value and can be decoded as bool
+            if (older_it->GetBool() == true && newer_it->GetBool() == false) {
+                // newer represent a larger range
+                return false;
+            } else {
+                // either equal value or newer represent a smaller range
+                return true;
+            }
+        }
+
+        if (older_it->IsDouble() && newer_it->IsDouble()) {
+            // TODO extend this for double
+            throw as_exception(invalid_schema(fmt::format(
+              R"({}-{} not implemented for types other than "boolean". input: older: '{}', newer: '{}')",
+              __FUNCTION__,
+              prop_name,
+              pj{older},
+              pj{newer})));
+        } else {
+            // types changes are always not compatible (one is boolean and the
+            // other is double)
+            return false;
+        }
+    };
+
+    if (!exclusive_limit_check(older, newer, "exclusiveMinimum")) {
+        return false;
+    }
+
+    if (!exclusive_limit_check(older, newer, "exclusiveMaximum")) {
+        return false;
+    }
+
+    return true;
 }
+
 bool is_array_superset(
   [[maybe_unused]] json::Value const& older,
   [[maybe_unused]] json::Value const& newer) {
@@ -591,11 +683,6 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "title",
            "description",
            "default",
-           "multipleOf",
-           "maximum",
-           "exclusiveMaximum",
-           "minimum",
-           "exclusiveMinimum",
            "maxLength",
            "minLength",
            "pattern",

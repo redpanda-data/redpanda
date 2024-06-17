@@ -156,6 +156,23 @@ static constexpr auto compatibility_test_cases
       .writer_schema = R"({"type": ["boolean", "null"]})",
       .reader_is_compatible_with_writer = false,
     },
+    // not allowed numeric evolutions
+    {
+      .reader_schema = R"({"type": "number", "minimum": 11.2})",
+      .writer_schema = R"({"type": "number", "maximum": 30})",
+      .reader_is_compatible_with_writer = false,
+    },
+    {
+      .reader_schema
+      = R"({"type": "number", "minumum": 1.1, "maximum": 3.199})",
+      .writer_schema = R"({"type": "integer", "minimum": 1.1, "maximum": 3.2})",
+      .reader_is_compatible_with_writer = false,
+    },
+    {
+      .reader_schema = R"({"type": "number", "multipleOf": 10})",
+      .writer_schema = R"({"type": "number", "multipleOf": 21})",
+      .reader_is_compatible_with_writer = false,
+    },
     //***** compatible section *****
     // same type
     {
@@ -172,6 +189,33 @@ static constexpr auto compatibility_test_cases
     {
       .reader_schema = R"({"type": ["null", "boolean"]})",
       .writer_schema = R"({"type": "null"})",
+      .reader_is_compatible_with_writer = true,
+    },
+    {
+      .reader_schema = R"({"type": ["number", "boolean"], "minimum": 10.2})",
+      .writer_schema = R"({"type": ["integer", "boolean"], "minimum": 11})",
+      .reader_is_compatible_with_writer = true,
+    },
+    // numeric checks
+    {
+      .reader_schema = R"({"type": "number"})",
+      .writer_schema
+      = R"({"type": "number", "minimum": 11, "exclusiveMinimum": true})",
+      .reader_is_compatible_with_writer = true,
+    },
+    {
+      .reader_schema = R"({"type": "number"})",
+      .writer_schema = R"({"type": "number", "maximum": 11})",
+      .reader_is_compatible_with_writer = true,
+    },
+    {
+      .reader_schema = R"({"type": "number", "minumum": 1.1, "maximum": 4})",
+      .writer_schema = R"({"type": "number", "minimum": 1.1, "maximum": 3.2})",
+      .reader_is_compatible_with_writer = true,
+    },
+    {
+      .reader_schema = R"({"type": "number", "multipleOf": 10})",
+      .writer_schema = R"({"type": "number", "multipleOf": 20})",
       .reader_is_compatible_with_writer = true,
     },
   });
