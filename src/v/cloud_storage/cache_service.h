@@ -111,7 +111,8 @@ public:
       config::binding<double>,
       config::binding<uint64_t>,
       config::binding<std::optional<double>>,
-      config::binding<uint32_t>) noexcept;
+      config::binding<uint32_t>,
+      config::binding<uint16_t>) noexcept;
 
     cache(const cache&) = delete;
     cache(cache&& rhs) = delete;
@@ -305,6 +306,7 @@ private:
     config::binding<std::optional<double>> _max_percent;
     uint64_t _max_bytes;
     config::binding<uint32_t> _max_objects;
+    config::binding<uint16_t> _walk_concurrency;
     void update_max_bytes();
 
     ss::abort_source _as;

@@ -2293,6 +2293,16 @@ configuration::configuration()
       "elapsed",
       {.visibility = visibility::tunable},
       5s)
+  , cloud_storage_cache_trim_walk_concurrency(
+      *this,
+      "cloud_storage_cache_trim_walk_concurrency",
+      "The maximum number of concurrent tasks launched for directory walk "
+      "during cache trimming. A higher number allows cache trimming to run "
+      "faster but can cause latency spikes due to increased pressure on I/O "
+      "subsystem and syscall threads.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1,
+      {.min = 1, .max = 1000})
   , cloud_storage_max_segment_readers_per_shard(
       *this,
       "cloud_storage_max_segment_readers_per_shard",

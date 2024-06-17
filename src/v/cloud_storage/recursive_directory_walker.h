@@ -46,6 +46,7 @@ public:
     ss::future<walk_result> walk(
       ss::sstring start_dir,
       const access_time_tracker& tracker,
+      uint16_t max_concurrency,
       std::optional<filter_type> collect_filter = std::nullopt);
 
 private:
