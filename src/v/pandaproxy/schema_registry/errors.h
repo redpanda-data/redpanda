@@ -150,6 +150,10 @@ inline error_info invalid_schema(const canonical_schema& schema) {
       error_code::schema_invalid, fmt::format("Invalid schema {}", schema)};
 }
 
+inline error_info invalid_schema(std::string msg) {
+    return {error_code::schema_invalid, std::move(msg)};
+}
+
 inline error_info has_references(const subject& sub, schema_version ver) {
     return {
       error_code::subject_version_has_references,

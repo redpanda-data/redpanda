@@ -12,6 +12,7 @@
 #include "pandaproxy/schema_registry/json.h"
 
 #include "json/document.h"
+#include "json/ostreamwrapper.h"
 #include "json/schema.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -300,8 +301,24 @@ result<json::Document> parse_json(std::string_view v) {
 
 /// is_superset section
 
+// a schema O is a superset of another schema N if every schema that is valid
+// for N is also valid for O. precondition: older and newer are both valid
+// schemas
+bool is_superset(json::Value const& older, json::Value const& newer);
+
 // close the implementation in a namespace to keep it contained
 namespace is_superset_impl {
+
+// helper struct to format json::Value
+struct pj {
+    json::Value const& v;
+    friend std::ostream& operator<<(std::ostream& os, pj const& p) {
+        auto osw = json::OStreamWrapper{os};
+        auto writer = json::Writer<json::OStreamWrapper>{osw};
+        p.v.Accept(writer);
+        return os;
+    }
+};
 
 enum class json_type : uint8_t {
     string = 0,
@@ -388,6 +405,40 @@ json_type_list normalized_type(json::Value const& v) {
 }
 
 } // namespace is_superset_impl
+
+using namespace is_superset_impl;
+
+// a schema O is a superset of another schema N if every schema that is valid
+// for N is also valid for O. precondition: older and newer are both valid
+// schemas
+bool is_superset(json::Value const& older, json::Value const& newer) {
+    // extract { "type" : ... }
+    auto older_types = normalized_type(older);
+    auto newer_types = normalized_type(newer);
+
+    // looking for types that are new in `newer`. done as newer_types
+    // \ older_types
+    auto newer_minus_older = json_type_list{};
+    std::ranges::set_difference(
+      newer_types, older_types, std::back_inserter(newer_minus_older));
+    if (
+      !newer_minus_older.empty()
+      && !(
+        newer_minus_older == json_type_list{json_type::integer}
+        && std::ranges::count(older_types, json_type::number) != 0)) {
+        // newer_types_not_in_older accepts integer, and we can accept an
+        // evolution from number -> integer. everything else is makes `newer`
+        // less strict than older
+        return false;
+    }
+
+    throw std::runtime_error{fmt::format(
+      "{} not fully implemented yet. input: older: '{}', newer: '{}'",
+      __FUNCTION__,
+      pj{older},
+      pj{newer})};
+}
+
 } // namespace
 
 ss::future<json_schema_definition>
