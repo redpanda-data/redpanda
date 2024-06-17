@@ -17,6 +17,7 @@ package sr
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 var (
@@ -55,10 +56,72 @@ func DecodeFn[T any](fn func([]byte, T) error) SerdeOpt[T] {
 	return serdeOpt[T]{func(t *idSerde[T]) { t.decode = fn }}
 }
 
+func keySubject[T any](base_name string, fn func(string) error) SerdeOpt[T] {
+	return serdeOpt[T]{func(t *idSerde[T]) {
+		t.ks_err = fn(fmt.Sprintf("%s-key", base_name))
+	}}
+}
+
+// KeySubjectTopicName tells Serde to construct a subject name using topic name strategy and
+// pass the result to a user-supplied function, where, for example, the subject might be pushed
+// out to schema registry. If the user supplied function returns an error, subsequent call to
+// Serde.Encode will short circuit, returning that error.
+func KeySubjectTopicName[T any](topic string, fn func(string) error) SerdeOpt[T] {
+	return keySubject[T](topic, fn)
+}
+
+// KeySubjectRecordName tells Serde to construct a subject name using record name strategy and
+// pass the result to a user-supplied function, where, for example, the subject might be pushed
+// out to schema registry. If the user supplied function returns an error, subsequent call to
+// Serde.Encode will short circuit, returning that error.
+func KeySubjectRecordName[T any](record_name string, fn func(string) error) SerdeOpt[T] {
+	return keySubject[T](record_name, fn)
+}
+
+// KeySubjectTopicRecordName tells Serde to construct a subject name using topic record name
+// strategy and pass the result to a user-supplied function, where, for example, the subject
+// might be pushed out to schema registry. If the user supplied function returns an error,
+// subsequent call to Serde.Encode will short circuit, returning that error.
+func KeySubjectTopicRecordName[T any](topic string, record_name string, fn func(string) error) SerdeOpt[T] {
+	return keySubject[T](fmt.Sprintf("%s-%s", topic, record_name), fn)
+}
+
+func valueSubject[T any](base_name string, fn func(string) error) SerdeOpt[T] {
+	return serdeOpt[T]{func(t *idSerde[T]) {
+		t.vs_err = fn(fmt.Sprintf("%s-value", base_name))
+	}}
+}
+
+// ValueSubjectTopicName tells Serde to construct a subject name using topic name strategy and
+// pass the result to a user-supplied function, where, for example, the subject might be pushed
+// out to schema registry. If the user supplied function returns an error, subsequent call to
+// Serde.Encode will short circuit, returning that error.
+func ValueSubjectTopicName[T any](topic string, fn func(string) error) SerdeOpt[T] {
+	return valueSubject[T](topic, fn)
+}
+
+// ValueSubjectRecordName tells Serde to construct a subject name using record name strategy and
+// pass the result to a user-supplied function, where, for example, the subject might be pushed
+// out to schema registry. If the user supplied function returns an error, subsequent call to
+// Serde.Encode will short circuit, returning that error.
+func ValueSubjectRecordName[T any](record_name string, fn func(string) error) SerdeOpt[T] {
+	return valueSubject[T](record_name, fn)
+}
+
+// ValueSubjectTopicRecordName tells Serde to construct a subject name using topic record name
+// strategy and pass the result to a user-supplied function, where, for example, the subject
+// might be pushed out to schema registry. If the user supplied function returns an error,
+// subsequent call to Serde.Encode will short circuit, returning that error.
+func ValueSubjectTopicRecordName[T any](topic string, record_name string, fn func(string) error) SerdeOpt[T] {
+	return valueSubject[T](fmt.Sprintf("%s-%s", topic, record_name), fn)
+}
+
 type idSerde[T any] struct {
 	encode       func(T) ([]byte, error)
 	appendEncode func([]byte, T) ([]byte, error)
 	decode       func([]byte, T) error
+	ks_err       error
+	vs_err       error
 }
 
 func (s *idSerde[T]) isEncoder() bool {
@@ -141,6 +204,12 @@ func (s *Serde[T]) AppendEncode(b []byte, v T) ([]byte, error) {
 	idserde, ok := s.ids[s.encodingVersion]
 	if !ok || !idserde.isEncoder() {
 		return b, ErrNotRegistered
+	}
+
+	if idserde.ks_err != nil {
+		return b, idserde.ks_err
+	} else if idserde.vs_err != nil {
+		return b, idserde.vs_err
 	}
 
 	// write the magic leading byte, then the id in big endian

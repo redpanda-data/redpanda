@@ -300,6 +300,13 @@ func TestSchemaRegistry(t *testing.T) {
 	// Make sure the schema was created by the transform
 	schema, err := srClient.SchemaByID(ctx, 1)
 	require.NoError(t, err)
+
+	// Quick check that the transform created an additional subject
+	// by applying topic name strategy to the input topic
+	subj_schema, err := srClient.SchemaByVersion(ctx, "avro-value", -1)
+	require.NoError(t, err)
+	require.Equal(t, schema, subj_schema.Schema, "Schemas should be the same")
+
 	// Ensure the canonicalized schema is what we expect.
 	require.Equal(t, avro.MustParse(schema.Schema).String(), RecordV1Schema.String())
 	v2 := RecordV2{
