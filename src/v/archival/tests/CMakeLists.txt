@@ -6,21 +6,21 @@ else()
     rp_test(
       FIXTURE_TEST
       BINARY_NAME test_archival_service
-      SOURCES 
-        service_fixture.cc 
-        ntp_archiver_test.cc 
-        segment_reupload_test.cc 
-        ntp_archiver_reupload_test.cc 
+      SOURCES
+        service_fixture.cc
+        ntp_archiver_test.cc
+        segment_reupload_test.cc
+        ntp_archiver_reupload_test.cc
         retention_strategy_test.cc
         archival_metadata_stm_test.cc
         async_data_uploader_test.cc
       DEFINITIONS BOOST_TEST_DYN_LINK
-      LIBRARIES 
-        v::seastar_testing_main 
-        v::application 
-        Boost::unit_test_framework 
+      LIBRARIES
+        v::seastar_testing_main
+        v::application
+        Boost::unit_test_framework
         v::cluster
-        v::storage_test_utils 
+        v::storage_test_utils
         v::cloud_roles
         v::http_test_utils
         v::kafka_test_utils
@@ -31,15 +31,15 @@ else()
     rp_test(
       FIXTURE_TEST
       BINARY_NAME test_archiver_manager_smp
-      SOURCES 
+      SOURCES
         archiver_manager_test.cc
       DEFINITIONS BOOST_TEST_DYN_LINK
-      LIBRARIES 
-        v::seastar_testing_main 
-        v::application 
-        Boost::unit_test_framework 
+      LIBRARIES
+        v::seastar_testing_main
+        v::application
+        Boost::unit_test_framework
         v::cluster
-        v::storage_test_utils 
+        v::storage_test_utils
         v::cloud_roles
         v::http_test_utils
       ARGS "-- -c 2"
@@ -49,13 +49,13 @@ else()
     rp_test(
       UNIT_TEST
       BINARY_NAME test_archival_service
-      SOURCES 
+      SOURCES
         upload_housekeeping_service_test.cc
         scrubber_scheduler_test.cc
       DEFINITIONS BOOST_TEST_DYN_LINK
-      LIBRARIES 
-        v::seastar_testing_main 
-        Boost::unit_test_framework 
+      LIBRARIES
+        v::seastar_testing_main
+        Boost::unit_test_framework
         v::cluster
       ARGS "-- -c 1"
       LABELS archival
