@@ -429,24 +429,16 @@ ss::future<topic_result> topics_frontend::do_create_topic(
         }
         auto rr_manager = remote_topic_configuration_source(
           _cloud_storage_api.local());
-
         errc download_res = co_await rr_manager.set_remote_properties_in_config(
           assignable_config,
           cloud_storage_clients::bucket_name(
             assignable_config.cfg.properties.read_replica_bucket.value()),
           _as.local());
-
         if (download_res != errc::success) {
             co_return make_error_result(
               assignable_config.cfg.tp_ns, errc::topic_operation_error);
         }
 
-        if (!assignable_config.cfg.properties.remote_topic_properties) {
-            vassert(
-              assignable_config.cfg.properties.remote_topic_properties,
-              "remote_topic_properties not set after successful download of "
-              "valid topic manifest");
-        }
         assignable_config.cfg.partition_count
           = assignable_config.cfg.properties.remote_topic_properties
               ->remote_partition_count;
