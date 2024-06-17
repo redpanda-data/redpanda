@@ -461,7 +461,7 @@ class TLSChainCACertManager(TLSCertManager):
         self._dir = tempfile.TemporaryDirectory()
         self.cert_expiry_days = cert_expiry_days
         self.ca_expiry_days = ca_expiry_days
-        self._cas = []
+        self._cas: list[CertificateAuthority] = []
         self._cas.append(
             self._create_ca(
                 'root-ca',
@@ -477,8 +477,7 @@ class TLSChainCACertManager(TLSCertManager):
                     parent_cfg=self._cas[-1].cfg,
                     ext='signing_ca_ext',
                 ))
-        self._cert_chain = self._create_ca_cert_chain(
-            [ca.crt for ca in self._cas])
+        self._cert_chain = self._create_ca_cert_chain()
         self.certs = {}
 
     @property
@@ -534,18 +533,32 @@ class TLSChainCACertManager(TLSCertManager):
 
         return CertificateAuthority(cfg, key, crt, crl)
 
-    def _create_ca_cert_chain(self, files: list[str]) -> CertificateAuthority:
+    def _create_ca_cert_chain(self) -> CertificateAuthority:
+        # First create the signing ca chain
+        ca_files = [ca.crt for ca in self._cas]
         out = self._with_dir('ca', 'signing-ca-chain.pem')
         pathlib.Path(out).touch()
         with open(out, 'w') as outfile:
-            for fname in reversed(files):
+            for fname in reversed(ca_files):
                 with open(fname, 'r') as infile:
                     outfile.write(infile.read())
 
         with open(out, 'r') as f:
             self._logger.debug(f"CA chain: {f.read()}")
 
-        return CertificateAuthority(None, None, out, self._cas[-1].crl)
+        # Now do the same for the CRLs
+        crl_files = [ca.crl for ca in self._cas]
+        crl_out = self._with_dir('ca', 'signing-crl-chain.crl')
+        pathlib.Path(out).touch()
+        with open(crl_out, 'w') as outfile:
+            for fname in reversed(crl_files):
+                with open(fname, 'r') as infile:
+                    outfile.write(infile.read())
+
+        with open(crl_out, 'r') as f:
+            self._logger.debug(f"CRL chain: {f.read()}")
+
+        return CertificateAuthority(None, None, out, crl_out)
 
     def create_cert(self,
                     host: str,
