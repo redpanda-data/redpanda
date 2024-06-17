@@ -11,6 +11,8 @@
 #include "cloud_storage/remote_label.h"
 #include "model/metadata.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <optional>
 
 namespace cloud_storage {
@@ -23,6 +25,13 @@ public:
     topic_manifest_prefix(const model::topic_namespace& topic) const;
     ss::sstring topic_manifest_path(
       const model::topic_namespace& topic, model::initial_revision_id) const;
+
+    ss::sstring
+    partition_manifest_path(const partition_manifest& manifest) const;
+    ss::sstring partition_manifest_path(
+      const model::ntp& ntp, model::initial_revision_id) const;
+    std::optional<ss::sstring> partition_manifest_path_json(
+      const model::ntp& ntp, model::initial_revision_id) const;
 
 private:
     std::optional<remote_label> label_;

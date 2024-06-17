@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #include "cloud_storage/remote_path_provider.h"
 
+#include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote_label.h"
 #include "cloud_storage/topic_path_utils.h"
 
@@ -30,6 +31,28 @@ ss::sstring remote_path_provider::topic_manifest_path(
         return labeled_topic_manifest_path(*label_, topic, rev);
     }
     return prefixed_topic_manifest_bin_path(topic);
+}
+
+ss::sstring remote_path_provider::partition_manifest_path(
+  const partition_manifest& manifest) const {
+    return partition_manifest_path(
+      manifest.get_ntp(), manifest.get_revision_id());
+}
+
+ss::sstring remote_path_provider::partition_manifest_path(
+  const model::ntp& ntp, model::initial_revision_id rev) const {
+    if (label_.has_value()) {
+        return labeled_partition_manifest_path(*label_, ntp, rev);
+    }
+    return prefixed_partition_manifest_bin_path(ntp, rev);
+}
+
+std::optional<ss::sstring> remote_path_provider::partition_manifest_path_json(
+  const model::ntp& ntp, model::initial_revision_id rev) const {
+    if (label_.has_value()) {
+        return std::nullopt;
+    }
+    return prefixed_partition_manifest_json_path(ntp, rev);
 }
 
 } // namespace cloud_storage
