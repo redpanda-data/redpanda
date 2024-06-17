@@ -126,3 +126,14 @@ rp_test(
   ARGS "-c 2 --duration=1 --runs=1 --memory=4G"
   LABELS kafka
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME test_group_tx_compaction
+  SOURCES
+        group_tx_compaction_test.cc
+  LIBRARIES v::gtest_main v::kafka v::kafka_test_utils v::application v::raft v::config
+  ARGS "-- -c 1"
+  LABELS kafka
+)

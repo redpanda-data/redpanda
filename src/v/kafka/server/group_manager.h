@@ -189,6 +189,8 @@ public:
     ss::future<kafka::error_code>
       recover_offsets(cluster::cloud_metadata::group_offsets_snapshot);
 
+    size_t attached_partitions_count() const { return _partitions.size(); }
+
 public:
     error_code validate_group_status(
       const model::ntp& ntp, const group_id& group, api_key api);
