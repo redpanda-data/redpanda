@@ -90,6 +90,11 @@ public:
         model::topic(std::move(topic_name)),
         model::partition_id(partition_id)} {}
 
+    ktp(const ktp&) noexcept = default;
+    ktp(ktp&&) noexcept = default;
+    ktp& operator=(const ktp&) noexcept = default;
+    ktp& operator=(ktp&&) noexcept = default;
+
     /**
      * @brief Return the equivalent ntp object.
      *
