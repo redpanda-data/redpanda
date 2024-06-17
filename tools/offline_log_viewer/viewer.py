@@ -3,7 +3,7 @@ import os
 import sys
 from os.path import join
 
-from controller import ControllerLog
+from controller import ControllerLog, ControllerSnapshot
 from consumer_groups import GroupsLog
 from consumer_offsets import OffsetsLog
 from topic_manifest import decode_topic_manifest, decode_topic_manifest_to_legacy_v1_json
@@ -57,6 +57,17 @@ def print_controller(store, bin_dump: bool):
             ctrl = ControllerLog(ntp, bin_dump)
             iter_json = json.JSONEncoder(indent=2).iterencode(
                 SerializableGenerator(ctrl))
+            for j in iter_json:
+                print(j, end='')
+
+
+def print_controller_snapshot(store, bin_dump: bool):
+    for ntp in store.ntps:
+        if ntp.nspace == "redpanda" and ntp.topic == "controller":
+
+            snap = ControllerSnapshot(ntp, bin_dump=bin_dump)
+            iter_json = json.JSONEncoder(indent=2).iterencode(
+                SerializableGenerator(snap.to_dict().items()))
             for j in iter_json:
                 print(j, end='')
 
@@ -159,7 +170,8 @@ def main():
                                 'controller', 'kvstore', 'kafka',
                                 'consumer_offsets', 'legacy-group',
                                 'kafka_records', 'tx_coordinator',
-                                'topic_manifest', 'topic_manifest_legacy'
+                                'topic_manifest', 'topic_manifest_legacy',
+                                'controller_snapshot'
                             ],
                             required=True,
                             help='operation to execute')
@@ -199,6 +211,8 @@ def main():
         print_kv_store(store)
     elif options.type == "controller":
         print_controller(store, options.dump)
+    elif options.type == "controller_snapshot":
+        print_controller_snapshot(store, options.dump)
     elif options.type == "kafka":
         validate_topic(options.path, options.topic)
         print_kafka(store, options.topic, headers_only=True)

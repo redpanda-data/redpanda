@@ -5,10 +5,14 @@ import collections
 from io import BufferedReader, BytesIO
 
 SERDE_ENVELOPE_FORMAT = "<BBI"
+SERDE_CHECKSUM_ENVELOPE_FORMAT = "<BBIi"
 SERDE_ENVELOPE_SIZE = struct.calcsize(SERDE_ENVELOPE_FORMAT)
+SERDE_CHECKSUM_ENVELOPE_SIZE = struct.calcsize(SERDE_CHECKSUM_ENVELOPE_FORMAT)
 
 SerdeEnvelope = collections.namedtuple('SerdeEnvelope',
                                        ('version', 'compat_version', 'size'))
+SerdeChecksumEnvelope = collections.namedtuple(
+    'SerdeChecksumEnvelope', ('version', 'compat_version', 'size', 'checksum'))
 
 logger = logging.getLogger('reader')
 
@@ -19,10 +23,14 @@ class Endianness(Enum):
 
 
 class Reader:
-    def __init__(self, stream, endianness=Endianness.LITTLE_ENDIAN):
+    def __init__(self,
+                 stream,
+                 endianness=Endianness.LITTLE_ENDIAN,
+                 include_envelope=False):
         # BytesIO provides .getBuffer(), BufferedReader peek()
         self.stream = BufferedReader(stream)
         self.endianness = endianness
+        self.include_envelope = include_envelope
 
     @staticmethod
     def _decode_zig_zag(v):
@@ -111,14 +119,33 @@ class Reader:
             ret.append(type_read(self))
         return ret
 
+    def read_map(self, k_reader, v_reader):
+        ret = {}
+        for _ in range(self.read_uint32()):
+            key = k_reader(self)
+            val = v_reader(self)
+            ret[key] = val
+        return ret
+
     def read_envelope(self, type_read=None, max_version=0):
         header = self.read_bytes(SERDE_ENVELOPE_SIZE)
         envelope = SerdeEnvelope(*struct.unpack(SERDE_ENVELOPE_FORMAT, header))
+        return self.read_envelope_inner(envelope, type_read, max_version)
+
+    def read_checksum_envelope(self, type_read=None, max_version=0):
+        header = self.read_bytes(SERDE_CHECKSUM_ENVELOPE_SIZE)
+        envelope = SerdeChecksumEnvelope(
+            *struct.unpack(SERDE_CHECKSUM_ENVELOPE_FORMAT, header))
+        return self.read_envelope_inner(envelope, type_read, max_version)
+
+    def read_envelope_inner(self, envelope, type_read, max_version):
         if type_read is not None:
             if envelope.version <= max_version:
-                return {
-                    'envelope': envelope
-                } | type_read(self, envelope.version)
+                v = type_read(self, envelope.version)
+                if not self.include_envelope:
+                    return v
+                else:
+                    return {'envelope': envelope} | v
             else:
                 logger.error(
                     f"can't decode {envelope.version=}, check {type_read=} or {max_version=}"
