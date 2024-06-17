@@ -10,6 +10,7 @@
  */
 #include "cloud_storage/tests/util.h"
 
+#include "cloud_storage/partition_manifest_downloader.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 
@@ -621,11 +622,15 @@ partition_manifest hydrate_manifest(
   remote& api, const cloud_storage_clients::bucket_name& bucket) {
     static ss::abort_source never_abort;
 
+    remote_path_provider path_provider(std::nullopt);
+    partition_manifest_downloader dl(
+      bucket, path_provider, manifest_ntp, manifest_revision, api);
     partition_manifest m(manifest_ntp, manifest_revision);
-    ss::lowres_clock::update();
     retry_chain_node rtc(never_abort, 300s, 200ms);
-    auto [res, _] = api.try_download_partition_manifest(bucket, m, rtc).get();
-    BOOST_REQUIRE(res == cloud_storage::download_result::success);
+    ss::lowres_clock::update();
+    auto res = dl.download_manifest(rtc, &m).get();
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE(res.value() == find_partition_manifest_outcome::success);
     return m;
 }
 

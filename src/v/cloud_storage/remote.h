@@ -275,18 +275,6 @@ public:
       base_manifest& manifest,
       retry_chain_node& parent);
 
-    /// \brief Try downloading partition_manifest. the function tries first the
-    /// manifest_format::serde path, and then manifest_format::json path. it's
-    /// expected that manifest is constructed with the approprieate npt and
-    /// revision_id, as it will be used to generate the paths return type is
-    /// download_result and index of path that generated the result
-    ss::future<std::pair<download_result, manifest_format>>
-    try_download_partition_manifest(
-      const cloud_storage_clients::bucket_name& bucket,
-      partition_manifest& manifest,
-      retry_chain_node& parent,
-      bool expect_missing = false);
-
     /// \brief Upload manifest to the pre-defined S3 location
     ///
     /// \param bucket is a bucket name
