@@ -2,11 +2,6 @@
       "get": {
         "summary": "Get the compatibility level for a subject.",
         "operationId": "get_config_subject",
-        "consumes": [
-          "application/vnd.schemaregistry.v1+json",
-          "application/vnd.schemaregistry+json",
-          "application/json"
-        ],
         "parameters": [
           {
             "name": "subject",
@@ -21,7 +16,11 @@
             "type": "boolean"
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -60,7 +59,11 @@
             }
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -79,11 +82,6 @@
       "delete": {
         "summary": "Delete the compatibility level for a subject.",
         "operationId": "delete_config_subject",
-        "consumes": [
-          "application/vnd.schemaregistry.v1+json",
-          "application/vnd.schemaregistry+json",
-          "application/json"
-        ],
         "parameters": [
           {
             "name": "subject",
@@ -92,12 +90,16 @@
             "type": "string"
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/put_compatibility"
+              "$ref": "#/definitions/get_compatibility"
             }
           },
           "404": {
@@ -119,13 +121,12 @@
       "get": {
         "summary": "Get the global compatibility level.",
         "operationId": "get_config",
-        "consumes": [
+        "parameters": [],
+        "produces": [
           "application/vnd.schemaregistry.v1+json",
           "application/vnd.schemaregistry+json",
           "application/json"
         ],
-        "parameters": [],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
         "responses": {
           "200": {
             "description": "OK",
@@ -158,7 +159,11 @@
             }
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -179,11 +184,6 @@
       "get": {
         "summary": "Get the global mode.",
         "operationId": "get_mode",
-        "consumes": [
-          "application/vnd.schemaregistry.v1+json",
-          "application/vnd.schemaregistry+json",
-          "application/json"
-        ],
         "parameters": [],
         "produces": [
           "application/vnd.schemaregistry.v1+json",
@@ -253,11 +253,6 @@
       "get": {
         "summary": "Get the mode for a subject.",
         "operationId": "get_mode_subject",
-        "consumes": [
-          "application/vnd.schemaregistry.v1+json",
-          "application/vnd.schemaregistry+json",
-          "application/json"
-        ],
         "parameters": [
           {
             "name": "subject",
@@ -359,11 +354,6 @@
       "delete": {
         "summary": "Delete the mode for a subject.",
         "operationId": "delete_mode_subject",
-        "consumes": [
-          "application/vnd.schemaregistry.v1+json",
-          "application/vnd.schemaregistry+json",
-          "application/json"
-        ],
         "parameters": [
           {
             "name": "subject",
@@ -404,13 +394,12 @@
       "get": {
         "summary": "Get the supported schema types.",
         "operationId": "get_schemas_types",
-        "consumes": [
+        "parameters": [],
+        "produces": [
           "application/vnd.schemaregistry.v1+json",
           "application/vnd.schemaregistry+json",
           "application/json"
         ],
-        "parameters": [],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
         "responses": {
           "200": {
             "description": "OK",
@@ -434,11 +423,6 @@
       "get": {
         "summary": "Get a schema by id.",
         "operationId": "get_schemas_ids_id",
-        "consumes": [
-          "application/vnd.schemaregistry.v1+json",
-          "application/vnd.schemaregistry+json",
-          "application/json"
-        ],
         "parameters": [
           {
             "name": "id",
@@ -447,7 +431,11 @@
             "type": "integer"
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -482,11 +470,6 @@
       "get": {
         "summary": "Get a list of subject-version for the schema id.",
         "operationId": "get_schemas_ids_id_versions",
-        "consumes": [
-          "application/vnd.schemaregistry.v1+json",
-          "application/vnd.schemaregistry+json",
-          "application/json"
-        ],
         "parameters": [
           {
             "name": "id",
@@ -495,7 +478,11 @@
             "type": "integer"
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -533,11 +520,6 @@
       "get": {
         "summary": "Retrieve a list of subjects associated with some schema ID.",
         "operationId": "get_schemas_ids_id_subjects",
-        "consumes": [
-          "application/vnd.schemaregistry.v1+json",
-          "application/vnd.schemaregistry+json",
-          "application/json"
-        ],
         "parameters": [
           {
             "name": "id",
@@ -552,7 +534,11 @@
             "type": "boolean"
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -644,7 +630,11 @@
             }
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -681,11 +671,6 @@
       "delete": {
         "summary": "Delete all schemas for the subject.",
         "operationId": "delete_subject",
-        "consumes": [
-          "application/vnd.schemaregistry.v1+json",
-          "application/vnd.schemaregistry+json",
-          "application/json"
-        ],
         "parameters": [
           {
             "name": "subject",
@@ -700,7 +685,11 @@
             "type": "boolean"
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -796,7 +785,11 @@
             }
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -1138,7 +1131,11 @@
             }
           }
         ],
-        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
         "responses": {
           "200": {
             "description": "OK",
