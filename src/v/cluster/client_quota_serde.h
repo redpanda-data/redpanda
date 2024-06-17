@@ -240,17 +240,15 @@ struct alter_delta_cmd_data
       = default;
 };
 
-constexpr std::string_view
-to_string_view(cluster::client_quota::entity_value_diff::key e) {
+constexpr std::string_view to_string_view(entity_value_diff::key e) {
     /// Note: the string values of these enums need to match the values used in
     /// the kafka client quota handlers
     switch (e) {
-    case cluster::client_quota::entity_value_diff::key::producer_byte_rate:
+    case entity_value_diff::key::producer_byte_rate:
         return "producer_byte_rate";
-    case cluster::client_quota::entity_value_diff::key::consumer_byte_rate:
+    case entity_value_diff::key::consumer_byte_rate:
         return "consumer_byte_rate";
-    case cluster::client_quota::entity_value_diff::key::
-      controller_mutation_rate:
+    case entity_value_diff::key::controller_mutation_rate:
         return "controller_mutation_rate";
     }
 }
@@ -260,23 +258,18 @@ std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
   from_string_view(std::string_view);
 
 template<>
-constexpr std::optional<cluster::client_quota::entity_value_diff::key>
-from_string_view<cluster::client_quota::entity_value_diff::key>(
-  std::string_view v) {
-    return string_switch<
-             std::optional<cluster::client_quota::entity_value_diff::key>>(v)
+constexpr std::optional<entity_value_diff::key>
+from_string_view<entity_value_diff::key>(std::string_view v) {
+    return string_switch<std::optional<entity_value_diff::key>>(v)
       .match(
-        to_string_view(
-          cluster::client_quota::entity_value_diff::key::producer_byte_rate),
-        cluster::client_quota::entity_value_diff::key::producer_byte_rate)
+        to_string_view(entity_value_diff::key::producer_byte_rate),
+        entity_value_diff::key::producer_byte_rate)
       .match(
-        to_string_view(
-          cluster::client_quota::entity_value_diff::key::consumer_byte_rate),
-        cluster::client_quota::entity_value_diff::key::consumer_byte_rate)
+        to_string_view(entity_value_diff::key::consumer_byte_rate),
+        entity_value_diff::key::consumer_byte_rate)
       .match(
-        to_string_view(cluster::client_quota::entity_value_diff::key::
-                         controller_mutation_rate),
-        cluster::client_quota::entity_value_diff::key::controller_mutation_rate)
+        to_string_view(entity_value_diff::key::controller_mutation_rate),
+        entity_value_diff::key::controller_mutation_rate)
       .default_match(std::nullopt);
 }
 

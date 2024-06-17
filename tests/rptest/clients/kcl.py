@@ -510,3 +510,13 @@ class RawKCL(KCL):
         self._redpanda.logger.info(f"DBG: {json.dumps(alter_configs_request)}")
         return self._cmd(['misc', 'raw-req', '-k', '33'],
                          input=json.dumps(alter_configs_request))
+
+    def raw_alter_quotas(self, body):
+        res = self._cmd(['misc', 'raw-req', '-k', '49'],
+                        input=json.dumps(body))
+        return json.loads(res)
+
+    def raw_describe_quotas(self, body):
+        res = self._cmd(['misc', 'raw-req', '-k', '48'],
+                        input=json.dumps(body))
+        return json.loads(res)
