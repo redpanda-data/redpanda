@@ -49,7 +49,7 @@ namespace archival {
 
 using namespace std::chrono_literals;
 
-inline ss::logger fixt_log("fixture"); // NOLINT
+inline ss::logger fixt_log("archiver_fixture"); // NOLINT
 
 archiver_fixture::archiver_fixture()
   : http_imposter_fixture(4441)
