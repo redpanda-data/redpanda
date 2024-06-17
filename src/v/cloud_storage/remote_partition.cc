@@ -16,6 +16,7 @@
 #include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
@@ -1306,6 +1307,7 @@ static constexpr ss::lowres_clock::duration finalize_backoff = 1s;
 struct finalize_data {
     model::ntp ntp;
     model::initial_revision_id revision;
+    remote_path_provider path_provider;
     cloud_storage_clients::bucket_name bucket;
     cloud_storage_clients::object_key key;
     iobuf serialized_manifest;
@@ -1322,16 +1324,25 @@ ss::future<> finalize_background(remote& api, finalize_data data) {
 
     partition_manifest remote_manifest(data.ntp, data.revision);
 
-    auto [manifest_get_result, result_fmt]
-      = co_await api.try_download_partition_manifest(
-        data.bucket, remote_manifest, local_rtc);
-
-    if (manifest_get_result != download_result::success) {
+    partition_manifest_downloader dl(
+      data.bucket, data.path_provider, data.ntp, data.revision, api);
+    auto manifest_get_result = co_await dl.download_manifest(
+      local_rtc, &remote_manifest);
+    if (manifest_get_result.has_error()) {
         vlog(
           cst_log.error,
           "[{}] Failed to fetch manifest during finalize(). Error: {}",
           data.ntp,
-          manifest_get_result);
+          manifest_get_result.error());
+        co_return;
+    }
+    if (
+      manifest_get_result.value()
+      == find_partition_manifest_outcome::no_matching_manifest) {
+        vlog(
+          cst_log.error,
+          "[{}] Failed to fetch manifest during finalize(). Not found",
+          data.ntp);
         co_return;
     }
 
@@ -1399,12 +1410,15 @@ void remote_partition::finalize() {
     const auto& stm_manifest = _manifest_view->stm_manifest();
     auto serialized_manifest = stm_manifest.to_iobuf();
 
+    const auto& path_provider = _manifest_view->path_provider();
     finalize_data data{
       .ntp = get_ntp(),
       .revision = stm_manifest.get_revision_id(),
+      .path_provider = path_provider,
       .bucket = _bucket,
       .key
-      = cloud_storage_clients::object_key{stm_manifest.get_manifest_path()()},
+      = cloud_storage_clients::object_key{path_provider.partition_manifest_path(
+        stm_manifest)},
       .serialized_manifest = std::move(serialized_manifest),
       .insync_offset = stm_manifest.get_insync_offset()};
 
