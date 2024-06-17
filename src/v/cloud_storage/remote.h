@@ -237,7 +237,13 @@ public:
       retry_chain_node& parent);
 
     /// compatibility version of download_manifest for json format
-    ss::future<download_result> download_manifest(
+    ss::future<download_result> download_manifest_json(
+      const cloud_storage_clients::bucket_name& bucket,
+      const remote_manifest_path& key,
+      base_manifest& manifest,
+      retry_chain_node& parent);
+    /// version of download_manifest for serde format
+    ss::future<download_result> download_manifest_bin(
       const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
