@@ -27,7 +27,9 @@
 
 #include <absl/algorithm/container.h>
 #include <boost/outcome/success_failure.hpp>
+#include <boost/range/combine.hpp>
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -408,6 +410,20 @@ ss::future<response_ptr> alter_client_quotas_handler::handle(
     alter_client_quotas_response response;
     response.data.entries.reserve(request.data.entries.size());
 
+    for (const auto& entry_req : request.data.entries) {
+        auto& entry_res = response.data.entries.emplace_back();
+
+        entry_res.entity.reserve(entry_req.entity.size());
+        std::transform(
+          entry_req.entity.begin(),
+          entry_req.entity.end(),
+          std::back_inserter(entry_res.entity),
+          [](const alter_client_quotas_request_entity_data& in) {
+              return alter_client_quotas_response_entity_data{
+                .entity_type = in.entity_type, .entity_name = in.entity_name};
+          });
+    }
+
     if (!ctx.authorized(
           security::acl_operation::describe_configs,
           security::default_cluster_name)) {
@@ -427,8 +443,8 @@ ss::future<response_ptr> alter_client_quotas_handler::handle(
         co_return co_await ctx.respond(std::move(response));
     }
 
-    for (const auto& entry : request.data.entries) {
-        auto& entry_res = response.data.entries.emplace_back();
+    for (const auto& [entry, entry_res] :
+         boost::combine(request.data.entries, response.data.entries)) {
         auto key_or_err = make_key(entry.entity);
         if (key_or_err.has_error()) {
             std::tie(entry_res.error_code, entry_res.error_message)

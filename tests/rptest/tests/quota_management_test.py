@@ -136,14 +136,58 @@ class QuotaManagementTest(RedpandaTest):
         self.kafka_cli = KafkaCliTools(self.redpanda)
         self.kcl = RawKCL(self.redpanda)
 
-    # TODO: write a small test suite against kafka-configs.sh
-    @ignore
     @cluster(num_nodes=1)
     def test_kafka_configs(self):
+        def normalize(output):
+            return [line.strip() for line in output.strip().split('\n')]
+
+        def assert_outputs_equal(out, expected):
+            self._assert_equal(normalize(out), normalize(expected))
+
+        self.redpanda.logger.debug("Create a config for client default")
         self.kafka_cli.alter_quota_config(
-            "--entity-type clients --entity-name client_1",
-            to_add={"consumer_byte_rate": 10240})
-        self.kafka_cli.describe_quota_config("--client-defaults")
+            "--entity-type clients --entity-default",
+            to_add={"consumer_byte_rate": 10240.0})
+
+        self.redpanda.logger.debug("Create a config for a specific client")
+        self.kafka_cli.alter_quota_config(
+            "--entity-type clients --entity-name custom-producer",
+            to_add={"producer_byte_rate": 20480.0})
+
+        self.redpanda.logger.debug(
+            "Check describe filtering works for a default match")
+        out = self.kafka_cli.describe_quota_config("--client-defaults")
+        expected = "Quota configs for the default client-id are consumer_byte_rate=10240.0"
+        assert_outputs_equal(out, expected)
+
+        self.redpanda.logger.debug("Check specific match filtering works")
+        out = self.kafka_cli.describe_quota_config(
+            "--entity-type clients --entity-name custom-producer")
+        expected = "Quota configs for client-id 'custom-producer' are producer_byte_rate=20480.0"
+        assert_outputs_equal(out, expected)
+
+        out = self.kafka_cli.describe_quota_config(
+            "--entity-type clients --entity-name unknown-producer")
+        expected = ""
+        assert_outputs_equal(out, expected)
+
+        self.redpanda.logger.debug("Check any match filtering works")
+        out = self.kafka_cli.describe_quota_config("--entity-type clients")
+        expected = """Quota configs for the default client-id are consumer_byte_rate=10240.0
+Quota configs for client-id 'custom-producer' are producer_byte_rate=20480.0"""
+        assert_outputs_equal(out, expected)
+
+        self.redpanda.logger.debug("Check deleting quotas works")
+        self.kafka_cli.alter_quota_config(
+            "--entity-type clients --entity-default",
+            to_remove=["consumer_byte_rate"])
+        self.kafka_cli.alter_quota_config(
+            "--entity-type clients --entity-name custom-producer",
+            to_remove=["producer_byte_rate"])
+
+        out = self.kafka_cli.describe_quota_config("--entity-type clients")
+        expected = ""
+        assert_outputs_equal(out, expected)
 
     def describe(self, *args, **kwargs) -> QuotaOutput:
         res = self.rpk.describe_cluster_quotas(*args, **kwargs)
