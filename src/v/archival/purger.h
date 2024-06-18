@@ -12,6 +12,7 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/lifecycle_marker.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 
@@ -74,6 +75,7 @@ private:
     ss::future<purge_result> purge_partition(
       const cluster::nt_lifecycle_marker&,
       const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage::remote_path_provider& path_provider,
       model::ntp,
       model::initial_revision_id,
       retry_chain_node& rtc);
@@ -92,12 +94,14 @@ private:
 
     ss::future<std::optional<collected_manifests>> collect_manifest_paths(
       const cloud_storage_clients::bucket_name&,
+      const cloud_storage::remote_path_provider&,
       model::ntp,
       model::initial_revision_id,
       retry_chain_node&);
 
     ss::future<purge_result> purge_manifest(
       const cloud_storage_clients::bucket_name&,
+      const cloud_storage::remote_path_provider&,
       model::ntp,
       model::initial_revision_id,
       remote_manifest_path,

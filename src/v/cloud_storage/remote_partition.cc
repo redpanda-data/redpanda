@@ -17,6 +17,7 @@
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_manifest_downloader.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
@@ -1447,6 +1448,7 @@ void remote_partition::finalize() {
 ss::future<remote_partition::erase_result> remote_partition::erase(
   cloud_storage::remote& api,
   cloud_storage_clients::bucket_name bucket,
+  const remote_path_provider& path_provider,
   partition_manifest manifest,
   remote_manifest_path manifest_path,
   retry_chain_node& parent_rtc) {
@@ -1458,7 +1460,8 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
 
     auto replaced_segments = manifest.lw_replaced_segments();
     for (const auto& lw_meta : replaced_segments) {
-        const auto path = manifest.generate_segment_path(lw_meta);
+        const auto path = manifest.generate_segment_path(
+          lw_meta, path_provider);
         ++segments_to_remove_count;
 
         objects_to_remove.emplace_back(path);
@@ -1469,7 +1472,7 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
     }
 
     for (const auto& meta : manifest) {
-        const auto path = manifest.generate_segment_path(meta);
+        const auto path = manifest.generate_segment_path(meta, path_provider);
         ++segments_to_remove_count;
 
         objects_to_remove.emplace_back(path);
