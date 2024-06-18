@@ -36,7 +36,7 @@ impl SchemaRegistryClient {
     /// Create a new default Schema Registry client that connects to Redpanda's Schema Registry
     /// when running within the context of a data transform.
     pub fn new() -> Self {
-        Self::new_wrapping(Box::new(AbiSchemaRegistryClient::new()))
+        Self::new_wrapping(Box::new(CachingSchemaRegistryClient::new(None)))
     }
 
     /// Create a new custom Schema Registry client wrapping the implementation.
@@ -168,7 +168,6 @@ impl SubjectVersion {
     }
 }
 
-#[allow(dead_code)]
 impl CachingSchemaRegistryClient {
     pub fn new(max_entries: Option<usize>) -> CachingSchemaRegistryClient {
         // No need for an abi::check() here; that's done in AbiSchemaRegistryClient::new()
