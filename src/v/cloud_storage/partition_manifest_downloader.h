@@ -39,6 +39,9 @@ public:
     ss::future<result<find_partition_manifest_outcome, error_outcome>>
     download_manifest(retry_chain_node& retry_node, partition_manifest*);
 
+    ss::future<result<find_partition_manifest_outcome, error_outcome>>
+    manifest_exists(retry_chain_node& retry_node);
+
 private:
     const cloud_storage_clients::bucket_name bucket_;
     const remote_path_provider& remote_path_provider_;

@@ -64,4 +64,40 @@ partition_manifest_downloader::download_manifest(
     co_return error_outcome::manifest_download_error;
 }
 
+ss::future<result<find_partition_manifest_outcome, error_outcome>>
+partition_manifest_downloader::manifest_exists(retry_chain_node& retry_node) {
+    const auto bin_path = remote_manifest_path{
+      remote_path_provider_.partition_manifest_path(ntp_, rev_)};
+    auto bin_res = co_await remote_.object_exists(
+      bucket_,
+      cloud_storage_clients::object_key{bin_path},
+      retry_node,
+      existence_check_type::manifest);
+    if (bin_res == download_result::success) {
+        co_return find_partition_manifest_outcome::success;
+    }
+    if (bin_res != download_result::notfound) {
+        co_return error_outcome::manifest_download_error;
+    }
+
+    const auto json_path_str
+      = remote_path_provider_.partition_manifest_path_json(ntp_, rev_);
+    if (!json_path_str.has_value()) {
+        co_return find_partition_manifest_outcome::no_matching_manifest;
+    }
+    const auto json_path = remote_manifest_path{json_path_str.value()};
+    auto json_res = co_await remote_.object_exists(
+      bucket_,
+      cloud_storage_clients::object_key{json_path},
+      retry_node,
+      existence_check_type::manifest);
+    if (json_res == download_result::success) {
+        co_return find_partition_manifest_outcome::success;
+    }
+    if (json_res != download_result::notfound) {
+        co_return error_outcome::manifest_download_error;
+    }
+    co_return find_partition_manifest_outcome::no_matching_manifest;
+}
+
 } // namespace cloud_storage
