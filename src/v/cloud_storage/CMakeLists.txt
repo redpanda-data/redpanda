@@ -39,6 +39,7 @@ v_cc_library(
     segment_chunk.cc
     segment_chunk_api.cc
     segment_chunk_data_source.cc
+    segment_path_utils.cc
     topic_manifest.cc
     topic_path_utils.cc
     async_manifest_view.cc
