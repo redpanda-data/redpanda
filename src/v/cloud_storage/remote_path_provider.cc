@@ -58,8 +58,7 @@ std::optional<ss::sstring> remote_path_provider::partition_manifest_path_json(
 
 ss::sstring remote_path_provider::segment_path(
   const partition_manifest& manifest,
-  const partition_manifest::value& segment,
-  model::term_id archiver_term) const {
+  const partition_manifest::value& segment) const {
     const auto segment_name = partition_manifest::generate_remote_segment_name(
       segment);
     if (label_.has_value()) {
@@ -68,13 +67,13 @@ ss::sstring remote_path_provider::segment_path(
           manifest.get_ntp(),
           manifest.get_revision_id(),
           segment_name,
-          archiver_term);
+          segment.archiver_term);
     }
     return prefixed_segment_path(
       manifest.get_ntp(),
       manifest.get_revision_id(),
       segment_name,
-      archiver_term);
+      segment.archiver_term);
 }
 
 } // namespace cloud_storage

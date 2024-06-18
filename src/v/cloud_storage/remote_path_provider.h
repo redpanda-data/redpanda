@@ -36,8 +36,7 @@ public:
 
     ss::sstring segment_path(
       const partition_manifest& manifest,
-      const partition_manifest::value& segment,
-      model::term_id archiver_term = model::term_id{}) const;
+      const partition_manifest::value& segment) const;
 
 private:
     std::optional<remote_label> label_;
