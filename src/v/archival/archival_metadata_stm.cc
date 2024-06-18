@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/types.h"
@@ -1148,22 +1149,26 @@ ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
     auto backoff = config::shard_local_cfg().cloud_storage_initial_backoff_ms();
 
     retry_chain_node rc_node(_download_as, timeout, backoff);
-    auto [res, res_fmt]
-      = co_await _cloud_storage_api.try_download_partition_manifest(
-        cloud_storage_clients::bucket_name{*bucket}, new_manifest, rc_node);
-
-    if (res == cloud_storage::download_result::notfound) {
-        set_next(_raft->start_offset());
-        vlog(_logger.info, "handled log eviction, the manifest is absent");
-        co_return;
-    } else if (res != cloud_storage::download_result::success) {
+    cloud_storage::partition_manifest_downloader dl(
+      cloud_storage_clients::bucket_name{*bucket},
+      _remote_path_provider,
+      _manifest->get_ntp(),
+      _manifest->get_revision_id(),
+      _cloud_storage_api);
+    auto res = co_await dl.download_manifest(rc_node, &new_manifest);
+    if (res.has_error()) {
         // sleep to the end of timeout to avoid calling handle_eviction in a
         // busy loop.
         co_await ss::sleep_abortable(rc_node.get_timeout(), _download_as);
-        throw std::runtime_error{fmt::format(
-          "couldn't download manifest {}: {}",
-          new_manifest.get_manifest_path(res_fmt),
-          res)};
+        throw std::runtime_error{
+          fmt::format("couldn't download manifest: {}", res.error())};
+    }
+    if (
+      res.value()
+      == cloud_storage::find_partition_manifest_outcome::no_matching_manifest) {
+        set_next(_raft->start_offset());
+        vlog(_logger.info, "handled log eviction, the manifest is absent");
+        co_return;
     }
 
     *_manifest = std::move(new_manifest);
