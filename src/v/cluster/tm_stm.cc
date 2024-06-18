@@ -27,69 +27,6 @@
 
 namespace cluster {
 
-namespace {
-
-tm_transaction_v1::tx_status
-downgrade_status(tm_transaction::tx_status status) {
-    switch (status) {
-    case tm_transaction::tx_status::ongoing:
-        return tm_transaction_v1::tx_status::ongoing;
-    case tm_transaction::tx_status::preparing:
-        return tm_transaction_v1::tx_status::preparing;
-    case tm_transaction::tx_status::prepared:
-        return tm_transaction_v1::tx_status::prepared;
-    case tm_transaction::tx_status::aborting:
-        return tm_transaction_v1::tx_status::aborting;
-    case tm_transaction::tx_status::killed:
-        return tm_transaction_v1::tx_status::killed;
-    case tm_transaction::tx_status::ready:
-        return tm_transaction_v1::tx_status::ready;
-    case tm_transaction::tx_status::tombstone:
-        return tm_transaction_v1::tx_status::tombstone;
-    }
-    vassert(false, "unknown status: {}", status);
-}
-
-tm_transaction_v1 downgrade_tx(const tm_transaction& tx) {
-    tm_transaction_v1 result;
-    result.id = tx.id;
-    result.pid = tx.pid;
-    result.tx_seq = tx.tx_seq;
-    result.etag = tx.etag;
-    result.status = downgrade_status(tx.status);
-    result.timeout_ms = tx.timeout_ms;
-    result.last_update_ts = tx.last_update_ts;
-    for (auto& partition : tx.partitions) {
-        result.partitions.push_back(tm_transaction_v1::tx_partition{
-          .ntp = partition.ntp, .etag = partition.etag});
-    }
-    for (auto& group : tx.groups) {
-        result.groups.push_back(tm_transaction_v1::tx_group{
-          .group_id = group.group_id, .etag = group.etag});
-    }
-    return result;
-}
-
-template<typename T>
-model::record_batch do_serialize_tx(T tx) {
-    iobuf key;
-    reflection::serialize(key, model::record_batch_type::tm_update);
-    auto pid_id = tx.pid.id;
-    auto tx_id = tx.id;
-    reflection::serialize(key, pid_id, tx_id);
-
-    iobuf value;
-    reflection::serialize(value, T::version);
-    reflection::serialize(value, std::move(tx));
-
-    storage::record_batch_builder b(
-      model::record_batch_type::tm_update, model::offset(0));
-    b.add_raw_kv(std::move(key), std::move(value));
-    return std::move(b).build();
-}
-
-} // namespace
-
 ss::future<result<raft::replicate_result>>
 tm_stm::replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
     auto opts = raft::replicate_options{raft::consistency_level::quorum_ack};
@@ -98,12 +35,21 @@ tm_stm::replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
       term, model::make_memory_record_batch_reader(std::move(batch)), opts);
 }
 
-model::record_batch tm_stm::serialize_tx(tm_transaction tx) {
-    if (use_new_tx_version()) {
-        return do_serialize_tx(tx);
-    }
-    auto old_tx = downgrade_tx(tx);
-    return do_serialize_tx(old_tx);
+model::record_batch tm_stm::serialize_tx(tx_metadata tx) {
+    iobuf key;
+    reflection::serialize(key, model::record_batch_type::tm_update);
+    auto pid_id = tx.pid.id;
+    auto tx_id = tx.id;
+    reflection::serialize(key, pid_id, tx_id);
+
+    iobuf value;
+    reflection::serialize(value, tx_metadata::version);
+    reflection::serialize(value, std::move(tx));
+
+    storage::record_batch_builder b(
+      model::record_batch_type::tm_update, model::offset(0));
+    b.add_raw_kv(std::move(key), std::move(value));
+    return std::move(b).build();
 }
 
 tm_stm::tm_stm(
@@ -129,7 +75,8 @@ ss::future<> tm_stm::start() {
 
 uint8_t tm_stm::active_snapshot_version() { return tm_snapshot::version; }
 
-std::optional<tm_transaction> tm_stm::find_tx(kafka::transactional_id tx_id) {
+std::optional<tx_metadata>
+tm_stm::find_tx(const kafka::transactional_id& tx_id) {
     auto tx_opt = _cache->find_mem(tx_id);
     if (tx_opt) {
         return tx_opt;
@@ -137,7 +84,7 @@ std::optional<tm_transaction> tm_stm::find_tx(kafka::transactional_id tx_id) {
     return _cache->find_log(tx_id);
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>>
+ss::future<checked<tx_metadata, tm_stm::op_status>>
 tm_stm::get_tx(kafka::transactional_id tx_id) {
     auto r = co_await sync(_sync_timeout);
     if (!r.has_value()) {
@@ -218,10 +165,6 @@ tm_stm::quorum_write_empty_batch(model::timeout_clock::time_point timeout) {
 }
 
 ss::future<> tm_stm::checkpoint_ongoing_txs() {
-    if (!use_new_tx_version()) {
-        co_return;
-    }
-
     auto txes_to_checkpoint = _cache->checkpoint();
     size_t checkpointed_txes = 0;
     for (auto& tx : txes_to_checkpoint) {
@@ -288,14 +231,14 @@ tm_stm::do_sync(model::timeout_clock::duration timeout) {
     co_return _insync_term;
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::update_tx(tm_transaction tx, model::term_id term) {
+ss::future<checked<tx_metadata, tm_stm::op_status>>
+tm_stm::update_tx(tx_metadata tx, model::term_id term) {
     return ss::with_gate(
       _gate, [this, tx, term] { return do_update_tx(tx, term); });
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
+ss::future<checked<tx_metadata, tm_stm::op_status>>
+tm_stm::do_update_tx(tx_metadata tx, model::term_id term) {
     vlog(
       _ctx_log.trace,
       "[tx_id={}] updating transaction: {} in term: {}",
@@ -361,7 +304,7 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
     co_return tx_opt.value();
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_aborting(
+ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::mark_tx_aborting(
   model::term_id expected_term, kafka::transactional_id tx_id) {
     vlog(
       _ctx_log.trace,
@@ -373,15 +316,15 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_aborting(
         co_return ptx;
     }
     auto tx = ptx.value();
-    if (tx.status != tm_transaction::tx_status::ongoing) {
+    if (tx.status != tx_status::ongoing) {
         co_return tm_stm::op_status::conflict;
     }
-    tx.status = cluster::tm_transaction::tx_status::aborting;
+    tx.status = cluster::tx_status::aborting;
     tx.last_update_ts = clock_type::now();
     co_return co_await update_tx(std::move(tx), expected_term);
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
+ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::mark_tx_prepared(
   model::term_id expected_term, kafka::transactional_id tx_id) {
     vlog(
       _ctx_log.trace,
@@ -399,10 +342,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
     }
     auto tx = tx_opt.value();
 
-    auto check_status = is_transaction_ga()
-                          ? tm_transaction::tx_status::ongoing
-                          : tm_transaction::tx_status::preparing;
-    if (tx.status != check_status) {
+    if (tx.status != tx_status::ongoing) {
         vlog(
           _ctx_log.warn,
           "[tx_id={}] error marking transaction {} as prepared. Incorrect "
@@ -410,15 +350,15 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
           tx_id,
           tx,
           tx.status,
-          check_status);
+          tx_status::ongoing);
         co_return tm_stm::op_status::conflict;
     }
-    tx.status = cluster::tm_transaction::tx_status::prepared;
+    tx.status = cluster::tx_status::prepared;
     tx.last_update_ts = clock_type::now();
     co_return co_await update_tx(std::move(tx), expected_term);
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_killed(
+ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::mark_tx_killed(
   model::term_id expected_term, kafka::transactional_id tx_id) {
     vlog(
       _ctx_log.trace,
@@ -430,17 +370,15 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_killed(
         co_return tx_opt;
     }
     auto tx = tx_opt.value();
-    if (
-      tx.status != tm_transaction::tx_status::ongoing
-      && tx.status != tm_transaction::tx_status::preparing) {
+    if (tx.status != tx_status::ongoing && tx.status != tx_status::preparing) {
         co_return tm_stm::op_status::conflict;
     }
-    tx.status = cluster::tm_transaction::tx_status::killed;
+    tx.status = cluster::tx_status::killed;
     tx.last_update_ts = clock_type::now();
     co_return co_await update_tx(std::move(tx), expected_term);
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>>
+ss::future<checked<tx_metadata, tm_stm::op_status>>
 tm_stm::reset_transferring(model::term_id term, kafka::transactional_id tx_id) {
     vlog(
       _ctx_log.trace,
@@ -482,7 +420,7 @@ tm_stm::reset_transferring(model::term_id term, kafka::transactional_id tx_id) {
     co_return tx;
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
+ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
   model::term_id expected_term, kafka::transactional_id tx_id) {
     vlog(
       _ctx_log.trace,
@@ -493,7 +431,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
     if (!tx_opt.has_value()) {
         co_return tx_opt;
     }
-    tm_transaction tx = tx_opt.value();
+    tx_metadata tx = tx_opt.value();
     if (tx.etag != expected_term) {
         vlog(
           _ctx_log.warn,
@@ -506,7 +444,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
           expected_term);
         co_return tm_stm::op_status::unknown;
     }
-    tx.status = tm_transaction::tx_status::ongoing;
+    tx.status = tx_status::ongoing;
     tx.tx_seq += 1;
     tx.partitions.clear();
     tx.groups.clear();
@@ -535,8 +473,8 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
     if (!tx_opt.has_value()) {
         co_return tx_opt.error();
     }
-    tm_transaction tx = tx_opt.value();
-    tx.status = tm_transaction::tx_status::ready;
+    tx_metadata tx = tx_opt.value();
+    tx.status = tx_status::ready;
     tx.pid = pid;
     tx.last_pid = last_pid;
     tx.tx_seq += 1;
@@ -586,13 +524,13 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
         co_return tm_stm::op_status::conflict;
     }
 
-    auto tx = tm_transaction{
+    auto tx = tx_metadata{
       .id = tx_id,
       .pid = pid,
-      .last_pid = model::unknown_pid,
+      .last_pid = model::no_pid,
       .tx_seq = model::tx_seq(0),
       .etag = expected_term,
-      .status = tm_transaction::tx_status::ready,
+      .status = tx_status::ready,
       .timeout_ms = transaction_timeout_ms,
       .last_update_ts = clock_type::now()};
     auto batch = serialize_tx(tx);
@@ -627,7 +565,7 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
 ss::future<tm_stm::op_status> tm_stm::add_partitions(
   model::term_id expected_term,
   kafka::transactional_id tx_id,
-  std::vector<tm_transaction::tx_partition> partitions) {
+  std::vector<tx_metadata::tx_partition> partitions) {
     auto tx_opt = find_tx(tx_id);
     if (!tx_opt) {
         vlog(
@@ -638,7 +576,7 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
         co_return tm_stm::op_status::unknown;
     }
     auto tx = tx_opt.value();
-    if (tx.status != tm_transaction::tx_status::ongoing) {
+    if (tx.status != tx_status::ongoing) {
         vlog(
           _ctx_log.warn,
           "[tx_id={}] expected ongoing transaction, found: {} ",
@@ -657,24 +595,6 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
           expected_term);
 
         co_return tm_stm::op_status::unknown;
-    }
-
-    if (!is_transaction_ga()) {
-        bool just_started = tx.partitions.size() == 0 && tx.groups.size() == 0;
-
-        if (just_started) {
-            for (auto& partition : partitions) {
-                tx.partitions.push_back(partition);
-            }
-            tx.last_update_ts = clock_type::now();
-            auto r = co_await update_tx(tx, tx.etag);
-
-            if (!r.has_value()) {
-                co_return tm_stm::op_status::unknown;
-            }
-            _cache->set_mem(tx.etag, tx_id, tx);
-            co_return tm_stm::op_status::success;
-        }
     }
 
     for (auto& partition : partitions) {
@@ -706,7 +626,7 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
         co_return tm_stm::op_status::unknown;
     }
     auto tx = tx_opt.value();
-    if (tx.status != tm_transaction::tx_status::ongoing) {
+    if (tx.status != tx_status::ongoing) {
         vlog(
           _ctx_log.warn,
           "[tx_id={}] expected ongoing transaction, found: {} ",
@@ -724,25 +644,8 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
         co_return tm_stm::op_status::unknown;
     }
 
-    if (!is_transaction_ga()) {
-        bool just_started = tx.partitions.size() == 0 && tx.groups.size() == 0;
-
-        if (just_started) {
-            tx.groups.push_back(
-              tm_transaction::tx_group{.group_id = group_id, .etag = etag});
-            tx.last_update_ts = clock_type::now();
-            auto r = co_await update_tx(tx, tx.etag);
-
-            if (!r.has_value()) {
-                co_return tm_stm::op_status::unknown;
-            }
-            _cache->set_mem(tx.etag, tx_id, tx);
-            co_return tm_stm::op_status::success;
-        }
-    }
-
     tx.groups.push_back(
-      tm_transaction::tx_group{.group_id = group_id, .etag = etag});
+      tx_metadata::tx_group{.group_id = group_id, .etag = etag});
     tx.last_update_ts = clock_type::now();
     _cache->set_mem(tx.etag, tx_id, tx);
 
@@ -833,25 +736,25 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
     iobuf_parser val_reader(std::move(val_buf));
     auto version = reflection::adl<int8_t>{}.from(val_reader);
 
-    tm_transaction tx;
+    tx_metadata tx;
     switch (version) {
-    case tm_transaction_v0::version: {
-        auto tx0 = reflection::adl<tm_transaction_v0>{}.from(val_reader);
+    case transaction_metadata_v0::version: {
+        auto tx0 = reflection::adl<transaction_metadata_v0>{}.from(val_reader);
         tx = tx0.upcast();
         break;
     }
-    case tm_transaction_v1::version: {
-        auto tx1 = reflection::adl<tm_transaction_v1>{}.from(val_reader);
+    case transaction_metadata_v1::version: {
+        auto tx1 = reflection::adl<transaction_metadata_v1>{}.from(val_reader);
         tx = tx1.upcast();
         break;
     }
     default: {
         vassert(
-          version == tm_transaction::version,
+          version == tx_metadata::version,
           "unknown group inflight tx record version: {} expected: {}",
           version,
-          tm_transaction::version);
-        tx = reflection::adl<tm_transaction>{}.from(val_reader);
+          tx_metadata::version);
+        tx = reflection::adl<tx_metadata>{}.from(val_reader);
         break;
     }
     }
@@ -886,7 +789,7 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
       tx,
       _insync_term);
 
-    if (tx.status == tm_transaction::tx_status::tombstone) {
+    if (tx.status == tx_status::tombstone) {
         _cache->erase_log(tx.id);
         vlog(
           _ctx_log.trace,
@@ -935,7 +838,7 @@ ss::future<> tm_stm::apply(const model::record_batch& b) {
     return ss::now();
 }
 
-bool tm_stm::is_expired(const tm_transaction& tx) {
+bool tm_stm::is_expired(const tx_metadata& tx) {
     auto now_ts = clock_type::now();
     return _transactional_id_expiration() < now_ts - tx.last_update_ts;
 }
@@ -994,15 +897,15 @@ ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
 
 size_t tm_stm::tx_cache_size() const { return _cache->tx_cache_size(); }
 
-std::optional<tm_transaction> tm_stm::oldest_tx() const {
+std::optional<tx_metadata> tm_stm::oldest_tx() const {
     return _cache->oldest_tx();
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>>
+ss::future<checked<tx_metadata, tm_stm::op_status>>
 tm_stm::delete_partition_from_tx(
   model::term_id term,
   kafka::transactional_id tid,
-  tm_transaction::tx_partition ntp) {
+  tx_metadata::tx_partition ntp) {
     if (!_raft->is_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
@@ -1019,7 +922,7 @@ tm_stm::delete_partition_from_tx(
         co_return tm_stm::op_status::partition_not_found;
     }
 
-    if (tx.status == tm_transaction::tx_status::ongoing) {
+    if (tx.status == tx_status::ongoing) {
         _cache->set_mem(term, tid, tx);
         co_return tx;
     } else {
@@ -1033,10 +936,10 @@ tm_stm::expire_tx(model::term_id term, kafka::transactional_id tx_id) {
     if (!tx_opt.has_value()) {
         co_return tm_stm::op_status::unknown;
     }
-    tm_transaction tx = tx_opt.value();
+    tx_metadata tx = tx_opt.value();
     tx.etag = term;
-    tx.status = tm_transaction::tx_status::tombstone;
-    tx.last_pid = model::unknown_pid;
+    tx.status = tx_status::tombstone;
+    tx.last_pid = model::no_pid;
     tx.partitions.clear();
     tx.groups.clear();
     tx.last_update_ts = clock_type::now();

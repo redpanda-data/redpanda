@@ -48,12 +48,12 @@ struct tm_cache_struct {
 using stm_t = cluster::tm_stm;
 using stm_cssshptrr_t = const ss::shared_ptr<stm_t>&;
 using op_status = stm_t::op_status;
-using tm_transaction = cluster::tm_transaction;
-using tx_status = cluster::tm_transaction::tx_status;
-using partitions_t = std::vector<tm_transaction::tx_partition>;
+using transaction_metadata = cluster::tx_metadata;
+using tx_status = cluster::tx_status;
+using partitions_t = std::vector<transaction_metadata::tx_partition>;
 
 ss::future<> check_tx(
-  const checked<tm_transaction, op_status>& res,
+  const checked<transaction_metadata, op_status>& res,
   kafka::transactional_id tx_id) {
     ASSERT_TRUE_CORO(res);
     ASSERT_EQ_CORO(res.assume_value().id, tx_id);
@@ -63,8 +63,9 @@ ss::future<> assert_success(op_status status) {
     ASSERT_EQ_CORO(status, op_status::success);
 }
 
-ss::future<tm_transaction> expect_tx(
-  checked<tm_transaction, op_status>&& res, kafka::transactional_id tx_id) {
+ss::future<transaction_metadata> expect_tx(
+  checked<transaction_metadata, op_status>&& res,
+  kafka::transactional_id tx_id) {
     auto res_mv = std::move(res);
     co_await check_tx(res_mv, tx_id);
     auto ret = std::move(res_mv).value();
@@ -72,8 +73,8 @@ ss::future<tm_transaction> expect_tx(
 }
 
 auto expect_tx(kafka::transactional_id tx_id) {
-    return [tx_id](checked<tm_transaction, op_status>&& res)
-             -> ss::future<tm_transaction> {
+    return [tx_id](checked<transaction_metadata, op_status>&& res)
+             -> ss::future<transaction_metadata> {
         return expect_tx(std::move(res), tx_id);
     };
 }
@@ -122,26 +123,28 @@ struct tm_stm_test_fixture : stm_raft_fixture<stm_t> {
           .then(assert_success);
     }
 
-    ss::future<tm_transaction> get_tx(kafka::transactional_id tx_id) {
+    ss::future<transaction_metadata> get_tx(kafka::transactional_id tx_id) {
         return stm_retry_with_leader<0>(
                  TIMEOUT,
                  [tx_id](stm_cssshptrr_t stm) { return stm->get_tx(tx_id); })
           .then(expect_tx(tx_id));
     }
 
-    ss::future<tm_transaction> mark_tx_ongoing(kafka::transactional_id tx_id) {
+    ss::future<transaction_metadata>
+    mark_tx_ongoing(kafka::transactional_id tx_id) {
         return retry_with_term(
                  [tx_id](stm_cssshptrr_t stm, model::term_id term)
-                   -> ss::future<checked<tm_transaction, op_status>> {
+                   -> ss::future<checked<transaction_metadata, op_status>> {
                      return stm->mark_tx_ongoing(term, tx_id);
                  })
           .then(expect_tx(tx_id));
     }
 
-    ss::future<tm_transaction> mark_tx_prepared(kafka::transactional_id tx_id) {
+    ss::future<transaction_metadata>
+    mark_tx_prepared(kafka::transactional_id tx_id) {
         return retry_with_term(
                  [tx_id](stm_cssshptrr_t stm, model::term_id term)
-                   -> ss::future<checked<tm_transaction, op_status>> {
+                   -> ss::future<checked<transaction_metadata, op_status>> {
                      return stm->mark_tx_prepared(term, tx_id);
                  })
           .then(expect_tx(tx_id));
@@ -165,10 +168,10 @@ TEST_F_CORO(tm_stm_test_fixture, test_tm_stm_new_tx) {
     ASSERT_EQ_CORO(tx1.partitions.size(), 0);
     co_await mark_tx_ongoing(tx_id);
 
-    std::vector<tm_transaction::tx_partition> partitions = {
-      tm_transaction::tx_partition{
+    std::vector<transaction_metadata::tx_partition> partitions = {
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
-      tm_transaction::tx_partition{
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
     co_await add_partitions(tx_id, partitions);
 
@@ -205,9 +208,9 @@ TEST_F_CORO(tm_stm_test_fixture, test_tm_stm_seq_tx) {
     co_await mark_tx_ongoing(tx_id);
 
     partitions_t partitions = {
-      tm_transaction::tx_partition{
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
-      tm_transaction::tx_partition{
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
     co_await add_partitions(tx_id, partitions);
     co_await get_tx(tx_id);
@@ -229,9 +232,9 @@ TEST_F_CORO(tm_stm_test_fixture, test_tm_stm_re_tx) {
     co_await get_tx(tx_id);
 
     partitions_t partitions = {
-      tm_transaction::tx_partition{
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
-      tm_transaction::tx_partition{
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
     co_await mark_tx_ongoing(tx_id);
     co_await add_partitions(tx_id, partitions);

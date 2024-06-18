@@ -227,6 +227,7 @@ v_cc_library(
     shard_placement_table.cc
     shard_balancer.cc
     topic_recovery_validator.cc
+    tm_stm_types.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc

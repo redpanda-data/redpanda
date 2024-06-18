@@ -19,6 +19,7 @@
 #include "cluster/topics_frontend.h"
 #include "container/fragmented_vector.h"
 #include "container/lw_shared_container.h"
+#include "model/record.h"
 #include "redpanda/admin/api-doc/debug.json.hh"
 #include "redpanda/admin/api-doc/partition.json.hh"
 #include "redpanda/admin/server.h"
@@ -29,6 +30,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <boost/lexical_cast.hpp>
 
 using admin::apply_validator;
 
@@ -130,26 +132,19 @@ admin_server::mark_transaction_expired_handler(
     const model::ntp ntp = parse_ntp_from_request(req->param);
 
     model::producer_identity pid;
-    auto node = req->get_query_param("id");
+    auto param = req->get_query_param("id");
     try {
-        pid.id = std::stoi(node);
+        pid.id = boost::lexical_cast<model::producer_id>(param);
     } catch (...) {
-        throw ss::httpd::bad_param_exception(fmt_with_ctx(
-          fmt::format, "Transaction id must be an integer: {}", node));
+        throw ss::httpd::bad_param_exception(
+          fmt_with_ctx(fmt::format, "Invalid producer id: {}", param));
     }
-    node = req->get_query_param("epoch");
+    param = req->get_query_param("epoch");
     try {
-        int64_t epoch = std::stoi(node);
-        if (
-          epoch < std::numeric_limits<int16_t>::min()
-          || epoch > std::numeric_limits<int16_t>::max()) {
-            throw ss::httpd::bad_param_exception(
-              fmt_with_ctx(fmt::format, "Invalid transaction epoch {}", epoch));
-        }
-        pid.epoch = epoch;
+        pid.epoch = boost::lexical_cast<model::producer_epoch>(param);
     } catch (...) {
-        throw ss::httpd::bad_param_exception(fmt_with_ctx(
-          fmt::format, "Transaction epoch must be an integer: {}", node));
+        throw ss::httpd::bad_param_exception(
+          fmt_with_ctx(fmt::format, "Invalid producer epoch: {}", param));
     }
 
     vlog(adminlog.info, "Mark transaction expired for pid:{}", pid);

@@ -51,7 +51,7 @@ tx_gateway::init_tm_tx(init_tm_tx_request request, rpc::streaming_context&) {
       request.tx_id,
       request.transaction_timeout_ms,
       request.timeout,
-      model::unknown_pid);
+      model::no_pid);
 }
 
 ss::future<begin_tx_reply>

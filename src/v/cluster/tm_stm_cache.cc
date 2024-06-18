@@ -28,16 +28,8 @@
 
 namespace cluster {
 
-std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
-    return o << "{tm_transaction: id=" << tx.id << ", status=" << tx.status
-             << ", pid=" << tx.pid << ", last_pid=" << tx.last_pid
-             << ", etag=" << tx.etag
-             << ", size(partitions)=" << tx.partitions.size()
-             << ", tx_seq=" << tx.tx_seq << "}";
-}
-
-std::optional<tm_transaction>
-tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
+std::optional<tx_metadata>
+tm_stm_cache::find(model::term_id term, const kafka::transactional_id& tx_id) {
     vlog(txlog.trace, "[tx_id={}] looking for tx with term: {}", tx_id, term);
     if (_mem_term && _mem_term.value() == term) {
         // when a node fetches a tx withing a term it means that it was
@@ -100,8 +92,8 @@ tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
     return log_it->second.tx;
 }
 
-std::optional<tm_transaction>
-tm_stm_cache::find_mem(kafka::transactional_id tx_id) {
+std::optional<tx_metadata>
+tm_stm_cache::find_mem(const kafka::transactional_id& tx_id) {
     if (_mem_term == std::nullopt) {
         return std::nullopt;
     }
@@ -118,8 +110,8 @@ tm_stm_cache::find_mem(kafka::transactional_id tx_id) {
     return tx_it->second;
 }
 
-std::optional<tm_transaction>
-tm_stm_cache::find_log(kafka::transactional_id tx_id) {
+std::optional<tx_metadata>
+tm_stm_cache::find_log(const kafka::transactional_id& tx_id) {
     auto tx_it = _log_txes.find(tx_id);
     if (tx_it == _log_txes.end()) {
         return std::nullopt;
@@ -127,7 +119,7 @@ tm_stm_cache::find_log(kafka::transactional_id tx_id) {
     return tx_it->second.tx;
 }
 
-void tm_stm_cache::set_log(tm_transaction tx) {
+void tm_stm_cache::set_log(tx_metadata tx) {
     vlog(
       txlog.trace,
       "[tx_id={}] saving tx with etag: {} pid: {} tx_seq: {} to log",
@@ -153,7 +145,7 @@ void tm_stm_cache::set_log(tm_transaction tx) {
     }
 }
 
-void tm_stm_cache::erase_log(kafka::transactional_id tx_id) {
+void tm_stm_cache::erase_log(const kafka::transactional_id& tx_id) {
     auto tx_it = _log_txes.find(tx_id);
     if (tx_it == _log_txes.end()) {
         return;
@@ -169,8 +161,8 @@ void tm_stm_cache::erase_log(kafka::transactional_id tx_id) {
     _log_txes.erase(tx_it);
 }
 
-fragmented_vector<tm_transaction> tm_stm_cache::get_log_transactions() {
-    fragmented_vector<tm_transaction> txes;
+fragmented_vector<tx_metadata> tm_stm_cache::get_log_transactions() {
+    fragmented_vector<tx_metadata> txes;
     for (auto& entry : _log_txes) {
         txes.push_back(entry.second.tx);
     }
@@ -178,7 +170,7 @@ fragmented_vector<tm_transaction> tm_stm_cache::get_log_transactions() {
 }
 
 void tm_stm_cache::set_mem(
-  model::term_id term, kafka::transactional_id tx_id, tm_transaction tx) {
+  model::term_id term, kafka::transactional_id tx_id, tx_metadata tx) {
     vlog(
       txlog.trace,
       "[tx_id={}] setting tx with etag: {} to {}",
@@ -211,7 +203,7 @@ void tm_stm_cache::clear_log() {
     _log_txes.clear();
 }
 
-void tm_stm_cache::erase_mem(kafka::transactional_id tx_id) {
+void tm_stm_cache::erase_mem(const kafka::transactional_id& tx_id) {
     if (!_mem_term) {
         return;
     }
@@ -234,8 +226,8 @@ void tm_stm_cache::erase_mem(kafka::transactional_id tx_id) {
     entry_it->second.txes.erase(tx_id);
 }
 
-fragmented_vector<tm_transaction> tm_stm_cache::get_all_transactions() {
-    fragmented_vector<tm_transaction> ans;
+fragmented_vector<tx_metadata> tm_stm_cache::get_all_transactions() {
+    fragmented_vector<tx_metadata> ans;
     if (_mem_term) {
         auto entry_it = _state.find(_mem_term.value());
         if (entry_it != _state.end()) {
@@ -254,8 +246,8 @@ fragmented_vector<tm_transaction> tm_stm_cache::get_all_transactions() {
     return get_log_transactions();
 }
 
-std::deque<tm_transaction> tm_stm_cache::checkpoint() {
-    std::deque<tm_transaction> txes_to_checkpoint;
+std::deque<tx_metadata> tm_stm_cache::checkpoint() {
+    std::deque<tx_metadata> txes_to_checkpoint;
 
     if (_mem_term == std::nullopt) {
         return txes_to_checkpoint;
@@ -268,9 +260,9 @@ std::deque<tm_transaction> tm_stm_cache::checkpoint() {
     }
     auto& entry = entry_it->second;
 
-    auto can_transfer = [](const tm_transaction& tx) {
+    auto can_transfer = [](const tx_metadata& tx) {
         return !tx.transferring
-               && (tx.status == tm_transaction::ready || tx.status == tm_transaction::ongoing);
+               && (tx.status == tx_status::ready || tx.status == tx_status::ongoing);
     };
     // Loop through all ongoing/pending txns in memory and checkpoint.
 
@@ -283,7 +275,7 @@ std::deque<tm_transaction> tm_stm_cache::checkpoint() {
     return txes_to_checkpoint;
 }
 
-std::optional<tm_transaction> tm_stm_cache::oldest_tx() const {
+std::optional<tx_metadata> tm_stm_cache::oldest_tx() const {
     if (lru_txes.empty()) {
         return std::nullopt;
     }

@@ -50,6 +50,7 @@
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "kafka/server/usage_manager.h"
+#include "model/record.h"
 #include "net/connection.h"
 #include "security/acl.h"
 #include "security/audit/schemas/iam.h"
@@ -1455,11 +1456,13 @@ ss::future<response_ptr> init_producer_id_handler::handle(
             // or {-1, x >= 0}.
             const bool is_invalid_pid =
               [](model::producer_identity expected_pid) {
-                  if (expected_pid == model::unknown_pid) {
+                  if (expected_pid == model::no_pid) {
                       return false;
                   }
 
-                  if (expected_pid.id < 0 || expected_pid.epoch < 0) {
+                  if (
+                    expected_pid.id < model::producer_id(0)
+                    || expected_pid.epoch < model::producer_epoch(0)) {
                       return true;
                   }
                   return false;
@@ -1970,7 +1973,7 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
 
     auto filter_tx = [](
                        const list_transactions_request& req,
-                       const cluster::tm_transaction& tx) -> bool {
+                       const cluster::tx_metadata& tx) -> bool {
         if (!req.data.producer_id_filters.empty()) {
             if (std::none_of(
                   req.data.producer_id_filters.begin(),
