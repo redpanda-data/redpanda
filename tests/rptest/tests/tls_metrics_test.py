@@ -30,14 +30,16 @@ RPC_TLS_CONFIG = dict(enabled=True,
                       require_client_auth=True,
                       key_file=RedpandaService.TLS_SERVER_KEY_FILE,
                       cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
-                      truststore_file=RedpandaService.TLS_CA_CRT_FILE)
+                      truststore_file=RedpandaService.TLS_CA_CRT_FILE,
+                      crl_file=RedpandaService.TLS_CA_CRL_FILE)
 
 ADMIN_TLS_CONFIG = dict(name='iplistener',
                         enabled=True,
                         require_client_auth=True,
                         key_file=RedpandaService.TLS_SERVER_KEY_FILE,
                         cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
-                        truststore_file=RedpandaService.TLS_CA_CRT_FILE)
+                        truststore_file=RedpandaService.TLS_CA_CRT_FILE,
+                        crl_file=RedpandaService.TLS_CA_CRL_FILE)
 
 
 class FaketimeTLSProvider(TLSProvider):
