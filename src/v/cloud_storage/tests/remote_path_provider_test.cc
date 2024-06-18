@@ -36,12 +36,17 @@ const spillover_manifest_path_components test_spill_comps{
   .last_ts = model::timestamp{1000},
 };
 const segment_meta test_smeta{
+  .size_bytes = 1_MiB,
   .base_offset = test_spill_comps.base,
   .committed_offset = test_spill_comps.last,
   .base_timestamp = test_spill_comps.base_ts,
   .max_timestamp = test_spill_comps.last_ts,
   .delta_offset = model::offset_delta(10),
+  .ntp_revision = test_rev,
+  .archiver_term = model::term_id{13},
+  .segment_term = model::term_id{12},
   .delta_offset_end = model::offset_delta(11),
+  .sname_format = segment_name_format::v3,
 };
 } // namespace
 
@@ -75,9 +80,11 @@ TEST(RemotePathProviderTest, TestPrefixedPartitionManifestPaths) {
       path_provider.partition_manifest_prefix(test_ntp, test_rev).c_str(),
       "e0000000/meta/kafka/tp/5_21");
 
-    auto json_path = path_provider.partition_manifest_path_json(test_ntp, test_rev);
+    auto json_path = path_provider.partition_manifest_path_json(
+      test_ntp, test_rev);
     ASSERT_TRUE(json_path.has_value());
-    EXPECT_STREQ(json_path.value().c_str(), "e0000000/meta/kafka/tp/5_21/manifest.json");
+    EXPECT_STREQ(
+      json_path.value().c_str(), "e0000000/meta/kafka/tp/5_21/manifest.json");
 
     partition_manifest pm(test_ntp, test_rev);
     EXPECT_STREQ(
@@ -103,7 +110,8 @@ TEST(RemotePathProviderTest, TestLabeledPartitionManifestPaths) {
       path_provider.partition_manifest_prefix(test_ntp, test_rev).c_str(),
       "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21");
 
-    auto json_path = path_provider.partition_manifest_path_json(test_ntp, test_rev);
+    auto json_path = path_provider.partition_manifest_path_json(
+      test_ntp, test_rev);
     ASSERT_FALSE(json_path.has_value());
 
     partition_manifest pm(test_ntp, test_rev);
@@ -121,6 +129,45 @@ TEST(RemotePathProviderTest, TestLabeledPartitionManifestPaths) {
       path_provider.partition_manifest_path(spill_m).c_str(),
       "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/"
       "manifest.bin.10.11.0.1.999.1000");
+}
+
+TEST(RemotePathProviderTest, TestPrefixedSegmentPaths) {
+    remote_path_provider path_provider(std::nullopt);
+    partition_manifest pm(test_ntp, test_rev);
+    EXPECT_STREQ(
+      path_provider.segment_path(pm, test_smeta).c_str(),
+      "d13f1c8e/kafka/tp/5_21/10-11-1048576-12-v1.log.13");
+    EXPECT_STREQ(
+      path_provider.segment_path(test_ntp, test_rev, test_smeta).c_str(),
+      "d13f1c8e/kafka/tp/5_21/10-11-1048576-12-v1.log.13");
+
+    // Resetting the term should result in the term being missing.
+    auto smeta_no_term = test_smeta;
+    smeta_no_term.archiver_term = model::term_id{};
+    EXPECT_STREQ(
+      path_provider.segment_path(pm, smeta_no_term).c_str(),
+      "d13f1c8e/kafka/tp/5_21/10-11-1048576-12-v1.log");
+}
+
+TEST(RemotePathProviderTest, TestLabeledSegmentPaths) {
+    remote_path_provider path_provider(test_label);
+    partition_manifest pm(test_ntp, test_rev);
+    EXPECT_STREQ(
+      path_provider.segment_path(pm, test_smeta).c_str(),
+      "deadbeef-0000-0000-0000-000000000000/kafka/tp/5_21/"
+      "10-11-1048576-12-v1.log.13");
+    EXPECT_STREQ(
+      path_provider.segment_path(test_ntp, test_rev, test_smeta).c_str(),
+      "deadbeef-0000-0000-0000-000000000000/kafka/tp/5_21/"
+      "10-11-1048576-12-v1.log.13");
+
+    // Resetting the term should result in the term being missing.
+    auto smeta_no_term = test_smeta;
+    smeta_no_term.archiver_term = model::term_id{};
+    EXPECT_STREQ(
+      path_provider.segment_path(pm, smeta_no_term).c_str(),
+      "deadbeef-0000-0000-0000-000000000000/kafka/tp/5_21/"
+      "10-11-1048576-12-v1.log");
 }
 
 class ParamsRemotePathProviderTest : public ::testing::TestWithParam<bool> {
@@ -154,8 +201,18 @@ TEST_P(ParamsRemotePathProviderTest, TestPartitionPrefixPrefixesPath) {
     ASSERT_TRUE(partition_path.starts_with(partition_prefix));
 
     partition_manifest pm(test_ntp, test_rev);
-    const auto spillover_path = path_provider.spillover_manifest_path(pm, test_spill_comps);
+    const auto spillover_path = path_provider.spillover_manifest_path(
+      pm, test_spill_comps);
     ASSERT_TRUE(spillover_path.starts_with(partition_prefix));
+}
+
+TEST_P(ParamsRemotePathProviderTest, TestPartitionPrefixDoesntPrefixSegments) {
+    // The partition manifest prefix, if used as a list prefix, shouldn't catch
+    // any segments.
+    const auto partition_prefix = path_provider.partition_manifest_prefix(
+      test_ntp, test_rev);
+    ASSERT_FALSE(path_provider.segment_path(test_ntp, test_rev, test_smeta)
+                   .starts_with(partition_prefix));
 }
 
 INSTANTIATE_TEST_SUITE_P(

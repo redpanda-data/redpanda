@@ -11,8 +11,10 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote_label.h"
+#include "cloud_storage/segment_path_utils.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/topic_path_utils.h"
+#include "cloud_storage/types.h"
 
 namespace cloud_storage {
 
@@ -75,6 +77,25 @@ ss::sstring remote_path_provider::spillover_manifest_path(
       partition_manifest_prefix(
         stm_manifest.get_ntp(), stm_manifest.get_revision_id()),
       spillover_manifest::filename(c));
+}
+
+ss::sstring remote_path_provider::segment_path(
+  const model::ntp& ntp,
+  model::initial_revision_id rev,
+  const segment_meta& segment) const {
+    const auto segment_name = partition_manifest::generate_remote_segment_name(
+      segment);
+    if (label_.has_value()) {
+        return labeled_segment_path(
+          *label_, ntp, rev, segment_name, segment.archiver_term);
+    }
+    return prefixed_segment_path(ntp, rev, segment_name, segment.archiver_term);
+}
+
+ss::sstring remote_path_provider::segment_path(
+  const partition_manifest& manifest, const segment_meta& segment) const {
+    return segment_path(
+      manifest.get_ntp(), manifest.get_revision_id(), segment);
 }
 
 } // namespace cloud_storage

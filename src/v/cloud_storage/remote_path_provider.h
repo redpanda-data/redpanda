@@ -11,6 +11,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/remote_label.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 
 #include <seastar/core/sstring.hh>
@@ -58,6 +59,14 @@ public:
     ss::sstring spillover_manifest_path(
       const partition_manifest& stm_manifest,
       const spillover_manifest_path_components& c) const;
+
+    // Segment paths.
+    ss::sstring segment_path(
+      const partition_manifest& manifest, const segment_meta& segment) const;
+    ss::sstring segment_path(
+      const model::ntp& ntp,
+      model::initial_revision_id rev,
+      const segment_meta& segment) const;
 
 private:
     std::optional<remote_label> label_;
