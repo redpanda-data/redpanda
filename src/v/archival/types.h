@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "archival/adjacent_segment_run.h"
 #include "base/seastarx.h"
 #include "cloud_storage/types.h"
 #include "seastar/core/lowres_clock.hh"
@@ -170,34 +171,6 @@ private:
 
 /// Number of segment reuploads the job can do per housekeeping run
 static constexpr int max_reuploads_per_run = 4;
-
-/// Represents a series of adjacent segments
-/// The object is used to compute a possible reupload
-/// candidate. The series of segment is supposed to be
-/// merged and reuploaded. The object produces metadata
-/// for the reuploaded segment.
-struct adjacent_segment_run {
-    explicit adjacent_segment_run(model::ntp ntp)
-      : ntp(std::move(ntp)) {}
-
-    model::ntp ntp;
-    cloud_storage::segment_meta meta{};
-    size_t num_segments{0};
-    std::vector<cloud_storage::remote_segment_path> segments;
-
-    /// Try to add segment to the run
-    ///
-    /// The subsequent calls are successful until the total size
-    /// of the run is below the threshold. The object keeps track
-    /// of all segment names.
-    ///
-    /// \return true if the run is assembled, false if more segments can be
-    ///         added to the run
-    bool
-    maybe_add_segment(const cloud_storage::segment_meta& s, size_t max_size);
-};
-
-std::ostream& operator<<(std::ostream& o, const adjacent_segment_run& run);
 
 enum class error_outcome {
     unexpected_failure = 1,
