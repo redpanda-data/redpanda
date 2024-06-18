@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_label.h"
 #include "model/metadata.h"
 
@@ -32,6 +33,11 @@ public:
       const model::ntp& ntp, model::initial_revision_id) const;
     std::optional<ss::sstring> partition_manifest_path_json(
       const model::ntp& ntp, model::initial_revision_id) const;
+
+    ss::sstring segment_path(
+      const partition_manifest& manifest,
+      const partition_manifest::value& segment,
+      model::term_id archiver_term = model::term_id{}) const;
 
 private:
     std::optional<remote_label> label_;
