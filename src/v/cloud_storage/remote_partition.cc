@@ -190,7 +190,8 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
     if (iter != _segments.end()) {
         if (
           iter->second->segment->get_segment_path()
-          != manifest.generate_segment_path(*mit)) {
+          != manifest.generate_segment_path(
+            *mit, _manifest_view->path_provider())) {
             // The segment was replaced and doesn't match metadata anymore. We
             // want to avoid picking it up because otherwise we won't be able to
             // make any progress.
@@ -199,7 +200,8 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
         }
     }
     if (iter == _segments.end()) {
-        auto path = manifest.generate_segment_path(*mit);
+        auto path = manifest.generate_segment_path(
+          *mit, _manifest_view->path_provider());
         iter = get_or_materialize_segment(path, *mit, std::move(segment_unit));
     }
     auto mit_committed_offset = mit->committed_offset;
@@ -1068,7 +1070,8 @@ remote_partition::aborted_transactions(offset_range offsets) {
             // up front at the start of the function.
             auto segment_unit = co_await materialized().get_segment_units(
               std::nullopt);
-            auto path = stm_manifest.generate_segment_path(*it);
+            auto path = stm_manifest.generate_segment_path(
+              *it, _manifest_view->path_provider());
             auto m = get_or_materialize_segment(
               path, *it, std::move(segment_unit));
             remote_segs.emplace_back(m->second->segment);
@@ -1100,7 +1103,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
         auto cursor = std::move(cur_res.value());
         co_await for_each_manifest(
           std::move(cursor),
-          [&offsets, &meta_to_materialize](
+          [&offsets, &meta_to_materialize, this](
             ssx::task_local_ptr<const partition_manifest> manifest) {
               for (auto it = manifest->segment_containing(offsets.begin);
                    it != manifest->end();
@@ -1108,7 +1111,8 @@ remote_partition::aborted_transactions(offset_range offsets) {
                   if (it->base_offset > offsets.end_rp) {
                       return ss::stop_iteration::yes;
                   }
-                  auto path = manifest->generate_segment_path(*it);
+                  auto path = manifest->generate_segment_path(
+                    *it, _manifest_view->path_provider());
                   meta_to_materialize.emplace_back(*it, path);
               }
               return ss::stop_iteration::no;
