@@ -40,7 +40,7 @@ struct cluster_partition_api {
 
     virtual ~cluster_partition_api() = default;
     virtual const cloud_storage::partition_manifest& manifest() const = 0;
-    virtual model::offset get_uploaded_offset() const = 0;
+    virtual model::offset get_next_uploaded_offset() const = 0;
     virtual model::offset get_applied_offset() const = 0;
     virtual model::producer_id get_highest_producer_id() const = 0;
 

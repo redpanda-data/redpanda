@@ -78,12 +78,9 @@ public:
                   arg.ntp);
                 co_return error_outcome::unexpected_failure;
             }
-            reconciled_upload_candidates_list result{
-              .ntp = arg.ntp,
-              .read_write_fence = partition->get_applied_offset(),
-            };
-            auto base_offset = model::next_offset(
-              partition->get_uploaded_offset());
+            reconciled_upload_candidates_list result(
+              arg.ntp, {}, partition->get_applied_offset());
+            auto base_offset = partition->get_next_uploaded_offset();
 
             // If not limit is specified (quota is set to nullopt) we don't want
             // to upload unlimited amount of data in one iteration. The defaults
@@ -174,17 +171,16 @@ public:
     /// the uploaded manifest. The state of the uploaded manifest doesn't
     /// include uploaded segments because they're not admitted yet.
     ss::future<result<upload_results_list>> schedule_uploads(
-      retry_chain_node& workflow_rtc,
-      reconciled_upload_candidates_list bundle,
-      bool inline_manifest_upl) noexcept override {
+      retry_chain_node&,
+      reconciled_upload_candidates_list,
+      bool) noexcept override {
         co_return error_outcome::unexpected_failure;
     }
 
     /// Add metadata to the manifest by replicating archival metadata
     /// configuration batch
-    ss::future<result<admit_uploads_result>> admit_uploads(
-      retry_chain_node& workflow_rtc,
-      upload_results_list upl_res) noexcept override {
+    ss::future<result<admit_uploads_result>>
+    admit_uploads(retry_chain_node&, upload_results_list) noexcept override {
         co_return error_outcome::unexpected_failure;
     }
 
