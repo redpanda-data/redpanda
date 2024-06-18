@@ -190,6 +190,13 @@ public:
         chunked_hash_map<model::topic_partition, pending_tx_offset> offsets;
     };
 
+    struct tx_producer {
+        explicit tx_producer(model::producer_epoch);
+
+        model::producer_epoch epoch;
+        std::unique_ptr<ongoing_transaction> transaction;
+    };
+
     struct offset_metadata {
         model::offset log_offset;
         model::offset offset;
@@ -628,11 +635,11 @@ public:
 
     void
     insert_ongoing_tx(model::producer_identity pid, ongoing_transaction tx);
-
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
-        auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
-        if (fence_it->second <= epoch) {
-            fence_it->second = epoch;
+        auto [it, _] = _producers.try_emplace(id, epoch);
+        if (it->second.epoch < epoch) {
+            it->second.epoch = epoch;
+            it->second.transaction.reset();
         }
     }
 
@@ -692,6 +699,7 @@ public:
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
+    using producers_map = chunked_hash_map<model::producer_id, tx_producer>;
 
     friend std::ostream& operator<<(std::ostream&, const group&);
 
@@ -825,10 +833,9 @@ private:
         }
 
         if (std::any_of(
-              _transactions.begin(),
-              _transactions.end(),
-              [&tp](const auto& tp_info) {
-                  return tp_info.second.offsets.contains(tp);
+              _producers.begin(), _producers.end(), [&tp](const auto& p) {
+                  return p.second.transaction
+                         && p.second.transaction->offsets.contains(tp);
               })) {
             return true;
         }
@@ -916,10 +923,7 @@ private:
 
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     model::term_id _term;
-    chunked_hash_map<model::producer_id, model::producer_epoch>
-      _fence_pid_epoch;
-    chunked_hash_map<model::producer_identity, ongoing_transaction>
-      _transactions;
+    producers_map _producers;
     chunked_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;

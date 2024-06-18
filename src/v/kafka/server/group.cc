@@ -179,6 +179,9 @@ group::ongoing_transaction::ongoing_transaction(
   , timeout(tx_timeout)
   , last_update(model::timeout_clock::now()) {}
 
+group::tx_producer::tx_producer(model::producer_epoch epoch)
+  : epoch(epoch) {}
+
 namespace {
 template<typename T>
 model::record_batch make_tx_batch(
@@ -1672,16 +1675,15 @@ void group::fail_offset_commit(
 
 void group::reset_tx_state(model::term_id term) {
     _term = term;
-    _transactions.clear();
-    _fence_pid_epoch.clear();
+    _producers.clear();
 }
 
 void group::insert_ongoing_tx(
   model::producer_identity pid, ongoing_transaction tx) {
-    auto [_, inserted] = _transactions.try_emplace(pid, std::move(tx));
-    if (!inserted) {
-        vlog(_ctx_txlog.warn, "error adding ongoing transaction for {}", pid);
-    }
+    auto [it, inserted] = _producers.try_emplace(pid.get_id(), pid.get_epoch());
+    it->second.epoch = pid.get_epoch();
+    it->second.transaction = std::make_unique<ongoing_transaction>(
+      std::move(tx));
 }
 
 ss::future<cluster::commit_group_tx_reply>
@@ -1698,24 +1700,25 @@ group::commit_tx(cluster::commit_group_tx_request r) {
         co_return make_commit_tx_reply(cluster::tx::errc::stale);
     }
 
-    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
-    if (fence_it == _fence_pid_epoch.end()) {
+    auto it = _producers.find(r.pid.get_id());
+    if (it == _producers.end()) {
         vlog(
-          _ctx_txlog.warn, "commit_tx request: {} failed - fence not found", r);
+          _ctx_txlog.warn,
+          "commit_tx request: {} failed - producer not found",
+          r);
         co_return make_commit_tx_reply(cluster::tx::errc::request_rejected);
     }
-
-    if (r.pid.get_epoch() != fence_it->second) {
+    auto& producer = it->second;
+    if (r.pid.get_epoch() != producer.epoch) {
         vlog(
           _ctx_txlog.warn,
           "commit_tx request: {} failed - fenced, stored producer epoch: {}",
           r,
-          fence_it->second);
+          producer.epoch);
         co_return make_commit_tx_reply(cluster::tx::errc::request_rejected);
     }
 
-    auto tx_it = _transactions.find(r.pid);
-    if (tx_it == _transactions.end()) {
+    if (producer.transaction == nullptr) {
         vlog(
           _ctx_txlog.trace,
           "commit_tx request: {} - can not find ongoing transaction, it was "
@@ -1723,8 +1726,8 @@ group::commit_tx(cluster::commit_group_tx_request r) {
           r);
         co_return make_commit_tx_reply(cluster::tx::errc::none);
     }
-
-    if (tx_it->second.tx_seq > r.tx_seq) {
+    auto& producer_tx = *producer.transaction;
+    if (producer_tx.tx_seq > r.tx_seq) {
         // rare situation:
         //   * tm_stm begins (tx_seq+1)
         //   * request on this group passes but then tm_stm fails and forgets
@@ -1737,15 +1740,15 @@ group::commit_tx(cluster::commit_group_tx_request r) {
           "observed",
           r.pid,
           r.tx_seq,
-          tx_it->second.tx_seq);
+          producer_tx.tx_seq);
         co_return make_commit_tx_reply(cluster::tx::errc::none);
     }
-    if (tx_it->second.tx_seq != r.tx_seq) {
+    if (producer_tx.tx_seq != r.tx_seq) {
         vlog(
           _ctx_txlog.warn,
           "commit_tx request: {} failed - tx_seq mismatch. Expected seq: {}",
           r,
-          tx_it->second.tx_seq);
+          producer_tx.tx_seq);
         co_return make_commit_tx_reply(cluster::tx::errc::request_rejected);
     }
 
@@ -1784,18 +1787,19 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         co_return make_begin_tx_reply(cluster::tx::errc::stale);
     }
 
-    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
+    auto it = _producers.find(r.pid.get_id());
 
-    if (fence_it != _fence_pid_epoch.end()) {
-        if (r.pid.get_epoch() < fence_it->second) {
+    if (it != _producers.end()) {
+        auto& producer = it->second;
+        if (r.pid.get_epoch() < producer.epoch) {
             vlog(
               _ctx_txlog.warn,
               "begin tx request failed. Producer {} epoch is lower than "
               "current fence epoch: {}",
               r.pid,
-              fence_it->second);
+              producer.epoch);
             co_return make_begin_tx_reply(cluster::tx::errc::fenced);
-        } else if (r.pid.get_epoch() > fence_it->second) {
+        } else if (r.pid.get_epoch() > producer.epoch) {
             // there is a fence, it might be that tm_stm failed, forget about
             // an ongoing transaction, assigned next pid for the same tx.id and
             // started a new transaction without aborting the previous one.
@@ -1806,7 +1810,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
             // the timeout
 
             auto old_pid = model::producer_identity{
-              r.pid.get_id(), fence_it->second};
+              r.pid.get_id(), producer.epoch};
             auto ar = co_await do_try_abort_old_tx(old_pid);
             if (ar != cluster::tx::errc::none) {
                 vlog(
@@ -1819,33 +1823,32 @@ group::begin_tx(cluster::begin_group_tx_request r) {
                 co_return make_begin_tx_reply(cluster::tx::errc::stale);
             }
         }
-    }
-    // Now we know the current producer epoch is valid
-    auto it = _transactions.find(r.pid);
-    if (it != _transactions.end()) {
-        if (r.tx_seq != it->second.tx_seq) {
-            vlog(
-              _ctx_txlog.warn,
-              "begin tx request {} failed - produced has already ongoing "
-              "transaction with highest sequence number: {}",
-              r,
-              it->second.tx_seq);
-            co_return make_begin_tx_reply(
-              cluster::tx::errc::unknown_server_error);
-        }
+        if (producer.transaction) {
+            auto& producer_tx = *producer.transaction;
+            if (r.tx_seq != producer_tx.tx_seq) {
+                vlog(
+                  _ctx_txlog.warn,
+                  "begin tx request {} failed - produced has already ongoing "
+                  "transaction with different sequence number: {}",
+                  r,
+                  producer_tx.tx_seq);
+                co_return make_begin_tx_reply(
+                  cluster::tx::errc::unknown_server_error);
+            }
 
-        if (!it->second.offsets.empty()) {
-            vlog(
-              _ctx_txlog.warn,
-              "begin tx request {} failed - transaction is already ongoing and "
-              "accepted offset commits",
-              r.pid,
-              r.tx_seq);
-            co_return make_begin_tx_reply(
-              cluster::tx::errc::unknown_server_error);
+            if (!producer_tx.offsets.empty()) {
+                vlog(
+                  _ctx_txlog.warn,
+                  "begin tx request {} failed - transaction is already ongoing "
+                  "and accepted offset commits",
+                  r);
+                co_return make_begin_tx_reply(
+                  cluster::tx::errc::unknown_server_error);
+            }
+            // begin_tx request is idempotent, return success
+            co_return cluster::begin_group_tx_reply(
+              _term, cluster::tx::errc::none);
         }
-        // begin_tx request is idempotent, return success
-        co_return cluster::begin_group_tx_reply(_term, cluster::tx::errc::none);
     }
 
     group_tx::fence_metadata fence{
@@ -1874,12 +1877,13 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         }
         co_return make_begin_tx_reply(cluster::tx::errc::leader_not_found);
     }
-    // set fence or update the one we already have
-    _fence_pid_epoch[r.pid.get_id()] = r.pid.get_epoch();
+    auto [producer_it, _] = _producers.try_emplace(
+      r.pid.get_id(), r.pid.get_epoch());
+    producer_it->second.epoch = r.pid.get_epoch();
+    producer_it->second.transaction = std::make_unique<ongoing_transaction>(
+      ongoing_transaction(r.tx_seq, r.tm_partition, r.timeout));
 
-    auto [tx_it, _] = _transactions.try_emplace(
-      r.pid, r.tx_seq, r.tm_partition, r.timeout);
-    try_arm(tx_it->second.deadline());
+    try_arm(producer_it->second.transaction->deadline());
 
     co_return cluster::begin_group_tx_reply(_term, cluster::tx::errc::none);
 }
@@ -1900,33 +1904,33 @@ group::abort_tx(cluster::abort_group_tx_request r) {
         co_return make_abort_tx_reply(cluster::tx::errc::stale);
     }
 
-    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
-    if (fence_it == _fence_pid_epoch.end()) {
+    auto it = _producers.find(r.pid.get_id());
+    if (it == _producers.end()) {
         vlog(
           _ctx_txlog.warn,
-          "abort_tx request: {} failed - producer fence not found",
+          "abort_tx request: {} failed - producer not found",
           r);
         co_return make_abort_tx_reply(cluster::tx::errc::request_rejected);
     }
-    if (r.pid.get_epoch() != fence_it->second) {
+    auto& producer = it->second;
+    if (r.pid.get_epoch() != producer.epoch) {
         vlog(
           _ctx_txlog.warn,
           "abort_tx request: {} failed - fence epoch mismatch. Fence epoch: {}",
           r.pid,
-          fence_it->second);
+          producer.epoch);
         co_return make_abort_tx_reply(cluster::tx::errc::request_rejected);
     }
 
-    auto tx_it = _transactions.find(r.pid);
-    if (tx_it == _transactions.end()) {
+    if (producer.transaction == nullptr) {
         vlog(
           _ctx_txlog.trace,
           "unable to find transaction for {}, probably already aborted",
           r.pid);
         co_return make_abort_tx_reply(cluster::tx::errc::none);
     }
-
-    if (tx_it->second.tx_seq > r.tx_seq) {
+    auto& producer_tx = *producer.transaction;
+    if (producer_tx.tx_seq > r.tx_seq) {
         // rare situation:
         //   * tm_stm begins (tx_seq+1)
         //   * request on this group passes but then tm_stm fails and forgets
@@ -1938,18 +1942,19 @@ group::abort_tx(cluster::abort_group_tx_request r) {
           "producer transaction {} already aborted, ongoing tx sequence: {}, "
           "request tx sequence: {}",
           r.pid,
-          tx_it->second.tx_seq,
+          producer_tx.tx_seq,
           r.tx_seq);
         co_return make_abort_tx_reply(cluster::tx::errc::none);
     }
 
-    if (tx_it->second.tx_seq != r.tx_seq) {
+    if (producer_tx.tx_seq != r.tx_seq) {
         vlog(
           _ctx_txlog.warn,
           "abort_tx request: {} failed - tx sequence mismatch. Ongoing tx "
           "sequence: {}, request tx sequence: {}",
           r.pid,
-          fence_it->second);
+          producer_tx.tx_seq,
+          r.tx_seq);
         co_return make_abort_tx_reply(cluster::tx::errc::request_rejected);
     }
 
@@ -1973,8 +1978,8 @@ group::store_txn_offsets(txn_offset_commit_request r) {
     model::producer_identity pid{r.data.producer_id, r.data.producer_epoch};
 
     // checking fencing
-    auto fence_it = _fence_pid_epoch.find(pid.get_id());
-    if (fence_it == _fence_pid_epoch.end()) {
+    auto it = _producers.find(pid.get_id());
+    if (it == _producers.end()) {
         vlog(
           _ctx_txlog.warn,
           "Can't store txn offsets: fence with pid {} isn't set",
@@ -1982,18 +1987,18 @@ group::store_txn_offsets(txn_offset_commit_request r) {
         co_return txn_offset_commit_response(
           r, error_code::invalid_producer_epoch);
     }
-    if (r.data.producer_epoch != fence_it->second) {
+    auto& producer = it->second;
+    if (r.data.producer_epoch != producer.epoch) {
         vlog(
           _ctx_txlog.trace,
           "Can't store txn offsets with pid {} - the fence doesn't match {}",
           pid,
-          fence_it->second);
+          producer.epoch);
         co_return txn_offset_commit_response(
           r, error_code::invalid_producer_epoch);
     }
 
-    auto tx_it = _transactions.find(pid);
-    if (tx_it == _transactions.end()) {
+    if (producer.transaction == nullptr) {
         vlog(
           _ctx_txlog.warn,
           "Can't store txn offsets: current tx with pid {} isn't ongoing",
@@ -2002,7 +2007,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
           r, error_code::invalid_producer_epoch);
     }
 
-    const auto tx_seq = tx_it->second.tx_seq;
+    auto& producer_tx = *producer.transaction;
 
     chunked_vector<group_tx::partition_offset> offsets;
 
@@ -2020,7 +2025,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
     group_tx::offsets_metadata tx_entry{
       .group_id = r.data.group_id,
       .pid = pid,
-      .tx_seq = tx_seq,
+      .tx_seq = producer_tx.tx_seq,
       .offsets = {offsets.begin(), offsets.end()},
     };
 
@@ -2046,8 +2051,9 @@ group::store_txn_offsets(txn_offset_commit_request r) {
         co_return txn_offset_commit_response(
           r, error_code::unknown_server_error);
     }
-    tx_it = _transactions.find(pid);
-    if (tx_it == _transactions.end()) {
+
+    it = _producers.find(pid.get_id());
+    if (it == _producers.end() || it->second.transaction == nullptr) {
         vlog(
           _ctx_txlog.warn,
           "Can't store txn offsets: current tx with pid {} isn't ongoing",
@@ -2055,13 +2061,14 @@ group::store_txn_offsets(txn_offset_commit_request r) {
         co_return txn_offset_commit_response(
           r, error_code::invalid_producer_epoch);
     }
+    auto& ongoing_tx = *it->second.transaction;
     for (auto& o : offsets) {
-        tx_it->second.offsets[o.tp] = pending_tx_offset{
+        ongoing_tx.offsets[o.tp] = pending_tx_offset{
           .offset_metadata = o,
           .log_offset = result.value().last_offset,
         };
     }
-    tx_it->second.update_last_update_time();
+    ongoing_tx.update_last_update_time();
 
     co_return txn_offset_commit_response(r, error_code::none);
 }
@@ -2835,16 +2842,17 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
         }
         co_return make_abort_tx_reply(cluster::tx::errc::timeout);
     }
-
-    _transactions.erase(pid);
-
+    auto it = _producers.find(pid.get_id());
+    if (it != _producers.end()) {
+        it->second.transaction.reset();
+    }
     co_return make_abort_tx_reply(cluster::tx::errc::none);
 }
 
 ss::future<cluster::commit_group_tx_reply>
 group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
-    auto ongoing_it = _transactions.find(pid);
-    if (ongoing_it == _transactions.end()) {
+    auto it = _producers.find(pid.get_id());
+    if (it == _producers.end() || it->second.transaction == nullptr) {
         // Impossible situation
         vlog(
           _ctx_txlog.error,
@@ -2852,7 +2860,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
           pid);
         co_return make_commit_tx_reply(cluster::tx::errc::unknown_server_error);
     }
-
+    auto& ongoing_tx = *it->second.transaction;
     // It is fix for https://github.com/redpanda-data/redpanda/issues/5163.
     // Problem is group_*_tx contains only producer_id in key, so compaction
     // save only last records for this events. We need only save in logs
@@ -2870,7 +2878,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
 
     cluster::simple_batch_builder store_offset_builder(
       model::record_batch_type::raft_data, model::offset(0));
-    for (const auto& [tp, pending_offset] : ongoing_it->second.offsets) {
+    for (const auto& [tp, pending_offset] : ongoing_tx.offsets) {
         update_store_offset_builder(
           store_offset_builder,
           tp.topic,
@@ -2914,9 +2922,9 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
         }
         co_return make_commit_tx_reply(cluster::tx::errc::timeout);
     }
-    ongoing_it = _transactions.find(pid);
 
-    if (ongoing_it == _transactions.end()) {
+    it = _producers.find(pid.get_id());
+    if (it == _producers.end() || it->second.transaction == nullptr) {
         vlog(
           _ctx_txlog.error,
           "unable to find ongoing transaction for producer: {}",
@@ -2924,7 +2932,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
         co_return make_commit_tx_reply(cluster::tx::errc::unknown_server_error);
     }
 
-    for (const auto& [tp, md] : ongoing_it->second.offsets) {
+    for (const auto& [tp, md] : it->second.transaction->offsets) {
         try_upsert_offset(
           tp,
           offset_metadata{
@@ -2937,7 +2945,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
           });
     }
 
-    _transactions.erase(ongoing_it);
+    it->second.transaction.reset();
 
     co_return make_commit_tx_reply(cluster::tx::errc::none);
 }
@@ -2951,8 +2959,11 @@ void group::abort_old_txes() {
 
 void group::maybe_rearm_timer() {
     std::optional<time_point_type> earliest_deadline;
-    for (auto& [pid, ongoing_tx] : _transactions) {
-        auto candidate = ongoing_tx.deadline();
+    for (auto& [pid, producer] : _producers) {
+        if (producer.transaction == nullptr) {
+            continue;
+        }
+        auto candidate = producer.transaction->deadline();
         if (earliest_deadline) {
             earliest_deadline = std::min(earliest_deadline.value(), candidate);
         } else {
@@ -2975,14 +2986,14 @@ ss::future<> group::do_abort_old_txes() {
 
     absl::btree_set<model::producer_identity> expired;
 
-    for (auto& [pid, tx] : _transactions) {
-        if (!tx.is_expired()) {
+    for (auto& [pid, producer] : _producers) {
+        if (
+          producer.transaction == nullptr
+          || !producer.transaction->is_expired()) {
             continue;
         }
-        auto it = _fence_pid_epoch.find(pid.get_id());
-        if (it != _fence_pid_epoch.end()) {
-            expired.insert(pid);
-        }
+
+        expired.insert(model::producer_identity{pid, producer.epoch});
     }
 
     for (auto pid : expired) {
@@ -2994,18 +3005,10 @@ ss::future<> group::do_abort_old_txes() {
 
 ss::future<> group::try_abort_old_tx(model::producer_identity pid) {
     return get_tx_lock(pid.get_id())->with([this, pid]() {
-        vlog(_ctx_txlog.info, "attempting expiration of producer: {}", pid);
-
-        auto tx_it = _transactions.find(pid);
-        if (tx_it != _transactions.end()) {
-            if (!tx_it->second.is_expired()) {
-                vlog(
-                  _ctx_txlog.trace,
-                  "producer {} transaction is not expired, skipping",
-                  pid);
-                return ss::now();
-            }
-        }
+        vlog(
+          _ctx_txlog.info,
+          "attempting expiration of producer: {} transaction",
+          pid);
 
         return do_try_abort_old_tx(pid).discard_result();
     });
@@ -3015,64 +3018,61 @@ ss::future<cluster::tx::errc>
 group::do_try_abort_old_tx(model::producer_identity pid) {
     vlog(_ctx_txlog.trace, "aborting producer {} transaction", pid);
 
-    auto tx_it = _transactions.find(pid);
-    if (tx_it != _transactions.end()) {
-        auto tx_seq = tx_it->second.tx_seq;
-
-        model::partition_id coordinator_partition_id
-          = tx_it->second.coordinator_partition;
-        vlog(
-          _ctx_txlog.trace,
-          "sending abort tx request for producer {} with tx_seq: {} to "
-          "coordinator partition: {}",
-          pid,
-          tx_seq,
-          coordinator_partition_id);
-        auto r = co_await _tx_frontend.local().route_globally(
-          cluster::try_abort_request(
-            coordinator_partition_id,
-            pid,
-            tx_seq,
-            config::shard_local_cfg().rm_sync_timeout_ms.value()));
-
-        if (r.ec != cluster::tx::errc::none) {
-            co_return r.ec;
-        }
-        vlog(
-          _ctx_txlog.trace,
-          "producer id {} abort request result: [committed: {}, aborted: {}]",
-          pid,
-          r.commited,
-          r.aborted);
-
-        if (r.commited) {
-            auto res = co_await do_commit(_id, pid);
-            if (res.ec != cluster::tx::errc::none) {
-                vlog(
-                  _ctxlog.warn,
-                  "committing producer {} transaction failed - {}",
-                  pid,
-                  res.ec);
-            }
-            co_return res.ec;
-        }
-
-        if (r.aborted) {
-            auto res = co_await do_abort(_id, pid, tx_seq);
-            if (res.ec != cluster::tx::errc::none) {
-                vlog(
-                  _ctxlog.warn,
-                  "aborting producer {} transaction failed - {}",
-                  pid,
-                  res.ec);
-            }
-            co_return res.ec;
-        }
-
-        co_return cluster::tx::errc::stale;
+    auto it = _producers.find(pid.get_id());
+    if (it == _producers.end() || it->second.transaction == nullptr) {
+        co_return cluster::tx::errc::none;
     }
-    // no active transaction for requested producer found
-    co_return cluster::tx::errc::none;
+    auto& producer_tx = *it->second.transaction;
+
+    vlog(
+      _ctx_txlog.trace,
+      "sending abort tx request for producer {} with tx_seq: {} to "
+      "coordinator partition: {}",
+      pid,
+      producer_tx.tx_seq,
+      producer_tx.coordinator_partition);
+    auto r = co_await _tx_frontend.local().route_globally(
+      cluster::try_abort_request(
+        producer_tx.coordinator_partition,
+        pid,
+        producer_tx.tx_seq,
+        config::shard_local_cfg().rm_sync_timeout_ms.value()));
+
+    if (r.ec != cluster::tx::errc::none) {
+        co_return r.ec;
+    }
+    vlog(
+      _ctx_txlog.trace,
+      "producer id {} abort request result: [committed: {}, aborted: {}]",
+      pid,
+      r.commited,
+      r.aborted);
+
+    if (r.commited) {
+        auto res = co_await do_commit(_id, pid);
+        if (res.ec != cluster::tx::errc::none) {
+            vlog(
+              _ctxlog.warn,
+              "committing producer {} transaction failed - {}",
+              pid,
+              res.ec);
+        }
+        co_return res.ec;
+    }
+
+    if (r.aborted) {
+        auto res = co_await do_abort(_id, pid, producer_tx.tx_seq);
+        if (res.ec != cluster::tx::errc::none) {
+            vlog(
+              _ctxlog.warn,
+              "aborting producer {} transaction failed - {}",
+              pid,
+              res.ec);
+        }
+        co_return res.ec;
+    }
+
+    co_return cluster::tx::errc::stale;
 }
 
 void group::try_arm(time_point_type deadline) {
@@ -3325,7 +3325,12 @@ group::get_expired_offsets(std::chrono::seconds retention_period) {
 
 bool group::has_offsets() const {
     return !_offsets.empty() || !_pending_offset_commits.empty()
-           || !_transactions.empty();
+           || std::any_of(
+             _producers.begin(),
+             _producers.end(),
+             [](const producers_map::value_type& p) {
+                 return p.second.transaction != nullptr;
+             });
 }
 
 std::vector<model::topic_partition>

@@ -20,6 +20,8 @@
 
 #include <absl/container/node_hash_set.h>
 
+#include <memory>
+
 namespace kafka {
 
 class group_stm {
@@ -37,6 +39,10 @@ public:
           offsets;
     };
 
+    struct producer {
+        model::producer_epoch epoch;
+        std::unique_ptr<ongoing_tx> tx;
+    };
     void overwrite_metadata(group_metadata_value&&);
 
     void update_offset(
@@ -57,20 +63,13 @@ public:
         return !_is_removed && (_is_loaded || _offsets.size() > 0);
     }
     bool is_removed() const { return _is_removed; }
-
-    const chunked_hash_map<model::producer_identity, ongoing_tx>&
-    ongoing_transactions() const {
-        return _ongoing_txs;
+    const chunked_hash_map<model::producer_id, producer>& producers() const {
+        return _producers;
     }
 
     const chunked_hash_map<model::topic_partition, logged_metadata>&
     offsets() const {
         return _offsets;
-    }
-
-    const chunked_hash_map<model::producer_id, model::producer_epoch>&
-    fences() const {
-        return _fence_pid_epoch;
     }
 
     group_metadata_value& get_metadata() { return _metadata; }
@@ -79,9 +78,7 @@ public:
 
 private:
     chunked_hash_map<model::topic_partition, logged_metadata> _offsets;
-    chunked_hash_map<model::producer_id, model::producer_epoch>
-      _fence_pid_epoch;
-    chunked_hash_map<model::producer_identity, ongoing_tx> _ongoing_txs;
+    chunked_hash_map<model::producer_id, producer> _producers;
 
     group_metadata_value _metadata;
     bool _is_loaded{false};

@@ -26,13 +26,13 @@ void group_stm::update_offset(
 
 void group_stm::update_tx_offset(
   model::offset offset, group_tx::offsets_metadata offset_md) {
-    auto it = _ongoing_txs.find(offset_md.pid);
-    // if an ongoing transaction doesn't exists we ignore the update
-    if (it == _ongoing_txs.end()) {
+    auto it = _producers.find(offset_md.pid.get_id());
+    if (
+      it == _producers.end() || it->second.tx == nullptr
+      || offset_md.pid.epoch != it->second.epoch) {
         vlog(
           cluster::txlog.warn,
-          "ongoing transaction for producer {} not found, skipping offsets "
-          "update",
+          "producer {} not found, skipping offsets update",
           offset_md.pid);
         return;
     }
@@ -47,13 +47,15 @@ void group_stm::update_tx_offset(
           .commit_timestamp = now,
           .expiry_timestamp = std::nullopt,
         };
-        it->second.offsets[tx_offset.tp] = md;
+        it->second.tx->offsets[tx_offset.tp] = md;
     }
 }
 
 void group_stm::commit(model::producer_identity pid) {
-    auto prepared_it = _ongoing_txs.find(pid);
-    if (prepared_it == _ongoing_txs.end()) {
+    auto it = _producers.find(pid.get_id());
+    if (
+      it == _producers.end() || it->second.tx == nullptr
+      || pid.epoch != it->second.epoch) {
         // missing prepare may happen when the consumer log gets truncated
         vlog(
           cluster::txlog.warn,
@@ -63,7 +65,7 @@ void group_stm::commit(model::producer_identity pid) {
         return;
     }
 
-    for (const auto& [tp, md] : prepared_it->second.offsets) {
+    for (const auto& [tp, md] : it->second.tx->offsets) {
         offset_metadata_value val{
           .offset = md.offset,
           .leader_epoch
@@ -78,20 +80,22 @@ void group_stm::commit(model::producer_identity pid) {
         _offsets[tp] = logged_metadata{
           .log_offset = md.log_offset, .metadata = std::move(val)};
     }
-
-    _ongoing_txs.erase(prepared_it);
+    it->second.tx.reset();
 }
 
 void group_stm::abort(
   model::producer_identity pid, [[maybe_unused]] model::tx_seq tx_seq) {
-    _ongoing_txs.erase(pid);
+    auto it = _producers.find(pid.get_id());
+    if (it != _producers.end() && it->second.epoch == pid.get_epoch()) {
+        it->second.tx.reset();
+    }
 }
 
 void group_stm::try_set_fence(
   model::producer_id id, model::producer_epoch epoch) {
-    auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
-    if (fence_it->second < epoch) {
-        fence_it->second = epoch;
+    auto [it, _] = _producers.try_emplace(id, epoch);
+    if (it->second.epoch < epoch) {
+        it->second.epoch = epoch;
     }
 }
 
@@ -101,17 +105,15 @@ void group_stm::try_set_fence(
   model::tx_seq txseq,
   model::timeout_clock::duration transaction_timeout_ms,
   model::partition_id tm_partition) {
-    auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
-    if (fence_it->second <= epoch) {
-        fence_it->second = epoch;
-        _ongoing_txs.try_emplace(
-          model::producer_identity(id, epoch),
-          ongoing_tx{
-            .tx_seq = txseq,
-            .tm_partition = tm_partition,
-            .timeout = transaction_timeout_ms,
-            .offsets = {},
-          });
+    auto [it, _] = _producers.try_emplace(id, epoch);
+    if (it->second.epoch <= epoch) {
+        it->second.epoch = epoch;
+        it->second.tx = std::make_unique<ongoing_tx>(ongoing_tx{
+          .tx_seq = txseq,
+          .tm_partition = tm_partition,
+          .timeout = transaction_timeout_ms,
+          .offsets = {},
+        });
     }
 }
 

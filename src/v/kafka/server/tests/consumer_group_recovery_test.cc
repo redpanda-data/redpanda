@@ -391,8 +391,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_happy_path) {
           make_tx_offset("topic-3", 12, 1)}}));
 
     auto state = co_await recover_from_batches(copy_batches(batches));
-    EXPECT_EQ(state.groups[gr_1].ongoing_transactions().size(), 1);
-    EXPECT_EQ(state.groups[gr_1].fences().size(), 1);
+    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
     // tx is ongoing offsets included in the transaction should not be
     // visible in state machine
 
@@ -407,8 +406,8 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_happy_path) {
       group_tx::commit_metadata{.group_id = gr_1}));
 
     state = co_await recover_from_batches(copy_batches(batches));
-    EXPECT_TRUE(state.groups[gr_1].ongoing_transactions().empty());
-    EXPECT_EQ(state.groups[gr_1].fences().size(), 1);
+
+    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
 
     expect_committed_offsets(
       state.groups[gr_1].offsets(),
@@ -432,9 +431,8 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_happy_path) {
       "test-2/10@256",
       "topic-3/12@1");
 
-    EXPECT_TRUE(state.groups[gr_1].ongoing_transactions().empty());
-
-    // EXPECT_TRUE(state.groups[gr_1].fences().empty());
+    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
+    EXPECT_EQ(state.groups[gr_1].producers().begin()->second.tx, nullptr);
 }
 
 TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
@@ -474,8 +472,9 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
       pid,
       group_tx::abort_metadata{.group_id = gr_1, .tx_seq = tx_seq}));
     auto state = co_await recover_from_batches(copy_batches(batches));
-    EXPECT_TRUE(state.groups[gr_1].ongoing_transactions().empty());
-    // EXPECT_TRUE(state.groups[gr_1].fences().empty());
+    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
+    EXPECT_EQ(state.groups[gr_1].producers().begin()->second.tx, nullptr);
+
     expect_committed_offsets(
       state.groups[gr_1].offsets(), "test-1/0@1024", "test-2/10@256");
 
@@ -486,8 +485,9 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
       pid,
       group_tx::commit_metadata{.group_id = gr_1}));
 
-    EXPECT_TRUE(state.groups[gr_1].ongoing_transactions().empty());
-    // EXPECT_TRUE(state.groups[gr_1].fences().empty());
+    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
+    EXPECT_EQ(state.groups[gr_1].producers().begin()->second.tx, nullptr);
+
     expect_committed_offsets(
       state.groups[gr_1].offsets(), "test-1/0@1024", "test-2/10@256");
 }

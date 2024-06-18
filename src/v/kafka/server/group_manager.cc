@@ -972,15 +972,14 @@ ss::future<> group_manager::do_recover_group(
                 .non_reclaimable = meta.metadata.non_reclaimable,
               });
         }
-        for (auto& [id, epoch] : group_stm.fences()) {
-            group->try_set_fence(id, epoch);
-        }
-
-        for (auto& [pid, tx] : group_stm.ongoing_transactions()) {
-            group::ongoing_transaction group_tx(
-              tx.tx_seq, tx.tm_partition, tx.timeout);
-            for (auto& [tp, o_md] : tx.offsets) {
-                group_tx.offsets[tp] = group::pending_tx_offset{
+        for (auto& [id, session] : group_stm.producers()) {
+            group->try_set_fence(id, session.epoch);
+            if (session.tx) {
+                auto& tx = *session.tx;
+                group::ongoing_transaction group_tx(
+                  tx.tx_seq, tx.tm_partition, tx.timeout);
+                for (auto& [tp, o_md] : tx.offsets) {
+                    group_tx.offsets[tp] = group::pending_tx_offset{
                   .offset_metadata = group_tx::partition_offset{
                     .tp = tp,
                     .offset = o_md.offset,
@@ -988,9 +987,12 @@ ss::future<> group_manager::do_recover_group(
                     .metadata = o_md.metadata,
                   },
                   .log_offset = o_md.log_offset};
-            }
+                }
 
-            group->insert_ongoing_tx(pid, std::move(group_tx));
+                group->insert_ongoing_tx(
+                  model::producer_identity(id, session.epoch),
+                  std::move(group_tx));
+            }
         }
 
         if (group_stm.is_removed()) {
