@@ -1654,9 +1654,10 @@ SEASTAR_THREAD_TEST_CASE(small_segment_run_test) {
        .segment_term = model::term_id{4},
        .sname_format = cloud_storage::segment_name_format::v2},
     };
+    cloud_storage::partition_manifest pm(manifest_ntp, manifest_revision);
     archival::adjacent_segment_run run(manifest_ntp);
     for (const auto& s : segments) {
-        if (run.maybe_add_segment(s, high_watermark)) {
+        if (run.maybe_add_segment(pm, s, high_watermark, path_provider)) {
             break;
         }
     }

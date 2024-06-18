@@ -12,6 +12,7 @@
 #include "archival/segment_reupload.h"
 #include "archival/tests/service_fixture.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
 #include "storage/log_manager.h"
@@ -25,6 +26,10 @@
 #include <boost/test/tools/old/interface.hpp>
 
 using namespace archival;
+
+namespace {
+static const cloud_storage::remote_path_provider path_provider(std::nullopt);
+} // anonymous namespace
 
 inline ss::logger test_log("test");
 
@@ -1350,6 +1355,7 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
 
     // This covers three segments with total size of 3000
     BOOST_REQUIRE(!run.maybe_add_segment(
+      m,
       cloud_storage::segment_meta{
         .is_compacted = false,
         .size_bytes = 100,
@@ -1364,9 +1370,11 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
         .delta_offset_end = model::offset_delta(0),
         .sname_format = cloud_storage::segment_name_format::v3,
       },
-      5000));
+      5000,
+      path_provider));
 
     BOOST_REQUIRE(!run.maybe_add_segment(
+      m,
       cloud_storage::segment_meta{
         .is_compacted = false,
         .size_bytes = 100,
@@ -1381,13 +1389,15 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
         .delta_offset_end = model::offset_delta(0),
         .sname_format = cloud_storage::segment_name_format::v3,
       },
-      5000));
+      5000,
+      path_provider));
 
     // The extra segment fits in by size but can't be added because it
     // has different term. The method should return 'true' because
     // we were able to add a segment to the run and we can't extend it
     // further.
     BOOST_REQUIRE(run.maybe_add_segment(
+      m,
       cloud_storage::segment_meta{
         .is_compacted = false,
         .size_bytes = 100,
@@ -1402,7 +1412,8 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
         .delta_offset_end = model::offset_delta(0),
         .sname_format = cloud_storage::segment_name_format::v3,
       },
-      5000));
+      5000,
+      path_provider));
 
     BOOST_REQUIRE_EQUAL(run.num_segments, 2);
     BOOST_REQUIRE_EQUAL(run.meta.base_offset(), 0);
