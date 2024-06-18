@@ -102,7 +102,8 @@ public:
               node->raft().get(),
               stm_node.remote.local(),
               node->get_feature_table().local(),
-              fixture_logger);
+              fixture_logger,
+              std::nullopt);
 
             stm_node.archival_stm = std::move(stm);
 
