@@ -79,7 +79,31 @@ public:
         pool_.stop().get();
     }
 
-    void upload_json_manifest(const partition_manifest& pm) {
+    void upload_labeled_bin_manifest(const partition_manifest& pm) {
+        retry_chain_node retry(never_abort, 1s, 10ms);
+        auto labeled_path = labeled_partition_manifest_path(
+          test_label, test_ntp, test_rev);
+        auto upload_res
+          = remote_.local()
+              .upload_manifest(
+                bucket_name, pm, remote_manifest_path{labeled_path}, retry)
+              .get();
+        ASSERT_EQ(upload_result::success, upload_res);
+    }
+
+    void upload_prefixed_bin_manifest(const partition_manifest& pm) {
+        retry_chain_node retry(never_abort, 1s, 10ms);
+        auto hash_path = prefixed_partition_manifest_bin_path(
+          test_ntp, test_rev);
+        auto upload_res
+          = remote_.local()
+              .upload_manifest(
+                bucket_name, pm, remote_manifest_path{hash_path}, retry)
+              .get();
+        ASSERT_EQ(upload_result::success, upload_res);
+    }
+
+    void upload_prefixed_json_manifest(const partition_manifest& pm) {
         retry_chain_node retry(never_abort, 1s, 10ms);
         iobuf buf;
         iobuf_ostreambuf obuf(buf);
@@ -106,16 +130,8 @@ protected:
 
 TEST_F(PartitionManifestDownloaderTest, TestDownloadLabeledManifest) {
     auto pm = dummy_partition_manifest();
-    auto labeled_path = labeled_partition_manifest_path(
-      test_label, test_ntp, test_rev);
+    ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(pm));
     retry_chain_node retry(never_abort, 1s, 10ms);
-    auto upload_res
-      = remote_.local()
-          .upload_manifest(
-            bucket_name, pm, remote_manifest_path{labeled_path}, retry)
-          .get();
-    ASSERT_EQ(upload_result::success, upload_res);
-
     {
         remote_path_provider path_provider(test_label);
         partition_manifest_downloader dl(
@@ -143,15 +159,8 @@ TEST_F(PartitionManifestDownloaderTest, TestDownloadLabeledManifest) {
 
 TEST_F(PartitionManifestDownloaderTest, TestDownloadPrefixedManifest) {
     auto pm = dummy_partition_manifest();
-    auto hash_path = prefixed_partition_manifest_bin_path(test_ntp, test_rev);
+    ASSERT_NO_FATAL_FAILURE(upload_prefixed_bin_manifest(pm));
     retry_chain_node retry(never_abort, 1s, 10ms);
-    auto upload_res
-      = remote_.local()
-          .upload_manifest(
-            bucket_name, pm, remote_manifest_path{hash_path}, retry)
-          .get();
-    ASSERT_EQ(upload_result::success, upload_res);
-
     {
         remote_path_provider path_provider(std::nullopt);
         partition_manifest_downloader dl(
@@ -179,7 +188,7 @@ TEST_F(PartitionManifestDownloaderTest, TestDownloadPrefixedManifest) {
 
 TEST_F(PartitionManifestDownloaderTest, TestDownloadJsonManifest) {
     auto pm = dummy_partition_manifest();
-    ASSERT_NO_FATAL_FAILURE(upload_json_manifest(pm));
+    ASSERT_NO_FATAL_FAILURE(upload_prefixed_json_manifest(pm));
     retry_chain_node retry(never_abort, 1s, 10ms);
 
     remote_path_provider path_provider(std::nullopt);
@@ -218,4 +227,74 @@ TEST_F(PartitionManifestDownloaderTest, TestDownloadJsonManifest) {
     EXPECT_STREQ(
       new_last_req.url.c_str(),
       "/20000000/meta/test-ns/test-topic/42_0/manifest.bin");
+}
+
+TEST_F(PartitionManifestDownloaderTest, TestLabeledManifestExists) {
+    remote_path_provider path_provider(test_label);
+    partition_manifest_downloader dl(
+      bucket_name, path_provider, test_ntp, test_rev, remote_.local());
+
+    // Upload both a binary and JSON manifest with the hash prefix scheme.
+    auto pm = dummy_partition_manifest();
+    ASSERT_NO_FATAL_FAILURE(upload_prefixed_bin_manifest(pm));
+    ASSERT_NO_FATAL_FAILURE(upload_prefixed_json_manifest(pm));
+
+    // Since the path provider is expecting a labeled manifest, it will not see
+    // either hash-prefixed manifest.
+    retry_chain_node retry(never_abort, 1s, 10ms);
+    auto exists_res = dl.manifest_exists(retry).get();
+    ASSERT_FALSE(exists_res.has_error());
+    ASSERT_EQ(
+      exists_res.value(),
+      find_partition_manifest_outcome::no_matching_manifest);
+
+    // Once a labeled manifest exists, we're good.
+    ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(pm));
+    exists_res = dl.manifest_exists(retry).get();
+    ASSERT_FALSE(exists_res.has_error());
+    ASSERT_EQ(exists_res.value(), find_partition_manifest_outcome::success);
+}
+
+TEST_F(PartitionManifestDownloaderTest, TestPrefixedJSONManifestExists) {
+    remote_path_provider path_provider(std::nullopt);
+    partition_manifest_downloader dl(
+      bucket_name, path_provider, test_ntp, test_rev, remote_.local());
+    auto pm = dummy_partition_manifest();
+    ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(pm));
+
+    // With the hash-prefixed path provider, we won't find labeled manifests.
+    retry_chain_node retry(never_abort, 1s, 10ms);
+    auto exists_res = dl.manifest_exists(retry).get();
+    ASSERT_FALSE(exists_res.has_error());
+    ASSERT_EQ(
+      exists_res.value(),
+      find_partition_manifest_outcome::no_matching_manifest);
+
+    // Once a JSON manifest exists, we're good.
+    ASSERT_NO_FATAL_FAILURE(upload_prefixed_json_manifest(pm));
+    exists_res = dl.manifest_exists(retry).get();
+    ASSERT_FALSE(exists_res.has_error());
+    ASSERT_EQ(exists_res.value(), find_partition_manifest_outcome::success);
+}
+
+TEST_F(PartitionManifestDownloaderTest, TestPrefixedBinaryManifestExists) {
+    remote_path_provider path_provider(std::nullopt);
+    partition_manifest_downloader dl(
+      bucket_name, path_provider, test_ntp, test_rev, remote_.local());
+    auto pm = dummy_partition_manifest();
+    ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(pm));
+
+    // With the hash-prefixed path provider, we won't find labeled manifests.
+    retry_chain_node retry(never_abort, 1s, 10ms);
+    auto exists_res = dl.manifest_exists(retry).get();
+    ASSERT_FALSE(exists_res.has_error());
+    ASSERT_EQ(
+      exists_res.value(),
+      find_partition_manifest_outcome::no_matching_manifest);
+
+    // Once a hash-prefixed binary manifest exists, we're good.
+    ASSERT_NO_FATAL_FAILURE(upload_prefixed_bin_manifest(pm));
+    exists_res = dl.manifest_exists(retry).get();
+    ASSERT_FALSE(exists_res.has_error());
+    ASSERT_EQ(exists_res.value(), find_partition_manifest_outcome::success);
 }
