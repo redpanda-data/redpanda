@@ -48,6 +48,7 @@ class TopicSwarm():
     # Based on manual runs, maximum creation time
     # is 16 sec for a batch with 16384 topics
     create_topic_timeout_ms = 30 * 1000
+    delete_topic_timeout_ms = 30 * 1000
 
     def __init__(self, brokers, workers, issilent, logger):
         self.logger = logger
@@ -72,6 +73,12 @@ class TopicSwarm():
         self.name_length = name_length
         self.skip_topic_names_randomization = skip_randomize
 
+    def make_superuser_client(self):
+        self.logger.info("Creating kafka client")
+        return KafkaAdminClient(bootstrap_servers=self.brokers,
+                                request_timeout_ms=30000,
+                                api_version_auto_timeout_ms=3000)
+
     def create_many_topics(self,
                            target_count,
                            topic_name_prefix="topic-swarm",
@@ -89,16 +96,11 @@ class TopicSwarm():
             num_partitions: How many partitions for each topic
             num_replicas: How many replicas for each topic
 
-            return value: topic details list
+            return value: topic details list, topic timings
         """
-        def make_superuser_client():
-            return KafkaAdminClient(bootstrap_servers=self.brokers,
-                                    request_timeout_ms=30000,
-                                    api_version_auto_timeout_ms=3000)
 
         # Kafka client
-        self.logger.info("Creating kafka client")
-        kclient = make_superuser_client()
+        kclient = self.make_superuser_client()
 
         def _create_single_topic(topic_item):
             # Create topic with time tracking
@@ -285,6 +287,54 @@ class TopicSwarm():
         timings['end_time_s'] = time.time()
         return (topics, timings)
 
+    def delete_many_topics(self, topic_name_prefix):
+        """Function deletes all topics based on the prefix
+
+        Args:
+            topic_name_prefix (list): topics list
+
+        Returns:
+            list[str], dict: topic names as list and timings dict
+        """
+        def _delete_topic_batch(topic_item_list):
+            # Send whole batch to kafka client
+            r = kclient.delete_topics(topic_item_list,
+                                      timeout_ms=self.create_topic_timeout_ms)
+            # Filter topic errors if any
+            _errors = [
+                e for e in getattr(r, 'topic_error_codes', []) if e[1] != 0
+            ]
+            # Transpose errors so names appear on 0, error code in 1
+            # and Class in 2
+            _errors = numpy.array(_errors).transpose()
+            # Fill time and check errors
+            for item in topic_item_list:
+                # if there is an error, create key
+                if len(_errors) > 0 and item['name'] in _errors[0]:
+                    idx = _errors[0].index(item['name'])
+                    item['topic_errors'] = (_errors[1][idx], _errors[2][idx])
+            return topic_item_list
+
+        kclient = self.make_superuser_client()
+        # list topics with prefix
+        all_topics = kclient.list_topics()
+        topics_to_delete = []
+        for topic_name in all_topics:
+            if topic_name.startswith(topic_name_prefix):
+                topics_to_delete.append(topic_name)
+
+        # delete them
+        delete_time_start_s = time.time()
+        _delete_topic_batch(topics_to_delete)
+        batch_deletion_time_s = time.time() - delete_time_start_s
+
+        # Peek creation timings
+        timings = {
+            "count_deleted": len(topics_to_delete),
+            "deletion_time": batch_deletion_time_s
+        }
+        return (topics_to_delete, timings)
+
 
 COMMAND_CREATE = 'create'
 COMMAND_DELETE = 'delete'
@@ -292,14 +342,14 @@ commands = [COMMAND_CREATE, COMMAND_DELETE]
 
 
 def main(args):
-
+    errorlevel = 0
     tm = TopicSwarm(args.brokers,
                     args.workers,
                     args.issilent,
                     logger=setup_logger())
 
-    if args.command == COMMAND_CREATE:
-        try:
+    try:
+        if args.command == COMMAND_CREATE:
             tm.set_topic_config(args.name_length, args.skip_randomize)
             topics, timings = tm.create_many_topics(
                 args.topic_count,
@@ -310,36 +360,40 @@ def main(args):
                 num_replicas=args.num_replicas)
 
             data = {'topics': topics, 'timings': timings}
-        except (NoBrokersAvailable, BrokerNotAvailableError) as e:
-            data = {'error': f"{e.__str__()} for '{args.brokers}'"}
-        except Exception as e:
-            import traceback
-            # If timeout happens, it will go here
-            # and be reported and handled like a normal error
-            exc_fmt = traceback.format_exception(type(e), e, e.__traceback__)
-            trimmed = []
-            # Trim long traceback lines here
-            for line in exc_fmt:
-                _size = len(line)
-                # Traceback lines actually trippled: "File ...\n Code hint\nMarker"
-                # This is why 512 would work better
-                if len(line) > 512:
-                    trimmed += [line[:256] + f"...({_size} chars)"]
-                else:
-                    trimmed += [line]
-            data = {'error': ''.join(trimmed)}
-        finally:
+        elif args.command == COMMAND_DELETE:
+            topics, timings = tm.delete_many_topics(args.topic_prefix)
+            data = {'topics': topics, 'timings': timings}
+        else:
+            data = {
+                'error':
+                f"topic swarm command "
+                f"'{args.command}' not yet implemented"
+            }
             write_json(sys.stdout, data)
-    else:
-        data = {
-            'error':
-            f"topic swarm command "
-            f"'{args.command}' not yet implemented"
-        }
+            errorlevel = 1
+    except (NoBrokersAvailable, BrokerNotAvailableError) as e:
+        data = {'error': f"{e.__str__()} for '{args.brokers}'"}
+        errorlevel = 2
+    except Exception as e:
+        import traceback
+        # If timeout happens, it will go here
+        # and be reported and handled like a normal error
+        exc_fmt = traceback.format_exception(type(e), e, e.__traceback__)
+        trimmed = []
+        # Trim long traceback lines here
+        for line in exc_fmt:
+            _size = len(line)
+            # Traceback lines actually trippled: "File ...\n Code hint\nMarker"
+            # This is why 512 would work better
+            if len(line) > 512:
+                trimmed += [line[:256] + f"...({_size} chars)"]
+            else:
+                trimmed += [line]
+        data = {'error': ''.join(trimmed)}
+        errorlevel = 3
+    finally:
         write_json(sys.stdout, data)
-        sys.exit(1)
-
-    return
+    return errorlevel
 
 
 if __name__ == '__main__':
@@ -423,5 +477,12 @@ if __name__ == '__main__':
                                help="Number of replicas in each topic")
 
     parser_delete = subparsers.add_parser("delete")
-
-    main(parser.parse_args())
+    parser_delete.add_argument(
+        "-f",
+        "--topic-prefix",
+        dest="topic_prefix",
+        default="topics-swarm-test",
+        help="Topic prefix to use when creating. "
+        "Formats: '<prefix>-p<partitions>-r<replicas>-<randomized>' or <prefix>-p<partitions>-r<replicas>-<sequence_number>"
+    )
+    sys.exit(main(parser.parse_args()))
