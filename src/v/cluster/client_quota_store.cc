@@ -13,15 +13,23 @@
 
 namespace cluster::client_quota {
 
-void store::set_quota(const entity_key& key, const entity_value& value) {
+void store::set_quota(
+  const entity_key& key, const entity_value& value, bool trigger_notify) {
     if (!value.is_empty()) {
         _quotas.insert_or_assign(key, value);
     } else {
         _quotas.erase(key);
     }
+
+    if (trigger_notify) {
+        notify_watchers();
+    }
 }
 
-void store::remove_quota(const entity_key& key) { _quotas.erase(key); }
+void store::remove_quota(const entity_key& key) {
+    _quotas.erase(key);
+    notify_watchers();
+}
 
 std::optional<entity_value> store::get_quota(const entity_key& key) const {
     auto it = _quotas.find(key);
@@ -42,7 +50,10 @@ store::range_container_type store::range(
 
 store::container_type::size_type store::size() const { return _quotas.size(); }
 
-void store::clear() { _quotas.clear(); }
+void store::clear() {
+    _quotas.clear();
+    notify_watchers();
+}
 
 const store::container_type& store::all_quotas() const { return _quotas; }
 
@@ -69,9 +80,20 @@ void store::apply_delta(const alter_delta_cmd_data& data) {
                 break;
             }
         }
-        set_quota(key, q);
+        set_quota(key, q, false);
     }
     _quotas.rehash(0);
+    notify_watchers();
+}
+
+void store::watch(on_change_callback_type&& f) {
+    _on_change_watchers.push_back(std::move(f));
+}
+
+void store::notify_watchers() const {
+    for (auto& f : _on_change_watchers) {
+        f();
+    }
 }
 
 } // namespace cluster::client_quota

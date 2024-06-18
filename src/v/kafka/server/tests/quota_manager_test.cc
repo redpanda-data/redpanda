@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/client_quota_serde.h"
 #include "cluster/client_quota_store.h"
 #include "config/configuration.h"
 #include "kafka/server/client_quota_translator.h"
@@ -328,5 +329,25 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         BOOST_REQUIRE(client_it->second->tp_produce_rate.has_value());
         BOOST_CHECK_EQUAL(
           client_it->second->tp_produce_rate->rate(), scale_to_smp_count(1024));
+    }
+
+    {
+        using cluster::client_quota::entity_key;
+        using cluster::client_quota::entity_value;
+
+        // Update fetch config again using the quota store
+        ss::sstring client_id = "franz-go";
+        auto key = entity_key{entity_key::client_id_match{client_id}};
+        auto value = entity_value{.consumer_byte_rate = 16384};
+        f.quota_store.local().set_quota(key, value);
+
+        // Wait for the quota update to propagate
+        ss::sleep(std::chrono::milliseconds(1)).get();
+
+        // Check the rate has been updated
+        auto it = f.buckets_map.local()->find(k_client_id{client_id});
+        BOOST_REQUIRE(it != f.buckets_map.local()->end());
+        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 16384);
     }
 }
