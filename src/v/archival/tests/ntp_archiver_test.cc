@@ -829,11 +829,14 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(partition);
 
     // Starting offset is lower than offset1
-    auto upload1 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         model::offset(0), lso, log, segment_read_lock_timeout)
-                       .get())
+    auto upload1 = require_upload_candidate(policy
+                                              .get_next_candidate(
+                                                model::offset(0),
+                                                lso,
+                                                std::nullopt,
+                                                log,
+                                                segment_read_lock_timeout)
+                                              .get())
                      .candidate;
     log_upload_candidate(upload1);
     BOOST_REQUIRE(!upload1.sources.empty());
@@ -843,12 +846,13 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     start_offset = upload1.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
-    auto upload2 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload2
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload2);
     BOOST_REQUIRE(!upload2.sources.empty());
     BOOST_REQUIRE(upload2.starting_offset() == offset2);
@@ -859,12 +863,13 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     start_offset = upload2.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
-    auto upload3 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload3
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload3);
     BOOST_REQUIRE(!upload3.sources.empty());
     BOOST_REQUIRE(upload3.starting_offset() == offset3);
@@ -877,13 +882,18 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
                    + model::offset(1);
     require_candidate_creation_error(
       policy
-        .get_next_candidate(start_offset, lso, log, segment_read_lock_timeout)
+        .get_next_candidate(
+          start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
         .get(),
       candidate_creation_error::no_segment_for_begin_offset);
     require_candidate_creation_error(
       policy
         .get_next_candidate(
-          lso + model::offset(1), lso, log, segment_read_lock_timeout)
+          lso + model::offset(1),
+          lso,
+          std::nullopt,
+          log,
+          segment_read_lock_timeout)
         .get(),
       candidate_creation_error::no_segment_for_begin_offset);
 }
@@ -925,13 +935,16 @@ FIXTURE_TEST(
     auto partition = app.partition_manager.local().get(manifest_ntp);
     BOOST_REQUIRE(partition);
 
-    auto candidate
-      = require_upload_candidate(
-          archival::archival_policy{manifest_ntp}
-            .get_next_candidate(
-              model::offset(0), lso, log, segment_read_lock_timeout)
-            .get())
-          .candidate;
+    auto candidate = require_upload_candidate(
+                       archival::archival_policy{manifest_ntp}
+                         .get_next_candidate(
+                           model::offset(0),
+                           lso,
+                           std::nullopt,
+                           log,
+                           segment_read_lock_timeout)
+                         .get())
+                       .candidate;
 
     // The search is expected to find the next segment after the compacted
     // segment, skipping the compacted one.
@@ -966,6 +979,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
                                               .get_next_candidate(
                                                 start_offset,
                                                 last_stable_offset,
+                                                std::nullopt,
                                                 log,
                                                 segment_read_lock_timeout)
                                               .get())
@@ -1027,6 +1041,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
             .get_next_candidate(
               start_offset,
               log->offsets().dirty_offset + model::offset{1},
+              std::nullopt,
               log,
               segment_read_lock_timeout)
             .get(),
@@ -1062,6 +1077,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
             .get_next_candidate(
               start_offset,
               log->offsets().dirty_offset + model::offset{1},
+              std::nullopt,
               log,
               segment_read_lock_timeout)
             .get(),
@@ -1551,24 +1567,26 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     model::offset start_offset{0};
     model::offset lso{9999};
     // Starting offset is lower than offset1
-    auto upload1 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload1
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload1);
     BOOST_REQUIRE(!upload1.sources.empty());
     BOOST_REQUIRE(upload1.starting_offset == offset1);
 
     start_offset = upload1.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
-    auto upload2 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload2
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload2);
     BOOST_REQUIRE(!upload2.sources.empty());
     BOOST_REQUIRE(upload2.starting_offset == offset2);
@@ -1579,12 +1597,13 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
 
     start_offset = upload2.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
-    auto upload3 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload3
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload3);
     BOOST_REQUIRE(!upload3.sources.empty());
     BOOST_REQUIRE(upload3.starting_offset == offset3);
@@ -1597,7 +1616,8 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
                    + model::offset(1);
     require_candidate_creation_error(
       policy
-        .get_next_candidate(start_offset, lso, log, segment_read_lock_timeout)
+        .get_next_candidate(
+          start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
         .get(),
       candidate_creation_error::no_segment_for_begin_offset);
 }
