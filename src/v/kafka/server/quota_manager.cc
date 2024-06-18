@@ -50,8 +50,6 @@ quota_manager::quota_manager(
   , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
     if (seastar::this_shard_id() == _client_quotas.shard_id()) {
         _gc_timer.set_callback([this]() { gc(); });
-        auto update_quotas = [this]() { update_client_quotas(); };
-        _translator.watch(update_quotas);
     }
 }
 
@@ -66,6 +64,9 @@ ss::future<> quota_manager::start() {
     if (ss::this_shard_id() == _client_quotas.shard_id()) {
         co_await _client_quotas.reset(client_quotas_map_t{});
         _gc_timer.arm_periodic(_gc_freq);
+
+        auto update_quotas = [this]() { update_client_quotas(); };
+        _translator.watch(update_quotas);
     }
 }
 
